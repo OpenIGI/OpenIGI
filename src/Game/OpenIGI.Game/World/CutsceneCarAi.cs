@@ -13,7 +13,6 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 internal sealed class CutsceneCarAi(
     CutsceneContext context,
-    LevelUpdateWalker walker,
     CutsceneVehicleBodies bodies,
     CutsceneVehicleArmament armament,
     List<CarAiState> carAis)
@@ -28,7 +27,6 @@ internal sealed class CutsceneCarAi(
     private const double CarAiChaseLookAheadSquared = 3_288_334_336d;
 
     private readonly CutsceneContext _context = context;
-    private readonly LevelUpdateWalker _walker = walker;
     private readonly CutsceneVehicleBodies _bodies = bodies;
     private readonly CutsceneVehicleArmament _armament = armament;
     private readonly List<CarAiState> _carAis = carAis;
@@ -67,8 +65,24 @@ internal sealed class CutsceneCarAi(
 
             CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
             _carAis.Add(state);
-            _walker.Bind(declared, _ => TickCarAi(state));
         }
+    }
+
+    /// <summary>A CarAI's own update, where the level's walk reaches its task (<c>0x425DE0</c>).</summary>
+    /// <param name="task">The CarAI's task.</param>
+    /// <returns>Whether the task drives a car this level's graphs gave a route.</returns>
+    internal bool RunFromWalk(GameTask task)
+    {
+        foreach (CarAiState state in _carAis)
+        {
+            if (ReferenceEquals(state.Task, task))
+            {
+                TickCarAi(state);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Gets the graph node a car's CarAI is heading for (<c>+104</c>), for diagnostics and tests.</summary>

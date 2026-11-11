@@ -41,6 +41,12 @@ public static class LevelTaskTypes
             AddDeclared<WorldInteractionTask>(types, name);
         }
 
+        AddDeclared<AnimTaskTask>(types, AnimTaskTask.TypeName);
+        AddDeclared<ConditionalSoundTask>(types, ConditionalSoundTask.TypeName);
+        AddDeclared<CarTask>(types, CarTask.TypeName);
+        AddDeclared<HeliTask>(types, HeliTask.TypeName);
+        AddDeclared<CarAiTask>(types, CarAiTask.TypeName);
+        AddDeclared<StationaryGunHolderTask>(types, StationaryGunHolderTask.TypeName);
         foreach (string name in PickupTask.TypeNames)
         {
             AddDeclared<PickupTask>(types, name);

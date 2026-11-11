@@ -33,18 +33,16 @@ public sealed partial class CutsceneRuntime
     {
         foreach (GameTask task in levelRoot.Descendants())
         {
-            if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
+            if (string.Equals(task.Type.Name, CarTask.TypeName, StringComparison.Ordinal)
+                || string.Equals(task.Type.Name, HeliTask.TypeName, StringComparison.Ordinal)
+                || string.Equals(task.Type.Name, CarAiTask.TypeName, StringComparison.Ordinal))
             {
-                _walker.Bind(task, TickCar);
-            }
-            else if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
-            {
-                _walker.Bind(task, TickHeli);
+                Adopt(task);
             }
             else if (string.Equals(task.Type.Name, CutsceneGunHolders.TypeName, StringComparison.Ordinal))
             {
                 _gunHolders.Register(task, visionPhases.TryGetValue(task, out int phase) ? phase : _armament.NextVisionPhase());
-                _walker.Bind(task, holder => _gunHolders.Tick(holder, () => _walker.RunChildren(holder)));
+                Adopt(task);
             }
         }
     }

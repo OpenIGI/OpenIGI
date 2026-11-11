@@ -33,6 +33,11 @@ public sealed partial class CutsceneRuntime
     private readonly List<Flow.LevelTimerTask> _timers = [];
     private readonly List<CutsceneAnimationState> _animations = [];
     private readonly List<CutsceneSoundState> _sounds = [];
+
+    // What each task that runs itself through this runtime is the task of.
+    private readonly Dictionary<GameTask, CutsceneAnimationState> _animationsByTask = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<GameTask, CutsceneSoundState> _soundsByTask = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<GameTask, CutsceneSceneState> _scenesByTask = new(ReferenceEqualityComparer.Instance);
     private readonly List<CarAiState> _carAis = [];
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
@@ -185,7 +190,7 @@ public sealed partial class CutsceneRuntime
         _gunHolders = new CutsceneGunHolders(_context, _armament);
         _parts = new CutsceneVehicleParts(_context, _armament);
         _packets = new CutsceneAnimationPackets(_context, _bodies, _ground, _parts);
-        _carAi = new CutsceneCarAi(_context, _walker, _bodies, _armament, _carAis);
+        _carAi = new CutsceneCarAi(_context, _bodies, _armament, _carAis);
         _draw = new CutsceneVehicleDraw(_context, _attachments, _bodies, _armament, _parts);
         _camera = new CutsceneCameraFrames(_context, _attachments);
         List<CutSceneTask> cutscenes = [];
@@ -286,12 +291,14 @@ public sealed partial class CutsceneRuntime
 
         foreach (CutsceneAnimationState animation in _animations)
         {
-            _walker.Bind(animation.Task, _ => TickAnimation(animation));
+            _animationsByTask[animation.Task] = animation;
+            Adopt(animation.Task);
         }
 
         foreach (CutsceneSoundState sound in _sounds)
         {
-            _walker.Bind(sound.Task, _ => TickSound(sound));
+            _soundsByTask[sound.Task] = sound;
+            Adopt(sound.Task);
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
@@ -313,7 +320,8 @@ public sealed partial class CutsceneRuntime
         {
             CutsceneSceneState scene = new(cutscene, _camera.ReadShots(cutscene));
             _scenes.Add(scene);
-            _walker.Bind(cutscene, _ => TickScene(scene));
+            _scenesByTask[cutscene] = scene;
+            cutscene.Cutscenes = this;
             _walker.RegisterDeactivation(cutscene, _ => DeactivateScene(scene));
         }
 
@@ -573,6 +581,68 @@ public sealed partial class CutsceneRuntime
     /// in authored order ticks them all.
     /// </summary>
     public LevelUpdateWalker Walker => _walker;
+
+    /// <summary>A task's own update, where the level's walk reaches it.</summary>
+    /// <param name="task">The task.</param>
+    /// <param name="level">The run that reached it.</param>
+    /// <returns>Whether this runtime keeps the task and stepped it; a walk that is not this runtime's steps nothing.</returns>
+    internal bool RunFromWalk(CutsceneRuntimeTask task, Level.LevelRun level)
+    {
+        if (!ReferenceEquals(level, _walker))
+        {
+            return false;
+        }
+
+        switch (task)
+        {
+            case AnimTaskTask when _animationsByTask.TryGetValue(task, out CutsceneAnimationState? animation):
+                TickAnimation(animation);
+                return true;
+            case ConditionalSoundTask when _soundsByTask.TryGetValue(task, out CutsceneSoundState? sound):
+                TickSound(sound);
+                return true;
+            case CarTask:
+                TickCar(task);
+                return true;
+            case HeliTask:
+                TickHeli(task);
+                return true;
+            case StationaryGunHolderTask:
+                _gunHolders.Tick(task, () => _walker.RunChildren(task));
+                return true;
+            case CarAiTask:
+                return _carAi.RunFromWalk(task);
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>A cutscene's own update, where the level's walk reaches its task.</summary>
+    /// <param name="task">The cutscene's task.</param>
+    /// <param name="level">The run that reached it.</param>
+    /// <returns>Whether this runtime keeps the scene and stepped it.</returns>
+    internal bool RunScene(CutSceneTask task, Level.LevelRun level)
+    {
+        if (!ReferenceEquals(level, _walker) || !_scenesByTask.TryGetValue(task, out CutsceneSceneState? scene))
+        {
+            return false;
+        }
+
+        TickScene(scene);
+        return true;
+    }
+
+    // Makes this runtime the one a kept task runs through, and says so loudly when the task was made without its class.
+    private void Adopt(GameTask task)
+    {
+        if (task is not CutsceneRuntimeTask typed)
+        {
+            throw new InvalidOperationException(
+                $"{task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+        }
+
+        typed.Cutscenes = this;
+    }
 
     /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>
     private void TickAnimation(CutsceneAnimationState animation)

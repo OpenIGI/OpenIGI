@@ -20,7 +20,7 @@ namespace OpenIGI.Game.World;
 /// <c>nTick</c>, and latches <c>isFinished</c> after the final nested EditCamera duration.
 /// </para>
 /// </remarks>
-public partial class CutSceneTask : GameTask
+public partial class CutSceneTask : GameTask, Level.ILevelTicked
 {
     /// <summary>The script name the level data instantiates this type under.</summary>
     public const string TypeName = "CutScene";
@@ -87,6 +87,20 @@ public partial class CutSceneTask : GameTask
     /// <summary>Gets or sets whether the cut-scene has finished — <c>CutScene+97</c>, <c>isFinished</c>.</summary>
     /// <remarks>A newly-created authored scene is unfinished; <see cref="CutsceneRuntime"/> latches this once its final shot ends.</remarks>
     public bool IsFinished { get; set; }
+
+    /// <summary>Gets or sets the level's cutscene runtime, which steps this scene; none until it is built.</summary>
+    internal CutsceneRuntime? Cutscenes { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>A scene no runtime keeps is walked as a plain container is.</remarks>
+    void Level.ILevelTicked.Run(Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Cutscenes?.RunScene(this, level) != true)
+        {
+            level.RunChildren(this);
+        }
+    }
 
     /// <summary>Gets or sets the cut-scene's tick counter — <c>CutScene+100</c>, <c>nTick</c>.</summary>
     public int Ticks { get; set; }
