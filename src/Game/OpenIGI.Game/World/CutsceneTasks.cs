@@ -4,13 +4,13 @@ using OpenIGI.Game.Level;
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// A task of one of the Project I.G.I. types the cutscene runtime keeps the state of: the vehicles a level's story brings
-/// in, the animations that move them, and the sounds and guns that go with them.
+/// A task of one of the Project I.G.I. types the cutscene runtime keeps the state of: the animations that move a level's
+/// objects and the sounds its story plays.
 /// </summary>
 /// <remarks>
-/// Each has a run handler of its own in the original; <see cref="CutsceneRuntime"/> holds what they share -- the vehicles'
-/// bodies, the animation packets, the scene's clock -- and each task runs its part where the level's walk reaches it. One
-/// the runtime does not keep, or a level with no runtime, is walked as a plain container is.
+/// Each has a run handler of its own in the original; <see cref="CutsceneRuntime"/> holds what they share -- the animation
+/// packets, the sound sink -- and each task runs its part where the level's walk reaches it. One the runtime does not keep,
+/// or a level with no runtime, is walked as a plain container is.
 /// </remarks>
 public abstract class CutsceneRuntimeTask : DeclaredLevelTask
 {
@@ -21,11 +21,16 @@ public abstract class CutsceneRuntimeTask : DeclaredLevelTask
     public sealed override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        if (Cutscenes?.RunFromWalk(this, level) != true)
+        if (Cutscenes is not { } cutscenes || !cutscenes.RunsIn(level) || !Run(cutscenes))
         {
             level.RunChildren(this);
         }
     }
+
+    /// <summary>Runs the type's own handler.</summary>
+    /// <param name="cutscenes">The level's cutscene runtime.</param>
+    /// <returns>Whether the runtime keeps this task and stepped it.</returns>
+    private protected abstract bool Run(CutsceneRuntime cutscenes);
 }
 
 /// <summary>An animation played on another task: Project I.G.I.'s <c>AnimTask</c> (run handler <c>0x4F3B40</c>).</summary>
@@ -33,6 +38,21 @@ public sealed class AnimTaskTask : CutsceneRuntimeTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AnimTask";
+
+    /// <summary>Gets or sets the animation as it plays, or <see langword="null"/> for a task the level gave no keys.</summary>
+    internal CutsceneAnimationState? Playing { get; set; }
+
+    /// <inheritdoc/>
+    private protected override bool Run(CutsceneRuntime cutscenes)
+    {
+        if (Playing is not { } playing)
+        {
+            return false;
+        }
+
+        cutscenes.RunAnimation(playing);
+        return true;
+    }
 
     /// <summary>Gets the id of the task the animation moves ("TargetID"), or -1 where the level gives none.</summary>
     public int TargetId => DeclaredTaskValues.IntStrict(this, "TargetID", DeclaredTaskValues.IntStrict(this, "Target ID", -1));
@@ -53,6 +73,21 @@ public sealed class ConditionalSoundTask : CutsceneRuntimeTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalSound";
+
+    /// <summary>Gets or sets the sound as it plays, or <see langword="null"/> until a runtime keeps it.</summary>
+    internal CutsceneSoundState? Playing { get; set; }
+
+    /// <inheritdoc/>
+    private protected override bool Run(CutsceneRuntime cutscenes)
+    {
+        if (Playing is not { } playing)
+        {
+            return false;
+        }
+
+        cutscenes.RunSound(playing);
+        return true;
+    }
 
     /// <summary>Gets the expression that says whether the sound plays (the parameter named for its condition).</summary>
     public string Condition => DeclaredTaskValues.FirstTextNamed(this, "condition");

@@ -35,8 +35,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     private readonly List<CutsceneSoundState> _sounds = [];
 
     // What each task that runs itself through this runtime is the task of.
-    private readonly Dictionary<GameTask, CutsceneAnimationState> _animationsByTask = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<GameTask, CutsceneSoundState> _soundsByTask = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, CutsceneSceneState> _scenesByTask = new(ReferenceEqualityComparer.Instance);
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
@@ -221,14 +219,18 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
 
         foreach (CutsceneAnimationState animation in _animations)
         {
-            _animationsByTask[animation.Task] = animation;
-            Adopt(animation.Task);
+            if (Adopt(animation.Task) is AnimTaskTask animated)
+            {
+                animated.Playing = animation;
+            }
         }
 
         foreach (CutsceneSoundState sound in _sounds)
         {
-            _soundsByTask[sound.Task] = sound;
-            Adopt(sound.Task);
+            if (Adopt(sound.Task) is ConditionalSoundTask sounding)
+            {
+                sounding.Playing = sound;
+            }
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
@@ -502,29 +504,18 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// </summary>
     public LevelUpdateWalker Walker => _walker;
 
-    /// <summary>A task's own update, where the level's walk reaches it.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="level">The run that reached it.</param>
-    /// <returns>Whether this runtime keeps the task and stepped it; a walk that is not this runtime's steps nothing.</returns>
-    internal bool RunFromWalk(CutsceneRuntimeTask task, Level.LevelRun level)
-    {
-        if (!ReferenceEquals(level, _walker))
-        {
-            return false;
-        }
+    /// <summary>Gets a value indicating whether a level's run is the one this runtime's tasks run in.</summary>
+    /// <param name="level">The run.</param>
+    /// <returns>Whether it is this runtime's; a walk that is not steps nothing of it.</returns>
+    internal bool RunsIn(Level.LevelRun level) => ReferenceEquals(level, _walker);
 
-        switch (task)
-        {
-            case AnimTaskTask when _animationsByTask.TryGetValue(task, out CutsceneAnimationState? animation):
-                TickAnimation(animation);
-                return true;
-            case ConditionalSoundTask when _soundsByTask.TryGetValue(task, out CutsceneSoundState? sound):
-                TickSound(sound);
-                return true;
-            default:
-                return false;
-        }
-    }
+    /// <summary>An AnimTask's own update, where the level's walk reaches its task.</summary>
+    /// <param name="animation">The animation as it plays.</param>
+    internal void RunAnimation(CutsceneAnimationState animation) => TickAnimation(animation);
+
+    /// <summary>A ConditionalSound's own update, where the level's walk reaches its task.</summary>
+    /// <param name="sound">The sound as it plays.</param>
+    internal void RunSound(CutsceneSoundState sound) => TickSound(sound);
 
     /// <summary>A cutscene's own update, where the level's walk reaches its task.</summary>
     /// <param name="task">The cutscene's task.</param>
@@ -542,12 +533,15 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     }
 
     // Makes this runtime the one a kept task runs through, and says so loudly when the task was made without its class.
-    private void Adopt(GameTask task)
+    private CutsceneRuntimeTask? Adopt(GameTask task)
     {
-        if (Level.LevelTaskClass.TryAs(task, _walker, out CutsceneRuntimeTask? typed))
+        if (!Level.LevelTaskClass.TryAs(task, _walker, out CutsceneRuntimeTask? typed))
         {
-            typed.Cutscenes = this;
+            return null;
         }
+
+        typed.Cutscenes = this;
+        return typed;
     }
 
     /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>
