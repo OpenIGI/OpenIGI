@@ -164,7 +164,7 @@ internal sealed class VehicleBodies(
         List<VehicleOccupant> occupants = [];
         foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
-            if (task.Type.Name is "Car" or "Heli")
+            if (task is CarTask or HeliTask)
             {
                 occupants.Add(new VehicleOccupant(task.Id, state.Position));
             }

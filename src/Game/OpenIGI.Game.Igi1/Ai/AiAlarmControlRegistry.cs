@@ -37,12 +37,12 @@ public sealed class AiAlarmControlRegistry
     public int Count => _controls.Count;
 
     /// <summary>Builds and exports every <c>AlarmControl</c> below <paramref name="root"/>.</summary>
-    public static AiAlarmControlRegistry Build(GameTask root, ScriptVarRegistry variables)
+    public static AiAlarmControlRegistry Build(GameTask root, ScriptVarRegistry variables, LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
-        AiAlarmControlRegistry registry = new(new LevelExpressionRuntime(variables));
+        AiAlarmControlRegistry registry = new(expressions ?? new LevelExpressionRuntime(variables));
         registry.Collect(root, variables);
         return registry;
     }

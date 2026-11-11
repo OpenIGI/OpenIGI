@@ -73,19 +73,21 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     /// when there is no profile, which is what <c>0x488ED0</c> falls back to.
     /// </param>
     /// <param name="isKeyDown">Reads the keyboard for the <c>Key0..9.isPressed</c> globals; without it they read up.</param>
+    /// <param name="expressions">The level's expressions, or <see langword="null"/> to compile with ones of its own.</param>
     public MissionObjectiveRuntime(
         GameTask levelRoot,
         ScriptVarRegistry variables,
         Func<string, string>? resolveText = null,
         Func<string, ScriptArguments, QvmValue?>? native = null,
         int difficulty = 1,
-        Func<KeyCode, bool>? isKeyDown = null)
+        Func<KeyCode, bool>? isKeyDown = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         _levelRoot = levelRoot;
         _variables = variables;
-        _expressions = new LevelExpressionRuntime(variables, native);
+        _expressions = expressions ?? new LevelExpressionRuntime(variables, native);
         _resolveText = resolveText ?? (static key => key);
         _isKeyDown = isKeyDown;
         _areas = new MissionAreaActivation(levelRoot);

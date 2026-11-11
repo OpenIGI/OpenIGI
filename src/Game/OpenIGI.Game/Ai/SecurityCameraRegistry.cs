@@ -797,12 +797,13 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
     public static SecurityCameraRegistry Build(
         GameTask root,
         ScriptVarRegistry variables,
-        WorldTraceCast? sight = null)
+        WorldTraceCast? sight = null,
+        World.LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
-        SecurityCameraRegistry registry = new(new LevelExpressionRuntime(variables), sight);
+        SecurityCameraRegistry registry = new(expressions ?? new LevelExpressionRuntime(variables), sight);
         registry.Collect(root, variables);
         return registry;
     }

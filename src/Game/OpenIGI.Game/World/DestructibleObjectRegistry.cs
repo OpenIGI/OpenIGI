@@ -75,19 +75,21 @@ public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateS
     /// Told of every magic object as it is made, in the level's order, so the others that draw from the stream as they
     /// are made -- a helicopter's rocket pods -- draw in their place among the panes.
     /// </param>
+    /// <param name="expressions">The level's expressions, or <see langword="null"/> to compile with ones of its own.</param>
     public static DestructibleObjectRegistry Build(
         GameTask root,
         IEnumerable<WorldPlacement> placements,
         ScriptVarRegistry variables,
         VehiclePhysicsRegistry? vehiclePhysics = null,
         IgiRandom? random = null,
-        Action<WorldPlacement>? made = null)
+        Action<WorldPlacement>? made = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(placements);
         ArgumentNullException.ThrowIfNull(variables);
 
-        DestructibleObjectRegistry registry = new(new LevelExpressionRuntime(variables), random ?? new IgiRandom());
+        DestructibleObjectRegistry registry = new(expressions ?? new LevelExpressionRuntime(variables), random ?? new IgiRandom());
         WorldPlacement[] resolved = [.. placements];
 
         foreach (DeclaredTask task in root.DescendantsAndSelf().OfType<DeclaredTask>())

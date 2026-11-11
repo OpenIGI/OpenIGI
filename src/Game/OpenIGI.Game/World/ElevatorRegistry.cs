@@ -93,14 +93,15 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
     public static ElevatorRegistry Build(
         GameTask root,
         ScriptVarRegistry variables,
-        DoorRegistry? doors)
+        DoorRegistry? doors,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
         _ = doors;
 
         ElevatorRegistry registry = new();
-        LevelExpressionRuntime expressions = new(variables);
+        expressions ??= new LevelExpressionRuntime(variables);
         Collect(root, root, registry, expressions, variables);
         return registry;
     }

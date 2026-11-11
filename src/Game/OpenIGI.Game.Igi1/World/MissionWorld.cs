@@ -49,6 +49,9 @@ public sealed class MissionWorld : MissionState, IInspectableMission
     /// <summary>Gets or sets the cutscene runtime, which also walks the level each tick.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 
+    /// <summary>Gets the level's expressions, which everything built for the level evaluates through; none before the cut-scenes are built.</summary>
+    public LevelExpressionRuntime? LevelExpressions => Cutscenes?.Expressions;
+
     /// <summary>Gets or sets the objective runtime.</summary>
     public MissionObjectiveRuntime? Objectives { get; set; }
 

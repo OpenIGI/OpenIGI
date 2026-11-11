@@ -82,6 +82,10 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         set => _context.Destructibles = value;
     }
 
+    /// <summary>Gets the level's expressions: one compile cache and one set of natives for everything the level evaluates.</summary>
+    /// <remarks>The original has one script context; what is built for the level after this takes it rather than making its own.</remarks>
+    public LevelExpressionRuntime Expressions => _context.Expressions;
+
     /// <summary>Gets the level's vehicles: its cars, helicopters, mounted-gun holders and what steers and arms them.</summary>
     public LevelVehicles Vehicles { get; }
 
@@ -134,7 +138,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         {
             int order = taskOrder++;
             _context.TaskOrder[task] = order;
-            if (task.Type.Name is "Car" or "Heli")
+            if (task is CarTask or HeliTask)
             {
                 Vehicles.Armament.RegisterVision(task, visionPhases);
             }

@@ -185,16 +185,18 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
     /// <param name="root">The level's task tree.</param>
     /// <param name="variables">The live level variables the expressions read.</param>
     /// <param name="anyAlarmOn">Whether any alarm control is sounding — what the cameras' beeps follow.</param>
+    /// <param name="expressions">The level's expressions, or <see langword="null"/> to compile with ones of its own.</param>
     /// <returns>The registry.</returns>
     public static AlarmSpeakerRegistry Build(
         GameTask root,
         ScriptVarRegistry variables,
-        Func<bool>? anyAlarmOn = null)
+        Func<bool>? anyAlarmOn = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
-        AlarmSpeakerRegistry registry = new(new LevelExpressionRuntime(variables), anyAlarmOn);
+        AlarmSpeakerRegistry registry = new(expressions ?? new LevelExpressionRuntime(variables), anyAlarmOn);
         registry.Collect(root);
         return registry;
     }

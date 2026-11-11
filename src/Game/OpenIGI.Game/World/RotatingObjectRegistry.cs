@@ -460,12 +460,13 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
         GameTask root,
         IEnumerable<WorldPlacement> placements,
         ScriptVarRegistry? variables = null,
-        MagicObjectRegistry? magic = null)
+        MagicObjectRegistry? magic = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(placements);
 
-        LevelExpressionRuntime? expressions = variables is not null ? new LevelExpressionRuntime(variables) : null;
+        expressions ??= variables is not null ? new LevelExpressionRuntime(variables) : null;
         RotatingObjectRegistry registry = new(expressions);
 
         foreach (WorldPlacement placement in placements)

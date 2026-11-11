@@ -624,7 +624,7 @@ public sealed partial class Igi1PlayerSetup(
         List<string> weaponModels = [];
         foreach (DeclaredTask vehicle in levelRoot.Descendants().OfType<DeclaredTask>())
         {
-            if (vehicle.Type.Name is ("Car" or "Heli")
+            if (vehicle is (CarTask or HeliTask)
                 && vehicle.TryGetValue("Model", out object? rawZoneModel)
                 && rawZoneModel is string zoneModel)
             {
@@ -643,7 +643,7 @@ public sealed partial class Igi1PlayerSetup(
             }
 
             // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
-            if (vehicle.Type.Name is not ("Car" or "Heli")
+            if (vehicle is not (CarTask or HeliTask)
                 || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
                 || rawCanFire is not string canFire
                 || string.IsNullOrWhiteSpace(canFire)

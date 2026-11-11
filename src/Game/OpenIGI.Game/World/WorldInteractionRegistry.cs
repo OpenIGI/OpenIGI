@@ -37,7 +37,8 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         DoorRegistry doors,
         ScriptVarRegistry variables,
         ElevatorRegistry? elevators = null,
-        IgiRandom? random = null)
+        IgiRandom? random = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(mission);
@@ -45,7 +46,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         ArgumentNullException.ThrowIfNull(variables);
 
         Dictionary<string, MefModel> models = WorldInteractionCollector.ModelsByName(mission);
-        LevelExpressionRuntime expressions = new(variables);
+        expressions ??= new LevelExpressionRuntime(variables);
         WorldInteractionRegistry registry = new();
         WorldInteractionCollector.CollectGenerators(root, registry, variables, expressions);
         WorldInteractionCollector.CollectRadios(root, registry, variables, expressions, random ?? new IgiRandom());

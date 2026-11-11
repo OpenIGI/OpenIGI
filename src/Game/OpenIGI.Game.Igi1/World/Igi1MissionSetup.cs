@@ -187,7 +187,8 @@ public sealed class Igi1MissionSetup(
             missionText.Get,
             mission.Cutscenes.TryInvokeNative,
             difficulty: host.ScriptDifficulty,
-            isKeyDown: host.IsKeyDown);
+            isKeyDown: host.IsKeyDown,
+            expressions: mission.LevelExpressions);
         mission.Objectives = objectives;
         made(objectives);
 
@@ -286,9 +287,9 @@ public sealed class Igi1MissionSetup(
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         mission.Doors = DoorRegistry.Build(levelRoot);
-        mission.Elevators = ElevatorRegistry.Build(levelRoot, host.Game.Variables);
+        mission.Elevators = ElevatorRegistry.Build(levelRoot, host.Game.Variables, doors: null, mission.LevelExpressions);
         mission.Interactions = WorldInteractionRegistry.Build(
-            levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators, random: mission.SoundRandom);
+            levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators, random: mission.SoundRandom, expressions: mission.LevelExpressions);
         mission.Interactions.Clock = () => mission.Objectives?.LevelTick;
         mission.Interactions.Sounds = audio.PlayInteractionSound;
         mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, host.Game.Variables, placements);
@@ -446,7 +447,7 @@ public sealed class Igi1MissionSetup(
         WorldTraceCast worldTrace = terrain is { } ground
             ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
             : solids.Tracer();
-        mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, host.Game.Variables, worldTrace);
+        mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, host.Game.Variables, worldTrace, mission.LevelExpressions);
         mission.SecurityCameras.BindScene(scene.Placements);
         host.Logger.Information(
             "Ai",
@@ -455,7 +456,7 @@ public sealed class Igi1MissionSetup(
 
         // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
         // what turns them: the walk gives a placement, this gives it an angle per tick.
-        mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, host.Game.Variables, mission.MagicObjects);
+        mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, host.Game.Variables, mission.MagicObjects, mission.LevelExpressions);
         return worldTrace;
     }
 
@@ -501,7 +502,7 @@ public sealed class Igi1MissionSetup(
             field.Blasts = blasts;
         }
 
-        mission.MineFieldExpressions = new LevelExpressionRuntime(host.Game.Variables);
+        mission.MineFieldExpressions = mission.LevelExpressions ?? new LevelExpressionRuntime(host.Game.Variables);
 
         // The Smoke tasks' plumes, in the impact effects' particle module so the one particle drawer shows them.
         mission.SmokePlumes = Igi1SmokePlumes.Build(levelRoot, host.Game.Variables);
@@ -518,7 +519,8 @@ public sealed class Igi1MissionSetup(
         mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
             levelRoot,
             host.Game.Variables,
-            () => soldiers.AnyAlarmOn);
+            () => soldiers.AnyAlarmOn,
+            mission.LevelExpressions);
         mission.AlarmSpeakers.BindScene(scene.Placements);
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
@@ -611,7 +613,8 @@ public sealed class Igi1MissionSetup(
             host.Game.Variables,
             mission.VehiclePhysics,
             random: mission.SoundRandom,
-            made: cutscenes.Vehicles.VehiclePartMade);
+            made: cutscenes.Vehicles.VehiclePartMade,
+            expressions: mission.LevelExpressions);
         solids.Destructibles = mission.Destructibles;
         cutscenes.Destructibles = mission.Destructibles;
     }
