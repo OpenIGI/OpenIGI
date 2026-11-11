@@ -630,7 +630,7 @@ public sealed partial class GameHost
         // The glows of the models this frame drew (Glow_DrawSorted), over the finished scene with the other sprites.
         if (_world is { CollectGlows: true, DrawnGlows.Count: > 0 } glowing)
         {
-            _modelGlows ??= new ModelGlowRenderer(_device, _resources, _logger);
+            _modelGlows ??= new ModelGlowRenderer(_device, _resources, _titleRuntime.Layout.CommonSearchDirectory, _logger);
             _modelGlows.Draw(glowing.DrawnGlows, eye, projection);
         }
 

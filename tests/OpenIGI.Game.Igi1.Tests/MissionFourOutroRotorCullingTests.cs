@@ -55,7 +55,7 @@ public sealed class MissionFourOutroRotorCullingTests
         {
             MeshGeometry geometry = Assert.IsType<MeshGeometry>(
                 MefMeshBuilder.Build(pair.First.Model, (float)(1d / WorldScene.UnitsPerMetre)));
-            return geometry.Subsets.Sum(DrawCalls) * pair.Second.SampleCount;
+            return Draws(geometry) * pair.Second.SampleCount;
         });
         Assert.True(expectedInViewDraws > 0);
 
@@ -160,6 +160,16 @@ public sealed class MissionFourOutroRotorCullingTests
     }
 
     // The draws a subset takes with culling off: its two-sided part, and its coincident skins culled after it (CoincidentSkins).
-    private static int DrawCalls(MeshSubset subset) =>
-        (subset.IndexCount - subset.SkinIndexCount > 0 ? 1 : 0) + (subset.SkinIndexCount > 0 ? 1 : 0);
+    // The draws a model is made in, as WorldRenderer.DrawSubset makes them: a model drawn culled -- one with authored normals,
+    // while r_world_cull is on -- has each subset in one draw; one drawn two-sided has a subset's coincident skins in a
+    // draw of their own after the rest.
+    private static int Draws(MeshGeometry geometry)
+    {
+        bool culled = OpenIGI.Rendering.GeometryCVars.WorldCull.Value != 0
+            && !geometry.HasDerivedNormals
+            && MefMeshBuilder.HasNormals(geometry.Vertices);
+        return geometry.Subsets.Sum(subset => culled
+            ? (subset.IndexCount > 0 ? 1 : 0)
+            : (subset.IndexCount - subset.SkinIndexCount > 0 ? 1 : 0) + (subset.SkinIndexCount > 0 ? 1 : 0));
+    }
 }
