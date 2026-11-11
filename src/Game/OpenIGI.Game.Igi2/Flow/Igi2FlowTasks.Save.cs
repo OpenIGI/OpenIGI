@@ -2,24 +2,6 @@ using OpenIGI.Game.Igi2.Saves;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
-/// <content>Its save state (areaactivateqtask.c's serialize list): the number counted inside, <c>nActive</c>.</content>
-public sealed partial class Igi2AreaActivateTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(_active);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        _active = reader.Int();
-    }
-}
-
 /// <content>Its save state, <c>ConditionalContainer_ptSerializeParameterList</c>: whether its children are in the world, and whether it runs.</content>
 public sealed partial class Igi2ConditionalContainerTask : ISavedState
 {

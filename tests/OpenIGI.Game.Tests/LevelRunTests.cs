@@ -73,6 +73,8 @@ public sealed class LevelRunTests
 
         public override double Evaluate(OpenIGI.Scripting.Expressions.LevelExpression expression) => throw new NotSupportedException();
 
+        public override double EvaluateLine(string source) => throw new NotSupportedException();
+
         protected override void RunUntyped(GameTask task)
         {
             Log.Add("untyped");

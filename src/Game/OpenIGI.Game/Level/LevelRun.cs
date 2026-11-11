@@ -36,6 +36,9 @@ public abstract class LevelRun
     /// <exception cref="ArgumentNullException"><paramref name="root"/> is <see langword="null"/>.</exception>
     protected LevelRun(GameTask root) => Root = root ?? throw new ArgumentNullException(nameof(root));
 
+    /// <summary>Gets the criteria the level's areas count by, which the title's humans and vehicles register.</summary>
+    public Flow.AreaCriteria Areas { get; } = new();
+
     /// <summary>Gets the level's root task.</summary>
     public GameTask Root { get; }
 
@@ -84,6 +87,15 @@ public abstract class LevelRun
     /// <returns>Its value, or nought when it is empty.</returns>
     /// <remarks>Project I.G.I.'s <c>sub_4F16E0</c>, I.G.I. 2's <c>Level_RunLevelExpression</c>; a caller that wants a whole number truncates it.</remarks>
     public abstract double Evaluate(LevelExpression expression);
+
+    /// <summary>Evaluates a line of script as it stands, against the level's constants, variables and natives.</summary>
+    /// <param name="source">The line.</param>
+    /// <returns>Its value.</returns>
+    /// <remarks>
+    /// Project I.G.I.'s <c>Script_EvalExpr</c>, I.G.I. 2's <c>Script_ParseLineInt32</c>: what a parameter that is plain script
+    /// and not a task's expression slot is read by, such as an area's criteria. No word of it is taken for a task's name.
+    /// </remarks>
+    public abstract double EvaluateLine(string source);
 
     /// <summary>Binds the work that runs a task in place of its own, given the task.</summary>
     /// <param name="task">The task.</param>

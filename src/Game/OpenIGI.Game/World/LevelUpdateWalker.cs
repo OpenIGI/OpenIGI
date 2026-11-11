@@ -62,6 +62,15 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
         return runtime.Evaluate(expression);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The walk was given no <see cref="Expressions"/>.</exception>
+    public override double EvaluateLine(string source)
+    {
+        LevelExpressionRuntime runtime = Expressions
+            ?? throw new InvalidOperationException("The level's walk was given no variables to evaluate a line of script against.");
+        return runtime.EvaluateLine(source);
+    }
+
     /// <summary>Registers what a task does when its conditional container takes it out of the world.</summary>
     /// <param name="task">The task.</param>
     /// <param name="deactivate">Its deactivation.</param>

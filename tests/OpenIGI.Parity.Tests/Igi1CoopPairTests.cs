@@ -66,8 +66,8 @@ public sealed class Igi1CoopPairTests
 
         // A level area that counts the player's team, empty, and far from where the host stands.
         Vector3d hostAt = pair.Host!.World.Player!.Body.Position;
-        DeclaredTask[] areas = [.. pair.Host.World.LevelRoot!.Descendants().OfType<DeclaredTask>().Where(static t => t.Type.Name == "AreaActivate")];
-        DeclaredTask? area = areas
+        GameTask[] areas = [.. pair.Host.World.LevelRoot!.Descendants().Where(static t => t.Type.Name == "AreaActivate")];
+        GameTask? area = areas
             .Where(t => Text(t, "Criteria") is "CRITERIA_HUMAN0" && At(t) is not null && Count(pair.Host, $"AreaActivate_{t.Id}.nActive") == 0)
             .OrderByDescending(t => Vector3d.Distance(hostAt, At(t)!.Value))
             .FirstOrDefault();
@@ -1128,10 +1128,10 @@ public sealed class Igi1CoopPairTests
     private static int Count(Igi1Gameplay game, string variable) =>
         game.World.Soldiers!.ScriptVariables!.TryRead(variable, out QvmValue value) ? value.ToInt32() : -1;
 
-    private static Vector3d? At(DeclaredTask task) => task.TryGetValue("Position", out object? p) && p is Vector3d v ? v : null;
+    private static Vector3d? At(GameTask task) => task.TryGetScriptValue("Position", out object? p) && p is Vector3d v ? v : null;
 
-    private static string Text(DeclaredTask task, string name) => task.TryGetValue(name, out object? v) ? v?.ToString() ?? string.Empty : string.Empty;
+    private static string Text(GameTask task, string name) => task.TryGetScriptValue(name, out object? v) ? v?.ToString() ?? string.Empty : string.Empty;
 
-    private static string Describe(DeclaredTask task) =>
-        $"{task.Id}: Position={(task.TryGetValue("Position", out object? p) ? $"{p?.GetType().Name}:{p}" : "missing")} Criteria={(task.TryGetValue("Criteria", out object? c) ? $"{c?.GetType().Name}:{c}" : "missing")}";
+    private static string Describe(GameTask task) =>
+        $"{task.Id}: Position={(task.TryGetScriptValue("Position", out object? p) ? $"{p?.GetType().Name}:{p}" : "missing")} Criteria={(task.TryGetScriptValue("Criteria", out object? c) ? $"{c?.GetType().Name}:{c}" : "missing")}";
 }

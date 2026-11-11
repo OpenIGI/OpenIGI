@@ -71,10 +71,12 @@ public sealed class DiagPatrolPaths
         // EditVariable tasks: what does 751/752 start at, and what changes them?
         foreach (GameTask task in WalkAll(root))
         {
-            if (task is not DeclaredTask declared || !string.Equals(task.Type?.Name, "EditVariable", StringComparison.Ordinal))
+            if (!string.Equals(task.Type?.Name, "EditVariable", StringComparison.Ordinal))
             {
                 continue;
             }
+
+            GameTask declared = task;
 
             if (declared.Id is 751 or 752 || declared.Id >= 740)
             {
@@ -84,11 +86,11 @@ public sealed class DiagPatrolPaths
         }
     }
 
-    private static string Text(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
+    private static string Text(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
 
-    private static int Int(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? value) && value is int number ? number : fallback;
+    private static int Int(GameTask task, string name, int fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is int number ? number : fallback;
 
     private static IEnumerable<GameTask> WalkAll(GameTask task)
     {

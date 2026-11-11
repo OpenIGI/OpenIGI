@@ -47,7 +47,7 @@ public sealed class LevelThreeOutroFidelityTests
         Assert.True(loop.Variables.TryWrite("EditVariable_3071.nValue", QvmValue.FromInt32(1)));
         Assert.True(loop.Variables.TryWrite("EditVariable_3069.nValue", QvmValue.FromInt32(1)));
 
-        Vector3d extractionCentre = Position(Assert.IsType<DeclaredTask>(root.Tree.FromId(739)));
+        Vector3d extractionCentre = Position(Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(739)));
         Step(objectives, runtime, extractionCentre);
         Assert.Equal(0, projectileCleanupCalls);
         // ConditionalContainer_3445 (CutScene_700.isRun, whose start runs Game_CutsceneDelete) precedes 3334, the
@@ -229,8 +229,8 @@ public sealed class LevelThreeOutroFidelityTests
         runtime.FinishExpressionTick();
     }
 
-    private static Vector3d Position(DeclaredTask task) =>
-        task.TryGetValue("Position", out object? value) && value is Vector3d position ? position : default;
+    private static Vector3d Position(GameTask task) =>
+        task.TryGetScriptValue("Position", out object? value) && value is Vector3d position ? position : default;
 
     private static (GameLoop Loop, LevelTask Root) LoadLevelThree()
     {

@@ -106,6 +106,12 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 continue;
             }
 
+            if (task is AreaActivateTask box)
+            {
+                _areas.Add(box);
+                continue;
+            }
+
             if (task is not DeclaredTask declared)
             {
                 continue;
@@ -114,16 +120,6 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
             if (string.Equals(task.Type.Name, "DefineComputerObjective", StringComparison.Ordinal))
             {
                 _definitions.Add(ReadDefinition(declared));
-            }
-            else if (string.Equals(task.Type.Name, "AreaActivate", StringComparison.Ordinal))
-            {
-                AreaActivation area = new(
-                    declared,
-                    Vector(declared, "Position"),
-                    Orientation(declared),
-                    Vector32(declared, "Dimensions"),
-                    TextTrimmed(declared, "Criteria"));
-                _areas.Declare(declared, area, variables);
             }
             else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
             {
@@ -521,10 +517,14 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
             return;
         }
 
-        _areas.UpdateAll();
+        // No walk reaches them: each area counted afresh, then each counter's own run, in the tree's order.
+        if (_walker is null)
+        {
+            _walker = new LevelUpdateWalker(_levelRoot) { Expressions = _expressions, IsReplica = Mirrored };
+            _areas.Register(_walker.Areas);
+        }
 
-        // No walk reaches them: each counter's own run, in the tree's order.
-        _walker ??= new LevelUpdateWalker(_levelRoot) { Expressions = _expressions, IsReplica = Mirrored };
+        _areas.RecountAll(_walker);
         foreach (EditVariableTask edit in _editVariables)
         {
             edit.Run(_walker);
@@ -556,7 +556,8 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         _walker = walker;
         walker.Expressions = _expressions;
         walker.IsReplica = Mirrored;
-        _areas.AttachTo(walker, vehicles, soldiers, player);
+        _areas.SetSources(vehicles, soldiers, player);
+        _areas.Register(walker.Areas);
 
         _messages.AttachTo(walker);
     }

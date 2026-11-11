@@ -76,8 +76,8 @@ public sealed class Level4WatchOutTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
 
         MissionObjectiveRuntime runtime = new(root, loop.Variables);
-        DeclaredTask area = Assert.IsType<DeclaredTask>(root.Tree.FromId(WatchOutAreaId));
-        Assert.True(area.TryGetValue("Position", out object? position));
+        GameTask area = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(WatchOutAreaId));
+        Assert.True(area.TryGetScriptValue("Position", out object? position));
         return (loop, root, runtime, Assert.IsType<Vector3d>(position));
     }
 

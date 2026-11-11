@@ -60,6 +60,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void AreaActivationCountsOnlySoldiersRegisteredIntoTheLiveWorld()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -79,7 +80,6 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Text("CRITERIA_HUMAN1"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
 
         ConditionalContainerTask dormantGate = (ConditionalContainerTask)loop.Tasks.New(
@@ -213,7 +213,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Real(100f), QvmExpression.Real(200f), QvmExpression.Real(300f),
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(40f), QvmExpression.Real(60f), QvmExpression.Real(80f),
-                QvmExpression.Text("PLAYER"))));
+                QvmExpression.Text("CRITERIA_HUMAN0"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
         MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
@@ -636,8 +636,8 @@ public sealed class MissionObjectiveRuntimeTests
 
             if (script.EndsWith(@"level1\objects.qvm", StringComparison.OrdinalIgnoreCase))
             {
-                DeclaredTask gateArea = Assert.IsType<DeclaredTask>(root.Tree.FromId(200));
-                Assert.True(gateArea.TryGetValue("Position", out object? rawPosition));
+                GameTask gateArea = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(200));
+                Assert.True(gateArea.TryGetScriptValue("Position", out object? rawPosition));
                 runtime.Tick(Assert.IsType<OpenIGI.Core.Numerics.Vector3d>(rawPosition));
 
                 Assert.True(loop.Variables.TryRead("AreaActivate_200.nActive", out var active));
@@ -698,7 +698,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(20f), QvmExpression.Real(20f), QvmExpression.Real(20f),
-                QvmExpression.Text("PLAYER"))));
+                QvmExpression.Text("CRITERIA_HUMAN0"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
         return (loop, new MissionObjectiveRuntime(loop.Tasks.Root, loop.Variables));

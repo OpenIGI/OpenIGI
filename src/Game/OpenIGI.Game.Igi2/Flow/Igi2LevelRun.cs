@@ -150,6 +150,10 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
     }
 
     /// <inheritdoc/>
+    public override double EvaluateLine(string source) =>
+        Evaluate(Igi2LevelExpressions.Create(source, string.Empty, Natives));
+
+    /// <inheritdoc/>
     public override double Evaluate(LevelExpression expression)
     {
         ArgumentNullException.ThrowIfNull(expression);

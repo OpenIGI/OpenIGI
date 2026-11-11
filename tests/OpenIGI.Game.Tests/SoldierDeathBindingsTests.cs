@@ -85,11 +85,10 @@ public sealed class SoldierDeathBindingsTests
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
 
         // Find area 155 (the internal plateau) and its centre position.
-        DeclaredTask? area155 = WalkAll(root)
-            .OfType<DeclaredTask>()
-            .FirstOrDefault(d => d.Type?.Name == "AreaActivate" && d.Id == 155);
+        GameTask? area155 = WalkAll(root)
+            .FirstOrDefault(d => d.Id == 155 && d.Type.Name == "AreaActivate");
         Assert.NotNull(area155);
-        Assert.True(area155.TryGetValue("Position", out object? positionRaw),
+        Assert.True(area155.TryGetScriptValue("Position", out object? positionRaw),
             "area 155 must author a Position for the friendly-advance test");
         OpenIGI.Core.Numerics.Vector3d plateau = positionRaw is OpenIGI.Core.Numerics.Vector3d v
             ? v

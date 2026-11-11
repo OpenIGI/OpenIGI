@@ -43,7 +43,7 @@ public sealed class MissionRestartTests
         LevelTask first = Load(loop, missions, fs, resources);
         MissionObjectiveRuntime objectives = new(first, loop.Variables);
         Vector3d inside = Assert.IsType<Vector3d>(
-            Assert.IsType<DeclaredTask>(first.Tree.FromId(175)).TryGetValue("Position", out object? centre)
+            Assert.IsAssignableFrom<GameTask>(first.Tree.FromId(175)).TryGetScriptValue("Position", out object? centre)
                 ? centre
                 : null);
         objectives.TickLevelState(inside, playerTeam: 0);

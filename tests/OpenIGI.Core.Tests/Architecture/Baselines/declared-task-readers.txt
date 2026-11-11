@@ -19,7 +19,6 @@ src/Game/OpenIGI.Game/Ai/AlarmSpeakerRegistry.cs
 src/Game/OpenIGI.Game/Ai/SecurityCameraRegistry.cs
 src/Game/OpenIGI.Game/Multiplayer/Modes/ArenaGates.cs
 src/Game/OpenIGI.Game/Weapons/WeaponConfigRegistry.cs
-src/Game/OpenIGI.Game/World/AreaActivation.cs
 src/Game/OpenIGI.Game/World/CarAiState.cs
 src/Game/OpenIGI.Game/World/CinematicActor.cs
 src/Game/OpenIGI.Game/World/CutsceneAnimationPackets.cs
@@ -41,7 +40,6 @@ src/Game/OpenIGI.Game/World/ElevatorSplineFrame.cs
 src/Game/OpenIGI.Game/World/GeneratorPowerState.cs
 src/Game/OpenIGI.Game/World/GenericPickupRegistry.cs
 src/Game/OpenIGI.Game/World/GunPickupRegistry.cs
-src/Game/OpenIGI.Game/World/MissionAreaActivation.cs
 src/Game/OpenIGI.Game/World/MissionObjectiveRuntime.cs
 src/Game/OpenIGI.Game/World/MissionStatusMessages.cs
 src/Game/OpenIGI.Game/World/ObjectCollisionIndexBuilder.cs

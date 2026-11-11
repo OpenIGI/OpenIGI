@@ -1,21 +1,70 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Flow;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.World;
 
+/// <summary>The bits of Project I.G.I.'s area criteria, each a script constant a level's <c>Criteria</c> slot names.</summary>
+/// <remarks>
+/// The humans register <c>CRITERIA_HUMAN</c> and one <c>CRITERIA_HUMAN</c><em>n</em> for each of eight teams (<c>Human_Open</c>),
+/// the vehicles <c>CRITERIA_VEHICLE</c> (<c>Vehicle_Open</c>). The original hands each the next free bit; only the names
+/// reach level data, so the order here is this port's.
+/// </remarks>
+public static class Igi1AreaCriteria
+{
+    /// <summary>Every human, <c>CRITERIA_HUMAN</c>.</summary>
+    public const int Human = 1 << 0;
+
+    /// <summary>Every vehicle, <c>CRITERIA_VEHICLE</c>.</summary>
+    public const int Vehicle = 1 << 9;
+
+    /// <summary>The number of teams with a criterion of their own.</summary>
+    public const int Teams = 8;
+
+    /// <summary>Gets a team's criterion, <c>CRITERIA_HUMAN</c><em>n</em>.</summary>
+    /// <param name="team">The team.</param>
+    /// <returns>Its bit, or nought for a team that has none.</returns>
+    public static int Team(int team) => (uint)team < Teams ? 2 << team : 0;
+
+    /// <summary>Gets the value of a criterion's script constant.</summary>
+    /// <param name="name">The name as written.</param>
+    /// <returns>Its bit, or <see langword="null"/> for a name that is not a criterion.</returns>
+    public static int? Constant(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        const string prefix = "CRITERIA_HUMAN";
+        if (name == "CRITERIA_VEHICLE")
+        {
+            return Vehicle;
+        }
+
+        if (!name.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (name.Length == prefix.Length)
+        {
+            return Human;
+        }
+
+        return name.Length == prefix.Length + 1 && name[^1] is >= '0' and < (char)('0' + Teams) ? Team(name[^1] - '0') : null;
+    }
+}
+
 /// <summary>
-/// The mission's <c>AreaActivate</c> volumes and the occupants they count: the player the host reports, the
-/// soldiers and the vehicles.
+/// What a Project I.G.I. level's <c>AreaActivate</c> volumes count: the player the host reports, a co-op session's other
+/// players, the soldiers and the vehicles, each through the criterion the original's module registers for it.
 /// </summary>
 /// <remarks>
-/// Owned by <see cref="MissionObjectiveRuntime"/>, which decides when the areas update -- from the level walk
-/// once attached, otherwise in its own level-state phase.
+/// Owned by <see cref="MissionObjectiveRuntime"/>. The areas themselves are tasks that run where the level's walk reaches
+/// them (<see cref="AreaActivateTask"/>); this is the humans' and the vehicles' side of it.
 /// </remarks>
 internal sealed class MissionAreaActivation
 {
     private readonly GameTask _levelRoot;
-    private readonly List<AreaActivation> _areaActivations = [];
+    private readonly List<AreaActivateTask> _areas = [];
     private readonly Dictionary<int, HumanOccupant> _soldierOccupants = [];
     private readonly Dictionary<int, VehicleOccupant> _vehicleOccupants = [];
     private bool _playerAlive = true;
@@ -24,16 +73,27 @@ internal sealed class MissionAreaActivation
     private Vector3d? _stateExtraPlayer;
     private Func<IEnumerable<VehicleOccupant>>? _vehicleSource;
     private Func<IEnumerable<HumanOccupant>>? _soldierSource;
+    private Func<AreaPlayer>? _playerSource;
 
     // As the match began: each area's count, and who stood where.
     private (int[] Counts, bool Alive, Vector3d? Player, int Team, Vector3d? Extra) _start = ([], true, null, 0, null);
 
-    internal void MarkLevelStart() =>
-        _start = ([.. _areaActivations.Select(static a => a.ActiveCount)], _playerAlive, _statePlayer, _stateTeam, _stateExtraPlayer);
+    /// <summary>Builds the occupant set over the loaded level.</summary>
+    /// <param name="levelRoot">The loaded level's task tree, which resolves occupants to their tasks.</param>
+    public MissionAreaActivation(GameTask levelRoot)
+    {
+        _levelRoot = levelRoot;
+    }
+
+    /// <summary>Gets or sets what reads the level's other players -- a co-op session's -- each counted as the player is.</summary>
+    public Func<IEnumerable<AreaPlayer>>? Partners { get; set; }
 
     /// <summary>Gets the state a save keeps of each area.</summary>
     internal IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates =>
-        _areaActivations.Select(static a => new KeyValuePair<GameTask, Saves.ISavedState>(a.Task, a));
+        _areas.Select(static a => new KeyValuePair<GameTask, Saves.ISavedState>(a, a));
+
+    internal void MarkLevelStart() =>
+        _start = ([.. _areas.Select(static a => a.Active)], _playerAlive, _statePlayer, _stateTeam, _stateExtraPlayer);
 
     /// <summary>Passes through a save who the areas last counted as the player, and where. Not retail.</summary>
     /// <param name="exchange">The exchange.</param>
@@ -52,53 +112,49 @@ internal sealed class MissionAreaActivation
 
     internal void ResetToLevelStart()
     {
-        for (int i = 0; i < _areaActivations.Count && i < _start.Counts.Length; i++)
+        for (int i = 0; i < _areas.Count && i < _start.Counts.Length; i++)
         {
-            _areaActivations[i].ActiveCount = _start.Counts[i];
+            _areas[i].Active = _start.Counts[i];
         }
 
         (_playerAlive, _statePlayer, _stateTeam, _stateExtraPlayer) = (_start.Alive, _start.Player, _start.Team, _start.Extra);
         _soldierOccupants.Clear();
         _vehicleOccupants.Clear();
     }
-    private Func<AreaPlayer>? _playerSource;
 
-    /// <summary>Gets or sets what reads the level's other players -- a co-op session's -- each counted as the player is.</summary>
-    public Func<IEnumerable<AreaPlayer>>? Partners { get; set; }
+    /// <summary>Lists one of the level's areas, in the tree's order.</summary>
+    /// <param name="area">The area.</param>
+    public void Add(AreaActivateTask area) => _areas.Add(area);
 
-    /// <summary>Builds the area set over the loaded level.</summary>
-    /// <param name="levelRoot">The loaded level's task tree, which resolves occupants to their tasks.</param>
-    public MissionAreaActivation(GameTask levelRoot)
+    /// <summary>Counts every area afresh in the tree's order, for a level no walk runs.</summary>
+    /// <param name="run">The run whose criteria count.</param>
+    public void RecountAll(LevelUpdateWalker run)
     {
-        _levelRoot = levelRoot;
-    }
-
-    /// <summary>Adds one authored area and exports its <c>nActive</c> on its task.</summary>
-    /// <param name="declared">The area's task.</param>
-    /// <param name="area">The area read from it.</param>
-    /// <param name="variables">The mission's script variables.</param>
-    public void Declare(DeclaredTask declared, AreaActivation area, ScriptVarRegistry variables)
-    {
-        _areaActivations.Add(area);
-        variables.BindInt(declared, "nActive", () => area.ActiveCount, value => area.ActiveCount = value);
-    }
-
-    /// <summary>Updates every area in declaration order, for a level that is not attached to a walk.</summary>
-    public void UpdateAll()
-    {
-        foreach (AreaActivation area in _areaActivations)
+        foreach (AreaActivateTask area in _areas)
         {
-            UpdateArea(area);
+            area.Recount(run);
         }
     }
 
-    /// <summary>Puts each area into the level's update walk; see <see cref="MissionObjectiveRuntime.AttachTo"/>.</summary>
-    /// <param name="walker">The level walk.</param>
+    /// <summary>Registers the humans' and the vehicles' criteria with a level's run.</summary>
+    /// <param name="criteria">The run's criteria.</param>
+    public void Register(AreaCriteria criteria)
+    {
+        criteria.Set(Igi1AreaCriteria.Human, (area, _) => CountHumans(area, static _ => true));
+        for (int team = 0; team < Igi1AreaCriteria.Teams; team++)
+        {
+            // Human_CountTeamCriteria (0x460A10): every human whose own team's bit is in the mask, once for each team bit set.
+            criteria.Set(Igi1AreaCriteria.Team(team), (area, mask) => CountHumans(area, t => (Igi1AreaCriteria.Team(t) & mask) != 0));
+        }
+
+        criteria.Set(Igi1AreaCriteria.Vehicle, (area, _) => CountVehicles(area));
+    }
+
+    /// <summary>Sets where the occupants are read from when an area counts them; see <see cref="MissionObjectiveRuntime.AttachTo"/>.</summary>
     /// <param name="vehicles">Reads the vehicles' live positions when an area counts them.</param>
     /// <param name="soldiers">Reads the soldiers where they stand when an area counts them.</param>
     /// <param name="player">Reads the player where it stands when an area counts it.</param>
-    public void AttachTo(
-        LevelUpdateWalker walker,
+    public void SetSources(
         Func<IEnumerable<VehicleOccupant>>? vehicles,
         Func<IEnumerable<HumanOccupant>>? soldiers,
         Func<AreaPlayer>? player)
@@ -106,14 +162,6 @@ internal sealed class MissionAreaActivation
         _vehicleSource = vehicles;
         _soldierSource = soldiers;
         _playerSource = player;
-        foreach (AreaActivation area in _areaActivations)
-        {
-            walker.Bind(area.Task, task =>
-            {
-                UpdateArea(area);
-                walker.RunChildren(task);
-            });
-        }
     }
 
     /// <summary>Latches the player's projections and liveness; see <see cref="MissionObjectiveRuntime.SetLevelStateInputs"/>.</summary>
@@ -163,17 +211,14 @@ internal sealed class MissionAreaActivation
         }
     }
 
-    /// <summary>Whether the named soldier's last reported state was dead.</summary>
-    private bool IsSoldierDead(int taskId) =>
-        _soldierOccupants.TryGetValue(taskId, out HumanOccupant occupant) && occupant.IsDead;
-
-    /// <summary>AreaActivate::Update (<c>0x5048A0</c>): nActive cleared and recounted over every matching occupant.</summary>
-    private void UpdateArea(AreaActivation area)
+    // The humans the original's list holds -- the player, a co-op session's other players, and each soldier that lives and
+    // is in the world -- that stand inside and whose team the criterion takes.
+    private int CountHumans(AreaActivateTask area, Func<int, bool> takesTeam)
     {
         int count = 0;
         AreaPlayer player = _playerSource?.Invoke()
             ?? new AreaPlayer(_statePlayer, _stateTeam, _stateExtraPlayer, _playerAlive);
-        if (Holds(area, player))
+        if (takesTeam(player.Team) && Holds(area, player))
         {
             count++;
         }
@@ -181,7 +226,7 @@ internal sealed class MissionAreaActivation
         // Every other player stands in an area as the player does: a co-op partner reaching the exit is a player there.
         foreach (AreaPlayer partner in Partners?.Invoke() ?? [])
         {
-            if (Holds(area, partner))
+            if (takesTeam(partner.Team) && Holds(area, partner))
             {
                 count++;
             }
@@ -194,33 +239,35 @@ internal sealed class MissionAreaActivation
             if (soldier is not null
                 && !occupant.IsDead
                 && ConditionalContainerGate.IsTaskActive(soldier)
-                && area.AcceptsSoldier(occupant.Team)
-                && area.Contains(occupant.Position))
+                && takesTeam(occupant.Team)
+                && area.IsInside(occupant.Position))
             {
                 count++;
             }
         }
 
-        // CRITERIA_VEHICLE (0x4F4560) counts the whole vehicle list; a vehicle stays listed while its container is
-        // closed, so no active test here.
+        return count;
+    }
+
+    // CRITERIA_VEHICLE (0x4F4560) counts the whole vehicle list; a vehicle stays listed while its container is closed, so no
+    // active test here.
+    private int CountVehicles(AreaActivateTask area)
+    {
+        int count = 0;
         IEnumerable<VehicleOccupant> vehicles = _vehicleSource?.Invoke() ?? _vehicleOccupants.Values;
         foreach (VehicleOccupant occupant in vehicles)
         {
-            GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
-            if (vehicle is not null
-                && area.AcceptsVehicle
-                && area.Contains(occupant.Position))
+            if (_levelRoot.Tree.FromId(occupant.TaskId) is not null && area.IsInside(occupant.Position))
             {
                 count++;
             }
         }
 
-        area.ActiveCount = count;
+        return count;
     }
 
-    private static bool Holds(AreaActivation area, AreaPlayer player) =>
+    private static bool Holds(AreaActivateTask area, AreaPlayer player) =>
         player.Alive
-        && area.AcceptsPlayer(player.Team)
-        && ((player.Position is { } point && area.Contains(point))
-            || (player.ExtraPosition is { } extra && area.Contains(extra)));
+        && ((player.Position is { } point && area.IsInside(point))
+            || (player.ExtraPosition is { } extra && area.IsInside(extra)));
 }

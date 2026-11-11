@@ -11,14 +11,24 @@ namespace OpenIGI.Game.Flow;
 /// </remarks>
 public static class LevelTaskTypes
 {
-    /// <summary>Registers the shared flow types a level of either title is made of.</summary>
+    /// <summary>Registers the flow types both titles make from the very same class.</summary>
+    /// <param name="types">The registry a level's tasks are made from.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="types"/> is <see langword="null"/>.</exception>
+    public static void RegisterShared(TaskTypeRegistry types)
+    {
+        ArgumentNullException.ThrowIfNull(types);
+        types.Register<EditVariableTask>(EditVariableTask.TypeName);
+        types.Register<LevelTimerTask>(LevelTimerTask.TypeName);
+    }
+
+    /// <summary>Registers the flow types of a Project I.G.I. level: the shared ones, and those I.G.I. 2 derives its own class from.</summary>
     /// <param name="types">The registry a level's tasks are made from.</param>
     /// <exception cref="ArgumentNullException"><paramref name="types"/> is <see langword="null"/>.</exception>
     public static void RegisterFlow(TaskTypeRegistry types)
     {
         ArgumentNullException.ThrowIfNull(types);
-        types.Register<EditVariableTask>(EditVariableTask.TypeName);
-        types.Register<LevelTimerTask>(LevelTimerTask.TypeName);
+        RegisterShared(types);
+        types.Register<AreaActivateTask>(AreaActivateTask.TypeName);
     }
 
     /// <summary>Registers every shared type a Project I.G.I. level is made of.</summary>
