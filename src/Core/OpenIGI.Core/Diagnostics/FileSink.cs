@@ -165,6 +165,19 @@ public sealed class FileSink : ILogSink
 
     private void Run()
     {
+        try
+        {
+            Drain();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Dispose waits two seconds for the queue to empty and then closes the file under this thread: on a machine
+            // too busy to write in that time the lines still queued are lost, not the process.
+        }
+    }
+
+    private void Drain()
+    {
         foreach (LogRecord record in _queue.GetConsumingEnumerable())
         {
             try
