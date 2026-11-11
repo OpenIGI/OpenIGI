@@ -10,6 +10,9 @@ namespace OpenIGI.Game.World;
 /// </summary>
 public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateSource
 {
+    // The objects their own tasks run from the level's walk.
+    private readonly HashSet<DestructibleObject> _walked = new(ReferenceEqualityComparer.Instance);
+
     private const string DestroyedModelParameter = "Destroyed model";
     private const string ExplosionDamageScaleParameter = "Damage scale";
     private const string GlassType = "TASKTYPE_GLASS";
@@ -349,38 +352,75 @@ public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateS
     {
         foreach (DestructibleObject item in _objects)
         {
-            item.IsLastDestroyed = item.IsDestroyed;
-            if (item.Kind == DestructibleObjectKind.Vehicle)
+            // One whose task runs it from the level's walk has run already, where the tree places it.
+            if (!_walked.Contains(item))
             {
-                _vehicleBlasts.TickDyingVehicle(item);
-                continue;
-            }
-
-            if (item.ExplodesOnCountdown)
-            {
-                TickCountdown(item);
-                continue;
-            }
-
-            if (!item.IsDestroyed
-                && item.ExplosionExpression.Length > 0
-                && ExplosionEnabled(item))
-            {
-                // ExplodeObject::Update (IGI1 0x481970) evaluates the authored expression on every
-                // tick and enters the explosion path immediately when it becomes true. This is the
-                // Level 6 C4 chain: LevelTimer_1604 reaches tick 600, then tanks 1600/1601 explode.
-                item.IsDestroyed = true;
-                _readyExplosions.Add(item);
-                continue;
-            }
-
-            if (item.PendingExplosionTicks > 0 && --item.PendingExplosionTicks == 0)
-            {
-                _readyExplosions.Add(item);
+                TickObject(item);
             }
         }
 
         _vehicleBlasts.TickVehicleBlasts();
+    }
+
+    /// <summary>
+    /// Has the tasks that are explode objects, or are built on one, run their own from the level's walk: each where the tree
+    /// places it, after its children, as <c>0x481970</c> does.
+    /// </summary>
+    /// <remarks>
+    /// What follows such a task in the tree then reads this tick's <c>isExploded</c>, and what precedes it last tick's. An
+    /// object whose task has no class for it -- a radio, a vehicle, a pane of glass -- keeps being stepped by <see cref="Tick"/>.
+    /// </remarks>
+    public void AttachToWalk()
+    {
+        // A task runs one object: the first it owns, as the level's order has them.
+        HashSet<GameTask> adopted = new(ReferenceEqualityComparer.Instance);
+        _walked.Clear();
+        foreach (DestructibleObject item in _objects)
+        {
+            if (item.Kind == DestructibleObjectKind.Explosive && item.Owner is IExplodeObjectTask task && adopted.Add(item.Owner))
+            {
+                task.Explosion = new ExplodeObjectUpdate(this, item);
+                _walked.Add(item);
+            }
+        }
+    }
+
+    /// <summary>An explode object's own update, where the level's walk reaches its task.</summary>
+    /// <param name="item">The object.</param>
+    internal void RunFromWalk(DestructibleObject item) => TickObject(item);
+
+    // One object's tick: its fuse or its expression, and the blast they make ready.
+    private void TickObject(DestructibleObject item)
+    {
+        item.IsLastDestroyed = item.IsDestroyed;
+        if (item.Kind == DestructibleObjectKind.Vehicle)
+        {
+            _vehicleBlasts.TickDyingVehicle(item);
+            return;
+        }
+
+        if (item.ExplodesOnCountdown)
+        {
+            TickCountdown(item);
+            return;
+        }
+
+        if (!item.IsDestroyed
+            && item.ExplosionExpression.Length > 0
+            && ExplosionEnabled(item))
+        {
+            // ExplodeObject::Update (IGI1 0x481970) evaluates the authored expression on every
+            // tick and enters the explosion path immediately when it becomes true. This is the
+            // Level 6 C4 chain: LevelTimer_1604 reaches tick 600, then tanks 1600/1601 explode.
+            item.IsDestroyed = true;
+            _readyExplosions.Add(item);
+            return;
+        }
+
+        if (item.PendingExplosionTicks > 0 && --item.PendingExplosionTicks == 0)
+        {
+            _readyExplosions.Add(item);
+        }
     }
 
     /// <summary>One ExplodeObject update, <c>0x481970</c>.</summary>

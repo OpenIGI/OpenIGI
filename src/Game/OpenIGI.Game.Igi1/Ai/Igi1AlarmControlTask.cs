@@ -8,13 +8,16 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// alarm expressions, which <see cref="AiAlarmControlRegistry"/> holds the state and the level's tick for. The task runs it
 /// where the level's walk reaches it. Its parameters are still the ones the level declares, read by name.
 /// </remarks>
-public sealed class Igi1AlarmControlTask : DeclaredLevelTask
+public sealed class Igi1AlarmControlTask : DeclaredLevelTask, OpenIGI.Game.World.IExplodeObjectTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AlarmControl";
 
     /// <summary>Gets or sets the mission's alarm controls, which step this one; none until they are built.</summary>
     internal AiAlarmControlRegistry? Alarms { get; set; }
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.World.ExplodeObjectUpdate? Explosion { get; set; }
 
     /// <summary>Gets the expression that triggers the alarm ("Trigger Expression").</summary>
     public string TriggerExpression => Declared("Trigger Expression", string.Empty);
@@ -30,6 +33,7 @@ public sealed class Igi1AlarmControlTask : DeclaredLevelTask
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);
+        Explosion?.Run();
         Alarms?.RunFromWalk(this);
     }
 }

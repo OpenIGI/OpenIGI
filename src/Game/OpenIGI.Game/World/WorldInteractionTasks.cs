@@ -17,13 +17,17 @@ namespace OpenIGI.Game.World;
 /// <see cref="WorldInteractionRegistry"/> collects); the task holds the one it owns, so the walk asks nobody whose it is.
 /// </para>
 /// </remarks>
-public abstract class WorldInteractionTask : DeclaredLevelTask
+public abstract class WorldInteractionTask : DeclaredLevelTask, IExplodeObjectTask
 {
     /// <summary>Gets or sets the level's interactions, whose clock the update runs by, or <see langword="null"/> before they are built.</summary>
     internal WorldInteractionRegistry? Interactions { get; set; }
 
     /// <summary>Gets or sets the interaction this task owns, or <see langword="null"/> for a task that has none.</summary>
     internal WorldInteraction? Item { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>Set for the types the original registers under <c>ExplodeObject</c>: a terminal, a timed action that can be blown up, a generator.</remarks>
+    public ExplodeObjectUpdate? Explosion { get; set; }
 
     /// <summary>Gets the expression that says whether the task is on ("On Expression", or "On" where a type names it so).</summary>
     public virtual string OnExpression => DeclaredTaskValues.TextOrFallback(
@@ -40,6 +44,7 @@ public abstract class WorldInteractionTask : DeclaredLevelTask
         else
         {
             level.RunChildren(this);
+            Explosion?.Run();
         }
     }
 
@@ -51,7 +56,9 @@ public abstract class WorldInteractionTask : DeclaredLevelTask
     /// <param name="now">The interactions' clock, in ticks.</param>
     private protected virtual void RunInWalk(LevelRun level, int now)
     {
+        // The ExplodeObject's handler first, where the type is built on one: its children, then its own blast.
         level.RunChildren(this);
+        Explosion?.Run();
         RunItem(Item!, now);
     }
 
@@ -259,6 +266,7 @@ public sealed class GeneratorTask : WorldInteractionTask
     private protected override void RunInWalk(LevelRun level, int now)
     {
         level.RunChildren(this);
+        Explosion?.Run();
         Power!.Tick();
     }
 

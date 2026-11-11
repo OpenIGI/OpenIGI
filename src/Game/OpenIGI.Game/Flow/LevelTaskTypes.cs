@@ -32,6 +32,7 @@ public static class LevelTaskTypes
         Add<LevelFlowTask>(types, LevelFlowTask.TypeName);
         Add<Igi1DefineComputerObjectiveTask>(types, Igi1DefineComputerObjectiveTask.TypeName);
         Add<Igi1StatusMessageTask>(types, Igi1StatusMessageTask.TypeName);
+        AddDeclared<ExplodeObjectTask>(types, ExplodeObjectTask.TypeName);
         AddDeclared<DoorTask>(types, DoorTask.TypeName);
         AddDeclared<RotatingObjectTask>(types, RotatingObjectTask.TypeName);
         AddDeclared<ElevatorTask>(types, ElevatorTask.TypeName);

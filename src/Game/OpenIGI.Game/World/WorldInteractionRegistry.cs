@@ -125,6 +125,12 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     /// <summary>Settles every generator whose ExplodeObject exploded after this tick's <see cref="Tick"/>.</summary>
     public void SettleGenerators()
     {
+        // In the level's walk a generator runs its ExplodeObject's update first, as the original does: there is nothing to settle.
+        if (_inWalk)
+        {
+            return;
+        }
+
         foreach (GeneratorPowerState generator in _generators)
         {
             if (generator.IsInWorld())

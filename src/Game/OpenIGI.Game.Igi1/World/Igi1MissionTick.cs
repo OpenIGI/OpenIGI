@@ -714,6 +714,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             interactions.AttachTo(walker);
         }
 
+        // An ExplodeObject, and the types built on one, read their explosion where the walk reaches them (0x481970).
+        if (walker.OwnsLevel)
+        {
+            mission.Destructibles?.AttachToWalk();
+        }
+
         // A camera updates where the walk reaches it (SCamera's UPDATE, 0x442610): its lens sweeps and scans the
         // humans as they stand at that moment, then the holder takes its power for the next tick. Its controls
         // (0x440D70) read the isDetection of the cameras ahead of them this tick.
