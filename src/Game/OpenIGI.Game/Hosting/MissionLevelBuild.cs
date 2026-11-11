@@ -73,9 +73,28 @@ public class MissionLevelBuild : LevelBuild
 
     /// <summary>Gets or sets the mission's text, addressed by its own keys.</summary>
     public MissionStringResolver? MissionText { get; set; }
+    /// <summary>Gets what a title's own systems hand one another while this level is built, by type.</summary>
+    /// <remarks>
+    /// A title's systems are separate steps that share what the earlier ones made. What only that title knows the type of
+    /// is kept here, so the context names nothing of one game's.
+    /// </remarks>
+    private readonly Dictionary<Type, object> _made = [];
 
-    /// <summary>Gets or sets the objective runtime, once made; the cutscene natives clear its messages.</summary>
-    public MissionObjectiveRuntime? Objectives { get; set; }
+    /// <summary>Keeps something a system made for the systems after it.</summary>
+    /// <typeparam name="T">What it is kept as.</typeparam>
+    /// <param name="value">What was made.</param>
+    public void Keep<T>(T value)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        _made[typeof(T)] = value;
+    }
+
+    /// <summary>Gets something an earlier system kept, or <see langword="null"/> when none has.</summary>
+    /// <typeparam name="T">What it was kept as.</typeparam>
+    /// <returns>What was kept.</returns>
+    public T? Kept<T>()
+        where T : class => _made.TryGetValue(typeof(T), out object? value) ? (T)value : null;
 
     /// <summary>Gets or sets the level's placed objects, walked.</summary>
     public WorldScene? Scene { get; set; }
