@@ -472,7 +472,8 @@ internal sealed partial class MissionSolver
     // that have one.
     private static bool ReadByParameters(GameTask task) =>
         task is OpenIGI.Engine.Tasks.DeclaredTask or OpenIGI.Game.Flow.EditVariableTask or OpenIGI.Game.Flow.LevelTimerTask
-            or OpenIGI.Game.Flow.AreaActivateTask or OpenIGI.Game.Flow.LevelFlowTask;
+            or OpenIGI.Game.Flow.AreaActivateTask or OpenIGI.Game.Flow.LevelFlowTask
+            or OpenIGI.Game.Flow.DefineComputerObjectiveTask or OpenIGI.Game.World.Igi1StatusMessageTask;
 
     private static string Text(GameTask task, string parameter) =>
         task.TryGetScriptValue(parameter, out object? raw) && raw is string text ? text : string.Empty;

@@ -252,8 +252,12 @@ public sealed class MissionObjectiveRuntimeTests
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
                 QvmExpression.Text("Send"), QvmExpression.Text("VarString"),
                 QvmExpression.Text("Text"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Sprite"), QvmExpression.Text("String256"),
+                QvmExpression.Text("Sound"), QvmExpression.Text("String16"),
                 QvmExpression.Text("Is send once"), QvmExpression.Text("bool8"),
                 QvmExpression.Text("Cutscene message"), QvmExpression.Text("bool8"),
                 QvmExpression.Text("Duration"), QvmExpression.Text("Real32")),
@@ -262,8 +266,12 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(300),
                 QvmExpression.Text("StatusMessage"),
                 QvmExpression.Text("Objective"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Text("1"),
                 QvmExpression.Text("OBJECTIVE"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty),
                 QvmExpression.Int(1),
                 QvmExpression.Int(0),
                 QvmExpression.Real(10f)),
@@ -272,8 +280,12 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(301),
                 QvmExpression.Text("StatusMessage"),
                 QvmExpression.Text("Unsent"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Text("0"),
                 QvmExpression.Text("UNSENT"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty),
                 QvmExpression.Int(1),
                 QvmExpression.Int(0),
                 QvmExpression.Real(10f))));
@@ -379,8 +391,12 @@ public sealed class MissionObjectiveRuntimeTests
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
                 QvmExpression.Text("Send"), QvmExpression.Text("VarString"),
                 QvmExpression.Text("Text"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Sprite"), QvmExpression.Text("String256"),
+                QvmExpression.Text("Sound"), QvmExpression.Text("String16"),
                 QvmExpression.Text("Is send once"), QvmExpression.Text("bool8"),
                 QvmExpression.Text("Cutscene message"), QvmExpression.Text("bool8"),
                 QvmExpression.Text("Duration"), QvmExpression.Text("Real32")),
@@ -422,8 +438,12 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(23),
                 QvmExpression.Text("StatusMessage"),
                 QvmExpression.Text("Mission Failed"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Text("LevelFlow_17.isFailed"),
                 QvmExpression.Text("MISSIONFAILED"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty),
                 QvmExpression.Int(1),
                 QvmExpression.Int(0),
                 QvmExpression.Real(2f))));
@@ -636,7 +656,6 @@ public sealed class MissionObjectiveRuntimeTests
                         $"{levelFlow.Name}.nTick", StringComparison.Ordinal))));
 
             failureMessageCount += Walk(root)
-                .OfType<DeclaredTask>()
                 .Count(message => string.Equals(message.Type.Name, "StatusMessage", StringComparison.Ordinal)
                     && levelFlows.Any(levelFlow => String(message, "Send").Contains(
                         $"{levelFlow.Name}.isFailed", StringComparison.Ordinal)));
@@ -686,8 +705,8 @@ public sealed class MissionObjectiveRuntimeTests
     /// <summary>The LevelFlow fields retail's export handler (0x488F90) binds on the task itself.</summary>
     private static readonly string[] LevelFlowFields = ["isComplete", "isFailed", "nTick", "eDifficulty"];
 
-    private static string String(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
+    private static string String(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
 
     private static IEnumerable<GameTask> Walk(GameTask root)
     {

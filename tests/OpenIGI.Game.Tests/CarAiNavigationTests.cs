@@ -19,6 +19,7 @@ public sealed class CarAiNavigationTests
     public void ADisconnectedDestinationNeverBecomesADirectDrivingTarget(bool connected)
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(BuildProgram(
             Call("Task_DeclareParameters", Text("Car"), Text("Position"), Text("ObjectPos")),
             Call("Task_DeclareParameters", Text("CarAI"),

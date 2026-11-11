@@ -147,6 +147,7 @@ public sealed class PlayerCameraBodyPenetrationTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

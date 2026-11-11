@@ -49,6 +49,7 @@ internal sealed class RetailTerrainHarness
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

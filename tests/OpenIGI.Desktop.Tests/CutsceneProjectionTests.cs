@@ -102,6 +102,7 @@ public sealed class CutsceneProjectionTests
     private static (GameLoop Loop, MissionObjectiveRuntime Runtime) BuildPlayerAreaRuntime()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",

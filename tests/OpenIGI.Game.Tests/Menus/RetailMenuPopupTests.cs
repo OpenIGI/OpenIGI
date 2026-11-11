@@ -128,6 +128,7 @@ public sealed class RetailMenuPopupTests
         // Off every control, so the pointer chooses nothing.
         host.MoveTo(-100, -100, down: false);
         GameLoop loop = new(time: time, host: host);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         GameMissionState missions = new();
         missions.Register(loop.Natives);
 

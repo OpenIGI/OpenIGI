@@ -128,24 +128,9 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 continue;
             }
 
-            if (task is not DeclaredTask declared)
+            if (task is Igi1StatusMessageTask message)
             {
-                continue;
-            }
-
-            if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
-            {
-                StatusMessage message = new(
-                    declared,
-                    TextTrimmed(declared, "Send"),
-                    TextTrimmed(declared, "Text"),
-                    BoolLenient(declared, "Is send once"),
-                    BoolLenient(declared, "Cutscene message"),
-                    RealFromFloatOrDouble(declared, "Duration", 2f))
-                {
-                    Sound = TextTrimmed(declared, "Sound"),
-                };
-                _messages.Declare(declared, message, variables);
+                _messages.Add(message);
             }
         }
 
@@ -559,7 +544,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         _areas.SetSources(vehicles, soldiers, player);
         _areas.Register(walker.Areas);
 
-        _messages.AttachTo(walker);
+        _messages.AttachToWalk();
     }
 
     /// <summary>Latches the player's projections and liveness for the areas that count them this tick.</summary>

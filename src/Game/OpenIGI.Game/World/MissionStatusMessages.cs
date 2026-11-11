@@ -182,24 +182,23 @@ internal sealed class MissionStatusMessages
         }
     }
 
-    /// <summary>Adds one authored message and exports its fields on its task.</summary>
-    /// <param name="declared">The message's task.</param>
-    /// <param name="message">The message read from it.</param>
-    /// <param name="variables">The mission's script variables.</param>
-    public void Declare(DeclaredTask declared, StatusMessage message, ScriptVarRegistry variables)
+    /// <summary>Lists one of the level's messages, in the tree's order, and becomes the screen it is sent to.</summary>
+    /// <param name="task">The message's task.</param>
+    public void Add(Igi1StatusMessageTask task)
     {
-        _statusMessages.Add(message);
+        _statusMessages.Add(task.Message);
+        task.Screen = this;
+    }
 
-        // 0x485770 exports these five fields. In particular, retail LevelFlow expressions
-        // use StatusMessage_N.isSendt to finish missions, so these must be live aliases.
-        variables.BindBool(declared, "isSendt", () => message.IsSent, value => message.IsSent = value);
-        variables.BindInt(declared, "nTickSendt", () => message.SentTick, value => message.SentTick = value);
-        variables.BindBool(declared, "isFinishedDisplay", () => message.IsFinishedDisplay,
-            value => message.IsFinishedDisplay = value);
-        variables.BindInt(declared, "nFinishedDisplay", () => message.FinishedDisplayTick,
-            value => message.FinishedDisplayTick = value);
-        variables.BindInt(declared, "nTicksSinceFinishedDisplay", () => message.TicksSinceFinishedDisplay,
-            value => message.TicksSinceFinishedDisplay = value);
+    /// <summary>A message's own update, where the level's walk reaches its task (<c>0x4855F0</c>).</summary>
+    /// <param name="message">The message.</param>
+    /// <remarks>Until the walk is attached the messages update in <see cref="Tick"/>, in list order.</remarks>
+    public void RunFromWalk(StatusMessage message)
+    {
+        if (_walkedMessages.Contains(message))
+        {
+            UpdateMessage(message);
+        }
     }
 
     /// <summary>Shows a non-scripted message in the next free slot; see <see cref="MissionObjectiveRuntime.ShowTransientMessage"/>.</summary>
@@ -293,22 +292,16 @@ internal sealed class MissionStatusMessages
         }
     }
 
-    /// <summary>Puts each authored message into the level's update walk, where the tree places its task.</summary>
-    /// <param name="walker">The level walk.</param>
-    public void AttachTo(LevelUpdateWalker walker)
+    /// <summary>Hands each authored message's update to its own task, which the level's walk runs where the tree places it.</summary>
+    public void AttachToWalk()
     {
         // StatusMessage::Run (0x4855F0) is the task's update: it runs where the walk reaches it, so a task later in
         // the tree sees this tick's send, and a message in a closed container does not update.
         foreach (StatusMessage message in _statusMessages)
         {
-            if (message.Task is { } owner)
+            if (message.Task is not null)
             {
                 _walkedMessages.Add(message);
-                walker.Bind(owner, task =>
-                {
-                    UpdateMessage(message);
-                    walker.RunChildren(task);
-                });
             }
         }
     }

@@ -59,6 +59,7 @@ public sealed class AiSightWiringTests
         // 0x4752B0: the stand right in front of a gunner's eye is no cover between him and the one he looks at, but the
         // same stand hides anyone behind it from a pair it has no part in.
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         GameTask gun = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
         {

@@ -219,6 +219,7 @@ public sealed class RetailHumanAiConfigTests
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         HumanAiConfigRegistry.RegisterTypes(loop.Types);
 
         HumanAiConfigRegistry config = new();

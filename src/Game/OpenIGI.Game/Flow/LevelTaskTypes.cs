@@ -17,8 +17,8 @@ public static class LevelTaskTypes
     public static void RegisterShared(TaskTypeRegistry types)
     {
         ArgumentNullException.ThrowIfNull(types);
-        types.Register<EditVariableTask>(EditVariableTask.TypeName);
-        types.Register<LevelTimerTask>(LevelTimerTask.TypeName);
+        Add<EditVariableTask>(types, EditVariableTask.TypeName);
+        Add<LevelTimerTask>(types, LevelTimerTask.TypeName);
     }
 
     /// <summary>Registers the flow types of a Project I.G.I. level: the shared ones, and those I.G.I. 2 derives its own class from.</summary>
@@ -28,9 +28,10 @@ public static class LevelTaskTypes
     {
         ArgumentNullException.ThrowIfNull(types);
         RegisterShared(types);
-        types.Register<AreaActivateTask>(AreaActivateTask.TypeName);
-        types.Register<LevelFlowTask>(LevelFlowTask.TypeName);
-        types.Register<Igi1DefineComputerObjectiveTask>(Igi1DefineComputerObjectiveTask.TypeName);
+        Add<AreaActivateTask>(types, AreaActivateTask.TypeName);
+        Add<LevelFlowTask>(types, LevelFlowTask.TypeName);
+        Add<Igi1DefineComputerObjectiveTask>(types, Igi1DefineComputerObjectiveTask.TypeName);
+        Add<Igi1StatusMessageTask>(types, Igi1StatusMessageTask.TypeName);
     }
 
     /// <summary>Registers every shared type a Project I.G.I. level is made of.</summary>
@@ -40,7 +41,19 @@ public static class LevelTaskTypes
     public static void Register(TaskTypeRegistry types)
     {
         ArgumentNullException.ThrowIfNull(types);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        Add<ConditionalContainerTask>(types, ConditionalContainerTask.TypeName);
         RegisterFlow(types);
+    }
+
+    // A type a class already makes is left as it is, so a level's loader may register its own types before or after these.
+    private static void Add<T>(TaskTypeRegistry types, string name)
+        where T : GameTask, new()
+    {
+        if (types.TryGet(name, out TaskType? existing) && !existing.IsDeclarationOnly)
+        {
+            return;
+        }
+
+        types.Register<T>(name);
     }
 }

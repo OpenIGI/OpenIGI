@@ -5,14 +5,14 @@ namespace OpenIGI.Game.World;
 /// <summary>One status message's send latch and on-screen state: an authored <c>StatusMessage</c> task, or a transient one with no task.</summary>
 /// <remarks>Sent, slotted and advanced by <see cref="MissionStatusMessages"/>.</remarks>
 internal sealed class StatusMessage(
-    DeclaredTask? owner,
+    GameTask? owner,
     string sendExpression,
     string textResource,
     bool sendOnce,
     bool cutscene,
     float duration) : Saves.IExchangedState
 {
-    public DeclaredTask? Task { get; } = owner;
+    public GameTask? Task { get; } = owner;
     public string SendExpression { get; } = sendExpression;
     public string TextResource { get; } = textResource;
     public bool SendOnce { get; } = sendOnce;

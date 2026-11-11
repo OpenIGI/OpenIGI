@@ -34,6 +34,7 @@ public sealed class RetailImpactMaterialTests
             fileSystem.ReadAllBytes(GameMaterialRegistry.ScriptResource));
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         GameMaterialRegistry materials = new();
         materials.Register(loop.Natives);
         materials.Load(resources, loop.Natives);

@@ -556,6 +556,7 @@ public sealed class RetailWeaponTypeTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         NativeRegistry natives = loop.Natives;
 
         WeaponTypeRegistry first = new();

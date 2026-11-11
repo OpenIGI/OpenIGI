@@ -197,6 +197,7 @@ public sealed class HumanHitZoneTableTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         HumanPlayerConfig config = new();
         config.Register(loop.Natives);
@@ -234,6 +235,7 @@ public sealed class HumanHitZoneTableTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         WeaponTypeRegistry weapons = new();
         weapons.Register(loop.Natives);

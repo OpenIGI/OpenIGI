@@ -102,6 +102,7 @@ public sealed class LevelFourWindowDetectionTests
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
             ResourceRegistry resources = new(fileSystem);
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
             AiTaskTypes.RegisterAll(loop.Types);
 

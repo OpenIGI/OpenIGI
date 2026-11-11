@@ -98,6 +98,7 @@ public sealed class RetailTerrainImpactMaterialTests
             fileSystem.ReadAllBytes(GameMaterialRegistry.ScriptResource));
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

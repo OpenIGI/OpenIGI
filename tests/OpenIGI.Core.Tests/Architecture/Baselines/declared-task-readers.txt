@@ -41,7 +41,6 @@ src/Game/OpenIGI.Game/World/GeneratorPowerState.cs
 src/Game/OpenIGI.Game/World/GenericPickupRegistry.cs
 src/Game/OpenIGI.Game/World/GunPickupRegistry.cs
 src/Game/OpenIGI.Game/World/MissionObjectiveRuntime.cs
-src/Game/OpenIGI.Game/World/MissionStatusMessages.cs
 src/Game/OpenIGI.Game/World/ObjectCollisionIndexBuilder.cs
 src/Game/OpenIGI.Game/World/RadioRuntime.cs
 src/Game/OpenIGI.Game/World/RailroadPath.cs
@@ -50,7 +49,6 @@ src/Game/OpenIGI.Game/World/RetailHeliSpawn.cs
 src/Game/OpenIGI.Game/World/RetailPlaneSpawn.cs
 src/Game/OpenIGI.Game/World/RetailWorldObjects.cs
 src/Game/OpenIGI.Game/World/RotatingObjectRegistry.cs
-src/Game/OpenIGI.Game/World/StatusMessage.cs
 src/Game/OpenIGI.Game/World/TaskGeometry.cs
 src/Game/OpenIGI.Game/World/TerrainDiscardBinding.cs
 src/Game/OpenIGI.Game/World/TerrainHeightBindings.cs

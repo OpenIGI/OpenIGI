@@ -88,6 +88,7 @@ public sealed class MenuClickLatchTests
         ManualTimeSource time = new();
         RecordingHost host = new();
         GameLoop loop = new(time: time, host: host);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         MenuSystem? menu = null;
         host.OnShowMainMenu = () =>

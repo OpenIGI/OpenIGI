@@ -59,6 +59,7 @@ public sealed class FenceVaultSoundTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         AnimTriggerRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Load(resources, loop.Natives);

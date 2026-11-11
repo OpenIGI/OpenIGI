@@ -76,6 +76,7 @@ public sealed class FootstepSoundTests
         fileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location0/level1/");
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         GameMaterialRegistry materials = new();
         materials.Register(loop.Natives);
@@ -127,6 +128,7 @@ public sealed class FootstepSoundTests
         fileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location0/level1/");
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         GameMaterialRegistry materials = new();
         materials.Register(loop.Natives);

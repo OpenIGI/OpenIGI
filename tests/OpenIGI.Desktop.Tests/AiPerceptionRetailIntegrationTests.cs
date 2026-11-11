@@ -138,6 +138,7 @@ public sealed class AiPerceptionRetailIntegrationTests
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
             ResourceRegistry resources = new(fileSystem);
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
 
             MissionRegistry registry = new();

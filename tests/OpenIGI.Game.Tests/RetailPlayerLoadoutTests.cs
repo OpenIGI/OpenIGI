@@ -122,6 +122,7 @@ public sealed class RetailPlayerLoadoutTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

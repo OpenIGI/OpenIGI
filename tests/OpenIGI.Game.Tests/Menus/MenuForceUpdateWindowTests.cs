@@ -52,6 +52,7 @@ public sealed class MenuForceUpdateWindowTests
         ManualTimeSource time = new();
         PointerHost host = new();
         GameLoop loop = new(time: time, host: host);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         GameMissionState missions = new();
         missions.Register(loop.Natives);
 

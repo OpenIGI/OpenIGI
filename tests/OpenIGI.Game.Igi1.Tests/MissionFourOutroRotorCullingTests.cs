@@ -111,8 +111,8 @@ public sealed class MissionFourOutroRotorCullingTests
 
         // Retail objects.qvm gates ConditionalContainer_3902 ("Outro cutscene") on AreaActivate_156.
         // Put the player at the authored activation volume, then run the normal level/cutscene phases.
-        DeclaredTask area156 = Assert.IsType<DeclaredTask>(root.Tree.FromId(156));
-        Assert.True(area156.TryGetValue("Position", out object? extractionRaw));
+        GameTask area156 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(156));
+        Assert.True(area156.TryGetScriptValue("Position", out object? extractionRaw));
         Vector3d extraction = Assert.IsType<Vector3d>(extractionRaw);
         objectives.TickLevelState(extraction);
         cutscenes.Tick();
