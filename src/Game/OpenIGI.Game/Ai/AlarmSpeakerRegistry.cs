@@ -255,29 +255,76 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
     /// <summary>Runs every alarm light that is not shot out, as <c>AlarmLight_Run</c> (<c>0x43A270</c>) changes its model.</summary>
     public void RunLights()
     {
+        // A light whose task runs it from the level's walk has run already, where the tree places it.
         foreach (AlarmLightReflector reflector in _reflectors)
         {
-            reflector.Run(!reflector.Light.IsDestroyed && IsOn(reflector.Light));
+            if (!_walkedLights.Contains(reflector.Light))
+            {
+                reflector.Run(!reflector.Light.IsDestroyed && IsOn(reflector.Light));
+            }
         }
 
         foreach (AlarmSpeaker light in _speakers)
         {
-            if (light.IsDestroyed || !string.Equals(light.Task.Type.Name, WorldScene.AlarmLightType, StringComparison.Ordinal))
+            if (light.IsDestroyed
+                || _walkedLights.Contains(light)
+                || !string.Equals(light.Task.Type.Name, WorldScene.AlarmLightType, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            bool on = IsOn(light);
-            if (light.WasOn && !on)
-            {
-                light.ShowsOff = true;
-            }
-            else if (!light.WasOn && on)
-            {
-                light.ShowsOff = false;
-            }
+            RunLight(light);
+        }
+    }
 
-            light.WasOn = on;
+    // The lights their own tasks run from the level's walk.
+    private readonly HashSet<AlarmSpeaker> _walkedLights = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Has each alarm light's task run it where the level's walk reaches it, as <c>0x43A270</c> does.</summary>
+    /// <param name="walker">The level's walk.</param>
+    public void AttachTo(Level.LevelRun walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        _walkedLights.Clear();
+        foreach (AlarmSpeaker light in _speakers)
+        {
+            if (string.Equals(light.Task.Type.Name, WorldScene.AlarmLightType, StringComparison.Ordinal)
+                && Level.LevelTaskClass.TryAs(light.Task, walker, out AlarmLightTask? task))
+            {
+                task.Light = light;
+                task.Speakers = this;
+                _walkedLights.Add(light);
+            }
+        }
+    }
+
+    /// <summary>One light's own step: its expression, and the model it shows as that turns.</summary>
+    /// <param name="light">A light that is not shot out.</param>
+    internal void RunLight(AlarmSpeaker light)
+    {
+        bool on = IsOn(light);
+        if (light.WasOn && !on)
+        {
+            light.ShowsOff = true;
+        }
+        else if (!light.WasOn && on)
+        {
+            light.ShowsOff = false;
+        }
+
+        light.WasOn = on;
+    }
+
+    /// <summary>Runs the reflectors inside one light, after its children.</summary>
+    /// <param name="light">A light that is not shot out.</param>
+    internal void RunReflectors(AlarmSpeaker light)
+    {
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            if (ReferenceEquals(reflector.Light, light))
+            {
+                reflector.Run(light.WasOn);
+            }
         }
     }
 

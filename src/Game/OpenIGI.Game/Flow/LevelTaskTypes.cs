@@ -34,6 +34,9 @@ public static class LevelTaskTypes
         Add<Igi1StatusMessageTask>(types, Igi1StatusMessageTask.TypeName);
         AddDeclared<ExplodeObjectTask>(types, ExplodeObjectTask.TypeName);
         AddDeclared<RadioTask>(types, RadioTask.TypeName);
+        AddDeclared<GenericPickupTask>(types, GenericPickupTask.TypeName);
+        AddDeclared<Ai.AlarmLightTask>(types, Ai.AlarmLightTask.TypeName);
+        AddDeclared<Ai.SirenTask>(types, Ai.SirenTask.TypeName);
         AddDeclared<DoorTask>(types, DoorTask.TypeName);
         AddDeclared<RotatingObjectTask>(types, RotatingObjectTask.TypeName);
         AddDeclared<ElevatorTask>(types, ElevatorTask.TypeName);
@@ -53,6 +56,8 @@ public static class LevelTaskTypes
         AddDeclared<ConditionalSoundTask>(types, ConditionalSoundTask.TypeName);
         AddDeclared<CarTask>(types, CarTask.TypeName);
         AddDeclared<HeliTask>(types, HeliTask.TypeName);
+        AddDeclared<PlaneTask>(types, PlaneTask.TypeName);
+        AddDeclared<TrainTask>(types, TrainTask.TypeName);
         AddDeclared<CarAiTask>(types, CarAiTask.TypeName);
         AddDeclared<StationaryGunHolderTask>(types, StationaryGunHolderTask.TypeName);
         foreach (string name in PickupTask.TypeNames)

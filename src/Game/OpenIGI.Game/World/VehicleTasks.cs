@@ -144,3 +144,41 @@ public sealed class StationaryGunHolderTask : VehicleTask
         return true;
     }
 }
+
+/// <summary>A jet that flies its cut-scene's path: Project I.G.I.'s <c>Plane</c>.</summary>
+/// <remarks>
+/// Its run handler (<c>0x433690</c>) starts <c>su27</c> unless its "Play sound" expression reads 0, then runs its children.
+/// The sound is the vehicles' (<see cref="VehicleBodies.VehicleSoundSources"/>), which reads the expression from here.
+/// </remarks>
+public sealed class PlaneTask : VehicleTask
+{
+    /// <summary>The script name level data instantiates this type under.</summary>
+    public const string TypeName = "Plane";
+
+    /// <summary>Gets the expression that says whether the engine sounds ("Play sound"); empty is always.</summary>
+    public string PlaySound => DeclaredTaskValues.TextOrEmpty(this, "Play sound");
+
+    /// <inheritdoc/>
+    private protected override bool Run(LevelVehicles vehicles) => false;
+}
+
+/// <summary>One car of a train: Project I.G.I.'s <c>Train</c>, a locomotive with its wagons as children.</summary>
+/// <remarks>
+/// Its run handler (<c>0x42B700</c>) starts its loop unless its "Play Sound" expression reads 0 -- <c>train_loop_1</c> for a
+/// car that pulls wagons, <c>train_loop_2</c> for any other -- sets the loop's two parameters from its locomotive's thrust,
+/// then runs its children. The sound is the vehicles' (<see cref="VehicleBodies.VehicleSoundSources"/>).
+/// </remarks>
+public sealed class TrainTask : VehicleTask
+{
+    /// <summary>The script name level data instantiates this type under.</summary>
+    public const string TypeName = "Train";
+
+    /// <summary>Gets the expression that says whether the car sounds ("Play Sound"); empty is always.</summary>
+    public string PlaySound => DeclaredTaskValues.TextOrEmpty(this, "Play Sound");
+
+    /// <summary>Gets a value indicating whether this car pulls wagons: one of its children is a car too.</summary>
+    public bool PullsWagons => Children.Any(static child => child is TrainTask);
+
+    /// <inheritdoc/>
+    private protected override bool Run(LevelVehicles vehicles) => false;
+}

@@ -239,6 +239,11 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
                     : Matrix3f.Identity;
 
             GenericPickup pickup = new(declared, position, orientation, modelName);
+            if (declared is GenericPickupTask item)
+            {
+                item.Pickup = pickup;
+            }
+
             _items.Add(pickup);
             _byTask.Add(declared, pickup);
             Export(variables, pickup);

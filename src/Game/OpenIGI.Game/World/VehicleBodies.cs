@@ -109,7 +109,7 @@ internal sealed class VehicleBodies(
                     : _context.VehiclePhysics?.TryGetCar(TextOrEmpty(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
                         ? car.EngineSoundSet
                         : string.Empty;
-            string gate = TextOrEmpty(vehicle, "Play sound");
+            string gate = vehicle is PlaneTask jet ? jet.PlaySound : TextOrEmpty(vehicle, "Play sound");
             bool on = string.IsNullOrWhiteSpace(gate) || _context.Expressions.EvaluateCondition(gate, emptyValue: true, vehicle);
             float throttle = helicopter
                 ? state.RetailHeli?.Collective ?? 0f
@@ -130,8 +130,8 @@ internal sealed class VehicleBodies(
 
     private VehicleSoundSource TrainSound(DeclaredTask car, TaskTransformState state)
     {
-        bool pullsWagons = car.Children.Any(child => child.Type.Name == "Train");
-        string gate = TextOrEmpty(car, "Play Sound");
+        bool pullsWagons = car is TrainTask train ? train.PullsWagons : car.Children.Any(child => child.Type.Name == TrainTask.TypeName);
+        string gate = car is TrainTask engine ? engine.PlaySound : TextOrEmpty(car, "Play Sound");
         bool on = string.IsNullOrWhiteSpace(gate) || _context.Expressions.EvaluateCondition(gate, emptyValue: true, car);
         float thrust = (state.TrainRoot ?? state).Thrust;
         double level = thrust * 5.0;
