@@ -17,12 +17,15 @@ public sealed class SecurityCameraTask : DeclaredLevelTask
     /// <summary>Gets or sets the level's cameras, which step this one; none until they are built.</summary>
     internal SecurityCameraRegistry? Cameras { get; set; }
 
+    /// <summary>Gets or sets the camera this task is, or <see langword="null"/> until a registry keeps it.</summary>
+    internal SecurityCamera? Camera { get; set; }
+
     /// <inheritdoc/>
     /// <remarks>With nothing to step it, it is walked as a plain container is.</remarks>
     public override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        if (Cameras?.RunFromWalk(this, level) != true)
+        if (Camera is not { } camera || Cameras?.RunFromWalk(camera, this, level) != true)
         {
             level.RunChildren(this);
         }
@@ -42,10 +45,16 @@ public sealed class SecurityCameraControlTask : WorldInteractionTask
     /// <summary>Gets or sets the level's cameras, which hold this control's detection; none until they are built.</summary>
     internal SecurityCameraRegistry? Cameras { get; set; }
 
+    /// <summary>Gets or sets what the registry keeps of this control, or <see langword="null"/> until one does.</summary>
+    internal SecurityCameraRegistry.ControlState? Control { get; set; }
+
     /// <inheritdoc/>
     public override void Run(LevelRun level)
     {
         base.Run(level);
-        Cameras?.UpdateDetectionFromWalk(this);
+        if (Control is { } control)
+        {
+            Cameras?.UpdateDetectionFromWalk(control);
+        }
     }
 }

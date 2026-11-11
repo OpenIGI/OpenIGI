@@ -642,18 +642,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     void OpenIGI.Game.Level.ITaskRun<ElevatorTask>.Run(ElevatorTask task, OpenIGI.Game.Level.LevelRun level)
     {
         level.RunChildren(task);
-        if (mission.Elevators is not { } elevators)
+        if (mission.Elevators is { } elevators && task.Elevator is { } elevator)
         {
-            return;
-        }
-
-        foreach (PlacedElevator elevator in elevators.Elevators)
-        {
-            if (ReferenceEquals(elevator.Task, task))
-            {
-                StepElevator(elevators, elevator);
-                return;
-            }
+            StepElevator(elevators, elevator);
         }
     }
 
@@ -688,6 +679,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 if (OpenIGI.Game.Level.LevelTaskClass.TryAs(elevator.Task, walker, out ElevatorTask? lift))
                 {
                     lift.Runner = this;
+                    lift.Elevator = elevator;
                 }
             }
 

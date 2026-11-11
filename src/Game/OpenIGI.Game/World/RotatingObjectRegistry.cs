@@ -613,6 +613,7 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
             {
                 _walked.Add(obj);
                 task.Rotators = this;
+                task.Rotator = obj;
             }
         }
 
@@ -620,18 +621,11 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
     }
 
     /// <summary>A rotating object's own update, where the level's walk reaches its task (<c>0x439090</c>).</summary>
-    /// <param name="task">The object's task.</param>
-    /// <returns>Whether the registry keeps and stepped it.</returns>
-    internal bool RunFromWalk(RotatingObjectTask task)
+    /// <param name="obj">The object.</param>
+    internal void RunFromWalk(PlacedRotatingObject obj)
     {
-        if (!_byTask.TryGetValue(task, out PlacedRotatingObject? obj) || !_walked.Contains(obj))
-        {
-            return false;
-        }
-
         StepRotatingObject(obj);
         _ticked?.Invoke(obj);
-        return true;
     }
 
     /// <summary>Advances every rotating object the level walk does not reach, for one 30 Hz simulation tick.</summary>

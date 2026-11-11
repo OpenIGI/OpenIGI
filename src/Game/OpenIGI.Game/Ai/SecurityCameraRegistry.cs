@@ -686,7 +686,7 @@ public sealed class SecurityCamera : Saves.IExchangedState
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
 public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStateSource
 {
-    private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded) : Saves.IExchangedState
+    internal sealed class ControlState(DeclaredTask task, string expression, Func<bool> isExploded) : Saves.IExchangedState
     {
         // Not retail: what a save keeps of a camera's control is whether it has raised its alarm.
         public void Exchange(Saves.StateExchange exchange) => IsDetection = exchange.Bool(IsDetection);
@@ -701,7 +701,7 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
     private readonly Dictionary<GameTask, SecurityCamera> _byTask = [];
     private readonly Dictionary<SecurityCamera, int> _order = [];
     private ReplicatedCamera[]? _mirror;
-    private readonly List<Control> _controls = [];
+    private readonly List<ControlState> _controls = [];
     private Func<SecurityCameraScan>? _scan;
     private Action<SecurityCamera>? _ticked;
     private readonly List<SecurityCameraSubject> _subjects = [];
@@ -843,15 +843,17 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
             if (Level.LevelTaskClass.TryAs(camera.Task, walker, out SecurityCameraTask? task))
             {
                 task.Cameras = this;
+                task.Camera = camera;
             }
         }
 
         // SCameraControl's update (0x440D70) is Terminal's, then its isDetection, which its task runs in that order.
-        foreach (Control control in _controls)
+        foreach (ControlState control in _controls)
         {
             if (Level.LevelTaskClass.TryAs(control.Task, walker, out SecurityCameraControlTask? task))
             {
                 task.Cameras = this;
+                task.Control = control;
             }
         }
 
@@ -860,47 +862,31 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
     }
 
     /// <summary>A camera's own update, where the level's walk reaches its task (<c>0x442610</c>): the lens, its children, then its power.</summary>
+    /// <param name="camera">The camera.</param>
     /// <param name="task">The camera's task.</param>
     /// <param name="level">The level's run, which runs the camera's children.</param>
     /// <returns>Whether the registry keeps and stepped it.</returns>
-    internal bool RunFromWalk(SecurityCameraTask task, Level.LevelRun level)
+    internal bool RunFromWalk(SecurityCamera camera, SecurityCameraTask task, Level.LevelRun level)
     {
         if (_scan is null)
         {
             return false;
         }
 
-        foreach (SecurityCamera camera in _cameras)
-        {
-            if (ReferenceEquals(camera.Task, task))
-            {
-                TickLens(camera, BuildSubjects(_scan()));
-                level.RunChildren(task);
-                UpdatePower(camera);
-                _ticked?.Invoke(camera);
-                return true;
-            }
-        }
-
-        return false;
+        TickLens(camera, BuildSubjects(_scan()));
+        level.RunChildren(task);
+        UpdatePower(camera);
+        _ticked?.Invoke(camera);
+        return true;
     }
 
     /// <summary>A control's detection, once its terminal's update has run (<c>0x440D70</c>).</summary>
-    /// <param name="task">The control's task.</param>
-    internal void UpdateDetectionFromWalk(SecurityCameraControlTask task)
+    /// <param name="control">The control.</param>
+    internal void UpdateDetectionFromWalk(ControlState control)
     {
-        if (_scan is null)
+        if (_scan is not null)
         {
-            return;
-        }
-
-        foreach (Control control in _controls)
-        {
-            if (ReferenceEquals(control.Task, task))
-            {
-                UpdateDetection(control);
-                return;
-            }
+            UpdateDetection(control);
         }
     }
 
@@ -920,7 +906,7 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
             UpdatePower(camera);
         }
 
-        foreach (Control control in _controls)
+        foreach (ControlState control in _controls)
         {
             UpdateDetection(control);
         }
@@ -992,7 +978,7 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
 
     // SCameraControl's own half of 0x440D70: held off once the control has exploded (+400), otherwise its Detection
     // Expression when it has one.
-    private void UpdateDetection(Control control)
+    private void UpdateDetection(ControlState control)
     {
         if (control.IsExploded() || SwitchedOff)
         {
@@ -1086,7 +1072,7 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
             && string.Equals(task.Type.Name, "SCameraControl", StringComparison.Ordinal))
         {
             string explodedSymbol = $"{controlTask.Name}.isExploded";
-            Control control = new(
+            ControlState control = new(
                 controlTask,
                 TextTrimmed(controlTask, "Detection Expression"),
                 () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);

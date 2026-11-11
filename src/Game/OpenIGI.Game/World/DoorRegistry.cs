@@ -599,6 +599,7 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
             if (Level.LevelTaskClass.TryAs(door.Task, walker, out DoorTask? task))
             {
                 task.Doors = this;
+                task.Door = door;
             }
         }
 
@@ -607,10 +608,10 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
     }
 
     /// <summary>A door's own update, where the level's walk reaches its task, after its children (<c>0x446D10</c>).</summary>
-    /// <param name="task">The door's task.</param>
-    internal void RunFromWalk(DoorTask task)
+    /// <param name="door">The door.</param>
+    internal void RunFromWalk(PlacedDoor door)
     {
-        if (_inWalk && _doorsByTask.TryGetValue(task, out PlacedDoor? door))
+        if (_inWalk)
         {
             Tick(door);
             _ticked?.Invoke(door);

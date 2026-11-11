@@ -15,12 +15,18 @@ public sealed class DoorTask : DeclaredLevelTask
     /// <summary>Gets or sets the level's doors, which step this one; none until they are built.</summary>
     internal DoorRegistry? Doors { get; set; }
 
+    /// <summary>Gets or sets the door this task is, or <see langword="null"/> until a registry keeps it.</summary>
+    internal PlacedDoor? Door { get; set; }
+
     /// <inheritdoc/>
     public override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);
-        Doors?.RunFromWalk(this);
+        if (Door is { } door)
+        {
+            Doors?.RunFromWalk(door);
+        }
     }
 }
 
@@ -34,12 +40,19 @@ public sealed class RotatingObjectTask : DeclaredLevelTask
     /// <summary>Gets or sets the level's rotating objects, which step this one; none until they are built.</summary>
     internal RotatingObjectRegistry? Rotators { get; set; }
 
+    /// <summary>Gets or sets the object this task turns, or <see langword="null"/> until a registry steps it from the walk.</summary>
+    internal PlacedRotatingObject? Rotator { get; set; }
+
     /// <inheritdoc/>
     /// <remarks>With nothing to step it, it is walked as a plain container is.</remarks>
     public override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        if (Rotators?.RunFromWalk(this) != true)
+        if (Rotator is { } rotator && Rotators is { } rotators)
+        {
+            rotators.RunFromWalk(rotator);
+        }
+        else
         {
             level.RunChildren(this);
         }
@@ -88,6 +101,9 @@ public sealed class ElevatorTask : DeclaredLevelTask
 
     /// <summary>Gets or sets what carries out the lift's run handler; <see langword="null"/> while nothing does.</summary>
     public ITaskRun<ElevatorTask>? Runner { get; set; }
+
+    /// <summary>Gets or sets the lift this task is, or <see langword="null"/> until a registry keeps it.</summary>
+    public PlacedElevator? Elevator { get; set; }
 
     /// <inheritdoc/>
     public override void Run(LevelRun level)
