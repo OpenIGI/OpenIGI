@@ -267,8 +267,7 @@ public sealed class LevelVehicles
     /// <param name="holder">The holder's task.</param>
     internal void RunGunHolder(GameTask holder) => Holders.Tick(holder, () => _walker.RunChildren(holder));
 
-    /// <summary>A CarAI's run.</summary>
-    /// <param name="task">The CarAI's task.</param>
-    /// <returns>Whether the task drives a car this level's graphs gave a route.</returns>
-    internal bool RunCarAi(GameTask task) => CarAi.RunFromWalk(task);
+    /// <summary>A CarAI's run (<c>0x425DE0</c>).</summary>
+    /// <param name="driver">What the CarAI drives.</param>
+    internal void RunCarAi(CarAiState driver) => CarAi.RunFromWalk(driver);
 }

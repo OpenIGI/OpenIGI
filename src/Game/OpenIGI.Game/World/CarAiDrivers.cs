@@ -41,6 +41,14 @@ internal sealed class CarAiDrivers(
     public void ConfigureCarAi(IReadOnlyDictionary<int, GraphFile> graphs)
     {
         ArgumentNullException.ThrowIfNull(graphs);
+        foreach (CarAiState old in _carAis)
+        {
+            if (old.Task is CarAiTask kept)
+            {
+                kept.Driver = null;
+            }
+        }
+
         _carAis.Clear();
         AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(_context.Root);
         foreach (GameTask task in _context.Root.Descendants())
@@ -65,25 +73,16 @@ internal sealed class CarAiDrivers(
 
             CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
             _carAis.Add(state);
+            if (declared is CarAiTask typed)
+            {
+                typed.Driver = state;
+            }
         }
     }
 
     /// <summary>A CarAI's own update, where the level's walk reaches its task (<c>0x425DE0</c>).</summary>
-    /// <param name="task">The CarAI's task.</param>
-    /// <returns>Whether the task drives a car this level's graphs gave a route.</returns>
-    internal bool RunFromWalk(GameTask task)
-    {
-        foreach (CarAiState state in _carAis)
-        {
-            if (ReferenceEquals(state.Task, task))
-            {
-                TickCarAi(state);
-                return true;
-            }
-        }
-
-        return false;
-    }
+    /// <param name="state">What the task drives.</param>
+    internal void RunFromWalk(CarAiState state) => TickCarAi(state);
 
     /// <summary>Gets the graph node a car's CarAI is heading for (<c>+104</c>), for diagnostics and tests.</summary>
     public int? CarAiTargetNode(GameTask car) =>

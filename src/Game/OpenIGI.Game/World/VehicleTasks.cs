@@ -63,8 +63,20 @@ public sealed class CarAiTask : VehicleTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "CarAI";
 
+    /// <summary>Gets or sets the car it drives and the route it follows, or <see langword="null"/> for one this level's graphs gave no route.</summary>
+    internal CarAiState? Driver { get; set; }
+
     /// <inheritdoc/>
-    private protected override bool Run(LevelVehicles vehicles) => vehicles.RunCarAi(this);
+    private protected override bool Run(LevelVehicles vehicles)
+    {
+        if (Driver is not { } driver)
+        {
+            return false;
+        }
+
+        vehicles.RunCarAi(driver);
+        return true;
+    }
 }
 
 /// <summary>A soldier's mounted gun that fires by itself: Project I.G.I.'s <c>AIStationaryGunHolder</c>.</summary>
