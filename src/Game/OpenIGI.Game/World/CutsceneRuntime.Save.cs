@@ -34,13 +34,9 @@ public sealed partial class CutsceneRuntime : ISavedStateSource
             }));
         }
 
-        foreach (CutsceneTimerState timer in _timers)
+        foreach (Flow.LevelTimerTask timer in _timers)
         {
-            yield return new(timer.Task, new ExchangedState(exchange =>
-            {
-                timer.IsRun = exchange.Bool(timer.IsRun);
-                timer.Tick = exchange.Int(timer.Tick);
-            }));
+            yield return new(timer, timer);
         }
 
         foreach (CutsceneAnimationState animation in _animations)

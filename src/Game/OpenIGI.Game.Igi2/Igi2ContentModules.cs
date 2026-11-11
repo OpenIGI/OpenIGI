@@ -250,7 +250,6 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Paths.Igi2SplinePathGuideTask>(Paths.Igi2SplinePathGuideTask.TypeName);
         context.Types.Register<Flow.Igi2StatusMessageTask>(Flow.Igi2StatusMessageTask.TypeName);
         context.Types.Register<Flow.Igi2AreaActivateTask>(Flow.Igi2AreaActivateTask.TypeName);
-        context.Types.Register<Flow.Igi2LevelTimerTask>(Flow.Igi2LevelTimerTask.TypeName);
         context.Types.Register<Flow.Igi2OverlayHolderTask>(Flow.Igi2OverlayHolderTask.TypeName);
         context.Types.Register<Flow.Igi2AnimTask>(Flow.Igi2AnimTask.TypeName);
         context.Types.Register<World.Igi2RainEffectTask>(World.Igi2RainEffectTask.TypeName);

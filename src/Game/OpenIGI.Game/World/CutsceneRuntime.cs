@@ -30,7 +30,7 @@ public sealed partial class CutsceneRuntime
     private readonly ScriptVarRegistry _variables;
     private readonly List<ConditionalContainerTask> _containers = [];
     private readonly List<CutsceneSceneState> _scenes = [];
-    private readonly List<CutsceneTimerState> _timers = [];
+    private readonly List<Flow.LevelTimerTask> _timers = [];
     private readonly List<CutsceneAnimationState> _animations = [];
     private readonly List<CutsceneSoundState> _sounds = [];
     private readonly List<CarAiState> _carAis = [];
@@ -229,20 +229,14 @@ public sealed partial class CutsceneRuntime
 
             _capture.Capture(task);
 
-            if (task is DeclaredTask declared)
+            if (task is Flow.LevelTimerTask clock)
             {
-                if (string.Equals(task.Type.Name, "LevelTimer", StringComparison.Ordinal))
-                {
-                    CutsceneTimerState timer = new(
-                        declared,
-                        TextOrEmpty(declared, "On"),
-                        TextOrEmpty(declared, "Reset"),
-                        BoolStrict(declared, "Initial run"));
-                    _timers.Add(timer);
-                    variables.BindBool(declared, "isRun", () => timer.IsRun, value => timer.IsRun = value);
-                    variables.BindInt(declared, "nTick", () => timer.Tick, value => timer.Tick = value);
-                }
-                else if (string.Equals(task.Type.Name, "AnimTask", StringComparison.Ordinal)
+                // A timer runs itself where the walk reaches it; it is listed for what a save keeps of it.
+                _timers.Add(clock);
+            }
+            else if (task is DeclaredTask declared)
+            {
+                if (string.Equals(task.Type.Name, "AnimTask", StringComparison.Ordinal)
                     && declared.TryGetValue("AnimData", out object? data)
                     && data is IReadOnlyList<AnimDataEntry> entries)
                 {
@@ -286,10 +280,9 @@ public sealed partial class CutsceneRuntime
             }
         }
 
-        foreach (CutsceneTimerState timer in _timers)
-        {
-            _walker.Bind(timer.Task, _ => TickTimer(timer));
-        }
+        // The level's tasks that run themselves evaluate their slots against the walk's variables; a walk the mission's
+        // objectives have not given theirs takes these.
+        _walker.Expressions ??= _context.Expressions;
 
         foreach (CutsceneAnimationState animation in _animations)
         {
@@ -580,24 +573,6 @@ public sealed partial class CutsceneRuntime
     /// in authored order ticks them all.
     /// </summary>
     public LevelUpdateWalker Walker => _walker;
-
-    /// <summary>A LevelTimer's update (<c>0x51BE10</c>): children first, then On, Reset and the tick count.</summary>
-    private void TickTimer(CutsceneTimerState timer)
-    {
-        _walker.RunChildren(timer.Task);
-        if (_context.Expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
-        {
-            timer.Tick = 0;
-        }
-
-        timer.IsRun = string.IsNullOrWhiteSpace(timer.Run)
-            ? timer.InitialRun
-            : _context.Expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun, timer.Task);
-        if (timer.IsRun)
-        {
-            timer.Tick++;
-        }
-    }
 
     /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>
     private void TickAnimation(CutsceneAnimationState animation)

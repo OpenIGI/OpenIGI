@@ -30,13 +30,6 @@ internal sealed class CutsceneSceneState(CutSceneTask task, List<EditCameraShot>
     }
 }
 
-/// <summary>One LevelTimer task: its expressions and the run byte and tick count it exports.</summary>
-internal sealed record CutsceneTimerState(DeclaredTask Task, string Run, string Reset, bool InitialRun)
-{
-    public bool IsRun { get; set; } = InitialRun;
-    public int Tick { get; set; }
-}
-
 /// <summary>One AnimTask: its target, its place in the walk and the AnimData programme it plays.</summary>
 internal sealed record CutsceneAnimationState(
     DeclaredTask Task,

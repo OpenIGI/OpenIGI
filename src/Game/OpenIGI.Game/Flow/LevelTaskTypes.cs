@@ -18,6 +18,7 @@ public static class LevelTaskTypes
     {
         ArgumentNullException.ThrowIfNull(types);
         types.Register<EditVariableTask>(EditVariableTask.TypeName);
+        types.Register<LevelTimerTask>(LevelTimerTask.TypeName);
     }
 
     /// <summary>Registers every shared type a Project I.G.I. level is made of.</summary>

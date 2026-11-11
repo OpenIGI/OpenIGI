@@ -20,26 +20,6 @@ public sealed partial class Igi2AreaActivateTask : ISavedState
     }
 }
 
-/// <content>Its save state, <c>LevelTimer_ptSerializeParameterList</c>: whether it runs, and its tick.</content>
-public sealed partial class Igi2LevelTimerTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Bool(_isRun != 0);
-        writer.Int(_tick);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        _isRun = reader.Bool() ? (byte)1 : (byte)0;
-        _tick = reader.Int();
-    }
-}
-
 /// <content>Its save state, <c>ConditionalContainer_ptSerializeParameterList</c>: whether its children are in the world, and whether it runs.</content>
 public sealed partial class Igi2ConditionalContainerTask : ISavedState
 {

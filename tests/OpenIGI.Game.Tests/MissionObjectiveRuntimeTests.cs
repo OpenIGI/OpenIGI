@@ -606,9 +606,8 @@ public sealed class MissionObjectiveRuntimeTests
 
             // Levels 6 and 14 time messages off LevelFlow_10.nTick; an unbound one reads zero forever.
             tickReaderCount += Walk(root)
-                .OfType<DeclaredTask>()
                 .Count(task => task.Type.Parameters
-                    .Select((_, index) => task.GetValue(index))
+                    .Select(parameter => task.TryGetScriptValue(parameter.Name, out object? value) ? value : null)
                     .OfType<string>()
                     .Any(text => levelFlows.Any(levelFlow => text.Contains(
                         $"{levelFlow.Name}.nTick", StringComparison.Ordinal))));
