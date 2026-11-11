@@ -22,7 +22,7 @@ namespace OpenIGI.Game.World;
 /// them is hacked (team <c>!Terminal_301.isHacked</c>): from then on their enemies are the guards.
 /// </para>
 /// </remarks>
-internal sealed class CutsceneGunHolders(CutsceneContext context, CutsceneVehicleArmament armament)
+internal sealed class StationaryGunHolders(CutsceneContext context, VehicleArmaments armament)
 {
     /// <summary>The holder's script type name.</summary>
     public const string TypeName = "AIStationaryGunHolder";
@@ -30,7 +30,7 @@ internal sealed class CutsceneGunHolders(CutsceneContext context, CutsceneVehicl
     private const double DegreesToRadians = 0.017453292;
 
     private readonly CutsceneContext _context = context;
-    private readonly CutsceneVehicleArmament _armament = armament;
+    private readonly VehicleArmaments _armament = armament;
     private readonly Dictionary<GameTask, HolderState> _holders = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Gets or sets every human a holder's record is offered, in the global detection list's order.</summary>

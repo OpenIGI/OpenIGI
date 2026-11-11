@@ -47,35 +47,35 @@ public sealed class LevelVehicles
     {
         _context = context;
         _walker = walker;
-        Ground = new CutsceneGroundSupport(context);
-        Bodies = new CutsceneVehicleBodies(context, Ground, obstacleHit, obstacleReleased);
-        Armament = new CutsceneVehicleArmament(context, _carAis, animations);
-        Holders = new CutsceneGunHolders(context, Armament);
-        Parts = new CutsceneVehicleParts(context, Armament);
-        CarAi = new CutsceneCarAi(context, Bodies, Armament, _carAis);
-        Draw = new CutsceneVehicleDraw(context, attachments, Bodies, Armament, Parts);
+        Ground = new VehicleGroundSupport(context);
+        Bodies = new VehicleBodies(context, Ground, obstacleHit, obstacleReleased);
+        Armament = new VehicleArmaments(context, _carAis, animations);
+        Holders = new StationaryGunHolders(context, Armament);
+        Parts = new VehicleParts(context, Armament);
+        CarAi = new CarAiDrivers(context, Bodies, Armament, _carAis);
+        Draw = new VehicleDraw(context, attachments, Bodies, Armament, Parts);
     }
 
     /// <summary>Gets what the vehicles stand on.</summary>
-    internal CutsceneGroundSupport Ground { get; }
+    internal VehicleGroundSupport Ground { get; }
 
     /// <summary>Gets the vehicles' bodies.</summary>
-    internal CutsceneVehicleBodies Bodies { get; }
+    internal VehicleBodies Bodies { get; }
 
     /// <summary>Gets the vehicles' guns, eyes and death zones.</summary>
-    internal CutsceneVehicleArmament Armament { get; }
+    internal VehicleArmaments Armament { get; }
 
     /// <summary>Gets the mounted-gun holders.</summary>
-    internal CutsceneGunHolders Holders { get; }
+    internal StationaryGunHolders Holders { get; }
 
     /// <summary>Gets the vehicles' doors, rotors and other parts.</summary>
-    internal CutsceneVehicleParts Parts { get; }
+    internal VehicleParts Parts { get; }
 
     /// <summary>Gets what steers the cars.</summary>
-    internal CutsceneCarAi CarAi { get; }
+    internal CarAiDrivers CarAi { get; }
 
     /// <summary>Gets where the vehicles and what they carry are drawn.</summary>
-    internal CutsceneVehicleDraw Draw { get; }
+    internal VehicleDraw Draw { get; }
 
     /// <summary>Gets the CarAI tasks' states, for the suites that read them.</summary>
     internal IReadOnlyList<CarAiState> CarAisForTesting => _carAis;
@@ -142,25 +142,25 @@ public sealed class LevelVehicles
     /// <returns>The record, or <see langword="null"/> for a task that is no holder.</returns>
     public AiDetectionRecord? GunHolderRecord(GameTask holder) => Holders.RecordOf(holder);
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.ConfigureVehicleCombat"/>
+    /// <inheritdoc cref="VehicleArmaments.ConfigureVehicleCombat"/>
     public void ConfigureVehicleCombat(GameTask vehicle, WeaponType weapon) => Armament.ConfigureVehicleCombat(vehicle, weapon);
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.ConfigureVehicleGuns"/>
+    /// <inheritdoc cref="VehicleArmaments.ConfigureVehicleGuns"/>
     public void ConfigureVehicleGuns(GameTask vehicle, IReadOnlyList<VehicleGun> guns) => Armament.ConfigureVehicleGuns(vehicle, guns);
 
-    /// <inheritdoc cref="CutsceneVehicleBodies.VehicleSoundSources"/>
+    /// <inheritdoc cref="VehicleBodies.VehicleSoundSources"/>
     public IEnumerable<VehicleSoundSource> VehicleSoundSources() => Bodies.VehicleSoundSources();
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.VehicleGunSounds"/>
+    /// <inheritdoc cref="VehicleArmaments.VehicleGunSounds"/>
     public IEnumerable<VehicleGunSound> VehicleGunSounds() => Armament.VehicleGunSounds();
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.ConfigureDeathZones"/>
+    /// <inheritdoc cref="VehicleArmaments.ConfigureDeathZones"/>
     public void ConfigureDeathZones(GameTask vehicle, IReadOnlyList<VehicleDeathZone> zones) => Armament.ConfigureDeathZones(vehicle, zones);
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.TryRunOver"/>
+    /// <inheritdoc cref="VehicleArmaments.TryRunOver"/>
     public bool TryRunOver(Vector3d humanOrigin, out GameTask? vehicle) => Armament.TryRunOver(humanOrigin, out vehicle);
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.GunTurret"/>
+    /// <inheritdoc cref="VehicleArmaments.GunTurret"/>
     public VehicleGunTurret? GunTurret(GameTask vehicle, int index) => Armament.GunTurret(vehicle, index);
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
@@ -170,43 +170,43 @@ public sealed class LevelVehicles
     /// </remarks>
     public void RestHelicoptersOnSupport() => Ground.RestCollisionHelisOnSupport();
 
-    /// <inheritdoc cref="CutsceneVehicleBodies.ConfigureRetailCars"/>
+    /// <inheritdoc cref="VehicleBodies.ConfigureRetailCars"/>
     public void ConfigureRetailCars(
         IRetailCarWorld world,
         Func<string, OpenIGI.Formats.World.MefModel?> models,
         Func<string, MagicObjectDefinition?>? magic = null) =>
         Bodies.ConfigureRetailCars(world, models, magic);
 
-    /// <inheritdoc cref="CutsceneCarAi.ConfigureCarAi"/>
+    /// <inheritdoc cref="CarAiDrivers.ConfigureCarAi"/>
     public void ConfigureCarAi(IReadOnlyDictionary<int, GraphFile> graphs) => CarAi.ConfigureCarAi(graphs);
 
-    /// <inheritdoc cref="CutsceneCarAi.CarAiTargetNode"/>
+    /// <inheritdoc cref="CarAiDrivers.CarAiTargetNode"/>
     public int? CarAiTargetNode(GameTask car) => CarAi.CarAiTargetNode(car);
 
-    /// <inheritdoc cref="CutsceneVehicleBodies.VehicleOccupants"/>
+    /// <inheritdoc cref="VehicleBodies.VehicleOccupants"/>
     public IReadOnlyList<VehicleOccupant> VehicleOccupants() => Bodies.VehicleOccupants();
 
-    /// <inheritdoc cref="CutsceneVehicleBodies.BindVehicleWheels"/>
+    /// <inheritdoc cref="VehicleBodies.BindVehicleWheels"/>
     public void BindVehicleWheels(WorldScene scene, Func<string, float>? modelRadius = null) =>
         Bodies.BindVehicleWheels(scene, modelRadius);
 
-    /// <inheritdoc cref="CutsceneVehicleParts.Configure"/>
+    /// <inheritdoc cref="VehicleParts.Configure"/>
     public void ConfigureVehicleParts(WorldScene scene, Func<string, MagicObjectDefinition?> magic, Func<MagicObjectDefinition, string> taskTypeName) =>
         Parts.Configure(scene, magic, taskTypeName);
 
-    /// <inheritdoc cref="CutsceneVehicleParts.Made"/>
+    /// <inheritdoc cref="VehicleParts.Made"/>
     public void VehiclePartMade(WorldPlacement placement) => Parts.Made(placement);
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.BindVehicleGunPlacements"/>
+    /// <inheritdoc cref="VehicleArmaments.BindVehicleGunPlacements"/>
     public void BindVehicleGunPlacements(WorldScene scene) => Armament.BindVehicleGunPlacements(scene);
 
-    /// <inheritdoc cref="CutsceneVehicleArmament.VehicleGunVisuals"/>
+    /// <inheritdoc cref="VehicleArmaments.VehicleGunVisuals"/>
     public IEnumerable<VehicleGunVisual> VehicleGunVisuals() => Armament.VehicleGunVisuals();
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetWheelDraw"/>
+    /// <inheritdoc cref="VehicleDraw.TryGetWheelDraw"/>
     public bool TryGetWheelDraw(WorldPlacement placement, out Matrix3f rotation) => Draw.TryGetWheelDraw(placement, out rotation);
 
-    /// <inheritdoc cref="CutsceneVehicleBodies.RetailVehicleModels"/>
+    /// <inheritdoc cref="VehicleBodies.RetailVehicleModels"/>
     public IReadOnlyList<RetailRayModel> RetailVehicleModels() => Bodies.RetailVehicleModels();
 
     /// <summary>Makes these the vehicles a level's vehicle tasks run through, each registered as its type needs.</summary>

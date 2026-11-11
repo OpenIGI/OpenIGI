@@ -13,7 +13,7 @@ namespace OpenIGI.Game.World;
 /// which the load starts and every later re-initialisation carries on from. Each gun asks the vision what it sees,
 /// turns to it (<c>0x46F390</c>) and lets <c>Gun_Fire</c> (<c>0x478BA0</c>) take the trigger.
 /// </remarks>
-internal sealed class CutsceneVehicleArmament(
+internal sealed class VehicleArmaments(
     CutsceneContext context,
     List<CarAiState> carAis,
     List<CutsceneAnimationState> animations)

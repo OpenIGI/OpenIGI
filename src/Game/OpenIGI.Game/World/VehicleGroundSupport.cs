@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// <c>0x4C7770</c>); the higher of the two is the surface. The airframe notes and the <c>Airframe.Path</c> samples are
 /// written from here because they report the same support query.
 /// </remarks>
-internal sealed class CutsceneGroundSupport(CutsceneContext context)
+internal sealed class VehicleGroundSupport(CutsceneContext context)
 {
     /// <summary>The narrow vertical band in which an airframe has touched supporting geometry.</summary>
     /// <remarks>

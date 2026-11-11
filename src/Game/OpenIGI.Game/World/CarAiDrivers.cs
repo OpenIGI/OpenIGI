@@ -9,12 +9,12 @@ namespace OpenIGI.Game.World;
 /// <remarks>
 /// CarAI is a normal level task, not a cutscene animation (<c>0x425DE0</c>). It follows its PatrolPath over the
 /// graph's route table, or chases what its car's vision holds, and its packet reaches the car through the same
-/// receiver an AnimTask's does (<see cref="CutsceneVehicleBodies.DriveCar"/>).
+/// receiver an AnimTask's does (<see cref="VehicleBodies.DriveCar"/>).
 /// </remarks>
-internal sealed class CutsceneCarAi(
+internal sealed class CarAiDrivers(
     CutsceneContext context,
-    CutsceneVehicleBodies bodies,
-    CutsceneVehicleArmament armament,
+    VehicleBodies bodies,
+    VehicleArmaments armament,
     List<CarAiState> carAis)
 {
     /// <summary>CarAI's arrival radius squared (<c>dbl_533648</c>: three metres).</summary>
@@ -27,8 +27,8 @@ internal sealed class CutsceneCarAi(
     private const double CarAiChaseLookAheadSquared = 3_288_334_336d;
 
     private readonly CutsceneContext _context = context;
-    private readonly CutsceneVehicleBodies _bodies = bodies;
-    private readonly CutsceneVehicleArmament _armament = armament;
+    private readonly VehicleBodies _bodies = bodies;
+    private readonly VehicleArmaments _armament = armament;
     private readonly List<CarAiState> _carAis = carAis;
 
     /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>

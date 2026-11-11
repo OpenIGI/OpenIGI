@@ -12,9 +12,9 @@ namespace OpenIGI.Game.World;
 /// both arrive through (<c>0x42EA10</c>). A car with a retail body steps <c>Car_Tick</c> on it, and the planes and
 /// helicopters get theirs here the first time their AnimTask speaks.
 /// </remarks>
-internal sealed class CutsceneVehicleBodies(
+internal sealed class VehicleBodies(
     CutsceneContext context,
-    CutsceneGroundSupport ground,
+    VehicleGroundSupport ground,
     Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit,
     Func<GameTask, bool>? vehicleObstacleReleased)
 {
@@ -45,7 +45,7 @@ internal sealed class CutsceneVehicleBodies(
         []);
 
     private readonly CutsceneContext _context = context;
-    private readonly CutsceneGroundSupport _ground = ground;
+    private readonly VehicleGroundSupport _ground = ground;
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit = vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased = vehicleObstacleReleased;
     private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];

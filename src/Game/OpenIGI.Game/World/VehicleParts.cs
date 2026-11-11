@@ -17,7 +17,7 @@ namespace OpenIGI.Game.World;
 /// Only the Hind (<c>700_01_1</c>) carries either: four pods and one door.
 /// </para>
 /// </remarks>
-internal sealed class CutsceneVehicleParts(CutsceneContext context, CutsceneVehicleArmament armament)
+internal sealed class VehicleParts(CutsceneContext context, VehicleArmaments armament)
 {
     /// <summary>The rocket a pod fires, <c>0x427A70</c>'s model.</summary>
     public const string RocketModel = "700_10_1";
@@ -26,7 +26,7 @@ internal sealed class CutsceneVehicleParts(CutsceneContext context, CutsceneVehi
     private const string HeliDoorTaskTypeName = "TASKTYPE_HELIDOOR";
 
     private readonly CutsceneContext _context = context;
-    private readonly CutsceneVehicleArmament _armament = armament;
+    private readonly VehicleArmaments _armament = armament;
     private readonly Dictionary<GameTask, HeliParts> _byVehicle = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<WorldPlacement, RocketPod> _pods = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<WorldPlacement, SlidingDoor> _doors = new(ReferenceEqualityComparer.Instance);

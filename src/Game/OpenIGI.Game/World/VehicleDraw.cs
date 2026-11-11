@@ -9,18 +9,18 @@ namespace OpenIGI.Game.World;
 /// Every read is presentation only: it derives a consist car or an attachment from the pose the simulation left, and
 /// never steps anything. A rotor's blur samples follow <c>RotorPrimitive::Draw</c> (<c>0x42C630</c>).
 /// </remarks>
-internal sealed class CutsceneVehicleDraw(
+internal sealed class VehicleDraw(
     CutsceneContext context,
     CutsceneAttachments attachments,
-    CutsceneVehicleBodies bodies,
-    CutsceneVehicleArmament armament,
-    CutsceneVehicleParts parts)
+    VehicleBodies bodies,
+    VehicleArmaments armament,
+    VehicleParts parts)
 {
-    private readonly CutsceneVehicleParts _parts = parts;
+    private readonly VehicleParts _parts = parts;
     private readonly CutsceneContext _context = context;
     private readonly CutsceneAttachments _attachments = attachments;
-    private readonly CutsceneVehicleBodies _bodies = bodies;
-    private readonly CutsceneVehicleArmament _armament = armament;
+    private readonly VehicleBodies _bodies = bodies;
+    private readonly VehicleArmaments _armament = armament;
 
     /// <summary>Resolves an animation-driven task transform in render units.</summary>
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation)
@@ -197,7 +197,7 @@ internal sealed class CutsceneVehicleDraw(
     {
         ArgumentNullException.ThrowIfNull(placement);
         rotation = Matrix3f.Identity;
-        if (!string.Equals(placement.MagicTaskTypeName, CutsceneVehicleBodies.WheelTaskTypeName, StringComparison.Ordinal)
+        if (!string.Equals(placement.MagicTaskTypeName, VehicleBodies.WheelTaskTypeName, StringComparison.Ordinal)
             || !_bodies.CarWheels.TryGetValue(placement.Owner, out CarWheel[]? wheels)
             || !_context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? state))
         {

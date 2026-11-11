@@ -742,14 +742,14 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// <summary>Clears one-tick cutscene input after every level expression has had a chance to read it.</summary>
     public void FinishExpressionTick() => _breakRequested = false;
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetDrawTransform"/>
+    /// <inheritdoc cref="VehicleDraw.TryGetDrawTransform"/>
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation) =>
         Vehicles.Draw.TryGetDrawTransform(task, out position, out orientation);
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetDynamicVelocity"/>
+    /// <inheritdoc cref="VehicleDraw.TryGetDynamicVelocity"/>
     public bool TryGetDynamicVelocity(GameTask task, out Vector3d velocity) => Vehicles.Draw.TryGetDynamicVelocity(task, out velocity);
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetPlacementDrawTransform(GameTask, Vector3d, Matrix3f, out Vector3d, out Matrix3f)"/>
+    /// <inheritdoc cref="VehicleDraw.TryGetPlacementDrawTransform(GameTask, Vector3d, Matrix3f, out Vector3d, out Matrix3f)"/>
     public bool TryGetPlacementDrawTransform(
         GameTask task,
         Vector3d placementPosition,
@@ -758,14 +758,14 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         out Matrix3f orientation) =>
         Vehicles.Draw.TryGetPlacementDrawTransform(task, placementPosition, placementOrientation, out position, out orientation);
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetPlacementDrawTransform(WorldPlacement, out Vector3d, out Matrix3f)"/>
+    /// <inheritdoc cref="VehicleDraw.TryGetPlacementDrawTransform(WorldPlacement, out Vector3d, out Matrix3f)"/>
     public bool TryGetPlacementDrawTransform(WorldPlacement placement, out Vector3d position, out Matrix3f orientation) =>
         Vehicles.Draw.TryGetPlacementDrawTransform(placement, out position, out orientation);
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.Claims"/>
+    /// <inheritdoc cref="VehicleDraw.Claims"/>
     public bool Claims(WorldPlacement placement) => Vehicles.Draw.Claims(placement);
 
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetRotorDrawState"/>
+    /// <inheritdoc cref="VehicleDraw.TryGetRotorDrawState"/>
     public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw) => Vehicles.Draw.TryGetRotorDrawState(placement, out draw);
 
     /// <inheritdoc cref="CutsceneAttachments.TryGetAttachedDrawTransform"/>

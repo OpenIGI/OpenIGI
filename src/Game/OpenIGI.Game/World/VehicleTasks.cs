@@ -71,7 +71,7 @@ public sealed class CarAiTask : VehicleTask
 public sealed class StationaryGunHolderTask : VehicleTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = CutsceneGunHolders.TypeName;
+    public const string TypeName = StationaryGunHolders.TypeName;
 
     /// <inheritdoc/>
     private protected override bool Run(LevelVehicles vehicles)

@@ -13,14 +13,14 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 internal sealed class CutsceneAnimationPackets(
     CutsceneContext context,
-    CutsceneVehicleBodies bodies,
-    CutsceneGroundSupport ground,
-    CutsceneVehicleParts parts)
+    VehicleBodies bodies,
+    VehicleGroundSupport ground,
+    VehicleParts parts)
 {
-    private readonly CutsceneVehicleParts _parts = parts;
+    private readonly VehicleParts _parts = parts;
     private readonly CutsceneContext _context = context;
-    private readonly CutsceneVehicleBodies _bodies = bodies;
-    private readonly CutsceneGroundSupport _ground = ground;
+    private readonly VehicleBodies _bodies = bodies;
+    private readonly VehicleGroundSupport _ground = ground;
 
     /// <summary>Delivers one packet of an AnimTask's programme to its target, by the target's type.</summary>
     /// <param name="targetId">The AnimTask's target id.</param>
@@ -259,7 +259,7 @@ internal sealed class CutsceneAnimationPackets(
             program.WriteChannel(2, 0f);
             program.WriteChannel(3, -1f);
             program.WriteChannel(4, -2f);
-            CutsceneVehicleBodies.CopyRetailPose(transform, retailHeli);
+            VehicleBodies.CopyRetailPose(transform, retailHeli);
             transform.PreviousPosition = transform.Position;
             transform.PreviousOrientation = transform.Orientation;
             transform.Velocity = default;
@@ -277,7 +277,7 @@ internal sealed class CutsceneAnimationPackets(
         // 0x4F4660 ticks the attachments -- the rotors push their lift and yaw -- right before Heli_Tick.
         retailHeli.RotorTick();
         retailHeli.Tick(retailWorld);
-        CutsceneVehicleBodies.CopyRetailPose(transform, retailHeli);
+        VehicleBodies.CopyRetailPose(transform, retailHeli);
         transform.Thrust = retailHeli.Collective;
         transform.TargetThrust = retailHeli.CollectiveTarget;
         transform.Speed = retailHeli.Speed;
@@ -327,13 +327,13 @@ internal sealed class CutsceneAnimationPackets(
         // rest height: an authored flight can reach an elevated surface while still above its
         // roof, and measuring that in-flight gap would make it stop in the air when its collective reached zero.
         double measuredRest = _ground.MeasureGroundRestOffset(transform.OriginPosition, target);
-        if (CutsceneGroundSupport.IsPlausibleGroundRestOffset(measuredRest, physics))
+        if (VehicleGroundSupport.IsPlausibleGroundRestOffset(measuredRest, physics))
         {
-            transform.GroundRestOffset = Math.Max(measuredRest, CutsceneGroundSupport.DefaultGroundRestOffset(physics));
+            transform.GroundRestOffset = Math.Max(measuredRest, VehicleGroundSupport.DefaultGroundRestOffset(physics));
         }
         else if (double.IsNaN(transform.GroundRestOffset))
         {
-            transform.GroundRestOffset = CutsceneGroundSupport.DefaultGroundRestOffset(physics);
+            transform.GroundRestOffset = VehicleGroundSupport.DefaultGroundRestOffset(physics);
             _context.Note(
                 $"heli-rest-fallback id={targetId} measured={measuredRest:R} "
                 + $"offset={transform.GroundRestOffset:R}");
@@ -473,7 +473,7 @@ internal sealed class CutsceneAnimationPackets(
             // The set-up makes the parts again before it resets the controls, so they seat by the gear byte this packet left.
             retailPlane.SeatParts();
             RetailPlaneSpawn.Reset(retailPlane, retailPlanePhysics, RetailPlaneSpawn.Placement(retailPlaneTask));
-            CutsceneVehicleBodies.CopyRetailPose(transform, retailPlane);
+            VehicleBodies.CopyRetailPose(transform, retailPlane);
             transform.PreviousPosition = transform.Position;
             transform.PreviousOrientation = transform.Orientation;
             transform.Velocity = default;
@@ -486,7 +486,7 @@ internal sealed class CutsceneAnimationPackets(
         transform.TakeSavedBodyMotion();
         SnapshotDynamicPose(transform, simulationOrder);
         retailPlane.Tick(planeWorld);
-        CutsceneVehicleBodies.CopyRetailPose(transform, retailPlane);
+        VehicleBodies.CopyRetailPose(transform, retailPlane);
         transform.Thrust = retailPlane.Thrust;
         transform.TargetThrust = retailPlane.ThrustTarget;
         transform.Speed = retailPlane.Speed;
