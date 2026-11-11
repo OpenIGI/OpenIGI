@@ -34,7 +34,11 @@ public sealed partial class GameHost
     // Where everyone who casts in a lamp's map stands, in metres: the player and the living soldiers.
     private void LampMapPeople(List<Vector3d> people)
     {
-        if (HostedPlayer is { } player)
+        if (TitlePlayer is { } title)
+        {
+            people.Add(WorldScene.ToMetres(title.Position));
+        }
+        else if (HostedPlayer is { } player)
         {
             people.Add(WorldScene.ToMetres(player.Body.Position));
         }

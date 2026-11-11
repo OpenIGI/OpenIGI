@@ -360,6 +360,15 @@ public sealed class MissionWorld : MissionState, IInspectableMission
     }
 
     /// <inheritdoc/>
+    public override bool HasOwnPlayer => Player is not null;
+
+    /// <inheritdoc/>
+    public override MissileSimulation? PlayerMissiles => Player?.Missiles;
+
+    /// <inheritdoc/>
+    public override void SetPlayerComputerOpen(bool open) => Player?.SetMapComputerOpen(open);
+
+    /// <inheritdoc/>
     public override void ForgetPlayer() => Player = null;
 
     /// <summary>Takes the level's soldiers as the frame draws them, and the simulation they carry.</summary>

@@ -49,6 +49,7 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionState.Collision)] = "a view of Solids and the terrain",
         [nameof(MissionState.CutsceneFrameShown)] = "a view of Cutscenes",
         [nameof(MissionState.Scenes)] = "a view of Cutscenes",
+        [nameof(MissionState.PlayerMissiles)] = "a view of Player: its rockets, cleared by the title",
         [nameof(MissionWorld.LevelExpressions)] = "a view of Cutscenes: holds compiled expressions, no state",
         [nameof(MissionState.Progress)] = "a view of Objectives",
         [nameof(MissionState.Placements)] = "a view of the registries",

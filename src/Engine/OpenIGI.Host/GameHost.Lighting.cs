@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
@@ -97,13 +98,11 @@ public sealed partial class GameHost
     /// </remarks>
     private void UpdateFlashlightSwitch(bool menuMode, bool consoleOpen)
     {
-        if (!_flashlight.CanSwitch(menuMode, consoleOpen, _mission.IsPlayerDead) || HostedPlayer is not { } player)
-        {
-            return;
-        }
-
-        player.InputProfile = _configuration.Active;
-        if (!player.WasActionPressed(_window.Input, PlayerAction.Flashlight))
+        // Any standing player's, unless its title's own keys take the action over for something of its own.
+        bool titleTakesIt = Gameplay is { } titleGameplay
+            && (TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) & PlayerAction.Flashlight) != 0;
+        if (!_flashlight.CanSwitch(menuMode, consoleOpen, _mission.IsPlayerDead) || !PlayerStands || titleTakesIt
+            || !PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(PlayerAction.Flashlight)))
         {
             return;
         }

@@ -243,6 +243,21 @@ public class MissionState
     /// <summary>Starts a fresh life at the same difficulty: the last one's death does not carry over.</summary>
     public virtual void StartFreshLife() => IsPlayerDead = false;
 
+    /// <summary>
+    /// Gets a value indicating whether the mission has a player of its own standing: the one its game's level places, rather than
+    /// another game's standing in it or none.
+    /// </summary>
+    public virtual bool HasOwnPlayer => false;
+
+    /// <summary>Gets the rockets the mission's own player has fired, in the air; <see langword="null"/> without a player of its own.</summary>
+    public virtual Weapons.MissileSimulation? PlayerMissiles => null;
+
+    /// <summary>Holds the mission's own player in its computer, or lets it go, as the computer opens and closes.</summary>
+    /// <param name="open">Whether the computer is open.</param>
+    public virtual void SetPlayerComputerOpen(bool open)
+    {
+    }
+
     /// <summary>Forgets the title's own player, as another takes the level or the level goes.</summary>
     public virtual void ForgetPlayer()
     {

@@ -88,6 +88,19 @@ public sealed partial class GameHost
     /// </remarks>
     private void UpdateListener()
     {
+        if (!PlayerStands)
+        {
+            return;
+        }
+
+        // The last frame's camera, whichever drew it; see ComposeFrameEye. The heads below are for the frames before a
+        // mission has drawn one.
+        if (_earCamera is { } ear)
+        {
+            _audioOut.Device.Listener = AudioListenerState.FromViewRotation(ear.Position, ear.Orientation);
+            return;
+        }
+
         if (TitlePlayer is { } title)
         {
             // A title's own player: its eyes as the last tick left them, in the camera's own row order.
@@ -97,14 +110,6 @@ public sealed partial class GameHost
 
         if (HostedPlayer is not { } player)
         {
-            return;
-        }
-
-        // The last frame's camera, whichever drew it; see ComposeFrameEye. The head below is for the frames before a
-        // mission has drawn one.
-        if (_earCamera is { } ear)
-        {
-            _audioOut.Device.Listener = AudioListenerState.FromViewRotation(ear.Position, ear.Orientation);
             return;
         }
 
@@ -220,7 +225,7 @@ public sealed partial class GameHost
         }
 
         // No player is the menu, where there is no ear to place the weather around.
-        bool raining = AudioCVars.Rain.Value && HostedPlayer is not null && (_rain?.IsWeatherEnabled ?? false);
+        bool raining = AudioCVars.Rain.Value && PlayerStands && (_rain?.IsWeatherEnabled ?? false);
         float intensity = raining
             ? (_storm is { Enabled: true } ? WeatherCVars.StormIntensity.Value : 1f)
             : 0f;
@@ -228,7 +233,7 @@ public sealed partial class GameHost
         rain.Update(
             _audioOut.Device.Listener.Position,
             _shelterField,
-            HostedPlayer?.GrenadeWalls,
+            _mission.Trace is { } shelterTrace ? WorldTrace.AsRayCast(shelterTrace) : null,
             WorldScene.UnitsPerMetre,
             intensity,
             AudioCVars.RainVolume.Value,

@@ -15,14 +15,31 @@ namespace OpenIGI.Game.Igi1.Player;
 /// </remarks>
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
-public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground) : ITitlePlayer, ITitleFirstPerson
+public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground)
+    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement
 {
+    private TitleLookPreview? _look;
+
 
     /// <summary>Gets the player.</summary>
     public Igi1HumanPlayer Human { get; } = human ?? throw new ArgumentNullException(nameof(human));
 
     private readonly Igi1HumanCamera _death = new();
     private Vector3d _deathFeet;
+
+    /// <summary>
+    /// Gets what runs a tick of the rig where the player is the game's own mission's: the mission's steps around it
+    /// (<c>Igi1MissionTick.StepPlayer</c>), which answer whether the player ticks at all. <see langword="null"/> to tick the rig
+    /// alone, as in another game's level.
+    /// </summary>
+    public Func<Action<PlayerCamera>, bool>? Step { get; init; }
+
+    /// <inheritdoc/>
+    /// <remarks>Not while dead, nor on a mounted gun, whose look turns the gun rather than the head.</remarks>
+    public bool CanPreviewLook => !Human.Life.IsDead && Human.Rig.MountedStationaryGun is null;
+
+    /// <inheritdoc/>
+    public Matrix3f LookOrientation => Look.Orientation;
 
     /// <summary>Gets the ticks the player has run.</summary>
     public long Ticks { get; private set; }
@@ -35,6 +52,14 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
 
     /// <inheritdoc/>
     public Matrix3f ViewOrientation => IsDeathViewActive ? _death.Camera.Orientation : Human.Rig.Camera.Orientation;
+
+    /// <inheritdoc/>
+    /// <remarks>The rig's own placement: a teleport, onto the ground below.</remarks>
+    public bool TryPlace(Vector3d cameraPosition, float yaw) => Human.Rig.Place(ground, cameraPosition / WorldScene.UnitsPerMetre, yaw);
+
+    /// <inheritdoc/>
+    /// <remarks>The body's yaw: its forward is (sin yaw, cos yaw).</remarks>
+    public float? Heading => Human.Rig.Yaw;
 
     /// <summary>Gets a value indicating whether the death camera has the view: the player is dead and its camera pulled back.</summary>
     public bool IsDeathViewActive => Human.Life.IsDead && _death.IsActive;
@@ -64,6 +89,16 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
     {
+        TitlePlayerInput given = input;
+
+        // In the game's own mission the mission decides whether the player ticks at all, and its death is the mission's camera's.
+        if (Step is { } step)
+        {
+            step(rig => TickRig(rig, given));
+            Look.Reset();
+            return;
+        }
+
         if (Human.Life.IsDead)
         {
             if (_death.IsActive)
@@ -77,10 +112,41 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
             return;
         }
 
-        Human.Rig.LookSettings = MouseLookSettings.FromSensitivity(input.MouseSensitivity, input.InvertMouse);
-        Human.Rig.Look(input.MouseX, input.MouseY);
-        Human.Rig.Tick(input.Held, ground);
+        TickRig(Human.Rig, given);
+
+        // The look gathered since the last tick is the rig's now.
+        Look.Reset();
+    }
+
+    /// <inheritdoc/>
+    public void GatherLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) => Look.Gather(mouseX, mouseY, sensitivity, invertMouse);
+
+    /// <inheritdoc/>
+    public void ResetLook() => Look.Reset();
+
+    /// <inheritdoc/>
+    public Matrix3f PreviewLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) =>
+        Look.Preview(mouseX, mouseY, sensitivity, invertMouse);
+
+    // The tick's look, the mouse's counts since the last as the rig turns them, then HumanPlayer_Update over the actions held.
+    private void TickRig(PlayerCamera rig, in TitlePlayerInput input)
+    {
+        rig.LookSettings = MouseLookSettings.FromSensitivity(input.MouseSensitivity, input.InvertMouse);
+        rig.Look(input.MouseX, input.MouseY);
+        rig.Tick(input.Held, ground);
         Ticks++;
+    }
+
+    // The look between ticks, from where the rig faced at its last: the shared Smooth Motion policy, turned as the rig turns.
+    private TitleLookPreview Look => _look ??= new(() => CanPreviewLook, () => (Human.Rig.Yaw, Human.Rig.Pitch), Turn, static (yaw, pitch) => Core.Graphics.Camera3D.LookRotation(yaw, pitch));
+
+    // The rig's turn (PlayerFirstPersonView.Turn): right turns right, the profile's invert in the pitch, slowed with a zoom.
+    private (float Gamma, float Pitch) Turn(float mouseX, float mouseY, float sensitivity, bool invertMouse, float yaw, float pitch)
+    {
+        MouseLookSettings settings = MouseLookSettings.FromSensitivity(sensitivity, invertMouse);
+        float zoom = Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f;
+        return (yaw + (settings.YawDelta(mouseX) * zoom),
+            Math.Clamp(pitch + (settings.PitchDelta(mouseY) * zoom), -PlayerBody.PitchLimit, PlayerBody.PitchLimit));
     }
 
     // The eye of a body standing on these feet, which the death camera orbits and looks at.

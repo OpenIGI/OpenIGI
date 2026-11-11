@@ -273,7 +273,8 @@ public sealed partial class GameHost
             _entry.Update(
                 entryElapsed,
                 liveOrbit,
-                HostedPlayer is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
+                TitlePlayer is { } titleStanding ? CameraPose.FromCamera(TitleCamera(titleStanding))
+                    : HostedPlayer is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
 
             // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
             // where the one frame the promotion still costs is least visible. What it used to cost --
@@ -315,7 +316,11 @@ public sealed partial class GameHost
             // no pose until something puts one in it.
             if (_soldiers is { } bodies)
             {
-                if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
+                if (_entry.ShowPlayerBody && TitlePlayer is { Heading: { } heading } titleBody)
+                {
+                    bodies.StandPlayerBodyAt(titleBody.Position, -heading);
+                }
+                else if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
                 {
                     // Minus the yaw, for the reason the third-person follow states at length: a
                     // heading is a gamma and turns the other way. This shot has always faced the
@@ -430,7 +435,7 @@ public sealed partial class GameHost
 
             // The pointer belongs to the menu now. The look is what holds the cursor captive, so the
             // player is told to let go of it rather than the lock being fought over each frame.
-            HostedPlayer?.HoldStill();
+            HoldPlayerStill();
             _window.CursorLocked = false;
 
             // The eye is drawn between its last two ticks and neither of them moves again until the
