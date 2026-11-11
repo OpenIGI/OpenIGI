@@ -67,95 +67,16 @@ public interface IMissionTick
     /// <summary>Forgets any climb in progress, as the player starts afresh.</summary>
     void ResetClimbs();
 
-    /// <summary>Hands the level's walk the soldiers and the player, so each updates at its place in the tree.</summary>
-    /// <param name="levelRoot">The level's task tree.</param>
-    void AttachToLevelWalk(GameTask levelRoot);
-
     /// <summary>Breaks the scene that is playing and runs the level's state once, so a gate the caller has just written is seen.</summary>
     /// <remarks>For the test captures that force an authored outro through its own script gate.</remarks>
     void BreakIntoOutro();
-
-    /// <summary>Gets the player as the level's areas count it, now.</summary>
-    /// <returns>Where the player is, its team and whether it lives.</returns>
-    AreaPlayer AreaPlayerNow();
 }
 
-/// <summary>The bring-up of a level's own systems, in the order the host's mission systems run them.</summary>
+/// <summary>What the host asks of a level's bring-up; the title's own systems make the rest (<see cref="IHostedMission.AddMissionSystems"/>).</summary>
 public interface IMissionSetup
 {
     /// <summary>Gets a value indicating whether the level has soldiers whose brains are to be animated.</summary>
     bool HasSoldiers { get; }
-
-    /// <summary>Makes the mission's text and its cutscene runtime.</summary>
-    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="walker">The level's walk.</param>
-    /// <param name="objectives">The objective runtime being built, which is made after this one.</param>
-    /// <returns>The mission's text.</returns>
-    MissionStringResolver BuildCutscenes(
-        LoadedMission loaded,
-        LevelTask levelRoot,
-        LevelUpdateWalker walker,
-        Func<MissionObjectiveRuntime?> objectives);
-
-    /// <summary>Makes the objective runtime.</summary>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="missionText">The mission's text.</param>
-    /// <param name="areaPlayer">The player as the level's areas count it.</param>
-    /// <param name="made">Told the runtime as soon as it exists.</param>
-    /// <returns>The runtime.</returns>
-    MissionObjectiveRuntime BuildObjectives(
-        LevelTask levelRoot,
-        MissionStringResolver missionText,
-        Func<AreaPlayer> areaPlayer,
-        Action<MissionObjectiveRuntime> made);
-
-    /// <summary>Builds the doors, lifts, pickups and world interactions.</summary>
-    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="solids">The collision index over the placed objects.</param>
-    /// <param name="placements">The level's placements, whose models size each pickup's reach.</param>
-    void BuildInteractions(
-        LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, IReadOnlyList<WorldPlacement>? placements = null);
-
-    /// <summary>Builds the security cameras and the trace the soldiers' sight and rounds share.</summary>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="scene">The level's built scene.</param>
-    /// <param name="solids">The collision index over the placed objects.</param>
-    /// <param name="terrain">The level's terrain, or <see langword="null"/>.</param>
-    /// <returns>The trace of the placed objects and the terrain together.</returns>
-    WorldTraceCast BuildCameras(LevelTask levelRoot, WorldScene scene, ObjectCollisionIndex solids, TerrainData? terrain);
-
-    /// <summary>Reads the level's navigation graphs.</summary>
-    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="gamePath">Where the game is installed.</param>
-    /// <param name="placements">The level's placements, which place a graph on a train where its car stands.</param>
-    /// <returns>The graphs, by their task's id.</returns>
-    Dictionary<int, GraphFile> ReadNavGraphs(LoadedMission loaded, LevelTask levelRoot, string gamePath, IReadOnlyList<WorldPlacement>? placements = null);
-
-    /// <summary>Animates the soldiers' brains, and builds the alarm speakers and the guards' rounds.</summary>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="scene">The level's built scene.</param>
-    /// <param name="worldTrace">What the soldiers' sight and rounds trace.</param>
-    /// <param name="graphs">The level's nav graphs, by their task's id.</param>
-    /// <param name="difficulty">The difficulty every guard reads its combat row at.</param>
-    /// <param name="difficultySource">Where the difficulty came from, for the log.</param>
-    void AnimateSoldiers(
-        LevelTask levelRoot,
-        WorldScene scene,
-        WorldTraceCast worldTrace,
-        Dictionary<int, GraphFile> graphs,
-        AiDifficulty difficulty,
-        string difficultySource);
-
-    /// <summary>Builds the level's vehicles.</summary>
-    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
-    /// <param name="levelRoot">The level's task tree.</param>
-    /// <param name="id">The mission's id.</param>
-    /// <param name="scene">The level's built scene.</param>
-    /// <param name="solids">The collision index over the placed objects.</param>
-    void BuildVehicles(LoadedMission loaded, LevelTask levelRoot, int id, WorldScene scene, ObjectCollisionIndex solids);
 }
 
 /// <summary>The bring-up of a level's player: its rig made, armed, tuned and stood where the level places it.</summary>
@@ -221,9 +142,6 @@ public interface IMissionAudio
 
     /// <summary>Stops the player's held voices and the weapons' loops, as the bank is emptied for a mission.</summary>
     void ResetForMission();
-
-    /// <summary>Forgets the ambience voices, as a level's areas are rebuilt.</summary>
-    void ForgetAmbience();
 
     /// <summary>Forgets the security cameras' voices.</summary>
     void ForgetCameras();
