@@ -92,7 +92,14 @@ public sealed class RadioRuntime : Saves.IExchangedState
     public Vector3d PositionUnits { get; }
 
     /// <summary>Gets or sets <c>isOn</c>.</summary>
-    public bool IsOn { get; set; }
+    public bool IsOn
+    {
+        get => _chatter.IsOn;
+        set => _chatter.IsOn = value;
+    }
+
+    // The chatter both games run, which keeps whether it is on and how long until its next sound.
+    private readonly OpenIGI.Game.Objects.RadioChatter _chatter = new();
 
     // As the match began: whether it talked, and how long until it next does.
     private (bool On, bool? Mirrored, int Countdown) _start;
@@ -120,61 +127,47 @@ public sealed class RadioRuntime : Saves.IExchangedState
     internal bool? MirroredOn { get; set; }
 
     /// <summary>Gets the ticks left before the next sound (<c>+572</c>).</summary>
-    public int Countdown { get; private set; }
+    public int Countdown
+    {
+        get => _chatter.Countdown;
+        private set => _chatter.Countdown = value;
+    }
 
     /// <summary>Runs <c>0x43AF90</c> for one tick, after the ExplodeObject update has run.</summary>
     /// <param name="sounds">Where the sounds go, or <see langword="null"/> when nothing can play.</param>
     public void Tick(IRadioSoundPlayer? sounds)
     {
-        bool wasOn = IsOn;
+        // What a server told a client stands; else off once blown up, else as the expression says (read only then).
+        bool on;
         if (MirroredOn is bool told)
         {
-            IsOn = told;
+            on = told;
         }
-        else if (_isExploded())
+        else
         {
-            IsOn = false;
-        }
-        else if (_onCondition is { } on)
-        {
-            IsOn = on();
+            bool exploded = _isExploded();
+            on = OpenIGI.Game.Objects.RadioChatter.Switched(IsOn, exploded, exploded ? null : _onCondition?.Invoke());
         }
 
-        if (IsOn)
+        bool holds = _voice is not null;
+        bool playing = holds && sounds is not null && sounds.IsPlaying(_voice!);
+        OpenIGI.Game.Objects.RadioStep step = _chatter.Step(on, holds, playing, _random);
+        if (step.Silence)
         {
-            if (_voice is { } playing)
-            {
-                if (sounds is not null && sounds.IsPlaying(playing))
-                {
-                    return;
-                }
-
-                _voice = null;
-            }
-
-            if (Countdown > 0)
-            {
-                Countdown--;
-                return;
-            }
-
-            string sound = _sounds[_random.NextBounded(SoundSlots)];
-            Countdown = (int)_random.NextBounded(SoundGapTicks) + SoundGapTicks;
-            _voice = sounds?.Play(sound, PositionUnits);
-            return;
+            sounds!.Silence(_voice!);
         }
 
-        if (_voice is { } cut)
+        if (step.Drop)
         {
-            if (sounds is not null && sounds.IsPlaying(cut))
-            {
-                sounds.Silence(cut);
-            }
-
             _voice = null;
         }
 
-        if (wasOn)
+        if (step.Play is int slot)
+        {
+            _voice = sounds?.Play(_sounds[slot], PositionUnits);
+        }
+
+        if (step.Shutdown)
         {
             sounds?.Play(_shutdownSound, PositionUnits);
         }

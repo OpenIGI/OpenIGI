@@ -214,6 +214,12 @@ internal static class Igi2InteractionSystems
         foreach (Igi2ExplodeObjectTask explosive in b.Root.Descendants().OfType<Igi2ExplodeObjectTask>())
         {
             Arm(explosive, explosive.Type.Name);
+
+            // A radio draws its sounds and its gaps from the run stream.
+            if (explosive is Igi2RadioTask radio)
+            {
+                radio.Random = player.Human.Random;
+            }
         }
 
         foreach (Igi2GenericTbaTask action in b.Root.Descendants().OfType<Igi2GenericTbaTask>())
