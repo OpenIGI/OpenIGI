@@ -23,11 +23,11 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
         Impacts = new Igi1ImpactEffects(World, host);
         Impacts.Explosions.Sound = (sound, at, priority) => host.PlayDefinition(sound, at, priority);
         PlayerSurroundings = new Igi1MissionPlayerSurroundings(World, Sounds, Audio, host);
-        Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
+        Harm = new Igi1PlayerHarm(World, PlayerSurroundings);
         Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
         World.TouchGlass = Blasts.TouchGlass;
         World.RoundContact = Blasts.ApplyRoundContact;
-        World.PlayerEvents = new Igi1PlayerEvents(World, Harm, Blasts, Sounds);
+        World.PlayerEvents = new Igi1PlayerEvents(World, Harm);
         Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, Impacts, host);
         Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
         ComputerWorld = new OpenIGI.Game.Igi1.Computer.Igi1ComputerWorld(World, Audio);

@@ -73,4 +73,16 @@ public sealed class Igi1GuestPlayerSurroundings(Igi1GuestSoundStage stage, IOpen
 
     /// <inheritdoc/>
     public void HearLanding(Vector3d feet, double radiusUnits) => Heard?.Invoke(feet, radiusUnits);
+
+    /// <inheritdoc/>
+    /// <remarks>The host draws the guest's body; it has none of its own to stand up.</remarks>
+    public void ReviveBody()
+    {
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The host's player owns the view; there is no camera of the guest's to end.</remarks>
+    public void EndDeathCamera()
+    {
+    }
 }

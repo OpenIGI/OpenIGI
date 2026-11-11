@@ -67,4 +67,10 @@ public interface IIgi1PlayerSurroundings
     /// <param name="feet">Where it landed, in world units.</param>
     /// <param name="radiusUnits">How far it is heard.</param>
     void HearLanding(Vector3d feet, double radiusUnits);
+
+    /// <summary>Stands the player's body up again, as a round of a match begins with everyone alive.</summary>
+    void ReviveBody();
+
+    /// <summary>Ends the death camera, giving the view back to the player's eye.</summary>
+    void EndDeathCamera();
 }

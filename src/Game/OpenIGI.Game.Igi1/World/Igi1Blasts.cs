@@ -39,12 +39,6 @@ public sealed partial class Igi1Blasts(
     // The flashbang's decal half-width (0x47E9A0's 2048).
     private const float FlashScorchHalfWidthInUnits = 2048f;
 
-    // 0x412990's shove, units a tick into the body's slide -- 758.51849.
-    private const float BlastShoveUnitsPerTick = 758.51849f;
-
-    // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
-    private const int ExplosionShakeTicks = 90;
-
     // Where each task stands in the order the level made them, for the explosion list.
     private readonly Dictionary<GameTask, long> _joinOrder = [];
     private LevelTask? _orderedRoot;
@@ -416,84 +410,8 @@ public sealed partial class Igi1Blasts(
     /// <param name="falloffUnits">The falloff beyond it, in units.</param>
     /// <param name="damageFactor">The blast's damage.</param>
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
-    public void BlastPlayer(IHarmedPlayer target, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
-    {
-        ArgumentNullException.ThrowIfNull(target);
-        if (target.Rig is not { } rig || target.Health.IsDead)
-        {
-            return;
-        }
-
-        ReachPlayerWithBlast(target, rig, position, radiusUnits, falloffUnits);
-        // 0x412990 weighs the blast at the origin (Human+32) with a third of the body model's bound (Human+0xA0).
-        float dose = ExplosionDamage.Dose(
-            (float)(rig.Body.Origin - position).Length,
-            ExplosionDamage.EffectiveBodyRadius(mission.Soldiers?.PlayerHumanRadius ?? (float)HumanSeparation.RadiusInUnits),
-            radiusUnits,
-            falloffUnits,
-            damageFactor);
-        if (dose > 0f)
-        {
-            target.Health.Apply(ExplosionDamage.Zone, dose);
-
-            // 0x412990's flash: four independent corner draws.
-            target.Senses.FlashCorners();
-
-            // A blast that zeroes the health kills exactly the way a bullet does -- without this the player stood at
-            // zero for ever.
-            if (target.Health.IsDead)
-            {
-                harm.BeginPlayerDeath(target, position, ExplosionDamage.Zone, -1, killedBy);
-            }
-        }
-    }
-
-    /// <summary>What any blast does to the player before its damage is counted — the head of <c>0x412990</c>.</summary>
-    /// <param name="target">The player.</param>
-    /// <param name="rig">Its rig.</param>
-    /// <param name="blastPosition">The blast's centre, in units.</param>
-    /// <param name="radiusUnits">The blast radius, in units.</param>
-    /// <param name="falloffUnits">The blast's falloff, in units.</param>
-    /// <remarks>
-    /// <para>
-    /// Explosion0 (<c>0x47F200</c>) hands its message to every human with no range test of its own, and the
-    /// player's handler acts on distance from the eye before, and whatever, the dose: inside one and a half
-    /// times radius plus falloff the body is shoved away from the blast by 758.5 units a tick (into the same
-    /// slide the bullet shove uses), and the view shakes by <c>k</c> of a hit's shake — all of it inside three
-    /// radii, fading to nothing at nine — for the explosion's 90 ticks.
-    /// </para>
-    /// <para>
-    /// The same handler raises <c>Human+3528</c> within 25 m, which plays the <c>earcandy</c> loop; no shipped
-    /// sound set defines it, so the original is silent there too.
-    /// </para>
-    /// </remarks>
-    private static void ReachPlayerWithBlast(IHarmedPlayer target, PlayerCamera rig, Vector3d blastPosition, float radiusUnits, float falloffUnits)
-    {
-        if (target.Health.IsDead || radiusUnits <= 0f)
-        {
-            return;
-        }
-
-        Vector3d away = rig.EyeUnits - blastPosition;
-        double distance = away.Length;
-        if (distance < (radiusUnits + falloffUnits) * 1.5 && distance > 0.0)
-        {
-            target.Shove(
-                rig,
-                (float)(away.X / distance * BlastShoveUnitsPerTick),
-                (float)(away.Y / distance * BlastShoveUnitsPerTick));
-        }
-
-        double beyond = distance - (radiusUnits * 3.0);
-        double share = beyond < 0.0 ? 1.0 : 1.0 - (beyond / (radiusUnits * 6.0));
-        if (share > 0.0)
-        {
-            target.Senses.Shake(
-                (float)(HumanViewShake.HitPositionUnits * share),
-                (float)(HumanViewShake.HitAngleRadians * share),
-                ExplosionShakeTicks);
-        }
-    }
+    public void BlastPlayer(IHarmedPlayer target, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy) =>
+        harm.BlastPlayer(target, position, radiusUnits, falloffUnits, damageFactor, killedBy);
 
     /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
     public void ResolveM203Detonations()

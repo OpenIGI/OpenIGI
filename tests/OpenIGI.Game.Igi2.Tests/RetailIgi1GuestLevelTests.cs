@@ -218,6 +218,14 @@ public sealed class RetailIgi1GuestLevelTests(ITestOutputHelper output)
         public void HearLanding(Vector3d feet, double radiusUnits)
         {
         }
+
+        public void ReviveBody()
+        {
+        }
+
+        public void EndDeathCamera()
+        {
+        }
     }
 
     // The body Project I.G.I.'s first mission dresses its first soldier in.

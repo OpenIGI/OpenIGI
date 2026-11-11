@@ -46,6 +46,7 @@ public sealed class Igi1MissionPlayerSurroundings(MissionWorld mission, Igi1Huma
     {
         audio.StopBinocularTransitionSound();
         audio.StopLadderSlideSound();
+        audio.StopTimedActionSound();
         audio.ResetWeaponSounds();
     }
 
@@ -64,4 +65,10 @@ public sealed class Igi1MissionPlayerSurroundings(MissionWorld mission, Igi1Huma
 
     /// <inheritdoc/>
     public void HearLanding(Vector3d feet, double radiusUnits) => mission.Soldiers?.NotifyGroundImpact(feet, feet, radiusUnits);
+
+    /// <inheritdoc/>
+    public void ReviveBody() => mission.SoldierPresenter?.RevivePlayerBody();
+
+    /// <inheritdoc/>
+    public void EndDeathCamera() => host.EndDeathCamera();
 }
