@@ -181,32 +181,38 @@ public sealed partial class GameHost
         _titleExtraPressed = 0;
     }
 
+    /// <summary>Gets the input a title's player is steered by: a script's where one drives the view, still under a pause menu that does not pause, else the window's.</summary>
+    /// <remarks>As <see cref="ViewInput"/> is for the free camera; the weapon wheel and the computer hold a title's player still in its own tick.</remarks>
+    private OpenIGI.Input.InputState TitleInput => (_menuFlow.PauseMenu && !MenuPausesGame) || _touchEditor.IsOpen
+        ? _stillInput
+        : ScriptedViewInput ?? _window.Input;
+
     /// <summary>Gathers a frame's input for the title's player: the mouse adds up and presses are kept until a tick.</summary>
     private void GatherTitleInput()
     {
-        _titleMouseX += _window.Input.Mouse.DeltaX;
-        _titleMouseY += _window.Input.Mouse.DeltaY;
-        _titleWheel += _window.Input.Mouse.WheelDelta;
+        _titleMouseX += TitleInput.Mouse.DeltaX;
+        _titleMouseY += TitleInput.Mouse.DeltaY;
+        _titleWheel += TitleInput.Mouse.WheelDelta;
         if (_titleFeatures?.Look is { } look)
         {
             if (FrameCVars.SmoothPresentation.Value && !_options.Lockstep)
             {
                 PlayerProfile? profile = _configuration.Active;
-                look.GatherLook(_window.Input.Mouse.DeltaX, _window.Input.Mouse.DeltaY,
+                look.GatherLook(TitleInput.Mouse.DeltaX, TitleInput.Mouse.DeltaY,
                     profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity, profile?.InvertMouse ?? false);
             }
             else { look.ResetLook(); }
         }
         foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
         {
-            if (PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            if (PlayerProfileInputBindings.WasPressed(_configuration.Active, TitleInput, PlayerInputBindings.ConfigName(action)))
             {
                 _titlePressed |= action;
             }
         }
         if (Gameplay is { } gameplay)
         {
-            _titleExtraPressed |= TitleInputBindings.Sample(_configuration.Active, _window.Input, gameplay.InputBindings, pressed: true);
+            _titleExtraPressed |= TitleInputBindings.Sample(_configuration.Active, TitleInput, gameplay.InputBindings, pressed: true);
         }
     }
 
@@ -228,7 +234,7 @@ public sealed partial class GameHost
         PlayerAction held = default;
         foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
         {
-            if (PlayerProfileInputBindings.IsDown(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            if (PlayerProfileInputBindings.IsDown(_configuration.Active, TitleInput, PlayerInputBindings.ConfigName(action)))
             {
                 held |= action;
             }
@@ -264,7 +270,7 @@ public sealed partial class GameHost
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
-            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
+            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, TitleInput, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
         TickObserver?.AfterTitleTick(player);
@@ -281,8 +287,8 @@ public sealed partial class GameHost
     /// <summary>The fixed keys and buttons a title's own screens read, held now, and the wheel turned since the last tick.</summary>
     private TitleRawKeys SampleRawKeys()
     {
-        OpenIGI.Input.KeyboardState keys = _window.Input.Keyboard;
-        OpenIGI.Input.MouseState mouse = _window.Input.Mouse;
+        OpenIGI.Input.KeyboardState keys = TitleInput.Keyboard;
+        OpenIGI.Input.MouseState mouse = TitleInput.Mouse;
         TitleRawKeys raw = _titleScriptRaw;
         if (mouse.IsDown(OpenIGI.Input.MouseButton.Left)) { raw |= TitleRawKeys.MouseLeft; }
         if (mouse.IsDown(OpenIGI.Input.MouseButton.Right)) { raw |= TitleRawKeys.MouseRight; }
