@@ -138,7 +138,22 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     }
 
     // The look between ticks, from where the rig faced at its last: the shared Smooth Motion policy, turned as the rig turns.
-    private TitleLookPreview Look => _look ??= new(() => CanPreviewLook, () => (Human.Rig.Yaw, Human.Rig.Pitch), Turn, static (yaw, pitch) => Core.Graphics.Camera3D.LookRotation(yaw, pitch));
+    private TitleLookPreview Look => _look ??= new(() => CanPreviewLook, () => (Human.Rig.Yaw, Human.Rig.Pitch), Turn, LookAxes);
+
+    /// <summary>The look a heading and a pitch make, as the shared presenter reads one: local to world, its columns the right, forward and up axes.</summary>
+    /// <param name="yaw">The heading, in radians; zero looks along +Y.</param>
+    /// <param name="pitch">The pitch, in radians; positive looks up.</param>
+    /// <returns>The orientation.</returns>
+    /// <remarks>
+    /// The camera's own matrix (<see cref="Core.Graphics.Camera3D.LookRotation"/>) has those axes as its rows, up before
+    /// forward. Handed over as it is, the presenter read its columns as axes: right only at each tick, and turned about
+    /// the wrong axes between them.
+    /// </remarks>
+    public static Matrix3f LookAxes(float yaw, float pitch)
+    {
+        Matrix3f camera = Core.Graphics.Camera3D.LookRotation(yaw, pitch);
+        return Matrix3f.FromRows(camera.Row1, camera.Row3, camera.Row2).Transposed();
+    }
 
     // The rig's turn (PlayerFirstPersonView.Turn): right turns right, the profile's invert in the pitch, slowed with a zoom.
     private (float Gamma, float Pitch) Turn(float mouseX, float mouseY, float sensitivity, bool invertMouse, float yaw, float pitch)
