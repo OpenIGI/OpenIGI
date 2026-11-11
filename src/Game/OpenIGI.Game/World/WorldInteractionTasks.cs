@@ -48,8 +48,13 @@ public abstract class WorldInteractionTask : DeclaredLevelTask
     private protected virtual void RunInWalk(LevelRun level, int now)
     {
         level.RunChildren(this);
-        Item!.Run(now);
+        RunItem(Item!, now);
     }
+
+    /// <summary>Runs the type's own update on the interaction it owns.</summary>
+    /// <param name="item">The interaction.</param>
+    /// <param name="now">The interactions' clock, in ticks.</param>
+    private protected abstract void RunItem(WorldInteraction item, int now);
 }
 
 /// <summary>A switch (<c>Switch</c>): its <c>ExplodeObject</c>'s run, then its own.</summary>
@@ -57,13 +62,19 @@ public sealed class SwitchTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Switch";
+
+    /// <inheritdoc/>
+    private protected override void RunItem(WorldInteraction item, int now) => item.RunSwitch(now);
 }
 
-/// <summary>A terminal (<c>Terminal</c>): its <c>ExplodeObject</c>'s run, then its own.</summary>
-public sealed class TerminalTask : WorldInteractionTask
+/// <summary>A terminal (<c>Terminal</c>): its <c>ExplodeObject</c>'s run, then its own. The types built on it run it first.</summary>
+public class TerminalTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Terminal";
+
+    /// <inheritdoc/>
+    private protected sealed override void RunItem(WorldInteraction item, int now) => item.RunTimed(now);
 }
 
 /// <summary>A cabinet (<c>Cabinet</c>): its children, then its own update.</summary>
@@ -71,6 +82,9 @@ public sealed class CabinetTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Cabinet";
+
+    /// <inheritdoc/>
+    private protected override void RunItem(WorldInteraction item, int now) => item.RunCabinet(now);
 }
 
 /// <summary>
@@ -88,9 +102,12 @@ public abstract class TimedActionTask : WorldInteractionTask
         }
         else
         {
-            Item.Run(now);
+            RunItem(Item, now);
         }
     }
+
+    /// <inheritdoc/>
+    private protected sealed override void RunItem(WorldInteraction item, int now) => item.RunTimed(now);
 }
 
 /// <summary>A timed action (<c>GenericTBA</c>).</summary>
@@ -116,9 +133,12 @@ public sealed class FenceTask : WorldInteractionTask
     /// <inheritdoc/>
     private protected override void RunInWalk(LevelRun level, int now)
     {
-        Item!.Run(now);
+        RunItem(Item!, now);
         level.RunChildren(this);
     }
+
+    /// <inheritdoc/>
+    private protected override void RunItem(WorldInteraction item, int now) => item.RunFence();
 }
 
 /// <summary>A mounted gun (<c>StationaryGun</c>): its own update, the gun's while nobody mans it, then its children.</summary>
@@ -130,14 +150,17 @@ public sealed class StationaryGunTask : WorldInteractionTask
     /// <inheritdoc/>
     private protected override void RunInWalk(LevelRun level, int now)
     {
-        Item!.Run(now);
-        if (Item.StationaryGun is { IsOccupied: false } emptyGun)
+        RunItem(Item!, now);
+        if (Item!.StationaryGun is { IsOccupied: false } emptyGun)
         {
             emptyGun.TickEmpty();
         }
 
         level.RunChildren(this);
     }
+
+    /// <inheritdoc/>
+    private protected override void RunItem(WorldInteraction item, int now) => item.RunHeld();
 }
 
 /// <summary>A wire to slide down (<c>Wire</c>): its own update, and no child.</summary>
@@ -147,7 +170,10 @@ public sealed class WireTask : WorldInteractionTask
     public const string TypeName = "Wire";
 
     /// <inheritdoc/>
-    private protected override void RunInWalk(LevelRun level, int now) => Item!.Run(now);
+    private protected override void RunInWalk(LevelRun level, int now) => RunItem(Item!, now);
+
+    /// <inheritdoc/>
+    private protected override void RunItem(WorldInteraction item, int now) => item.RunHeld();
 }
 
 /// <summary>A generator (<c>Generator</c>): its <c>ExplodeObject</c>'s run, then its power (<c>0x43B500</c>).</summary>
@@ -167,5 +193,11 @@ public sealed class GeneratorTask : WorldInteractionTask
     {
         level.RunChildren(this);
         Power!.Tick();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A generator owns no interaction: nobody works it by hand.</remarks>
+    private protected override void RunItem(WorldInteraction item, int now)
+    {
     }
 }

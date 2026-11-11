@@ -8,7 +8,7 @@ using OpenIGI.Game.Player;
 namespace OpenIGI.Game.World;
 
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
-public sealed class WorldInteraction : Saves.IExchangedState
+public sealed partial class WorldInteraction : Saves.IExchangedState
 {
     /// <summary>The fixed length of fence locomotion state 41, returned by IGI1 <c>0x440270</c>.</summary>
     public const int FenceTraversalTicks = 6 * 30;
@@ -795,118 +795,6 @@ public sealed class WorldInteraction : Saves.IExchangedState
                 IsCompleted = true;
                 break;
         }
-    }
-
-    /// <summary>The task's update, where its pulses clear on their stamps and its expressions are read.</summary>
-    /// <param name="now">The level's tick.</param>
-    /// <remarks>
-    /// <para>
-    /// Each type's own update, as retail runs it: a switch (<c>0x4450F0</c>) reads its On expression, then, two ticks past its
-    /// press, shifts <c>isPressed</c> into <c>isLastPressed</c> and clears it, so <c>isLastPressed</c> holds for the one update
-    /// that clears it; a terminal (<c>0x4438E0</c>) and a GenericTBA (<c>0x4480B0</c>) read their On expression, are off while
-    /// exploded, and clear <c>isInUse</c> and the finished-this-tick byte two ticks past their stamps; a cabinet
-    /// (<c>0x444590</c>) clears <c>isInUse</c> likewise; a fence (<c>0x43FC30</c>) is electrified as its expression says, or
-    /// not at all. Every <c>isLast*</c> takes its value in the same update, after the clear.
-    /// </para>
-    /// <para>
-    /// An expression slot that is empty or did not compile leaves its byte as it was, so a script's write to it stands; a door's
-    /// expressions are its own update's (<see cref="PlacedDoor.Conditions"/>).
-    /// </para>
-    /// </remarks>
-    internal void Run(int now)
-    {
-        _offset = _dynamicOffset?.Invoke() ?? default;
-        switch (Type)
-        {
-            case InteractionActivateType.Switch:
-                if ((MirroredOn ?? _onCondition?.Invoke()) is bool switchedOn)
-                {
-                    IsOn = switchedOn;
-                }
-
-                if (now > _pressStamp + 2)
-                {
-                    Pressed.EndPulse();
-                }
-
-                // On a change of its on, pressed or destroyed byte it wears one of its five models, and the first, on and
-                // at rest, comes with its click: the "switch" definition where it stands.
-                if (IsOn != LastOn || Pressed.Value != Pressed.Last || IsDestroyed != LastDestroyed)
-                {
-                    ModelSlot = IsDestroyed ? 4 : IsOn ? (Pressed.Value ? 1 : 0) : (Pressed.Value ? 3 : 2);
-                    if (ModelSlot == 0)
-                    {
-                        Sound(InteractionSound.Played, SwitchSound, TaskPosition + _offset);
-                    }
-                }
-
-                LastOn = IsOn;
-                LastDestroyed = IsDestroyed;
-                break;
-            case InteractionActivateType.Terminal:
-            case InteractionActivateType.Generic:
-            case InteractionActivateType.PlaceExplosive:
-                if ((MirroredOn ?? _onCondition?.Invoke()) is bool on)
-                {
-                    IsOn = on;
-                }
-
-                ClearUse(now);
-                if (now > _completeStamp + 2)
-                {
-                    CompletedThisTick = false;
-                }
-
-                break;
-            case InteractionActivateType.Cabinet:
-                ClearUse(now);
-                break;
-            case InteractionActivateType.Fence:
-                IsElectrified = MirroredElectrified ?? _electricCondition?.Invoke() ?? false;
-                RunFenceHum();
-                InUse.CommitTick();
-                break;
-            default:
-                InUse.CommitTick();
-                break;
-        }
-    }
-
-    // 0x43FC30: a powered fence makes its own AmbientArea, buzzing elfence_loop in a box two metres up its middle, the
-    // length of the span between its magic vertices 0 and 1 and a metre and a half past each end; it deletes it with the power.
-    private void RunFenceHum()
-    {
-        if (_humming && !IsElectrified)
-        {
-            _humming = false;
-            Sound(InteractionSound.AreaStopped, string.Empty, default);
-        }
-        else if (!_humming && IsElectrified && FenceSpan is (float first, float second))
-        {
-            _humming = true;
-            double middle = ((double)second + first) * 0.5;
-            Vector3f offset = Orientation.Transposed().Transform(new Vector3f((float)middle, 0f, 8192f));
-            _sounds?.Invoke(new InteractionSoundEvent(
-                Task,
-                InteractionSound.AreaStarted,
-                FenceSound,
-                TaskPosition + new Vector3d(offset.X, offset.Y, offset.Z),
-                Orientation,
-                new Vector3d((((double)second - first) * 0.00012207031) + 1.5, 1.75, 2.0)));
-        }
-    }
-
-    private void Sound(InteractionSound what, string sound, Vector3d at) =>
-        _sounds?.Invoke(new InteractionSoundEvent(Task, what, sound, at, Matrix3f.Identity, default));
-
-    private void ClearUse(int now)
-    {
-        if (now > _useStamp + 2)
-        {
-            InUse.Value = false;
-        }
-
-        InUse.CommitTick();
     }
 
     // The door's own update runs these (0x446D10), where the level walk reaches it: Open and Close, then Locked, which a

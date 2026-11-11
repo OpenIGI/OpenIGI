@@ -37,10 +37,10 @@ public sealed class SecurityCameraTask : DeclaredLevelTask
 /// Its run handler (<c>0x440D70</c>) is the terminal's, then its Detection Expression, so a control reads this tick's
 /// <c>isDetection</c> from every camera ahead of it in the tree and last tick's from those after.
 /// </remarks>
-public sealed class SecurityCameraControlTask : WorldInteractionTask
+public sealed class SecurityCameraControlTask : TerminalTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "SCameraControl";
+    public new const string TypeName = "SCameraControl";
 
     /// <summary>Gets or sets the level's cameras, which hold this control's detection; none until they are built.</summary>
     internal SecurityCameraRegistry? Cameras { get; set; }
