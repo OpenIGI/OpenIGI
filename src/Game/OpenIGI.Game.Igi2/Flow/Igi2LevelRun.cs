@@ -127,14 +127,14 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
     protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        switch (task.Type.Name)
+        switch (task)
         {
-            case EngineTaskTypes.Level:
+            case LevelTask:
                 RunChildren(task);
                 CountTick();
                 break;
 
-            case EngineTaskTypes.Dynamic:
+            case DynamicTask:
                 RunChildren(task);
                 Dynamic?.Run();
                 RunDelayed();

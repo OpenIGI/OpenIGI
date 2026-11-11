@@ -119,7 +119,7 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
     protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (task.Type.Name is "Static" or "Idle")
+        if (task is StaticTask or IdleTask)
         {
             return;
         }
