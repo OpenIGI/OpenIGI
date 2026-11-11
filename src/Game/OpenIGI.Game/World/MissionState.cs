@@ -46,6 +46,11 @@ public class MissionState : IInspectableMission
 
     private LevelCollision _collision = LevelCollision.Empty;
 
+    /// <summary>Gets the mission's objects as the picture asks after them: which placements they move, turn, break or take away.</summary>
+    public IPlacementObjects Placements => _placements ??= new Igi1PlacementObjects(this);
+
+    private IPlacementObjects? _placements;
+
     /// <summary>Gets or sets the doors.</summary>
     public DoorRegistry? Doors { get; set; }
 

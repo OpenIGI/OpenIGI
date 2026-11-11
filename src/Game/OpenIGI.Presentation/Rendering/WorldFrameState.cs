@@ -59,9 +59,6 @@ internal sealed class WorldFrameState
         _occlusionSettle = occlusionSettle;
     }
 
-    /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
-    internal GenericPickupRegistry? GenericPickups { get; set; }
-
     /// <summary>Gets or sets the title's own view culling, asked once a frame for every placement.</summary>
     internal IPlacementVisibility? Visibility { get; set; }
 
@@ -209,7 +206,7 @@ internal sealed class WorldFrameState
             ResolvedWorldModel? wasModel = entry.Model;
             Vector3d wasPosition = entry.Position;
 
-            if (GenericPickups?.IsCollected(authored.Owner) == true
+            if (_transforms.Objects?.IsTaken(authored) == true
                 || !ConditionalContainerGate.IsTaskActive(authored.Owner)
                 || _transforms.Presence?.IsInWorld(authored) == false)
             {
@@ -221,8 +218,7 @@ internal sealed class WorldFrameState
             // Blown up with nothing authored to stand in its place: there is no rubble model to
             // swap to, so the placement leaves the frame entirely rather than drawing intact.
             // A placement a bomb shattered has left as its pieces, whatever it would otherwise have been drawn as.
-            if (((_transforms.Destructibles?.IsDestroyed(authored) == true || _transforms.Destruction?.IsDestroyed(authored) == true
-                    || _transforms.AlarmSpeakers?.IsLightGone(authored.Owner) == true)
+            if (((_transforms.IsBroken(authored) || _transforms.Objects?.IsLightGone(authored) == true)
                 && authored.DestroyedReplacement is null)
                 || (_transforms.Shattered.Count > 0 && _transforms.Shattered.Contains(authored)))
             {

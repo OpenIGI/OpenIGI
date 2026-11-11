@@ -191,7 +191,7 @@ public sealed class WorldRendererRotorCullingTests
         }
 
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Cutscenes = cutscenes };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new Igi1PlacementObjects(new MissionState { Cutscenes = cutscenes }) };
         return new Scenario(scene, cutscenes, device, renderer);
     }
 
