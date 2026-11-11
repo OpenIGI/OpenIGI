@@ -185,6 +185,22 @@ public sealed class GeneratorTask : WorldInteractionTask
     /// <summary>Gets or sets the generator's power, or <see langword="null"/> before the level's interactions are built.</summary>
     internal GeneratorPowerState? Power { get; set; }
 
+    /// <summary>Gets the definition it hums with while on ("Run sound").</summary>
+    public string RunSound => DeclaredTaskValues.TextOrFallback(this, "Run sound", string.Empty);
+
+    /// <summary>Gets the definition played as it goes off ("Shutdown sound").</summary>
+    public string ShutdownSound => DeclaredTaskValues.TextOrFallback(this, "Shutdown sound", string.Empty);
+
+    /// <summary>Gets the expression that says whether it is on ("On expression").</summary>
+    public string OnExpression => DeclaredTaskValues.TextOrFallback(
+        this, "On expression", DeclaredTaskValues.TextOrFallback(this, "On Expression", string.Empty));
+
+    /// <summary>Gets a value indicating whether it comes back on by itself ("Use backup timer").</summary>
+    public bool UsesBackupTimer => DeclaredTaskValues.BoolStrict(this, "Use backup timer");
+
+    /// <summary>Gets how long it stays off before it comes back on, in seconds ("Seconds until power backup").</summary>
+    public float BackupSeconds => DeclaredTaskValues.RealFromNumber(this, "Seconds until power backup", 10f);
+
     /// <inheritdoc/>
     private protected override bool HasUpdate => Power is not null;
 

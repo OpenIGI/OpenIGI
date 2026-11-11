@@ -152,35 +152,35 @@ public sealed class SecurityCamera : Saves.IExchangedState
     private float _previousAlpha;
     private float _previousGamma;
 
-    internal SecurityCamera(DeclaredTask task)
+    internal SecurityCamera(SecurityCameraTask task)
     {
         Task = task;
-        OnExpression = TextTrimmed(task, "On Expression");
-        HeadModelName = TextTrimmed(task, WorldScene.SecurityCameraModelParameters[1]);
+        OnExpression = task.OnExpression;
+        HeadModelName = task.CameraModel;
         if (HeadModelName.Length == 0)
         {
             HeadModelName = WorldScene.SecurityCameraModels[1];
         }
 
-        _holderGamma = RealFromFloatOrDouble(task, "Holder Gamma");
-        _cameraAlpha = RealFromFloatOrDouble(task, "Camera Alpha");
-        _cameraGamma = RealFromFloatOrDouble(task, "Camera Gamma");
-        _rightLimit = IntWidening(task, "Rotate Gamma Right (d)", 45) * DegreesToRadians;
-        _leftLimit = IntWidening(task, "Rotate Gamma Left (d)", 45) * DegreesToRadians;
-        _scanStep = IntWidening(task, "Rotate Gamma Speed (d/s)", 45) * DegreesToRadians / 30f;
-        _endDelayTicks = Math.Max(0, (int)(RealFromFloatOrDouble(task, "Gamma Delay (s)", 1f) * 30f));
+        _holderGamma = task.HolderGamma;
+        _cameraAlpha = task.CameraAlpha;
+        _cameraGamma = task.CameraGamma;
+        _rightLimit = task.RotateGammaRight * DegreesToRadians;
+        _leftLimit = task.RotateGammaLeft * DegreesToRadians;
+        _scanStep = task.RotateGammaSpeed * DegreesToRadians / 30f;
+        _endDelayTicks = Math.Max(0, (int)(task.GammaDelay * 30f));
 
-        double alpha = (IntWidening(task, "Viewcone Alpha (d)", 90) / 2.0) * Math.PI / 180.0;
-        double gamma = (IntWidening(task, "Viewcone Gamma (d)", 90) / 2.0) * Math.PI / 180.0;
-        double length = RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * WorldScene.UnitsPerMetre;
+        double alpha = (task.ViewconeAlpha / 2.0) * Math.PI / 180.0;
+        double gamma = (task.ViewconeGamma / 2.0) * Math.PI / 180.0;
+        double length = task.ViewconeLength * WorldScene.UnitsPerMetre;
         _viewCone = new AiSnapshotCone(alpha, gamma, length);
-        ViewconeAngle = IntWidening(task, "Viewcone Gamma (d)", 90) * DegreesToRadians;
-        ViewconeLength = ((X87)RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * 4096f).Value;
+        ViewconeAngle = task.ViewconeGamma * DegreesToRadians;
+        ViewconeLength = ((X87)task.ViewconeLength * 4096f).Value;
 
         CurrentAlpha = _cameraAlpha;
         _previousAlpha = CurrentAlpha;
         _previousGamma = CurrentGamma;
-        HeadPositionUnits = Vector(task, "Holder Position");
+        HeadPositionUnits = task.HolderPosition;
         HolderPositionUnits = HeadPositionUnits;
         RefreshTransform();
     }
@@ -1051,8 +1051,7 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
 
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
-        if (task is DeclaredTask declared
-            && string.Equals(task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal))
+        if (task is SecurityCameraTask declared)
         {
             SecurityCamera camera = new(declared);
             _order[camera] = _cameras.Count;
@@ -1069,13 +1068,12 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
                 }
             });
         }
-        else if (task is DeclaredTask controlTask
-            && string.Equals(task.Type.Name, "SCameraControl", StringComparison.Ordinal))
+        else if (task is SecurityCameraControlTask controlTask)
         {
             string explodedSymbol = $"{controlTask.Name}.isExploded";
             ControlState control = new(
                 controlTask,
-                TextTrimmed(controlTask, "Detection Expression"),
+                controlTask.DetectionExpression,
                 () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls.Add(control);
             variables.BindBool(task, "isDetection", () => control.IsDetection, value => control.IsDetection = value);

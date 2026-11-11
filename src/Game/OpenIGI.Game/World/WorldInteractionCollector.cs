@@ -194,25 +194,21 @@ internal static class WorldInteractionCollector
         ScriptVarRegistry variables,
         LevelExpressionRuntime expressions)
     {
-        if (task is DeclaredTask declared
-            && string.Equals(task.Type.Name, "Generator", StringComparison.Ordinal))
+        if (task is GeneratorTask declared)
         {
-            string onExpression = TextOrFallback(
-                declared,
-                "On expression",
-                TextOrFallback(declared, "On Expression", string.Empty));
+            string onExpression = declared.OnExpression;
             // Generator::Run (0x43B500) forces isOn off once the ExplodeObject under it has exploded
             // (+400), before it ever looks at the On expression.
             string explodedSymbol = $"{declared.Name}.isExploded";
             GeneratorPowerState state = new(
                 declared,
-                TextOrFallback(declared, "Run sound", string.Empty),
-                TextOrFallback(declared, "Shutdown sound", string.Empty),
+                declared.RunSound,
+                declared.ShutdownSound,
                 sound => registry.Sounds?.Invoke(sound),
                 ByteSlot(expressions, onExpression, declared),
                 () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
-                BoolStrict(declared, "Use backup timer"),
-                RealFromNumber(declared, "Seconds until power backup", 10f),
+                declared.UsesBackupTimer,
+                declared.BackupSeconds,
                 () => ConditionalContainerGate.IsTaskActive(declared));
             registry.AddGenerator(state);
             variables.BindBool(declared, "isOn", () => state.IsOn, value => state.IsOn = value);

@@ -473,35 +473,22 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
         {
             // A task-authored RotatingObject owns its behavior even when its model also has a
             // magic-object definition (Level 5's standalone 436_02_1 is exactly that case).
-            if (!placement.IsAttached
-                && string.Equals(placement.Owner.Type.Name, RotatingObjectTaskType, StringComparison.Ordinal)
-                && placement.Owner is DeclaredTask declared)
+            if (!placement.IsAttached && placement.Owner is RotatingObjectTask declared)
             {
-                float speedX = RealFromNumberOrShort(declared, "Degrees per second X-axis");
-                float speedY = RealFromNumberOrShort(declared, "Degrees per second Y-axis");
-                float speedZ = RealFromNumberOrShort(declared, "Degrees per second Z-axis");
-
-                float accelX = RealFromNumberOrShort(declared, "Acceleration, degrees per second X-axis");
-                float accelY = RealFromNumberOrShort(declared, "Acceleration, degrees per second Y-axis");
-                float accelZ = RealFromNumberOrShort(declared, "Acceleration, degrees per second Z-axis");
-
-                string onExpr = TextTrimmed(declared, "On expression");
-                string sound = TextTrimmed(declared, "Rotate sound");
-
                 registry.Add(new PlacedRotatingObject(
                     placement,
-                    speedX,
-                    speedY,
-                    speedZ,
-                    accelX,
-                    accelY,
-                    accelZ,
-                    onExpr,
+                    declared.DegreesPerSecondX,
+                    declared.DegreesPerSecondY,
+                    declared.DegreesPerSecondZ,
+                    declared.AccelerationX,
+                    declared.AccelerationY,
+                    declared.AccelerationZ,
+                    declared.OnExpression,
                     isActive: true,
-                    sound: sound)
+                    sound: declared.RotateSound)
                 {
                     IsRotatingObjectTask = true,
-                    IsDestructable = declared.TryGetValue("Destructable", out object? destructable) && destructable is true,
+                    IsDestructable = declared.IsDestructable,
                 });
                 continue;
             }

@@ -81,6 +81,33 @@ public sealed class RotatingObjectTask : DeclaredLevelTask
     /// <summary>Gets or sets the object this task turns, or <see langword="null"/> until a registry steps it from the walk.</summary>
     internal PlacedRotatingObject? Rotator { get; set; }
 
+    /// <summary>Gets how fast it turns about X, in degrees a second ("Degrees per second X-axis").</summary>
+    public float DegreesPerSecondX => DeclaredTaskValues.RealFromNumberOrShort(this, "Degrees per second X-axis");
+
+    /// <summary>Gets how fast it turns about Y, in degrees a second ("Degrees per second Y-axis").</summary>
+    public float DegreesPerSecondY => DeclaredTaskValues.RealFromNumberOrShort(this, "Degrees per second Y-axis");
+
+    /// <summary>Gets how fast it turns about Z, in degrees a second ("Degrees per second Z-axis").</summary>
+    public float DegreesPerSecondZ => DeclaredTaskValues.RealFromNumberOrShort(this, "Degrees per second Z-axis");
+
+    /// <summary>Gets how fast its turn about X gathers ("Acceleration, degrees per second X-axis").</summary>
+    public float AccelerationX => DeclaredTaskValues.RealFromNumberOrShort(this, "Acceleration, degrees per second X-axis");
+
+    /// <summary>Gets how fast its turn about Y gathers ("Acceleration, degrees per second Y-axis").</summary>
+    public float AccelerationY => DeclaredTaskValues.RealFromNumberOrShort(this, "Acceleration, degrees per second Y-axis");
+
+    /// <summary>Gets how fast its turn about Z gathers ("Acceleration, degrees per second Z-axis").</summary>
+    public float AccelerationZ => DeclaredTaskValues.RealFromNumberOrShort(this, "Acceleration, degrees per second Z-axis");
+
+    /// <summary>Gets the expression that says whether it turns ("On expression").</summary>
+    public string OnExpression => DeclaredTaskValues.TextTrimmed(this, "On expression");
+
+    /// <summary>Gets the definition played while it turns ("Rotate sound").</summary>
+    public string RotateSound => DeclaredTaskValues.TextTrimmed(this, "Rotate sound");
+
+    /// <summary>Gets a value indicating whether a round breaks it ("Destructable").</summary>
+    public bool IsDestructable => Declared("Destructable", false);
+
     /// <inheritdoc/>
     /// <remarks>With nothing to step it, it is walked as a plain container is.</remarks>
     public override void Run(LevelRun level)

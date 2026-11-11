@@ -46,7 +46,6 @@ src/Game/OpenIGI.Game/World/RetailCarSpawn.cs
 src/Game/OpenIGI.Game/World/RetailHeliSpawn.cs
 src/Game/OpenIGI.Game/World/RetailPlaneSpawn.cs
 src/Game/OpenIGI.Game/World/RetailWorldObjects.cs
-src/Game/OpenIGI.Game/World/RotatingObjectRegistry.cs
 src/Game/OpenIGI.Game/World/TaskGeometry.cs
 src/Game/OpenIGI.Game/World/TerrainDiscardBinding.cs
 src/Game/OpenIGI.Game/World/TerrainHeightBindings.cs
