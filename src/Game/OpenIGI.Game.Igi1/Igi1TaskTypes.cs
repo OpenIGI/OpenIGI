@@ -17,6 +17,19 @@ public static class Igi1TaskTypes
     {
         ArgumentNullException.ThrowIfNull(types);
         Add<Igi1AmbientAreaTask>(types, Igi1AmbientAreaTask.TypeName);
+        AddDeclared<Ai.Igi1AlarmControlTask>(types, Ai.Igi1AlarmControlTask.TypeName);
+    }
+
+    // A class whose parameters stay the ones the level declares.
+    private static void AddDeclared<T>(TaskTypeRegistry types, string name)
+        where T : DeclaredTask, new()
+    {
+        if (types.TryGet(name, out TaskType? existing) && !existing.IsDeclarationOnly)
+        {
+            return;
+        }
+
+        types.RegisterDeclared<T>(name);
     }
 
     private static void Add<T>(TaskTypeRegistry types, string name)

@@ -15,8 +15,12 @@ namespace OpenIGI.Engine.Tasks;
 /// So a whole mission's object tree loads and can be asserted on before the ~150 concrete task classes
 /// exist. As each real class arrives it registers under the same name and takes over.
 /// </para>
+/// <para>
+/// A class may derive from it to give a type behaviour while keeping the parameters its level declares, read by name: the
+/// step between a type that is only data and one whose parameters a class spells out (<see cref="TaskTypeRegistry.RegisterDeclared{T}"/>).
+/// </para>
 /// </remarks>
-public sealed class DeclaredTask : GameTask
+public class DeclaredTask : GameTask
 {
     private TaskParameterValues? _values;
 

@@ -1,4 +1,3 @@
-src/Game/OpenIGI.Game.Igi1/Ai/AiAlarmControlRegistry.cs
 src/Game/OpenIGI.Game.Igi1/Ai/SoldierSimulation.cs
 src/Game/OpenIGI.Game.Igi1/World/Igi1MissionTick.cs
 src/Game/OpenIGI.Game.Igi2/Systems/Igi2FlowSystems.cs

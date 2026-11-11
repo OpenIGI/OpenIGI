@@ -119,7 +119,12 @@ public sealed class RatchetTests
     public void Declared_task_readers()
     {
         Regex declared = new(@"\bDeclaredTask\b", RegexOptions.CultureInvariant);
-        Check("declared-task-readers", Scan(IsGameplay, (file, text) => declared.IsMatch(text) ? [file] : []));
+        // The base of a class that keeps its level's declared parameters, and the lists that register such classes, name the
+        // placeholder because they are how a type stops being one.
+        Check("declared-task-readers", Scan(IsGameplay, (file, text) =>
+            declared.IsMatch(text)
+            && !file.EndsWith("/Level/DeclaredLevelTask.cs", StringComparison.Ordinal)
+            && !file.EndsWith("TaskTypes.cs", StringComparison.Ordinal) ? [file] : []));
     }
 
     // The projects that hold the games and what shows them; the engine, which defines the task model, is not one.

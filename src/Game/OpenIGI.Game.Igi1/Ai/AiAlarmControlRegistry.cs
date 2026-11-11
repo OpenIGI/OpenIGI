@@ -24,6 +24,8 @@ public sealed class AiAlarmControlRegistry
 
     private readonly Dictionary<int, Entry> _controls = [];
     private readonly LevelExpressionRuntime _expressions;
+    private Func<int>? _tick;
+    private Action<int>? _ticked;
 
     private AiAlarmControlRegistry(LevelExpressionRuntime expressions) => _expressions = expressions;
 
@@ -68,12 +70,26 @@ public sealed class AiAlarmControlRegistry
         ArgumentNullException.ThrowIfNull(tick);
         foreach (Entry entry in _controls.Values)
         {
-            walker.Bind(entry.Task, task =>
+            if (entry.Task is not Igi1AlarmControlTask)
             {
-                walker.RunChildren(task);
-                Tick(entry, tick());
-                ticked?.Invoke(task.Id);
-            });
+                throw new InvalidOperationException(
+                    $"{entry.Task.Name} was made without its class; a level's loader registers {nameof(Igi1TaskTypes)} before it loads.");
+            }
+        }
+
+        _tick = tick;
+        _ticked = ticked;
+    }
+
+    /// <summary>A control's own update, where the level's walk reaches its task (<c>0x4408A0</c>), after its children.</summary>
+    /// <param name="control">The control's task.</param>
+    /// <remarks>Until the walk is attached the controls are stepped by <see cref="Tick(int)"/>.</remarks>
+    internal void RunFromWalk(Igi1AlarmControlTask control)
+    {
+        if (_tick is not null && _controls.TryGetValue(control.Id, out Entry? entry) && ReferenceEquals(entry.Task, control))
+        {
+            Tick(entry, _tick());
+            _ticked?.Invoke(control.Id);
         }
     }
 
@@ -147,6 +163,10 @@ public sealed class AiAlarmControlRegistry
                 ReadString(declared, "On Expression"),
                 () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls[task.Id] = entry;
+            if (declared is Igi1AlarmControlTask control)
+            {
+                control.Alarms = this;
+            }
 
             // AlarmControl_RegisterScriptSymbolsHandler exports exactly these three names. They are
             // live aliases and the expressions may refer back to the control's previous isAlarm value.

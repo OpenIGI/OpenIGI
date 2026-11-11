@@ -153,7 +153,7 @@ public abstract class LevelRun
             return;
         }
 
-        if (task is TickedTask typed)
+        if (task is ILevelTicked typed)
         {
             if (OwnsLevel)
             {
