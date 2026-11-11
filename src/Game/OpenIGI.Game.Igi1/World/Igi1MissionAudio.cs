@@ -917,7 +917,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     {
         // The radios after the destructibles: a Radio's update (0x43AF90) runs the ExplodeObject update first, so one
         // that blew up this tick is already off.
-        mission.Interactions?.TickRadios(_radioSounds ??= new RadioSoundPlayer(host));
+        mission.Interactions?.TickRadios(RadioSounds);
         TickAlarmSpeakers();
         TickSecurityCameraSounds();
     }
@@ -927,6 +927,9 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public void PlayTransmissionSound(string sound) => host.SoundOutput?.PlayDefinition(sound, priority: 180);
 
     private RadioSoundPlayer? _radioSounds;
+
+    /// <summary>Gets where the level's radios play, made on first use.</summary>
+    public IRadioSoundPlayer RadioSounds => _radioSounds ??= new RadioSoundPlayer(host);
 
     // A radio's voices: 0x43AF90 resolves the authored name (sub_4E6B00) and plays it at the task (sub_4E6C30). A name with
     // no definition starts nothing, and the radio carries on regardless.

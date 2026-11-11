@@ -148,11 +148,22 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     /// </remarks>
     public void TickRadios(IRadioSoundPlayer? sounds)
     {
+        RadioSounds = sounds;
         foreach (RadioRuntime radio in _radios)
         {
-            radio.Tick(sounds);
+            // One whose task runs it from the level's walk has run already, where the tree places it.
+            if (!_walkedRadios.Contains(radio))
+            {
+                radio.Tick(sounds);
+            }
         }
     }
+
+    /// <summary>Gets or sets where the radios' sounds go, or <see langword="null"/> when nothing can play.</summary>
+    public IRadioSoundPlayer? RadioSounds { get; set; }
+
+    // The radios their own tasks run from the level's walk.
+    private readonly HashSet<RadioRuntime> _walkedRadios = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
     /// Puts every task into the level's update walk, each where the tree places it and in its own update's order: a switch,
@@ -176,6 +187,17 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
             if (item.Type != InteractionActivateType.Door)
             {
                 Adopt(item.Task, walker, item, null);
+            }
+        }
+
+        // A radio runs its own update where the walk reaches its task (0x43AF90), after its ExplodeObject's.
+        foreach (RadioRuntime radio in _radios)
+        {
+            if (LevelTaskClass.TryAs(radio.Task, walker, out RadioTask? chattering))
+            {
+                chattering.Radio = radio;
+                chattering.Interactions = this;
+                _walkedRadios.Add(radio);
             }
         }
 

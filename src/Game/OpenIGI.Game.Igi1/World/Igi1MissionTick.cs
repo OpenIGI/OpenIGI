@@ -711,6 +711,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // walk reaches them, each in its own update's order -- before the cameras bind, whose controls extend a terminal's.
         if (mission.Interactions is { } interactions)
         {
+            // The radios chatter from the walk, so their sounds have somewhere to go from its first tick.
+            interactions.RadioSounds = audio.RadioSounds;
             interactions.AttachTo(walker);
         }
 
