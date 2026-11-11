@@ -1,4 +1,3 @@
 src/Game/OpenIGI.Game.Igi1/Computer/Igi1ComputerWorld.cs
 src/Game/OpenIGI.Game.Igi1/World/Igi1PlayerSetup.cs
-src/Game/OpenIGI.Game/World/VehicleBodies.cs
 src/Game/OpenIGI.Game/World/ShelterHeightField.cs

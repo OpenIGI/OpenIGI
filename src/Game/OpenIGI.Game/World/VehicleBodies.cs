@@ -86,22 +86,22 @@ internal sealed class VehicleBodies(
     {
         foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
-            if (task is not DeclaredTask vehicle
-                || vehicle.Type.Name is not ("Car" or "Heli" or "Plane" or "Train")
+            if (task is not VehicleTask vehicle
+                || vehicle is not (MotorVehicleTask or PlaneTask or TrainTask)
                 || !ConditionalContainerGate.IsTaskActive(vehicle)
                 || _context.Destructibles?.IsDestroyed(vehicle) == true)
             {
                 continue;
             }
 
-            if (vehicle.Type.Name == "Train")
+            if (vehicle is TrainTask)
             {
                 yield return TrainSound(vehicle, state);
                 continue;
             }
 
-            bool helicopter = vehicle.Type.Name == "Heli";
-            bool plane = vehicle.Type.Name == "Plane";
+            bool helicopter = vehicle is HeliTask;
+            bool plane = vehicle is PlaneTask;
             string set = helicopter
                 ? "helicopter_1"
                 : plane
@@ -130,7 +130,7 @@ internal sealed class VehicleBodies(
 
     private VehicleSoundSource TrainSound(DeclaredTask car, TaskTransformState state)
     {
-        bool pullsWagons = car is TrainTask train ? train.PullsWagons : car.Children.Any(child => child.Type.Name == TrainTask.TypeName);
+        bool pullsWagons = car is TrainTask { PullsWagons: true };
         string gate = car is TrainTask engine ? engine.PlaySound : TextOrEmpty(car, "Play Sound");
         bool on = string.IsNullOrWhiteSpace(gate) || _context.Expressions.EvaluateCondition(gate, emptyValue: true, car);
         float thrust = (state.TrainRoot ?? state).Thrust;
