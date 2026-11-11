@@ -20,7 +20,8 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
+public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick,
+    OpenIGI.Game.Level.ITaskRun<HumanTask>, OpenIGI.Game.Level.ITaskRun<ElevatorTask>
 {
     // Partners' guns are voiced below every soldier's runtime id, which counts up from zero.
     private const int PartnerVoiceBase = -1_000_000;
@@ -611,6 +612,34 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>The player's update, then its children, where the level's walk reaches the player's task.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<HumanTask>.Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        UpdatePlayer();
+        level.RunChildren(task);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A lift's update (<c>0x43D280</c>): its children first, then its own floor expressions and its move.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<ElevatorTask>.Run(ElevatorTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        level.RunChildren(task);
+        if (mission.Elevators is not { } elevators)
+        {
+            return;
+        }
+
+        foreach (PlacedElevator elevator in elevators.Elevators)
+        {
+            if (ReferenceEquals(elevator.Task, task))
+            {
+                StepElevator(elevators, elevator);
+                return;
+            }
+        }
+    }
+
     /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
     /// <remarks>
     /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
@@ -639,14 +668,14 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             foreach (PlacedElevator elevator in elevators.Elevators)
             {
-                walker.Bind(elevator.Task, task =>
+                if (OpenIGI.Game.Level.LevelTaskClass.TryAs(elevator.Task, walker, out ElevatorTask? lift))
                 {
-                    walker.RunChildren(task);
-                    StepElevator(elevators, elevator);
-                });
+                    lift.Runner = this;
+                }
             }
 
-            mission.ElevatorsInWalk = true;
+            // Lifts of a level this walk only passes over are stepped ahead of it, as for a level the walk does not reach.
+            mission.ElevatorsInWalk = walker.OwnsLevel;
         }
 
         // The switches, terminals, cabinets, fences, wires, GenericTBAs, stationary guns and generators update where the
@@ -684,12 +713,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
         {
-            walker.Bind(playerTask, task =>
+            // A level this walk only passes over is its own title's to run, and so is its player's task: the mission's own
+            // per-tick player work is then done after the walk, as for a level with no player task in it.
+            if (walker.OwnsLevel && OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
             {
-                UpdatePlayer();
-                walker.RunChildren(task);
-            });
-            mission.PlayerInWalk = true;
+                human.Runner = this;
+                mission.PlayerInWalk = true;
+            }
         }
     }
 

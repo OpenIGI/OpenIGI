@@ -161,14 +161,14 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         ArgumentNullException.ThrowIfNull(walker);
         foreach (GeneratorPowerState generator in _generators)
         {
-            Adopt(generator.Task);
+            Adopt(generator.Task, walker);
         }
 
         foreach (WorldInteraction item in _items)
         {
             if (item.Type != InteractionActivateType.Door)
             {
-                Adopt(item.Task);
+                Adopt(item.Task, walker);
             }
         }
 
@@ -240,15 +240,12 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     }
 
     // Makes the registry the one a kept task runs through, and says so loudly when the task was made without its class.
-    private void Adopt(GameTask task)
+    private void Adopt(GameTask task, LevelRun level)
     {
-        if (task is not WorldInteractionTask typed)
+        if (LevelTaskClass.TryAs(task, level, out WorldInteractionTask? typed))
         {
-            throw new InvalidOperationException(
-                $"{task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            typed.Interactions = this;
         }
-
-        typed.Interactions = this;
     }
 
     /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz, for a level whose walk does not run them.</summary>

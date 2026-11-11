@@ -204,6 +204,7 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
             if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
             {
                 TakenPickupTask.BindUpdate(
+                    walker,
                     pickup.Task,
                     () => pickup.IsCollected && !KeepsTakenTasks,
                     () => WithdrawsTakenTasks && !Saves.SaveGameLock.IsHeld,

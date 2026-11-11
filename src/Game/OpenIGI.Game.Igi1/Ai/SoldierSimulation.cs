@@ -32,7 +32,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// them share one <see cref="SoldierContext"/>, so every part reads the same roster, brains and random stream.
 /// </para>
 /// </remarks>
-public sealed partial class SoldierSimulation : IHumanEvents
+public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level.ITaskRun<HumanTask>, OpenIGI.Game.Level.ITaskRun<GuardGeneratorTask>
 {
     /// <summary>The damage factor a knife stab carries into a soldier with no fight on (<c>0x46DFB0</c>: <c>0x447A0000</c>).</summary>
     public const float KnifeUnawareDamageFactor = 1000f;
@@ -469,25 +469,36 @@ public sealed partial class SoldierSimulation : IHumanEvents
         {
             if (soldiers.Add(view.Soldier))
             {
-                walker.Bind(view.Soldier, task =>
+                if (OpenIGI.Game.Level.LevelTaskClass.TryAs(view.Soldier, walker, out HumanTask? human))
                 {
-                    TickSoldierTask(task);
-                    walker.RunChildren(task);
-                });
+                    human.Runner = this;
+                }
             }
         }
 
         foreach (GuardGeneratorTask generator in _generators.AllGenerators)
         {
-            walker.Bind(generator, task =>
-            {
-                _generators.TickGuardGenerator((GuardGeneratorTask)task);
-                walker.RunChildren(task);
-            });
+            generator.Runner = this;
         }
 
         Doors?.AttachTo(walker, DoorTicked);
         AlarmControls?.AttachTo(walker, () => TickCount, _ => AlarmControlTicked());
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A soldier's update, then its children, where the level's walk reaches its task.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<HumanTask>.Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        TickSoldierTask(task);
+        level.RunChildren(task);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A guard generator's update (<c>0x487EE0</c>), then its children.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<GuardGeneratorTask>.Run(GuardGeneratorTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        _generators.TickGuardGenerator(task);
+        level.RunChildren(task);
     }
 
     /// <summary>Runs one tick outside a level walk: the same per-task updates, in one pass.</summary>

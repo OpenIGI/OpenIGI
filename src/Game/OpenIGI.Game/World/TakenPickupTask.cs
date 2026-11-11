@@ -39,28 +39,27 @@ internal static class TakenPickupTask
     }
 
     /// <summary>Gives a pickup task the update that deletes it once the pickup is taken.</summary>
+    /// <param name="walker">The level's walk the pickup is attached to.</param>
     /// <param name="task">The pickup's task.</param>
     /// <param name="isTaken">Whether it has been taken.</param>
     /// <param name="variables">Where its <c>isPickedUp</c> is exported, or <see langword="null"/>.</param>
-    internal static void BindUpdate(GameTask task, Func<bool> isTaken, ScriptVarRegistry? variables) =>
-        BindUpdate(task, isTaken, static () => false, variables, null);
+    internal static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, ScriptVarRegistry? variables) =>
+        BindUpdate(walker, task, isTaken, static () => false, variables, null);
 
     /// <summary>Gives a pickup's task its update: once the pickup is taken the task goes, or is withdrawn until it is put back.</summary>
+    /// <param name="walker">The level's walk the pickup is attached to.</param>
     /// <param name="task">The pickup's task.</param>
     /// <param name="isTaken">Whether the pickup has been taken.</param>
     /// <param name="withdraws">Whether a taken pickup's task is kept, its field withdrawn, rather than deleted.</param>
     /// <param name="variables">The level's variables, or <see langword="null"/>.</param>
     /// <param name="export">Exports the task's field again when a withdrawn pickup comes back.</param>
-    /// <exception cref="InvalidOperationException">The task was made without its class.</exception>
-    internal static void BindUpdate(GameTask task, Func<bool> isTaken, Func<bool> withdraws, ScriptVarRegistry? variables, Action? export)
+    /// <exception cref="InvalidOperationException">The level is the walk's own and the task was made without its class.</exception>
+    internal static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, Func<bool> withdraws, ScriptVarRegistry? variables, Action? export)
     {
-        if (task is not PickupTask pickup)
+        if (LevelTaskClass.TryAs(task, walker, out PickupTask? pickup))
         {
-            throw new InvalidOperationException(
-                $"{task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            pickup.Taken = new TakenPickupUpdate(isTaken, withdraws, variables, export);
         }
-
-        pickup.Taken = new TakenPickupUpdate(isTaken, withdraws, variables, export);
     }
 
     /// <summary>Deletes a taken pickup's task, as its delete handler does.</summary>

@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// </remarks>
 public abstract class HumanTask
-    : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable
+    : ContainerTask, Level.ILevelTicked, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable
 {
     /// <summary>
     /// Gets or sets the live body the human's game keeps for it: where it stands, its eyes and its stance; <see langword="null"/>
@@ -38,6 +38,28 @@ public abstract class HumanTask
     /// every walk, draw, hit test and detector that asks whether the human is live leaves it out.
     /// </remarks>
     public bool IsOutOfWorld { get; set; }
+
+    /// <summary>
+    /// Gets or sets what carries out the human's run handler: the game's soldiers or its player, or another title's standing
+    /// in for it; <see langword="null"/> while nothing does.
+    /// </summary>
+    public Level.ITaskRun<HumanTask>? Runner { get; set; }
+
+    /// <summary>Runs the human for one tick, where the level's walk reaches it.</summary>
+    /// <param name="level">The level's run.</param>
+    /// <remarks>A human nothing runs is run as a type with no handler is, by the title's rule.</remarks>
+    public void Run(Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
 
     /// <summary>
     /// Gets or sets the game whose body stands for the human when it is not the game whose level it is in, or

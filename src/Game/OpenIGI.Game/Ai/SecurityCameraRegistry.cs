@@ -840,25 +840,19 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
         ArgumentNullException.ThrowIfNull(scan);
         foreach (SecurityCamera camera in _cameras)
         {
-            if (camera.Task is not SecurityCameraTask task)
+            if (Level.LevelTaskClass.TryAs(camera.Task, walker, out SecurityCameraTask? task))
             {
-                throw new InvalidOperationException(
-                    $"{camera.Task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+                task.Cameras = this;
             }
-
-            task.Cameras = this;
         }
 
         // SCameraControl's update (0x440D70) is Terminal's, then its isDetection, which its task runs in that order.
         foreach (Control control in _controls)
         {
-            if (control.Task is not SecurityCameraControlTask task)
+            if (Level.LevelTaskClass.TryAs(control.Task, walker, out SecurityCameraControlTask? task))
             {
-                throw new InvalidOperationException(
-                    $"{control.Task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+                task.Cameras = this;
             }
-
-            task.Cameras = this;
         }
 
         _scan = scan;

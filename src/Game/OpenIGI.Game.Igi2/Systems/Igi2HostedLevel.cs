@@ -31,7 +31,7 @@ namespace OpenIGI.Game.Igi2.Systems;
 /// the world, the player's visibility for the next tick's detection, and the soldiers' sounds once, as the game runs its own.
 /// </para>
 /// </remarks>
-public sealed class Igi2HostedLevel
+public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
 {
     private readonly TaskTree _tasks;
     private readonly Igi2LevelRun _run;
@@ -256,10 +256,20 @@ public sealed class Igi2HostedLevel
         ArgumentNullException.ThrowIfNull(walk);
         foreach (HumanTask host in _squads.Keys)
         {
-            walk.Bind(host, () => RunSquadOnce(_squads[host]));
+            host.Runner = this;
         }
 
         walk.AddTickEnd(EndTick);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The squad of the soldier that stands in for the host's human runs, once a tick.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<HumanTask>.Run(HumanTask task, LevelRun level)
+    {
+        if (_squads.TryGetValue(task, out Igi2AiSquadTask? squad))
+        {
+            RunSquadOnce(squad);
+        }
     }
 
     // A squad's run, once a tick.

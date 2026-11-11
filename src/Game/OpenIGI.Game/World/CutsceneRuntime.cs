@@ -635,13 +635,10 @@ public sealed partial class CutsceneRuntime
     // Makes this runtime the one a kept task runs through, and says so loudly when the task was made without its class.
     private void Adopt(GameTask task)
     {
-        if (task is not CutsceneRuntimeTask typed)
+        if (Level.LevelTaskClass.TryAs(task, _walker, out CutsceneRuntimeTask? typed))
         {
-            throw new InvalidOperationException(
-                $"{task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            typed.Cutscenes = this;
         }
-
-        typed.Cutscenes = this;
     }
 
     /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>

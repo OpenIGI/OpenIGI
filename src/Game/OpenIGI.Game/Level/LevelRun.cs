@@ -170,6 +170,16 @@ public abstract class LevelRun
         RunUntyped(task);
     }
 
+    /// <summary>Runs a task as one whose type links no run handler is run, by the title's rule.</summary>
+    /// <param name="task">The task.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <remarks>What a task whose handler is carried out for it does while nothing carries it out.</remarks>
+    public void RunWithoutHandler(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        RunUntyped(task);
+    }
+
     /// <summary>Runs a task's children in order, as a container's run handler does.</summary>
     /// <param name="task">The parent.</param>
     /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>

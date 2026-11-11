@@ -596,13 +596,10 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
         ArgumentNullException.ThrowIfNull(walker);
         foreach (PlacedDoor door in _doors)
         {
-            if (door.Task is not DoorTask task)
+            if (Level.LevelTaskClass.TryAs(door.Task, walker, out DoorTask? task))
             {
-                throw new InvalidOperationException(
-                    $"{door.Task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+                task.Doors = this;
             }
-
-            task.Doors = this;
         }
 
         _inWalk = true;

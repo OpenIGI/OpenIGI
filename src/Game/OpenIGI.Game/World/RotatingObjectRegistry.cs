@@ -609,14 +609,11 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
                 continue;
             }
 
-            if (obj.Owner is not RotatingObjectTask task)
+            if (Level.LevelTaskClass.TryAs(obj.Owner, walker, out RotatingObjectTask? task))
             {
-                throw new InvalidOperationException(
-                    $"{obj.Owner.Name} was made without its class; a level's loader registers the level task types before it loads.");
+                _walked.Add(obj);
+                task.Rotators = this;
             }
-
-            _walked.Add(obj);
-            task.Rotators = this;
         }
 
         _ticked = ticked;

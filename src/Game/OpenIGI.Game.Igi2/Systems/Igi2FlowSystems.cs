@@ -34,7 +34,12 @@ internal static class Igi2FlowSystems
             level.CutsceneShake = shake;
         }
 
-        level.Bind(b.PlayerTask, player.RunPlayer);
+        if (b.PlayerTask is not OpenIGI.Game.Player.HumanTask human)
+        {
+            throw new InvalidOperationException($"{b.PlayerTask.Name} is not a human's task, and cannot be run as the player.");
+        }
+
+        human.Runner = new PlayerRun(player);
         if (b.PlayerTask is Igi2HumanPlayerTask playerTask)
         {
             playerTask.Human = player.Human;
@@ -140,5 +145,11 @@ internal static class Igi2FlowSystems
         {
             launched.LevelTick = () => level.LevelFlow?.Tick ?? 0;
         }
+    }
+
+    // The player's run handler (HumanPlayer_RunHandler), carried out by the title's player at the task's place in the tree.
+    private sealed class PlayerRun(Igi2TitlePlayer player) : OpenIGI.Game.Level.ITaskRun<OpenIGI.Game.Player.HumanTask>
+    {
+        public void Run(OpenIGI.Game.Player.HumanTask task, OpenIGI.Game.Level.LevelRun level) => player.RunPlayer();
     }
 }

@@ -34,6 +34,7 @@ public static class LevelTaskTypes
         Add<Igi1StatusMessageTask>(types, Igi1StatusMessageTask.TypeName);
         AddDeclared<DoorTask>(types, DoorTask.TypeName);
         AddDeclared<RotatingObjectTask>(types, RotatingObjectTask.TypeName);
+        AddDeclared<ElevatorTask>(types, ElevatorTask.TypeName);
         AddDeclared<Ai.SecurityCameraTask>(types, Ai.SecurityCameraTask.TypeName);
         AddDeclared<Ai.SecurityCameraControlTask>(types, Ai.SecurityCameraControlTask.TypeName);
         foreach (string name in WorldInteractionTask.TypeNames)

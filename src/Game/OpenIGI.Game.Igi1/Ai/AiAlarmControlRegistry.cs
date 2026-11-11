@@ -70,11 +70,7 @@ public sealed class AiAlarmControlRegistry
         ArgumentNullException.ThrowIfNull(tick);
         foreach (Entry entry in _controls.Values)
         {
-            if (entry.Task is not Igi1AlarmControlTask)
-            {
-                throw new InvalidOperationException(
-                    $"{entry.Task.Name} was made without its class; a level's loader registers {nameof(Igi1TaskTypes)} before it loads.");
-            }
+            _ = OpenIGI.Game.Level.LevelTaskClass.TryAs(entry.Task, walker, out Igi1AlarmControlTask? _);
         }
 
         _tick = tick;

@@ -425,6 +425,7 @@ public sealed class GunPickupRegistry : ILevelReset
             if (pickup.Task is { } task)
             {
                 TakenPickupTask.BindUpdate(
+                    walker,
                     task,
                     () => pickup.IsCollected && !KeepsTakenTasks,
                     () => WithdrawsTakenTasks && !Saves.SaveGameLock.IsHeld,

@@ -104,3 +104,32 @@ public sealed class PickupTask : DeclaredLevelTask
         }
     }
 }
+
+/// <summary>A lift: Project I.G.I.'s <c>Elevator</c>.</summary>
+/// <remarks>
+/// Its run handler (<c>0x43D280</c>) runs its children first -- the doors, switches and indicators that ride it -- then its
+/// own floor expressions and its move, after which it carries what stands on it. <see cref="ElevatorRegistry"/> keeps each
+/// lift's state; what steps the lifts is the task's <see cref="Runner"/>.
+/// </remarks>
+public sealed class ElevatorTask : DeclaredLevelTask
+{
+    /// <summary>The script name level data instantiates this type under.</summary>
+    public const string TypeName = "Elevator";
+
+    /// <summary>Gets or sets what carries out the lift's run handler; <see langword="null"/> while nothing does.</summary>
+    public ITaskRun<ElevatorTask>? Runner { get; set; }
+
+    /// <inheritdoc/>
+    public override void Run(LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
+}
