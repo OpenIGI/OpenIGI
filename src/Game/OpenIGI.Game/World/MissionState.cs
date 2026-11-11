@@ -90,6 +90,12 @@ public class MissionState
     public virtual bool IsPlayerDead { get; set; }
 
     /// <summary>
+    /// Gets the level's one expression runtime, which everything of the level compiles and evaluates through, or
+    /// <see langword="null"/> for a mission that keeps none or before its level is up.
+    /// </summary>
+    public virtual LevelExpressionRuntime? Expressions => null;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the level's objects -- its lifts, its cameras and their controls, its soldiers --
     /// update where the level's walk reaches them. <see langword="false"/> only for a level stepped without its walk.
     /// </summary>

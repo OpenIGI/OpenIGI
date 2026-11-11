@@ -225,7 +225,8 @@ public readonly record struct MapComputerPresentationRequest(
 /// <summary>What a title needs in order to build the catalogue of places its computer marks.</summary>
 /// <param name="LevelRoot">The level's task tree, which the marks are read from.</param>
 /// <param name="Variables">The script variables a mark's visibility is gated on.</param>
-public readonly record struct ComputerHighlightRequest(GameTask LevelRoot, ScriptVarRegistry Variables);
+/// <param name="Expressions">The level's expressions, or <see langword="null"/> for a catalogue that compiles with its own.</param>
+public readonly record struct ComputerHighlightRequest(GameTask LevelRoot, ScriptVarRegistry Variables, LevelExpressionRuntime? Expressions = null);
 
 /// <summary>The second, straight-down 3D view owned by the retail map page.</summary>
 /// <remarks>

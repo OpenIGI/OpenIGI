@@ -52,6 +52,9 @@ public sealed class MissionWorld : MissionState, IInspectableMission
     /// <summary>Gets the level's expressions, which everything built for the level evaluates through; none before the cut-scenes are built.</summary>
     public LevelExpressionRuntime? LevelExpressions => Cutscenes?.Expressions;
 
+    /// <inheritdoc/>
+    public override LevelExpressionRuntime? Expressions => LevelExpressions;
+
     /// <summary>Gets or sets the objective runtime.</summary>
     public MissionObjectiveRuntime? Objectives { get; set; }
 

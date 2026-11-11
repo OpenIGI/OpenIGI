@@ -295,7 +295,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     private IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request) =>
-        new ComputerHighlightCatalog(request.LevelRoot, request.Variables);
+        new ComputerHighlightCatalog(request.LevelRoot, request.Variables, request.Expressions);
 
     /// <inheritdoc/>
     private ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>

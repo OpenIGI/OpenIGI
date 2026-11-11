@@ -59,7 +59,7 @@ public sealed partial class GameHost
 
         if (_mapGate is null || !ReferenceEquals(_mapGate.LevelRoot, root))
         {
-            _mapGate = new MapComputerGate(root, _loop.Variables);
+            _mapGate = new MapComputerGate(root, _loop.Variables, _mission.Expressions);
         }
 
         return _mapGate.MapAvailable;
@@ -72,7 +72,7 @@ public sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
         MissionStringResolver missionText = b.MissionText!;
 
-        _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables));
+        _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables, _mission.Expressions));
         _mapComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get, _hosted));
         if (_mapComputer is not null && !_mapComputer.Load(_fileSystem))
