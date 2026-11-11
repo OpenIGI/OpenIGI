@@ -27,6 +27,12 @@ public interface IHostedMission : IMissionGameplay, ITitleGameplay
     /// <summary>Gets the mission's state, which the host reads and the level systems fill.</summary>
     MissionState World { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether the host's walk of the level runs it: <see langword="false"/> for a game whose level
+    /// runs itself behind its player, which the walk only passes over.
+    /// </summary>
+    bool OwnsLevel => true;
+
     /// <summary>Gets the mission's fixed tick.</summary>
     IMissionTick Tick { get; }
 

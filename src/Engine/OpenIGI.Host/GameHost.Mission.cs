@@ -211,7 +211,7 @@ public sealed partial class GameHost
         }
 
         // A title that runs its own level (ITitleGameplay) is only passed over by this walk.
-        LevelUpdateWalker walker = new(levelRoot) { OwnsLevel = _gameplay is null };
+        LevelUpdateWalker walker = new(levelRoot) { OwnsLevel = _hosted.OwnsLevel };
         MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
         if (_title.Services.TryGet(out LevelSystemEdits? edits))

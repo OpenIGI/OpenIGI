@@ -31,13 +31,11 @@ public sealed partial class GameHost
 {
     private const double TitleUnitsPerMetre = WorldUnits.PerMetre;
 
-    private ITitleGameplay? _gameplay;
-
     // What stood the player now standing: the title's own gameplay, or one the session's content provides in its stead.
     private ITitleGameplay? _standingGameplay;
 
     // The gameplay whose input the player reads: the one that stood it, else the title's.
-    private ITitleGameplay? Gameplay => _standingGameplay ?? _gameplay;
+    private ITitleGameplay? Gameplay => _standingGameplay ?? _hosted;
     // The title's own player, with what it can do; null when the host's rig is the player.
     private TitlePlayerFeatures? _titleFeatures;
 
@@ -96,15 +94,14 @@ public sealed partial class GameHost
             _standingGameplay = provided;
             RestoreTitleInputBindings();
         }
-        else if ((_gameplay ?? _hosted) is { } titleGameplay)
+        else if (_hosted is { } titleGameplay)
         {
-            // The title's gameplay, or where the title brings none, the hosted mission's own, which stands its player on this path
-            // when g_mission_title_player is on.
+            // The mission being played makes its player: a game's own gameplay behind it, or the mission's own rig.
             player = titleGameplay.CreatePlayer(request);
             _standingGameplay = titleGameplay;
 
             // A hosted mission that keeps its player on its own path declines, and that is no fault of the level's.
-            if (player is null && _gameplay is not null)
+            if (player is null && !_hosted.OwnsLevel)
             {
                 _logger.Warning("Player", "The level places no player for the title to stand.");
             }
@@ -120,7 +117,7 @@ public sealed partial class GameHost
 
         // The hosted mission's own player is still the mission's: the mission keeps it, and while its HUD and arms are the
         // mission's presenters the title's are not made beside them.
-        bool missionsOwn = ReferenceEquals(_standingGameplay, _hosted);
+        bool missionsOwn = _hosted.OwnsLevel && ReferenceEquals(_standingGameplay, _hosted);
         _titleHud = missionsOwn ? null : _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
         _titleHud?.Load(_resources.FileSystem);
         _titleTickMilliseconds = 0;

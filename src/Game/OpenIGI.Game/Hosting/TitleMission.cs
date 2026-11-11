@@ -27,6 +27,9 @@ public sealed class TitleMission(IMissionHostServices host, ITitleGameplay gamep
     private readonly Parts _parts = new(host ?? throw new ArgumentNullException(nameof(host)));
 
     /// <inheritdoc/>
+    public bool OwnsLevel => false;
+
+    /// <inheritdoc/>
     public MissionState World => _parts.State;
 
     /// <inheritdoc/>

@@ -380,7 +380,6 @@ public sealed partial class GameHost : IDisposable
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
-        _gameplay = binding.Gameplay;
         _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
         _options = options;
