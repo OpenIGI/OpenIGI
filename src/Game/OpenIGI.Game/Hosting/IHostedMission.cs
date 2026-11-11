@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Hosting;
 /// Made by the composition root, which is the one place that names a title, over the host's <see cref="IMissionHostServices"/>.
 /// The host calls it in the order its frame loop and its mission systems run, and knows nothing of the title behind it.
 /// </remarks>
-public interface IHostedMission : IMissionGameplay
+public interface IHostedMission : IMissionGameplay, ITitleGameplay
 {
     /// <summary>Gets the mission's state, which the host reads and the level systems fill.</summary>
     MissionState World { get; }

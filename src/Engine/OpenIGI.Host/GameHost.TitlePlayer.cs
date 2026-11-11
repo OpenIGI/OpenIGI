@@ -96,7 +96,7 @@ public sealed partial class GameHost
             _standingGameplay = provided;
             RestoreTitleInputBindings();
         }
-        else if ((_gameplay ?? _hosted as ITitleGameplay) is { } titleGameplay)
+        else if ((_gameplay ?? _hosted) is { } titleGameplay)
         {
             // The title's gameplay, or where the title brings none, the hosted mission's own, which stands its player on this path
             // when g_mission_title_player is on.

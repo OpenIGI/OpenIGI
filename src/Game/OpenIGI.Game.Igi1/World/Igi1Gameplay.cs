@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle, ITitleGameplay
+public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle
 {
     private readonly IMissionHostServices _host;
 
