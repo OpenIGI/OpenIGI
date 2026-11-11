@@ -536,6 +536,28 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
 
     }
 
+    /// <summary>
+    /// Raised as the tick's corpses move: after the simulation has closed the tick (<see cref="FinishTick"/>), before the guns
+    /// the dead dropped fall, which share the probes that stop a falling body.
+    /// </summary>
+    public event Action? CorpsesMove;
+
+    /// <summary>Raised once the tick is closed: the bodies stand where they will be drawn until the next.</summary>
+    public event Action? TickClosed;
+
+    /// <summary>
+    /// Closes a tick the level's walk ran (<see cref="BeginTick"/>, <see cref="AttachTo"/>): the bodies the walk missed and the
+    /// collision, the corpses (<see cref="CorpsesMove"/>), then the guns the dead dropped (<see cref="TickClosed"/> after).
+    /// </summary>
+    public void EndTick()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        FinishTick();
+        CorpsesMove?.Invoke();
+        TickAfterCorpses();
+        TickClosed?.Invoke();
+    }
+
     /// <summary>Closes the tick's simulation before the corpses move: the bodies the walk missed, the staged actors, the collision.</summary>
     internal void FinishTick()
     {

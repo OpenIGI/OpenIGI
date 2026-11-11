@@ -1,4 +1,4 @@
-namespace OpenIGI.Engine.Tasks;
+﻿namespace OpenIGI.Engine.Tasks;
 
 /// <summary>The values level data gave a task's parameters, by the names and in the order its type declares them.</summary>
 /// <remarks>
@@ -95,6 +95,38 @@ public sealed class TaskParameterValues
         }
 
         return false;
+    }
+
+    /// <summary>Values given in code, by parameter name, as a level's script would give them; a parameter not named has none.</summary>
+    /// <param name="parameters">The type's parameters, in their declared order.</param>
+    /// <param name="values">The values, by name.</param>
+    /// <returns>The values.</returns>
+    /// <exception cref="ArgumentException">A value names no parameter of the type.</exception>
+    internal static TaskParameterValues From(IReadOnlyList<TaskParameter> parameters, IReadOnlyDictionary<string, object?> values)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentNullException.ThrowIfNull(values);
+        object?[] read = new object?[parameters.Count];
+        foreach ((string name, object? value) in values)
+        {
+            int index = -1;
+            for (int i = 0; i < parameters.Count && index < 0; i++)
+            {
+                if (string.Equals(parameters[i].Name, name, StringComparison.Ordinal))
+                {
+                    index = i;
+                }
+            }
+
+            if (index < 0)
+            {
+                throw new ArgumentException($"The type has no parameter '{name}'.", nameof(values));
+            }
+
+            read[index] = value;
+        }
+
+        return new TaskParameterValues(parameters, read);
     }
 
     internal static TaskParameterValues Read(ScriptArgumentReader reader, IReadOnlyList<TaskParameter> parameters)

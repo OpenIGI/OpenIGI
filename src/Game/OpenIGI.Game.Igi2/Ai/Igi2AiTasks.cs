@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
@@ -6,6 +7,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 
@@ -20,7 +22,7 @@ namespace OpenIGI.Game.Igi2.Ai;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget,
-    IHumanAiEventTarget
+    IHumanAiEventTarget, IHostedHuman
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
@@ -57,13 +59,20 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IW
     public Igi2HumanSoldier? Body { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>A claimed soldier is given no body (<see cref="Soldiers.Igi2Soldiers.Spawn"/>): the other game's stands for it.</remarks>
+    public GameTitle? Driver { get; set; }
+
+    /// <inheritdoc/>
+    public IAiHuman? StandIn { get; set; }
+
+    /// <inheritdoc/>
     public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Body?.EvaluateWeaponCollision(query) ?? false;
 
     /// <inheritdoc/>
-    public void WeaponHit(in WeaponHit hit) => ((IWeaponHitTarget?)Body)?.WeaponHit(hit);
+    public void WeaponHit(in WeaponHit hit) => ((IWeaponHitTarget?)Body ?? StandIn as IWeaponHitTarget)?.WeaponHit(hit);
 
     /// <inheritdoc/>
-    public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body)?.ExplosionHit(hit);
+    public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body ?? StandIn as IExplosionHitTarget)?.ExplosionHit(hit);
 
     /// <inheritdoc/>
     /// <remarks>Another game's broadcast, read as this game's own would be raised (<see cref="Igi2AiEvent.FromShared"/>) and given to the soldier's mind.</remarks>

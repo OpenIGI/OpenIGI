@@ -111,8 +111,8 @@ internal sealed class PlayerBodyRenderer(
             return false;
         }
 
-        Group? group = _owner.Meshes.BuildGroup(mission, model, view);
-        if (group is null)
+        if (!SoldierBodyModel.TryPose(mission, model, view, _logger, out SoldierBodyModel? body, out MeshGeometry? geometry, out Vertex3D[]? skin)
+            || _owner.Meshes.BuildGroup(mission, new SoldierLoadedGroup(new SoldierModelGroup(body), model, view, geometry, skin)) is not { } group)
         {
             return false;
         }

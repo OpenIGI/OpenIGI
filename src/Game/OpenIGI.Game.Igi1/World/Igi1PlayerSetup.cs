@@ -7,6 +7,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -191,33 +192,19 @@ public sealed partial class Igi1PlayerSetup(
         _bringUp = (loaded, levelRoot, solids, missionText);
         WirePlayer(candidate, loaded, solids, missionText);
 
-        // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
-        // symbols that get their values as the two tables are read, so the rosters have to load
-        // before humanplayer.qvm runs -- otherwise every id in its weapon cycle is a placeholder
-        // and the cycle names weapons nobody carries.
+        // ORDER MATTERS, and it is the original's: Igi1Arsenal reads the tables before humanplayer.qvm runs, or every id in
+        // its weapon cycle is a placeholder and the cycle names weapons nobody carries. Empty until then, so a mission whose
+        // tables cannot be read still has tables to ask.
         Weapons = new(host.Logger);
         Ammunition = new(host.Logger);
-        WeaponTypeRegistry weaponRoster = Weapons;
-        AmmoTypeRegistry ammoTable = Ammunition;
-        GameMaterialRegistry materialTable = new(host.Logger);
         try
         {
-            weaponRoster.Register(host.Game.Natives);
-            weaponRoster.Load(host.FileSystem, host.Resources, host.Game.Natives);
-            WeaponConfigRegistry.RegisterTypes(host.Game.Types);
-            WeaponConfigRegistry weaponConfig = new(host.Logger);
-            if (weaponConfig.Load(host.Resources, host.Game.Natives, host.Game.Tasks) == WeaponConfigRegistry.NoScript)
-            {
-                host.Logger.Warning(
-                    "Weapon",
-                    $"No weapon configuration at {WeaponConfigRegistry.ScriptResource}; this title keeps it elsewhere.");
-            }
-            else
-            {
-                weaponConfig.AttachTo(weaponRoster);
-            }
-            ammoTable.Register(host.Game.Natives);
-            ammoTable.Load(host.FileSystem, host.Resources, host.Game.Natives);
+            Igi1Arsenal arsenal = Igi1Arsenal.Load(host.Game, host.FileSystem, host.Resources, host.Logger);
+            Weapons = arsenal.Weapons;
+            Ammunition = arsenal.Ammunition;
+            WeaponTypeRegistry weaponRoster = Weapons;
+            AmmoTypeRegistry ammoTable = Ammunition;
+            GameMaterialRegistry materialTable = arsenal.Materials;
 
             // Shared with the guard-round handler: the ammunition record is what colours the retail tracer.
             mission.AmmoTypes = ammoTable;
@@ -227,23 +214,10 @@ public sealed partial class Igi1PlayerSetup(
             mission.WeaponTypes = weaponRoster;
 
             // What every surface in the world is made of, and therefore what a round leaves on it.
-            materialTable.Register(host.Game.Natives);
-            if (host.FileSystem.Exists(GameMaterialRegistry.ScriptResource))
-            {
-                host.Resources.Register(
-                    GameMaterialRegistry.ScriptResource,
-                    host.FileSystem.ReadAllBytes(GameMaterialRegistry.ScriptResource));
-            }
-            else
-            {
-                host.Logger.Warning("Material", $"No material table at {GameMaterialRegistry.ScriptResource}.");
-            }
-
-            int materialCount = materialTable.Load(host.Resources, host.Game.Natives);
             candidate.UseMaterials(materialTable);
             mission.Soldiers?.UseMaterials(materialTable);
             mission.Materials = materialTable;
-            host.Logger.Information("Material", $"Read {materialCount} game material(s).");
+            host.Logger.Information("Material", $"Read {arsenal.MaterialCount} game material(s).");
 
             // What the open ground is made of. The terrain declares it the same way a mesh face
             // does -- see FootstepSounds.TerrainGameMaterialIndex -- and it is Snow in the Arctic

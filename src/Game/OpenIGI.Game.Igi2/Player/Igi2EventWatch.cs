@@ -43,7 +43,7 @@ internal sealed class Igi2EventWatch
         _alarm = AnyAlarm();
 
         // A soldier the level places dead has not died in play.
-        _dead.UnionWith(level.Descendants().OfType<Igi2HumanSoldierTask>().Where(static soldier => soldier.Body is { IsDead: true }));
+        _dead.UnionWith(level.Descendants().OfType<Igi2HumanSoldierTask>().Where(static soldier => IsDead(soldier)));
     }
 
     /// <summary>Raises the events of the tick that has just run.</summary>
@@ -89,7 +89,7 @@ internal sealed class Igi2EventWatch
 
         foreach (Igi2HumanSoldierTask soldier in _level.Descendants().OfType<Igi2HumanSoldierTask>())
         {
-            bool dead = soldier.Body is { IsDead: true };
+            bool dead = IsDead(soldier);
             if (dead && _dead.Add(soldier))
             {
                 _events.Raise(new HumanKilled(soldier.Id, soldier.Team));
@@ -156,4 +156,7 @@ internal sealed class Igi2EventWatch
 
         return false;
     }
+
+    // Its own body's death, or the death of the other game's body that stands for it.
+    private static bool IsDead(Igi2HumanSoldierTask soldier) => soldier.Body is { IsDead: true } || soldier.StandIn is { IsDead: true };
 }

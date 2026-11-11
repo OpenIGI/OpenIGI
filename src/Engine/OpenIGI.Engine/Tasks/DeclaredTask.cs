@@ -1,4 +1,4 @@
-namespace OpenIGI.Engine.Tasks;
+﻿namespace OpenIGI.Engine.Tasks;
 
 /// <summary>
 /// A task of a type that level data declared but no class implements yet: it parses its parameters
@@ -75,6 +75,14 @@ public class DeclaredTask : GameTask
 
         return _values.TryGetValue(name, out value);
     }
+
+    /// <summary>
+    /// Gives the task its parameters' values in code, as a level's script gives them: for a task another game makes in a level it
+    /// hosts, which no script declares.
+    /// </summary>
+    /// <param name="values">The values, by parameter name; a parameter not named has none.</param>
+    /// <exception cref="ArgumentException">A value names no parameter of the task's type.</exception>
+    public void Assign(IReadOnlyDictionary<string, object?> values) => _values = TaskParameterValues.From(ScriptParameters, values);
 
     /// <inheritdoc/>
     /// <remarks>What the level gave the task, changed after it was read: as a level reshaped for another use is.</remarks>

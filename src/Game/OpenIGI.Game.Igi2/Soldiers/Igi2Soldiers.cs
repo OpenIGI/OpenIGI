@@ -98,6 +98,12 @@ public sealed class Igi2Soldiers
         Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in levelRoot.Descendants().OfType<Igi2HumanSoldierTask>())
         {
+            // Claimed by another game, whose body stands for it: it is given none.
+            if (task.Driver is not null)
+            {
+                continue;
+            }
+
             string wornModel = worn is not null && worn.TryGetValue(task, out string? face) ? face : task.Model;
             Formats.World.MefModel? model = models(wornModel);
             Igi2BoneHierarchy? rig = model?.BoneHierarchy;

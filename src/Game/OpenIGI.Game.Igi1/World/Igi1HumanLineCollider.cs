@@ -28,7 +28,8 @@ public sealed class Igi1HumanLineCollider(HumanTask human, uint group, int mater
     public object Owner => _human;
 
     /// <inheritdoc/>
-    public object? Handler => _human;
+    /// <remarks>The human itself, unless what takes its hits in the other game's world stands between.</remarks>
+    public object? Handler { get; init; } = human;
 
     /// <inheritdoc/>
     public uint Group => group;

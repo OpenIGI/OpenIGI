@@ -35,15 +35,15 @@ public sealed class RequiresGameDataTheoryAttribute : TheoryAttribute
 /// titles — it asserts what one specific retail file decodes to, and the two games ship different files
 /// — so each title's tests carry their own attribute and skip independently.
 /// </remarks>
-/// <param name="titleId">The title's stable id, for example <c>igi2</c>.</param>
-public sealed class RequiresTitleDataFactAttribute(string titleId) : FactAttribute
+/// <param name="titleIds">The titles' stable ids, for example <c>igi2</c>: a test of one game's soldiers in another's names both.</param>
+public sealed class RequiresTitleDataFactAttribute(params string[] titleIds) : FactAttribute
 {
-    private string TitleId { get; } = titleId;
+    private string[] TitleIds { get; } = titleIds;
 
     /// <inheritdoc/>
     public override string? Skip
     {
-        get => SkipFor(TitleId) ?? base.Skip;
+        get => TitleIds.Select(SkipFor).FirstOrDefault(static skip => skip is not null) ?? base.Skip;
         set => base.Skip = value;
     }
 

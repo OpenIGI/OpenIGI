@@ -48,6 +48,11 @@ internal static class Igi2WorldSystems
                 detection.Detectables.Add(soldier);
                 Igi2Gameplay.SeeThrough(soldier, detection);
             }
+            else if (node is Ai.Igi2HumanSoldierTask { StandIn: Game.Ai.IAiDetectable standIn })
+            {
+                // Another game's body standing for the soldier is seen where it stands.
+                detection.Detectables.Add(standIn);
+            }
         }
 
         // HumanSoldier_UpdateInternalDataAfterLoadHandler: a living soldier of team 1 is no business of the detectors, but in
@@ -62,6 +67,12 @@ internal static class Igi2WorldSystems
                     detection.Remove(living);
                 }
             }
+        }
+
+        // Another game's humans joined to the level are seen where they stand.
+        foreach (Game.Ai.IAiDetectable joined in b.Level.Joined.Seen)
+        {
+            detection.Detectables.Add(joined);
         }
 
         b.Sight = detection;

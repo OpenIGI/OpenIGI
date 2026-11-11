@@ -137,6 +137,24 @@ public sealed class GraphFile
     /// </remarks>
     public double CoverMidOffsetMetres { get; set; } = 1.0;
 
+    /// <summary>Moves each node to where the level that owns the graph placed it, in place of the graph's own offset.</summary>
+    /// <param name="placed">Where the node of an id stands in the world, or <see langword="null"/> to leave it where it is.</param>
+    /// <remarks>
+    /// For a graph another game reads and places by its own rules -- its nodes in a moving parent's frame, its positions in its
+    /// own arithmetic -- so this game walks the nodes where that game's level has them.
+    /// </remarks>
+    public void PlaceNodes(Func<int, Vector3d?> placed)
+    {
+        ArgumentNullException.ThrowIfNull(placed);
+        foreach (GraphNode node in Nodes)
+        {
+            if (placed(node.Id) is { } position)
+            {
+                node.Position = position;
+            }
+        }
+    }
+
     /// <summary>
     /// Transforms every node's position from the graph's own frame into world space by adding an offset.
     /// </summary>
@@ -286,14 +304,19 @@ public sealed class GraphFile
 
     /// <summary>Reads a graph file, picking the variant from its first four bytes.</summary>
     /// <param name="data">The file bytes.</param>
+    /// <param name="idLimit">
+    /// The first node id dropped: the first game's own, <see cref="GraphNode.IdLimit"/>, or a higher one for a graph another game
+    /// wrote, whose ids reach further.
+    /// </param>
     /// <returns>The graph.</returns>
     /// <exception cref="GraphFormatException">The stream runs out mid-value, or a node id repeats.</exception>
-    public static GraphFile Read(ReadOnlyMemory<byte> data)
+    public static GraphFile Read(ReadOnlyMemory<byte> data, int idLimit = GraphNode.IdLimit)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(idLimit);
         var reader = new GraphStreamReader(data);
         if (data.Length >= 4 && reader.ReadRawUInt32() == Magic)
         {
-            return ReadNamed(reader, data.Length);
+            return ReadNamed(reader, data.Length, idLimit);
         }
 
         reader.Rewind();
@@ -316,9 +339,9 @@ public sealed class GraphFile
         return map;
     }
 
-    private static GraphFile ReadNamed(GraphStreamReader reader, int length)
+    private static GraphFile ReadNamed(GraphStreamReader reader, int length, int idLimit)
     {
-        var builder = new Builder(positional: false);
+        var builder = new Builder(positional: false, idLimit);
 
         // The staging buffer 0x4FAF50 clears and 0x4FB030 commits from. Kept as one mutable group so a
         // file that omits or reorders a field behaves exactly as the original's globals would.
@@ -488,7 +511,7 @@ public sealed class GraphFile
     public override string ToString() =>
         $"{(IsPositional ? "positional" : "named")} graph, {Nodes.Count} of {MaxNodes} slots, {Links.Count} links";
 
-    private sealed class Builder(bool positional)
+    private sealed class Builder(bool positional, int idLimit = GraphNode.IdLimit)
     {
         private GraphNode?[] _slots = [];
         private int _maxNodes;
@@ -517,7 +540,7 @@ public sealed class GraphFile
 
         public void AddNode(int id, Vector3d position, float gamma, float radius, int materialId, string criteriaName)
         {
-            if (id >= GraphNode.IdLimit)
+            if (id >= idLimit)
             {
                 // 0x4F9510's first line: too large, dropped without a word.
                 Discarded.Add(id);

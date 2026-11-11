@@ -70,6 +70,27 @@ public sealed class TaskTree : ILevelTaskTable
     /// <summary>Gets the number of live tasks, the root included.</summary>
     public int Count { get; private set; } = 1;
 
+    /// <summary>
+    /// Makes a task of a type whose parameters its level declares, with their values given in code as a level script gives
+    /// them: for a task one game makes in a level another hosts, which no script declares.
+    /// </summary>
+    /// <param name="parent">The parent, or <see langword="null"/> for the root's child.</param>
+    /// <param name="type">The type.</param>
+    /// <param name="values">The values, by parameter name; a parameter not named has none.</param>
+    /// <returns>The task.</returns>
+    /// <exception cref="ArgumentException">The type's tasks keep no declared parameters, or a value names none of them.</exception>
+    public GameTask New(GameTask? parent, TaskType type, IReadOnlyDictionary<string, object?> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        if (New(parent, type) is not DeclaredTask made)
+        {
+            throw new ArgumentException($"A '{type.Name}' task keeps no declared parameters.", nameof(type));
+        }
+
+        made.Assign(values);
+        return made;
+    }
+
     /// <summary>Creates a task and appends it to a parent's children.</summary>
     /// <param name="parent">The parent, or <see langword="null"/> to create an unparented task.</param>
     /// <param name="type">The type to create.</param>
@@ -94,7 +115,7 @@ public sealed class TaskTree : ILevelTaskTable
     /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// The original's <c>Task_NewSibling</c>, selected by a one-shot flag the <c>Task_New</c> script
-    /// command consumes. Identical to <see cref="New"/> apart from the insertion end.
+    /// command consumes. Identical to <see cref="New(GameTask?, TaskType)"/> apart from the insertion end.
     /// </remarks>
     public GameTask NewSibling(GameTask? parent, TaskType type)
     {

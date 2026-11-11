@@ -19,6 +19,7 @@ internal static class Igi2ScriptSystems
                 b.PlacedById.TryAdd(node.Id, node switch
                 {
                     Ai.Igi2HumanSoldierTask { Body: { } body } => body,
+                    Ai.Igi2HumanSoldierTask { StandIn: { } standIn } => standIn,
                     Igi2HumanPlayerTask => b.Player.Human,
                     _ => node,
                 });
@@ -94,6 +95,10 @@ internal static class Igi2ScriptSystems
         });
 
         Igi2Gameplay.HearAiEvents(everyone, () => player.Ai);
+
+        // Another game's humans joined to the level hear its AI events after its own, and are struck by its blasts.
+        player.Ai.OtherHumans = level.Joined.Humans;
+        player.Explosions?.Joined = level.Joined;
 
         foreach (Vehicles.Igi2CarTask car in player.Cars)
         {

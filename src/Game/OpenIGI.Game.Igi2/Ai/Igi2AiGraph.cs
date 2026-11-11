@@ -493,6 +493,55 @@ public sealed class Igi2AiGraphs
     /// <returns>The graph, or <see langword="null"/>.</returns>
     public Igi2AiGraph? Graph(int id) => _graphs.GetValueOrDefault(id);
 
+    /// <summary>
+    /// Reads the graphs again as the first game reads a graph file, each node where this level placed it: the graphs another
+    /// game's soldiers walk in this level.
+    /// </summary>
+    /// <param name="resources">Where the graph files are read from.</param>
+    /// <param name="logger">Where a file that is missing or that the first game cannot read is reported.</param>
+    /// <returns>The graphs, by their task id.</returns>
+    /// <remarks>
+    /// Both games write the same named stream, so the first game's reader reads this one's files; it keeps the fields it knows
+    /// and skips the rest. Its ids reach this game's limit (<see cref="Igi2AiGraph.IdLimit"/>), past the first game's own, and a
+    /// node it still drops is reported. A graph that rides a moving object is placed where it stands when it is read.
+    /// </remarks>
+    public IReadOnlyDictionary<int, GraphFile> ToGraphFiles(ResourceRegistry resources, IOpenIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
+        Dictionary<int, GraphFile> files = [];
+        foreach ((int id, Igi2AiGraph graph) in _graphs)
+        {
+            string resource = Igi2AiGraphTask.ResourceNameFor(id);
+            if (!resources.TryLoad(resource, out ReadOnlyMemory<byte> bytes))
+            {
+                log.Warning(LogCategory, $"AIGraph {id} has no '{resource}'.");
+                continue;
+            }
+
+            GraphFile file;
+            try
+            {
+                file = GraphFile.Read(bytes, Igi2AiGraph.IdLimit);
+            }
+            catch (GraphFormatException ex)
+            {
+                log.Warning(LogCategory, $"AIGraph {id} cannot be read as the first game's graph: {ex.Message}");
+                continue;
+            }
+
+            file.PlaceNodes(node => graph.Node(node)?.Position);
+            if (file.DiscardedNodeIds.Count > 0)
+            {
+                log.Warning(LogCategory, $"AIGraph {id} has {file.DiscardedNodeIds.Count} node(s) past the id limit, which are dropped.");
+            }
+
+            files[id] = file;
+        }
+
+        return files;
+    }
+
     /// <summary>Reads every <c>AIGraph</c> a level places.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="resources">Where the graph files are read from.</param>
