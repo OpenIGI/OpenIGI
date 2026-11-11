@@ -174,17 +174,14 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             }
             else if (task is DeclaredTask declared)
             {
-                if (string.Equals(task.Type.Name, "AnimTask", StringComparison.Ordinal)
-                    && declared.TryGetValue("AnimData", out object? data)
-                    && data is IReadOnlyList<AnimDataEntry> entries)
+                if (declared is AnimTaskTask { AnimData: { } entries } animated)
                 {
-                    int target = IntStrict(declared, "TargetID", IntStrict(declared, "Target ID", -1));
                     CutsceneAnimationState animation = new(
                         declared,
-                        target,
+                        animated.TargetId,
                         order,
-                        TextOrEmpty(declared, "Run"),
-                        BoolStrict(declared, "Initial run"),
+                        animated.RunExpression,
+                        animated.InitialRun,
                         new AnimDataProgram(entries));
                     _animations.Add(animation);
 
@@ -200,16 +197,16 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
                     // latches itself with "|| this.isRun".
                     variables.BindBool(declared, "isRun", () => animation.IsRun, value => animation.IsRun = value);
                 }
-                else if (string.Equals(task.Type.Name, "ConditionalSound", StringComparison.Ordinal))
+                else if (declared is ConditionalSoundTask sounding)
                 {
                     _sounds.Add(new CutsceneSoundState(
                         declared,
-                        FirstTextNamed(declared, "condition"),
-                        FirstTextNamed(declared, "sound"),
-                        Vector(declared, "Position"),
-                        BoolStrict(declared, "Simple"),
-                        BoolStrict(declared, "OneShot"),
-                        BoolStrict(declared, "Relative to microphone")));
+                        sounding.Condition,
+                        sounding.Sound,
+                        sounding.Position,
+                        sounding.IsSimple,
+                        sounding.IsOneShot,
+                        sounding.IsRelativeToMicrophone));
                 }
                 else if (string.Equals(task.Type.Name, "BinocularOverlayHolder", StringComparison.Ordinal))
                 {

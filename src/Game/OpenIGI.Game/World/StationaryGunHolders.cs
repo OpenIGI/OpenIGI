@@ -58,7 +58,7 @@ internal sealed class StationaryGunHolders(LevelMotionContext context, VehicleAr
     public void Tick(GameTask holder, Action runChildren)
     {
         ArgumentNullException.ThrowIfNull(runChildren);
-        if (holder is not DeclaredTask declared || !_holders.TryGetValue(holder, out HolderState? state))
+        if (holder is not StationaryGunHolderTask declared || !_holders.TryGetValue(holder, out HolderState? state))
         {
             runChildren();
             return;
@@ -67,12 +67,12 @@ internal sealed class StationaryGunHolders(LevelMotionContext context, VehicleAr
         bool wasOn = state.On;
 
         // round_int under the game's chop rounding mode: the expressions' values are truncated.
-        if (_context.Expressions.TryEvaluateReal(TextOrEmpty(declared, "Team expression"), holder, out double team))
+        if (_context.Expressions.TryEvaluateReal(declared.TeamExpression, holder, out double team))
         {
             state.Team = (int)team;
         }
 
-        if (_context.Expressions.TryEvaluateReal(TextOrEmpty(declared, "On expression"), holder, out double on))
+        if (_context.Expressions.TryEvaluateReal(declared.OnExpression, holder, out double on))
         {
             state.On = (byte)(int)on != 0;
         }
@@ -84,9 +84,9 @@ internal sealed class StationaryGunHolders(LevelMotionContext context, VehicleAr
                 transform.Position,
                 transform.Orientation,
                 new AiSnapshotCone(
-                    RealConverted(declared, "Viewcone Alpha", 360f) * DegreesToRadians,
-                    RealConverted(declared, "Viewcone Gamma", 360f) * DegreesToRadians,
-                    RealConverted(declared, "Viewcone Length", 10f) * WorldScene.UnitsPerMetre),
+                    declared.ViewconeAlpha * DegreesToRadians,
+                    declared.ViewconeGamma * DegreesToRadians,
+                    declared.ViewconeLength * WorldScene.UnitsPerMetre),
                 default,
                 secondaryEnabled: false);
 

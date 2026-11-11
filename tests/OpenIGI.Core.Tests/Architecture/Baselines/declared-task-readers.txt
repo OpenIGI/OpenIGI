@@ -23,7 +23,6 @@ src/Game/OpenIGI.Game/World/CutsceneAnimationPackets.cs
 src/Game/OpenIGI.Game/World/CutsceneAttachments.cs
 src/Game/OpenIGI.Game/World/CutsceneCameraFrames.cs
 src/Game/OpenIGI.Game/World/CarAiDrivers.cs
-src/Game/OpenIGI.Game/World/StationaryGunHolders.cs
 src/Game/OpenIGI.Game/World/CutsceneRuntime.cs
 src/Game/OpenIGI.Game/World/CutsceneTimelineStates.cs
 src/Game/OpenIGI.Game/World/CutsceneTransformCapture.cs

@@ -1,3 +1,4 @@
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.World;
@@ -32,6 +33,19 @@ public sealed class AnimTaskTask : CutsceneRuntimeTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AnimTask";
+
+    /// <summary>Gets the id of the task the animation moves ("TargetID"), or -1 where the level gives none.</summary>
+    public int TargetId => DeclaredTaskValues.IntStrict(this, "TargetID", DeclaredTaskValues.IntStrict(this, "Target ID", -1));
+
+    /// <summary>Gets the expression that says whether the animation runs ("Run").</summary>
+    public string RunExpression => DeclaredTaskValues.TextOrEmpty(this, "Run");
+
+    /// <summary>Gets a value indicating whether the animation runs from the start of the level ("Initial run").</summary>
+    public bool InitialRun => DeclaredTaskValues.BoolStrict(this, "Initial run");
+
+    /// <summary>Gets the keys of the animation ("AnimData"), or <see langword="null"/> where the level gives none.</summary>
+    public IReadOnlyList<AnimDataEntry>? AnimData =>
+        TryGetValue("AnimData", out object? data) ? data as IReadOnlyList<AnimDataEntry> : null;
 }
 
 /// <summary>A sound that plays while its script holds: Project I.G.I.'s <c>ConditionalSound</c>.</summary>
@@ -39,4 +53,22 @@ public sealed class ConditionalSoundTask : CutsceneRuntimeTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalSound";
+
+    /// <summary>Gets the expression that says whether the sound plays (the parameter named for its condition).</summary>
+    public string Condition => DeclaredTaskValues.FirstTextNamed(this, "condition");
+
+    /// <summary>Gets the definition played (the parameter named for its sound).</summary>
+    public string Sound => DeclaredTaskValues.FirstTextNamed(this, "sound");
+
+    /// <summary>Gets where the sound is heard from ("Position").</summary>
+    public OpenIGI.Core.Numerics.Vector3d Position => DeclaredTaskValues.Vector(this, "Position");
+
+    /// <summary>Gets a value indicating whether the sound is played without a place in the world ("Simple").</summary>
+    public bool IsSimple => DeclaredTaskValues.BoolStrict(this, "Simple");
+
+    /// <summary>Gets a value indicating whether the sound plays once ("OneShot").</summary>
+    public bool IsOneShot => DeclaredTaskValues.BoolStrict(this, "OneShot");
+
+    /// <summary>Gets a value indicating whether its place is measured from the ear ("Relative to microphone").</summary>
+    public bool IsRelativeToMicrophone => DeclaredTaskValues.BoolStrict(this, "Relative to microphone");
 }

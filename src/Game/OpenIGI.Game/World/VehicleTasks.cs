@@ -63,6 +63,15 @@ public sealed class CarAiTask : VehicleTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "CarAI";
 
+    /// <summary>Gets the id of the car it drives ("Car ID"), or <see langword="null"/> where the level gives none.</summary>
+    public int? CarId => TryGetValue("Car ID", out object? value) && value is int id ? id : null;
+
+    /// <summary>Gets the id of the graph it drives on ("Graph ID"), or <see langword="null"/> where the level gives none.</summary>
+    public int? GraphId => TryGetValue("Graph ID", out object? value) && value is int id ? id : null;
+
+    /// <summary>Gets the id of the route it follows ("Route ID"), or <see langword="null"/> where the level gives none.</summary>
+    public int? RouteId => TryGetValue("Route ID", out object? value) && value is int id ? id : null;
+
     /// <summary>Gets or sets the car it drives and the route it follows, or <see langword="null"/> for one this level's graphs gave no route.</summary>
     internal CarAiState? Driver { get; set; }
 
@@ -84,6 +93,21 @@ public sealed class StationaryGunHolderTask : VehicleTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = StationaryGunHolders.TypeName;
+
+    /// <summary>Gets the expression that gives the team of the holder ("Team expression").</summary>
+    public string TeamExpression => DeclaredTaskValues.TextOrEmpty(this, "Team expression");
+
+    /// <summary>Gets the expression that says whether the holder is on ("On expression").</summary>
+    public string OnExpression => DeclaredTaskValues.TextOrEmpty(this, "On expression");
+
+    /// <summary>Gets the height of the view cone, in degrees ("Viewcone Alpha").</summary>
+    public float ViewconeAlpha => DeclaredTaskValues.RealConverted(this, "Viewcone Alpha", 360f);
+
+    /// <summary>Gets the width of the view cone, in degrees ("Viewcone Gamma").</summary>
+    public float ViewconeGamma => DeclaredTaskValues.RealConverted(this, "Viewcone Gamma", 360f);
+
+    /// <summary>Gets the length of the view cone, in metres ("Viewcone Length").</summary>
+    public float ViewconeLength => DeclaredTaskValues.RealConverted(this, "Viewcone Length", 10f);
 
     /// <inheritdoc/>
     private protected override bool Run(LevelVehicles vehicles)

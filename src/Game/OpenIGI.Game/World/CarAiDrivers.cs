@@ -53,14 +53,10 @@ internal sealed class CarAiDrivers(
         AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(_context.Root);
         foreach (GameTask task in _context.Root.Descendants())
         {
-            if (task is not DeclaredTask declared
-                || !string.Equals(task.Type.Name, "CarAI", StringComparison.Ordinal)
-                || !declared.TryGetValue("Car ID", out object? rawCarId)
-                || !declared.TryGetValue("Graph ID", out object? rawGraphId)
-                || !declared.TryGetValue("Route ID", out object? rawRouteId)
-                || rawCarId is not int carId
-                || rawGraphId is not int graphId
-                || rawRouteId is not int routeId
+            if (task is not CarAiTask declared
+                || declared.CarId is not int carId
+                || declared.GraphId is not int graphId
+                || declared.RouteId is not int routeId
                 || graphId < 0
                 || routeId < 0
                 || _context.Root.Tree.FromId(carId) is not DeclaredTask car
@@ -73,10 +69,7 @@ internal sealed class CarAiDrivers(
 
             CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
             _carAis.Add(state);
-            if (declared is CarAiTask typed)
-            {
-                typed.Driver = state;
-            }
+            declared.Driver = state;
         }
     }
 
