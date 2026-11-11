@@ -25,6 +25,10 @@ public abstract class WorldInteractionTask : DeclaredLevelTask
     /// <summary>Gets or sets the interaction this task owns, or <see langword="null"/> for a task that has none.</summary>
     internal WorldInteraction? Item { get; set; }
 
+    /// <summary>Gets the expression that says whether the task is on ("On Expression", or "On" where a type names it so).</summary>
+    public virtual string OnExpression => DeclaredTaskValues.TextOrFallback(
+        this, "On Expression", DeclaredTaskValues.TextOrFallback(this, "On", string.Empty));
+
     /// <inheritdoc/>
     public override void Run(LevelRun level)
     {
@@ -63,6 +67,9 @@ public sealed class SwitchTask : WorldInteractionTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Switch";
 
+    /// <summary>Gets a value indicating whether a round breaks the switch ("Destructable").</summary>
+    public bool IsDestructable => DeclaredTaskValues.BoolStrict(this, "Destructable");
+
     /// <inheritdoc/>
     private protected override void RunItem(WorldInteraction item, int now) => item.RunSwitch(now);
 }
@@ -72,6 +79,9 @@ public class TerminalTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Terminal";
+
+    /// <summary>Gets how long the terminal takes to hack, in seconds ("Hack Time (s)").</summary>
+    public float HackSeconds => DeclaredTaskValues.RealFromNumber(this, "Hack Time (s)", 4f);
 
     /// <inheritdoc/>
     private protected sealed override void RunItem(WorldInteraction item, int now) => item.RunTimed(now);
@@ -83,6 +93,9 @@ public sealed class CabinetTask : WorldInteractionTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Cabinet";
 
+    /// <summary>Gets how long the cabinet takes to search, in seconds ("Search Time (s)").</summary>
+    public float SearchSeconds => DeclaredTaskValues.RealFromNumber(this, "Search Time (s)", 4f);
+
     /// <inheritdoc/>
     private protected override void RunItem(WorldInteraction item, int now) => item.RunCabinet(now);
 }
@@ -93,6 +106,19 @@ public sealed class CabinetTask : WorldInteractionTask
 /// </summary>
 public abstract class TimedActionTask : WorldInteractionTask
 {
+    /// <summary>Gets how long the action takes, in seconds ("Activate Time (s)").</summary>
+    public float ActivateSeconds => DeclaredTaskValues.RealFromNumber(this, "Activate Time (s)", 4f);
+
+    /// <summary>Gets the sprite the prompt shows ("Click to select sprite"), as the level names it.</summary>
+    public string ActionSprite => DeclaredTaskValues.TextOrFallback(this, "Click to select sprite", "a_c4.spr");
+
+    /// <summary>Gets a value indicating whether the action can be blown up, and so runs its <c>ExplodeObject</c> ("Explodable").</summary>
+    public bool IsExplodable => DeclaredTaskValues.BoolStrict(this, "Explodable");
+
+    /// <summary>Gets the animation the body plays while at it ("Activate Anim"), or -1 for none.</summary>
+    /// <remarks>An Int16 parameter, which the task holds as a short.</remarks>
+    public int ActivateAnimation => DeclaredTaskValues.IntTruncating(this, "Activate Anim", -1);
+
     /// <inheritdoc/>
     private protected override void RunInWalk(LevelRun level, int now)
     {
@@ -122,6 +148,9 @@ public sealed class PlaceExplosiveTbaTask : TimedActionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "PlaceExplosiveTBA";
+
+    /// <summary>Gets the id of the task the plant puts in place ("Task ID to place"), or -1 for none.</summary>
+    public int TaskIdToPlace => DeclaredTaskValues.IntTruncating(this, "Task ID to place", -1);
 }
 
 /// <summary>A fence (<c>Fence</c>): its own update, then its children.</summary>
@@ -129,6 +158,9 @@ public sealed class FenceTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Fence";
+
+    /// <summary>Gets the expression that says whether the fence is live ("Electric Expression").</summary>
+    public string ElectricExpression => DeclaredTaskValues.TextOrFallback(this, "Electric Expression", string.Empty);
 
     /// <inheritdoc/>
     private protected override void RunInWalk(LevelRun level, int now)
@@ -146,6 +178,21 @@ public sealed class StationaryGunTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StationaryGun";
+
+    /// <summary>Gets how far the gun lifts, in degrees ("Max up angle").</summary>
+    public float MaxUpAngle => DeclaredTaskValues.RealFromNumber(this, "Max up angle", 25f);
+
+    /// <summary>Gets how far the gun dips, in degrees ("Max down angle").</summary>
+    public float MaxDownAngle => DeclaredTaskValues.RealFromNumber(this, "Max down angle", -25f);
+
+    /// <summary>Gets how far the gun turns to either side, in degrees ("Max sideways angle").</summary>
+    public float MaxSidewaysAngle => DeclaredTaskValues.RealFromNumber(this, "Max sideways angle", 90f);
+
+    /// <summary>Gets the weapon the stand carries ("Weapon ID").</summary>
+    public string WeaponId => DeclaredTaskValues.TextOrFallback(this, "Weapon ID", "WEAPON_ID_M2HB");
+
+    /// <summary>Gets the rounds the gun starts with ("Ammo"), or -1 for no limit.</summary>
+    public int Ammo => (int)DeclaredTaskValues.RealFromNumber(this, "Ammo", -1f);
 
     /// <inheritdoc/>
     private protected override void RunInWalk(LevelRun level, int now)
@@ -168,6 +215,10 @@ public sealed class WireTask : WorldInteractionTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Wire";
+
+    /// <summary>Gets where the wire ends ("Stop position"), or <see langword="null"/> where the level gives none.</summary>
+    public OpenIGI.Core.Numerics.Vector3d? StopPosition =>
+        TryGetValue("Stop position", out object? value) && value is OpenIGI.Core.Numerics.Vector3d stop ? stop : null;
 
     /// <inheritdoc/>
     private protected override void RunInWalk(LevelRun level, int now) => RunItem(Item!, now);
@@ -192,7 +243,7 @@ public sealed class GeneratorTask : WorldInteractionTask
     public string ShutdownSound => DeclaredTaskValues.TextOrFallback(this, "Shutdown sound", string.Empty);
 
     /// <summary>Gets the expression that says whether it is on ("On expression").</summary>
-    public string OnExpression => DeclaredTaskValues.TextOrFallback(
+    public override string OnExpression => DeclaredTaskValues.TextOrFallback(
         this, "On expression", DeclaredTaskValues.TextOrFallback(this, "On Expression", string.Empty));
 
     /// <summary>Gets a value indicating whether it comes back on by itself ("Use backup timer").</summary>

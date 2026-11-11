@@ -19,6 +19,21 @@ public sealed class DoorTask : DeclaredLevelTask
     /// <summary>Gets or sets the door this task is, or <see langword="null"/> until a registry keeps it.</summary>
     internal PlacedDoor? Door { get; set; }
 
+    /// <summary>Gets a value indicating whether the door's lock can be picked ("Pickable").</summary>
+    public bool IsPickable => DeclaredTaskValues.BoolStrict(this, "Pickable");
+
+    /// <summary>Gets how long the lock takes to pick, in seconds ("Pick lock time (s)").</summary>
+    public float PickLockSeconds => DeclaredTaskValues.RealFromNumber(this, "Pick lock time (s)", 4f);
+
+    /// <summary>Gets the expression that says whether the door is locked ("Locked expression").</summary>
+    public string LockedExpression => DeclaredTaskValues.TextOrFallback(this, "Locked expression", string.Empty);
+
+    /// <summary>Gets the expression that opens the door ("Open door expression").</summary>
+    public string OpenExpression => DeclaredTaskValues.TextOrFallback(this, "Open door expression", string.Empty);
+
+    /// <summary>Gets the expression that closes the door ("Close door expression").</summary>
+    public string CloseExpression => DeclaredTaskValues.TextOrFallback(this, "Close door expression", string.Empty);
+
     /// <summary>Gets where the door stands closed ("Position start").</summary>
     public Vector3d PositionStart => Declared("Position start", default(Vector3d));
 

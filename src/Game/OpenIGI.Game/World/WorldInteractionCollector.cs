@@ -31,7 +31,7 @@ internal static class WorldInteractionCollector
         {
             Vector3d taskPosition = PositionOf(declared, type);
             Vector3d start = taskPosition;
-            Vector3d end = Vector(declared, "Stop position", start);
+            Vector3d end = (declared as WireTask)?.StopPosition ?? start;
             float facing = FacingOf(declared);
             Matrix3f orientation = OrientationOf(declared);
             int magicIndex = type is InteractionActivateType.Terminal
@@ -66,16 +66,16 @@ internal static class WorldInteractionCollector
             PlacedDoor? door = type == InteractionActivateType.Door
                 ? doors.Doors.FirstOrDefault(candidate => ReferenceEquals(candidate.Task, task))
                 : null;
-            AiStationaryGun? stationaryGun = type == InteractionActivateType.StationaryGun
+            AiStationaryGun? stationaryGun = declared is StationaryGunTask mounted
                 ? new AiStationaryGun(
                     declared.Id,
                     taskPosition,
                     orientation,
-                    RealFromNumber(declared, "Max up angle", 25f),
-                    RealFromNumber(declared, "Max down angle", -25f),
-                    RealFromNumber(declared, "Max sideways angle", 90f),
-                    TextOrFallback(declared, "Weapon ID", "WEAPON_ID_M2HB"),
-                    (int)RealFromNumber(declared, "Ammo", -1f))
+                    mounted.MaxUpAngle,
+                    mounted.MaxDownAngle,
+                    mounted.MaxSidewaysAngle,
+                    mounted.WeaponId,
+                    mounted.Ammo)
                 : null;
             if (stationaryGun is not null
                 && models.TryGetValue(modelName, out MefModel? standModel)
@@ -109,19 +109,15 @@ internal static class WorldInteractionCollector
                 MarkerOf(taskPosition, orientation, start, models, modelName);
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
-                DurationOf(declared, type), SpriteOf(declared, type), door,
-                BoolStrict(declared, "Pickable"), stationaryGun,
+                DurationOf(declared), SpriteOf(declared, type), door,
+                declared is DoorTask { IsPickable: true }, stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
                 markerPoint, markerLocal,
-                type == InteractionActivateType.PlaceExplosive ? IntTruncating(declared, "Task ID to place", -1) : -1,
-                // An Int16 parameter, which the task holds as a short: read as an int it answered -1 for every
-                // charge, no clip started, and the body kept the pose it walked up in.
-                type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
-                    ? IntTruncating(declared, "Activate Anim", -1)
-                    : -1)
+                (declared as PlaceExplosiveTbaTask)?.TaskIdToPlace ?? -1,
+                (declared as TimedActionTask)?.ActivateAnimation ?? -1)
             {
-                IsDestructable = type == InteractionActivateType.Switch && BoolStrict(declared, "Destructable"),
-                IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && BoolStrict(declared, "Explodable"),
+                IsDestructable = declared is SwitchTask { IsDestructable: true },
+                IsExplodable = declared is TimedActionTask { IsExplodable: true },
                 TaskPosition = taskPosition,
                 WireOriginAuthored = wire?.PositionUnits ?? Vector3d.Lerp(start, end, 0.5),
                 WireStartLocalY = wire?.CableStartLocalY ?? -(end - start).Length * 0.5,
@@ -150,11 +146,12 @@ internal static class WorldInteractionCollector
                     item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
                 }
             }
-            string onExpression = TextOrFallback(declared, "On Expression", TextOrFallback(declared, "On", string.Empty));
-            string lockedExpression = TextOrFallback(declared, "Locked expression", string.Empty);
-            string openExpression = TextOrFallback(declared, "Open door expression", string.Empty);
-            string closeExpression = TextOrFallback(declared, "Close door expression", string.Empty);
-            string electricExpression = TextOrFallback(declared, "Electric Expression", string.Empty);
+            string onExpression = (declared as WorldInteractionTask)?.OnExpression ?? string.Empty;
+            DoorTask? hinged = declared as DoorTask;
+            string lockedExpression = hinged?.LockedExpression ?? string.Empty;
+            string openExpression = hinged?.OpenExpression ?? string.Empty;
+            string closeExpression = hinged?.CloseExpression ?? string.Empty;
+            string electricExpression = (declared as FenceTask)?.ElectricExpression ?? string.Empty;
 
             // A terminal's update (0x4438E0) and a GenericTBA's (0x4480B0) force isOn off once the ExplodeObject they derive
             // from has exploded (+400), before they look at the On expression -- a terminal blown up is a terminal switched
@@ -334,19 +331,20 @@ internal static class WorldInteractionCollector
         }
     }
 
-    private static int DurationOf(DeclaredTask task, InteractionActivateType type)
+    // How long working the task takes, in ticks: each type's own time parameter, at thirty ticks a second.
+    private static int DurationOf(DeclaredTask task)
     {
-        string parameter = type switch
+        float? seconds = task switch
         {
-            InteractionActivateType.Door => "Pick lock time (s)",
-            InteractionActivateType.Cabinet => "Search Time (s)",
-            InteractionActivateType.Terminal => "Hack Time (s)",
-            InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive => "Activate Time (s)",
-            _ => string.Empty,
+            DoorTask door => door.PickLockSeconds,
+            CabinetTask cabinet => cabinet.SearchSeconds,
+            TerminalTask terminal => terminal.HackSeconds,
+            TimedActionTask action => action.ActivateSeconds,
+            _ => null,
         };
-        return type == InteractionActivateType.Fence
+        return task is FenceTask
             ? WorldInteraction.FenceTraversalTicks
-            : parameter.Length == 0 ? 0 : Math.Max(1, (int)(RealFromNumber(task, parameter, 4f) * 30f));
+            : seconds is float time ? Math.Max(1, (int)(time * 30f)) : 0;
     }
 
     private static string SpriteOf(DeclaredTask task, InteractionActivateType type) => type switch
@@ -359,7 +357,7 @@ internal static class WorldInteractionCollector
         InteractionActivateType.Wire => "a_wire.spr",
         InteractionActivateType.Fence => "a_fence.spr",
         InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
-            TextOrFallback(task, "Click to select sprite", "a_c4.spr")
+            ((task as TimedActionTask)?.ActionSprite ?? "a_c4.spr")
                 .Replace("STATUSSCREEN:", string.Empty, StringComparison.OrdinalIgnoreCase),
         _ => string.Empty,
     };
