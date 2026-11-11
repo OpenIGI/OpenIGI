@@ -35,7 +35,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     private readonly List<CutsceneSoundState> _sounds = [];
 
     // What each task that runs itself through this runtime is the task of.
-    private readonly Dictionary<GameTask, CutsceneSceneState> _scenesByTask = new(ReferenceEqualityComparer.Instance);
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
@@ -252,8 +251,8 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         {
             CutsceneSceneState scene = new(cutscene, _camera.ReadShots(cutscene));
             _scenes.Add(scene);
-            _scenesByTask[cutscene] = scene;
             cutscene.Cutscenes = this;
+            cutscene.Playing = scene;
             _walker.RegisterDeactivation(cutscene, _ => DeactivateScene(scene));
         }
 
@@ -518,19 +517,8 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     internal void RunSound(CutsceneSoundState sound) => TickSound(sound);
 
     /// <summary>A cutscene's own update, where the level's walk reaches its task.</summary>
-    /// <param name="task">The cutscene's task.</param>
-    /// <param name="level">The run that reached it.</param>
-    /// <returns>Whether this runtime keeps the scene and stepped it.</returns>
-    internal bool RunScene(CutSceneTask task, Level.LevelRun level)
-    {
-        if (!ReferenceEquals(level, _walker) || !_scenesByTask.TryGetValue(task, out CutsceneSceneState? scene))
-        {
-            return false;
-        }
-
-        TickScene(scene);
-        return true;
-    }
+    /// <param name="scene">The scene as it plays.</param>
+    internal void RunScene(CutsceneSceneState scene) => TickScene(scene);
 
     // Makes this runtime the one a kept task runs through, and says so loudly when the task was made without its class.
     private CutsceneRuntimeTask? Adopt(GameTask task)

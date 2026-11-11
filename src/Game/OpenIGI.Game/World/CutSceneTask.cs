@@ -91,12 +91,19 @@ public partial class CutSceneTask : GameTask, Level.ILevelTicked
     /// <summary>Gets or sets the level's cutscene runtime, which steps this scene; none until it is built.</summary>
     internal CutsceneRuntime? Cutscenes { get; set; }
 
+    /// <summary>Gets or sets the scene as it plays -- its shots and its clock -- or <see langword="null"/> until a runtime keeps it.</summary>
+    internal CutsceneSceneState? Playing { get; set; }
+
     /// <inheritdoc/>
     /// <remarks>A scene no runtime keeps is walked as a plain container is.</remarks>
     void Level.ILevelTicked.Run(Level.LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        if (Cutscenes?.RunScene(this, level) != true)
+        if (Cutscenes is { } cutscenes && Playing is { } playing && cutscenes.RunsIn(level))
+        {
+            cutscenes.RunScene(playing);
+        }
+        else
         {
             level.RunChildren(this);
         }
