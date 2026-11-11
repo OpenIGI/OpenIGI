@@ -128,7 +128,7 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
             return _vehicles;
         }
 
-        foreach (VehicleOccupant occupant in runtime.VehicleOccupants())
+        foreach (VehicleOccupant occupant in runtime.Vehicles.VehicleOccupants())
         {
             if (root.Tree.FromId(occupant.TaskId) is not { } task)
             {
@@ -137,7 +137,7 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
 
             float yaw = runtime.TryGetDrawTransform(task, out _, out Matrix3f orientation) ? SoldierBodyQueries.FacingOf(orientation) : 0f;
             float radius = 0f;
-            foreach (RetailRayModel model in runtime.RetailVehicleModels())
+            foreach (RetailRayModel model in runtime.Vehicles.RetailVehicleModels())
             {
                 if (ReferenceEquals(model.Owner, task))
                 {

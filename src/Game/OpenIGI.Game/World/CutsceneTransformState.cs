@@ -147,7 +147,7 @@ internal sealed class CutsceneTransformState(Vector3d position, Matrix3f orienta
     /// <summary>The car's retail rigid body, once its controller's set-up packet has created it.</summary>
     public RetailCarBody? RetailBody { get; set; }
 
-    /// <summary>Whether a set-up packet arrived before <see cref="CutsceneRuntime.ConfigureRetailCars"/> supplied the world.</summary>
+    /// <summary>Whether a set-up packet arrived before <see cref="LevelVehicles.ConfigureRetailCars"/> supplied the world.</summary>
     public bool RetailResetPending { get; set; }
 
     /// <summary>The helicopter's retail rigid body, once its AnimTask has first spoken.</summary>

@@ -628,7 +628,7 @@ public sealed partial class Igi1PlayerSetup(
                 && vehicle.TryGetValue("Model", out object? rawZoneModel)
                 && rawZoneModel is string zoneModel)
             {
-                runtime.ConfigureDeathZones(
+                runtime.Vehicles.ConfigureDeathZones(
                     vehicle,
                     VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
             }
@@ -664,10 +664,10 @@ public sealed partial class Igi1PlayerSetup(
         // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
         if (host.Scene is { } armedScene)
         {
-            runtime.BindVehicleGunPlacements(armedScene);
+            runtime.Vehicles.BindVehicleGunPlacements(armedScene);
         }
 
-        mission.SoldierPresenter?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
+        mission.SoldierPresenter?.ArmVehicleGuns(loaded, weaponModels, runtime.Vehicles.VehicleGunVisuals);
 
         // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
         // about a metre over the feet standing and half that crouched -- not the eye.
@@ -676,7 +676,7 @@ public sealed partial class Igi1PlayerSetup(
             mission.IsPlayerDead || mission.PlayerHealth.IsDead ? null
             : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
             : (player.Body.Position, player.Body.IsCrouched);
-        runtime.VehicleCombatTarget = () => Target() is { } aim
+        runtime.Vehicles.VehicleCombatTarget = () => Target() is { } aim
             ? aim.Feet + new Vector3d(
                 0d,
                 0d,
@@ -684,13 +684,13 @@ public sealed partial class Igi1PlayerSetup(
             : null;
         // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
         // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.VehicleSightTarget = () => Target() is { } seen
+        runtime.Vehicles.VehicleSightTarget = () => Target() is { } seen
             ? seen.Feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(seen.Low))
             : null;
         // A holder's record is offered every human in the global list's order (0x489750), each described by itself
         // (0x45FE30): the player, the partners, then the soldiers.
         List<AiDetectable> detectables = [];
-        runtime.GunHolderSubjects = () =>
+        runtime.Vehicles.GunHolderSubjects = () =>
         {
             detectables.Clear();
             int playerTeam = mission.Soldiers?.PlayerTeam ?? 0;
@@ -708,10 +708,10 @@ public sealed partial class Igi1PlayerSetup(
             mission.Soldiers?.AddDetectables(detectables);
             return detectables;
         };
-        runtime.VehicleCombatLineOfSight = (owner, from, to) =>
+        runtime.Vehicles.VehicleCombatLineOfSight = (owner, from, to) =>
             mission.Trace is null
             || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.SightObstructionTolerance, owner);
-        runtime.VehicleCombatShotFired = shot =>
+        runtime.Vehicles.VehicleCombatShotFired = shot =>
         {
             if (shot.IsHitscan)
             {
@@ -760,7 +760,7 @@ public sealed partial class Igi1PlayerSetup(
                 return false;
             }
 
-            runtime.ConfigureVehicleGuns(carrier, guns);
+            runtime.Vehicles.ConfigureVehicleGuns(carrier, guns);
             weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
             host.Logger.Information(
                 "Ai",

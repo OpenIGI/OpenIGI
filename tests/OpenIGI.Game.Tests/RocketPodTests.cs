@@ -131,15 +131,15 @@ public sealed class RocketPodTests
         IgiRandom random = IgiRandom.Seeded();
         int draws = 0;
         random.Drew = _ => draws++;
-        runtime.VehicleRandom = random;
-        runtime.ConfigureVehicleParts(
+        runtime.Vehicles.VehicleRandom = random;
+        runtime.Vehicles.ConfigureVehicleParts(
             world,
             name => magic.TryGet(name, out MagicObjectDefinition definition) ? definition : null,
             definition => magic.TaskTypeName(definition.TaskType));
 
         foreach (WorldPlacement placement in world.Placements)
         {
-            runtime.VehiclePartMade(placement);
+            runtime.Vehicles.VehiclePartMade(placement);
         }
 
         // Heli_353 and Heli_356 are the mission's two Hinds.

@@ -120,7 +120,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
                 runtime.CollisionIndex = ObjectCollisionIndex.Build(scene.Placements);
             }
 
-            runtime.BindVehicleWheels(
+            runtime.Vehicles.BindVehicleWheels(
                 scene,
                 name => mission.TryGetModel(name, out MefModel? model) && model is not null
                     ? WorldScene.WheelRadius(model)

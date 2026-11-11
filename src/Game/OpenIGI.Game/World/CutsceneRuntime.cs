@@ -38,22 +38,14 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     private readonly Dictionary<GameTask, CutsceneAnimationState> _animationsByTask = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, CutsceneSoundState> _soundsByTask = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, CutsceneSceneState> _scenesByTask = new(ReferenceEqualityComparer.Instance);
-    private readonly List<CarAiState> _carAis = [];
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
     private bool _held;
     private readonly LevelUpdateWalker _walker;
-    private readonly Dictionary<GameTask, int> _lastVehicleTick = [];
     private readonly CutsceneAttachments _attachments;
-    private readonly CutsceneGroundSupport _ground;
-    private readonly CutsceneVehicleBodies _bodies;
     private readonly CutsceneTransformCapture _capture;
     private readonly CutsceneAnimationPackets _packets;
-    private readonly CutsceneVehicleArmament _armament;
-    private readonly CutsceneVehicleParts _parts;
-    private readonly CutsceneCarAi _carAi;
-    private readonly CutsceneVehicleDraw _draw;
     private readonly CutsceneCameraFrames _camera;
     private bool _breakRequested;
 
@@ -74,7 +66,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// a great deal of what a vehicle stands on is placed geometry rather than terrain -- the
     /// Mission 1 outro truck starts on a garage floor a few centimetres above the dirt, and without
     /// the objects its wheels settle through the floor onto the terrain. Setting it no longer rests
-    /// the helicopters as a side effect; call <see cref="RestHelicoptersOnSupport"/> for that.
+    /// the helicopters as a side effect; call <see cref="LevelVehicles.RestHelicoptersOnSupport"/> for that.
     /// </para>
     /// </remarks>
     public ObjectCollisionIndex? CollisionIndex
@@ -90,65 +82,8 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         set => _context.Destructibles = value;
     }
 
-    /// <summary>Supplies the living player eye used by firing vehicles.</summary>
-    public Func<Vector3d?>? VehicleCombatTarget
-    {
-        get => _armament.VehicleCombatTarget;
-        set => _armament.VehicleCombatTarget = value;
-    }
-
-    /// <summary>
-    /// Gets or sets where a vehicle's eye tests the same target: the point the human reports to a detection sweep
-    /// (message <c>0x489620</c>), which the soldiers' sweep uses too. Falls back to <see cref="VehicleCombatTarget"/>.
-    /// </summary>
-    public Func<Vector3d?>? VehicleSightTarget
-    {
-        get => _armament.VehicleSightTarget;
-        set => _armament.VehicleSightTarget = value;
-    }
-
-    /// <summary>Tests the firing vehicle's muzzle-to-player sight segment.</summary>
-    public Func<GameTask, Vector3d, Vector3d, bool>? VehicleCombatLineOfSight
-    {
-        get => _armament.VehicleCombatLineOfSight;
-        set => _armament.VehicleCombatLineOfSight = value;
-    }
-
-    /// <summary>Receives a vehicle missile only after sight, retention and gun cadence allow it.</summary>
-    public Action<VehicleCombatShot>? VehicleCombatShotFired
-    {
-        get => _armament.VehicleCombatShotFired;
-        set => _armament.VehicleCombatShotFired = value;
-    }
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.ConfigureVehicleCombat"/>
-    public void ConfigureVehicleCombat(GameTask vehicle, WeaponType weapon) => _armament.ConfigureVehicleCombat(vehicle, weapon);
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.ConfigureVehicleGuns"/>
-    public void ConfigureVehicleGuns(GameTask vehicle, IReadOnlyList<VehicleGun> guns) => _armament.ConfigureVehicleGuns(vehicle, guns);
-
-    /// <inheritdoc cref="CutsceneVehicleBodies.VehicleSoundSources"/>
-    public IEnumerable<VehicleSoundSource> VehicleSoundSources() => _bodies.VehicleSoundSources();
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.VehicleGunSounds"/>
-    public IEnumerable<VehicleGunSound> VehicleGunSounds() => _armament.VehicleGunSounds();
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.ConfigureDeathZones"/>
-    public void ConfigureDeathZones(GameTask vehicle, IReadOnlyList<VehicleDeathZone> zones) => _armament.ConfigureDeathZones(vehicle, zones);
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.TryRunOver"/>
-    public bool TryRunOver(Vector3d humanOrigin, out GameTask? vehicle) => _armament.TryRunOver(humanOrigin, out vehicle);
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.GunTurret"/>
-    public VehicleGunTurret? GunTurret(GameTask vehicle, int index) => _armament.GunTurret(vehicle, index);
-
-    /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
-    /// <remarks>
-    /// Separate from <see cref="CollisionIndex"/> because it is a one-shot placement pass, not a
-    /// consequence of the index being available: the index is what every vehicle's ground query
-    /// reads, and only a helicopter authored with collision wants to be re-seated on it.
-    /// </remarks>
-    public void RestHelicoptersOnSupport() => _ground.RestCollisionHelisOnSupport();
+    /// <summary>Gets the level's vehicles: its cars, helicopters, mounted-gun holders and what steers and arms them.</summary>
+    public LevelVehicles Vehicles { get; }
 
     /// <summary>Builds the live cutscene state for a loaded level.</summary>
     public CutsceneRuntime(
@@ -183,15 +118,9 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             terrain,
             logger ?? NullLogger.Instance);
         _attachments = new CutsceneAttachments(_context);
-        _ground = new CutsceneGroundSupport(_context);
-        _bodies = new CutsceneVehicleBodies(_context, _ground, vehicleObstacleHit, vehicleObstacleReleased);
+        Vehicles = new LevelVehicles(_context, _attachments, _animations, _walker, vehicleObstacleHit, vehicleObstacleReleased);
         _capture = new CutsceneTransformCapture(_context, _attachments, modelLength, modelPivot);
-        _armament = new CutsceneVehicleArmament(_context, _carAis, _animations);
-        _gunHolders = new CutsceneGunHolders(_context, _armament);
-        _parts = new CutsceneVehicleParts(_context, _armament);
-        _packets = new CutsceneAnimationPackets(_context, _bodies, _ground, _parts);
-        _carAi = new CutsceneCarAi(_context, _bodies, _armament, _carAis);
-        _draw = new CutsceneVehicleDraw(_context, _attachments, _bodies, _armament, _parts);
+        _packets = new CutsceneAnimationPackets(_context, Vehicles.Bodies, Vehicles.Ground, Vehicles.Parts);
         _camera = new CutsceneCameraFrames(_context, _attachments);
         List<CutSceneTask> cutscenes = [];
 
@@ -199,7 +128,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         // lenses at construction, then HumanAIs and vehicles in tree order at post-load (AiVisionPhases). Runtime
         // re-initialisations carry on from where the load left the counter.
         (IReadOnlyDictionary<GameTask, int> visionPhases, int visionCounter) = AiVisionPhases.Assign(levelRoot);
-        _armament.StartVisionCounter(visionCounter);
+        Vehicles.Armament.StartVisionCounter(visionCounter);
         int taskOrder = 0;
         foreach (GameTask task in levelRoot.Descendants())
         {
@@ -207,7 +136,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             _context.TaskOrder[task] = order;
             if (task.Type.Name is "Car" or "Heli")
             {
-                _armament.RegisterVision(task, visionPhases);
+                Vehicles.Armament.RegisterVision(task, visionPhases);
             }
             if (task is ConditionalContainerTask { SettlesOutsideTheTick: true } container)
             {
@@ -302,7 +231,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
-        BindVehicleUpdates(levelRoot, visionPhases);
+        Vehicles.Adopt(levelRoot, visionPhases);
 
         _walker.ContainerScript = (container, script) => _context.Expressions.Execute(script, container);
         _walker.HoldContainer = RetainsLevelFourOutro;
@@ -310,7 +239,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         // Capture the whole authored hierarchy before parking a vehicle. Moving a
         // parent first makes its still-authored child positions acquire the parking
         // displacement as a permanent local offset (Level 3's pilot floats above it).
-        _ground.RestCollisionHelisOnSupport();
+        Vehicles.Ground.RestCollisionHelisOnSupport();
 
         // EditCamera caches every Link task's initial world transform during retail
         // UpdateInternalData.  Build those keys only after all task transforms exist: Train tasks do
@@ -384,22 +313,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
 
     /// <summary>Supplies live poses for targets owned by another simulation, such as animated humans.</summary>
     public void SetTargetPoseResolver(Func<int, CutsceneTargetPose?>? resolver) => _camera.TargetPoseResolver = resolver;
-
-    /// <inheritdoc cref="CutsceneVehicleBodies.ConfigureRetailCars"/>
-    public void ConfigureRetailCars(
-        IRetailCarWorld world,
-        Func<string, OpenIGI.Formats.World.MefModel?> models,
-        Func<string, MagicObjectDefinition?>? magic = null) =>
-        _bodies.ConfigureRetailCars(world, models, magic);
-
-    /// <inheritdoc cref="CutsceneCarAi.ConfigureCarAi"/>
-    public void ConfigureCarAi(IReadOnlyDictionary<int, GraphFile> graphs) => _carAi.ConfigureCarAi(graphs);
-
-    /// <inheritdoc cref="CutsceneCarAi.CarAiTargetNode"/>
-    public int? CarAiTargetNode(GameTask car) => _carAi.CarAiTargetNode(car);
-
-    /// <inheritdoc cref="CutsceneVehicleBodies.VehicleOccupants"/>
-    public IReadOnlyList<VehicleOccupant> VehicleOccupants() => _bodies.VehicleOccupants();
 
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>
     /// <param name="task">The helicopter task whose first terrain contact is terminal.</param>
@@ -607,17 +520,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             case ConditionalSoundTask when _soundsByTask.TryGetValue(task, out CutsceneSoundState? sound):
                 TickSound(sound);
                 return true;
-            case CarTask:
-                TickCar(task);
-                return true;
-            case HeliTask:
-                TickHeli(task);
-                return true;
-            case StationaryGunHolderTask:
-                _gunHolders.Tick(task, () => _walker.RunChildren(task));
-                return true;
-            case CarAiTask:
-                return _carAi.RunFromWalk(task);
             default:
                 return false;
         }
@@ -820,34 +722,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         }
     }
 
-    /// <summary>
-    /// A Car's update (<c>0x42E320</c>): at most once a tick, its children -- the CarAI or AnimTask whose packet
-    /// steps its physics -- then its guns and its death zones.
-    /// </summary>
-    private void TickCar(GameTask car)
-    {
-        if (_lastVehicleTick.TryGetValue(car, out int last) && last == _context.SimulationTick)
-        {
-            return;
-        }
-
-        _lastVehicleTick[car] = _context.SimulationTick;
-        _armament.TickVehicleVision(car);
-        _walker.RunChildren(car);
-        _armament.TickVehicleCombat(car);
-        _armament.TickDeathZones(car);
-    }
-
-    /// <summary>A Heli's update (<c>0x4316D0</c>): its children -- its AnimTask flies it -- then its gun.</summary>
-    private void TickHeli(GameTask heli)
-    {
-        _parts.TickDoor(heli);
-        _armament.TickVehicleVision(heli);
-        _walker.RunChildren(heli);
-        _armament.TickVehicleCombat(heli);
-        _armament.TickDeathZones(heli);
-    }
-
     /// <summary>Serves cutscene-specific level-expression natives to sibling mission runtimes.</summary>
     public QvmValue? TryInvokeNative(string name, ScriptArguments arguments) => InvokeNative(name, arguments);
 
@@ -870,14 +744,10 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetDrawTransform"/>
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation) =>
-        _draw.TryGetDrawTransform(task, out position, out orientation);
+        Vehicles.Draw.TryGetDrawTransform(task, out position, out orientation);
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetDynamicVelocity"/>
-    public bool TryGetDynamicVelocity(GameTask task, out Vector3d velocity) => _draw.TryGetDynamicVelocity(task, out velocity);
-
-    /// <inheritdoc cref="CutsceneVehicleBodies.BindVehicleWheels"/>
-    public void BindVehicleWheels(WorldScene scene, Func<string, float>? modelRadius = null) =>
-        _bodies.BindVehicleWheels(scene, modelRadius);
+    public bool TryGetDynamicVelocity(GameTask task, out Vector3d velocity) => Vehicles.Draw.TryGetDynamicVelocity(task, out velocity);
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetPlacementDrawTransform(GameTask, Vector3d, Matrix3f, out Vector3d, out Matrix3f)"/>
     public bool TryGetPlacementDrawTransform(
@@ -886,44 +756,17 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         Matrix3f placementOrientation,
         out Vector3d position,
         out Matrix3f orientation) =>
-        _draw.TryGetPlacementDrawTransform(task, placementPosition, placementOrientation, out position, out orientation);
+        Vehicles.Draw.TryGetPlacementDrawTransform(task, placementPosition, placementOrientation, out position, out orientation);
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetPlacementDrawTransform(WorldPlacement, out Vector3d, out Matrix3f)"/>
     public bool TryGetPlacementDrawTransform(WorldPlacement placement, out Vector3d position, out Matrix3f orientation) =>
-        _draw.TryGetPlacementDrawTransform(placement, out position, out orientation);
-
-    /// <inheritdoc cref="CutsceneVehicleParts.Configure"/>
-    public void ConfigureVehicleParts(WorldScene scene, Func<string, MagicObjectDefinition?> magic, Func<MagicObjectDefinition, string> taskTypeName) =>
-        _parts.Configure(scene, magic, taskTypeName);
-
-    /// <inheritdoc cref="CutsceneVehicleParts.Made"/>
-    public void VehiclePartMade(WorldPlacement placement) => _parts.Made(placement);
-
-    /// <summary>Gets or sets the game's stream, which the vehicles' guns and the helicopters' rocket pods draw from.</summary>
-    public IgiRandom? VehicleRandom
-    {
-        get => _parts.Random;
-        set
-        {
-            _parts.Random = value;
-            _armament.Random = value;
-        }
-    }
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.BindVehicleGunPlacements"/>
-    public void BindVehicleGunPlacements(WorldScene scene) => _armament.BindVehicleGunPlacements(scene);
-
-    /// <inheritdoc cref="CutsceneVehicleArmament.VehicleGunVisuals"/>
-    public IEnumerable<VehicleGunVisual> VehicleGunVisuals() => _armament.VehicleGunVisuals();
-
-    /// <inheritdoc cref="CutsceneVehicleDraw.TryGetWheelDraw"/>
-    public bool TryGetWheelDraw(WorldPlacement placement, out Matrix3f rotation) => _draw.TryGetWheelDraw(placement, out rotation);
+        Vehicles.Draw.TryGetPlacementDrawTransform(placement, out position, out orientation);
 
     /// <inheritdoc cref="CutsceneVehicleDraw.Claims"/>
-    public bool Claims(WorldPlacement placement) => _draw.Claims(placement);
+    public bool Claims(WorldPlacement placement) => Vehicles.Draw.Claims(placement);
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetRotorDrawState"/>
-    public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw) => _draw.TryGetRotorDrawState(placement, out draw);
+    public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw) => Vehicles.Draw.TryGetRotorDrawState(placement, out draw);
 
     /// <inheritdoc cref="CutsceneAttachments.TryGetAttachedDrawTransform"/>
     public bool TryGetAttachedDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation) =>
@@ -945,9 +788,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
 
     /// <inheritdoc cref="CutsceneAttachments.AdvanceAttachedActor"/>
     public bool AdvanceAttachedActor(GameTask task, Vector3f rootMotion) => _attachments.AdvanceAttachedActor(task, rootMotion);
-
-    /// <inheritdoc cref="CutsceneVehicleBodies.RetailVehicleModels"/>
-    public IReadOnlyList<RetailRayModel> RetailVehicleModels() => _bodies.RetailVehicleModels();
 
     private void RefreshContainers(bool executeTransitions)
     {
@@ -1078,9 +918,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
 
     /// <summary>Gets what each attached task rides, by task, for the suites that read them.</summary>
     internal IReadOnlyDictionary<GameTask, CutsceneAttachmentState> AttachmentsForTesting => _attachments.All;
-
-    /// <summary>Gets the CarAI tasks' states, for the suites that read them.</summary>
-    internal IReadOnlyList<CarAiState> CarAisForTesting => _carAis;
 
     /// <summary>Makes every AnimTask run from the next tick on: an empty run expression, initial run set and running.</summary>
     internal void RunEveryAnimationForTesting()

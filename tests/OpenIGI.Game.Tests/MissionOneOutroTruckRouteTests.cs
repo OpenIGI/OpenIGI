@@ -94,7 +94,7 @@ public sealed class MissionOneOutroTruckRouteTests(ITestOutputHelper output)
                     : null,
             vehicleObstacleReleased: obstacle => doors.Doors
                 .FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
         Refresh();
 

@@ -263,8 +263,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         if (mission.Cutscenes is { } soundingVehicles)
         {
             host.SoundVehicles(
-                soundingVehicles.VehicleSoundSources().Concat(mission.RotatingObjects?.SoundSources() ?? []),
-                soundingVehicles.VehicleGunSounds());
+                soundingVehicles.Vehicles.VehicleSoundSources().Concat(mission.RotatingObjects?.SoundSources() ?? []),
+                soundingVehicles.Vehicles.VehicleGunSounds());
         }
 
         if (mission.Cutscenes is { } liveCutscenes && host.Scene is { } cinematicScene && mission.Solids is { } cinematicSolids)
@@ -537,7 +537,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
 
             Vector3d origin = rig.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.HumanOriginStandingInUnits);
-            if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+            if (!runtime.Vehicles.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
             {
                 continue;
             }

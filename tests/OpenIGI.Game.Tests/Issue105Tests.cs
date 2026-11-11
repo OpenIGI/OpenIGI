@@ -359,7 +359,7 @@ public sealed class Issue105Tests
         DeclaredTask limoGraphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(11));
         Assert.True(limoGraphTask.TryGetValue("Graph position", out object? rawLimoGraphPosition));
         limoGraph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawLimoGraphPosition));
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph, [11] = limoGraph });
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph, [11] = limoGraph });
         GameTask fakeApc = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(803));
         GameTask alarmApc = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
         Assert.True(ConditionalContainerGate.IsTaskActive(fakeApc));
@@ -436,7 +436,7 @@ public sealed class Issue105Tests
         bool reachedHelipad = false;
         for (int tick = 0; tick < 12_000 && ConditionalContainerGate.IsTaskActive(limo); tick++)
         {
-            objectives.SetVehicleOccupants(runtime.VehicleOccupants());
+            objectives.SetVehicleOccupants(runtime.Vehicles.VehicleOccupants());
             objectives.TickLevelState();
             if (variables.TryRead("AreaActivate_162.nActive", out QvmValue active)
                 && active.ToInt32() > 0)
@@ -525,7 +525,7 @@ public sealed class Issue105Tests
         DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
 
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
         // CarAI drives its car through the car's own physics: the first packet only sets the receiver
@@ -595,17 +595,17 @@ public sealed class Issue105Tests
         Assert.True(liveApc.IsDestroyed);
 
         Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d wreckPosition, out _));
-        runtime.ConfigureVehicleCombat(apc, new WeaponType
+        runtime.Vehicles.ConfigureVehicleCombat(apc, new WeaponType
         {
             ScriptId = "WEAPON_ID_APC",
             MuzzleVelocity = 5f,
             RoundsPerMinute = 12,
         });
         List<VehicleCombatShot> postDestructionShots = [];
-        runtime.VehicleCombatTarget = () => wreckPosition * WorldScene.UnitsPerMetre
+        runtime.Vehicles.VehicleCombatTarget = () => wreckPosition * WorldScene.UnitsPerMetre
             + new Vector3d(0d, 37.0137d * WorldScene.UnitsPerMetre, 0d);
-        runtime.VehicleCombatLineOfSight = static (_, _, _) => true;
-        runtime.VehicleCombatShotFired = postDestructionShots.Add;
+        runtime.Vehicles.VehicleCombatLineOfSight = static (_, _, _) => true;
+        runtime.Vehicles.VehicleCombatShotFired = postDestructionShots.Add;
 
         for (int tick = 0; tick < 8; tick++)
         {
@@ -636,8 +636,8 @@ public sealed class Issue105Tests
         DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
-        runtime.ConfigureVehicleCombat(apc, new WeaponType
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
+        runtime.Vehicles.ConfigureVehicleCombat(apc, new WeaponType
         {
             ScriptId = "WEAPON_ID_APC",
             MuzzleVelocity = 5f,
@@ -645,9 +645,9 @@ public sealed class Issue105Tests
         });
 
         List<VehicleCombatShot> shots = [];
-        runtime.VehicleCombatTarget = () => playerEye;
-        runtime.VehicleCombatLineOfSight = static (_, _, _) => true;
-        runtime.VehicleCombatShotFired = shots.Add;
+        runtime.Vehicles.VehicleCombatTarget = () => playerEye;
+        runtime.Vehicles.VehicleCombatLineOfSight = static (_, _, _) => true;
+        runtime.Vehicles.VehicleCombatShotFired = shots.Add;
 
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
         runtime.Tick(); // Target becomes visible and is retained; retail does not fire in this pass.

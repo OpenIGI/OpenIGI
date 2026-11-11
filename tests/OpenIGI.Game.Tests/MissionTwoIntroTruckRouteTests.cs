@@ -89,7 +89,7 @@ public sealed class MissionTwoIntroTruckRouteTests(ITestOutputHelper output)
         {
             CollisionIndex = solids,
         };
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
 
         Dictionary<int, Vector3d> samples = [];

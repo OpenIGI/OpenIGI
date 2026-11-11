@@ -40,31 +40,3 @@ public sealed class ConditionalSoundTask : CutsceneRuntimeTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalSound";
 }
-
-/// <summary>A wheeled vehicle: Project I.G.I.'s <c>Car</c>.</summary>
-public sealed class CarTask : CutsceneRuntimeTask
-{
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "Car";
-}
-
-/// <summary>A helicopter: Project I.G.I.'s <c>Heli</c>.</summary>
-public sealed class HeliTask : CutsceneRuntimeTask
-{
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "Heli";
-}
-
-/// <summary>What drives a car along a patrol path: Project I.G.I.'s <c>CarAI</c> (callback <c>0x425DE0</c>).</summary>
-public sealed class CarAiTask : CutsceneRuntimeTask
-{
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "CarAI";
-}
-
-/// <summary>What mans a mounted gun for the level: Project I.G.I.'s <c>AIStationaryGunHolder</c>.</summary>
-public sealed class StationaryGunHolderTask : CutsceneRuntimeTask
-{
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = CutsceneGunHolders.TypeName;
-}

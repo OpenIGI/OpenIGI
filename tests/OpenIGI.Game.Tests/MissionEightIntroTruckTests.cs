@@ -94,9 +94,9 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
         {
             CollisionIndex = solids,
         };
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         Func<string, MefModel?> models = name => mission.TryGetModel(name, out MefModel? model) ? model : null;
-        runtime.ConfigureRetailCars(
+        runtime.Vehicles.ConfigureRetailCars(
             new RetailCarWorld(
                 new RetailTerrainRay(
                     terrain.Octree,
@@ -104,7 +104,7 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
                     TerrainDiscardBinding.For(terrain).Regions,
                     TerrainHeightBindings.Bind(terrain, root)),
                 RetailWorldObjects.Build(root, models, name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null),
-                runtime.RetailVehicleModels,
+                runtime.Vehicles.RetailVehicleModels,
                 static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
             models,
             name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null);

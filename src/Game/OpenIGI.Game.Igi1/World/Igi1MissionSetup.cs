@@ -198,7 +198,7 @@ public sealed class Igi1MissionSetup(
         // The areas and edit variables update inside the level's one walk, where the tree places them.
         objectives.AttachTo(
             mission.Cutscenes.Walker,
-            mission.Cutscenes.VehicleOccupants,
+            mission.Cutscenes.Vehicles.VehicleOccupants,
             () => mission.Soldiers?.LiveOccupants() ?? [],
             areaPlayer);
 
@@ -558,12 +558,12 @@ public sealed class Igi1MissionSetup(
         cutscenes.CollisionIndex = solids;
         if (id == 4)
         {
-            cutscenes.RestHelicoptersOnSupport();
+            cutscenes.Vehicles.RestHelicoptersOnSupport();
         }
 
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        cutscenes.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
+        cutscenes.Vehicles.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
 
         // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
         if (loaded.Terrain is { } carTerrain)
@@ -580,12 +580,12 @@ public sealed class Igi1MissionSetup(
                     carModels,
                     name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null,
                     definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) == "TASKTYPE_GLASS"),
-                cutscenes.RetailVehicleModels,
+                cutscenes.Vehicles.RetailVehicleModels,
                 static owner => owner is RetailGlassPane pane
                     ? !pane.IsBroken && ConditionalContainerGate.IsTaskActive(pane.Owner)
                     : owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task),
                 (pane, from) => mission.TouchGlass?.Invoke(pane, from) == true);
-            cutscenes.ConfigureRetailCars(
+            cutscenes.Vehicles.ConfigureRetailCars(
                 mission.RetailWorld,
                 carModels,
                 name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
@@ -597,11 +597,11 @@ public sealed class Igi1MissionSetup(
 
         // The Hind's rocket pods and door, which its flights run; each pod draws its first gap as it is made. The pods and
         // the vehicles' guns draw from the level's stream.
-        cutscenes.ConfigureVehicleParts(
+        cutscenes.Vehicles.ConfigureVehicleParts(
             scene,
             name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition part) == true ? part : null,
             definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) ?? string.Empty);
-        cutscenes.VehicleRandom = mission.SoundRandom;
+        cutscenes.Vehicles.VehicleRandom = mission.SoundRandom;
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
@@ -611,7 +611,7 @@ public sealed class Igi1MissionSetup(
             host.Game.Variables,
             mission.VehiclePhysics,
             random: mission.SoundRandom,
-            made: cutscenes.VehiclePartMade);
+            made: cutscenes.Vehicles.VehiclePartMade);
         solids.Destructibles = mission.Destructibles;
         cutscenes.Destructibles = mission.Destructibles;
     }
@@ -656,7 +656,7 @@ public sealed class Igi1MissionSetup(
             // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
             // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
             // PatrolPath route. d843661b dropped this call and left every one of them parked.
-            mission.Cutscenes?.ConfigureCarAi(graphs);
+            mission.Cutscenes?.Vehicles.ConfigureCarAi(graphs);
         }
         else
         {
