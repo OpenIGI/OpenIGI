@@ -18,7 +18,7 @@ namespace OpenIGI.Game.World;
 /// transition-latched link/target tracking. The host only supplies presentation and the few game natives
 /// referenced by level expressions.
 /// </remarks>
-public sealed partial class CutsceneRuntime
+public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
 {
     /// <summary>The fixed update frequency used by retail cutscenes and animation programmes.</summary>
     public const int Frequency = 30;
@@ -524,6 +524,12 @@ public sealed partial class CutsceneRuntime
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     /// <remarks>A co-op client's scenes are its server's to break: it asks nothing of its own.</remarks>
     public void RequestBreak() => _breakRequested = !Mirrored;
+
+    /// <inheritdoc/>
+    Engine.Tasks.GameTask? Hosting.IMissionCutscenes.ActiveScene => ActiveScene;
+
+    /// <inheritdoc/>
+    public int ActiveSceneTicks => ActiveScene?.Ticks ?? 0;
 
     /// <summary>Gets whether the break key, down now, would end the scene playing.</summary>
     /// <remarks>

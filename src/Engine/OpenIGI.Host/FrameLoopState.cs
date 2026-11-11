@@ -49,7 +49,7 @@ internal sealed class FrameLoopState
 
     public int CutsceneCaptureStartTick { get; set; }
 
-    public CutSceneTask? PreviousCapturedScene { get; set; }
+    public OpenIGI.Engine.Tasks.GameTask? PreviousCapturedScene { get; set; }
 
     public int CutsceneCaptureLimit { get; set; }
 

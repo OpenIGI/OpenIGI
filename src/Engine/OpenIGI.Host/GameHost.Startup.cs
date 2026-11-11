@@ -386,8 +386,7 @@ public sealed partial class GameHost
         _mission.Materials = null;
         _mission.AmmoTypes = null;
         _mission.WeaponTypes = null;
-        _mission.AlarmSpeakers = null;
-        _mission.Destructibles = null;
+        _mission.ReleaseAlarmsAndDestructibles();
         _hosted.Audio.ForgetSirens();
         _playerMode = false;
 

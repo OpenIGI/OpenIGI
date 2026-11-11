@@ -72,6 +72,6 @@ public sealed partial class GameHost
         }
 
         _logger.Information("Saves", said + ".");
-        _mission.Objectives?.ShowTransientMessage(said);
+        _mission.Progress?.ShowTransientMessage(said);
     }
 }

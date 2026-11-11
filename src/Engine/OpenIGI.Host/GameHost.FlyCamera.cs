@@ -139,7 +139,7 @@ public sealed partial class GameHost
                 _window.CursorLocked = UsesMissionComputer && !OverlayHasPointer && !state.CaptureMode;
                 HostedPlayer?.ReleaseLook();
             }
-            else if (_mission.Cutscenes?.IsPlaying == true)
+            else if (_mission.Scenes?.IsPlaying == true)
             {
                 HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;

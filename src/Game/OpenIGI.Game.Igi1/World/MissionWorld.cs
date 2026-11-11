@@ -14,10 +14,88 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s played mission: the shared mission state, and the player's rig, the soldiers' simulation, the guards'
 /// rounds, the ambience and the title's own tables.
 /// </summary>
-public sealed class MissionWorld : MissionState
+public sealed class MissionWorld : MissionState, IInspectableMission
 {
     /// <summary>Initializes a new instance of the <see cref="MissionWorld"/> class.</summary>
     public MissionWorld() => _mineWaits = new MineFieldWaits(this);
+
+    /// <summary>Gets or sets the doors.</summary>
+    public DoorRegistry? Doors { get; set; }
+
+    /// <summary>Gets or sets the elevators.</summary>
+    public ElevatorRegistry? Elevators { get; set; }
+
+    /// <summary>Gets or sets what the player and the soldiers use: switches, terminals, ladders and the rest.</summary>
+    public WorldInteractionRegistry? Interactions { get; set; }
+
+    /// <summary>Gets or sets the weapons lying in the level.</summary>
+    public GunPickupRegistry? GunPickups { get; set; }
+
+    /// <summary>Gets or sets the level's other pickups.</summary>
+    public GenericPickupRegistry? GenericPickups { get; set; }
+
+    /// <summary>Gets or sets the alarm speakers.</summary>
+    public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
+
+    /// <summary>Gets or sets what can be destroyed.</summary>
+    public DestructibleObjectRegistry? Destructibles { get; set; }
+
+    /// <summary>Gets or sets the security cameras.</summary>
+    public SecurityCameraRegistry? SecurityCameras { get; set; }
+
+    /// <summary>Gets or sets the radar dishes and the authored rotating tasks.</summary>
+    public RotatingObjectRegistry? RotatingObjects { get; set; }
+
+    /// <summary>Gets or sets the cutscene runtime, which also walks the level each tick.</summary>
+    public CutsceneRuntime? Cutscenes { get; set; }
+
+    /// <summary>Gets or sets the objective runtime.</summary>
+    public MissionObjectiveRuntime? Objectives { get; set; }
+
+    /// <inheritdoc/>
+    public override IPlacementObjects Placements => _placements ??= new Igi1PlacementObjects(this);
+
+    private Igi1PlacementObjects? _placements;
+
+    /// <inheritdoc/>
+    public override IPlacementVariant? PlacementVariants => Interactions;
+
+    /// <inheritdoc/>
+    public override OpenIGI.Game.Hosting.IMissionCutscenes? Scenes => Cutscenes;
+
+    /// <inheritdoc/>
+    public override OpenIGI.Game.Hosting.IMissionObjectives? Progress => Objectives;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<GunPickup>? LyingGuns => GunPickups?.Items;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<SecurityCamera>? StatusCameras => SecurityCameras?.Cameras;
+
+    /// <inheritdoc/>
+    /// <remarks>An alarm light's turning reflector throws its red flare at the eye (<c>0x439F10</c>).</remarks>
+    public override IReadOnlyList<WorldGlow> AlarmFlares(Vector3d eyeUnits, float tickFraction) =>
+        AlarmSpeakers is { Reflectors.Count: > 0 } lights ? lights.ReflectorFlares(eyeUnits, tickFraction) : [];
+
+    /// <inheritdoc/>
+    public override CutsceneFrame? CutsceneFrameShown => IntroSkipPending ? null : Cutscenes?.Frame;
+
+    /// <inheritdoc/>
+    public override void ReleaseAlarmsAndDestructibles()
+    {
+        AlarmSpeakers = null;
+        Destructibles = null;
+    }
+
+    /// <inheritdoc/>
+    public override void ReleaseRuntimes()
+    {
+        Objectives?.Release();
+        Objectives = null;
+        Cutscenes = null;
+        SecurityCameras = null;
+        base.ReleaseRuntimes();
+    }
 
     /// <summary>Gets or sets the level's authored ambience boxes.</summary>
     public AmbientAreaRegistry? Ambience { get; set; }
@@ -48,7 +126,12 @@ public sealed class MissionWorld : MissionState
 
     /// <inheritdoc/>
     /// <remarks>The shared parts, then the panes of glass the cars meet and the level's own minefields' waits.</remarks>
-    protected override IEnumerable<ILevelReset?> LevelParts => [.. base.LevelParts, RetailWorld as ILevelReset, _mineWaits];
+    /// <remarks>Lifts before doors, so a door riding a car is re-placed against the car where it stands again.</remarks>
+    protected override IEnumerable<ILevelReset?> LevelParts =>
+    [
+        Elevators, Doors, Interactions, GunPickups, GenericPickups, AlarmSpeakers, Destructibles, SecurityCameras, RotatingObjects,
+        Objectives, RetailWorld as ILevelReset, _mineWaits,
+    ];
 
     private readonly MineFieldWaits _mineWaits;
 
@@ -309,6 +392,12 @@ public sealed class MissionWorld : MissionState
         SoldierPresenter = null;
         Player = null;
         PlayerTask = null;
+        Destructibles = null;
+        Doors = null;
+        Elevators = null;
+        Interactions = null;
+        GunPickups = null;
+        GenericPickups = null;
         base.ReleaseWorld();
     }
 }

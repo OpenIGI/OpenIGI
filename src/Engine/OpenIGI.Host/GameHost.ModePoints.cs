@@ -24,7 +24,7 @@ public sealed partial class GameHost
     {
         if (_bombPickup.Saw(CurrentMatchHud()))
         {
-            _mission.Objectives?.ShowTransientMessage(Game.Multiplayer.Modes.BombPickupWatch.Message);
+            _mission.Progress?.ShowTransientMessage(Game.Multiplayer.Modes.BombPickupWatch.Message);
         }
     }
 

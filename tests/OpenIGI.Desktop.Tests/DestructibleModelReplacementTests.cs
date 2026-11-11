@@ -283,7 +283,7 @@ public sealed class DestructibleModelReplacementTests
             scene.Placements,
             loop.Variables);
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new Igi1PlacementObjects(new MissionState { Destructibles = destructibles }) };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new OpenIGI.Game.Igi1.World.Igi1PlacementObjects(new OpenIGI.Game.Igi1.World.MissionWorld { Destructibles = destructibles }) };
         return new Scenario(scene, destructibles, device, renderer);
     }
 

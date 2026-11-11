@@ -16,15 +16,14 @@ namespace OpenIGI.Game.World;
 /// is dropped again as the mission is released. Held in one place so that what reads the level -- the inspector, the
 /// sounds, the effects -- is handed the mission rather than the whole host. A title with a simulation of its own extends it.
 /// </remarks>
-public class MissionState : IInspectableMission
+public class MissionState
 {
     /// <summary>Gets the parts of the level a match's rounds put back, in the order they go back.</summary>
     /// <remarks>
     /// Lifts before doors, so a door riding a car is re-placed against the car where it stands again. A title with parts of
     /// its own adds them (<see cref="ILevelReset"/>); every part listed here that is <see langword="null"/> is skipped.
     /// </remarks>
-    protected virtual IEnumerable<ILevelReset?> LevelParts =>
-        [Elevators, Doors, Interactions, GunPickups, GenericPickups, AlarmSpeakers, Destructibles, SecurityCameras, RotatingObjects, Objectives];
+    protected virtual IEnumerable<ILevelReset?> LevelParts => [];
 
     /// <summary>Records the whole level as it stands now, as what <see cref="ResetToLevelStart"/> puts back.</summary>
     public void MarkLevelStart()
@@ -46,40 +45,34 @@ public class MissionState : IInspectableMission
 
     private LevelCollision _collision = LevelCollision.Empty;
 
-    /// <summary>Gets the mission's objects as the picture asks after them: which placements they move, turn, break or take away.</summary>
-    public IPlacementObjects Placements => _placements ??= new Igi1PlacementObjects(this);
+    /// <summary>Gets the mission's objects as the picture asks after them, or <see langword="null"/> for a mission with none of its own.</summary>
+    public virtual IPlacementObjects? Placements => null;
 
-    private IPlacementObjects? _placements;
+    /// <summary>Gets which of their models the mission's own objects make placements wear, or <see langword="null"/> when none change.</summary>
+    public virtual IPlacementVariant? PlacementVariants => null;
 
-    /// <summary>Gets or sets the doors.</summary>
-    public DoorRegistry? Doors { get; set; }
+    /// <summary>Gets the mission's cut-scenes, or <see langword="null"/> before they are built.</summary>
+    public virtual Hosting.IMissionCutscenes? Scenes => null;
 
-    /// <summary>Gets or sets the elevators.</summary>
-    public ElevatorRegistry? Elevators { get; set; }
+    /// <summary>Gets the mission's objectives and status messages, or <see langword="null"/> before they are built.</summary>
+    public virtual Hosting.IMissionObjectives? Progress => null;
 
-    /// <summary>Gets or sets what the player and the soldiers use: switches, terminals, ladders and the rest.</summary>
-    public WorldInteractionRegistry? Interactions { get; set; }
+    /// <summary>Gets the weapons lying in the level, or <see langword="null"/> before they are built.</summary>
+    public virtual IReadOnlyList<GunPickup>? LyingGuns => null;
 
-    /// <summary>Gets or sets the weapons lying in the level.</summary>
-    public GunPickupRegistry? GunPickups { get; set; }
+    /// <summary>Gets the security cameras whose status lights are drawn, or <see langword="null"/> when the level has none.</summary>
+    public virtual IReadOnlyList<SecurityCamera>? StatusCameras => null;
 
-    /// <summary>Gets or sets the level's other pickups.</summary>
-    public GenericPickupRegistry? GenericPickups { get; set; }
+    /// <summary>Gets the flares the level's turning alarm lights throw at an eye.</summary>
+    /// <param name="eyeUnits">Where the eye is, in engine units.</param>
+    /// <param name="tickFraction">How far the frame is between two ticks.</param>
+    /// <returns>The flares; none for a level without alarm lights.</returns>
+    public virtual IReadOnlyList<WorldGlow> AlarmFlares(Vector3d eyeUnits, float tickFraction) => [];
 
-    /// <summary>Gets or sets the alarm speakers.</summary>
-    public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
-
-    /// <summary>Gets or sets what can be destroyed.</summary>
-    public DestructibleObjectRegistry? Destructibles { get; set; }
-
-    /// <summary>Gets or sets the security cameras.</summary>
-    public SecurityCameraRegistry? SecurityCameras { get; set; }
-
-    /// <summary>Gets or sets the radar dishes and the authored rotating tasks.</summary>
-    public RotatingObjectRegistry? RotatingObjects { get; set; }
-
-    /// <summary>Gets or sets the cutscene runtime, which also walks the level each tick.</summary>
-    public CutsceneRuntime? Cutscenes { get; set; }
+    /// <summary>Drops what the soldiers' bring-up made of the level's alarms and what can be destroyed, as a mission is left.</summary>
+    public virtual void ReleaseAlarmsAndDestructibles()
+    {
+    }
 
     /// <summary>
     /// Gets or sets whether an intro skipped at load (no cinematics, or <c>OPENIGI_BREAK_CUTSCENE</c>) is still playing
@@ -88,10 +81,7 @@ public class MissionState : IInspectableMission
     public bool IntroSkipPending { get; set; }
 
     /// <summary>Gets the cutscene frame to present: none while a skipped intro is still closing.</summary>
-    public CutsceneFrame? CutsceneFrameShown => IntroSkipPending ? null : Cutscenes?.Frame;
-
-    /// <summary>Gets or sets the objective runtime.</summary>
-    public MissionObjectiveRuntime? Objectives { get; set; }
+    public virtual CutsceneFrame? CutsceneFrameShown => null;
 
     /// <summary>Gets or sets the difficulty the player's damage is scaled by.</summary>
     public int PlayerDifficulty { get; set; }
@@ -235,17 +225,13 @@ public class MissionState : IInspectableMission
     public HumanDamageFlash DamageFlash { get; set; } = null!;
 
     /// <summary>Drops the level's runtimes as the mission is left: the objectives, the cutscenes, the walk and the cameras.</summary>
-    public void ReleaseRuntimes()
+    public virtual void ReleaseRuntimes()
     {
-        Objectives?.Release();
-        Objectives = null;
-        Cutscenes = null;
         IntroSkipPending = false;
         SoldiersInWalk = false;
         PlayerInWalk = false;
         ElevatorsInWalk = false;
         CamerasInWalk = false;
-        SecurityCameras = null;
     }
 
     /// <summary>Takes the tables the running title publishes.</summary>
@@ -321,13 +307,7 @@ public class MissionState : IInspectableMission
         TerrainMaterialRow = null;
         Solids = null;
         LevelRoot = null;
-        Destructibles = null;
         Materials = null;
-        Doors = null;
-        Elevators = null;
-        Interactions = null;
-        GunPickups = null;
-        GenericPickups = null;
         VehicleMissiles.Clear();
     }
 }

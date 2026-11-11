@@ -611,10 +611,10 @@ public sealed partial class GameHost
 
         // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
         // red while confirming/detecting, and attached to the head as it pans.
-        if (_mission.SecurityCameras is { } statusCameras)
+        if (_mission.StatusCameras is { } statusCameras)
         {
             _cameraStatusLights?.Draw(
-                statusCameras.Cameras,
+                statusCameras,
                 eye,
                 projection,
                 tickBlend,
@@ -622,12 +622,9 @@ public sealed partial class GameHost
         }
 
         // An alarm light's turning reflector throws its red flare at the eye (0x439F10), with the camera lamps' sprite.
-        if (_mission.AlarmSpeakers is { Reflectors.Count: > 0 } lights)
+        if (_mission.AlarmFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f) is { Count: > 0 } flares)
         {
-            _cameraStatusLights?.DrawGlows(
-                lights.ReflectorFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f),
-                eye,
-                projection);
+            _cameraStatusLights?.DrawGlows(flares, eye, projection);
         }
 
         // The glows of the models this frame drew (Glow_DrawSorted), over the finished scene with the other sprites.

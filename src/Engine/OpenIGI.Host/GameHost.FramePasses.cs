@@ -95,7 +95,7 @@ public sealed partial class GameHost
                 && !_menuFlow.PauseMenu
                 && _session.Mission is not null
                 && !PresentationHoldsLevel
-                && _mission.Cutscenes?.IsPlaying != true);
+                && _mission.Scenes?.IsPlaying != true);
         _device.BeginLatencyFrame();
 
         _window.PumpEvents();
@@ -417,7 +417,7 @@ public sealed partial class GameHost
             && !_computerOpen
             && !_touchEditor.IsOpen
             && !_session.FailedMenu
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
             && _mission.MenusEnabled
             && state.Shell is not null
@@ -657,7 +657,7 @@ public sealed partial class GameHost
         // (3 s) up to the still budget. Test-only; driven by environment variables.
         // A chained intro resets its scene-local clock. Do not carry the previous scene's next
         // capture threshold into the next scene and silently miss its early/short shots.
-        if (state.CaptureCutscene && _mission.Cutscenes?.ActiveScene is { } observedScene
+        if (state.CaptureCutscene && _mission.Scenes?.ActiveScene is { } observedScene
             && !ReferenceEquals(state.PreviousCapturedScene, observedScene))
         {
             state.PreviousCapturedScene = observedScene;
@@ -665,9 +665,9 @@ public sealed partial class GameHost
         }
         if (state.CaptureCutscene
             && state.CutsceneCaptureCount < state.CutsceneCaptureLimit
-            && _mission.Cutscenes?.ActiveScene is { } activeCutscene
+            && _mission.Scenes?.ActiveScene is { } activeCutscene
             && (state.CutsceneCaptureScene <= 0 || activeCutscene.Id == state.CutsceneCaptureScene)
-            && activeCutscene.Ticks >= state.CutsceneCaptureTick)
+            && _mission.Scenes.ActiveSceneTicks >= state.CutsceneCaptureTick)
         {
             Directory.CreateDirectory(state.CutsceneCaptureDirectory!);
             Bgra32[] capture = new Bgra32[_window.Width * _window.Height];
@@ -676,8 +676,8 @@ public sealed partial class GameHost
             string path = Path.Combine(
                 state.CutsceneCaptureDirectory!,
                 state.CutsceneCaptureEvery > 0
-                    ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp")
-                    : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
+                    ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}.bmp")
+                    : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
             BitmapWriter.Write(path, _window.Width, _window.Height, capture);
             _logger.Information("CutsceneCapture", $"Wrote {path}.");
             state.CutsceneCaptureTick += state.CutsceneCaptureEvery;

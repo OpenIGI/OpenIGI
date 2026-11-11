@@ -141,13 +141,13 @@ public sealed partial class GameHost
     /// else the title's player's own computer's, in a level of the title's own.
     /// </summary>
     private IComputerObjectives? ComputerObjectives =>
-        (IComputerObjectives?)_mission.Objectives ?? TitleComputer?.ComputerObjectives;
+        _mission.Progress ?? TitleComputer?.ComputerObjectives;
 
     /// <summary>
     /// Gets the title's player's own computer, which the remastered computer shows in a level of the title's own: none where the
     /// mission has objectives of its own, which it shows instead.
     /// </summary>
-    private ITitlePlayerComputer? TitleComputer => _mission.Objectives is null ? TitlePlayer as ITitlePlayerComputer : null;
+    private ITitlePlayerComputer? TitleComputer => _mission.Progress is null ? TitlePlayer as ITitlePlayerComputer : null;
 
     /// <summary>Whether the computer offers its map: the mission's own gate where it has one, else the title's player's computer's.</summary>
     private bool ComputerMapOffered() =>
@@ -208,7 +208,7 @@ public sealed partial class GameHost
                 && !_computerCamFired
                 && _loop.Clock.FrameCount >= _options.ComputerCamFrame
                 && !_entry.IsCameraActive
-                && _mission.Cutscenes?.IsPlaying != true;
+                && _mission.Scenes?.IsPlaying != true;
             if (automaticOpen)
             {
                 _computerCamFired = true;
@@ -254,7 +254,7 @@ public sealed partial class GameHost
 
                 // Not during a cinematic: the view is the cutscene's or the entry camera's, not the player's to leave, and
                 // the original takes no map key while one plays.
-                bool cinematic = _entry.IsCameraActive || _mission.Cutscenes?.IsPlaying == true;
+                bool cinematic = _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true;
                 if (!_computerOpen && toggleComputer && !cinematic)
                 {
                     _computerOpen = true;

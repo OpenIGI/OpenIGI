@@ -37,7 +37,7 @@ public sealed partial class GameHost
 
         public ISoldierBodies? Soldiers => host._soldiers;
 
-        public IInspectableMission Mission => host._mission;
+        public IInspectableMission? Mission => host._mission as IInspectableMission;
 
         public Camera3D InspectorEye => host._inspectorEye;
 

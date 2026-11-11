@@ -16,7 +16,7 @@ namespace OpenIGI.Game.World;
 /// level may contain several objective definitions and switch between them with <c>Objectives Valid</c>.
 /// The last valid definition in task-update order is the one the original publishes globally.
 /// </remarks>
-public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, Saves.ISavedStateSource, Hosting.IMissionProgress
+public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, Saves.ISavedStateSource, Hosting.IMissionObjectives
 {
     /// <summary>The maximum number of objective rows in one IGI1 definition.</summary>
     public const int ObjectiveSlotCount = 6;

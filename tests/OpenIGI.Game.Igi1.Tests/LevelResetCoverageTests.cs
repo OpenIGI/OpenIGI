@@ -14,16 +14,16 @@ public sealed class LevelResetCoverageTests
     // The parts a round puts back: each must take ILevelReset (MissionState.LevelParts / MissionWorld.LevelParts list them).
     private static readonly HashSet<string> Reset =
     [
-        nameof(MissionState.Doors),
-        nameof(MissionState.Elevators),
-        nameof(MissionState.Interactions),
-        nameof(MissionState.GunPickups),
-        nameof(MissionState.GenericPickups),
-        nameof(MissionState.AlarmSpeakers),
-        nameof(MissionState.Destructibles),
-        nameof(MissionState.SecurityCameras),
-        nameof(MissionState.RotatingObjects),
-        nameof(MissionState.Objectives),
+        nameof(MissionWorld.Doors),
+        nameof(MissionWorld.Elevators),
+        nameof(MissionWorld.Interactions),
+        nameof(MissionWorld.GunPickups),
+        nameof(MissionWorld.GenericPickups),
+        nameof(MissionWorld.AlarmSpeakers),
+        nameof(MissionWorld.Destructibles),
+        nameof(MissionWorld.SecurityCameras),
+        nameof(MissionWorld.RotatingObjects),
+        nameof(MissionWorld.Objectives),
     ];
 
     // The rest, and why a round needs nothing of them.
@@ -48,6 +48,12 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionWorld.GuardRounds)] = "resolves a guard's shot as it is fired; nothing in flight",
         [nameof(MissionState.Collision)] = "a view of Solids and the terrain",
         [nameof(MissionState.CutsceneFrameShown)] = "a view of Cutscenes",
+        [nameof(MissionState.Scenes)] = "a view of Cutscenes",
+        [nameof(MissionState.Progress)] = "a view of Objectives",
+        [nameof(MissionState.Placements)] = "a view of the registries",
+        [nameof(MissionState.PlacementVariants)] = "a view of Interactions",
+        [nameof(MissionState.LyingGuns)] = "a view of GunPickups",
+        [nameof(MissionState.StatusCameras)] = "a view of SecurityCameras",
         [nameof(MissionState.VehicleRoundOwner)] = "set and cleared around one cast",
         [nameof(MissionWorld.PlayerStandIn)] = "a view of PlayerTask",
         [nameof(MissionWorld.Partners)] = "a view of NetworkPlayers / ShownPartners",
@@ -61,7 +67,7 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionWorld.OfferedPrompt)] = "asked for again on every tick the player updates",
 
         // Held still in an arena, so a round finds them as the last did.
-        [nameof(MissionState.Cutscenes)] = "held in an arena (CutsceneRuntime.Held)",
+        [nameof(MissionWorld.Cutscenes)] = "held in an arena (CutsceneRuntime.Held)",
         [nameof(MissionWorld.Soldiers)] = "an arena has none (ArenaLevel.RemoveSoldiers)",
         [nameof(MissionWorld.SoldierPresenter)] = "an arena has no soldiers to show",
 

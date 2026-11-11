@@ -292,7 +292,7 @@ public sealed partial class GameHost
         // it, as it opens no pause menu either, and the press that starts the hold must not end the test.
         if (editor.IsPlaying)
         {
-            bool cutscene = _mission.Cutscenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true };
+            bool cutscene = _mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true };
             if (!state.Console.IsOpen && !cutscene && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
                 editor.StopPlaying();

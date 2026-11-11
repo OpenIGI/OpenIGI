@@ -46,7 +46,7 @@ public sealed partial class GameHost
             remasterHud,
             HudCVars.TacticalMessages.Value);
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && Viewpoint?.IsDeathViewActive != true
             && _demoWatched is null
             && Viewpoint?.HasPlayerHud == true;
@@ -168,7 +168,7 @@ public sealed partial class GameHost
     private List<StatusMessageDisplay> GuestMissionMessages()
     {
         _guestMessages.Clear();
-        if (HostedPlayer is null && _mission.Objectives is { } runtime)
+        if (HostedPlayer is null && _mission.Progress is { } runtime)
         {
             _guestMessages.AddRange(runtime.DisplayedMessages);
         }
@@ -183,7 +183,7 @@ public sealed partial class GameHost
     /// <param name="view">The frame's view, whose eye and projection place their markers.</param>
     private void DrawModHudOverlays(FrameLoopState state, in FrameView view)
     {
-        if (_hudOverlays.Count == 0 || !_playerMode || _computerOpen || _mission.Cutscenes?.IsPlaying == true
+        if (_hudOverlays.Count == 0 || !_playerMode || _computerOpen || _mission.Scenes?.IsPlaying == true
             || _shellType?.Body is not { } font)
         {
             return;
@@ -249,7 +249,7 @@ public sealed partial class GameHost
         // affect the world and first-person rig. The damage and flash washes intentionally remain
         // later in the draw order and still cover the HUD exactly as they did before this separation.
         if (TitlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
-            && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Cutscenes?.IsPlaying != true
+            && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Scenes?.IsPlaying != true
             && Viewpoint?.ShowsViewModel != false)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -535,7 +535,7 @@ public sealed partial class GameHost
 
         // Cutscene StatusMessages are subtitles, not HUD. They remain visible while the authored
         // camera owns the frame even though the arms, weapon and ordinary mission UI are hidden.
-        if (_mission.Cutscenes?.IsPlaying == true && _mission.Objectives is { } subtitleRuntime)
+        if (_mission.Scenes?.IsPlaying == true && _mission.Progress is { } subtitleRuntime)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();

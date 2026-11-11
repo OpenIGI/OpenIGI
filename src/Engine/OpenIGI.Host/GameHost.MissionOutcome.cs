@@ -40,9 +40,9 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class MissionOutcomeHost(GameHost host) : IMissionOutcomeHost
     {
-        public IMissionProgress? Objectives => host._mission.Objectives;
+        public IMissionProgress? Objectives => host._mission.Progress;
 
-        public bool CutscenePlaying => host._mission.Cutscenes?.IsPlaying == true;
+        public bool CutscenePlaying => host._mission.Scenes?.IsPlaying == true;
 
         public ITitlePlayer? TitlePlayer => host.TitlePlayer;
 

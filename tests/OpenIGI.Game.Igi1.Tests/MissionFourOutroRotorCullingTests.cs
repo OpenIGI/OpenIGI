@@ -124,7 +124,7 @@ public sealed class MissionFourOutroRotorCullingTests
         Assert.True(Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3902)).IsRun);
 
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new Igi1PlacementObjects(new MissionState { Cutscenes = cutscenes }) };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new OpenIGI.Game.Igi1.World.Igi1PlacementObjects(new OpenIGI.Game.Igi1.World.MissionWorld { Cutscenes = cutscenes }) };
         return new Scenario(scene, cutscenes, device, renderer);
     }
 

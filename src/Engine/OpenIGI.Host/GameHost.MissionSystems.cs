@@ -110,7 +110,7 @@ public sealed partial class GameHost
     /// <summary>The scene walk, the world renderer and the collision index; the vehicles on it, what can be destroyed, and the weather.</summary>
     private void MissionScene(MissionBuild b)
     {
-        if (_mission.Cutscenes is null)
+        if (_mission.Scenes is null)
         {
             throw MissingSystem(MissionSystemNames.Cutscenes);
         }
@@ -343,7 +343,7 @@ public sealed partial class GameHost
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
         world.Objects = _mission.Placements;
-        world.Variants = _mission.Interactions;
+        world.Variants = _mission.PlacementVariants;
 
         EndStage("the doors, elevators and world interactions");
     }

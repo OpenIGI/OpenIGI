@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.World;
+using OpenIGI.Game.World;
+
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Project I.G.I.'s objects as the picture asks after them: its doors, lifts, cameras, cut-scene vehicles and the rest.</summary>
 /// <remarks>
@@ -9,15 +11,15 @@ namespace OpenIGI.Game.World;
 /// carries it, then the cut-scene's rotors and vehicles, an alarm light's reflector, a rotating object, a planted charge.
 /// </remarks>
 /// <param name="mission">The mission whose objects these are.</param>
-public sealed class Igi1PlacementObjects(MissionState mission) : IPlacementObjects
+public sealed class Igi1PlacementObjects(MissionWorld mission) : IPlacementObjects
 {
-    private readonly MissionState _mission = mission ?? throw new ArgumentNullException(nameof(mission));
+    private readonly MissionWorld _mission = mission ?? throw new ArgumentNullException(nameof(mission));
 
     /// <inheritdoc/>
     public bool Claims(WorldPlacement placement)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        Engine.Tasks.GameTask owner = placement.Owner;
+        OpenIGI.Engine.Tasks.GameTask owner = placement.Owner;
         return _mission.Doors?.Claims(owner) == true
             || _mission.Elevators?.Claims(owner) == true
             || _mission.Cutscenes?.Claims(placement) == true

@@ -83,7 +83,7 @@ public sealed partial class GameHost
     private void DrawRemasteredBinoculars(FrameLoopState state, in FrameView view, float? rangeMetres)
     {
         if (!view.RemasteredOptics || !BinocularsOpen || BinocularHud is not { } hud || _computerOpen
-            || _mission.Cutscenes?.IsPlaying == true || (!TitleBinocularsOpen && !view.ShowFirstPersonHud))
+            || _mission.Scenes?.IsPlaying == true || (!TitleBinocularsOpen && !view.ShowFirstPersonHud))
         {
             return;
         }

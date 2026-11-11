@@ -370,13 +370,13 @@ public sealed partial class GameHost
                 }
             }
 
-            if (_mission.GunPickups is { } pickups)
+            if (_mission.LyingGuns is { } pickups)
             {
                 _gunPickupRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGunPickupPresenter>(ViewModelRequest());
                 if (_gunPickupRenderer is not null)
                 {
                     _gunPickupRenderer.Materials = _materials;
-                    _gunPickupRenderer.Load(loaded, pickups.Items);
+                    _gunPickupRenderer.Load(loaded, pickups);
                 }
             }
 
