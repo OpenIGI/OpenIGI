@@ -333,8 +333,19 @@ internal sealed class PlayerFirstPersonView
     internal Matrix3f SmoothedLookRotation(float aimPitch, float alpha)
     {
         (float pitch, float roll, float yaw) = _pair.SmoothedShake(alpha);
-        return Shaken(_body.Yaw, _pair.SmoothedAimPitch(_body.Pitch, aimPitch, alpha), pitch, roll, yaw);
+        (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
+        return Shaken(heading, _pair.SmoothedAimPitch(bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha), pitch, roll, yaw);
     }
+
+    /// <summary>
+    /// Gets or sets the heading and pitch the frame is drawn with in place of the body's, or <see langword="null"/> for the
+    /// body's own.
+    /// </summary>
+    /// <remarks>
+    /// Where the look is taken on the tick (a title path), the frames between show the mouse gathered since: the eye and
+    /// the arms are both drawn from this, so the gun stays welded to the view. It never reaches the body.
+    /// </remarks>
+    internal (float Yaw, float Pitch)? ShownLook { get; set; }
 
     /// <summary>Where the ear is for a frame between two ticks, in metres.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
@@ -355,6 +366,9 @@ internal sealed class PlayerFirstPersonView
         Matrix3f Orientation,
         BoneAttachment? HeldWeapon,
         BoneAttachment? Magazine,
-        BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha) =>
-        _pair.SmoothedRig(Rig, _body.Yaw, _body.Pitch, aimPitch, alpha);
+        BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha)
+    {
+        (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
+        return _pair.SmoothedRig(Rig, heading, bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha);
+    }
 }

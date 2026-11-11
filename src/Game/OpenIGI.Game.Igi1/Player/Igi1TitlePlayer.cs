@@ -91,6 +91,9 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     {
         TitlePlayerInput given = input;
 
+        // Whatever look the frames were shown is the rig's own from here: this tick takes it.
+        Human.Rig.ShowLook(null);
+
         // In the game's own mission the mission decides whether the player ticks at all, and its death is the mission's camera's.
         if (Step is { } step)
         {
@@ -122,11 +125,23 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     public void GatherLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) => Look.Gather(mouseX, mouseY, sensitivity, invertMouse);
 
     /// <inheritdoc/>
-    public void ResetLook() => Look.Reset();
+    public void ResetLook()
+    {
+        Look.Reset();
+        Human.Rig.ShowLook(null);
+    }
 
     /// <inheritdoc/>
-    public Matrix3f PreviewLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) =>
-        Look.Preview(mouseX, mouseY, sensitivity, invertMouse);
+    public Matrix3f PreviewLook(float mouseX, float mouseY, float sensitivity, bool invertMouse)
+    {
+        // The rig draws its eye and its arms from the same look, so the gun stays welded to the view between ticks.
+        if (CanPreviewLook)
+        {
+            Human.Rig.ShowLook(Look.Next(mouseX, mouseY, sensitivity, invertMouse));
+        }
+
+        return Look.Preview(mouseX, mouseY, sensitivity, invertMouse);
+    }
 
     // The tick's look, the mouse's counts since the last as the rig turns them, then HumanPlayer_Update over the actions held.
     private void TickRig(PlayerCamera rig, in TitlePlayerInput input)

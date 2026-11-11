@@ -932,6 +932,10 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerFirstPersonView.SmoothedEyeMetres"/>
     public Vector3d SmoothedEyeMetres(float alpha) => _firstPerson.SmoothedEyeMetres(alpha);
 
+    /// <summary>Draws the frames until the next tick with this heading and pitch in place of the body's: the look a title path has gathered but not yet taken.</summary>
+    /// <param name="look">The heading and pitch, in radians, or <see langword="null"/> for the body's own.</param>
+    public void ShowLook((float Yaw, float Pitch)? look) => _firstPerson.ShownLook = look;
+
     /// <summary>Gets the complete first-person camera at one shared between-tick presentation point.</summary>
     public Camera3D SmoothedCamera(float alpha) =>
         new(SmoothedEyeMetres(alpha), SmoothedLookRotation(alpha));
