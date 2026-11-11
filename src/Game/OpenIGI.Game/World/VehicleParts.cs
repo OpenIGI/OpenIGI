@@ -136,12 +136,12 @@ internal sealed class VehicleParts(LevelMotionContext context, VehicleArmaments 
     /// <param name="heli">The Heli task.</param>
     public void TickDoor(GameTask heli)
     {
-        if (!_byVehicle.TryGetValue(heli, out HeliParts? parts) || parts.Doors.Count == 0 || heli is not DeclaredTask declared)
+        if (!_byVehicle.TryGetValue(heli, out HeliParts? parts) || parts.Doors.Count == 0 || heli is not MotorVehicleTask declared)
         {
             return;
         }
 
-        string expression = TextOrEmpty(declared, "Open door");
+        string expression = declared.OpenDoor;
         if (expression.Length == 0)
         {
             return;

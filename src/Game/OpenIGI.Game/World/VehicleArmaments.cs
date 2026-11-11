@@ -195,14 +195,14 @@ internal sealed class VehicleArmaments(
 
         {
             if (!_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? transform)
-                || vehicle is not DeclaredTask declared)
+                || vehicle is not MotorVehicleTask declared)
             {
                 return;
             }
 
             // A car's "Can fire" is an expression: 0x42E870 evaluates it every tick and registers the
             // car's vision while it holds, removing it again when it stops.
-            bool canFire = _context.Expressions.EvaluateCondition(TextOrEmpty(declared, "Can fire"), emptyValue: false, vehicle);
+            bool canFire = _context.Expressions.EvaluateCondition(declared.CanFire, emptyValue: false, vehicle);
             CarAiState? controller = _carAis.Find(state => ReferenceEquals(state.Car, vehicle));
             bool active = ConditionalContainerGate.IsTaskActive(vehicle)
                 && (controller is null || ConditionalContainerGate.IsTaskActive(controller.Task))
@@ -441,7 +441,7 @@ internal sealed class VehicleArmaments(
 
     /// <summary>The Level 6 capture's single fixed gun: fire the row's cadence at whatever is retained.</summary>
     private void TickLegacyVehicleGun(
-        DeclaredTask vehicle,
+        MotorVehicleTask vehicle,
         TaskTransformState transform,
         VehicleArmament armament,
         WeaponType weapon,
@@ -467,9 +467,9 @@ internal sealed class VehicleArmaments(
             seen,
             active,
             canFire,
-            DeclaredTaskValues.RealConverted(vehicle, "ViewCone Alpha (degrees)", 180f),
-            DeclaredTaskValues.RealConverted(vehicle, "ViewCone Gamma (degrees)", 360f),
-            DeclaredTaskValues.RealConverted(vehicle, "ViewCone Length (meter)", 0f),
+            vehicle.ViewConeAlpha,
+            vehicle.ViewConeGamma,
+            vehicle.ViewConeLength,
             visible,
             weapon.MuzzleVelocity,
             weapon.RoundsPerMinute));
@@ -495,15 +495,15 @@ internal sealed class VehicleArmaments(
     public void TickVehicleVision(GameTask vehicle)
     {
         if (!_visions.TryGetValue(vehicle, out VehicleVision? vision)
-            || vehicle is not DeclaredTask declared
+            || vehicle is not MotorVehicleTask declared
             || !_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? transform)
             || _context.Destructibles?.IsDestroyed(vehicle) == true)
         {
             return;
         }
 
-        bool helicopter = string.Equals(vehicle.Type.Name, "Heli", StringComparison.Ordinal);
-        bool canFire = _context.Expressions.EvaluateCondition(TextOrEmpty(declared, "Can fire"), emptyValue: false, vehicle);
+        bool helicopter = declared.IsHelicopter;
+        bool canFire = _context.Expressions.EvaluateCondition(declared.CanFire, emptyValue: false, vehicle);
         Vector3d eyePosition = helicopter
             ? transform.Position
             : transform.Position + new Vector3d(0d, 0d, VehicleVision.CarEyeHeightUnits);
@@ -512,9 +512,9 @@ internal sealed class VehicleArmaments(
             eyePosition,
             orientation,
             new AiSnapshotCone(
-                DeclaredTaskValues.RealConverted(declared, "ViewCone Alpha (degrees)", 180f) * 0.017453292,
-                DeclaredTaskValues.RealConverted(declared, "ViewCone Gamma (degrees)", 360f) * 0.017453292,
-                DeclaredTaskValues.RealConverted(declared, "ViewCone Length (meter)", 0f) * 4096.0),
+                declared.ViewConeAlpha * 0.017453292,
+                declared.ViewConeGamma * 0.017453292,
+                declared.ViewConeLength * 4096.0),
             default,
             secondaryEnabled: false);
         Vector3d? target = VehicleSightTarget?.Invoke() ?? VehicleCombatTarget?.Invoke();

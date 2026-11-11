@@ -29,9 +29,34 @@ public abstract class VehicleTask : DeclaredLevelTask
     private protected abstract bool Run(LevelVehicles vehicles);
 }
 
-/// <summary>A car or a truck: Project I.G.I.'s <c>Car</c>.</summary>
-public sealed class CarTask : VehicleTask
+/// <summary>A vehicle that carries an eye, guns and a door: a car or a helicopter, which the levels declare alike.</summary>
+public abstract class MotorVehicleTask : VehicleTask
 {
+    /// <summary>Gets a value indicating whether the vehicle is a helicopter, whose eye sits at its origin and tilts with it.</summary>
+    public abstract bool IsHelicopter { get; }
+
+    /// <summary>Gets the expression that opens its door ("Open door").</summary>
+    public string OpenDoor => DeclaredTaskValues.TextOrEmpty(this, "Open door");
+
+    /// <summary>Gets the expression that lets it see and fire ("Can fire").</summary>
+    public string CanFire => DeclaredTaskValues.TextOrEmpty(this, "Can fire");
+
+    /// <summary>Gets the height of its view cone, in degrees ("ViewCone Alpha (degrees)").</summary>
+    public float ViewConeAlpha => DeclaredTaskValues.RealConverted(this, "ViewCone Alpha (degrees)", 180f);
+
+    /// <summary>Gets the width of its view cone, in degrees ("ViewCone Gamma (degrees)").</summary>
+    public float ViewConeGamma => DeclaredTaskValues.RealConverted(this, "ViewCone Gamma (degrees)", 360f);
+
+    /// <summary>Gets the length of its view cone, in metres ("ViewCone Length (meter)").</summary>
+    public float ViewConeLength => DeclaredTaskValues.RealConverted(this, "ViewCone Length (meter)", 0f);
+}
+
+/// <summary>A car or a truck: Project I.G.I.'s <c>Car</c>.</summary>
+public sealed class CarTask : MotorVehicleTask
+{
+    /// <inheritdoc/>
+    public override bool IsHelicopter => false;
+
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Car";
 
@@ -44,8 +69,11 @@ public sealed class CarTask : VehicleTask
 }
 
 /// <summary>A helicopter: Project I.G.I.'s <c>Heli</c>.</summary>
-public sealed class HeliTask : VehicleTask
+public sealed class HeliTask : MotorVehicleTask
 {
+    /// <inheritdoc/>
+    public override bool IsHelicopter => true;
+
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Heli";
 
