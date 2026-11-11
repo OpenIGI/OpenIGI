@@ -492,7 +492,7 @@ public sealed class Igi1MissionSetup(
         // doorway is walkable. Both have to exist before Animate hands each brain its query.
         soldiers.Animate(
             graphs, worldTrace, host.Resources, host.Game.Natives, levelRoot, mission.AiConfig, difficulty,
-            host.Game.Variables);
+            host.Game.Variables, mission.LevelExpressions);
         host.EndStage("animating the soldiers' brains");
 
         // The minefields, which blast at their target while their condition holds.

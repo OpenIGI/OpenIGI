@@ -221,7 +221,7 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
         if (!ReferenceEquals(_hilightsOf, root))
         {
             _hilightsOf = root;
-            _expressions = new LevelExpressionRuntime(variables);
+            _expressions = _mission.LevelExpressions ?? new LevelExpressionRuntime(variables);
             _hilightTasks.Clear();
             foreach (GameTask task in root.Descendants())
             {

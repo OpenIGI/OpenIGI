@@ -339,6 +339,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// </param>
     /// <param name="difficulty">Which of the table's three columns to read.</param>
     /// <param name="variables">The live level variables used by AlarmControl expressions.</param>
+    /// <param name="expressions">The level's expressions, or <see langword="null"/> to compile with ones of its own.</param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
@@ -352,7 +353,8 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         GameTask? levelRoot = null,
         HumanAiConfigRegistry? config = null,
         AiDifficulty difficulty = AiDifficulty.Normal,
-        ScriptVarRegistry? variables = null)
+        ScriptVarRegistry? variables = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -364,7 +366,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         _rounds.Clear();
         _damage.ClearForLevel();
         _generators.GuardGenerators.Clear();
-        _generators.GuardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
+        _generators.GuardExpressions = variables is null ? null : expressions ?? new LevelExpressionRuntime(variables);
         ScriptVariables = variables;
         LastDetectionShoutTick = -1;
         _context.Combat.Clear();
@@ -390,7 +392,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
             Humans.AddRange(levelRoot.DescendantsAndSelf().OfType<IHumanAiEventTarget>());
         }
         AlarmControls = levelRoot is not null && variables is not null
-            ? AiAlarmControlRegistry.Build(levelRoot, variables)
+            ? AiAlarmControlRegistry.Build(levelRoot, variables, expressions)
             : null;
 
         (int Patrolling, int PerTask, int Unroutable, Dictionary<int, int> GraphUse) census = _brains.BindBrains(
