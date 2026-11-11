@@ -761,28 +761,9 @@ public sealed partial class Igi1Blasts(
         return true;
     }
 
-    /// <summary>Runs the level's minefields a tick (<c>0x43ABC0</c>): each that has waited and whose condition holds goes off.</summary>
-    public void TickMineFields()
-    {
-        foreach (Igi1MineField field in mission.MineFields)
-        {
-            if (!ConditionalContainerGate.IsTaskActive(field.Task)
-                || !field.Pause.Due(() => field.Condition.Length != 0
-                    && mission.MineFieldExpressions?.EvaluateCondition(field.Condition, emptyValue: false, field.Task) == true))
-            {
-                continue;
-            }
-
-            ExplodeMineField(field);
-
-            // 0x43ABC0 waits its seconds between blasts; "explode once" (-1) waits for ever.
-            field.Pause.Ticks = (int)(field.WaitSeconds * 30f);
-        }
-    }
-
     // MineField_Explode (0x43AC40): an Explosion0 at its target, dropped to the ground beneath it (0x4149B0), that throws its
     // own fragments and FireBalls and sends no AI event.
-    private void ExplodeMineField(Igi1MineField field)
+    internal void ExplodeMineField(Igi1MineFieldTask field)
     {
         if (MineFieldTarget(field.TargetId) is not { } found)
         {
@@ -791,18 +772,18 @@ public sealed partial class Igi1Blasts(
 
         (Vector3d at, GameTask? target) = found;
 
-        if (field.SnapsToGround && mission.Trace is { } trace)
+        if (field.SnapToGround && mission.Trace is { } trace)
         {
             at = DropToGround(trace, at, target);
         }
 
-        float radius = field.RadiusUnits;
-        float falloff = field.FalloffUnits;
-        float damage = field.Damage;
+        float radius = field.Radius * 4096f;
+        float falloff = field.FalloffRadius * 4096f;
+        float damage = field.DamageScale;
         impacts.Explosions.Spawn(new Igi1ExplosionRequest(
             at,
             1,
-            field.DelayTicks,
+            (int)(field.Delay * 30f),
             damage,
             radius,
             falloff,

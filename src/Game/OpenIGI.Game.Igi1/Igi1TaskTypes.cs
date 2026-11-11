@@ -17,6 +17,7 @@ public static class Igi1TaskTypes
     {
         ArgumentNullException.ThrowIfNull(types);
         Add<Igi1AmbientAreaTask>(types, Igi1AmbientAreaTask.TypeName);
+        Add<Igi1MineFieldTask>(types, Igi1MineFieldTask.TypeName);
         AddDeclared<Ai.Igi1AlarmControlTask>(types, Ai.Igi1AlarmControlTask.TypeName);
     }
 

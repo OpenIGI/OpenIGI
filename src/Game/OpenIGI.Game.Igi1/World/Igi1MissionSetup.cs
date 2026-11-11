@@ -496,6 +496,11 @@ public sealed class Igi1MissionSetup(
 
         // The minefields, which blast at their target while their condition holds.
         mission.MineFields = Igi1MineFields.Build(levelRoot);
+        foreach (Igi1MineFieldTask field in mission.MineFields)
+        {
+            field.Blasts = blasts;
+        }
+
         mission.MineFieldExpressions = new LevelExpressionRuntime(host.Game.Variables);
 
         // The Smoke tasks' plumes, in the impact effects' particle module so the one particle drawer shows them.

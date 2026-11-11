@@ -44,7 +44,7 @@ public sealed class MissionWorld : MissionState
     public Igi1SmokePlumes? SmokePlumes { get; set; }
 
     /// <summary>Gets or sets the level's minefields.</summary>
-    public IReadOnlyList<Igi1MineField> MineFields { get; set; } = [];
+    public IReadOnlyList<Igi1MineFieldTask> MineFields { get; set; } = [];
 
     /// <inheritdoc/>
     /// <remarks>The shared parts, then the panes of glass the cars meet and the level's own minefields' waits.</remarks>
@@ -57,13 +57,13 @@ public sealed class MissionWorld : MissionState
     {
         private int[] _start = [];
 
-        public void MarkLevelStart() => _start = [.. world.MineFields.Select(static f => f.Pause.Ticks)];
+        public void MarkLevelStart() => _start = [.. world.MineFields.Select(static f => f.Pause)];
 
         public void ResetToLevelStart(ObjectCollisionIndex? solids)
         {
             for (int i = 0; i < world.MineFields.Count && i < _start.Length; i++)
             {
-                world.MineFields[i].Pause.Ticks = _start[i];
+                world.MineFields[i].Pause = _start[i];
             }
         }
     }
