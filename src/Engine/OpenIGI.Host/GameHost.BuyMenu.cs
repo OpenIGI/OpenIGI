@@ -34,7 +34,7 @@ public sealed partial class GameHost
         get
         {
             IReadOnlyList<ArmouryItem> items = Armoury.For(_titleRuntime.Title.Id);
-            if (HostedPlayer?.Weapons is not { } weapons || CurrentMatchHud() is not { Money: not null, FreeLoadout: false })
+            if ((TitlePlayer as Game.Player.ITitleMatchPlayer)?.Weapons is not { } weapons || CurrentMatchHud() is not { Money: not null, FreeLoadout: false })
             {
                 return items;
             }
@@ -56,7 +56,7 @@ public sealed partial class GameHost
     private void UpdateBuyMenu()
     {
         // A round's freeze time holds this player where it stands, as the server holds it, so what it predicts is what is run.
-        if (HostedPlayer is { } own)
+        if (TitlePlayer is Game.Player.ITitleMatchPlayer own)
         {
             own.HeldStill = CurrentMatchHud() is { Frozen: true };
         }
@@ -143,7 +143,7 @@ public sealed partial class GameHost
     {
         System.Text.StringBuilder had = new();
         had.Append(CurrentMatchHud()?.Money ?? -1);
-        if (HostedPlayer?.Weapons is { } weapons)
+        if ((TitlePlayer as Game.Player.ITitleMatchPlayer)?.Weapons is { } weapons)
         {
             foreach (Game.Player.CarriedWeapon carried in weapons.Carried)
             {

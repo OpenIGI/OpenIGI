@@ -20,7 +20,7 @@ public sealed partial class GameHost
     {
         _computerOpen = false;
         _computerFlight.Reset();
-        HostedPlayer?.SetMapComputerOpen(false);
+        _mission.SetPlayerComputerOpen(false);
 
         // The result is a shell page, not a drawn card, so its choices can be clicked and navigated like every other page
         // and the shell's own cursor is the one on screen. Menu mode hands it the frame's input and draw; the pause flag
@@ -32,7 +32,7 @@ public sealed partial class GameHost
         // The platform cursor stays hidden: the shell draws its own, so revealing this one would put a second, unrelated
         // pointer beside it.
         _window.CursorVisible = false;
-        HostedPlayer?.HoldStill();
+        (TitlePlayer as ITitleMatchPlayer)?.HoldStill();
         _window.CursorLocked = false;
     }
 

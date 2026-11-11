@@ -153,12 +153,6 @@ public sealed partial class GameHost
 
         public TerrainData? Terrain => host._mission.Terrain;
 
-        public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
-        {
-            host.ReadSharedAnimations();
-            return host._playerBodyAnimations;
-        }
-
         public void EndStage(string what) => host.EndStage(what);
 
 
@@ -192,6 +186,8 @@ public sealed partial class GameHost
         public string DifficultySource => host.DifficultySource;
 
         public string GamePath => host._gamePath;
+
+        public OpenIGI.Core.Threading.IWorkScheduler Work => host._work;
 
         public bool PlayCutscenes => host._options.PlayCutscenes;
 

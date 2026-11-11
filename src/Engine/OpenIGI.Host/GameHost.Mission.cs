@@ -285,7 +285,6 @@ public sealed partial class GameHost
         {
             var playerSetup = _hosted.NewPlayerSetup();
             playerSetup.Begin(loaded, levelRoot, solids, missionText);
-            Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
@@ -298,9 +297,8 @@ public sealed partial class GameHost
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
             // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
             // without it there is nothing to draw a gun on.
-            if (_viewRigAnimations is { } viewRigSet)
+            if (playerSetup.UseViewRig())
             {
-                playerSetup.UseViewRig(viewRigSet);
 
                 // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
                 // skinning: 005_01_1 is mesh format 1.
@@ -396,14 +394,12 @@ public sealed partial class GameHost
             // warning below already covers.
             if (playerSetup.Stand(levelRoot, _mission.Ground, solids, _camera?.Position, _options.CameraYaw, out PlayerSpawnPoint spawn))
             {
-                IHostedPlayer candidate = playerSetup.Player;
-
                 // The player's own third-person body -- the rig the death camera reveals. Built from the
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
                 // player walks on. It stays invisible until the player dies. Without the spawn's model or
                 // the set there is simply no body to show, and death falls back to the frozen view.
                 if (_soldiers is { } bodies
-                    && playerBodySet is { } bodySet
+                    && playerSetup.BodyAnimations is { } bodySet
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
                     // A co-op partner's look this level doesn't ship is borrowed from one that does; and so is this
@@ -420,26 +416,6 @@ public sealed partial class GameHost
                 // Walking is what starting a mission means. The free camera is the debugging tool, so
                 // it is the thing you switch to rather than the thing you start in.
                 _playerMode = !_options.StartFlying;
-
-                // After a switch of renderer, back where the view was before it.
-                ResumePose();
-                _logger.Information(
-                    "Player",
-                    _playerMode
-                        ? $"Standing at {candidate.Position}; F1 for the free camera."
-                        : $"Free camera; F1 to stand at {candidate.Position}.");
-
-                // The eye, spelled the way the capture flags take it. Walking and flying are supposed to
-                // draw the same picture from the same place, and the only way to check that is to put the
-                // free camera exactly where the walking eye is -- which needs the eye, not the feet the
-                // line above reports, and needs it before a capture run can be scripted around it.
-                Camera3D spawnEye = candidate.Camera;
-                _logger.Information(
-                    "Player",
-                    FormattableString.Invariant(
-                        $"Eye at -campos {spawnEye.Position.X:F3},{spawnEye.Position.Y:F3},{spawnEye.Position.Z:F3} ")
-                        + FormattableString.Invariant(
-                            $"-yaw {candidate.Body.Yaw:F4} -pitch {candidate.Body.Pitch:F4}"));
             }
             else
             {
@@ -449,8 +425,11 @@ public sealed partial class GameHost
             }
         }
 
-        // A title that brings its own player stands it here, in place of the rig above.
+        // The player on the title path: a title's own, or the mission's own the rig above stood.
         StandTitlePlayer(loaded, levelRoot, scene);
+
+        // After a switch of renderer, back where the view was before it.
+        ResumePose();
     }
 
     /// <summary>Turns the menu's backdrop into the mission being played, without loading anything.</summary>

@@ -166,8 +166,7 @@ public sealed partial class GameHost
     private ComputerSubjectView? ComputerSubject() =>
         TitlePlayer is { } title && (_mission.HasOwnPlayer || (TitleUsesMissionComputer && _playerMode))
             ? new ComputerSubjectView(title.Position, TitleCamera(title))
-        : HostedPlayer is { } hosted ? new ComputerSubjectView(hosted.Body.Position, hosted.Camera)
-        : null;
+            : null;
 
     /// <summary>Gets where the player the computer serves stands, in engine units, or none.</summary>
     private Vector3d? ComputerBodyUnits => ComputerSubject()?.BodyUnits;

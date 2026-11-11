@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Player;
@@ -66,8 +67,6 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <remarks>The title outlives its missions; each load builds a new level tree, and between two there is none.</remarks>
     public object? Level => World.LevelRoot;
 
-    /// <summary>Gets the player the host steers and looks through, or <see langword="null"/> before a level places one.</summary>
-    public IHostedPlayer? Player => World.Player;
 
     /// <inheritdoc/>
     public ShotTally? PlayerShots => World.Player?.Shots;
@@ -102,14 +101,13 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The mission's own player on the host's title path, where <see cref="GameplayCVars.MissionTitlePlayer"/> has it there: the
-    /// player the mission stood, ticked inside the mission's steps around it (<see cref="Igi1MissionTick.StepPlayer"/>). A tick the
-    /// mission refuses -- the player dead, the mission failed -- is not the player's, so nothing it would have set in motion is
-    /// resolved. Off, or with no player stood, the mission ticks its player itself.
+    /// The mission's own player on the host's title path: the player the mission stood, ticked inside the mission's steps around
+    /// it (<see cref="Igi1MissionTick.StepPlayer"/>). A tick the mission refuses -- the player dead, the mission failed -- is not
+    /// the player's, so nothing it would have set in motion is resolved. With no player stood, none.
     /// </remarks>
     public ITitlePlayer? CreatePlayer(in TitlePlayerRequest request)
     {
-        if (!GameplayCVars.MissionTitlePlayer.Value || World.Player is not { } rig)
+        if (World.Player is not { } rig)
         {
             return null;
         }
@@ -155,7 +153,7 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>
-    public Igi1PlayerSetup NewPlayerSetup() => PlayerSetup = new(World, Harm, Audio, Sounds, _host);
+    public Igi1PlayerSetup NewPlayerSetup() => PlayerSetup = new(World, Harm, Audio, Sounds, PlayerAnimations, _host);
 
     /// <summary>Records the level as it stands, for <see cref="ResetToLevelStart"/>: as a match's session takes it up.</summary>
     public void MarkLevelStart() => World.MarkLevelStart();
@@ -238,4 +236,37 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <summary>Gets the bring-up of the mission's player, once made, which a co-op session's other players are made by.</summary>
     public Igi1PlayerSetup? PlayerSetup { get; private set; }
+
+
+    /// <summary>
+    /// Gets the two animation sets every mission stands its player with, its body's (skeleton 0) and its first-person rig's
+    /// (skeleton 5), read once for the installation being played: waited for here when <see cref="Prefetch"/> has not finished.
+    /// </summary>
+    /// <remarks>
+    /// They live under common/ rather than under any level, so they are the same 2.4 MB of IFF for every mission of one
+    /// installation, and parsing them was the single largest thing standing a player up used to do on the render thread. A
+    /// switch of installation reads the new one's: a set left over from another would send its missions down a path theirs
+    /// do not take.
+    /// </remarks>
+    public Igi1PlayerAnimations PlayerAnimations => ReadPlayerAnimations().GetAwaiter().GetResult();
+
+    /// <inheritdoc/>
+    public void Prefetch() => _ = ReadPlayerAnimations();
+
+    // The read for the installation being played, started once for it.
+    private Task<Igi1PlayerAnimations> ReadPlayerAnimations()
+    {
+        string root = _host.GamePath;
+        if (_animations is not { } read || !string.Equals(read.Root, root, StringComparison.OrdinalIgnoreCase))
+        {
+            IMissionSetupHost setup = _host;
+            IOpenIgiLogger logger = setup.Logger;
+            _animations = read = (root, setup.Work.Run(() => Igi1PlayerAnimations.Read(root, logger)));
+        }
+
+        return read.Sets;
+    }
+
+    // The animation sets, by the installation they were read from.
+    private (string Root, Task<Igi1PlayerAnimations> Sets)? _animations;
 }

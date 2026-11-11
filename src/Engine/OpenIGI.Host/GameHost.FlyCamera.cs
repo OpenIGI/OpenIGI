@@ -36,11 +36,6 @@ public sealed partial class GameHost
             // Resolved per frame rather than cached, so the options menu's sensitivity slider takes
             // effect on the next frame instead of the next launch. It is two multiplies and a Pow.
             MouseLookSettings look = MouseLookSettings.FromProfile(_configuration.Active);
-            if (HostedPlayer is not null)
-            {
-                HostedPlayer.LookSettings = look;
-            }
-
             if (Viewpoint is { } lookViewpoint)
             {
                 lookViewpoint.LookSettings = look;
@@ -82,8 +77,7 @@ public sealed partial class GameHost
             {
                 // Watching a player in a demo: the viewer's own body stands still; fire watches the next player, the other
                 // button lets the viewer walk the level itself again.
-                HostedPlayer?.HoldStill();
-                HostedPlayer?.ReleaseLook();
+                (TitlePlayer as ITitleMatchPlayer)?.HoldStill();
                 _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
                 if (_window.Input.Mouse.WasPressed(Input.MouseButton.Left))
                 {
@@ -156,13 +150,6 @@ public sealed partial class GameHost
                 // gathers what the mouse and the keys did since the last one.
                 GatherTitleInput();
                 _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
-            }
-            else if (_playerMode && HostedPlayer is not null)
-            {
-                // Looking is per frame so the view is as smooth as the display allows; the body itself
-                // moves on the fixed tick below, so it steps identically whatever the frame rate.
-                HostedPlayer.Look(_window.Input, elapsed);
-                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode && HostedPlayer.IsCapturingMouse;
             }
             else if (_sunGizmo.Active)
             {

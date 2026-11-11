@@ -22,10 +22,14 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="harm">What a fall and a powered fence do to the player.</param>
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="sounds">The clatter of a dropped gun landing.</param>
+/// <param name="animations">The animation sets the rig walks on and its first-person rig is posed by.</param>
 /// <param name="host">What shows and plays it.</param>
 public sealed partial class Igi1PlayerSetup(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, Igi1PlayerAnimations animations, IPlayerSetupHost host) : IPlayerBringUp
 {
+    /// <inheritdoc/>
+    public BoneAnimationSet? BodyAnimations => animations.Body;
+
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
 
@@ -57,8 +61,6 @@ public sealed partial class Igi1PlayerSetup(
     public PlayerSpawnPoint? LevelSpawn() =>
         _bringUp is { } b && PlayerSpawn.TryFindGameplay(b.LevelRoot, out PlayerSpawnPoint spawn) ? spawn : null;
 
-    /// <summary>Gets the rig being brought up, as the host steers it.</summary>
-    public IHostedPlayer Player => Candidate;
 
     /// <inheritdoc/>
     void IPlayerBringUp.Begin(LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, MissionStringResolver missionText) =>
@@ -73,11 +75,17 @@ public sealed partial class Igi1PlayerSetup(
     public void Configure() => Configure(Candidate);
 
     /// <summary>Gives the rig being brought up the first-person rig every Human builds (skeleton 5, model 005_01_1).</summary>
-    /// <param name="animations">The first-person rig's animation set.</param>
-    public void UseViewRig(BoneAnimationSet animations)
+    /// <returns>Whether the game has its set.</returns>
+    public bool UseViewRig()
     {
-        _viewRig = animations;
-        Candidate.UseViewRig(animations);
+        if (animations.ViewRig is not { } viewRig)
+        {
+            return false;
+        }
+
+        _viewRig = viewRig;
+        Candidate.UseViewRig(viewRig);
+        return true;
     }
 
     /// <summary>Hands the rig being brought up what the level's own <c>HumanPlayer</c> declares it carries.</summary>
@@ -188,10 +196,11 @@ public sealed partial class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(missionText);
         // 000.iff, kept so the player's third-person body can be built from the same set it walks on (HumanPlayerBody: the body
-        // is skeleton 0, and this is skeleton 0's set). Read once for the session rather than per mission: it lives under common/,
-        // so it is the same 1.5 MB of IFF for all fourteen. The walls are the index built for the soldiers' ground probe.
+        // is skeleton 0, and this is skeleton 0's set). Read once for the installation rather than per mission
+        // (Igi1Gameplay.PlayerAnimations): it lives under common/, so it is the same 1.5 MB of IFF for all fourteen. The walls
+        // are the index built for the soldiers' ground probe.
         PlayerCamera candidate = Igi1PlayerRig.Build(
-            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), host.ReadSharedAnimations(), host.Logger);
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), animations.Body, host.Logger);
         Candidate = candidate;
         _bringUp = (loaded, levelRoot, solids, missionText);
         WirePlayer(candidate, loaded, solids, missionText);
@@ -403,7 +412,7 @@ public sealed partial class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
         PlayerCamera extra = Igi1PlayerRig.Build(
-            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), host.ReadSharedAnimations(), host.Logger);
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), animations.Body, host.Logger);
         WirePlayer(extra, loaded, solids, missionText);
         WirePickups(extra, missionText);
         // Tuned, rigged and then armed, in the order the mission's own player is.

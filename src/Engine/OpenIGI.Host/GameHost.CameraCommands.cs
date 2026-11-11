@@ -50,7 +50,7 @@ public sealed partial class GameHost
             "Stands the player at a place: setpos <x> <y> <z> [yaw], in the metres campos prints.",
             context =>
             {
-                if (HostedPlayer is not { } player
+                if (TitlePlayer is not { } player || _titleFeatures?.Placement is not { } placement
                     || !double.TryParse(context[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
                     || !double.TryParse(context[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double y)
                     || !double.TryParse(context[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double z))
@@ -59,8 +59,8 @@ public sealed partial class GameHost
                     return;
                 }
 
-                float yaw = float.TryParse(context[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float turned) ? turned : player.Body.Yaw;
-                bool stood = player.Place(_mission.Ground, new Vector3d(x, y, z), yaw);
+                float yaw = float.TryParse(context[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float turned) ? turned : player.Heading ?? 0f;
+                bool stood = placement.TryPlace(new Vector3d(x, y, z) * Game.World.WorldScene.UnitsPerMetre, yaw);
                 string said = stood ? FormattableString.Invariant($"Standing at {x:0.##},{y:0.##},{z:0.##}.") : "Nothing to stand on there.";
                 context.Print(said);
                 _logger.Information("Camera", said);

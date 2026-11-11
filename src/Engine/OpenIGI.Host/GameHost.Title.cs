@@ -180,7 +180,7 @@ public sealed partial class GameHost
         // skeletons -- and a set that is merely present is enough to send the mission down a path it
         // would otherwise have skipped, which is how a switch to a title with no animations at all
         // ended in an unhandled exception rather than a warning.
-        ForgetSharedAnimations();
+        _hosted.Prefetch();
 
         // The same file system, re-pointed. VirtualFileSystem keys devices by name, so registering a
         // second LOCAL replaces the first -- which matters because the console, the audio system and the

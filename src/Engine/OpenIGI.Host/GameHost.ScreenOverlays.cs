@@ -168,7 +168,7 @@ public sealed partial class GameHost
     private List<StatusMessageDisplay> GuestMissionMessages()
     {
         _guestMessages.Clear();
-        if (HostedPlayer is null && _mission.Progress is { } runtime)
+        if (!_mission.HasOwnPlayer && _mission.Progress is { } runtime)
         {
             _guestMessages.AddRange(runtime.DisplayedMessages);
         }
