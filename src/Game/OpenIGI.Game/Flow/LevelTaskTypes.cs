@@ -37,10 +37,15 @@ public static class LevelTaskTypes
         AddDeclared<ElevatorTask>(types, ElevatorTask.TypeName);
         AddDeclared<Ai.SecurityCameraTask>(types, Ai.SecurityCameraTask.TypeName);
         AddDeclared<Ai.SecurityCameraControlTask>(types, Ai.SecurityCameraControlTask.TypeName);
-        foreach (string name in WorldInteractionTask.TypeNames)
-        {
-            AddDeclared<WorldInteractionTask>(types, name);
-        }
+        AddDeclared<SwitchTask>(types, SwitchTask.TypeName);
+        AddDeclared<TerminalTask>(types, TerminalTask.TypeName);
+        AddDeclared<CabinetTask>(types, CabinetTask.TypeName);
+        AddDeclared<GenericTbaTask>(types, GenericTbaTask.TypeName);
+        AddDeclared<PlaceExplosiveTbaTask>(types, PlaceExplosiveTbaTask.TypeName);
+        AddDeclared<FenceTask>(types, FenceTask.TypeName);
+        AddDeclared<StationaryGunTask>(types, StationaryGunTask.TypeName);
+        AddDeclared<WireTask>(types, WireTask.TypeName);
+        AddDeclared<GeneratorTask>(types, GeneratorTask.TypeName);
 
         AddDeclared<AnimTaskTask>(types, AnimTaskTask.TypeName);
         AddDeclared<ConditionalSoundTask>(types, ConditionalSoundTask.TypeName);

@@ -161,14 +161,14 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         ArgumentNullException.ThrowIfNull(walker);
         foreach (GeneratorPowerState generator in _generators)
         {
-            Adopt(generator.Task, walker);
+            Adopt(generator.Task, walker, null, generator);
         }
 
         foreach (WorldInteraction item in _items)
         {
             if (item.Type != InteractionActivateType.Door)
             {
-                Adopt(item.Task, walker);
+                Adopt(item.Task, walker, item, null);
             }
         }
 
@@ -177,74 +177,29 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         _inWalk = true;
     }
 
-    /// <summary>A task's own update, where the level's walk reaches it, in its type's order.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="level">The level's run, which runs the task's children.</param>
-    /// <returns>Whether the registry keeps and stepped it.</returns>
-    /// <remarks>
-    /// A switch, terminal, cabinet and generator run their children first (an ExplodeObject's update is its children, then its
-    /// blast); a GenericTBA runs them only when it is Explodable, as only then does it run ExplodeObject's update
-    /// (<c>0x4480B0</c>); a fence (<c>0x43FC30</c>) and a stationary gun (<c>0x474190</c>) run them last; a wire
-    /// (<c>0x43F340</c>) not at all.
-    /// </remarks>
-    internal bool RunFromWalk(WorldInteractionTask task, LevelRun level)
+    /// <summary>Gets a value indicating whether the tasks run their own updates from the level's walk.</summary>
+    internal bool RunsInWalk => _inWalk;
+
+    // Hands a kept task what it runs with, and says so loudly when the task was made without its class.
+    private void Adopt(GameTask task, LevelRun level, WorldInteraction? item, GeneratorPowerState? power)
     {
-        if (!_inWalk)
+        if (!LevelTaskClass.TryAs(task, level, out WorldInteractionTask? typed))
         {
-            return false;
+            return;
         }
 
-        if (TryGet(task, out WorldInteraction? item) && item is not null && item.Type != InteractionActivateType.Door)
-        {
-            switch (item.Type)
-            {
-                case InteractionActivateType.Fence:
-                    item.Run(Now);
-                    level.RunChildren(task);
-                    break;
-                case InteractionActivateType.StationaryGun:
-                    item.Run(Now);
-                    if (item.StationaryGun is { IsOccupied: false } emptyGun)
-                    {
-                        emptyGun.TickEmpty();
-                    }
-
-                    level.RunChildren(task);
-                    break;
-                case InteractionActivateType.Wire:
-                    item.Run(Now);
-                    break;
-                case InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive when !item.IsExplodable:
-                    item.Run(Now);
-                    break;
-                default:
-                    level.RunChildren(task);
-                    item.Run(Now);
-                    break;
-            }
-
-            return true;
-        }
-
-        foreach (GeneratorPowerState generator in _generators)
-        {
-            if (ReferenceEquals(generator.Task, task))
-            {
-                level.RunChildren(task);
-                generator.Tick();
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // Makes the registry the one a kept task runs through, and says so loudly when the task was made without its class.
-    private void Adopt(GameTask task, LevelRun level)
-    {
-        if (LevelTaskClass.TryAs(task, level, out WorldInteractionTask? typed))
+        // A task kept across a rebuild of the level's interactions lets go of what the last ones gave it.
+        if (!ReferenceEquals(typed.Interactions, this))
         {
             typed.Interactions = this;
+            typed.Item = null;
+        }
+
+        // The first item a task owns is the one its update runs, as a search of the list in its order would find.
+        typed.Item ??= item;
+        if (power is not null && typed is GeneratorTask generator)
+        {
+            generator.Power = power;
         }
     }
 

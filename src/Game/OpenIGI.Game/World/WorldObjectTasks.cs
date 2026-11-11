@@ -46,36 +46,6 @@ public sealed class RotatingObjectTask : DeclaredLevelTask
     }
 }
 
-/// <summary>
-/// One of the things a human works by hand -- a switch, a terminal, a cabinet, a timed action, a fence, a wire, a mounted
-/// gun -- or a generator: the Project I.G.I. types <see cref="WorldInteractionRegistry"/> keeps the state of.
-/// </summary>
-/// <remarks>
-/// Each type's run handler orders its own work and its children's differently (a switch, terminal, cabinet and generator
-/// run their children first; a fence and a mounted gun last; a wire not at all), which the registry knows; the task runs
-/// it where the level's walk reaches it.
-/// </remarks>
-public class WorldInteractionTask : DeclaredLevelTask
-{
-    /// <summary>The script names level data instantiates this class's types under.</summary>
-    public static readonly IReadOnlyList<string> TypeNames =
-        ["Switch", "Terminal", "Cabinet", "GenericTBA", "PlaceExplosiveTBA", "Fence", "StationaryGun", "Wire", "Generator"];
-
-    /// <summary>Gets or sets the level's interactions, which step this one; none until they are built.</summary>
-    internal WorldInteractionRegistry? Interactions { get; set; }
-
-    /// <inheritdoc/>
-    /// <remarks>One the registry does not keep is walked as a plain container is.</remarks>
-    public override void Run(LevelRun level)
-    {
-        ArgumentNullException.ThrowIfNull(level);
-        if (Interactions?.RunFromWalk(this, level) != true)
-        {
-            level.RunChildren(this);
-        }
-    }
-}
-
 /// <summary>A weapon or a box of ammunition lying in the level: Project I.G.I.'s <c>GunPickup</c> and <c>AmmoPickup</c>.</summary>
 /// <remarks>
 /// Its run handler deletes the task once the pickup has been taken (<see cref="TakenPickupTask"/>), which the registry that
