@@ -171,6 +171,7 @@ public sealed partial class GameHost
         _viewpoint = null;
         _worldBuilder = binding.WorldBuilder;
         _gameplay = binding.Gameplay;
+        BindMission(_titles, binding);
         RestoreTitleInputBindings();
         _missionCatalogue = binding.Missions;
         _gamePath = binding.DataRoot;

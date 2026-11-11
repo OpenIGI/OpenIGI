@@ -163,12 +163,12 @@ public sealed partial class GameHost : IDisposable
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     // The first game's mission, its world, and the host's side of it.
     private readonly MissionHostServices _missionHost;
-    private readonly IHostedMission _hosted;
+    private IHostedMission _hosted = null!;
 
     // Starts the mission that is up afresh: the pause menu's restart, which a save game's load asks for too.
     private Action? _restartMission;
     private Action? _resumeMission;
-    private readonly MissionState _mission;
+    private MissionState _mission = null!;
 
     // The player the host steers and looks through, when the mission has one.
 
@@ -363,8 +363,7 @@ public sealed partial class GameHost : IDisposable
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
         _missionHost = new MissionHostServices(this);
-        _hosted = titles.CreateHostedMission(_missionHost);
-        _mission = _hosted.World;
+        BindMission(titles, binding);
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,

@@ -110,7 +110,8 @@ public sealed partial class GameHost
     /// <summary>The scene walk, the world renderer and the collision index; the vehicles on it, what can be destroyed, and the weather.</summary>
     private void MissionScene(MissionBuild b)
     {
-        if (_mission.Scenes is null)
+        // The step in the cut-scenes' place leaves the mission's text, whether or not its game has cut-scenes of its own.
+        if (b.MissionText is null)
         {
             throw MissingSystem(MissionSystemNames.Cutscenes);
         }

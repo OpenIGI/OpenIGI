@@ -71,6 +71,7 @@ public sealed partial class GameHost
         RegisterDemoCommands(state.Console.System);
         RegisterInviteCommand(state.Console.System);
         RegisterPartyCommands(state.Console.System);
+        _missionConsole = state.Console.System;
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterBlastCommands(state.Console.System);
