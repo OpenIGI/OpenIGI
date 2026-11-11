@@ -643,10 +643,9 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
         LevelExpressionRuntime expressions,
         ScriptVarRegistry variables)
     {
-        if (task is DeclaredTask declared
-            && string.Equals(declared.Type.Name, "Elevator", StringComparison.Ordinal))
+        if (task is ElevatorTask declared)
         {
-            int? splineId = IntStrictOrNull(declared, "SplineObj taskid");
+            int? splineId = declared.SplineTaskId;
             GameTask? spline = splineId is int id ? FindById(root, id) : null;
             List<DeclaredTask> waypoints = spline?.Children
                 .OfType<DeclaredTask>()
@@ -661,34 +660,34 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
 
             if (floors.Count > 0)
             {
-                Vector3d start = Vector(declared, "Position", floors[0].Position);
+                Vector3d start = declared.Position ?? floors[0].Position;
                 ElevatorState state = new(
                     start,
                     floors,
-                    DoubleFromNumber(declared, "Max speed", 1f) * WorldScene.UnitsPerMetre,
-                    DoubleFromNumber(declared, "Speed inertia", 1f) * WorldScene.UnitsPerMetre,
-                    IntStrictOrNull(declared, "Start floor task ID"));
+                    declared.MaxSpeed * WorldScene.UnitsPerMetre,
+                    declared.SpeedInertia * WorldScene.UnitsPerMetre,
+                    startFloorTaskId: null);
                 PlacedElevator elevator = new(
                     declared,
                     state,
-                    ReadOrientation(declared, "Orientation"),
-                    TextOrEmpty(declared, "Model"),
-                    TextOrEmpty(declared, "Start sound"),
-                    TextOrEmpty(declared, "Stop sound"),
-                    TextOrEmpty(declared, "Move sound"),
+                    declared.Orientation,
+                    declared.Model,
+                    declared.StartSound,
+                    declared.StopSound,
+                    declared.MoveSound,
                     ElevatorSplineFrame.For(declared, spline));
                 registry._elevators.Add(elevator);
                 PlacementClaims.Changed();
-                List<string> wantedExpressions = Enumerable.Range(0, 10)
-                    .Select(i => TextOrEmpty(declared, $"Wanted floor {i}"))
+                List<string> wantedExpressions = Enumerable.Range(0, ElevatorTask.WantedFloorCount)
+                    .Select(declared.WantedFloor)
                     .ToList();
                 List<Func<bool>> wantedFloors = wantedExpressions
                     .Select(expression => (Func<bool>)(() => expressions.EvaluateCondition(
                         expression, emptyValue: false, declared)))
                     .ToList();
-                string canStart = TextOrEmpty(declared, "Can start");
-                string floorUp = TextOrEmpty(declared, "Floor up");
-                string floorDown = TextOrEmpty(declared, "Floor down");
+                string canStart = declared.CanStart;
+                string floorUp = declared.FloorUp;
+                string floorDown = declared.FloorDown;
                 List<ExteriorSwitchCall> exteriorCalls = FindExteriorSwitchCalls(
                     root, declared, floors, wantedExpressions);
                 registry._commands.Add(new ElevatorCommand(
