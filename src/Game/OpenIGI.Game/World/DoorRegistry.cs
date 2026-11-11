@@ -480,8 +480,7 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
     private static void Collect(GameTask task, DoorRegistry registry, GameTask? nearestObject)
     {
         GameTask? objectHere = nearestObject;
-        if (task is DeclaredTask declared
-            && string.Equals(task.Type.Name, "Door", StringComparison.Ordinal))
+        if (task is DoorTask declared)
         {
             (PlacedDoor door, float[] baseOrientation) = Create(declared);
             PlacedDoor? parent = nearestObject is not null && registry._doorsByTask.TryGetValue(nearestObject, out PlacedDoor? outer)
@@ -505,51 +504,32 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
     }
 
     /// <summary>Reads a <c>Door</c> task's parameters into a door and its base orientation (<c>0x4B38E0</c>, exact).</summary>
-    private static (PlacedDoor Door, float[] Base) Create(DeclaredTask declared)
+    private static (PlacedDoor Door, float[] Base) Create(DoorTask declared)
     {
-        Vector3d position = declared.TryGetValue("Position start", out object? start) && start is Vector3d p
-            ? p
-            : default;
-
-        float maxAngle = declared.TryGetValue("Max angle", out object? angle) && angle is float a ? a : 0f;
-        float openTime = declared.TryGetValue("Open time", out object? time) && time is float t ? t : 1f;
-        float stopX = declared.TryGetValue("Position stop X", out object? rawX) && rawX is float xValue ? xValue : 0f;
-        float stopY = declared.TryGetValue("Position stop Y", out object? rawY) && rawY is float yValue ? yValue : 0f;
-        float slider = declared.TryGetValue("Position slider", out object? rawZ) && rawZ is float zValue ? zValue : 0f;
+        float stopX = declared.PositionStopX;
+        float stopY = declared.PositionStopY;
+        float slider = declared.PositionSlider;
+        float openTime = declared.OpenTime;
 
         // 0x446D10 slides only with a stop; 0x447830 keeps the slide's length for the step.
         bool slides = stopX != 0f || stopY != 0f;
         float length = X87.Sqrt((X87)stopX * stopX + (X87)stopY * stopY).F;
-        float[] baseOrientation = declared.TryGetValue("Orientation", out object? rawOrientation)
-            ? rawOrientation switch
-            {
-                Vector3f angles => RetailOrientation.Euler(angles.X, angles.Y, angles.Z),
-                float gamma => RetailOrientation.Euler(0f, 0f, gamma),
-                _ => [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f],
-            }
-            : [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+        float[] baseOrientation = declared.BaseOrientation;
 
+        // The three sounds are declared String16 and hold a definition name, not a bank key.
         PlacedDoor door = new(
             declared,
-            position,
+            declared.PositionStart,
             RetailOrientation.ToMatrix(baseOrientation),
             stopX,
             stopY,
             slider,
-            new DoorState(maxAngle, openTime <= 0f ? 1f : openTime, slides, slider, length),
-            ReadSound(declared, "Open sound"),
-            ReadSound(declared, "Close sound"),
-            ReadSound(declared, "Move sound"));
+            new DoorState(declared.MaxAngle, openTime <= 0f ? 1f : openTime, slides, slider, length),
+            declared.OpenSound,
+            declared.CloseSound,
+            declared.MoveSound);
         return (door, baseOrientation);
     }
-
-    /// <summary>Reads one of the door's three sound parameters.</summary>
-    /// <remarks>
-    /// All three are declared <c>String16</c> — the 16-byte parameter type the registrar's last three
-    /// declarations use — and they hold a <b>definition</b> name, not a bank key.
-    /// </remarks>
-    private static string ReadSound(DeclaredTask declared, string parameter) =>
-        DeclaredTaskValues.TextOrEmpty(declared, parameter);
 
     /// <summary>Sets where a door's sounds are reported, or <see langword="null"/> to make them silent.</summary>
     /// <param name="sink">Called during <see cref="Tick(PlacedDoor)"/> for each moment a door makes a noise.</param>

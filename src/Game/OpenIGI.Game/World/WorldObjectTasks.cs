@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.World;
@@ -17,6 +18,43 @@ public sealed class DoorTask : DeclaredLevelTask
 
     /// <summary>Gets or sets the door this task is, or <see langword="null"/> until a registry keeps it.</summary>
     internal PlacedDoor? Door { get; set; }
+
+    /// <summary>Gets where the door stands closed ("Position start").</summary>
+    public Vector3d PositionStart => Declared("Position start", default(Vector3d));
+
+    /// <summary>Gets how far along X a sliding door travels ("Position stop X").</summary>
+    public float PositionStopX => Declared("Position stop X", 0f);
+
+    /// <summary>Gets how far along Y a sliding door travels ("Position stop Y").</summary>
+    public float PositionStopY => Declared("Position stop Y", 0f);
+
+    /// <summary>Gets the slider's position ("Position slider").</summary>
+    public float PositionSlider => Declared("Position slider", 0f);
+
+    /// <summary>Gets how far a swinging door opens ("Max angle").</summary>
+    public float MaxAngle => Declared("Max angle", 0f);
+
+    /// <summary>Gets how long the door takes to open, in seconds ("Open time"); one second where the level gives none.</summary>
+    public float OpenTime => Declared("Open time", 1f);
+
+    /// <summary>Gets the definition played as the door opens ("Open sound").</summary>
+    public string OpenSound => Declared("Open sound", string.Empty);
+
+    /// <summary>Gets the definition played as the door closes ("Close sound").</summary>
+    public string CloseSound => Declared("Close sound", string.Empty);
+
+    /// <summary>Gets the definition played while the door moves ("Move sound").</summary>
+    public string MoveSound => Declared("Move sound", string.Empty);
+
+    /// <summary>Gets the door's authored orientation as a matrix's nine reals ("Orientation": three angles, or the one about Z).</summary>
+    public float[] BaseOrientation => TryGetValue("Orientation", out object? raw)
+        ? raw switch
+        {
+            Vector3f angles => RetailOrientation.Euler(angles.X, angles.Y, angles.Z),
+            float gamma => RetailOrientation.Euler(0f, 0f, gamma),
+            _ => [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f],
+        }
+        : [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
 
     /// <inheritdoc/>
     public override void Run(LevelRun level)
