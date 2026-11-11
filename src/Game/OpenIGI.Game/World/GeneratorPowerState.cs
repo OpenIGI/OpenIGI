@@ -24,8 +24,18 @@ internal sealed class GeneratorPowerState(
 
     private bool _explodedWhenTicked;
 
-    public bool IsOn { get; set; }
-    public int BackupTimer { get; set; } = -1;
+    private readonly Objects.GeneratorPower _power = new();
+
+    public bool IsOn
+    {
+        get => _power.IsOn;
+        set => _power.IsOn = value;
+    }
+    public int BackupTimer
+    {
+        get => _power.BackupTimer;
+        set => _power.BackupTimer = value;
+    }
 
     /// <summary>Gets or sets the co-op server's word on the power, which a client's update takes in place of its own.</summary>
     public bool? MirroredOn { get; set; }
@@ -80,7 +90,11 @@ internal sealed class GeneratorPowerState(
         }
     }
 
-    private bool _running;
+    private bool _running
+    {
+        get => _power.IsRunSoundHeld;
+        set => _power.IsRunSoundHeld = value;
+    }
 
     private void Run(bool exploded)
     {
@@ -89,27 +103,26 @@ internal sealed class GeneratorPowerState(
 
         // 0x43B500: while on it holds its run sound, started once; as it goes off it lets go of it and, having been on,
         // plays its shutdown sound once, where it stands.
-        Vector3d at = task.TryGetValue("Position", out object? placed) && placed is Vector3d position ? position : default;
-        if (IsOn)
+        Objects.GeneratorSounds change = _power.SettleSounds(wasOn, runSound.Length > 0);
+        if (change == Objects.GeneratorSounds.None)
         {
-            if (!_running && runSound.Length > 0)
-            {
-                _running = true;
-                sounds(new InteractionSoundEvent(task, InteractionSound.LoopStarted, runSound, at, Matrix3f.Identity, default));
-            }
+            return;
         }
-        else
-        {
-            if (_running)
-            {
-                _running = false;
-                sounds(new InteractionSoundEvent(task, InteractionSound.LoopStopped, string.Empty, at, Matrix3f.Identity, default));
-            }
 
-            if (wasOn && shutdownSound.Length > 0)
-            {
-                sounds(new InteractionSoundEvent(task, InteractionSound.Played, shutdownSound, at, Matrix3f.Identity, default));
-            }
+        Vector3d at = task.TryGetValue("Position", out object? placed) && placed is Vector3d position ? position : default;
+        if (change.HasFlag(Objects.GeneratorSounds.StartRun))
+        {
+            sounds(new InteractionSoundEvent(task, InteractionSound.LoopStarted, runSound, at, Matrix3f.Identity, default));
+        }
+
+        if (change.HasFlag(Objects.GeneratorSounds.StopRun))
+        {
+            sounds(new InteractionSoundEvent(task, InteractionSound.LoopStopped, string.Empty, at, Matrix3f.Identity, default));
+        }
+
+        if (change.HasFlag(Objects.GeneratorSounds.Shutdown) && shutdownSound.Length > 0)
+        {
+            sounds(new InteractionSoundEvent(task, InteractionSound.Played, shutdownSound, at, Matrix3f.Identity, default));
         }
     }
 
@@ -123,35 +136,8 @@ internal sealed class GeneratorPowerState(
             return;
         }
 
-        if (exploded)
-        {
-            IsOn = false;
-        }
-        else if (onCondition?.Invoke() is bool on)
-        {
-            IsOn = on;
-        }
-
-        if (!useBackupTimer)
-        {
-            return;
-        }
-
-        // Generator::Run (0x43B500) starts the backup only after primary power is lost, then
-        // publishes power again when the authored 30 Hz countdown reaches zero; the countdown is
-        // (__int64)(seconds * 30.0), taken as it starts.
-        if (!IsOn && BackupTimer == -1)
-        {
-            BackupTimer = (int)(backupSeconds * 30.0);
-        }
-
-        if (BackupTimer <= 0)
-        {
-            IsOn = true;
-        }
-        else
-        {
-            BackupTimer--;
-        }
+        // A generator with no expression that compiled keeps what it had, off from the constructor, and comes on only by
+        // its backup.
+        _power.Step(exploded, onCondition?.Invoke(), useBackupTimer, backupSeconds);
     }
 }

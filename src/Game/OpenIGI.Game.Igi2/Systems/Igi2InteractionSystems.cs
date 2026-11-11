@@ -213,7 +213,7 @@ internal static class Igi2InteractionSystems
         List<IIgi2Destructible> destructibles = [];
         foreach (Igi2ExplodeObjectTask explosive in b.Root.Descendants().OfType<Igi2ExplodeObjectTask>())
         {
-            Arm(explosive, Igi2ExplodeObjectTask.TypeName);
+            Arm(explosive, explosive.Type.Name);
         }
 
         foreach (Igi2GenericTbaTask action in b.Root.Descendants().OfType<Igi2GenericTbaTask>())
