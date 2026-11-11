@@ -194,6 +194,25 @@ internal static class Igi2InteractionSystems
         }
     }
 
+    /// <summary>The fans, dishes and beacons that turn where they stand: their solids turn with them, a round reaches them, and they are drawn as they face.</summary>
+    public static void RotatingObjects(Igi2LevelBuild b)
+    {
+        foreach (Igi2RotatingObjectTask turning in b.Root.Descendants().OfType<Igi2RotatingObjectTask>())
+        {
+            turning.Models = b.Models;
+            turning.Magic = b.Magic;
+            IReadOnlyList<Igi2RigidObject> solids = b.Player.CollisionWorld.SolidsOf(Igi2RotatingObjectTask.TypeName, turning.Id);
+            turning.Bind(solids);
+            if (solids.Count > 0 && solids[0].Owner is Igi2CollisionOwner { Depth: 0 })
+            {
+                solids[0].Handler = turning;
+            }
+
+            Igi2Attachment.AttachChildren(turning, turning);
+            b.Movers.Add(turning);
+        }
+    }
+
     // A prop that moves: its solids go with it, and it is drawn where it stands.
     private static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
     {

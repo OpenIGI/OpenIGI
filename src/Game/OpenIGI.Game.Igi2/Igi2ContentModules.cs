@@ -239,6 +239,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2ExplodeObjectTask>(Interaction.Igi2ExplodeObjectTask.TypeName);
         context.Types.Register<Interaction.Igi2GeneratorTask>(Interaction.Igi2GeneratorTask.TypeName);
         context.Types.Register<Interaction.Igi2RadioTask>(Interaction.Igi2RadioTask.TypeName);
+        context.Types.Register<Interaction.Igi2RotatingObjectTask>(Interaction.Igi2RotatingObjectTask.TypeName);
         context.Types.Register<Interaction.Igi2GenericTbaTask>(Interaction.Igi2GenericTbaTask.TypeName);
         context.Types.Register<Interaction.Igi2TerminalTask>(Interaction.Igi2TerminalTask.TypeName);
         context.Types.Register<Interaction.Igi2LadderTask>(Interaction.Igi2LadderTask.TypeName);

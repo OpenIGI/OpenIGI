@@ -147,9 +147,12 @@ public sealed class PlacedRotatingObject : Saves.IExchangedState
     {
         get
         {
-            float level = IsRotatingObjectTask
-                ? (CurrentSpeedZ / MaxSpeedZ) + (CurrentSpeedX / MaxSpeedX) + (CurrentSpeedY / MaxSpeedY)
-                : CurrentSpeedZ / MaxSpeedZ;
+            if (IsRotatingObjectTask)
+            {
+                return Objects.RotationRule.SoundLevel(CurrentSpeedX, CurrentSpeedY, CurrentSpeedZ, MaxSpeedX, MaxSpeedY, MaxSpeedZ);
+            }
+
+            float level = CurrentSpeedZ / MaxSpeedZ;
             return level < 0f || float.IsNaN(level) ? 0f : Math.Min(level, 1f);
         }
     }
@@ -294,50 +297,13 @@ public sealed class PlacedRotatingObject : Saves.IExchangedState
         return ComputeOrientation(x, y, z);
     }
 
-    private Matrix3f ComputeOrientation(float x, float y, float z)
-    {
-        Matrix3f rot = (x == 0f && y == 0f)
-            ? Matrix3f.RotationZ(z * DegreesToRadians)
-            : Matrix3f.FromEngineEulerAngles(x * DegreesToRadians, y * DegreesToRadians, z * DegreesToRadians);
+    private Matrix3f ComputeOrientation(float x, float y, float z) => Objects.RotationRule.Orientation(BaseOrientation, x, y, z);
 
-        return BaseOrientation * rot;
-    }
+    // The step both games run (Objects.RotationRule).
+    private static float StepSpeed(float current, float target, float acceleration) =>
+        Objects.RotationRule.StepSpeed(current, target, acceleration);
 
-    // One axis's speed toward its target (0x4390DF and its two siblings).
-    private static float StepSpeed(float current, float target, float acceleration)
-    {
-        if (current == target)
-        {
-            return current;
-        }
-
-        if (current < target)
-        {
-            X87 next = ((X87)acceleration * DeltaTime) + current;
-            return next.Value > target ? target : next.F;
-        }
-
-        X87 down = (X87)current - ((X87)acceleration * DeltaTime);
-        return down.Value < target ? target : down.F;
-    }
-
-    // One axis's angle (0x4392D4): the sum is stored, then brought under 360 by whole turns.
-    private static float StepAngle(float angle, float speed)
-    {
-        float next = (((X87)speed * DeltaTime) + angle).F;
-        if (next >= 360f)
-        {
-            X87 wrapped;
-            do
-            {
-                wrapped = (X87)next - 360f;
-                next = wrapped.F;
-            }
-            while (wrapped.Value >= 360.0);
-        }
-
-        return next;
-    }
+    private static float StepAngle(float angle, float speed) => Objects.RotationRule.StepAngle(angle, speed);
 
     private static float MoveTowards(float current, float target, float maxDelta)
     {
