@@ -19,6 +19,7 @@ public static class Igi1TaskTypes
         Add<Igi1AmbientAreaTask>(types, Igi1AmbientAreaTask.TypeName);
         Add<Igi1MineFieldTask>(types, Igi1MineFieldTask.TypeName);
         AddDeclared<Ai.Igi1AlarmControlTask>(types, Ai.Igi1AlarmControlTask.TypeName);
+        AddDeclared<World.Igi1SmokeTask>(types, World.Igi1SmokeTask.TypeName);
     }
 
     // A class whose parameters stay the ones the level declares.

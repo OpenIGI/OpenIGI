@@ -722,6 +722,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             mission.Destructibles?.AttachToWalk();
             mission.AlarmSpeakers?.AttachTo(walker);
+            mission.SmokePlumes?.AttachTo(walker);
         }
 
         // A camera updates where the walk reaches it (SCamera's UPDATE, 0x442610): its lens sweeps and scans the
