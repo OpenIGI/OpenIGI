@@ -75,14 +75,13 @@ public sealed partial class Igi1StatusMessageTask : TickedTask
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The original's handler runs no children. The walk this replaced ran them, and no census of the levels has yet said none
-    /// hangs a task beneath a message, so they are still run.
+    /// The original's handler (<c>0x485890</c>) runs no children, and no retail level hangs a task beneath a message.
     /// </remarks>
     public override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
+        // 0x485890 runs no child: nothing in a retail level hangs off a StatusMessage (StatusMessageChildrenCensusTests).
         Screen?.RunFromWalk(Message);
-        level.RunChildren(this);
     }
 
     /// <inheritdoc/>
