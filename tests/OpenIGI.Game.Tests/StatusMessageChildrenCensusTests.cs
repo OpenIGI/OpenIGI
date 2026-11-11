@@ -12,7 +12,7 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// No retail level hangs a task off a <c>StatusMessage</c>: the type's run handler (<c>0x485890</c>) runs no child, so a
+/// No retail level hangs a task off a <c>StatusMessage</c>: the type's run handler (<c>0x4855F0</c>) runs no child, so a
 /// level that did would never update it.
 /// </summary>
 public sealed class StatusMessageChildrenCensusTests
