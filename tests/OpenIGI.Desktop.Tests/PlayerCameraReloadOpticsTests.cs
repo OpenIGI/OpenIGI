@@ -155,6 +155,7 @@ public sealed class PlayerCameraReloadOpticsTests
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

@@ -42,6 +42,7 @@ public sealed class HeldWeaponAttachmentTests
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);
@@ -266,6 +267,7 @@ public sealed class HeldWeaponAttachmentTests
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

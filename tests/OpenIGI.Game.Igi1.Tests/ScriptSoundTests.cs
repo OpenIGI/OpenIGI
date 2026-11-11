@@ -26,6 +26,7 @@ public sealed class ScriptSoundTests
         bank.MountDirectory("LOCAL:common/sounds");
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         SoundDefinitionRegistry definitions = new();
         definitions.Register(loop.Natives);
         definitions.LoadForMission(new ResourceRegistry(fileSystem), loop.Natives);

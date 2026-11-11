@@ -236,12 +236,15 @@ public sealed class AmbientAreaTests
         // reaches the sample's length; the area finds the slot empty the tick after and draws a fresh gap (0x44C370).
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
-        GameTask task = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
+        Igi1AmbientAreaTask task = (Igi1AmbientAreaTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(Igi1AmbientAreaTask.TypeName));
         PlacedAmbientArea area = new(
             task, default, Matrix3f.Identity, new Vector3d(1.0, 1.0, 1.0),
             MinDelaySeconds: 10.0, RandomWaitSeconds: 0.0, Sounds: ["dog_01"]);
         AmbientAreaRegistry live = new(new IgiRandom());
         ((List<PlacedAmbientArea>)live.Areas).Add(area);
+        task.Area = area;
+        task.Ambience = live;
         LevelUpdateWalker walker = new(loop.Tasks.Root);
         live.AttachTo(walker, static () => default(Vector3d), static _ => true, _ => seconds);
 

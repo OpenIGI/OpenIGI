@@ -109,6 +109,7 @@ public sealed class WorldContentModule : IContentModule
         // is false during play. Without the type each is built as a plain container and its children are
         // rendered, standing in the level at mission start where the original never registers them.
         OpenIGI.Game.Flow.LevelTaskTypes.Register(context.Types);
+        Igi1TaskTypes.Register(context.Types);
 
         // GetOrProvide rather than Provide: a session running beside another -- the mission preview --
         // must bind its own loop's natives to the tables the playing session already loaded, not to a

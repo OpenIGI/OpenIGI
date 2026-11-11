@@ -60,6 +60,7 @@ public sealed class AiSightWiringTests
         // same stand hides anyone behind it from a pair it has no part in.
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         GameTask gun = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
         {

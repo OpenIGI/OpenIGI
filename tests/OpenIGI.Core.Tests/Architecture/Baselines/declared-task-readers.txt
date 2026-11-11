@@ -3,7 +3,6 @@ src/Game/OpenIGI.Game.Igi1/Ai/NavGraphs.cs
 src/Game/OpenIGI.Game.Igi1/Ai/SoldierBrainBinder.cs
 src/Game/OpenIGI.Game.Igi1/Computer/Igi1ComputerWorld.cs
 src/Game/OpenIGI.Game.Igi1/Player/PlayerLoadout.cs
-src/Game/OpenIGI.Game.Igi1/World/AmbientAreaRegistry.cs
 src/Game/OpenIGI.Game.Igi1/World/Igi1Blasts.cs
 src/Game/OpenIGI.Game.Igi1/World/Igi1MineFields.cs
 src/Game/OpenIGI.Game.Igi1/World/Igi1MissionSetup.cs

@@ -111,6 +111,7 @@ public sealed class SoldierRendererGunshotTeamTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
 
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();

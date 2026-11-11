@@ -76,6 +76,7 @@ public sealed class Igi1BodyRigTests
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
         OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         MissionRegistry missions = new();
