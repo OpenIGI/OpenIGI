@@ -25,8 +25,8 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// (<c>RunDelayed_Run</c>, <c>0x58FDB0</c>).
 /// </para>
 /// <para>
-/// A task whose behaviour lives outside the tree, the player's, is bound to its node (<see cref="LevelRun.Bind(GameTask, Action)"/>)
-/// and runs there, in the tree's order and under its containers' conditions. The tick rate is the shared
+/// A task whose behaviour lives outside the tree, the player's, names what carries out its run handler
+/// (<see cref="OpenIGI.Game.Player.HumanTask.Runner"/>) and runs there, in the tree's order and under its containers' conditions. The tick rate is the shared
 /// <see cref="LevelRun.Frequency"/>, <c>GAME_FREQUENCY</c>.
 /// </para>
 /// </remarks>

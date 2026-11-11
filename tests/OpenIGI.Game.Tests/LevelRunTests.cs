@@ -8,22 +8,32 @@ namespace OpenIGI.Game.Tests;
 public sealed class LevelRunTests
 {
     [Fact]
-    public void Bound_work_runs_in_place_of_the_task_and_a_typed_task_runs_itself()
+    public void A_typed_task_runs_itself_and_the_title_runs_the_rest()
     {
         (TaskTree tree, TaskType container, TaskType ticked) = Build();
-        GameTask bound = tree.New(tree.Root, ticked);
         var typed = (Ticking)tree.New(tree.Root, ticked);
         GameTask plain = tree.New(tree.Root, container);
         RecordingRun run = new(tree.Root);
-        List<string> log = run.Log;
-        run.Bind(bound, () => log.Add("bound"));
 
         run.RunChildren(tree.Root);
 
-        Assert.Equal(["bound", "typed", "untyped"], log);
+        Assert.Equal(["typed", "untyped"], run.Log);
         Assert.Equal(1, typed.Runs);
-        Assert.Equal(0, ((Ticking)bound).Runs);
         Assert.Same(plain, run.Untyped.Single());
+    }
+
+    [Fact]
+    public void A_run_that_only_passes_over_a_level_runs_no_typed_tasks_handler_but_walks_beneath_it()
+    {
+        (TaskTree tree, TaskType _, TaskType ticked) = Build();
+        var parent = (Ticking)tree.New(tree.Root, ticked);
+        var child = (Ticking)tree.New(parent, ticked);
+        RecordingRun run = new(tree.Root) { OwnsLevel = false };
+
+        run.RunChildren(tree.Root);
+
+        Assert.Equal((0, 0), (parent.Runs, child.Runs));
+        Assert.Empty(run.Log);
     }
 
     [Fact]

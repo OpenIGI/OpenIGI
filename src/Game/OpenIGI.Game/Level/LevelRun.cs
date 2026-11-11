@@ -4,8 +4,8 @@ using OpenIGI.Scripting.Expressions;
 namespace OpenIGI.Game.Level;
 
 /// <summary>
-/// One tick of a level's task tree: every task reached is run, by the work bound to it, by its own <see cref="TickedTask.Run"/>,
-/// or by the title's rule for a task of no class of its own.
+/// One tick of a level's task tree: every task reached is run, by its own run handler (<see cref="ILevelTicked.Run"/>) or by
+/// the title's rule for a task of no class of its own.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,9 +15,9 @@ namespace OpenIGI.Game.Level;
 /// containers count the tick and run their deferred work -- which is <see cref="RunUntyped"/>.
 /// </para>
 /// <para>
-/// A task is run by the first of: the work bound to it (<see cref="Bind(GameTask, Action)"/>), which is how a system that owns a
-/// task drives it; its own <see cref="TickedTask.Run"/>; <see cref="RunUntyped"/>. Children are run in order, each sibling
-/// read before its predecessor runs, so a task may delete itself as it runs.
+/// A task that runs itself is run by its own handler, and one that does not by <see cref="RunUntyped"/>. Nothing else runs
+/// a task: there is no table of work set against a task from outside, as there is none in the original. Children are run in
+/// order, each sibling read before its predecessor runs, so a task may delete itself as it runs.
 /// </para>
 /// </remarks>
 public abstract class LevelRun
@@ -28,7 +28,6 @@ public abstract class LevelRun
     /// <summary>The length of one tick, in whole milliseconds.</summary>
     public const int MillisecondsPerTick = 1000 / Frequency;
 
-    private readonly Dictionary<GameTask, Action<GameTask>> _bound = [];
     private readonly List<Action> _tickEnds = [];
 
     /// <summary>Initializes a new instance of the <see cref="LevelRun"/> class.</summary>
@@ -100,34 +99,6 @@ public abstract class LevelRun
     /// </remarks>
     public abstract double EvaluateLine(string source);
 
-    /// <summary>Binds the work that runs a task in place of its own, given the task.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="run">What runs it.</param>
-    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public void Bind(GameTask task, Action<GameTask> run)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        ArgumentNullException.ThrowIfNull(run);
-        _bound[task] = run;
-    }
-
-    /// <summary>Gets the work bound to run a task, for a binding that extends it as a derived type extends its parent's update.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="run">Receives the work, or <see langword="null"/>.</param>
-    /// <returns>Whether the task has bound work.</returns>
-    public bool TryGetBound(GameTask task, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Action<GameTask>? run) =>
-        _bound.TryGetValue(task, out run);
-
-    /// <summary>Binds the work that runs a task in place of its own.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="run">What runs it.</param>
-    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public void Bind(GameTask task, Action run)
-    {
-        ArgumentNullException.ThrowIfNull(run);
-        Bind(task, _ => run());
-    }
-
     /// <summary>Adds work the level does once a tick, after its tree has run and the tick is counted.</summary>
     /// <param name="work">The work, run in the order it was added.</param>
     /// <exception cref="ArgumentNullException"><paramref name="work"/> is <see langword="null"/>.</exception>
@@ -147,12 +118,6 @@ public abstract class LevelRun
     public void Run(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (_bound.TryGetValue(task, out Action<GameTask>? bound))
-        {
-            bound(task);
-            return;
-        }
-
         if (task is ILevelTicked typed)
         {
             if (OwnsLevel)

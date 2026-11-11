@@ -113,17 +113,17 @@ public sealed class RetailIgi2LevelFlowTests
         Assert.True(player.IsRun);
     }
 
-    /// <summary>A task bound to its node runs in the tree's place for it, only while every container above it runs.</summary>
+    /// <summary>The player's task runs in the tree's place for it, only while every container above it runs.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_player_runs_where_the_level_places_it()
     {
         Mission1 m = Mission1.Load();
         Assert.True(PlayerSpawn.TryFindGameplay(m.Root, out _));
-        GameTask human = PlayerSpawn.FindGameplayTask(m.Root)!;
+        OpenIGI.Game.Player.HumanTask human = Assert.IsAssignableFrom<OpenIGI.Game.Player.HumanTask>(PlayerSpawn.FindGameplayTask(m.Root));
         Assert.Equal(PlayerAndAi, human.Parent!.Parent!.Id);
         int runs = 0;
         int delayed = 0;
-        m.Level.Bind(human, () =>
+        human.Runner = new Counted(() =>
         {
             runs++;
             m.Level.Delay(() => delayed++);
@@ -209,5 +209,11 @@ public sealed class RetailIgi2LevelFlowTests
                 }
             }
         }
+    }
+
+    // Stands in for the player's run handler.
+    private sealed class Counted(Action ran) : OpenIGI.Game.Level.ITaskRun<OpenIGI.Game.Player.HumanTask>
+    {
+        public void Run(OpenIGI.Game.Player.HumanTask task, OpenIGI.Game.Level.LevelRun level) => ran();
     }
 }
