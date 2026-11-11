@@ -18,7 +18,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <remarks>
 /// <para>
 /// The same messages, the same moments, a different surface. Timing, ordering and wrapping still come
-/// from the simulation — <see cref="MissionObjectiveRuntime.DisplayedMessages"/> is what the original's
+/// from the simulation — the mission's displayed messages is what the original's
 /// slot array produces, typewriter and all — so this is a reskin in the strict sense: nothing here can
 /// make a message arrive earlier, hold longer, or appear in a different order than the retail path shows
 /// it in. <c>StatusScreenRenderer.DrawStatusMessages</c> is the faithful one; this is its

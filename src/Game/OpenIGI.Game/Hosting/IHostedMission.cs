@@ -71,6 +71,10 @@ public interface IMissionTick
     /// <param name="levelRoot">The level's task tree.</param>
     void AttachToLevelWalk(GameTask levelRoot);
 
+    /// <summary>Breaks the scene that is playing and runs the level's state once, so a gate the caller has just written is seen.</summary>
+    /// <remarks>For the test captures that force an authored outro through its own script gate.</remarks>
+    void BreakIntoOutro();
+
     /// <summary>Gets the player as the level's areas count it, now.</summary>
     /// <returns>Where the player is, its team and whether it lives.</returns>
     AreaPlayer AreaPlayerNow();

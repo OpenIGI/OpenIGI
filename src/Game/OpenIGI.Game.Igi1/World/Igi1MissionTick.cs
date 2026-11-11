@@ -42,6 +42,21 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         _ownInteraction.Reset();
     }
 
+    /// <inheritdoc/>
+    public void BreakIntoOutro()
+    {
+        if (mission.Cutscenes is not { } cutscenes || mission.Objectives is not { } objectives)
+        {
+            throw new InvalidOperationException("The mission's cut-scenes and objectives are not built yet.");
+        }
+
+        cutscenes.RequestBreak();
+        cutscenes.Tick();
+        objectives.TickLevelState();
+        objectives.TickAfterLevelState();
+        cutscenes.FinishExpressionTick();
+    }
+
     /// <summary>Runs one pass of the loop.</summary>
     /// <param name="tick">Whether the pass is a simulation tick; a render pass only keeps the player's jump gate current.</param>
     public void Run(bool tick)
@@ -247,7 +262,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         mission.Cutscenes?.Tick();
         if (mission.Cutscenes is { } soundingVehicles)
         {
-            host.SoundVehicles(soundingVehicles);
+            host.SoundVehicles(
+                soundingVehicles.VehicleSoundSources().Concat(mission.RotatingObjects?.SoundSources() ?? []),
+                soundingVehicles.VehicleGunSounds());
         }
 
         if (mission.Cutscenes is { } liveCutscenes && host.Scene is { } cinematicScene && mission.Solids is { } cinematicSolids)

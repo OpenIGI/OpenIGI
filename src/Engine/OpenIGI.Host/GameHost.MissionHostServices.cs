@@ -52,7 +52,7 @@ public sealed partial class GameHost
         public void StepWeather() => host._storm?.Tick(host._stormEyeMetres);
 
 
-        public void SoundVehicles(CutsceneRuntime cutscenes)
+        public void SoundVehicles(IEnumerable<VehicleSoundSource> engines, IEnumerable<VehicleGunSound> guns)
         {
             if (host._audioOut.Sounds is not { } vehicleSoundSystem)
             {
@@ -61,8 +61,8 @@ public sealed partial class GameHost
 
             host._vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
             host._vehicleSounds.Tick(
-                cutscenes.VehicleSoundSources().Concat(host._mission.RotatingObjects?.SoundSources() ?? []),
-                cutscenes.VehicleGunSounds(),
+                engines,
+                guns,
                 host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
         }
 

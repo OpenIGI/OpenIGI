@@ -82,13 +82,7 @@ public sealed partial class GameHost
                 _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
             }
 
-            CutsceneRuntime outroCutscenes = _mission.Cutscenes!;
-            outroCutscenes.RequestBreak();
-            outroCutscenes.Tick();
-            MissionObjectiveRuntime outroObjectives = _mission.Objectives!;
-            outroObjectives.TickLevelState();
-            outroObjectives.TickAfterLevelState();
-            outroCutscenes.FinishExpressionTick();
+            _hosted.Tick.BreakIntoOutro();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
     }

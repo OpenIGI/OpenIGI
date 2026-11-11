@@ -376,7 +376,7 @@ public sealed partial class GameHost
                 if (_gunPickupRenderer is not null)
                 {
                     _gunPickupRenderer.Materials = _materials;
-                    _gunPickupRenderer.Load(loaded, pickups);
+                    _gunPickupRenderer.Load(loaded, pickups.Items);
                 }
             }
 

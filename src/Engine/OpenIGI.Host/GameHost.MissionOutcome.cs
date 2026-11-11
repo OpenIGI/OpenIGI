@@ -2,6 +2,7 @@
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Services;
@@ -39,9 +40,9 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class MissionOutcomeHost(GameHost host) : IMissionOutcomeHost
     {
-        public MissionObjectiveRuntime? Objectives => host._mission.Objectives;
+        public IMissionProgress? Objectives => host._mission.Objectives;
 
-        public CutsceneRuntime? Cutscenes => host._mission.Cutscenes;
+        public bool CutscenePlaying => host._mission.Cutscenes?.IsPlaying == true;
 
         public ITitlePlayer? TitlePlayer => host.TitlePlayer;
 
