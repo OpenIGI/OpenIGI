@@ -29,7 +29,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     private readonly ScriptVarRegistry _variables;
     private readonly LevelExpressionRuntime _expressions;
     private readonly Func<string, string> _resolveText;
-    private readonly List<Definition> _definitions = [];
+    private readonly List<DefineComputerObjectiveTask> _definitions = [];
     private readonly MissionAreaActivation _areas;
     private readonly List<EditVariableTask> _editVariables = [];
 
@@ -112,6 +112,12 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 continue;
             }
 
+            if (task is DefineComputerObjectiveTask rows)
+            {
+                _definitions.Add(rows);
+                continue;
+            }
+
             if (task is LevelFlowTask flow)
             {
                 // 0x488ED0 copies the active profile's difficulty; 0x488F90 binds the number row beside the flow's own fields.
@@ -127,11 +133,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 continue;
             }
 
-            if (string.Equals(task.Type.Name, "DefineComputerObjective", StringComparison.Ordinal))
-            {
-                _definitions.Add(ReadDefinition(declared));
-            }
-            else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
+            if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
                 StatusMessage message = new(
                     declared,
@@ -550,6 +552,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     {
         ArgumentNullException.ThrowIfNull(walker);
         _attached = true;
+        walker.CurrentObjectives = _walker?.CurrentObjectives;
         _walker = walker;
         walker.Expressions = _expressions;
         walker.IsReplica = Mirrored;
@@ -664,53 +667,44 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         }
     }
 
-    // The definition that ran last, the computer's (gObjective).
-    private Definition? _current;
-
-    /// <summary>Runs the objective definitions and publishes the rows of the one that ran last.</summary>
+    /// <summary>Publishes the rows of the objective definition that ran last, the computer's.</summary>
     /// <remarks>
-    /// <c>0x467410</c>: a definition whose <c>Objectives Valid</c> is empty or holds becomes the computer's, and each of its
-    /// rows takes its <c>Complete</c> and <c>Failed</c> flags from its expressions -- off where a row has none. One that does
-    /// not hold leaves everything as it was, so the computer keeps the last that ran, flags and all. Running it at
-    /// construction, before the host has a player to report, latches the level's opening state.
+    /// The definitions run themselves where the level's walk reaches them (<c>0x467410</c>); with no walk attached each
+    /// runs here, in the tree's order. Running them at construction, before the host has a player to report, latches the
+    /// level's opening state.
     /// </remarks>
     private void PublishObjectives()
     {
-        foreach (Definition definition in _definitions)
+        LevelUpdateWalker run = _attached ? _walker! : DetachedRun();
+        if (!_attached)
         {
-            if (!_expressions.EvaluateCondition(definition.ValidExpression, emptyValue: true, definition.Task))
+            foreach (DefineComputerObjectiveTask definition in _definitions)
             {
-                continue;
-            }
-
-            _current = definition;
-            foreach (Slot slot in definition.Slots)
-            {
-                slot.IsComplete = _expressions.EvaluateCondition(slot.CompleteExpression, emptyValue: false, definition.Task);
-                slot.IsFailed = _expressions.EvaluateCondition(slot.FailedExpression, emptyValue: false, definition.Task);
+                definition.Run(run);
             }
         }
 
         List<MissionObjective> current = [];
-        if (_current is { } active)
+        if (run.CurrentObjectives is { } active)
         {
-            for (int index = 0; index < active.Slots.Count; index++)
+            for (int index = 0; index < active.Objectives.Count; index++)
             {
-                Slot slot = active.Slots[index];
-                if (string.IsNullOrEmpty(slot.TextResource))
+                ComputerObjective row = active.Objectives[index];
+                string text = row.TextResource.Trim();
+                if (text.Length == 0)
                 {
                     continue;
                 }
 
-                MissionObjectiveState state = slot.IsFailed ? MissionObjectiveState.Failed
-                    : slot.IsComplete ? MissionObjectiveState.Complete
+                MissionObjectiveState state = row.IsFailed ? MissionObjectiveState.Failed
+                    : row.IsComplete ? MissionObjectiveState.Complete
                     : MissionObjectiveState.Incomplete;
-                Vector3d? position = slot.LinkTaskId >= 0 && _levelRoot.Tree.FromId(slot.LinkTaskId) is not null
-                    ? FindPosition(_levelRoot.Tree.FromId(slot.LinkTaskId)!)
+                Vector3d? position = row.LinkToPosition >= 0 && _levelRoot.Tree.FromId(row.LinkToPosition) is { } linked
+                    ? FindPosition(linked)
                     : null;
-                current.Add(new MissionObjective(slot.TextResource, slot.LinkTaskId, position, state)
+                current.Add(new MissionObjective(text, row.LinkToPosition, position, state)
                 {
-                    Text = _resolveText(slot.TextResource),
+                    Text = _resolveText(text),
                     Slot = index,
                 });
             }
@@ -719,53 +713,14 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         Objectives = current;
     }
 
-    private static Definition ReadDefinition(DeclaredTask task)
-    {
-        List<Slot> slots = [];
-        for (int number = 1; number <= ObjectiveSlotCount; number++)
-        {
-            slots.Add(new Slot(
-                TextTrimmed(task, $"Objective {number} Text Resource"),
-                IntStrict(task, $"Objective {number} Link To Position", -1),
-                TextTrimmed(task, $"Objective {number} Complete Expression"),
-                TextTrimmed(task, $"Objective {number} Failed Expression")));
-        }
-
-        return new Definition(task, TextTrimmed(task, "Objectives Valid"), slots);
-    }
-
     private static Matrix3f Orientation(DeclaredTask task) =>
         task.TryGetValue("Orientation", out object? value) && value is Vector3f angles
             ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
             : Matrix3f.Identity;
 
-    private static Vector3d FindPosition(GameTask task)
-    {
-        if (task is DeclaredTask declared)
-        {
-            if (declared.TryGetValue("Graph position", out object? graph) && graph is Vector3d graphPosition)
-            {
-                return graphPosition;
-            }
-
-            if (declared.TryGetValue("Position", out object? raw) && raw is Vector3d position)
-            {
-                return position;
-            }
-        }
-
-        return default;
-    }
-
-    private sealed record Definition(
-        DeclaredTask Task,
-        string ValidExpression,
-        IReadOnlyList<Slot> Slots);
-    private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression)
-    {
-        // The flags the row's definition last left it with (+0x42, +0x43).
-        public bool IsComplete { get; set; }
-
-        public bool IsFailed { get; set; }
-    }
+    // Where a task a row points to stands: its graph position where it has one, else its position, whatever class makes it.
+    private static Vector3d FindPosition(GameTask task) =>
+        task.TryGetScriptValue("Graph position", out Vector3d graphPosition) ? graphPosition
+        : task.TryGetScriptValue("Position", out Vector3d position) ? position
+        : default;
 }

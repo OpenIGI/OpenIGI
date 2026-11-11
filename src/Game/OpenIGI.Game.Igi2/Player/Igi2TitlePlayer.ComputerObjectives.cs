@@ -24,7 +24,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerComputer
     /// </summary>
     /// <param name="objective">The objective.</param>
     /// <returns>The place, or <see langword="null"/> for an objective that links to nothing placed.</returns>
-    private Vector3d? ObjectivePlace(Igi2ComputerObjective objective) =>
+    private Vector3d? ObjectivePlace(OpenIGI.Game.Flow.ComputerObjective objective) =>
         objective.LinkToPosition != -1
             ? (_mapWorld ??= new Igi2ComputerMapWorld(this)).Task(objective.LinkToPosition)?.CameraTargetPosition
             : null;

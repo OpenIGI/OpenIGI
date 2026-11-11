@@ -119,10 +119,10 @@ internal sealed class Igi2EventWatch
             return;
         }
 
-        IReadOnlyList<Igi2ComputerObjective> objectives = defined.Objectives;
+        IReadOnlyList<OpenIGI.Game.Flow.ComputerObjective> objectives = defined.Objectives;
         for (int slot = 0; slot < objectives.Count; slot++)
         {
-            Igi2ComputerObjective objective = objectives[slot];
+            OpenIGI.Game.Flow.ComputerObjective objective = objectives[slot];
             MissionObjectiveState state = objective.IsFailed ? MissionObjectiveState.Failed
                 : objective.IsComplete ? MissionObjectiveState.Complete
                 : MissionObjectiveState.Incomplete;

@@ -39,6 +39,9 @@ public abstract class LevelRun
     /// <summary>Gets the criteria the level's areas count by, which the title's humans and vehicles register.</summary>
     public Flow.AreaCriteria Areas { get; } = new();
 
+    /// <summary>Gets or sets the objective definition that ran last, the map computer's: the original's <c>gObjective</c>.</summary>
+    public Flow.DefineComputerObjectiveTask? CurrentObjectives { get; set; }
+
     /// <summary>Gets the level's root task.</summary>
     public GameTask Root { get; }
 

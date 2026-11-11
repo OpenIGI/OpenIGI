@@ -30,6 +30,7 @@ public static class LevelTaskTypes
         RegisterShared(types);
         types.Register<AreaActivateTask>(AreaActivateTask.TypeName);
         types.Register<LevelFlowTask>(LevelFlowTask.TypeName);
+        types.Register<Igi1DefineComputerObjectiveTask>(Igi1DefineComputerObjectiveTask.TypeName);
     }
 
     /// <summary>Registers every shared type a Project I.G.I. level is made of.</summary>
