@@ -2,62 +2,6 @@ using OpenIGI.Game.Igi2.Saves;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
-/// <content>Its save state, <c>EditVariable_ptSerializeParameterList</c>: its value.</content>
-public sealed partial class Igi2EditVariableTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(Value);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        Value = reader.Int();
-    }
-}
-
-/// <content>Its save state (areaactivateqtask.c's serialize list): the number counted inside, <c>nActive</c>.</content>
-public sealed partial class Igi2AreaActivateTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(_active);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        _active = reader.Int();
-    }
-}
-
-/// <content>Its save state, <c>LevelTimer_ptSerializeParameterList</c>: whether it runs, and its tick.</content>
-public sealed partial class Igi2LevelTimerTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Bool(_isRun != 0);
-        writer.Int(_tick);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        _isRun = reader.Bool() ? (byte)1 : (byte)0;
-        _tick = reader.Int();
-    }
-}
-
 /// <content>Its save state, <c>ConditionalContainer_ptSerializeParameterList</c>: whether its children are in the world, and whether it runs.</content>
 public sealed partial class Igi2ConditionalContainerTask : ISavedState
 {
@@ -75,26 +19,6 @@ public sealed partial class Igi2ConditionalContainerTask : ISavedState
         ArgumentNullException.ThrowIfNull(reader);
         IsActive = reader.Bool();
         SetRunByte(reader.Bool() ? (byte)1 : (byte)0);
-    }
-}
-
-/// <content>Its save state, <c>LevelFlow_ptSerializeParameterList</c>: its tick, then its time of day.</content>
-public sealed partial class Igi2LevelFlowTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(Tick);
-        writer.Int(TimeOfDayTick);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        Tick = reader.Int();
-        TimeOfDayTick = reader.Int();
     }
 }
 

@@ -251,6 +251,7 @@ public sealed class RetailPatrolPathTests
             ResourceRegistry resources = new(fileSystem);
 
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
             AiTaskTypes.RegisterAll(loop.Types);
 

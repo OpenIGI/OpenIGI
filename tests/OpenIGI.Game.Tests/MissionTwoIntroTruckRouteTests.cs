@@ -52,7 +52,7 @@ public sealed class MissionTwoIntroTruckRouteTests(ITestOutputHelper output)
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -72,7 +72,7 @@ public sealed class MissionTwoIntroTruckRouteTests(ITestOutputHelper output)
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
 
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(778));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(778));
         Assert.Equal("Car which Jones drives into base", truck.Label);
 
         CutsceneRuntime runtime = new(
@@ -89,8 +89,9 @@ public sealed class MissionTwoIntroTruckRouteTests(ITestOutputHelper output)
         {
             CollisionIndex = solids,
         };
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         Dictionary<int, Vector3d> samples = [];
         int lastTick = RetailRoute[^1].Tick;

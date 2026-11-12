@@ -58,7 +58,7 @@ public sealed class MissionOneOutroTruckRouteTests(ITestOutputHelper output)
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -75,7 +75,7 @@ public sealed class MissionOneOutroTruckRouteTests(ITestOutputHelper output)
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
 
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1099));
         Assert.Equal("Truck which Jones will steal", truck.Label);
 
         // 304_01_1 FENCE_GATES is a pair, and the level opens both leaves. Opening only one leaves
@@ -94,8 +94,9 @@ public sealed class MissionOneOutroTruckRouteTests(ITestOutputHelper output)
                     : null,
             vehicleObstacleReleased: obstacle => doors.Doors
                 .FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         Refresh();
 
         bool opened = false;

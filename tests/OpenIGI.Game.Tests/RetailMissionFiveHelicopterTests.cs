@@ -27,7 +27,7 @@ public sealed class RetailMissionFiveHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -51,7 +51,7 @@ public sealed class RetailMissionFiveHelicopterTests
         GameTask extractionBell = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(3322));
         // LEVEL5/OBJECTS.QVM replaces the incoming Bell with this parked Bell when
         // AnimTask 3333 passes tick 1530, making its authored position the retail touchdown pose.
-        DeclaredTask parkedBell = Assert.IsType<DeclaredTask>(root.Tree.FromId(1234));
+        DeclaredTask parkedBell = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1234));
         Assert.True(WorldScene.TryGetPosition(parkedBell, out Vector3d authoredTouchdown));
         runtime.EnableTerminalTerrainLanding(extractionBell, parkedBell);
         Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(1002)).Condition = "1";

@@ -290,20 +290,68 @@ public sealed class Igi1SmokePlumes
 
         foreach (Igi1SmokePlume plume in _plumes)
         {
-            if (plume.System is not { } system || !module.Systems.Contains(system))
+            // One whose task runs it from the level's walk has run already, where the tree places it.
+            if (_walked.Contains(plume))
             {
-                plume.Bind(module);
+                continue;
             }
 
-            if (CarrierPose is { } pose)
-            {
-                plume.Follow(pose);
-            }
-
+            Ready(plume, module);
             if (ConditionalContainerGate.IsTaskActive(plume.Task))
             {
                 plume.Run(Random, Expressions);
             }
+        }
+    }
+
+    // The plumes their own tasks run from the level's walk.
+    private readonly HashSet<Igi1SmokePlume> _walked = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Has each plume's task run it where the level's walk reaches it, as <c>0x437DB0</c> does.</summary>
+    /// <param name="walker">The level's walk.</param>
+    public void AttachTo(OpenIGI.Game.Level.LevelRun walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        _walked.Clear();
+        foreach (Igi1SmokePlume plume in _plumes)
+        {
+            if (OpenIGI.Game.Level.LevelTaskClass.TryAs(plume.Task, walker, out Igi1SmokeTask? task))
+            {
+                task.Plume = plume;
+                task.Plumes = this;
+                _walked.Add(plume);
+            }
+        }
+    }
+
+    /// <summary>Makes a plume's system if it has none and carries it to where its task now is: what its handler does before its children.</summary>
+    /// <param name="plume">The plume.</param>
+    /// <returns><see langword="false"/> while the level's particles are not bound.</returns>
+    internal bool Prepare(Igi1SmokePlume plume)
+    {
+        if (_module is not { } module)
+        {
+            return false;
+        }
+
+        Ready(plume, module);
+        return true;
+    }
+
+    /// <summary>Reads a plume's expression and adds this tick's particles: what its handler does after its children.</summary>
+    /// <param name="plume">The plume.</param>
+    internal void Emit(Igi1SmokePlume plume) => plume.Run(Random, Expressions);
+
+    private void Ready(Igi1SmokePlume plume, Particle2DModule module)
+    {
+        if (plume.System is not { } system || !module.Systems.Contains(system))
+        {
+            plume.Bind(module);
+        }
+
+        if (CarrierPose is { } pose)
+        {
+            plume.Follow(pose);
         }
     }
 }

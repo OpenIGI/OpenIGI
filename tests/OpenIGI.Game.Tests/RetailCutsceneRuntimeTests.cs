@@ -47,6 +47,7 @@ public sealed class RetailCutsceneRuntimeTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         Assert.NotEmpty(Walk(root).OfType<CutSceneTask>());
         Assert.True(runtime.IsPlaying);

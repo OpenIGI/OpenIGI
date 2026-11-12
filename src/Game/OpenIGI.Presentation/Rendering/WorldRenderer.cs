@@ -126,20 +126,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <summary>Gets how many frustum-passing placements the occlusion queries rejected last draw.</summary>
     public int LastOccludedCount { get; private set; }
 
-    /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
-    public DoorRegistry? Doors { get => _transforms.Doors; set => _transforms.Doors = value; }
-
-    /// <summary>Gets or sets the live elevator transforms applied to lift placements.</summary>
-    public ElevatorRegistry? Elevators { get => _transforms.Elevators; set => _transforms.Elevators = value; }
-
-    /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
-    public AlarmSpeakerRegistry? AlarmSpeakers { get => _transforms.AlarmSpeakers; set => _transforms.AlarmSpeakers = value; }
-
-    /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
-    public DestructibleObjectRegistry? Destructibles { get => _transforms.Destructibles; set => _transforms.Destructibles = value; }
-
-    /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
-    public SecurityCameraRegistry? SecurityCameras { get => _transforms.SecurityCameras; set => _transforms.SecurityCameras = value; }
+    /// <summary>Gets or sets the title's own objects that move, turn, break and take away placements.</summary>
+    public IPlacementObjects? Objects { get => _transforms.Objects; set => _transforms.Objects = value; }
 
     /// <inheritdoc/>
     public IPlacementSpin? Spins { get => _transforms.Spins; set => _transforms.Spins = value; }
@@ -155,18 +143,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
 
     /// <inheritdoc/>
     public IPlacementVariant? Variants { get => _transforms.Variants; set => _transforms.Variants = value; }
-
-    /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
-    public CutsceneRuntime? Cutscenes { get => _transforms.Cutscenes; set => _transforms.Cutscenes = value; }
-
-    /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
-    public GenericPickupRegistry? GenericPickups { get => _frameState.GenericPickups; set => _frameState.GenericPickups = value; }
-
-    /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
-    public WorldInteractionRegistry? Interactions { get => _transforms.Interactions; set => _transforms.Interactions = value; }
-
-    /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
-    public RotatingObjectRegistry? RotatingObjects { get => _transforms.RotatingObjects; set => _transforms.RotatingObjects = value; }
 
     /// <inheritdoc/>
     void IWorldPresenter.Draw(

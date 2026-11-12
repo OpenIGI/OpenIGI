@@ -159,13 +159,6 @@ public interface IWorldPresenter : IDisposable
         set { }
     }
 
-    /// <summary>Gets or sets the live rotating world objects, or null for a title with none.</summary>
-    /// <remarks>
-    /// Radar dishes and the authored <c>Rotating</c> tasks. The scene walk places them; this turns them,
-    /// so the presenter asks it for a transform per draw rather than holding an angle of its own.
-    /// </remarks>
-    RotatingObjectRegistry? RotatingObjects { get; set; }
-
     /// <summary>Gets or sets the detail textures the world is shaded with, or null for none.</summary>
     MaterialDetailPack? DetailMaps { get; set; }
 
@@ -178,20 +171,12 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets which of those lamps are lit, or null for all of them.</summary>
     LampSwitchboard? Switchboard { get; set; }
 
-    /// <summary>Gets or sets the level's doors, or null when it has none.</summary>
-    DoorRegistry? Doors { get; set; }
-
-    /// <summary>Gets or sets the level's elevators, or null when it has none.</summary>
-    ElevatorRegistry? Elevators { get; set; }
-
-    /// <summary>Gets or sets the level's alarm speakers, or null when it has none.</summary>
-    AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
-
-    /// <summary>Gets or sets the level's destructible objects, or null when it has none.</summary>
-    DestructibleObjectRegistry? Destructibles { get; set; }
-
-    /// <summary>Gets or sets the level's security cameras, or null when it has none.</summary>
-    SecurityCameraRegistry? SecurityCameras { get; set; }
+    /// <summary>
+    /// Gets or sets the title's own objects that move, turn, break and take away placements: its doors, lifts, cameras,
+    /// pickups and the like. Null for a title that answers through the narrower contracts below.
+    /// </summary>
+    /// <remarks>Set it again when the objects behind it are built or dropped: what they claim is cached.</remarks>
+    IPlacementObjects? Objects { get; set; }
 
     /// <summary>Gets or sets the placements that turn on the spot, or null when none do.</summary>
     IPlacementSpin? Spins { get; set; }
@@ -213,18 +198,6 @@ public interface IWorldPresenter : IDisposable
 
     /// <summary>Gets or sets which of their models the placements wear by their objects' state, or null when none change.</summary>
     IPlacementVariant? Variants { get; set; }
-
-    /// <summary>Gets or sets the level's pickups, or null when it has none.</summary>
-    GenericPickupRegistry? GenericPickups { get; set; }
-
-    /// <summary>
-    /// Gets or sets the level's direct interactions: the charges a plant has moved and the
-    /// stationary-gun stands that turn with their gun. Null when the level has none.
-    /// </summary>
-    WorldInteractionRegistry? Interactions { get; set; }
-
-    /// <summary>Gets or sets the cut-scene runtime that poses animated placements, or null for none.</summary>
-    CutsceneRuntime? Cutscenes { get; set; }
 
     /// <summary>Prepares the frame, interpolating animated placements between ticks.</summary>
     /// <param name="tickFraction">How far the frame sits between the previous tick and the next.</param>

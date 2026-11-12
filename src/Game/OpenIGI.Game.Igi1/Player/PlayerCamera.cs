@@ -34,7 +34,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// the states that own locomotion. This class keeps <c>HumanPlayer_Update</c>'s order and the surface the host drives.
 /// </para>
 /// </remarks>
-public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost, IWeaponWheelPlayer
+public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelPlayer
 {
     /// <summary>
     /// The delta translation a walk covers in one tick, in the body's frame.
@@ -80,6 +80,40 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _shots.ClearImpacts();
         _shots.TickProjectiles();
     }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether what this player threw and fired is run by the level after its own objects,
+    /// as the original's Dynamic tasks are, rather than inside this player's update.
+    /// </summary>
+    public bool ProjectilesRunByLevel
+    {
+        get => _shots.ProjectilesRunByLevel;
+        set => _shots.ProjectilesRunByLevel = value;
+    }
+
+    /// <summary>Runs what flies where the level's Dynamic tasks run, on a tick this player's update asked for it.</summary>
+    /// <returns><see langword="true"/> when they were advanced.</returns>
+    public bool RunDeferredProjectiles() => _shots.RunDeferredProjectiles();
+
+    /// <summary>Runs what flies as the level's Dynamic task does: every tick the level runs, this player's update or not.</summary>
+    /// <returns><see langword="true"/> when the level runs them and they were advanced.</returns>
+    public bool RunProjectilesByLevel() => _shots.RunProjectilesByLevel();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this player's rounds are marched by the level, where their gun's
+    /// <c>GunShot</c> task runs (<c>0x47B690</c>), rather than inside this player's update.
+    /// </summary>
+    public bool RoundsRunByLevel
+    {
+        get => _shots.RoundsRunByLevel;
+        set => _shots.RoundsRunByLevel = value;
+    }
+
+    /// <summary>Gets a value indicating whether the rounds waiting are a picked-up gun's, marched at <c>Dynamic</c>'s tail.</summary>
+    public bool PendingRoundsAtTail => _shots.PendingRoundsAtTail;
+
+    /// <summary>Marches the rounds this tick's update fired, where the level runs their gun's <c>GunShot</c> task.</summary>
+    public void RunDeferredRounds() => _shots.RunDeferredRounds();
     private readonly PlayerInteractionDriver _interaction;
     private readonly PlayerLadderController _ladder;
     private readonly PlayerFootsteps _footsteps;
@@ -353,7 +387,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Puts a set of cheats in force on the body and the weapons.</summary>
     /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
     /// <remarks>
-    /// <see cref="Tick"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
+    /// <see cref="Tick(InputState, IGroundHeightField)"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
     /// every tick, so a change from Extras or the console lands on the next one without a restart.
     /// </remarks>
     public void ApplyCheats(PlayerCheatOptions cheats)
@@ -823,9 +857,16 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void Look(InputState input, float seconds)
     {
         ArgumentNullException.ThrowIfNull(input);
+        Look(input.Mouse.DeltaX, input.Mouse.DeltaY);
+    }
 
+    /// <summary>Takes the look from mouse motion, in counts: the window's this frame, or a title path's this tick.</summary>
+    /// <param name="deltaX">The motion across.</param>
+    /// <param name="deltaY">The motion up and down.</param>
+    public void Look(float deltaX, float deltaY)
+    {
         // A mod has the body (ControlTaken): the mouse does not turn it. The mouse stays captured and the view in step.
-        if (!ControlTaken && _firstPerson.Turn(input.Mouse, MountedStationaryGun) is { } steered)
+        if (!ControlTaken && _firstPerson.Turn(deltaX, deltaY, MountedStationaryGun) is { } steered)
         {
             _interaction.FaceAlongGun(steered);
             SyncView();
@@ -924,6 +965,10 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
     /// <inheritdoc cref="PlayerFirstPersonView.SmoothedEyeMetres"/>
     public Vector3d SmoothedEyeMetres(float alpha) => _firstPerson.SmoothedEyeMetres(alpha);
+
+    /// <summary>Draws the frames until the next tick with this heading and pitch in place of the body's: the look a title path has gathered but not yet taken.</summary>
+    /// <param name="look">The heading and pitch, in radians, or <see langword="null"/> for the body's own.</param>
+    public void ShowLook((float Yaw, float Pitch)? look) => _firstPerson.ShownLook = look;
 
     /// <summary>Gets the complete first-person camera at one shared between-tick presentation point.</summary>
     public Camera3D SmoothedCamera(float alpha) =>

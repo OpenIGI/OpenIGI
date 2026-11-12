@@ -1,11 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Physics;
-using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -26,69 +24,8 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// owner, falling off in a straight line.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2MineFieldTask : Igi2Task
+public sealed partial class Igi2MineFieldTask : OpenIGI.Game.World.MineFieldTask
 {
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "MineField";
-
-    /// <summary>The model its fragments are thrown as.</summary>
-    public const string FragmentModel = "1009_01_1";
-
-    private LevelExpression? _explode;
-
-    /// <summary>Gets or sets where the editor shows it.</summary>
-    [ScriptParam(ScriptParamType.ObjectPos, "Position")]
-    public Vector3d Position { get; set; }
-
-    /// <summary>Gets or sets the expression it explodes under.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Explode")]
-    public string ExplodeExpression { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets how far the full damage reaches, in metres.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Explosion radius (meter)")]
-    public float Radius { get; set; } = 3f;
-
-    /// <summary>Gets or sets how far past that it falls away, in metres.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Explosion falloff radius (meter)")]
-    public float FalloffRadius { get; set; } = 1.5f;
-
-    /// <summary>Gets or sets the damage at its heart.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Explosion damage scale")]
-    public float DamageScale { get; set; } = 3f;
-
-    /// <summary>Gets or sets the seconds before a blast goes off.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Explosion delay (seconds)")]
-    public float Delay { get; set; }
-
-    /// <summary>Gets or sets how many fragments a blast throws.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Explosion fragments")]
-    public int Fragments { get; set; } = 3;
-
-    /// <summary>Gets or sets how many fireballs a blast throws.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Explosion fireballs")]
-    public int Fireballs { get; set; } = 3;
-
-    /// <summary>Gets or sets a blast's sound.</summary>
-    [ScriptParam(ScriptParamType.String16, "Explosion sound")]
-    public string Sound { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the task a blast goes off at.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Explode close to task ID")]
-    public int TargetId { get; set; }
-
-    /// <summary>Gets or sets the seconds between blasts; -1 for one only.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Explosion delay between explosions (seconds) -1: explode once")]
-    public float DelayBetween { get; set; } = 5f;
-
-    /// <summary>Gets or sets a value indicating whether a blast is put on the ground.</summary>
-    [ScriptParam(ScriptParamType.Bool8, "Snap explosion to ground")]
-    public bool SnapToGround { get; set; } = true;
-
-    /// <summary>Gets the ticks before it may explode again, <c>nDelayBetweenExplosions</c>.</summary>
-    public int Pause { get => _pause.Ticks; private set => _pause.Ticks = value; }
-
-    private readonly OpenIGI.Game.World.MineFieldPause _pause = new();
-
     /// <summary>Gets or sets the blasts it sets off.</summary>
     [LevelService]
     public Igi2ExplosionWorld? Explosions { get; set; }
@@ -100,22 +37,11 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
     public Func<int, object?> TaskById { get; set; } = static _ => null;
 
     /// <inheritdoc/>
-    public override void Run(Igi2LevelRun level)
-    {
-        ArgumentNullException.ThrowIfNull(level);
-        if (_pause.Due(() =>
-            {
-                _explode ??= Igi2LevelExpressions.Create(ExplodeExpression, Name, level.Natives);
-                return !_explode.IsEmpty && level.Evaluate(_explode) != 0.0;
-            }))
-        {
-            Explode();
-            Pause = Fpu.ToInt32((Fpu)DelayBetween * 30.0);
-        }
-    }
+    /// <remarks>The sequel's build multiplies in extended precision before it cuts.</remarks>
+    protected override int DelayBetweenTicks => Fpu.ToInt32((Fpu)DelayBetween * 30.0);
 
     /// <summary>Sets off a blast at its target, <c>MineField_Explode</c>.</summary>
-    public void Explode()
+    public override void Explode()
     {
         if ((uint)TargetId >= 0x1000u || TaskById(TargetId) is not { } target || target is Igi2Human { IsDead: true })
         {

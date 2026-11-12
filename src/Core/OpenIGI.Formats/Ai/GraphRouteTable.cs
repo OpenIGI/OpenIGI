@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Formats.Ai;
 
@@ -40,6 +41,9 @@ public sealed class GraphRouteTable
 
     private readonly ReadOnlyMemory<byte> _data;
 
+    // A table worked out from a graph's links rather than read: each destination's column, made as it is first asked for.
+    private readonly RouteColumns? _columns;
+
     /// <summary>Initializes a new instance of the <see cref="GraphRouteTable"/> class.</summary>
     /// <param name="data">The table bytes, exactly <c>8 × maxNodes²</c> of them.</param>
     /// <param name="maxNodes">The slot count the file declares.</param>
@@ -57,6 +61,35 @@ public sealed class GraphRouteTable
 
         _data = data;
         MaxNodes = maxNodes;
+    }
+
+    private GraphRouteTable(RouteColumns columns, int maxNodes)
+    {
+        _columns = columns;
+        MaxNodes = maxNodes;
+    }
+
+    /// <summary>
+    /// Works a graph's routes out from its links, for a graph that ships none -- another game's, which searches its routes as it
+    /// walks them rather than looking them up.
+    /// </summary>
+    /// <param name="maxNodes">The slot count the graph declares.</param>
+    /// <param name="nodes">Its nodes, where they stand.</param>
+    /// <param name="links">Its links, each walked both ways.</param>
+    /// <returns>The table.</returns>
+    /// <remarks>
+    /// A route is the shortest along the links, a link costing the distance between its nodes, so the cost strictly decreases
+    /// along a route as a shipped table's does, and a node has no route to itself or to a node no link reaches. A destination's
+    /// routes are worked out together (one search out from it) the first time any is asked for, so a table costs what its
+    /// walkers' destinations need rather than the whole square.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxNodes"/> is negative.</exception>
+    public static GraphRouteTable FromLinks(int maxNodes, IReadOnlyList<GraphNode> nodes, IReadOnlyList<GraphLink> links)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxNodes);
+        ArgumentNullException.ThrowIfNull(nodes);
+        ArgumentNullException.ThrowIfNull(links);
+        return new GraphRouteTable(new RouteColumns(maxNodes, nodes, links), maxNodes);
     }
 
     /// <summary>Gets the slot count the table is square over.</summary>
@@ -78,6 +111,11 @@ public sealed class GraphRouteTable
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(from, MaxNodes);
             ArgumentOutOfRangeException.ThrowIfNegative(to);
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(to, MaxNodes);
+
+            if (_columns is { } columns)
+            {
+                return columns.Entry(from, to);
+            }
 
             // 0x509390: routeTable + 8 * (from + to * maxNodes).
             ReadOnlySpan<byte> entry = _data.Span.Slice(EntryStride * (from + (to * MaxNodes)), EntryStride);
@@ -147,5 +185,95 @@ public sealed class GraphRouteTable
     }
 
     /// <inheritdoc/>
-    public override string ToString() => $"route table over {MaxNodes} slots, {_data.Length} bytes";
+    public override string ToString() =>
+        _columns is null ? $"route table over {MaxNodes} slots, {_data.Length} bytes" : $"route table over {MaxNodes} slots, from links";
+
+    // Each destination's column of a table worked out from links: the next node toward it from every node, and what is left.
+    private sealed class RouteColumns
+    {
+        // The least a link costs, so that the cost still falls along a route through nodes that stand on one another.
+        private const double ShortestLink = 1e-3;
+
+        private readonly int _maxNodes;
+        private readonly Vector3d[] _positions;
+        private readonly List<(int Node, double Length)>[] _neighbours;
+        private readonly Dictionary<int, (int[] Next, float[] Cost)> _columns = [];
+
+        public RouteColumns(int maxNodes, IReadOnlyList<GraphNode> nodes, IReadOnlyList<GraphLink> links)
+        {
+            _maxNodes = maxNodes;
+            _positions = new Vector3d[maxNodes];
+            bool[] present = new bool[maxNodes];
+            _neighbours = new List<(int, double)>[maxNodes];
+            foreach (GraphNode node in nodes)
+            {
+                if ((uint)node.Id < (uint)maxNodes)
+                {
+                    present[node.Id] = true;
+                    _positions[node.Id] = node.Position;
+                }
+            }
+
+            foreach (GraphLink link in links)
+            {
+                if ((uint)link.NodeA < (uint)maxNodes && (uint)link.NodeB < (uint)maxNodes && present[link.NodeA] && present[link.NodeB]
+                    && link.NodeA != link.NodeB)
+                {
+                    double length = Math.Max(Vector3d.Distance(_positions[link.NodeA], _positions[link.NodeB]), ShortestLink);
+                    (_neighbours[link.NodeA] ??= []).Add((link.NodeB, length));
+                    (_neighbours[link.NodeB] ??= []).Add((link.NodeA, length));
+                }
+            }
+        }
+
+        public (int NextNode, float Cost) Entry(int from, int to)
+        {
+            if (!_columns.TryGetValue(to, out (int[] Next, float[] Cost) column))
+            {
+                column = Search(to);
+                _columns[to] = column;
+            }
+
+            int next = column.Next[from];
+            return next == NoRoute ? Sentinel : (next, column.Cost[from]);
+        }
+
+        // One search out from the destination: each node reached steps to the node it was reached from.
+        private (int[] Next, float[] Cost) Search(int to)
+        {
+            int[] next = new int[_maxNodes];
+            double[] distance = new double[_maxNodes];
+            Array.Fill(next, NoRoute);
+            Array.Fill(distance, double.PositiveInfinity);
+            distance[to] = 0.0;
+            PriorityQueue<int, double> open = new();
+            open.Enqueue(to, 0.0);
+            while (open.TryDequeue(out int at, out double reached))
+            {
+                if (reached > distance[at] || _neighbours[at] is not { } around)
+                {
+                    continue;
+                }
+
+                foreach ((int node, double length) in around)
+                {
+                    double through = reached + length;
+                    if (through < distance[node])
+                    {
+                        distance[node] = through;
+                        next[node] = at;
+                        open.Enqueue(node, through);
+                    }
+                }
+            }
+
+            float[] cost = new float[_maxNodes];
+            for (int node = 0; node < _maxNodes; node++)
+            {
+                cost[node] = next[node] == NoRoute ? -1.0f : (float)distance[node];
+            }
+
+            return (next, cost);
+        }
+    }
 }

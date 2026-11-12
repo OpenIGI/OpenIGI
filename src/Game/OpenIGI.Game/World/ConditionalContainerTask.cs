@@ -188,7 +188,7 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
     /// <summary>Settles the condition again outside the tick and returns whether <see cref="IsRun"/> changed.</summary>
     /// <param name="started"><see langword="true"/> when this change started the container.</param>
     /// <returns>Whether it changed.</returns>
-    internal bool Refresh(out bool started)
+    public bool Refresh(out bool started)
     {
         bool before = _isRun is { } latched && latched != 0;
         bool after = ConditionResolver is null ? true : ConditionResolver(this) ?? before;

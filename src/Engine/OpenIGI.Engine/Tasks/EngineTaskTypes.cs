@@ -90,9 +90,9 @@ public static class EngineTaskTypes
             switch (name)
             {
                 case Level: RegisterIfAbsent<LevelTask>(types, Level, root); break;
-                case Static: RegisterIfAbsent<RootTask>(types, Static, root); break;
+                case Static: RegisterIfAbsent<StaticTask>(types, Static, root); break;
                 case Dynamic: RegisterIfAbsent<DynamicTask>(types, Dynamic, root); break;
-                case Idle: RegisterIfAbsent<RootTask>(types, Idle, root); break;
+                case Idle: RegisterIfAbsent<IdleTask>(types, Idle, root); break;
                 case CameraBase: RegisterIfAbsent<ContainerTask>(types, CameraBase, root); break;
                 case Container: RegisterIfAbsent<ContainerTask>(types, Container, root); break;
                 default:

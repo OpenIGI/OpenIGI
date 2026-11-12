@@ -271,7 +271,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         if (IncludesHost && _game.World.Player is { } host)
         {
             humans.Add(Carrying(OnLift(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerHealth, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime), _game.World.IsPlayerDead)), host), ServerSession.HostSlot));
+                HostEntity, host, _game.World.PlayerLife.Health, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime), _game.World.IsPlayerDead)), host), ServerSession.HostSlot));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)

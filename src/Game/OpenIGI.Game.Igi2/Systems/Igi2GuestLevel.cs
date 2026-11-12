@@ -15,6 +15,7 @@ using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -40,8 +41,6 @@ namespace OpenIGI.Game.Igi2.Systems;
 /// </remarks>
 public sealed class Igi2GuestLevel
 {
-    private const int TopId = 4095;
-
     private readonly Igi2GuestContent _content;
     private readonly GuestTitle _guest;
     private readonly List<Interaction.Igi2AlarmControlTask> _alarms = [];
@@ -49,12 +48,13 @@ public sealed class Igi2GuestLevel
     private Igi2CollisionWorld? _playerWorld;
     private Igi2Sounds? _sounds;
     private readonly List<Weapons.Igi2StationaryGunTask> _guns = [];
-    private int _spare = TopId;
+    private readonly GuestTaskIds _ids;
 
     private Igi2GuestLevel(Igi2GuestContent content, LevelTask root, GameTask dynamic)
     {
         _content = content;
         _guest = content.Guest;
+        _ids = new GuestTaskIds(_guest.Loop.Tasks);
         Root = root;
         Dynamic = dynamic;
     }
@@ -336,9 +336,6 @@ public sealed class Igi2GuestLevel
         return true;
     }
 
-    /// <summary>The ticks a host's patrol animation pauses its soldier for: two seconds, about what a retail one takes.</summary>
-    public const int AnimationPauseTicks = 60;
-
     /// <summary>
     /// Adds a patrol path to the level under the id the host gives it, which a soldier's script sends it on by
     /// (<c>AIAction_Patrol</c>): its commands in order, each as I.G.I. 2 keeps one.
@@ -350,7 +347,7 @@ public sealed class Igi2GuestLevel
     /// I.G.I. 2 reads a command's node, its delay or its animation from its <c>Command Parameter</c>
     /// (<c>HumanAIContent_PatrolRunCB</c>), as Project I.G.I. reads its operand, so each command keeps its kind and operand. An
     /// animation is the host's own number, which names nothing of I.G.I. 2's: it is a pause of about the length a retail
-    /// patrol's animation takes instead (<see cref="AnimationPauseTicks"/>).
+    /// patrol's animation takes instead (<see cref="Igi2PatrolPathTask.AnimationPauseTicks"/>).
     /// </remarks>
     public Igi2PatrolPathTask? AddPatrolPath(int id, IEnumerable<AiPatrolCommand> commands)
     {
@@ -373,7 +370,7 @@ public sealed class Igi2GuestLevel
             Igi2PatrolPathCommandTask step = (Igi2PatrolPathCommandTask)New(path, Igi2PatrolPathCommandTask.TypeName);
             bool animation = command.Kind == AiPatrolCommandKind.Animation;
             step.CommandValue = animation ? (int)Igi2PatrolCommand.Delay : (int)command.Kind;
-            step.Parameter = animation ? AnimationPauseTicks : command.Operand;
+            step.Parameter = animation ? Igi2PatrolPathTask.AnimationPauseTicks : command.Operand;
         }
 
         return path;
@@ -658,21 +655,7 @@ public sealed class Igi2GuestLevel
 
     private GameTask New(GameTask parent, string typeName) => _guest.Loop.Tasks.New(parent, _guest.Loop.Types.Get(typeName));
 
-    private void Bind(GameTask task, int preferred)
-    {
-        TaskTree tasks = _guest.Loop.Tasks;
-        if (preferred >= 0 && tasks.FromId(preferred) is null && tasks.TryBindId(preferred, task))
-        {
-            return;
-        }
-
-        while (tasks.FromId(_spare) is not null)
-        {
-            _spare--;
-        }
-
-        tasks.TryBindId(_spare--, task);
-    }
+    private void Bind(GameTask task, int preferred) => _ids.Bind(task, preferred);
 
     // A soldier as a blast finds it: only while it takes part in the level.
     private sealed class ActiveBody(Soldiers.Igi2HumanSoldier body) : IExplosionHitTarget

@@ -205,7 +205,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         ArgumentNullException.ThrowIfNull(context);
         context.Types.Register<Flow.Igi2ContainerTask>(Flow.Igi2ContainerTask.TypeName);
         context.Types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
-        context.Types.Register<Flow.Igi2EditVariableTask>(Flow.Igi2EditVariableTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterShared(context.Types);
         context.Types.Register<Flow.Igi2MissionScoreSettingsTask>(Flow.Igi2MissionScoreSettingsTask.TypeName);
         context.Types.Register<World.Igi2BuildingTask>(World.Igi2BuildingTask.TypeName);
         context.Types.Register<World.Igi2LevelInfoTask>(World.Igi2LevelInfoTask.TypeName);
@@ -237,6 +237,9 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2FloorTask>(Interaction.Igi2FloorTask.TypeName);
         context.Types.Register<Interaction.Igi2ConveyorBeltTask>(Interaction.Igi2ConveyorBeltTask.TypeName);
         context.Types.Register<Interaction.Igi2ExplodeObjectTask>(Interaction.Igi2ExplodeObjectTask.TypeName);
+        context.Types.Register<Interaction.Igi2GeneratorTask>(Interaction.Igi2GeneratorTask.TypeName);
+        context.Types.Register<Interaction.Igi2RadioTask>(Interaction.Igi2RadioTask.TypeName);
+        context.Types.Register<Interaction.Igi2RotatingObjectTask>(Interaction.Igi2RotatingObjectTask.TypeName);
         context.Types.Register<Interaction.Igi2GenericTbaTask>(Interaction.Igi2GenericTbaTask.TypeName);
         context.Types.Register<Interaction.Igi2TerminalTask>(Interaction.Igi2TerminalTask.TypeName);
         context.Types.Register<Interaction.Igi2LadderTask>(Interaction.Igi2LadderTask.TypeName);
@@ -250,7 +253,6 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Paths.Igi2SplinePathGuideTask>(Paths.Igi2SplinePathGuideTask.TypeName);
         context.Types.Register<Flow.Igi2StatusMessageTask>(Flow.Igi2StatusMessageTask.TypeName);
         context.Types.Register<Flow.Igi2AreaActivateTask>(Flow.Igi2AreaActivateTask.TypeName);
-        context.Types.Register<Flow.Igi2LevelTimerTask>(Flow.Igi2LevelTimerTask.TypeName);
         context.Types.Register<Flow.Igi2OverlayHolderTask>(Flow.Igi2OverlayHolderTask.TypeName);
         context.Types.Register<Flow.Igi2AnimTask>(Flow.Igi2AnimTask.TypeName);
         context.Types.Register<World.Igi2RainEffectTask>(World.Igi2RainEffectTask.TypeName);

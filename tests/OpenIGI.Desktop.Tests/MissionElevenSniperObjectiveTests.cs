@@ -130,8 +130,8 @@ public sealed class MissionElevenSniperObjectiveTests : IDisposable
 
         Assert.True(loop.Variables.TryWrite("EditVariable_102.nValue", QvmValue.FromInt32(1)));
         Assert.True(loop.Variables.TryWrite("EditVariable_103.nValue", QvmValue.FromInt32(1)));
-        OpenIGI.Engine.Tasks.DeclaredTask cableCar = Assert.IsType<OpenIGI.Engine.Tasks.DeclaredTask>(sniper.Task!.Tree.FromId(150));
-        Assert.True(cableCar.TryGet("Position", out OpenIGI.Core.Numerics.Vector3d inside));
+        OpenIGI.Game.Flow.AreaActivateTask cableCar = Assert.IsType<OpenIGI.Game.Flow.AreaActivateTask>(sniper.Task!.Tree.FromId(150));
+        OpenIGI.Core.Numerics.Vector3d inside = cableCar.Position;
 
         bool outro = false;
         for (int i = 0; i < 300 && !outro; i++)

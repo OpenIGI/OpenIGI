@@ -29,7 +29,7 @@ public sealed class RetailPlaneSoundTests
         ResourceRegistry resources = new(fs);
         GameLoop loop = new(new ManualTimeSource());
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -55,9 +55,9 @@ public sealed class RetailPlaneSoundTests
         {
             CollisionIndex = solids,
         };
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         Func<string, MefModel?> models = name => mission.TryGetModel(name, out MefModel? model) ? model : null;
-        runtime.ConfigureRetailCars(
+        runtime.Vehicles.ConfigureRetailCars(
             new RetailCarWorld(
                 new RetailTerrainRay(
                     terrain.Octree,
@@ -65,7 +65,7 @@ public sealed class RetailPlaneSoundTests
                     TerrainDiscardBinding.For(terrain).Regions,
                     TerrainHeightBindings.Bind(terrain, root)),
                 RetailWorldObjects.Build(root, models, name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null),
-                runtime.RetailVehicleModels,
+                runtime.Vehicles.RetailVehicleModels,
                 static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
             models,
             name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null);
@@ -79,7 +79,7 @@ public sealed class RetailPlaneSoundTests
         {
             runtime.Tick();
             runtime.FinishExpressionTick();
-            foreach (VehicleSoundSource source in runtime.VehicleSoundSources())
+            foreach (VehicleSoundSource source in runtime.Vehicles.VehicleSoundSources())
             {
                 if (ReferenceEquals(source.Vehicle, plane))
                 {

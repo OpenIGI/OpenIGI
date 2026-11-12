@@ -32,8 +32,11 @@ namespace OpenIGI.Presentation.Rendering;
 /// </remarks>
 public sealed class ModelGlowRenderer : IDisposable
 {
-    /// <summary>The sprite every glow is drawn with.</summary>
-    public const string TextureName = "LOCAL:common/textures/glowsprite.tex";
+    /// <summary>The sprite file, under the common content of the game being played.</summary>
+    public const string SpriteFile = "textures/glowsprite.tex";
+
+    // The sprite, as the game being played names it.
+    private readonly string _textureName;
 
     /// <summary>The most glows one frame draws.</summary>
     public const int MaximumGlows = 2048;
@@ -61,14 +64,17 @@ public sealed class ModelGlowRenderer : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ModelGlowRenderer"/> class.</summary>
     /// <param name="device">The device to draw with.</param>
     /// <param name="resources">Where the sprite is read from.</param>
+    /// <param name="commonDirectory">The game's search directory for shared content, which the sprite is read under.</param>
     /// <param name="logger">Where a missing sprite is reported.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public ModelGlowRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger? logger = null)
+    public ModelGlowRenderer(IGraphicsDevice device, ResourceRegistry resources, string commonDirectory, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
         _device = device;
+        ArgumentNullException.ThrowIfNull(commonDirectory);
         _resources = resources;
+        _textureName = commonDirectory + SpriteFile;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -195,9 +201,9 @@ public sealed class ModelGlowRenderer : IDisposable
 
         _asked = true;
 
-        if (!_resources.TryLoad(TextureName, out ReadOnlyMemory<byte> bytes))
+        if (!_resources.TryLoad(_textureName, out ReadOnlyMemory<byte> bytes))
         {
-            _logger.Warning(LogCategory, $"'{TextureName}' is absent; the models' glows will not draw.");
+            _logger.Warning(LogCategory, $"'{_textureName}' is absent; the models' glows will not draw.");
             return false;
         }
 
@@ -210,7 +216,7 @@ public sealed class ModelGlowRenderer : IDisposable
         }
         catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
         {
-            _logger.Warning(LogCategory, $"'{TextureName}' did not load: {ex.Message}");
+            _logger.Warning(LogCategory, $"'{_textureName}' did not load: {ex.Message}");
         }
 
         return _texture.IsValid;

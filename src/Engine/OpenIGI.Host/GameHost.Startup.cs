@@ -71,6 +71,7 @@ public sealed partial class GameHost
         RegisterDemoCommands(state.Console.System);
         RegisterInviteCommand(state.Console.System);
         RegisterPartyCommands(state.Console.System);
+        _missionConsole = state.Console.System;
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterBlastCommands(state.Console.System);
@@ -340,7 +341,7 @@ public sealed partial class GameHost
         // Started rather than done: at start-up the thing between the player and the first frame is this
         // thread, and the read needs nothing from it. The first mission waits for the result, by when it
         // has been sitting finished for several seconds.
-        BeginReadingSharedAnimations();
+        _hosted.Prefetch();
 
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
@@ -363,17 +364,14 @@ public sealed partial class GameHost
         _heldWeapon = null;
         _hud = null;
         _debugOverlay = null;
-        _marks = null;
         _effects.Forget();
-        _cameraStatusLights = null;
+        WorldView?.ReleaseLevel();
         _modelGlows = null;
-        _grenadeRenderer = null;
-        _missileRenderer = null;
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
         _mission.AdoptSoldiers(null);
-        _mission.SoldiersInWalk = false;
+        _mission.ObjectsInWalk = false;
         _mission.PlayerInWalk = false;
         _mission.Terrain = null;
         _mission.Ground = null;
@@ -386,8 +384,7 @@ public sealed partial class GameHost
         _mission.Materials = null;
         _mission.AmmoTypes = null;
         _mission.WeaponTypes = null;
-        _mission.AlarmSpeakers = null;
-        _mission.Destructibles = null;
+        _mission.ReleaseAlarmsAndDestructibles();
         _hosted.Audio.ForgetSirens();
         _playerMode = false;
 

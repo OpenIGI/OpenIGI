@@ -46,52 +46,19 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     {
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
-        // never calls the parent handler.
-        if (mission.Player.IsBinocularsOpen)
-        {
-            retailHud.DrawBinocularOverlay(
-                batch,
-                frame.Width,
-                frame.Height,
-                frame.BinocularTargets,
-                mission.Player.Yaw,
-                frame.TickCount,
-                frame.BinocularRangeMetres);
-        }
-        else if (mission.Player.IsSniperScoped)
-        {
-            retailHud.DrawSniperScope(batch, frame.Width, frame.Height);
-        }
-        else
-        {
-            CarriedWeapon? held = carried.InHand;
-            int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
-                && mission.AmmoTypes?.Types.FirstOrDefault(
-                    ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
-                    ? carried.Ammunition.Count(m203.AmmoId)
-                    : 0;
-            retailHud.Draw(
-                batch,
-                held?.Weapon,
-                held?.Gun.RoundsInClip ?? 0,
-                held is { } primary ? primary.Gun.Reserve(carried.Ammunition) : 0,
-                held?.Gun.State.SecondSubCounter ?? 0,
-                m203Reserve,
-                frame.Width,
-                frame.Height,
-                frame.RetailUiScale);
+        Igi1HudSections.Weapon(
+            batch, retailHud, mission.Player, carried, mission.AmmoTypes, frame.Width, frame.Height, frame.RetailUiScale, frame.TickCount,
+            frame.BinocularTargets, frame.BinocularRangeMetres);
 
-            // The original's crosshair marks a hit and a kill as the remastered one does: a soldier's, and in a session a
-            // player's, which its server tells of.
-            if (HudCVars.ShowsHitMarkers && (_remastered ??= CreateRemastered()).IsReady)
-            {
-                _remastered.DrawHitMarks(
-                    batch,
-                    Game.Igi1.Player.Igi1Crosshair.Feedback(mission.Player, mission.Soldiers),
-                    Igi1HudTheme.Theme,
-                    HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 0f));
-            }
+        // The original's crosshair marks a hit and a kill as the remastered one does: a soldier's, and in a session a
+        // player's, which its server tells of.
+        if (!mission.Player.IsBinocularsOpen && !mission.Player.IsSniperScoped && HudCVars.ShowsHitMarkers && (_remastered ??= CreateRemastered()).IsReady)
+        {
+            _remastered.DrawHitMarks(
+                batch,
+                Game.Igi1.Player.Igi1Crosshair.Feedback(mission.Player, mission.Soldiers),
+                Igi1HudTheme.Theme,
+                HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 0f));
         }
 
         batch.End();
@@ -140,9 +107,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         batch.End();
     }
 
-    // The human-owned retail display remains alive when a full-body interaction hides the
-    // hands and weapon: that is precisely when HumanPlayer's timed-use bar is needed. In the
-    // original dispatch order this follows the weapon handler and precedes StatusScreen's timer.
+    // The human-owned retail display remains alive when a full-body interaction hides the hands and weapon (Igi1HudSections.Status).
     if (!frame.RemasterHud
         && frame.ShowPlayerHud
         && mission.Player is { } retailPlayer
@@ -150,14 +115,9 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     {
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        retailStatus.DrawPlayerStatus(
-            batch,
-            mission.PlayerHealth.RemainingFraction,
-            retailPlayer.InteractionProgress,
-            mission.Objectives?.InterfaceTimerRemainingTicks,
-            frame.Width,
-            frame.Height,
-            frame.RetailUiScale);
+        Igi1HudSections.Status(
+            batch, retailStatus, retailPlayer, mission.PlayerLife.Health.RemainingFraction, mission.Objectives?.InterfaceTimerRemainingTicks,
+            frame.Width, frame.Height, frame.RetailUiScale);
         batch.End();
     }
     }
@@ -167,53 +127,15 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     {
         ArgumentNullException.ThrowIfNull(batch);
         MissionWorld mission = _gameplay.World;
-    // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
-    // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
-    // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
-    // when the arms and the HUD are gone but the last thing the screen showed is still red.
+    // The damage wash goes over everything, in its own 2D pass, and the flashbang's white over it (Igi1HudSections.Washes).
+    // Outside the player-mode block on purpose -- it has to survive the player's death, when the arms and the HUD are gone but
+    // the last thing the screen showed is still red.
     float flashStrength = Math.Clamp(HudCVars.DamageFlash.Value, 0f, 1f);
-    if (mission.DamageFlash.IsActive && flashStrength > 0f)
+    if ((mission.PlayerLife.DamageFlash.IsActive && flashStrength > 0f) || mission.PlayerLife.FlashbangFlash.IsActive)
     {
-        float flashWidth = frame.Width;
-        float flashHeight = frame.Height;
-
-        // The strength scales the alpha only. The four corners still carry their own values
-        // and still decay on the original's schedule, so a hit from the left is still redder
-        // on the left and still fades over the same number of ticks -- it is the peak that
-        // comes down, not the cue.
-        Bgra32 Red(float alpha) =>
-            new(0, 0, 255, (byte)Math.Clamp((int)(alpha * flashStrength * 255f), 0, 255));
-
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        batch.DrawQuad(
-            TextureHandle.None,
-            new Vertex2D(0f, 0f, 0f, 0f, Red(mission.DamageFlash.TopLeft)),
-            new Vertex2D(flashWidth, 0f, 1f, 0f, Red(mission.DamageFlash.TopRight)),
-            new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(mission.DamageFlash.BottomRight)),
-            new Vertex2D(0f, flashHeight, 0f, 1f, Red(mission.DamageFlash.BottomLeft)));
-        batch.End();
-    }
-
-    // The native player flash handler writes a uniform white screen field. It is stronger
-    // when the eye is inside the grenade radius (2) and still fully white at the first
-    // frame of the 25 m visible effect (1); the close field simply keeps the quad opaque
-    // for longer. This pass follows the red damage wash so the retail flash wins.
-    if (mission.FlashbangFlash.IsActive)
-    {
-        byte whiteAlpha = (byte)Math.Clamp(
-            (int)(Math.Min(mission.FlashbangFlash.Strength, 1f) * 255f),
-            0,
-            255);
-        Bgra32 white = new(255, 255, 255, whiteAlpha);
-        _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
-        batch.Begin();
-        batch.DrawQuad(
-            TextureHandle.None,
-            new Vertex2D(0f, 0f, 0f, 0f, white),
-            new Vertex2D(frame.Width, 0f, 1f, 0f, white),
-            new Vertex2D(frame.Width, frame.Height, 1f, 1f, white),
-            new Vertex2D(0f, frame.Height, 0f, 1f, white));
+        Igi1HudSections.Washes(batch, mission.PlayerLife, frame.Width, frame.Height, flashStrength);
         batch.End();
     }
     }

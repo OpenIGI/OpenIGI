@@ -39,7 +39,7 @@ public static class Igi1MissionSystems
             {
                 game.World.LevelRoot = b.LevelRoot;
                 game.World.MissionId = b.Id;
-                b.MissionText = game.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
+                b.MissionText = game.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Kept<OpenIGI.Game.World.MissionObjectiveRuntime>());
             }))
             .InsertBefore(MissionSystemNames.TestCaptures, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Objectives, b =>
                 game.Setup.BuildObjectives(
@@ -49,7 +49,7 @@ public static class Igi1MissionSystems
                     made =>
                     {
                         made.PartnerPlayers = game.Tick.PartnerAreaPlayers;
-                        b.Objectives = made;
+                        b.Keep(made);
                         BringComputerUp(game, b, made, host);
                     })))
             .InsertBefore(MissionSystemNames.SceneView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Vehicles, b =>

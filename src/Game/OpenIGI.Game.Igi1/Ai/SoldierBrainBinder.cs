@@ -362,7 +362,8 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                 }
 
                 AiCombatParameters row = config.Parameters(type, difficulty);
-                _context.Combat[member.View] = row;
+                member.View.Combat = row;
+            _context.Keep(member.View);
                 bound++;
 
                 (int count, AiCombatParameters _) = accuracyByType.GetValueOrDefault(type);

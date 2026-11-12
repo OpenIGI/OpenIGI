@@ -8,7 +8,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1.Cameras;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -57,6 +56,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
 
     /// <inheritdoc/>
     public bool IsInteractionViewActive => _interaction.IsActive;
+
+    /// <inheritdoc/>
+    public bool OrbitsBody => gameplay.World.Player is { IsOnLadder: true } or { IsInWorldInteraction: true, IsMountedStationaryGun: false };
 
     /// <inheritdoc/>
     public bool ShowsViewModel => _thirdPerson.ShowsViewModel && !_following && gameplay.World.ViewTakeover is not { HidesViewModel: true };

@@ -39,11 +39,11 @@ internal sealed class Igi2EventWatch
         _events = events;
         _alarms = [.. level.Descendants().OfType<Igi2AlarmControlTask>()];
         _damage = player.Human.Damage.Damage;
-        _playerDead = player.Human.IsDead;
+        _playerDead = player.StandIn?.IsDead ?? player.Human.IsDead;
         _alarm = AnyAlarm();
 
         // A soldier the level places dead has not died in play.
-        _dead.UnionWith(level.Descendants().OfType<Igi2HumanSoldierTask>().Where(static soldier => soldier.Body is { IsDead: true }));
+        _dead.UnionWith(level.Descendants().OfType<Igi2HumanSoldierTask>().Where(static soldier => IsDead(soldier)));
     }
 
     /// <summary>Raises the events of the tick that has just run.</summary>
@@ -71,7 +71,7 @@ internal sealed class Igi2EventWatch
         }
 
         _damage = damage;
-        bool dead = _player.Human.IsDead;
+        bool dead = _player.StandIn?.IsDead ?? _player.Human.IsDead;
         if (dead && !_playerDead && _events.IsHeard<PlayerKilled>())
         {
             _events.Raise(new PlayerKilled());
@@ -89,7 +89,7 @@ internal sealed class Igi2EventWatch
 
         foreach (Igi2HumanSoldierTask soldier in _level.Descendants().OfType<Igi2HumanSoldierTask>())
         {
-            bool dead = soldier.Body is { IsDead: true };
+            bool dead = IsDead(soldier);
             if (dead && _dead.Add(soldier))
             {
                 _events.Raise(new HumanKilled(soldier.Id, soldier.Team));
@@ -119,10 +119,10 @@ internal sealed class Igi2EventWatch
             return;
         }
 
-        IReadOnlyList<Igi2ComputerObjective> objectives = defined.Objectives;
+        IReadOnlyList<OpenIGI.Game.Flow.ComputerObjective> objectives = defined.Objectives;
         for (int slot = 0; slot < objectives.Count; slot++)
         {
-            Igi2ComputerObjective objective = objectives[slot];
+            OpenIGI.Game.Flow.ComputerObjective objective = objectives[slot];
             MissionObjectiveState state = objective.IsFailed ? MissionObjectiveState.Failed
                 : objective.IsComplete ? MissionObjectiveState.Complete
                 : MissionObjectiveState.Incomplete;
@@ -156,4 +156,7 @@ internal sealed class Igi2EventWatch
 
         return false;
     }
+
+    // Its own body's death, or the death of the other game's body that stands for it.
+    private static bool IsDead(Igi2HumanSoldierTask soldier) => soldier.Body is { IsDead: true } || soldier.StandIn is { IsDead: true };
 }

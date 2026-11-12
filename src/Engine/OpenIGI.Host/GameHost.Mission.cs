@@ -210,6 +210,7 @@ public sealed partial class GameHost
             _logger.Information("Session", $"An arena: {scripted} of the level's scripted vehicles, timers, sounds and messages taken out.");
         }
 
+        // The walk the mission ticks its level with; a game whose level runs itself behind its player leaves it unused.
         LevelUpdateWalker walker = new(levelRoot);
         MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
@@ -284,7 +285,6 @@ public sealed partial class GameHost
         {
             var playerSetup = _hosted.NewPlayerSetup();
             playerSetup.Begin(loaded, levelRoot, solids, missionText);
-            Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
@@ -297,9 +297,8 @@ public sealed partial class GameHost
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
             // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
             // without it there is nothing to draw a gun on.
-            if (_viewRigAnimations is { } viewRigSet)
+            if (playerSetup.UseViewRig())
             {
-                playerSetup.UseViewRig(viewRigSet);
 
                 // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
                 // skinning: 005_01_1 is mesh format 1.
@@ -317,11 +316,9 @@ public sealed partial class GameHost
             // What the mission arms you with is declared, not computed: weapon tasks hang off the
             // level's own HumanPlayer, and every WEAPON_ID_* resolves to a roster entry naming a
             // Gun Model. With the rig in place that model can finally be put where the game puts it.
-            _gunPickupRenderer?.Dispose();
-            _gunPickupRenderer = null;
+            WorldView?.ReleaseLyingWeaponsAndMarks();
             _heldWeapon?.Dispose();
             _hud?.Dispose();
-            _marks?.Dispose();
             _effects.Release();
             _heldWeapon = null;
 
@@ -337,8 +334,7 @@ public sealed partial class GameHost
                 playerSetup.ConnectSoldiers(_hosted.Sounds.PlayRicochet);
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
-                _marks?.Dispose();
-                _marks = _presentation.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(EffectsRequest());
+                WorldView?.LoadMarks(WorldObjects(loaded));
 
                 // The world's effects: the bursts where rounds land, the original's own dust, chips and blood,
                 // the fireball every blast shares, and the smoke rockets and blasts leave.
@@ -369,24 +365,8 @@ public sealed partial class GameHost
                 }
             }
 
-            if (_mission.GunPickups is { } pickups)
-            {
-                _gunPickupRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGunPickupPresenter>(ViewModelRequest());
-                if (_gunPickupRenderer is not null)
-                {
-                    _gunPickupRenderer.Materials = _materials;
-                    _gunPickupRenderer.Load(loaded, pickups);
-                }
-            }
-
-            // The grenades in the air, drawn with their own retail models. Loaded beside the
-            // pickups because it is the same model machinery at a transform the simulation owns.
-            _grenadeRenderer?.Dispose();
-            _grenadeRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGrenadePresenter>(ViewModelRequest());
-            _grenadeRenderer?.Load(loaded);
-            _missileRenderer?.Dispose();
-            _missileRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(ViewModelRequest());
-            _missileRenderer?.Load(loaded);
+            // The weapons lying in the level and what flies in it are the title's to draw, with its own models.
+            WorldView?.LoadLooseObjects(WorldObjects(loaded), _mission.LyingGuns);
             LightLooseModels(_world?.Shading.Sun);
 
             EndStage("the loadout, the bullet marks and the HUD");
@@ -395,14 +375,12 @@ public sealed partial class GameHost
             // warning below already covers.
             if (playerSetup.Stand(levelRoot, _mission.Ground, solids, _camera?.Position, _options.CameraYaw, out PlayerSpawnPoint spawn))
             {
-                IHostedPlayer candidate = playerSetup.Player;
-
                 // The player's own third-person body -- the rig the death camera reveals. Built from the
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
                 // player walks on. It stays invisible until the player dies. Without the spawn's model or
                 // the set there is simply no body to show, and death falls back to the frozen view.
                 if (_soldiers is { } bodies
-                    && playerBodySet is { } bodySet
+                    && playerSetup.BodyAnimations is { } bodySet
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
                     // A co-op partner's look this level doesn't ship is borrowed from one that does; and so is this
@@ -419,26 +397,6 @@ public sealed partial class GameHost
                 // Walking is what starting a mission means. The free camera is the debugging tool, so
                 // it is the thing you switch to rather than the thing you start in.
                 _playerMode = !_options.StartFlying;
-
-                // After a switch of renderer, back where the view was before it.
-                ResumePose();
-                _logger.Information(
-                    "Player",
-                    _playerMode
-                        ? $"Standing at {candidate.Position}; F1 for the free camera."
-                        : $"Free camera; F1 to stand at {candidate.Position}.");
-
-                // The eye, spelled the way the capture flags take it. Walking and flying are supposed to
-                // draw the same picture from the same place, and the only way to check that is to put the
-                // free camera exactly where the walking eye is -- which needs the eye, not the feet the
-                // line above reports, and needs it before a capture run can be scripted around it.
-                Camera3D spawnEye = candidate.Camera;
-                _logger.Information(
-                    "Player",
-                    FormattableString.Invariant(
-                        $"Eye at -campos {spawnEye.Position.X:F3},{spawnEye.Position.Y:F3},{spawnEye.Position.Z:F3} ")
-                        + FormattableString.Invariant(
-                            $"-yaw {candidate.Body.Yaw:F4} -pitch {candidate.Body.Pitch:F4}"));
             }
             else
             {
@@ -448,8 +406,11 @@ public sealed partial class GameHost
             }
         }
 
-        // A title that brings its own player stands it here, in place of the rig above.
+        // The player on the title path: a title's own, or the mission's own the rig above stood.
         StandTitlePlayer(loaded, levelRoot, scene);
+
+        // After a switch of renderer, back where the view was before it.
+        ResumePose();
     }
 
     /// <summary>Turns the menu's backdrop into the mission being played, without loading anything.</summary>
@@ -613,16 +574,12 @@ public sealed partial class GameHost
         DisposeModePoints();
         _menuBackdrop.ReleaseSoldiers();
         _heldWeapon?.Dispose();
-        _gunPickupRenderer?.Dispose();
+        WorldView?.ReleaseLevel();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _debugOverlay?.Dispose();
-        _marks?.Dispose();
         _effects.Release();
-        _cameraStatusLights?.Dispose();
         _modelGlows?.Dispose();
-        _grenadeRenderer?.Dispose();
-        _missileRenderer?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
         _sky = null;
@@ -637,15 +594,10 @@ public sealed partial class GameHost
         _world = null;
         _soldiers = null;
         _heldWeapon = null;
-        _gunPickupRenderer = null;
         _hud = null;
         _remasteredHud = null;
         _debugOverlay = null;
-        _marks = null;
-        _cameraStatusLights = null;
         _modelGlows = null;
-        _grenadeRenderer = null;
-        _missileRenderer = null;
         _arms = null;
         _titleFeatures = null;
         _titleArms = null;
@@ -700,7 +652,7 @@ public sealed partial class GameHost
     {
         // A level that declared no loadout never built a presenter for the hand, so the first granted
         // weapon would be carried but never drawn.
-        if (_heldWeapon is null && HostedPlayer?.View is not null
+        if (_heldWeapon is null && _mission.HasOwnPlayer
             && _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest()) is { } presenter)
         {
             presenter.Materials = _materials;
@@ -710,6 +662,10 @@ public sealed partial class GameHost
 
     /// <summary>The three things the small world-effect presenters are built from.</summary>
     private EffectsPresentationRequest EffectsRequest() => new(_device, _resources, _logger);
+
+    /// <summary>What the title's world view makes its loose objects' presenters from, for a loaded level.</summary>
+    private WorldObjectsRequest WorldObjects(LoadedMission loaded) =>
+        new(_presentation.Presenters, ViewModelRequest(), EffectsRequest(), loaded, _materials);
 
     /// <summary>The four things every first-person and projectile presenter is built from.</summary>
     /// <remarks>
@@ -745,8 +701,6 @@ public sealed partial class GameHost
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
     private void PresentPlayerImpacts()
     {
-        IHostedPlayer player = HostedPlayer!;
-
         // What this tick's rounds landed on -- dirt, steel or flesh, out of the material table.
         _hosted.Sounds.PlayPlayerImpacts();
 
@@ -764,7 +718,14 @@ public sealed partial class GameHost
 
         // The launcher rockets in the air lay their smoke trail, one column of puffs per
         // segment they crossed this tick.
-        _effects.SpawnMissileTrails(player.Missiles, _mission.VehicleMissiles);
+        if (_mission.PlayerMissiles is { } missiles)
+        {
+            _effects.SpawnMissileTrails(missiles, _mission.VehicleMissiles);
+        }
+        else
+        {
+            _effects.SpawnMissileTrails(_mission.VehicleMissiles);
+        }
     }
 
     /// <summary>
@@ -786,19 +747,6 @@ public sealed partial class GameHost
     private void LightLooseModels(FixedFunctionSun? sun)
     {
         _bombSun = sun;
-        if (_gunPickupRenderer is { } pickups)
-        {
-            pickups.Sun = sun;
-        }
-
-        if (_grenadeRenderer is { } grenades)
-        {
-            grenades.Sun = sun;
-        }
-
-        if (_missileRenderer is { } missiles)
-        {
-            missiles.Sun = sun;
-        }
+        WorldView?.Light(sun);
     }
 }

@@ -95,7 +95,7 @@ public sealed partial class GameHost
                 && !_menuFlow.PauseMenu
                 && _session.Mission is not null
                 && !PresentationHoldsLevel
-                && _mission.Cutscenes?.IsPlaying != true);
+                && _mission.Scenes?.IsPlaying != true);
         _device.BeginLatencyFrame();
 
         _window.PumpEvents();
@@ -273,7 +273,7 @@ public sealed partial class GameHost
             _entry.Update(
                 entryElapsed,
                 liveOrbit,
-                HostedPlayer is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
+                TitlePlayer is { } titleStanding ? CameraPose.FromCamera(TitleCamera(titleStanding)) : null);
 
             // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
             // where the one frame the promotion still costs is least visible. What it used to cost --
@@ -315,14 +315,14 @@ public sealed partial class GameHost
             // no pose until something puts one in it.
             if (_soldiers is { } bodies)
             {
-                if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
+                if (_entry.ShowPlayerBody && TitlePlayer is { Heading: { } heading } titleBody)
                 {
-                    // Minus the yaw, for the reason the third-person follow states at length: a
+                    // Minus the heading, for the reason the third-person follow states at length: a
                     // heading is a gamma and turns the other way. This shot has always faced the
                     // character the wrong way about; it went unnoticed because the dive ends inside
                     // their head and the level's own spawn heading is often near zero, where the
                     // mirror shows nothing.
-                    bodies.StandPlayerBodyAt(standingBody.Body.Position, -standingBody.Body.Yaw);
+                    bodies.StandPlayerBodyAt(titleBody.Position, -heading);
                 }
                 else
                 {
@@ -417,7 +417,7 @@ public sealed partial class GameHost
             && !_computerOpen
             && !_touchEditor.IsOpen
             && !_session.FailedMenu
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
             && _mission.MenusEnabled
             && state.Shell is not null
@@ -430,7 +430,7 @@ public sealed partial class GameHost
 
             // The pointer belongs to the menu now. The look is what holds the cursor captive, so the
             // player is told to let go of it rather than the lock being fought over each frame.
-            HostedPlayer?.HoldStill();
+            HoldPlayerStill();
             _window.CursorLocked = false;
 
             // The eye is drawn between its last two ticks and neither of them moves again until the
@@ -657,7 +657,7 @@ public sealed partial class GameHost
         // (3 s) up to the still budget. Test-only; driven by environment variables.
         // A chained intro resets its scene-local clock. Do not carry the previous scene's next
         // capture threshold into the next scene and silently miss its early/short shots.
-        if (state.CaptureCutscene && _mission.Cutscenes?.ActiveScene is { } observedScene
+        if (state.CaptureCutscene && _mission.Scenes?.ActiveScene is { } observedScene
             && !ReferenceEquals(state.PreviousCapturedScene, observedScene))
         {
             state.PreviousCapturedScene = observedScene;
@@ -665,9 +665,9 @@ public sealed partial class GameHost
         }
         if (state.CaptureCutscene
             && state.CutsceneCaptureCount < state.CutsceneCaptureLimit
-            && _mission.Cutscenes?.ActiveScene is { } activeCutscene
+            && _mission.Scenes?.ActiveScene is { } activeCutscene
             && (state.CutsceneCaptureScene <= 0 || activeCutscene.Id == state.CutsceneCaptureScene)
-            && activeCutscene.Ticks >= state.CutsceneCaptureTick)
+            && _mission.Scenes.ActiveSceneTicks >= state.CutsceneCaptureTick)
         {
             Directory.CreateDirectory(state.CutsceneCaptureDirectory!);
             Bgra32[] capture = new Bgra32[_window.Width * _window.Height];
@@ -676,8 +676,8 @@ public sealed partial class GameHost
             string path = Path.Combine(
                 state.CutsceneCaptureDirectory!,
                 state.CutsceneCaptureEvery > 0
-                    ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp")
-                    : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
+                    ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}.bmp")
+                    : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
             BitmapWriter.Write(path, _window.Width, _window.Height, capture);
             _logger.Information("CutsceneCapture", $"Wrote {path}.");
             state.CutsceneCaptureTick += state.CutsceneCaptureEvery;

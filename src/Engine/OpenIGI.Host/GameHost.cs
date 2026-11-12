@@ -168,15 +168,31 @@ public sealed partial class GameHost : IDisposable
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     // The first game's mission, its world, and the host's side of it.
     private readonly MissionHostServices _missionHost;
-    private readonly IHostedMission _hosted;
+    private IHostedMission _hosted = null!;
 
     // Starts the mission that is up afresh: the pause menu's restart, which a save game's load asks for too.
     private Action? _restartMission;
     private Action? _resumeMission;
-    private readonly MissionState _mission;
+    private MissionState _mission = null!;
 
     // The player the host steers and looks through, when the mission has one.
-    private IHostedPlayer? HostedPlayer => _hosted.Player;
+
+    // Holds the standing player still while something else has the pointer: nothing the mouse or the keys did since the last
+    // tick goes through, and taking the cursor back is not read as aim.
+    private void HoldPlayerStill()
+    {
+        if (TitlePlayer is not null)
+        {
+            ForgetTitleInput();
+            _titleFeatures?.Look?.ResetLook();
+        }
+    }
+
+    // Lets go of the standing player's look while another camera has the mouse, so handing it back is not read as aim.
+    private void ReleasePlayerLook() => _titleFeatures?.Look?.ResetLook();
+
+    // Whether a player stands in the mission.
+    private bool PlayerStands => TitlePlayer is not null;
 
     // The console's handle on the content layers.
     private readonly ContentLayerCommands _contentLayers;
@@ -239,7 +255,6 @@ public sealed partial class GameHost : IDisposable
 
     // --- The player, the held weapon, the HUD and the soldiers ---
     private IHeldWeaponPresenter? _heldWeapon;
-    private IGunPickupPresenter? _gunPickupRenderer;
 
     // The over-the-shoulder camera's and the flashlight's wall cast, cached against the collision it is built from.
     private DebugOverlayRenderer? _debugOverlay;
@@ -252,16 +267,12 @@ public sealed partial class GameHost : IDisposable
     private long _titleCycleLeg;
     private int _missionCycleMission;
 
-    private IBulletMarkPresenter? _marks;
 
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
     // and the player's own material lookup already use.
 
-    private ICameraStatusLightPresenter? _cameraStatusLights;
     private ModelGlowRenderer? _modelGlows;
-    private IGrenadePresenter? _grenadeRenderer;
-    private IMissilePresenter? _missileRenderer;
 
     // How the level's models give up detail with distance, or none.
     private ModelLodPolicy? _modelLod;
@@ -352,8 +363,7 @@ public sealed partial class GameHost : IDisposable
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
         _missionHost = new MissionHostServices(this);
-        _hosted = titles.CreateHostedMission(_missionHost);
-        _mission = _hosted.World;
+        BindMission(titles, binding);
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,
@@ -370,7 +380,6 @@ public sealed partial class GameHost : IDisposable
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
-        _gameplay = binding.Gameplay;
         _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
         _options = options;
@@ -383,7 +392,7 @@ public sealed partial class GameHost : IDisposable
         _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
-        _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this), _work);
+        _effects = new WorldEffects(device, logger, () => _mission.SoundRandom, new WorldEffectsHost(this), _work);
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);
@@ -945,7 +954,6 @@ public sealed partial class GameHost : IDisposable
         _menuBackdrop.Dispose();
         _menuFlow.Dispose();
         _heldWeapon?.Dispose();
-        _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _touchIcons?.Dispose();
@@ -954,12 +962,9 @@ public sealed partial class GameHost : IDisposable
         _mapComputerDevice?.Dispose();
         _tacticalComputer?.Dispose();
         _messages?.Dispose();
-        _marks?.Dispose();
+        (_worldView as IDisposable)?.Dispose();
         _effects.Dispose();
-        _cameraStatusLights?.Dispose();
         _modelGlows?.Dispose();
-        _grenadeRenderer?.Dispose();
-        _missileRenderer?.Dispose();
         _retailMenus?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();

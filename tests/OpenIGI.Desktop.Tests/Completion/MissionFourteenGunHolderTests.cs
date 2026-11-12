@@ -48,8 +48,8 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
             Step(host, 300);
             foreach (GameTask holder in holders)
             {
-                Assert.NotNull(runtime.GunTurret(holder, 0));
-                Assert.Equal((1, false), runtime.GunHolderState(holder));
+                Assert.NotNull(runtime.Vehicles.GunTurret(holder, 0));
+                Assert.Equal((1, false), runtime.Vehicles.GunHolderState(holder));
             }
 
             // On, still the guards' side: the guards are friends, the player (far off) its only enemy, and nothing fires.
@@ -59,9 +59,9 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
                 Step(host, 1);
                 foreach (GameTask holder in holders)
                 {
-                    Assert.Equal((1, true), runtime.GunHolderState(holder));
-                    Assert.False(runtime.GunTurret(holder, 0)!.Firing, $"holder {holder.Id} fired while on the guards' side");
-                    Assert.All(runtime.GunHolderRecord(holder)!.Enemies, enemy => Assert.IsType<PlayerCamera>(enemy.Key));
+                    Assert.Equal((1, true), runtime.Vehicles.GunHolderState(holder));
+                    Assert.False(runtime.Vehicles.GunTurret(holder, 0)!.Firing, $"holder {holder.Id} fired while on the guards' side");
+                    Assert.All(runtime.Vehicles.GunHolderRecord(holder)!.Enemies, enemy => Assert.IsType<PlayerCamera>(enemy.Key));
                 }
             }
 
@@ -73,13 +73,13 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
                 Step(host, 1);
                 foreach (GameTask holder in holders)
                 {
-                    Assert.Equal(0, runtime.GunHolderState(holder)!.Value.Team);
-                    VehicleGunTurret turret = runtime.GunTurret(holder, 0)!;
+                    Assert.Equal(0, runtime.Vehicles.GunHolderState(holder)!.Value.Team);
+                    VehicleGunTurret turret = runtime.Vehicles.GunTurret(holder, 0)!;
                     fired += turret.Firing ? 1 : 0;
                     if (tick % 30 == 0)
                     {
                         trace.AppendLine(CultureInfo.InvariantCulture,
-                            $"{tick} holder {holder.Id}: seen [{string.Join(", ", runtime.GunHolderRecord(holder)!.Enemies.Where(e => e.Seen).Select(e => Describe(e.Key)))}] yaw {turret.Yaw:0.00} pitch {turret.Pitch:0.00} firing {turret.Firing}");
+                            $"{tick} holder {holder.Id}: seen [{string.Join(", ", runtime.Vehicles.GunHolderRecord(holder)!.Enemies.Where(e => e.Seen).Select(e => Describe(e.Key)))}] yaw {turret.Yaw:0.00} pitch {turret.Pitch:0.00} firing {turret.Firing}");
                     }
                 }
             }

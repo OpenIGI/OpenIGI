@@ -101,7 +101,7 @@ public sealed partial class GameHost
             return TouchControlMode.Edit;
         }
 
-        if (!_menuFlow.MenuMode && (_mission.Cutscenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true }))
+        if (!_menuFlow.MenuMode && (_mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true }))
         {
             return TouchControlMode.Cutscene;
         }

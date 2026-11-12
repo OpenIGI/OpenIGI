@@ -28,9 +28,10 @@ public interface IMissionTickHost
     /// <summary>Steps the weather, which falls whatever the player is doing.</summary>
     void StepWeather();
 
-    /// <summary>Plays the vehicles' engines and guns as the cutscene runtime now has them.</summary>
-    /// <param name="cutscenes">The cutscene runtime.</param>
-    void SoundVehicles(CutsceneRuntime cutscenes);
+    /// <summary>Plays the level's engines and vehicle guns as they sound this tick.</summary>
+    /// <param name="engines">What hums, drives or turns: the vehicles and the rotating objects.</param>
+    /// <param name="guns">The vehicle guns that fired.</param>
+    void SoundVehicles(IEnumerable<VehicleSoundSource> engines, IEnumerable<VehicleGunSound> guns);
 
     /// <summary>Gets the log.</summary>
     IOpenIgiLogger Logger { get; }

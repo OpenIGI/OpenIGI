@@ -224,7 +224,7 @@ public sealed partial class Igi2TitlePlayer
             return null;
         }
 
-        foreach (Computer.Igi2ComputerObjective objective in objectives)
+        foreach (OpenIGI.Game.Flow.ComputerObjective objective in objectives)
         {
             if (objective.TextResource.Length == 0 || objective.IsComplete || objective.IsFailed)
             {

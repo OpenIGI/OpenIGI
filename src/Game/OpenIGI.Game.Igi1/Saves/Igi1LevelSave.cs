@@ -21,12 +21,12 @@ internal static class Igi1LevelSave
         Stream(exchange, world.MissileStream.Random);
         Stream(exchange, world.Soldiers?.AiRandom);
 
-        int[] waits = exchange.Run([.. world.MineFields.Select(static f => f.Pause.Ticks)], static (e, ticks) => e.Int(ticks));
+        int[] waits = exchange.Run([.. world.MineFields.Select(static f => f.Pause)], static (e, ticks) => e.Int(ticks));
         if (exchange.IsReading)
         {
             for (int i = 0; i < world.MineFields.Count && i < waits.Length; i++)
             {
-                world.MineFields[i].Pause.Ticks = waits[i];
+                world.MineFields[i].Pause = waits[i];
             }
         }
 

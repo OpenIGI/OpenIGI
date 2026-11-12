@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 /// <remarks>
 /// The server has no screen for a partner, and its sound stream is its own player's: so nothing is drawn or played here.
 /// The partner's client takes each record from its snapshot and makes the same call on its own
-/// <see cref="LocalPlayerSenses"/> (<see cref="Replay"/>), drawing on its own stream as its own handlers would. A shove is
+/// <see cref="Player.Igi1PlayerSenses"/> (<see cref="Replay"/>), drawing on its own stream as its own handlers would. A shove is
 /// the one record that is not a sense: the client moves its own body by it (<see cref="TryShove"/>).
 /// </remarks>
 internal sealed class RemotePlayerSenses(Func<int> entity, Func<long> commandTick) : IPlayerSenses

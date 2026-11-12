@@ -204,7 +204,7 @@ public sealed class RetailIgi2LevelAiTests
     public void A_soldier_with_a_mind_stands_on_its_graph()
     {
         (RetailIgi2Mission1 m, Igi2Soldiers soldiers, Igi2AiWorld _, _) = Build();
-        m.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         for (int tick = 0; tick < 600; tick++)
         {
             m.Run.Tick();
@@ -242,7 +242,7 @@ public sealed class RetailIgi2LevelAiTests
     public void A_soldier_fights_the_player_in_front_of_him()
     {
         (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build(facing: 400);
-        m.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         Igi2HumanAi mind = (Igi2HumanAi)m.Tree.OfType<Igi2HumanSoldierTask>().Single(static t => t.Id == 400).Body!.Mind!;
         bool seen = false, held = false;
         int shots = 0, last = mind.AmmoInWeapon();
@@ -295,7 +295,7 @@ public sealed class RetailIgi2LevelAiTests
     public void Soldiers_and_squads_saved_and_loaded_are_as_they_were()
     {
         (RetailIgi2Mission1 played, Igi2Soldiers bodies, _, _) = Build();
-        played.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        played.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         for (int tick = 0; tick < 300; tick++)
         {
             played.Run.Tick();

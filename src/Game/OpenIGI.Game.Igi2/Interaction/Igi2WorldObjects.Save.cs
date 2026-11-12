@@ -37,21 +37,3 @@ public sealed partial class Igi2EditRigidObjTask : ISavedState
         Ride(position, orientation, _movedTick);
     }
 }
-
-/// <content>Its save state, <c>MineField_ptSerializeParameterList</c>: the ticks before it may explode again.</content>
-public sealed partial class Igi2MineFieldTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(Pause);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        Pause = reader.Int();
-    }
-}

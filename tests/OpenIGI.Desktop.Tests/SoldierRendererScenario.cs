@@ -64,7 +64,8 @@ internal sealed class SoldierRendererScenario(
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
 
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
@@ -83,6 +84,7 @@ internal sealed class SoldierRendererScenario(
             new ConditionalContainerGate(loop.Variables).Prepare(root);
             cutscenes = new CutsceneRuntime(root, loop.Variables);
             objectives = new MissionObjectiveRuntime(root, loop.Variables, native: cutscenes.TryInvokeNative);
+            objectives.AttachTo(cutscenes.Walker);
         }
 
         RecordingGraphicsDevice device = new();

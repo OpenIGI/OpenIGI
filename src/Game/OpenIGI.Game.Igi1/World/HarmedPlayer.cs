@@ -47,9 +47,9 @@ public readonly record struct PlayerFall(
 /// original's player handlers make besides the damage itself, each one primitive, in the handlers' own order.
 /// </summary>
 /// <remarks>
-/// The mission's own player's are <see cref="LocalPlayerSenses"/>, which draw on the sound stream exactly as the
+/// The mission's own player's are <see cref="Player.Igi1PlayerSenses"/>, which draw on the sound stream exactly as the
 /// original's handlers do. A co-op partner's are its client's: the server records each call and the partner's own
-/// game makes it, through its own <see cref="LocalPlayerSenses"/>.
+/// game makes it, through its own <see cref="Player.Igi1PlayerSenses"/>.
 /// </remarks>
 public interface IPlayerSenses
 {
@@ -125,7 +125,7 @@ internal sealed class MissionPlayer(MissionWorld mission, IPlayerSenses senses) 
     public PlayerCamera? Rig => mission.Player;
 
     /// <inheritdoc/>
-    public HumanHealth Health => mission.PlayerHealth;
+    public HumanHealth Health => mission.PlayerLife.Health;
 
     /// <inheritdoc/>
     public bool IsDead

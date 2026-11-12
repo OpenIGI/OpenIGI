@@ -154,9 +154,9 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game carries {string.Join(", ", Kit(pair.Joiner!.World.Player!))}");
 
         // Both wounded and living; the next round (the match begun again in place) puts them back whole, on both games.
-        pair.Host.World.PlayerHealth.Apply(13, 0.5f);
+        pair.Host.World.PlayerLife.Health.Apply(13, 0.5f);
         pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player)).Health.Apply(13, 0.5f);
-        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction < 0.9f, 30 * 3) >= 0, "the joiner never saw its wound");
+        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerLife.Health.RemainingFraction < 0.9f, 30 * 3) >= 0, "the joiner never saw its wound");
 
         // Each carries a rifle with rounds spent into the restart; the match played again arms both from nothing.
         IModeHost modes = pair.Session.Session;
@@ -168,8 +168,8 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => Kit(pair.Host.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(hostKit), 30 * 3) >= 0, $"the host restarted with {string.Join(", ", Kit(pair.Host.World.Player!))}");
         Assert.True(Kit(partner.Player).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), $"the joiner restarted with {string.Join(", ", Kit(partner.Player))}");
         Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game restarted with {string.Join(", ", Kit(pair.Joiner!.World.Player!))}");
-        Assert.True(pair.RunUntil(() => pair.Host.World.PlayerHealth.RemainingFraction >= 1f && partner.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the server kept the wounds");
-        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction >= 1f, 30 * 3) >= 0, "the joiner's own game kept its wound");
+        Assert.True(pair.RunUntil(() => pair.Host.World.PlayerLife.Health.RemainingFraction >= 1f && partner.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the server kept the wounds");
+        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerLife.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the joiner's own game kept its wound");
 
         // The sides are I.G.I. 2's.
         Assert.Equal(("IGI", "Conspiracy"), (MatchState.TeamName(TeamRoster.Good), MatchState.TeamName(TeamRoster.Bad)));
@@ -780,7 +780,7 @@ public sealed class Igi1VersusTests
 
         // Aimed at the chest where the joiner's own game draws the host, clicked; until the host falls or ten rounds are out.
         int before = joiner.Player.Weapons!.ShotSequence;
-        float damage = pair.Host.World.PlayerHealth.Damage;
+        float damage = pair.Host.World.PlayerLife.Health.Damage;
         int landed = 0;
         int frame = 0;
         pair.RunUntil(
@@ -795,10 +795,10 @@ public sealed class Igi1VersusTests
                 }
 
                 pair.JoinerInput.Mouse.SetButton(OpenIGI.Input.MouseButton.Left, frame++ % 6 < 2);
-                if (pair.Host.World.PlayerHealth.Damage != damage)
+                if (pair.Host.World.PlayerLife.Health.Damage != damage)
                 {
                     landed++;
-                    damage = pair.Host.World.PlayerHealth.Damage;
+                    damage = pair.Host.World.PlayerLife.Health.Damage;
                 }
 
                 return pair.Host.World.IsPlayerDead || joiner.Player.Weapons.ShotSequence - before >= 10;

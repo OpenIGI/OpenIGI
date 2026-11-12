@@ -3,7 +3,7 @@ using OpenIGI.Game.Igi2.Saves;
 namespace OpenIGI.Game.Igi2.Interaction;
 
 /// <content>Its save state, <c>ExplodeObject_ptSerializeParameterList</c>.</content>
-public sealed partial class Igi2ExplodeObjectTask : ISavedState
+public partial class Igi2ExplodeObjectTask : ISavedState
 {
     /// <inheritdoc/>
     public void WriteState(StateWriter writer) => Explosive.WriteState(writer);

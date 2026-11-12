@@ -121,7 +121,7 @@ public sealed class ElevatorSwitchInteractionTests
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
             root, mission, doors, variables, elevators);
         PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
-        DeclaredTask declared = Assert.IsType<DeclaredTask>(elevator.Task);
+        DeclaredTask declared = Assert.IsAssignableFrom<DeclaredTask>(elevator.Task);
 
         int startFloor = Settle(elevator, interactions, elevators, doors);
         int targetFloor = startFloor == 0 ? 1 : 0;
@@ -358,6 +358,7 @@ public sealed class ElevatorSwitchInteractionTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

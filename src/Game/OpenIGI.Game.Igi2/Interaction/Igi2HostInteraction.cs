@@ -83,7 +83,7 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Found as that game's player finds it (<see cref="WorldInteractionRegistry.Resolve(Vector3d, float, float)"/>): while its task
+    /// Found as that game's player finds it (<c>WorldInteractionRegistry.Resolve</c>): while its task
     /// is in the world and it is to be had, only from the side that game offers it from (<see cref="WorldInteraction.CanOfferFrom"/>),
     /// so not through the wall behind it, and then from its nearest spot to the view, and a door from its own spot too, in front of
     /// the view and within reach.

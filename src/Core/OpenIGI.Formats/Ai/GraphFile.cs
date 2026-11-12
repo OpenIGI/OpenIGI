@@ -106,7 +106,14 @@ public sealed class GraphFile
     /// no table at all rather than a one-entry one. Every retail file declares far more than one slot and
     /// carries a table.
     /// </remarks>
-    public GraphRouteTable? RouteTable { get; }
+    public GraphRouteTable? RouteTable { get; private set; }
+
+    /// <summary>
+    /// Gives a graph that ships no route table one worked out from its links (<see cref="GraphRouteTable.FromLinks"/>): another
+    /// game's graph, which that game searches as it walks, for a walker that looks its routes up.
+    /// </summary>
+    /// <remarks>A graph that ships its table keeps it. Its nodes should stand where they will be walked first.</remarks>
+    public void RouteFromLinks() => RouteTable ??= GraphRouteTable.FromLinks(MaxNodes, Nodes, Links);
 
     /// <summary>Gets the per-node data only the positional variant carries, in node order.</summary>
     /// <remarks>Empty for a named file, which has no equivalent.</remarks>
@@ -136,6 +143,24 @@ public sealed class GraphFile
     /// 4019, 264 nodes) says 0.5 while its small graphs say 1. Read live from a retail run with the probe.
     /// </remarks>
     public double CoverMidOffsetMetres { get; set; } = 1.0;
+
+    /// <summary>Moves each node to where the level that owns the graph placed it, in place of the graph's own offset.</summary>
+    /// <param name="placed">Where the node of an id stands in the world, or <see langword="null"/> to leave it where it is.</param>
+    /// <remarks>
+    /// For a graph another game reads and places by its own rules -- its nodes in a moving parent's frame, its positions in its
+    /// own arithmetic -- so this game walks the nodes where that game's level has them.
+    /// </remarks>
+    public void PlaceNodes(Func<int, Vector3d?> placed)
+    {
+        ArgumentNullException.ThrowIfNull(placed);
+        foreach (GraphNode node in Nodes)
+        {
+            if (placed(node.Id) is { } position)
+            {
+                node.Position = position;
+            }
+        }
+    }
 
     /// <summary>
     /// Transforms every node's position from the graph's own frame into world space by adding an offset.
@@ -286,14 +311,19 @@ public sealed class GraphFile
 
     /// <summary>Reads a graph file, picking the variant from its first four bytes.</summary>
     /// <param name="data">The file bytes.</param>
+    /// <param name="idLimit">
+    /// The first node id dropped: the first game's own, <see cref="GraphNode.IdLimit"/>, or a higher one for a graph another game
+    /// wrote, whose ids reach further.
+    /// </param>
     /// <returns>The graph.</returns>
     /// <exception cref="GraphFormatException">The stream runs out mid-value, or a node id repeats.</exception>
-    public static GraphFile Read(ReadOnlyMemory<byte> data)
+    public static GraphFile Read(ReadOnlyMemory<byte> data, int idLimit = GraphNode.IdLimit)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(idLimit);
         var reader = new GraphStreamReader(data);
         if (data.Length >= 4 && reader.ReadRawUInt32() == Magic)
         {
-            return ReadNamed(reader, data.Length);
+            return ReadNamed(reader, data.Length, idLimit);
         }
 
         reader.Rewind();
@@ -316,9 +346,9 @@ public sealed class GraphFile
         return map;
     }
 
-    private static GraphFile ReadNamed(GraphStreamReader reader, int length)
+    private static GraphFile ReadNamed(GraphStreamReader reader, int length, int idLimit)
     {
-        var builder = new Builder(positional: false);
+        var builder = new Builder(positional: false, idLimit);
 
         // The staging buffer 0x4FAF50 clears and 0x4FB030 commits from. Kept as one mutable group so a
         // file that omits or reorders a field behaves exactly as the original's globals would.
@@ -488,7 +518,7 @@ public sealed class GraphFile
     public override string ToString() =>
         $"{(IsPositional ? "positional" : "named")} graph, {Nodes.Count} of {MaxNodes} slots, {Links.Count} links";
 
-    private sealed class Builder(bool positional)
+    private sealed class Builder(bool positional, int idLimit = GraphNode.IdLimit)
     {
         private GraphNode?[] _slots = [];
         private int _maxNodes;
@@ -517,7 +547,7 @@ public sealed class GraphFile
 
         public void AddNode(int id, Vector3d position, float gamma, float radius, int materialId, string criteriaName)
         {
-            if (id >= GraphNode.IdLimit)
+            if (id >= idLimit)
             {
                 // 0x4F9510's first line: too large, dropped without a word.
                 Discarded.Add(id);

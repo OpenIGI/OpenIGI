@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -10,120 +9,62 @@ namespace OpenIGI.Presentation.Rendering;
 /// swaps to, and the door, lift, cutscene, rotor, swivel and stand transforms that move it.
 /// </summary>
 /// <remarks>
+/// <para>
 /// One precedence for every reader -- the frame's resolve, the selection outline and the decal and
 /// mark poses -- so none of them can drift from what the draw shows.
+/// </para>
+/// <para>
+/// It knows no door, lift or camera: what a title's objects do to a placement it asks of the title
+/// (<see cref="IPlacementObjects"/>, and the narrower contracts beside it).
+/// </para>
 /// </remarks>
 internal sealed class WorldPlacementTransforms
 {
-    /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
-    internal DoorRegistry? Doors
+    private IPlacementObjects? _objects;
+
+    /// <summary>Gets or sets the title's objects that move, turn, break and take away placements.</summary>
+    /// <remarks>Setting it is a claim made or let go, whichever objects it now answers for.</remarks>
+    internal IPlacementObjects? Objects
     {
-        get => _doors;
-        set => (_doors, _) = (value, Claimed());
+        get => _objects;
+        set => (_objects, _) = (value, Claimed());
     }
 
-    /// <summary>Gets or sets the live elevator transforms applied to lift placements.</summary>
-    internal ElevatorRegistry? Elevators
-    {
-        get => _elevators;
-        set => (_elevators, _) = (value, Claimed());
-    }
-
-    /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
-    internal AlarmSpeakerRegistry? AlarmSpeakers
-    {
-        get => _alarmSpeakers;
-        set => (_alarmSpeakers, _) = (value, Claimed());
-    }
-
-    /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
-    internal DestructibleObjectRegistry? Destructibles { get; set; }
-
-    /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
-    internal SecurityCameraRegistry? SecurityCameras { get; set; }
-
-    /// <summary>Gets or sets the title's turning placements, fans and radar heads.</summary>
+    /// <summary>Gets or sets the placements that turn for ever where they stand.</summary>
     internal IPlacementSpin? Spins { get; set; }
 
-    /// <summary>Gets or sets the title's moving placements, the doors it swings.</summary>
+    /// <summary>Gets or sets where a title's own objects move what they placed.</summary>
     internal IPlacementMotion? Motions { get; set; }
 
-    /// <summary>Gets or sets the title's destroyed placements.</summary>
+    /// <summary>Gets or sets which of a title's own placements are destroyed.</summary>
     internal IPlacementDestruction? Destruction { get; set; }
 
-    /// <summary>Gets or sets which placements a title's own level has in the world.</summary>
+    /// <summary>Gets or sets which of a title's own placements are in the world.</summary>
     internal IPlacementPresence? Presence { get; set; }
 
-    /// <summary>Gets the placements a bomb's blast has shattered into flying pieces, which leave the frame until the level is put back.</summary>
+    /// <summary>Gets the placements a blast has shattered into pieces.</summary>
     internal HashSet<WorldPlacement> Shattered { get; } = new(ReferenceEqualityComparer.Instance);
 
-    /// <summary>Gets or sets which variant each placement wears.</summary>
+    /// <summary>Gets or sets which of their models a title's own placements wear.</summary>
     internal IPlacementVariant? Variants { get; set; }
 
-    /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
-    internal CutsceneRuntime? Cutscenes
-    {
-        get => _cutscenes;
-        set => (_cutscenes, _) = (value, Claimed());
-    }
-
-    /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
-    internal WorldInteractionRegistry? Interactions
-    {
-        get => _interactions;
-        set => (_interactions, _) = (value, Claimed());
-    }
-
-    /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
-    internal RotatingObjectRegistry? RotatingObjects
-    {
-        get => _rotatingObjects;
-        set => (_rotatingObjects, _) = (value, Claimed());
-    }
-
-    private DoorRegistry? _doors;
-    private ElevatorRegistry? _elevators;
-    private AlarmSpeakerRegistry? _alarmSpeakers;
-    private CutsceneRuntime? _cutscenes;
-    private WorldInteractionRegistry? _interactions;
-    private RotatingObjectRegistry? _rotatingObjects;
-
-    /// <summary>Gets or sets the frame's position between the last two ticks, 0–1.</summary>
+    /// <summary>Gets or sets how far the frame is between two ticks.</summary>
     internal float FrameAlpha { get; set; } = 1f;
 
-    /// <summary>Gets or sets whether the frame's transforms are interpolated.</summary>
+    /// <summary>Gets or sets a value indicating whether motion is blended between ticks.</summary>
     internal bool FrameSmooth { get; set; }
-
-    // A StationaryGun's stand turns with its gun: 0x474420 writes the traverse into the task's own
-    // orientation (+112, the authored one times Z(traverse)), and that is what the stand model is drawn
-    // with. Only the traverse -- the elevation belongs to the gun alone -- so the yoke stays square to
-    // the gun it holds.
-    private bool TryGetStandOrientation(WorldPlacement placement, out Matrix3f orientation)
-    {
-        // The type test first: TryGet walks the level's interactions, and this runs per placement.
-        if (placement.Owner is { } owner
-            && string.Equals(owner.Type.Name, "StationaryGun", StringComparison.Ordinal)
-            && Interactions?.TryGet(owner, out WorldInteraction? interaction) == true
-            && interaction?.StationaryGun is { } gun)
-        {
-            orientation = gun.TurnedOrientation;
-            return true;
-        }
-
-        orientation = default;
-        return false;
-    }
 
     // Which of its variants a placement wears, or -1 for the model the walk placed: an index the title gives, whose binding resolved.
     internal int VariantOf(WorldPlacement placement) =>
         placement.Variants is { } variants
-        && (Variants?.VariantOf(placement) is >= 0 and int titled ? titled : AlarmSpeakers?.LightVariantOf(placement)) is int variant
+        && (Variants?.VariantOf(placement) is >= 0 and int titled ? titled : Objects?.LightVariantOf(placement)) is int variant
         && variant >= 0
         && variant < variants.Count
         && variants[variant] is not null
             ? variant
             : -1;
-    /// <summary>The placement as it is shown this frame: its worn variant, its destroyed model and its live transforms.</summary>
+
+    // The placement as it is shown: the variant it wears, its destroyed model where it has gone off, and where it stands now.
     internal WorldPlacement DisplayedPlacement(WorldPlacement placement)
     {
         WorldPlacement displayed = placement;
@@ -145,19 +86,11 @@ internal sealed class WorldPlacementTransforms
         return ApplyLiveTransforms(placement, displayed);
     }
 
-    /// <summary>Applies the per-frame transforms that turn or move a placement but never change its model.</summary>
-    /// <param name="placement">The authored placement the live state is keyed by.</param>
-    /// <param name="displayed">The placement as displayed so far.</param>
-    /// <returns><paramref name="displayed"/>, swivelled, spun, swung and turned on its stand as this frame has it.</returns>
     internal WorldPlacement ApplyLiveTransforms(WorldPlacement placement, WorldPlacement displayed)
     {
-        // The security camera's swivel changes the orientation but never the model, so the
+        // A security camera's swivel changes the orientation but never the model, so the
         // displayed placement cached above stays right; only the transform is per-frame.
-        if (SecurityCameras?.TryGetHeadOrientation(
-            placement,
-            FrameAlpha,
-            FrameSmooth,
-            out Matrix3f orientation) == true)
+        if (Objects?.TryGetSwivelOrientation(placement, FrameAlpha, FrameSmooth, out Matrix3f orientation) == true)
         {
             displayed = displayed with { Orientation = orientation };
         }
@@ -179,7 +112,7 @@ internal sealed class WorldPlacementTransforms
             displayed = displayed with { Position = moved, Orientation = movedOrientation };
         }
 
-        if (TryGetStandOrientation(placement, out Matrix3f stand))
+        if (Objects?.TryGetStandOrientation(placement, out Matrix3f stand) == true)
         {
             displayed = displayed with { Orientation = stand };
         }
@@ -187,51 +120,26 @@ internal sealed class WorldPlacementTransforms
         return displayed;
     }
 
-    /// <summary>Whether the renderer must swap an authored placement for its destroyed-model binding.</summary>
     internal bool UsesDestroyedReplacement(WorldPlacement placement) =>
         placement.DestroyedReplacement is not null
-        && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
-            || Destructibles?.IsDestroyed(placement) == true
-            || Destruction?.IsDestroyed(placement) == true);
+        && (Objects?.WearsDestroyedModel(placement) == true || Destruction?.IsDestroyed(placement) == true);
 
-    /// <summary>
-    /// Whether anything that moves placements claims this one: a door, a lift or what rides it, a cut-scene, a vehicle's gun or
-    /// plane part, an alarm light's reflector, something turning, a charge a plant can move. What none claims is drawn where the
-    /// level put it, as <see cref="ResolveDrawTransform"/> would find after asking each of them; the answer holds until
-    /// <see cref="PlacementClaims.Epoch"/> moves.
-    /// </summary>
-    internal bool IsClaimed(WorldPlacement placement)
-    {
-        GameTask owner = placement.Owner;
-        return _doors?.Claims(owner) == true
-            || _elevators?.Claims(owner) == true
-            || _cutscenes?.Claims(placement) == true
-            || _alarmSpeakers?.ClaimsReflector(placement) == true
-            || _rotatingObjects?.Claims(placement) == true
-            || _interactions?.ClaimsPlaced(owner) == true;
-    }
+    // Whether a placement has gone off: one of the title's objects says it is broken.
+    internal bool IsBroken(WorldPlacement placement) =>
+        Objects?.IsBroken(placement) == true || Destruction?.IsDestroyed(placement) == true;
 
-    // A registry swapped in or out is a claim made or let go.
-    private static bool Claimed()
+    internal bool IsClaimed(WorldPlacement placement) => _objects?.Claims(placement) == true;
+
+    // The title's objects swapped in or out is a claim made or let go.
+    private bool Claimed()
     {
-        PlacementClaims.Changed();
+        Swaps++;
         return true;
     }
 
-    /// <summary>
-    /// Works out where a placement is drawn this frame, after everything that can move it has moved it.
-    /// </summary>
-    /// <param name="placement">The placement being drawn.</param>
-    /// <param name="drawPosition">Receives the position to draw at.</param>
-    /// <param name="drawOrientation">Receives the orientation to draw with.</param>
-    /// <param name="rotorDraw">Receives the motion-blurred rotor state, when one applies.</param>
-    /// <param name="hasRotorDraw">Receives whether a rotor state applies.</param>
-    /// <remarks>
-    /// A door swings, an elevator carries what stands on it, a cutscene can seize either, and a rotor
-    /// smears across the frame. Pulled out of the draw loop so the selection outline resolves the same
-    /// transform from the same code: an outline computed a second way would drift off its subject the
-    /// moment any of these took hold, which is exactly when a reader is watching it.
-    /// </remarks>
+    /// <summary>Gets how many times the title's objects have been swapped in or out: each is a claim made or let go.</summary>
+    internal int Swaps { get; private set; }
+
     internal void ResolveDrawTransform(
         WorldPlacement placement,
         out Vector3d drawPosition,
@@ -239,77 +147,17 @@ internal sealed class WorldPlacementTransforms
         out RotorDrawState rotorDraw,
         out bool hasRotorDraw)
     {
+        if (Objects is { } objects)
+        {
+            objects.TryGetDrawTransform(
+                placement, FrameAlpha, FrameSmooth, out drawPosition, out drawOrientation, out rotorDraw, out hasRotorDraw);
+            return;
+        }
+
         drawPosition = placement.Position;
         drawOrientation = placement.Orientation;
         rotorDraw = default;
         hasRotorDraw = false;
-
-        if (Doors?.TryGetDrawTransform(
-            placement.Owner,
-            FrameAlpha,
-            FrameSmooth,
-            out Vector3d doorPosition,
-            out Matrix3f doorOrientation) == true)
-        {
-            drawPosition = doorPosition;
-            drawOrientation = doorOrientation;
-            if (Elevators?.TryGetDisplacement(
-                placement.Owner,
-                FrameAlpha,
-                FrameSmooth,
-                out Vector3d doorDisplacement) == true)
-            {
-                drawPosition += doorDisplacement;
-            }
-        }
-        else if (Elevators?.TryGetDrawTransform(
-            placement.Owner,
-            placement.Position,
-            placement.Orientation,
-            FrameAlpha,
-            FrameSmooth,
-            out Vector3d elevatorPosition,
-            out Matrix3f elevatorOrientation) == true)
-        {
-            drawPosition = elevatorPosition;
-            drawOrientation = elevatorOrientation;
-        }
-        else if (Cutscenes?.TryGetRotorDrawState(placement, out rotorDraw) == true)
-        {
-            drawPosition = rotorDraw.Position;
-            hasRotorDraw = true;
-        }
-        else if (Cutscenes?.TryGetPlacementDrawTransform(
-            placement,
-            out Vector3d cinematicPosition,
-            out Matrix3f cinematicOrientation) == true)
-        {
-            drawPosition = cinematicPosition;
-            drawOrientation = cinematicOrientation;
-        }
-        else if (AlarmSpeakers?.TryGetReflectorOrientation(placement, FrameAlpha, out Matrix3f reflectorOrientation) == true)
-        {
-            drawOrientation = reflectorOrientation;
-        }
-        else if (RotatingObjects?.TryGetDrawTransform(
-            placement,
-            FrameAlpha,
-            FrameSmooth,
-            out Vector3d rotatingPosition,
-            out Matrix3f rotatingOrientation) == true)
-        {
-            drawPosition = rotatingPosition;
-            drawOrientation = rotatingOrientation;
-        }
-        else if (Interactions?.TryGetPlacedPose(
-            placement.Owner,
-            out Vector3d placedUnits,
-            out Matrix3f placedOrientation) == true)
-        {
-            // A planted charge: state 36 moved its EditRigidObj to where the plant's trace struck.
-            drawPosition = placedUnits / WorldScene.UnitsPerMetre;
-            drawOrientation = placedOrientation;
-        }
     }
 
     // The transform a placement is drawn with this frame, through the same precedence the draw loop

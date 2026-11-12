@@ -132,6 +132,12 @@ public interface ITitlePlayer
     /// <summary>Gets how wide the eyes see, as the tangent of half the view's horizontal angle: one, ninety degrees, unless a zoom narrows it.</summary>
     float FieldOfViewScale => 1f;
 
+    /// <summary>
+    /// Gets where the player faces, as the remaster's compass reads it: forward is the sine and cosine of it across and along the
+    /// world; <see langword="null"/> where the title does not say.
+    /// </summary>
+    float? Heading => null;
+
     /// <summary>Gets a value indicating whether the title's level played a cutscene on the last tick, which Escape breaks rather than pausing.</summary>
     bool IsCutscenePlaying => false;
 

@@ -58,8 +58,30 @@ public partial class PatrolPathCommandTask : GameTask
 /// <c>graph1</c>.
 /// </para>
 /// </remarks>
-public partial class HumanAiTask : GameTask
+public partial class HumanAiTask : GameTask, OpenIGI.Game.Level.ILevelTicked
 {
+    /// <summary>
+    /// Gets or sets what carries out this task's run handler: the game whose soldier it drives; <see langword="null"/> while
+    /// nothing does.
+    /// </summary>
+    public OpenIGI.Game.Level.ITaskRun<HumanAiTask>? Runner { get; set; }
+
+    /// <summary>Runs the task for one tick, where the level's walk reaches it.</summary>
+    /// <param name="level">The level's run.</param>
+    /// <remarks>The original moves a soldier from here: <c>HumanAI</c>'s update (<c>0x44F410</c>) detects, takes its events, runs its action and sends its controls to the <c>HumanSoldier</c> above it, whose input handler (<c>0x45D040</c>) runs the body's update. The soldier's own run handler only runs its children.</remarks>
+    public void Run(OpenIGI.Game.Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
+
     /// <summary>Gets or sets the AI type, as the constant name level data spells it.</summary>
     /// <remarks>For example <c>AITYPE_PATROL_AK</c>; <see cref="ResolvedType"/> turns it into a number.</remarks>
     [ScriptParam(ScriptParamType.String32, "AI Type")]

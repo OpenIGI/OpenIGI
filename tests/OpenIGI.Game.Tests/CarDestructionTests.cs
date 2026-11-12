@@ -56,7 +56,7 @@ public sealed class CarDestructionTests
         // A partner's LAW blew the truck up on the server; the client's copy is struck by the server's word, and its own
         // car tick runs the same two blasts and the same wreck.
         (LevelTask root, WorldScene world, ScriptVarRegistry variables, VehiclePhysicsRegistry physics) = LoadMissionOne();
-        DeclaredTask truckTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(EscapeTruckId));
+        DeclaredTask truckTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(EscapeTruckId));
         DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
             root, world.Placements, variables, physics, new IgiRandom());
         DestructibleObject truck = Assert.Single(
@@ -86,7 +86,7 @@ public sealed class CarDestructionTests
     public void MissionOneSeesItsEscapeTruckExplode()
     {
         (LevelTask root, WorldScene world, ScriptVarRegistry variables, VehiclePhysicsRegistry physics) = LoadMissionOne();
-        DeclaredTask truckTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(EscapeTruckId));
+        DeclaredTask truckTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(EscapeTruckId));
         DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
             root, world.Placements, variables, physics, new IgiRandom());
         LevelExpressionRuntime expressions = new(variables);
@@ -184,11 +184,11 @@ public sealed class CarDestructionTests
         // children (0x401780) and takes the tank out of the world (message 0x4CEA20); the wreck's initializer
         // (0x4F2B90) commits it to the world like any placed object, so it collides.
         (LevelTask root, WorldScene world, ScriptVarRegistry variables, VehiclePhysicsRegistry physics) = LoadMission(7);
-        DeclaredTask tankTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(354));
+        DeclaredTask tankTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(354));
         DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
             root, world.Placements, variables, physics, new IgiRandom());
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
-        solids.Destructibles = destructibles;
+        solids.PlacementDestroyed = destructibles.IsDestroyed;
 
         DestructibleObject tank = Assert.Single(
             destructibles.Objects,
@@ -262,7 +262,7 @@ public sealed class CarDestructionTests
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

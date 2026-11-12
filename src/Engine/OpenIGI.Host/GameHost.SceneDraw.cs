@@ -282,11 +282,11 @@ public sealed partial class GameHost
         DrawTitleWorldModels(eye, projection);
 
         _device.SetObjectMotion(true);
-        _gunPickupRenderer?.Draw(eye, projection);
+        WorldView?.DrawLyingWeapons(eye, projection);
         DrawBombs(eye, projection);
 
         // The grenades, rockets and launcher rounds in the air, solid geometry among the world's own.
-        WorldView?.DrawProjectiles(_grenadeRenderer, _missileRenderer, eye, projection, smoothPresentation ? tickBlend : 1f);
+        WorldView?.DrawProjectiles(eye, projection, smoothPresentation ? tickBlend : 1f);
 
         _device.SetObjectMotion(false);
     }
@@ -351,9 +351,9 @@ public sealed partial class GameHost
         EndStageIfSlow("the soldiers");
 
         // The marks rounds have left, over the world and under the first-person rig.
-        if (_marks is not null && CombatEffectCVars.BulletMarks.Value)
+        if (CombatEffectCVars.BulletMarks.Value)
         {
-            WorldView?.DrawMarks(_marks, eye, projection, _world.DrawPoses);
+            WorldView?.DrawMarks(eye, projection, _world.DrawPoses);
         }
     }
 
@@ -611,29 +611,21 @@ public sealed partial class GameHost
 
         // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
         // red while confirming/detecting, and attached to the head as it pans.
-        if (_mission.SecurityCameras is { } statusCameras)
+        if (_mission.StatusCameras is { } statusCameras)
         {
-            _cameraStatusLights?.Draw(
-                statusCameras.Cameras,
-                eye,
-                projection,
-                tickBlend,
-                smoothPresentation);
+            WorldView?.DrawCameraLamps(statusCameras, eye, projection, tickBlend, smoothPresentation);
         }
 
         // An alarm light's turning reflector throws its red flare at the eye (0x439F10), with the camera lamps' sprite.
-        if (_mission.AlarmSpeakers is { Reflectors.Count: > 0 } lights)
+        if (_mission.AlarmFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f) is { Count: > 0 } flares)
         {
-            _cameraStatusLights?.DrawGlows(
-                lights.ReflectorFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f),
-                eye,
-                projection);
+            WorldView?.DrawGlows(flares, eye, projection);
         }
 
         // The glows of the models this frame drew (Glow_DrawSorted), over the finished scene with the other sprites.
         if (_world is { CollectGlows: true, DrawnGlows.Count: > 0 } glowing)
         {
-            _modelGlows ??= new ModelGlowRenderer(_device, _resources, _logger);
+            _modelGlows ??= new ModelGlowRenderer(_device, _resources, _titleRuntime.Layout.CommonSearchDirectory, _logger);
             _modelGlows.Draw(glowing.DrawnGlows, eye, projection);
         }
 

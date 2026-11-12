@@ -1,6 +1,7 @@
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.TestSupport;
@@ -197,6 +198,26 @@ public sealed class RetailIgi2AiDataTests
         Assert.Equal(6, paths.Count(p => p.GraphId == 2 && p.Commands.Any(c => c.Command is Igi2PatrolCommand.WalkTo or Igi2PatrolCommand.RunTo && graphs.Graph(2)!.Node(c.Parameter) is null)));
 
         Assert.Contains(paths.SelectMany(static p => p.Commands), static c => (c.Command, c.Parameter) == (Igi2PatrolCommand.Delay, 300));
+    }
+
+    [RequiresTitleDataFact("igi2")]
+    public void The_patrols_read_in_the_terms_both_games_share()
+    {
+        RetailIgi2LevelLoadTests.Harness harness = Harness();
+
+        foreach (Igi2PatrolPathTask path in RetailIgi2Mission1.All(harness.LevelRoot).OfType<Igi2PatrolPathTask>())
+        {
+            Igi2PatrolPathCommandTask[] kept = [.. path.Commands.Where(static c => c.Command is > Igi2PatrolCommand.None and <= Igi2PatrolCommand.SetSpeed)];
+            AiPatrolCommand[] shared = [.. path.SharedCommands()];
+            Assert.Equal(kept.Length, shared.Length);
+            for (int i = 0; i < kept.Length; i++)
+            {
+                AiPatrolCommand expected = kept[i].Command == Igi2PatrolCommand.Animation
+                    ? new AiPatrolCommand(AiPatrolCommandKind.Delay, Igi2PatrolPathTask.AnimationPauseTicks)
+                    : new AiPatrolCommand((AiPatrolCommandKind)kept[i].CommandValue, kept[i].Parameter);
+                Assert.Equal(expected, shared[i]);
+            }
+        }
     }
 
     private static float Distance(Igi2AiGraphNode a, Igi2AiGraphNode b) =>

@@ -253,7 +253,7 @@ public sealed class WorldScene
     /// </summary>
     /// <param name="task">The switch task to read.</param>
     /// <returns>The model name.</returns>
-    internal static string SwitchModelNameOf(DeclaredTask task) =>
+    public static string SwitchModelNameOf(DeclaredTask task) =>
         task.TryGetValue(SwitchModelParameter, out object? model) && model is string name && name.Length > 0
             ? name
             : "switch";

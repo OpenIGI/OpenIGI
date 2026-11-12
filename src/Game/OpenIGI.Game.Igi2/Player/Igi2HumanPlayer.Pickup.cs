@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Pickups;
 using OpenIGI.Game.Igi2.Weapons;
@@ -71,6 +72,22 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
         Surroundings.PlaySound(PickupSound);
     }
 
+    /// <summary>
+    /// Offers the level's other pickups -- its documents, key cards and disks -- to eyes at a place, whatever the hands are doing
+    /// (<c>GameFunctions_ePickupQTaskEvent</c>): this player's, or another game's player's standing in for it.
+    /// </summary>
+    /// <param name="viewPosition">Where the eyes are, in world units.</param>
+    public void OfferGenericPickups(Vector3d viewPosition)
+    {
+        foreach (Pickups.Igi2GenericPickupTask generic in GenericPickups)
+        {
+            if (generic.IsInWorld)
+            {
+                generic.Offer(viewPosition);
+            }
+        }
+    }
+
     /// <summary>Offers the player each of the level's pickups in turn, <c>HumanPlayer_Pickup</c> (<c>igi2 0x49F8C0</c>).</summary>
     /// <remarks>
     /// <para>
@@ -93,15 +110,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
             return;
         }
 
-        // Everything else on the pickup list is offered whatever the hands are doing (GameFunctions_ePickupQTaskEvent).
-        foreach (Pickups.Igi2GenericPickupTask generic in GenericPickups)
-        {
-            if (generic.IsInWorld)
-            {
-                generic.Offer(View.Position);
-            }
-        }
-
+        OfferGenericPickups(View.Position);
         if (Pickups is not { } pickups)
         {
             return;

@@ -25,8 +25,8 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// (<c>RunDelayed_Run</c>, <c>0x58FDB0</c>).
 /// </para>
 /// <para>
-/// A task whose behaviour lives outside the tree, the player's, is bound to its node (<see cref="LevelRun.Bind(GameTask, Action)"/>)
-/// and runs there, in the tree's order and under its containers' conditions. The tick rate is the shared
+/// A task whose behaviour lives outside the tree, the player's, names what carries out its run handler
+/// (<see cref="OpenIGI.Game.Player.HumanTask.Runner"/>) and runs there, in the tree's order and under its containers' conditions. The tick rate is the shared
 /// <see cref="LevelRun.Frequency"/>, <c>GAME_FREQUENCY</c>.
 /// </para>
 /// </remarks>
@@ -55,6 +55,12 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
 
     /// <summary>Gets the namespace the level's expressions resolve in.</summary>
     public NativeRegistry Natives { get; }
+
+    /// <summary>
+    /// Gets another game's humans joined to the level: struck by its blasts, told its AI events, and seen by its detectors as
+    /// its own are.
+    /// </summary>
+    public Game.World.LevelJoiners Joined { get; } = new();
 
     /// <summary>Gets the natives the level's script text may call.</summary>
     public Igi2ScriptFunctions Functions { get; }
@@ -127,14 +133,14 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
     protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        switch (task.Type.Name)
+        switch (task)
         {
-            case EngineTaskTypes.Level:
+            case LevelTask:
                 RunChildren(task);
                 CountTick();
                 break;
 
-            case EngineTaskTypes.Dynamic:
+            case DynamicTask:
                 RunChildren(task);
                 Dynamic?.Run();
                 RunDelayed();
@@ -142,10 +148,19 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
         }
     }
 
-    /// <summary>Runs an expression and keeps its value.</summary>
-    /// <param name="expression">The expression.</param>
-    /// <returns>Its value.</returns>
-    public double Evaluate(LevelExpression expression)
+    /// <inheritdoc/>
+    public override LevelExpression Compile(string? source, GameTask owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        return Igi2LevelExpressions.Create(source, owner.Name, Natives);
+    }
+
+    /// <inheritdoc/>
+    public override double EvaluateLine(string source) =>
+        Evaluate(Igi2LevelExpressions.Create(source, string.Empty, Natives));
+
+    /// <inheritdoc/>
+    public override double Evaluate(LevelExpression expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
         return expression.Run(Natives, Functions);

@@ -38,6 +38,9 @@ public interface IMissionSetupHost : IGuardRoundHost
     /// <summary>Gets where the game is installed, which the nav graphs are read from.</summary>
     string GamePath { get; }
 
+    /// <summary>Gets what runs work off the frame: the host's scheduler, which a mission hands its own reads to.</summary>
+    OpenIGI.Core.Threading.IWorkScheduler Work => OpenIGI.Core.Threading.InlineWorkScheduler.Instance;
+
     /// <summary>Gets a value indicating whether the level's cinematics play, or are broken as Escape breaks them.</summary>
     bool PlayCutscenes { get; }
 

@@ -149,7 +149,7 @@ public sealed class RetailBulletImpactMaterialTests
 
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

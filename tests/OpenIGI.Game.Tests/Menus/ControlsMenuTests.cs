@@ -163,6 +163,7 @@ public sealed class ControlsMenuTests
         PointerHost host = new();
         host.MoveTo(-100, -100, down: false);
         GameLoop loop = new(time: time, host: host);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         GameConfig config = GameConfig.CreateDefault();
 
         MenuSystem? menu = null;

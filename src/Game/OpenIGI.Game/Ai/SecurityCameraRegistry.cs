@@ -152,35 +152,40 @@ public sealed class SecurityCamera : Saves.IExchangedState
     private float _previousAlpha;
     private float _previousGamma;
 
-    internal SecurityCamera(DeclaredTask task)
+    /// <summary>Initializes a new instance of the <see cref="SecurityCamera"/> class from what its level declares of it.</summary>
+    /// <param name="owner">The camera's task.</param>
+    /// <param name="task">What the level declares of the camera.</param>
+    public SecurityCamera(DeclaredTask owner, ISecurityCameraDeclaration task)
     {
-        Task = task;
-        OnExpression = TextTrimmed(task, "On Expression");
-        HeadModelName = TextTrimmed(task, WorldScene.SecurityCameraModelParameters[1]);
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(task);
+        Task = owner;
+        OnExpression = task.OnExpression;
+        HeadModelName = task.CameraModel;
         if (HeadModelName.Length == 0)
         {
             HeadModelName = WorldScene.SecurityCameraModels[1];
         }
 
-        _holderGamma = RealFromFloatOrDouble(task, "Holder Gamma");
-        _cameraAlpha = RealFromFloatOrDouble(task, "Camera Alpha");
-        _cameraGamma = RealFromFloatOrDouble(task, "Camera Gamma");
-        _rightLimit = IntWidening(task, "Rotate Gamma Right (d)", 45) * DegreesToRadians;
-        _leftLimit = IntWidening(task, "Rotate Gamma Left (d)", 45) * DegreesToRadians;
-        _scanStep = IntWidening(task, "Rotate Gamma Speed (d/s)", 45) * DegreesToRadians / 30f;
-        _endDelayTicks = Math.Max(0, (int)(RealFromFloatOrDouble(task, "Gamma Delay (s)", 1f) * 30f));
+        _holderGamma = task.HolderGamma;
+        _cameraAlpha = task.CameraAlpha;
+        _cameraGamma = task.CameraGamma;
+        _rightLimit = task.RotateGammaRight * DegreesToRadians;
+        _leftLimit = task.RotateGammaLeft * DegreesToRadians;
+        _scanStep = task.RotateGammaSpeed * DegreesToRadians / 30f;
+        _endDelayTicks = Math.Max(0, (int)(task.GammaDelay * 30f));
 
-        double alpha = (IntWidening(task, "Viewcone Alpha (d)", 90) / 2.0) * Math.PI / 180.0;
-        double gamma = (IntWidening(task, "Viewcone Gamma (d)", 90) / 2.0) * Math.PI / 180.0;
-        double length = RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * WorldScene.UnitsPerMetre;
+        double alpha = (task.ViewconeAlpha / 2.0) * Math.PI / 180.0;
+        double gamma = (task.ViewconeGamma / 2.0) * Math.PI / 180.0;
+        double length = task.ViewconeLength * WorldScene.UnitsPerMetre;
         _viewCone = new AiSnapshotCone(alpha, gamma, length);
-        ViewconeAngle = IntWidening(task, "Viewcone Gamma (d)", 90) * DegreesToRadians;
-        ViewconeLength = ((X87)RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * 4096f).Value;
+        ViewconeAngle = task.ViewconeGamma * DegreesToRadians;
+        ViewconeLength = ((X87)task.ViewconeLength * 4096f).Value;
 
         CurrentAlpha = _cameraAlpha;
         _previousAlpha = CurrentAlpha;
         _previousGamma = CurrentGamma;
-        HeadPositionUnits = Vector(task, "Holder Position");
+        HeadPositionUnits = task.HolderPosition;
         HolderPositionUnits = HeadPositionUnits;
         RefreshTransform();
     }
@@ -204,7 +209,7 @@ public sealed class SecurityCamera : Saves.IExchangedState
     /// always reads the value the holder left last tick. The constructor (<c>0x4423F0</c>) starts it at nought:
     /// a camera's first tick is unpowered.
     /// </remarks>
-    public bool IsPowered { get; internal set; }
+    public bool IsPowered { get; set; }
 
     /// <summary>Gets the live/destroyed head's intact model name.</summary>
     public string HeadModelName { get; }
@@ -279,7 +284,8 @@ public sealed class SecurityCamera : Saves.IExchangedState
     /// <summary>Gets which half of the retail 16-tick lamp pulse is active.</summary>
     public bool IsLargeLampPulse => _lampPulseLarge;
 
-    internal void Bind(WorldPlacement placement)
+    /// <summary>Ties the camera to the placement it is drawn as.</summary>
+    public void Bind(WorldPlacement placement)
     {
         HeadPositionUnits = placement.Position * WorldScene.UnitsPerMetre;
         if (placement.Model.TryGetMagicVertex(1, out Vector3f viewVertex))
@@ -296,12 +302,14 @@ public sealed class SecurityCamera : Saves.IExchangedState
     // The camera as the match began, which a round puts back: its scan, its lamp, whether it was shot out or saw anyone.
     private Start _start;
 
-    internal void MarkLevelStart() => _start = new Start(
+    /// <summary>Marks the state the level starts in, to be put back by <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart() => _start = new Start(
         _targetGamma, _lampPulseCountdown, _scanDirection, _endDelay, _resumeScanDelay, _targetKey, _lampPulseLarge,
         IsPowered, HeadPositionUnits, CurrentAlpha, CurrentGamma, IsActive, IsDetection, IsLastDetection, DetectionTime,
         IsExploded, Beep, IsMoving, HolderPositionUnits, IsBodyTarget);
 
-    internal void ResetToLevelStart()
+    /// <summary>Puts back the state the level started in.</summary>
+    public void ResetToLevelStart()
     {
         Start s = _start;
         _targetGamma = s.TargetGamma;
@@ -388,7 +396,8 @@ public sealed class SecurityCamera : Saves.IExchangedState
         Vector3d HolderPositionUnits,
         bool IsBodyTarget);
 
-    internal void Destroy()
+    /// <summary>Breaks the camera: its lens is out for the rest of the level.</summary>
+    public void Destroy()
     {
         IsExploded = true;
         IsActive = false;
@@ -428,7 +437,8 @@ public sealed class SecurityCamera : Saves.IExchangedState
     // A co-op client's lens, posed by the server's as the newest snapshot has it instead of scanning: the client's copy of
     // the level holds only its own player, and a camera that answered to it alone would be red for a joiner no alarm heard
     // and green for a host the server's had seen. The lamp keeps its own pulse.
-    internal void TickMirrored(in ReplicatedCamera state)
+    /// <summary>Takes the camera as a co-op server sent it, on a machine that mirrors the level.</summary>
+    public void TickMirrored(in ReplicatedCamera state)
     {
         _previousAlpha = CurrentAlpha;
         _previousGamma = CurrentGamma;
@@ -455,7 +465,8 @@ public sealed class SecurityCamera : Saves.IExchangedState
         RefreshTransform();
     }
 
-    internal void Tick(
+    /// <summary>Advances the camera one tick: its power, its sweep and what its lens sees.</summary>
+    public void Tick(
         bool powered,
         IReadOnlyList<SecurityCameraSubject> subjects,
         WorldTraceCast? sight)
@@ -683,384 +694,45 @@ public sealed class SecurityCamera : Saves.IExchangedState
     }
 }
 
-/// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
-public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStateSource
+/// <summary>What a level declares of a security camera: where its holder hangs, how its head turns and what it sees.</summary>
+public interface ISecurityCameraDeclaration
 {
-    private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded) : Saves.IExchangedState
-    {
-        // Not retail: what a save keeps of a camera's control is whether it has raised its alarm.
-        public void Exchange(Saves.StateExchange exchange) => IsDetection = exchange.Bool(IsDetection);
+    /// <summary>Gets the expression that powers the camera.</summary>
+    string OnExpression { get; }
 
-        public DeclaredTask Task { get; } = task;
-        public string Expression { get; } = expression;
-        public Func<bool> IsExploded { get; } = isExploded;
-        public bool IsDetection { get; set; }
-    }
+    /// <summary>Gets the head's model; empty for the type's own.</summary>
+    string CameraModel { get; }
 
-    private readonly List<SecurityCamera> _cameras = [];
-    private readonly Dictionary<GameTask, SecurityCamera> _byTask = [];
-    private readonly Dictionary<SecurityCamera, int> _order = [];
-    private ReplicatedCamera[]? _mirror;
-    private readonly List<Control> _controls = [];
-    private readonly List<SecurityCameraSubject> _subjects = [];
-    private readonly LevelExpressionRuntime _expressions;
-    private readonly WorldTraceCast? _sight;
+    /// <summary>Gets the holder's heading, radians.</summary>
+    float HolderGamma { get; }
 
-    private SecurityCameraRegistry(LevelExpressionRuntime expressions, WorldTraceCast? sight)
-    {
-        _expressions = expressions;
-        _sight = sight;
-    }
+    /// <summary>Gets the head's pitch, radians.</summary>
+    float CameraAlpha { get; }
 
-    /// <summary>Gets every camera in task-update order.</summary>
-    public IReadOnlyList<SecurityCamera> Cameras => _cameras;
+    /// <summary>Gets the head's heading, radians.</summary>
+    float CameraGamma { get; }
 
-    /// <summary>Gets the number of <c>SCameraControl</c> aggregators.</summary>
-    public int ControlCount => _controls.Count;
+    /// <summary>Gets how far the head turns to its right, degrees.</summary>
+    int RotateGammaRight { get; }
 
-    /// <summary>
-    /// Gets or sets whether the lenses take their state from a co-op server's (<see cref="Mirror"/>) instead of scanning:
-    /// a client's. Their controls still read them as ever.
-    /// </summary>
-    public bool Mirrored { get; set; }
+    /// <summary>Gets how far the head turns to its left, degrees.</summary>
+    int RotateGammaLeft { get; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether every camera and camera control is held off, whatever its expressions say: a
-    /// versus match's arena, where a camera would only sound an alarm nobody plays against. The models stay, dark and still.
-    /// </summary>
-    public bool SwitchedOff { get; set; }
+    /// <summary>Gets how fast the head turns, degrees a second.</summary>
+    int RotateGammaSpeed { get; }
 
-    /// <summary>Raised on a client when the server's word is that an intact lens here was destroyed, before it is marked so.</summary>
-    public Action<SecurityCamera>? MirroredDestruction { get; set; }
+    /// <summary>Gets how long the head rests at each end of its sweep, seconds.</summary>
+    float GammaDelay { get; }
 
-    /// <summary>Gets every camera as a co-op server sends them, in the level's own order.</summary>
-    /// <returns>Their states, or <see langword="null"/> when the level has none.</returns>
-    public ReplicatedCamera[]? Replicate()
-    {
-        if (_cameras.Count == 0)
-        {
-            return null;
-        }
+    /// <summary>Gets the view cone's whole pitch angle, degrees.</summary>
+    int ViewconeAlpha { get; }
 
-        ReplicatedCamera[] states = new ReplicatedCamera[Math.Min(_cameras.Count, ReplicatedCamera.MaxPerSnapshot)];
-        for (int i = 0; i < states.Length; i++)
-        {
-            states[i] = _cameras[i].Replicate();
-        }
+    /// <summary>Gets the view cone's whole heading angle, degrees.</summary>
+    int ViewconeGamma { get; }
 
-        return states;
-    }
+    /// <summary>Gets how far the camera sees, metres.</summary>
+    float ViewconeLength { get; }
 
-    /// <summary>Takes the server's cameras, as the newest snapshot has them, for each lens's next update to be posed by.</summary>
-    /// <param name="states">Their states, in the level's own order.</param>
-    public void Mirror(ReplicatedCamera[]? states) => _mirror = states;
-
-    // Each control's detection as the match began.
-    private bool[] _controlsAtStart = [];
-
-    /// <inheritdoc/>
-    public void MarkLevelStart()
-    {
-        foreach (SecurityCamera camera in _cameras)
-        {
-            camera.MarkLevelStart();
-        }
-
-        _controlsAtStart = [.. _controls.Select(static c => c.IsDetection)];
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>Every camera whole, posed and scanning as the match began; a client's mirror waits for the server's next word.</remarks>
-    public void ResetToLevelStart(World.ObjectCollisionIndex? solids)
-    {
-        foreach (SecurityCamera camera in _cameras)
-        {
-            camera.ResetToLevelStart();
-        }
-
-        for (int i = 0; i < _controls.Count && i < _controlsAtStart.Length; i++)
-        {
-            _controls[i].IsDetection = _controlsAtStart[i];
-        }
-
-        _mirror = null;
-    }
-
-    /// <inheritdoc/>
-    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(World.ObjectCollisionIndex? solids) =>
-        _cameras.Select(static c => new KeyValuePair<GameTask, Saves.ISavedState>(c.Task, c))
-            .Concat(_controls.Select(static c => new KeyValuePair<GameTask, Saves.ISavedState>(c.Task, c)));
-
-    /// <summary>Collects cameras, exports their retail script variables and prepares their controllers.</summary>
-    public static SecurityCameraRegistry Build(
-        GameTask root,
-        ScriptVarRegistry variables,
-        WorldTraceCast? sight = null)
-    {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(variables);
-
-        SecurityCameraRegistry registry = new(new LevelExpressionRuntime(variables), sight);
-        registry.Collect(root, variables);
-        return registry;
-    }
-
-    /// <summary>Binds every lens to the exact resolved head model transform and magic vertex.</summary>
-    public void BindScene(IEnumerable<WorldPlacement> placements)
-    {
-        ArgumentNullException.ThrowIfNull(placements);
-        foreach (WorldPlacement placement in placements)
-        {
-            if (_byTask.TryGetValue(placement.Owner, out SecurityCamera? camera)
-                && string.Equals(placement.Instance.Name, camera.HeadModelName, StringComparison.OrdinalIgnoreCase))
-            {
-                camera.Bind(placement);
-            }
-        }
-    }
-
-    /// <summary>The key the player goes by among a camera's scan subjects.</summary>
-    public static readonly object PlayerKey = new();
-
-    /// <summary>Puts every camera and every <c>SCameraControl</c> into the level walk, each updating where the walk reaches it.</summary>
-    /// <param name="walker">The level walk.</param>
-    /// <param name="scan">What a lens scans at the moment it updates: the player and every live soldier.</param>
-    /// <param name="ticked">Called after each camera's update, to carry its head's new transform.</param>
-    /// <remarks>
-    /// <c>SCamera</c>'s update (<c>0x442610</c>) runs its children -- the lens, which sweeps and scans
-    /// (<c>0x441770</c>) -- and then evaluates its power. <c>SCameraControl</c>'s (<c>0x440D70</c>) runs its terminal's
-    /// and then its Detection Expression, so a control reads this tick's isDetection from every camera ahead of it in
-    /// the tree and last tick's from those after.
-    /// </remarks>
-    public void AttachTo(LevelUpdateWalker walker, Func<SecurityCameraScan> scan, Action<SecurityCamera>? ticked = null)
-    {
-        ArgumentNullException.ThrowIfNull(walker);
-        ArgumentNullException.ThrowIfNull(scan);
-        foreach (SecurityCamera camera in _cameras)
-        {
-            walker.Bind(camera.Task, task =>
-            {
-                TickLens(camera, BuildSubjects(scan()));
-                walker.RunChildren(task);
-                UpdatePower(camera);
-                ticked?.Invoke(camera);
-            });
-        }
-
-        // SCameraControl's update (0x440D70) is Terminal's, then its isDetection: a terminal already bound in the walk runs
-        // first, its children with it.
-        foreach (Control control in _controls)
-        {
-            Action<GameTask>? terminal = walker.TryGetBound(control.Task, out Action<GameTask>? bound) ? bound : null;
-            walker.Bind(control.Task, task =>
-            {
-                if (terminal is not null)
-                {
-                    terminal(task);
-                }
-                else
-                {
-                    walker.RunChildren(task);
-                }
-
-                UpdateDetection(control);
-            });
-        }
-    }
-
-    /// <summary>Advances all lenses against the player alone.</summary>
-    public void Tick(Vector3d targetFeet, bool targetCrouching, bool targetAlive) =>
-        Tick(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide: false, []);
-
-    /// <summary>Advances all lenses against what a scan offers, then the <c>SCameraControl</c> expressions that consume them.</summary>
-    /// <param name="scan">The player, its partners and the soldiers.</param>
-    public void Tick(SecurityCameraScan scan)
-    {
-        ArgumentNullException.ThrowIfNull(scan.Soldiers);
-        List<SecurityCameraSubject> subjects = BuildSubjects(scan);
-        foreach (SecurityCamera camera in _cameras)
-        {
-            TickLens(camera, subjects);
-            UpdatePower(camera);
-        }
-
-        foreach (Control control in _controls)
-        {
-            UpdateDetection(control);
-        }
-    }
-
-    /// <summary>Advances all lenses, then the <c>SCameraControl</c> expressions that consume them.</summary>
-    /// <param name="targetFeet">The player's feet, in engine units.</param>
-    /// <param name="targetCrouching">Whether the player is crouching, which lowers the mark.</param>
-    /// <param name="targetAlive">Whether the player is alive.</param>
-    /// <param name="playerOnCamerasSide">Whether the player is on team 1, the cameras' side.</param>
-    /// <param name="soldiers">
-    /// Every live soldier in the global human list's order, as <c>0x45FE30</c> describes it. The cameras
-    /// themselves are appended here (<c>0x442A30</c>), so one lens sees another that has been destroyed.
-    /// </param>
-    public void Tick(
-        Vector3d targetFeet,
-        bool targetCrouching,
-        bool targetAlive,
-        bool playerOnCamerasSide,
-        IReadOnlyList<SecurityCameraSubject> soldiers)
-    {
-        ArgumentNullException.ThrowIfNull(soldiers);
-        Tick(new SecurityCameraScan(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide, soldiers));
-    }
-
-    // The lens's update (0x441770), against the holder's power as last tick left it -- or, on a co-op client, the server's.
-    private void TickLens(SecurityCamera camera, IReadOnlyList<SecurityCameraSubject> subjects)
-    {
-        if (!Mirrored)
-        {
-            camera.Tick(camera.IsPowered, subjects, _sight);
-            return;
-        }
-
-        // Nothing from the server yet: the lens holds as it stands.
-        int at = _order[camera];
-        if (_mirror is not { } states || at >= states.Length)
-        {
-            return;
-        }
-
-        ReplicatedCamera state = states[at];
-        if ((state.Flags & ReplicatedCameraCondition.Exploded) != 0 && !camera.IsExploded)
-        {
-            MirroredDestruction?.Invoke(camera);
-        }
-
-        camera.TickMirrored(state);
-    }
-
-    // The rest of the holder's update (0x442610): off once exploded, otherwise its On Expression when it has one. A client's
-    // holder takes its power from the server's with the lens.
-    private void UpdatePower(SecurityCamera camera)
-    {
-        if (Mirrored)
-        {
-            return;
-        }
-
-        if (camera.IsExploded || SwitchedOff)
-        {
-            camera.IsPowered = false;
-        }
-        else if (!string.IsNullOrWhiteSpace(camera.OnExpression))
-        {
-            camera.IsPowered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: false, camera.Task);
-        }
-    }
-
-    // SCameraControl's own half of 0x440D70: held off once the control has exploded (+400), otherwise its Detection
-    // Expression when it has one.
-    private void UpdateDetection(Control control)
-    {
-        if (control.IsExploded() || SwitchedOff)
-        {
-            control.IsDetection = false;
-        }
-        else if (!string.IsNullOrWhiteSpace(control.Expression))
-        {
-            control.IsDetection = _expressions.EvaluateCondition(control.Expression, emptyValue: false, control.Task);
-        }
-    }
-
-    // What 0x489750 is offered: the player, a co-op session's other players, the soldiers in the global human list's order,
-    // then every camera (0x442A30).
-    private List<SecurityCameraSubject> BuildSubjects(SecurityCameraScan scan)
-    {
-        _subjects.Clear();
-        _subjects.Add(SecurityCameraScan.PlayerSubject(
-            PlayerKey, scan.TargetFeet, scan.TargetCrouching, scan.PlayerOnCamerasSide, scan.TargetAlive));
-        if (scan.Partners is { } partners)
-        {
-            _subjects.AddRange(partners);
-        }
-
-        _subjects.AddRange(scan.Soldiers);
-        foreach (SecurityCamera camera in _cameras)
-        {
-            _subjects.Add(new SecurityCameraSubject(
-                camera, camera.HolderPositionUnits, CamerasSide: true, Alive: !camera.IsExploded, camera.Task));
-        }
-
-        return _subjects;
-    }
-
-    /// <summary>Marks a camera's lens exploded immediately when its damage handler fires.</summary>
-    public bool Destroy(GameTask task)
-    {
-        if (!_byTask.TryGetValue(task, out SecurityCamera? camera) || camera.IsExploded)
-        {
-            return false;
-        }
-        camera.Destroy();
-        return true;
-    }
-
-    /// <summary>Resolves the camera owned by an exact level task.</summary>
-    public bool TryGetCamera(GameTask task, out SecurityCamera? camera)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        return _byTask.TryGetValue(task, out camera);
-    }
-
-    /// <summary>Resolves the current transform for a rendered camera head.</summary>
-    public bool TryGetHeadOrientation(
-        WorldPlacement placement,
-        float tickFraction,
-        bool smooth,
-        out Matrix3f orientation)
-    {
-        if (_byTask.TryGetValue(placement.Owner, out SecurityCamera? camera)
-            && string.Equals(placement.Instance.Name, camera.HeadModelName, StringComparison.OrdinalIgnoreCase))
-        {
-            orientation = camera.PresentedOrientation(tickFraction, smooth);
-            return true;
-        }
-
-        orientation = default;
-        return false;
-    }
-
-    private void Collect(GameTask task, ScriptVarRegistry variables)
-    {
-        if (task is DeclaredTask declared
-            && string.Equals(task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal))
-        {
-            SecurityCamera camera = new(declared);
-            _order[camera] = _cameras.Count;
-            _cameras.Add(camera);
-            _byTask[task] = camera;
-            variables.BindBool(task, "isDetection", () => camera.IsDetection, value => camera.IsDetection = value);
-            variables.BindBool(task, "isLastDetection", () => camera.IsLastDetection, value => camera.IsLastDetection = value);
-            variables.BindInt(task, "nDetectionTime", () => camera.DetectionTime, value => camera.DetectionTime = value);
-            variables.BindBool(task, "isExploded", () => camera.IsExploded, value =>
-            {
-                if (value)
-                {
-                    camera.Destroy();
-                }
-            });
-        }
-        else if (task is DeclaredTask controlTask
-            && string.Equals(task.Type.Name, "SCameraControl", StringComparison.Ordinal))
-        {
-            string explodedSymbol = $"{controlTask.Name}.isExploded";
-            Control control = new(
-                controlTask,
-                TextTrimmed(controlTask, "Detection Expression"),
-                () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
-            _controls.Add(control);
-            variables.BindBool(task, "isDetection", () => control.IsDetection, value => control.IsDetection = value);
-        }
-
-        foreach (GameTask child in task.Children)
-        {
-            Collect(child, variables);
-        }
-    }
+    /// <summary>Gets where the holder hangs, world units.</summary>
+    Vector3d HolderPosition { get; }
 }

@@ -20,6 +20,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -64,6 +65,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -96,16 +98,17 @@ public sealed class AiAlarmRuntimeTests
     }
 
     /// <summary>
-    /// A siren is an ExplodeObject: Mission 1's 0.2 rounds add up to its 1.0 threshold (0x481E60 against +492), so it takes
-    /// five. Its update (0x4494D0) then swaps the working loop for its faulty one while its expression holds.
+    /// A siren is an ExplodeObject: Mission 1's 0.2 rounds are added to its damage against its 1.0 health (0x481E60), under
+    /// the chop rounding every ExplodeObject's is, so it takes six. Its update (0x4494D0) then swaps the working loop for its faulty one while its expression holds.
     /// </summary>
     [Fact]
-    public void A_siren_takes_five_rounds_and_then_sounds_its_faulty_loop_while_the_alarm_is_on()
+    public void A_siren_takes_six_rounds_and_then_sounds_its_faulty_loop_while_the_alarm_is_on()
     {
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -115,6 +118,7 @@ public sealed class AiAlarmRuntimeTests
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("Siren"),
+                QvmExpression.Text("Damage scale"), QvmExpression.Text("Real32"),
                 QvmExpression.Text("Explosion sound"), QvmExpression.Text("VarString"),
                 QvmExpression.Text("Working Sound"), QvmExpression.Text("VarString"),
                 QvmExpression.Text("Faulty Sound"), QvmExpression.Text("VarString"),
@@ -124,24 +128,39 @@ public sealed class AiAlarmRuntimeTests
                 QvmExpression.Int(93),
                 QvmExpression.Text("Siren"),
                 QvmExpression.Text("Siren"),
+                QvmExpression.Real(1f),
                 QvmExpression.Text("explosion_1"),
                 QvmExpression.Text("alarmsystem_working"),
                 QvmExpression.Text("alarmsystem_faulty"),
                 QvmExpression.Text("TRUE"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
 
+        // The damage is its ExplodeObject's, kept with the level's destructibles; the speakers only sound it.
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(tree.Root, [], variables);
         AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        speakers.Exploded = destructibles.IsDestroyed;
         AlarmSpeaker siren = Assert.Single(speakers.Speakers);
         Assert.Equal("alarmsystem_working", speakers.SoundNow(siren));
 
-        for (int round = 1; round < 5; round++)
+        for (int round = 1; round < 6; round++)
         {
+            destructibles.TryDestroy(siren.Task, null, 0.2f);
+            destructibles.Tick();
+
+            // The speakers take no damage for it: neither a round on it nor one beside it.
             Assert.Null(speakers.TryDestroy(siren.Task, 0.2f));
             Assert.Null(speakers.TryDestroyAt(siren.PositionUnits));
+            Assert.False(destructibles.IsDestroyed(siren.Task));
+            Assert.Equal("alarmsystem_working", speakers.SoundNow(siren));
         }
 
-        Assert.Same(siren, speakers.TryDestroy(siren.Task, 0.2f));
-        Assert.True(siren.IsDestroyed);
+        // Five rounds of 0.2 leave 0.99999994 in the damage it stores under the original's chop rounding; the sixth brings it
+        // to its health (0x481E60), and its next update explodes it (0x481970).
+        destructibles.TryDestroy(siren.Task, null, 0.2f);
+        destructibles.Tick();
+        Assert.True(destructibles.IsDestroyed(siren.Task));
+        Assert.False(siren.IsDestroyed);
+        Assert.True(speakers.IsOut(siren));
         Assert.False(speakers.IsOn(siren));
         Assert.Equal("alarmsystem_faulty", speakers.SoundNow(siren));
     }
@@ -167,6 +186,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -212,6 +232,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -244,6 +265,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -258,7 +280,7 @@ public sealed class AiAlarmRuntimeTests
         Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
 
         AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
-        GameTask left = Assert.IsType<DeclaredTask>(tree.FromId(12));
+        GameTask left = Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(12));
         AlarmSpeaker destroyed = Assert.IsType<AlarmSpeaker>(speakers.TryDestroy(left));
 
         Assert.Same(left, destroyed.Task);
@@ -306,6 +328,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -317,7 +340,7 @@ public sealed class AiAlarmRuntimeTests
                 "Task_New", QvmExpression.Int(12), QvmExpression.Text("SCamera"), QvmExpression.Text("Lens"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
 
-        return (AlarmSpeakerRegistry.Build(tree.Root, variables), Assert.IsType<DeclaredTask>(tree.FromId(12)));
+        return (AlarmSpeakerRegistry.Build(tree.Root, variables), Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(12)));
     }
 
     [Fact]
@@ -326,6 +349,7 @@ public sealed class AiAlarmRuntimeTests
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -362,7 +386,9 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         EngineTaskTypes.Register(types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -385,7 +411,7 @@ public sealed class AiAlarmRuntimeTests
         // Running those phases in retail order must leave the alarm on after the press has ended.
         MissionObjectiveRuntime objectives = new(tree.Root, variables);
         AiAlarmControlRegistry alarms = AiAlarmControlRegistry.Build(tree.Root, variables);
-        DeclaredTask alarmSwitch = Assert.IsType<DeclaredTask>(tree.FromId(94));
+        DeclaredTask alarmSwitch = Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(94));
         ScriptFlag pressed = new();
         variables.BindFlag(alarmSwitch, "isPressed", pressed);
 

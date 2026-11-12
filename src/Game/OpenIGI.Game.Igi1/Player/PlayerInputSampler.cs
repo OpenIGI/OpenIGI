@@ -27,6 +27,20 @@ internal static class PlayerInputSampler
         return frame;
     }
 
+    /// <summary>The input frame of the actions held, however they were read: the title path's input (<c>TitlePlayerInput.Held</c>).</summary>
+    /// <param name="held">The actions held this tick.</param>
+    /// <returns>The frame, each held slot carrying its masked bit as <see cref="SampleFrame"/>'s do.</returns>
+    internal static PlayerInputFrame FromActions(PlayerAction held)
+    {
+        PlayerInputFrame frame = default;
+        foreach ((PlayerInputSlot slot, PlayerAction action) in PlayerInputBindings.All)
+        {
+            Set(ref frame, slot, (held & action) != 0);
+        }
+
+        return frame;
+    }
+
     private static void Set(ref PlayerInputFrame frame, PlayerInputSlot slot, bool down)
     {
         if (down && PlayerInputBindings.TryGetAction(slot, out PlayerAction action))

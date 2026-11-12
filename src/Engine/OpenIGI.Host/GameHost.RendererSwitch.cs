@@ -144,10 +144,15 @@ public sealed partial class GameHost
             return null;
         }
 
-        if (_playerMode && HostedPlayer is { } player)
+        if (_playerMode && TitlePlayer is { } title)
         {
-            Vector3d feet = player.Body.Position / WorldScene.UnitsPerMetre;
-            return new RendererSwitchPose(feet, player.Body.Yaw, player.Body.Pitch, Flying: false);
+            // The title's player's feet, and the way its eyes look.
+            Vector3f forward = TitleCamera(title).Orientation.Row3;
+            return new RendererSwitchPose(
+                title.Position / TitleUnitsPerMetre,
+                title.Heading ?? MathF.Atan2(forward.X, forward.Y),
+                MathF.Asin(Math.Clamp(forward.Z, -1f, 1f)),
+                Flying: false);
         }
 
         return _camera is { } camera
@@ -197,9 +202,10 @@ public sealed partial class GameHost
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
         }
-        else if (HostedPlayer is { } player && player.Place(_mission.Ground, pose.Position, pose.Yaw))
+        else if (TitlePlayer is not null && _titleFeatures?.Placement is { } placement
+            && placement.TryPlace(pose.Position * TitleUnitsPerMetre, pose.Yaw))
         {
-            player.Body.Pitch = pose.Pitch;
+            // Back on its feet where it stood, the way it faced; its look's pitch is its own to set again.
             _playerMode = true;
         }
         else

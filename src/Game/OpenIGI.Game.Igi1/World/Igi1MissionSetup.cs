@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Brings up Project I.G.I.'s cutscene runtime and objective runtime for a loaded level.</summary>
 /// <param name="mission">The mission's world, which keeps them.</param>
-/// <param name="harm">What a guard's round does to the player.</param>
+/// <param name="harm">What hurts a player of the mission and how it dies.</param>
 /// <param name="blasts">What a guard's round does to a speaker or a destructible.</param>
 /// <param name="sounds">The soldiers' cries and the sound of a guard's round landing.</param>
 /// <param name="audio">Where the doors, lifts and soldiers send their sounds.</param>
@@ -187,7 +187,8 @@ public sealed class Igi1MissionSetup(
             missionText.Get,
             mission.Cutscenes.TryInvokeNative,
             difficulty: host.ScriptDifficulty,
-            isKeyDown: host.IsKeyDown);
+            isKeyDown: host.IsKeyDown,
+            expressions: mission.LevelExpressions);
         mission.Objectives = objectives;
         made(objectives);
 
@@ -198,7 +199,7 @@ public sealed class Igi1MissionSetup(
         // The areas and edit variables update inside the level's one walk, where the tree places them.
         objectives.AttachTo(
             mission.Cutscenes.Walker,
-            mission.Cutscenes.VehicleOccupants,
+            mission.Cutscenes.Vehicles.VehicleOccupants,
             () => mission.Soldiers?.LiveOccupants() ?? [],
             areaPlayer);
 
@@ -286,14 +287,14 @@ public sealed class Igi1MissionSetup(
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         mission.Doors = DoorRegistry.Build(levelRoot);
-        mission.Elevators = ElevatorRegistry.Build(levelRoot, host.Game.Variables);
+        mission.Elevators = ElevatorRegistry.Build(levelRoot, host.Game.Variables, doors: null, mission.LevelExpressions);
         mission.Interactions = WorldInteractionRegistry.Build(
-            levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators, random: mission.SoundRandom);
+            levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators, random: mission.SoundRandom, expressions: mission.LevelExpressions);
         mission.Interactions.Clock = () => mission.Objectives?.LevelTick;
         mission.Interactions.Sounds = audio.PlayInteractionSound;
         mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, host.Game.Variables, placements);
 
-        solids.GenericPickups = mission.GenericPickups;
+        solids.PickupTaken = owner => mission.GenericPickups?.IsCollected(owner) == true;
 
         // A taken AmmoPickup's task is deleted by its own update where the walk reaches it (0x46D740).
         if (mission.Cutscenes is { } pickupWalk)
@@ -349,7 +350,7 @@ public sealed class Igi1MissionSetup(
             soldiers.SetHitSound((prefix, variants, position) => sounds.PlayHit(prefix, variants, position));
             soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(mission.SoundRandom));
             soldiers.SetMeleeStrikeSink((struck, attacker, damage) => harm.StrikePlayer(struck ?? harm.Own, attacker, damage));
-            soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerDeltaTranslationScale);
+            soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerLife.DeltaTranslationScale);
 
             // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
             // HumanAI's current position. Both begin at the same live position; the backend owns any voice
@@ -446,7 +447,7 @@ public sealed class Igi1MissionSetup(
         WorldTraceCast worldTrace = terrain is { } ground
             ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
             : solids.Tracer();
-        mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, host.Game.Variables, worldTrace);
+        mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, host.Game.Variables, worldTrace, mission.LevelExpressions);
         mission.SecurityCameras.BindScene(scene.Placements);
         host.Logger.Information(
             "Ai",
@@ -455,7 +456,7 @@ public sealed class Igi1MissionSetup(
 
         // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
         // what turns them: the walk gives a placement, this gives it an angle per tick.
-        mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, host.Game.Variables, mission.MagicObjects);
+        mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, host.Game.Variables, mission.MagicObjects, mission.LevelExpressions);
         return worldTrace;
     }
 
@@ -491,12 +492,17 @@ public sealed class Igi1MissionSetup(
         // doorway is walkable. Both have to exist before Animate hands each brain its query.
         soldiers.Animate(
             graphs, worldTrace, host.Resources, host.Game.Natives, levelRoot, mission.AiConfig, difficulty,
-            host.Game.Variables);
+            host.Game.Variables, mission.LevelExpressions);
         host.EndStage("animating the soldiers' brains");
 
         // The minefields, which blast at their target while their condition holds.
         mission.MineFields = Igi1MineFields.Build(levelRoot);
-        mission.MineFieldExpressions = new LevelExpressionRuntime(host.Game.Variables);
+        foreach (Igi1MineFieldTask field in mission.MineFields)
+        {
+            field.Blasts = blasts;
+        }
+
+        mission.MineFieldExpressions = mission.LevelExpressions ?? new LevelExpressionRuntime(host.Game.Variables);
 
         // The Smoke tasks' plumes, in the impact effects' particle module so the one particle drawer shows them.
         mission.SmokePlumes = Igi1SmokePlumes.Build(levelRoot, host.Game.Variables);
@@ -513,12 +519,16 @@ public sealed class Igi1MissionSetup(
         mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
             levelRoot,
             host.Game.Variables,
-            () => soldiers.AnyAlarmOn);
+            () => soldiers.AnyAlarmOn,
+            mission.LevelExpressions);
         mission.AlarmSpeakers.BindScene(scene.Placements);
+
+        // A siren is an ExplodeObject: whether it has exploded is the destructibles' to say, built after this.
+        mission.AlarmSpeakers.Exploded = task => mission.Destructibles?.IsDestroyed(task) == true;
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
         // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
-        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, sounds, impacts, host, host.Logger);
+        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, blasts, sounds, impacts, host, host.Logger);
         soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
 
         // The soldiers' guns march their rounds through the same world the soldiers see.
@@ -553,12 +563,12 @@ public sealed class Igi1MissionSetup(
         cutscenes.CollisionIndex = solids;
         if (id == 4)
         {
-            cutscenes.RestHelicoptersOnSupport();
+            cutscenes.Vehicles.RestHelicoptersOnSupport();
         }
 
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        cutscenes.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
+        cutscenes.Vehicles.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
 
         // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
         if (loaded.Terrain is { } carTerrain)
@@ -575,12 +585,12 @@ public sealed class Igi1MissionSetup(
                     carModels,
                     name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null,
                     definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) == "TASKTYPE_GLASS"),
-                cutscenes.RetailVehicleModels,
+                cutscenes.Vehicles.RetailVehicleModels,
                 static owner => owner is RetailGlassPane pane
                     ? !pane.IsBroken && ConditionalContainerGate.IsTaskActive(pane.Owner)
                     : owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task),
                 (pane, from) => mission.TouchGlass?.Invoke(pane, from) == true);
-            cutscenes.ConfigureRetailCars(
+            cutscenes.Vehicles.ConfigureRetailCars(
                 mission.RetailWorld,
                 carModels,
                 name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
@@ -592,11 +602,11 @@ public sealed class Igi1MissionSetup(
 
         // The Hind's rocket pods and door, which its flights run; each pod draws its first gap as it is made. The pods and
         // the vehicles' guns draw from the level's stream.
-        cutscenes.ConfigureVehicleParts(
+        cutscenes.Vehicles.ConfigureVehicleParts(
             scene,
             name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition part) == true ? part : null,
             definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) ?? string.Empty);
-        cutscenes.VehicleRandom = mission.SoundRandom;
+        cutscenes.Vehicles.VehicleRandom = mission.SoundRandom;
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
@@ -606,8 +616,9 @@ public sealed class Igi1MissionSetup(
             host.Game.Variables,
             mission.VehiclePhysics,
             random: mission.SoundRandom,
-            made: cutscenes.VehiclePartMade);
-        solids.Destructibles = mission.Destructibles;
+            made: cutscenes.Vehicles.VehiclePartMade,
+            expressions: mission.LevelExpressions);
+        solids.PlacementDestroyed = placement => mission.Destructibles?.IsDestroyed(placement) == true;
         cutscenes.Destructibles = mission.Destructibles;
     }
 
@@ -651,7 +662,7 @@ public sealed class Igi1MissionSetup(
             // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
             // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
             // PatrolPath route. d843661b dropped this call and left every one of them parked.
-            mission.Cutscenes?.ConfigureCarAi(graphs);
+            mission.Cutscenes?.Vehicles.ConfigureCarAi(graphs);
         }
         else
         {

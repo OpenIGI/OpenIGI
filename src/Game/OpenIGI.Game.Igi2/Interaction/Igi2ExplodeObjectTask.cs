@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// <see cref="Igi2Explosive"/>'s.
 /// </summary>
 /// <remarks>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</remarks>
-public sealed partial class Igi2ExplodeObjectTask
+public partial class Igi2ExplodeObjectTask
     : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>

@@ -55,7 +55,7 @@ public sealed class MissionFourOutroRotorCullingTests
         {
             MeshGeometry geometry = Assert.IsType<MeshGeometry>(
                 MefMeshBuilder.Build(pair.First.Model, (float)(1d / WorldScene.UnitsPerMetre)));
-            return geometry.Subsets.Sum(DrawCalls) * pair.Second.SampleCount;
+            return Draws(geometry) * pair.Second.SampleCount;
         });
         Assert.True(expectedInViewDraws > 0);
 
@@ -89,7 +89,8 @@ public sealed class MissionFourOutroRotorCullingTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -108,11 +109,12 @@ public sealed class MissionFourOutroRotorCullingTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime cutscenes = new(root, loop.Variables, vehiclePhysics: physics);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: cutscenes.TryInvokeNative);
+        objectives.AttachTo(cutscenes.Walker);
 
         // Retail objects.qvm gates ConditionalContainer_3902 ("Outro cutscene") on AreaActivate_156.
         // Put the player at the authored activation volume, then run the normal level/cutscene phases.
-        DeclaredTask area156 = Assert.IsType<DeclaredTask>(root.Tree.FromId(156));
-        Assert.True(area156.TryGetValue("Position", out object? extractionRaw));
+        GameTask area156 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(156));
+        Assert.True(area156.TryGetScriptValue("Position", out object? extractionRaw));
         Vector3d extraction = Assert.IsType<Vector3d>(extractionRaw);
         objectives.TickLevelState(extraction);
         cutscenes.Tick();
@@ -123,7 +125,7 @@ public sealed class MissionFourOutroRotorCullingTests
         Assert.True(Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3902)).IsRun);
 
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Cutscenes = cutscenes };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new OpenIGI.Game.Igi1.World.Igi1PlacementObjects(new OpenIGI.Game.Igi1.World.MissionWorld { Cutscenes = cutscenes }) };
         return new Scenario(scene, cutscenes, device, renderer);
     }
 
@@ -159,6 +161,16 @@ public sealed class MissionFourOutroRotorCullingTests
     }
 
     // The draws a subset takes with culling off: its two-sided part, and its coincident skins culled after it (CoincidentSkins).
-    private static int DrawCalls(MeshSubset subset) =>
-        (subset.IndexCount - subset.SkinIndexCount > 0 ? 1 : 0) + (subset.SkinIndexCount > 0 ? 1 : 0);
+    // The draws a model is made in, as WorldRenderer.DrawSubset makes them: a model drawn culled -- one with authored normals,
+    // while r_world_cull is on -- has each subset in one draw; one drawn two-sided has a subset's coincident skins in a
+    // draw of their own after the rest.
+    private static int Draws(MeshGeometry geometry)
+    {
+        bool culled = OpenIGI.Rendering.GeometryCVars.WorldCull.Value != 0
+            && !geometry.HasDerivedNormals
+            && MefMeshBuilder.HasNormals(geometry.Vertices);
+        return geometry.Subsets.Sum(subset => culled
+            ? (subset.IndexCount > 0 ? 1 : 0)
+            : (subset.IndexCount - subset.SkinIndexCount > 0 ? 1 : 0) + (subset.SkinIndexCount > 0 ? 1 : 0));
+    }
 }

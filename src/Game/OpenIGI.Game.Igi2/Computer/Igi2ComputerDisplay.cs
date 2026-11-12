@@ -684,7 +684,7 @@ public sealed partial class Igi2ComputerDisplay
         int y = (int)(long)((Fpu)Height * 0.12083333333333333).Value;
         for (int i = 0; i < ObjectiveCount; i++)
         {
-            Igi2ComputerObjective? objective = _computer.GetObjective(i);
+            OpenIGI.Game.Flow.ComputerObjective? objective = _computer.GetObjective(i);
             if (objective is null || objective.TextResource.Length == 0)
             {
                 continue;

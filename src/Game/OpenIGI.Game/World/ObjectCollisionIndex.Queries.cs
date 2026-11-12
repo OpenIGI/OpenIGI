@@ -129,7 +129,7 @@ public sealed partial class ObjectCollisionIndex
 
     private void CollectEntry(ObjectCollisionEntry entry, Vector3d min, Vector3d max, List<CollisionTriangle> into)
     {
-        if (GenericPickups?.IsCollected(entry.Owner) == true
+        if (PickupTaken?.Invoke(entry.Owner) == true
             || IsRetired(entry)
             || _passable.Contains(entry.Owner)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
@@ -496,7 +496,7 @@ public sealed partial class ObjectCollisionIndex
             return false;
         }
 
-        if (GenericPickups?.IsCollected(entry.Owner) == true
+        if (PickupTaken?.Invoke(entry.Owner) == true
             || IsRetired(entry)
             || _passable.Contains(entry.Owner)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
@@ -545,7 +545,7 @@ public sealed partial class ObjectCollisionIndex
 
         foreach (ObjectCollisionEntry entry in entries)
         {
-            if (GenericPickups?.IsCollected(entry.Owner) == true
+            if (PickupTaken?.Invoke(entry.Owner) == true
                 || IsRetired(entry)
                 || (honourPassable
                     && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))

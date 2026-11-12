@@ -64,7 +64,7 @@ public sealed partial class GameHost
             : new SoldierBodies(shadowCasters, shadowTasks, tickBlend);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
-        _gunPickupRenderer?.BeginFrame(tickBlend, smoothPresentation);
+        WorldView?.BeginFrame(tickBlend, smoothPresentation);
 
         return casterBodies;
     }

@@ -598,7 +598,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     {
         if (!_recoil.TryGetValue(soldier, out HumanRecoil? recoil))
         {
-            float? configured = _context.Combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.RecoilThreshold : null;
+            float? configured = soldier.Combat is { } row ? row.RecoilThreshold : null;
             recoil = soldier.Soldier.Class.CreateRecoil(configured);
             _recoil[soldier] = recoil;
         }

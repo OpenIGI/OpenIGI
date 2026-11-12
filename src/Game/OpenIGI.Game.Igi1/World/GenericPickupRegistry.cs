@@ -1,0 +1,225 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
+
+namespace OpenIGI.Game.World;
+
+/// <summary>Runs the original game's automatic, proximity-based generic item pickups.</summary>
+/// <remarks>
+/// Retail's <c>GenericPickup</c> proximity handler at <c>0x46C630</c> answers the message the player sends every
+/// tick (<c>0x410F70</c>) with the Human's ORIGIN (<c>+32</c>, 3877.2 units above the feet standing), accepts a
+/// planar distance below the item's reach (<see cref="GenericPickup.ReachRadius"/>) and a vertical separation
+/// below 4096 units, then publishes the task's <c>isPickedUp</c> variable. Tested from the feet, an item resting on
+/// a crate about a metre up sat more than 4096 units above them and only came into reach mid-jump (Mission 2's
+/// explosives room). Its following cleanup removes the item from the spatial world but leaves
+/// the task and its exported variable available to mission expressions. This registry preserves that
+/// lifetime split: the task remains in the tree while the renderer and collision index ignore the
+/// consumed item.
+/// <para>An <c>AmmoPickup</c> is touched the same way (<c>0x46D990</c>) but does not stay: its own update
+/// (<c>0x46D740</c>) deletes its task once taken, and that drops its <c>isPickedUp</c> (<see cref="TakenPickupTask"/>).</para>
+/// </remarks>
+public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
+{
+    private readonly List<GenericPickup> _items = [];
+    private readonly Dictionary<GameTask, GenericPickup> _byTask = [];
+    private readonly ScriptVarRegistry _variables;
+
+    private GenericPickupRegistry(ScriptVarRegistry variables) => _variables = variables;
+
+    /// <summary>Gets every authored generic pickup, including consumed items for diagnostics.</summary>
+    public IReadOnlyList<GenericPickup> Items => _items;
+
+    /// <summary>Builds the pickup list and exports each task's live <c>isPickedUp</c> variable.</summary>
+    /// <param name="root">The level root.</param>
+    /// <param name="variables">The script variables the pickups export into.</param>
+    /// <param name="placements">The level's placements, whose models size each item's reach; none keeps 2867.2.</param>
+    public static GenericPickupRegistry Build(
+        GameTask root,
+        ScriptVarRegistry variables,
+        IEnumerable<WorldPlacement>? placements = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(variables);
+
+        GenericPickupRegistry registry = new(variables);
+        registry.Collect(root, variables);
+        foreach (WorldPlacement placement in placements ?? [])
+        {
+            if (placement.Owner is { } owner
+                && registry._byTask.TryGetValue(owner, out GenericPickup? pickup)
+                && placement.Model is { NativeMarkerBound: > 0f } model
+                && float.IsFinite(model.NativeMarkerBound))
+            {
+                pickup.ReachRadius = Math.Max(pickup.ReachRadius, model.NativeMarkerBound);
+            }
+        }
+
+        return registry;
+    }
+
+    /// <summary>Consumes every pickup within the retail reach of the Human's origin this tick.</summary>
+    /// <param name="origin">The Human's origin (<c>+32</c>), not its feet.</param>
+    public IReadOnlyList<GenericPickup> CollectAt(Vector3d origin)
+    {
+        if (Mirrored)
+        {
+            return [];
+        }
+
+        List<GenericPickup>? collected = null;
+        foreach (GenericPickup pickup in _items)
+        {
+            if (pickup.IsCollected
+                || !ConditionalContainerGate.IsTaskActive(pickup.Task)
+                || !PickupReach.IsWithinRange(origin, pickup.Position, pickup.ReachRadius))
+            {
+                continue;
+            }
+
+            pickup.IsCollected = true;
+            (collected ??= []).Add(pickup);
+        }
+
+        return collected ?? [];
+    }
+
+    /// <summary>
+    /// Gets or sets whether the pickups are a co-op client's, taken when the server says who took them rather than by whoever
+    /// walks over them here.
+    /// </summary>
+    public bool Mirrored { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a taken ammunition pickup keeps its task, as <see cref="GunPickupRegistry.KeepsTakenTasks"/>.</summary>
+    public bool KeepsTakenTasks { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a taken ammunition pickup is withdrawn rather than deleted, as <see cref="GunPickupRegistry.WithdrawsTakenTasks"/>.</summary>
+    public bool WithdrawsTakenTasks { get; set; }
+
+    // Which were taken as the match began.
+    private bool[] _startCollected = [];
+    private bool _levelCleared;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the level's own pickups are all gone, for good: a versus match, where nothing
+    /// lies about to heal or arm a player but what the players drop and buy. Every round put back keeps them gone.
+    /// </summary>
+    public bool LevelCleared
+    {
+        get => _levelCleared;
+        set
+        {
+            // Only as it first goes: what lies about by then is the level's own; a gun dropped after is a player's.
+            bool clearing = value && !_levelCleared;
+            _levelCleared = value;
+            if (clearing)
+            {
+                foreach (GenericPickup pickup in _items)
+                {
+                    pickup.IsCollected = true;
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart() => _startCollected = [.. _items.Select(static p => p.IsCollected)];
+
+    /// <inheritdoc/>
+    /// <remarks>Every pickup lies there again, or is gone, as it was when the match began.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        for (int i = 0; i < _items.Count; i++)
+        {
+            _items[i].IsCollected = _levelCleared || (i < _startCollected.Length && _startCollected[i]);
+        }
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _items.Select(static pickup => new KeyValuePair<GameTask, Saves.ISavedState>(pickup.Task, pickup));
+
+    /// <summary>Takes a pickup out of the level, as walking over it does.</summary>
+    /// <param name="pickup">The pickup.</param>
+    /// <returns><see langword="false"/> when it was already taken.</returns>
+    public bool Take(GenericPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        if (pickup.IsCollected || !_items.Contains(pickup))
+        {
+            return false;
+        }
+
+        pickup.IsCollected = true;
+        return true;
+    }
+
+    /// <summary>Puts each <c>AmmoPickup</c>'s update into the level's walk, where its task deletes itself once taken.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>
+    /// A <c>GenericPickup</c> keeps the walk's plain update. Without a walk, nothing runs an ammo pickup's update, and its task
+    /// stays in the tree, taken.
+    /// </remarks>
+    public void AttachTo(LevelRun walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        foreach (GenericPickup pickup in _items)
+        {
+            if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
+            {
+                TakenPickupTask.BindUpdate(
+                    walker,
+                    pickup.Task,
+                    () => pickup.IsCollected && !KeepsTakenTasks,
+                    () => WithdrawsTakenTasks && !Saves.SaveGameLock.IsHeld,
+                    _variables,
+                    _variables is { } variables ? () => Export(variables, pickup) : null);
+            }
+        }
+    }
+
+    /// <summary>Returns whether a world placement's owner has already been removed by pickup.</summary>
+    public bool IsCollected(GameTask owner) =>
+        owner is not null && _byTask.TryGetValue(owner, out GenericPickup? pickup) && pickup.IsCollected;
+
+    private static void Export(ScriptVarRegistry variables, GenericPickup pickup) =>
+        TakenPickupTask.Export(variables, pickup.Task, () => pickup.IsCollected, value => pickup.IsCollected = value);
+
+    private void Collect(GameTask task, ScriptVarRegistry variables)
+    {
+        if (task is DeclaredTask declared
+            && (string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
+                || string.Equals(declared.Type.Name, "AmmoPickup", StringComparison.Ordinal))
+            && declared.TryGet("Position", out Vector3d position))
+        {
+            string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model
+                ? ResolveModelName(model)
+                : declared.TryGetValue("ID", out object? rawId) && rawId is string id
+                    ? AmmoPickupCatalog.ModelNameForScriptId(id)
+                    : string.Empty;
+            Matrix3f orientation = declared.TryGetValue("Orientation", out object? rawOrientation)
+                && rawOrientation is Vector3f angles
+                    ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
+                    : Matrix3f.Identity;
+
+            GenericPickup pickup = new(declared, position, orientation, modelName);
+            if (declared is GenericPickupTask item)
+            {
+                item.Pickup = pickup;
+            }
+
+            _items.Add(pickup);
+            _byTask.Add(declared, pickup);
+            Export(variables, pickup);
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            Collect(child, variables);
+        }
+    }
+
+    private static string ResolveModelName(string model) =>
+        AmmoPickupCatalog.ModelNameForScriptId(model) is { Length: > 0 } ammoModel
+            ? ammoModel
+            : model;
+}

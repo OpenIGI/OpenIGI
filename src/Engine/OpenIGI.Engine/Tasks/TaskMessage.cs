@@ -18,7 +18,7 @@ namespace OpenIGI.Engine.Tasks;
 /// </remarks>
 public enum TaskMessage
 {
-    /// <summary>Construction. Sent by <see cref="TaskTree.New"/> after the task is linked to its parent.</summary>
+    /// <summary>Construction. Sent by <see cref="TaskTree.New(GameTask?, TaskType)"/> after the task is linked to its parent.</summary>
     Create = 0,
 
     /// <summary>The 30 Hz logic tick. Broadcast depth-first over the whole tree.</summary>

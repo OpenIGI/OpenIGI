@@ -187,9 +187,9 @@ public sealed partial class GameHost
             json.WriteString("north", "+Y is up the picture, +X to its right");
             json.WriteNumber("groundLow", low);
             json.WriteNumber("groundHigh", high);
-            if (_hosted.Player is { } player)
+            if (TitlePlayer is { } player)
             {
-                Vector3d start = WorldScene.ToUnits(player.Position);
+                Vector3d start = player.Position;
                 json.WriteStartArray("playerStart");
                 json.WriteNumberValue(start.X);
                 json.WriteNumberValue(start.Y);

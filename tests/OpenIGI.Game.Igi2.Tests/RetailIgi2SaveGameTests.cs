@@ -61,11 +61,11 @@ public sealed class RetailIgi2SaveGameTests
             played.Tree.OfType<Igi2ConditionalContainerTask>().Select(static c => (c.Id, c.IsRun)),
             fresh.Tree.OfType<Igi2ConditionalContainerTask>().Select(static c => (c.Id, c.IsRun)));
         Assert.Equal(
-            played.Tree.OfType<Igi2EditVariableTask>().Select(static v => (v.Id, v.Value)),
-            fresh.Tree.OfType<Igi2EditVariableTask>().Select(static v => (v.Id, v.Value)));
+            played.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Select(static v => (v.Id, v.Value)),
+            fresh.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Select(static v => (v.Id, v.Value)));
         Assert.Equal(
-            played.Tree.OfType<Igi2LevelTimerTask>().Select(static t => (t.Id, t.Tick)),
-            fresh.Tree.OfType<Igi2LevelTimerTask>().Select(static t => (t.Id, t.Tick)));
+            played.Tree.OfType<OpenIGI.Game.Flow.LevelTimerTask>().Select(static t => (t.Id, t.Tick)),
+            fresh.Tree.OfType<OpenIGI.Game.Flow.LevelTimerTask>().Select(static t => (t.Id, t.Tick)));
         Assert.Contains(played.Tree.OfType<Igi2ConditionalContainerTask>(), static c => c.IsRun);
     }
 

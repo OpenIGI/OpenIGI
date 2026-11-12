@@ -148,6 +148,7 @@ internal static class RetailLevelOneGround
         ResourceRegistry resources = new(fileSystem);
         _resources = resources;
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

@@ -9,6 +9,4 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public interface IMissionGameplay
 {
-    /// <summary>Gets the player the host steers, or <see langword="null"/> while none stands in the level.</summary>
-    IHostedPlayer? Player { get; }
 }

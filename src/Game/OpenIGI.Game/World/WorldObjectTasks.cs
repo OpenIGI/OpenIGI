@@ -1,0 +1,112 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Level;
+
+namespace OpenIGI.Game.World;
+
+/// <summary>A weapon or a box of ammunition lying in the level: Project I.G.I.'s <c>GunPickup</c> and <c>AmmoPickup</c>.</summary>
+/// <remarks>
+/// Its run handler deletes the task once the pickup has been taken (<see cref="TakenPickupTask"/>), which the registry that
+/// keeps the pickup tells it.
+/// </remarks>
+public sealed class PickupTask : DeclaredLevelTask
+{
+    /// <summary>The script names level data instantiates this class's types under.</summary>
+    public static readonly IReadOnlyList<string> TypeNames = ["GunPickup", "AmmoPickup"];
+
+    /// <summary>Gets or sets what the task does once its pickup is taken; none until a registry keeps the pickup.</summary>
+    internal TakenPickupUpdate? Taken { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>One no registry keeps is walked as a plain container is.</remarks>
+    public override void Run(LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Taken is { } taken)
+        {
+            taken.Run(this);
+        }
+        else
+        {
+            level.RunChildren(this);
+        }
+    }
+}
+
+/// <summary>A lift: Project I.G.I.'s <c>Elevator</c>.</summary>
+/// <remarks>
+/// Its run handler (<c>0x43D280</c>) runs its children first -- the doors, switches and indicators that ride it -- then its
+/// own floor expressions and its move, after which it carries what stands on it. <c>ElevatorRegistry</c> keeps each
+/// lift's state; what steps the lifts is the task's <see cref="Runner"/>.
+/// </remarks>
+public sealed class ElevatorTask : DeclaredLevelTask
+{
+    /// <summary>The script name level data instantiates this type under.</summary>
+    public const string TypeName = "Elevator";
+
+    /// <summary>Gets or sets what carries out the lift's run handler; <see langword="null"/> while nothing does.</summary>
+    public ITaskRun<ElevatorTask>? Runner { get; set; }
+
+    /// <summary>Gets or sets the lift this task is, or <see langword="null"/> until a registry keeps it.</summary>
+    public PlacedElevator? Elevator { get; set; }
+
+    /// <summary>The number of "Wanted floor" expressions a lift declares.</summary>
+    public const int WantedFloorCount = 10;
+
+    /// <summary>Gets where the car stands at the level's start ("Position"), or <see langword="null"/> where the level gives none.</summary>
+    public Vector3d? Position => TryGetValue("Position", out object? value) && value is Vector3d position ? position : null;
+
+    /// <summary>Gets the car's authored orientation ("Orientation").</summary>
+    public Matrix3f Orientation => TryGetValue("Orientation", out object? value) && value is Vector3f angles
+        ? WorldScene.ToOrientation(angles)
+        : Matrix3f.Identity;
+
+    /// <summary>Gets the car's model ("Model").</summary>
+    public string Model => Declared("Model", string.Empty);
+
+    /// <summary>Gets the id of the spline the car rides ("SplineObj taskid"), or <see langword="null"/> where the level gives none.</summary>
+    public int? SplineTaskId => TryGetValue("SplineObj taskid", out object? value) && value is int id ? id : null;
+
+    /// <summary>Gets the car's top speed, in metres a second ("Max speed").</summary>
+    public double MaxSpeed => Declared("Max speed", 1f);
+
+    /// <summary>Gets how fast the car gathers and loses speed ("Speed inertia").</summary>
+    public double SpeedInertia => Declared("Speed inertia", 1f);
+
+    /// <summary>Gets the expression that lets the car leave ("Can start").</summary>
+    public string CanStart => Declared("Can start", string.Empty);
+
+    /// <summary>Gets the expression that sends the car up a floor ("Floor up").</summary>
+    public string FloorUp => Declared("Floor up", string.Empty);
+
+    /// <summary>Gets the expression that sends the car down a floor ("Floor down").</summary>
+    public string FloorDown => Declared("Floor down", string.Empty);
+
+    /// <summary>Gets the definition played as the car starts ("Start sound").</summary>
+    public string StartSound => Declared("Start sound", string.Empty);
+
+    /// <summary>Gets the definition played as the car stops ("Stop sound").</summary>
+    public string StopSound => Declared("Stop sound", string.Empty);
+
+    /// <summary>Gets the definition played while the car moves ("Move sound").</summary>
+    public string MoveSound => Declared("Move sound", string.Empty);
+
+    /// <summary>Gets the expression that calls the car to a floor ("Wanted floor 0" to "Wanted floor 9").</summary>
+    /// <param name="floor">The floor, from zero.</param>
+    /// <returns>The expression, empty where the level gives none.</returns>
+    public string WantedFloor(int floor) =>
+        Declared(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Wanted floor {floor}"), string.Empty);
+
+    /// <inheritdoc/>
+    public override void Run(LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
+}

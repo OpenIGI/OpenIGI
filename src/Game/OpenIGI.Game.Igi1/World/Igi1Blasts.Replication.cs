@@ -34,7 +34,7 @@ public sealed partial class Igi1Blasts
         (float visible, float close) = Flashbang.Effect((float)(watcher.EyeUnits - at).Length, radiusUnits);
         if (visible > 0f || close > 0f)
         {
-            mission.FlashbangFlash.Apply(visible, close);
+            mission.PlayerLife.FlashbangFlash.Apply(visible, close);
         }
     }
 

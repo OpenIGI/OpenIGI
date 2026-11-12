@@ -54,7 +54,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         LevelTask root = fixture.Root;
         _ = fixture.Load(1);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
-        DeclaredTask dialogue = Assert.IsType<DeclaredTask>(root.Tree.FromId(3998));
+        DeclaredTask dialogue = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(3998));
         Assert.True(dialogue.TryGetValue("Relative to microphone", out object? relative));
         Assert.False(Assert.IsType<bool>(relative));
         List<CutsceneSoundEvent> edges = [];
@@ -256,7 +256,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         Assert.Equal(1.09990954f, frame.FieldOfView, precision: 5);
 
         HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1666));
-        GameTask trainCar = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
+        GameTask trainCar = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1888));
         Assert.True(runtime.TryAttachActorToTask(
             jones,
             trainCar,
@@ -305,7 +305,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
             includeInactiveOwners: false,
             out _));
 
-        GameTask freightCar = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
+        GameTask freightCar = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1888));
         Assert.True(runtime.TryGetDrawTransform(freightCar, out Vector3d initialFreightPosition, out _));
         Vector3d retailInitialFreight = new(
             22_198_857.489 / WorldScene.UnitsPerMetre,
@@ -322,7 +322,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
 
         Assert.Equal(1202, runtime.ActiveScene?.Id);
         HumanSoldierTask wagonJones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(2021));
-        GameTask wagonCar = Assert.IsType<DeclaredTask>(root.Tree.FromId(2333));
+        GameTask wagonCar = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(2333));
         Assert.True(runtime.TryAttachActorToTask(
             wagonJones,
             wagonCar,
@@ -332,7 +332,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         Assert.True(landingScene.IsRun);
         runtime.Tick();
         Assert.False(landingScene.IsRun);
-        GameTask landingTrain = Assert.IsType<DeclaredTask>(root.Tree.FromId(1507));
+        GameTask landingTrain = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1507));
         Assert.True(runtime.TryGetDrawTransform(landingTrain, out Vector3d position, out _));
         Vector3d retail = new(
             22_347_714.470 / WorldScene.UnitsPerMetre,
@@ -395,8 +395,9 @@ public sealed class RetailCutsceneMissionOneIntroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1666));
-        GameTask car1888 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
+        GameTask car1888 = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1888));
         GameTask introContainer = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(4001));
 
         // The wagon where its consist stands at load (the probe's Human_SetParent packet), and Jones on it.
@@ -458,6 +459,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         ConditionalContainerTask intro = Walk(root).OfType<ConditionalContainerTask>()
             .First(container => container.Label.Contains("Intro cutscene", StringComparison.OrdinalIgnoreCase));
 
@@ -499,6 +501,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         // The retail camera recorded at scene tick N is the one set on the level's (N+1)th tick: a running
         // scene sets its camera from the tick it is on and counts on afterwards, so its first tick shows time
         // nought. One runtime tick more than the scene tick, then.
@@ -649,6 +652,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         Assert.InRange((carPlacement.Position - initialCarPosition).Length, 0d, 0.0001d);
 
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         for (int tick = 0; tick < 2250; tick++)
         {
             objectives.TickLevelState();

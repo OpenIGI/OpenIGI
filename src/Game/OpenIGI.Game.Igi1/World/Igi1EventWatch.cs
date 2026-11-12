@@ -35,7 +35,7 @@ internal sealed class Igi1EventWatch
     {
         _mission = mission;
         _events = events;
-        _damage = mission.PlayerHealth?.Damage ?? 0f;
+        _damage = mission.PlayerLife.Health?.Damage ?? 0f;
         _playerDead = mission.IsPlayerDead;
         _alarm = mission.Soldiers?.AnyAlarmOn ?? false;
 
@@ -62,7 +62,7 @@ internal sealed class Igi1EventWatch
 
     private void ObservePlayer()
     {
-        if (_mission.PlayerHealth is { } health)
+        if (_mission.PlayerLife.Health is { } health)
         {
             float damage = health.Damage;
             if (damage > _damage && _events.IsHeard<PlayerDamaged>())

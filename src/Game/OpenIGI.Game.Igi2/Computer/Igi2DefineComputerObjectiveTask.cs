@@ -1,6 +1,4 @@
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Computer;
 
@@ -13,7 +11,7 @@ namespace OpenIGI.Game.Igi2.Computer;
 /// otherwise it is the set in force and each objective's complete and failed flags are its expressions' values, truncated to a
 /// byte; an objective with no expression is neither.
 /// </remarks>
-public sealed partial class Igi2DefineComputerObjectiveTask : Igi2Task
+public sealed partial class Igi2DefineComputerObjectiveTask : OpenIGI.Game.Flow.DefineComputerObjectiveTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "DefineComputerObjective";
@@ -21,17 +19,18 @@ public sealed partial class Igi2DefineComputerObjectiveTask : Igi2Task
     /// <summary>The objectives a set holds.</summary>
     public const int Count = 8;
 
-    private LevelExpression? _valid;
+    /// <summary>Initializes a new instance of the <see cref="Igi2DefineComputerObjectiveTask"/> class.</summary>
+    public Igi2DefineComputerObjectiveTask()
+        : base(Count)
+    {
+    }
 
-    /// <summary>Gets the objectives.</summary>
-    public IReadOnlyList<Igi2ComputerObjective> Objectives { get; } = [.. Enumerable.Range(0, Count).Select(static _ => new Igi2ComputerObjective())];
-
-    /// <summary>Gets or sets the computer the set reports to, or <see langword="null"/>.</summary>
+    /// <summary>Gets or sets the computer that shows the definition in force.</summary>
     public Igi2Computer? Computer { get; set; }
 
-    /// <summary>Gets or sets the expression under which the set is the one in force; blank for always.</summary>
+    /// <inheritdoc/>
     [ScriptParam(ScriptParamType.VarString, "Objectives Valid")]
-    public string ValidExpression { get; set; } = string.Empty;
+    public override string ValidExpression { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the text resource of objective 1.</summary>
     [ScriptParam(ScriptParamType.String32, "Objective 1 Text Resource")]
@@ -162,23 +161,9 @@ public sealed partial class Igi2DefineComputerObjectiveTask : Igi2Task
     public string Failed8 { get => Objectives[7].FailedExpression; set => Objectives[7].FailedExpression = value; }
 
     /// <inheritdoc/>
-    public override void Run(Igi2LevelRun level)
-    {
-        ArgumentNullException.ThrowIfNull(level);
-        _valid ??= Igi2LevelExpressions.Create(ValidExpression, Name, level.Natives);
-        if (!_valid.IsEmpty && (byte)(long)level.Evaluate(_valid) == 0)
-        {
-            Computer?.InactiveObjectives = this;
-            return;
-        }
+    protected override void OnValid() => Computer?.Objectives = this;
 
-        Computer?.Objectives = this;
-        foreach (Igi2ComputerObjective objective in Objectives)
-        {
-            objective.Complete ??= Igi2LevelExpressions.Create(objective.CompleteExpression, Name, level.Natives);
-            objective.Failed ??= Igi2LevelExpressions.Create(objective.FailedExpression, Name, level.Natives);
-            objective.IsComplete = !objective.Complete.IsEmpty && (sbyte)(long)level.Evaluate(objective.Complete) != 0;
-            objective.IsFailed = !objective.Failed.IsEmpty && (sbyte)(long)level.Evaluate(objective.Failed) != 0;
-        }
-    }
+    /// <inheritdoc/>
+    /// <remarks>A definition that does not hold is the computer's inactive one.</remarks>
+    protected override void OnNotValid() => Computer?.InactiveObjectives = this;
 }

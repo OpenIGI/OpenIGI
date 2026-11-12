@@ -73,6 +73,27 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
     /// <summary>Gets the placed task this view draws.</summary>
     public HumanSoldierTask Soldier { get; }
 
+    /// <summary>
+    /// Gets the body's damage state, made on its first hit (<c>0x489C30</c>); <see langword="null"/> until then. A human
+    /// carries its own health in the original, so this is the body's and no table's beside it.
+    /// </summary>
+    public HumanHealth? Health { get; internal set; }
+
+    /// <summary>Gets the settings row the body's mind was configured from (<c>0x406F70</c>), or <see langword="null"/> for none.</summary>
+    public OpenIGI.Game.Igi1.Ai.AiCombatParameters? Combat { get; internal set; }
+
+    /// <summary>
+    /// Gets the bound its model was authored with, metres (<c>Human+0xA0</c>): what its detector marker and the rays that
+    /// test it are sized by. Zero until its model is known.
+    /// </summary>
+    public float DetectorMarkerScaleMetres { get; internal set; }
+
+    /// <summary>
+    /// Gets what the body was drawn and stepped as before it left the world, or <see langword="null"/> while it is in it:
+    /// a guard generator makes the next guard from it.
+    /// </summary>
+    internal (Ai.SoldierAgent Agent, Ai.SoldierModelGroup Group)? GoneBody { get; set; }
+
     /// <summary>Gets the bone object the stand animation plays on.</summary>
     public BoneObject Bones => _bones;
 

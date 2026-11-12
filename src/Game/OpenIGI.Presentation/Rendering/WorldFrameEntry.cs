@@ -27,7 +27,7 @@ internal struct WorldFrameEntry
     public ResolvedWorldModel? Model;
     public WorldPlacement? Displayed;
 
-    // Whether nothing claims Displayed, as of PlacementClaims.Epoch ClaimEpoch, for Displayed as it was then (ClaimFor).
+    // Whether nothing claims Displayed, as of the count ClaimEpoch (the tree's placement epoch and the renderer's swaps), for Displayed as it was then (ClaimFor).
     public bool Unclaimed;
     public int ClaimEpoch;
     public WorldPlacement? ClaimFor;

@@ -79,26 +79,53 @@ public static class Igi1HudTheme
     public static void Build(MissionWorld mission, bool worldPrompt, Func<WeaponType, string> iconFor, HudModel model, bool messages = false)
     {
         ArgumentNullException.ThrowIfNull(mission);
+        Build(
+            mission.Player,
+            mission.PlayerLife.Health.RemainingFraction,
+            mission.Soldiers,
+            messages ? mission.Objectives?.DisplayedMessages : null,
+            mission.Objectives?.Objectives,
+            worldPrompt,
+            iconFor,
+            model);
+    }
+
+    /// <summary>Reads Project I.G.I.'s player into the shared model, wherever it stands.</summary>
+    /// <param name="player">The player, or <see langword="null"/> while none stands.</param>
+    /// <param name="health">Its health, nought to one.</param>
+    /// <param name="soldiers">The game's soldiers about it, who see it and are seen; <see langword="null"/> for none.</param>
+    /// <param name="messages">The mission's status messages the display shows, or <see langword="null"/> for none.</param>
+    /// <param name="objectives">The mission's objectives, the first not yet done shown where it lies; <see langword="null"/> for none.</param>
+    /// <param name="worldPrompt">Whether the world-anchored prompt shows what may be done, so the row does not.</param>
+    /// <param name="iconFor">The status screen's picture for a weapon.</param>
+    /// <param name="model">The model, refilled.</param>
+    public static void Build(
+        OpenIGI.Game.Igi1.Player.PlayerCamera? player,
+        float health,
+        OpenIGI.Game.Igi1.Ai.SoldierSimulation? soldiers,
+        IEnumerable<OpenIGI.Game.World.StatusMessageDisplay>? messages,
+        IReadOnlyList<OpenIGI.Game.World.MissionObjective>? objectives,
+        bool worldPrompt,
+        Func<WeaponType, string> iconFor,
+        HudModel model)
+    {
         ArgumentNullException.ThrowIfNull(iconFor);
         ArgumentNullException.ThrowIfNull(model);
         model.Reset();
-        HudParts said = messages && mission.Objectives is { } runtime && model.AddMissionMessages(runtime.DisplayedMessages)
-            ? HudParts.Messages
-            : HudParts.None;
-
-        if (mission.Player is not { } player)
+        HudParts said = messages is not null && model.AddMissionMessages(messages) ? HudParts.Messages : HudParts.None;
+        if (player is null)
         {
             return;
         }
 
         model.Show = HudParts.Status | HudParts.Weapon | HudParts.Actions | HudParts.Progress | HudParts.Crosshair | said;
-        model.Health = mission.PlayerHealth.RemainingFraction;
+        model.Health = health;
         model.HeadingRadians = player.Yaw;
         model.PitchRadians = player.Pitch;
 
         // Who has the player in sight, by their bearing from where the camera faces -- forward is (sin yaw, cos yaw) -- and the
         // point over their heads the eye is drawn at.
-        if (mission.Soldiers is { } soldiers)
+        if (soldiers is not null)
         {
             float forwardX = MathF.Sin(player.Yaw), forwardY = MathF.Cos(player.Yaw);
             model.AlertStatus = soldiers.AlertStatus();
@@ -117,7 +144,7 @@ public static class Igi1HudTheme
         }
 
         // What the crosshair shows: the weapon's own, its spread, an enemy under it, the rounds' hits and kills.
-        model.Aim = OpenIGI.Game.Igi1.Player.Igi1Crosshair.Feedback(player, mission.Soldiers);
+        model.Aim = OpenIGI.Game.Igi1.Player.Igi1Crosshair.Feedback(player, soldiers);
 
         if (player.Weapons is { InHand: { } held } carried)
         {
@@ -161,7 +188,7 @@ public static class Igi1HudTheme
         }
 
         // The objective being worked on: the first not yet done, where it has a place in the level.
-        if (mission.Objectives?.Objectives is { } objectives)
+        if (objectives is not null)
         {
             foreach (OpenIGI.Game.World.MissionObjective objective in objectives)
             {

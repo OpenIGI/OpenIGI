@@ -51,7 +51,7 @@ public enum AiPatrolCommandKind
 
     /// <summary>Crouch, and advance on the same tick — the only kind that never waits.</summary>
     /// <remarks>
-    /// Sets <see cref="AiPatrolRoute.IsCrouching"/>, which the walker applies on every subsequent tick and
+    /// Sets <c>AiPatrolRoute.IsCrouching</c>, which the walker applies on every subsequent tick and
     /// which only a movement command clears.
     /// </remarks>
     Crouch = 4,

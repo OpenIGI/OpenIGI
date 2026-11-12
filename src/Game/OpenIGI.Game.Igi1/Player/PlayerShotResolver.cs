@@ -470,22 +470,132 @@ internal sealed class PlayerShotResolver
             }
             else
             {
-                ResolveShot(shot, damageFactor, category, held?.PenetrationPower ?? 0f);
+                MarchOrDefer(shot, damageFactor, category, held?.PenetrationPower ?? 0f, weapons.InHand?.Gun.MadeAtRunTime == true);
             }
         }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a round is marched by the level, as its gun's <c>GunShot</c> task, rather
+    /// than inside this player's update.
+    /// </summary>
+    /// <remarks>
+    /// The original's gun only adds a bullet to its <c>GunShot</c> task as it fires (<c>0x47C420</c> -> <c>0x47B190</c>);
+    /// that task, a child of the level's <c>Dynamic</c> task, marches it in its own run (<c>0x47B690</c> -> <c>0x47B750</c>)
+    /// the same tick. A knife's strike is cast as it is made (<c>KnifeStab</c>'s fire handler).
+    /// </remarks>
+    internal bool RoundsRunByLevel { get; set; }
+
+    // The rounds fired this tick that the level has yet to march.
+    private readonly List<(GunProjectile Shot, float DamageFactor, WeaponCategory Category, float Penetration)> _pendingRounds = [];
+
+    /// <summary>
+    /// Gets a value indicating whether the rounds waiting are those of a gun made while the level runs, whose
+    /// <c>GunShot</c> task stands at the tail of <c>Dynamic</c> rather than after the child the player stands under.
+    /// </summary>
+    internal bool PendingRoundsAtTail { get; private set; }
+
+    // A round: marched now, or kept for the level to march where its gun's GunShot task runs.
+    private void MarchOrDefer(GunProjectile shot, float damageFactor, WeaponCategory category, float penetration, bool atTail)
+    {
+        if (!RoundsRunByLevel)
+        {
+            ResolveShot(shot, damageFactor, category, penetration);
+            return;
+        }
+
+        if (_pendingRounds.Count == 0)
+        {
+            PendingRoundsAtTail = atTail;
+        }
+
+        _pendingRounds.Add((shot, damageFactor, category, penetration));
+    }
+
+    /// <summary>Marches the rounds this tick's update fired, where the level runs their gun's <c>GunShot</c> task.</summary>
+    internal void RunDeferredRounds()
+    {
+        for (int i = 0; i < _pendingRounds.Count; i++)
+        {
+            (GunProjectile shot, float damageFactor, WeaponCategory category, float penetration) = _pendingRounds[i];
+            ResolveShot(shot, damageFactor, category, penetration);
+        }
+
+        _pendingRounds.Clear();
+        PendingRoundsAtTail = false;
     }
 
     // The rounds of a mounted gun, by the retail ray as a carried one's are.
     internal void ResolveMountedRounds(IReadOnlyList<GunProjectile> shots, WeaponType weapon)
     {
+        // A mounted gun's own Gun is made as the gun is set up (0x477C50 from its reset), so its GunShot task is at the tail.
         foreach (GunProjectile shot in shots)
         {
-            ResolveShot(shot, weapon.DamageFactor, weapon.Category, weapon.PenetrationPower);
+            MarchOrDefer(shot, weapon.DamageFactor, weapon.Category, weapon.PenetrationPower, atTail: true);
         }
     }
 
-    /// <summary>Advances what flies: the grenades, the rockets and the launcher's rounds.</summary>
+    /// <summary>
+    /// Gets or sets a value indicating whether what flies is run by the level, after its own objects, rather than inside
+    /// this player's update.
+    /// </summary>
+    /// <remarks>
+    /// The original makes a grenade, a mine, a rocket and a launcher's round under the level's Dynamic task
+    /// (<c>Grenade_Throw</c>, <c>Missile_New</c>: <c>Level_GetDynamic</c>, <c>0x4F0EE0</c>), whose children run after the
+    /// level's objects (<c>0x4F0660</c>). A mission that walks its level sets this for its own player and runs them there
+    /// (<see cref="RunDeferredProjectiles"/>); a player with no such walk around it runs them in its own update.
+    /// </remarks>
+    internal bool ProjectilesRunByLevel { get; set; }
+
+    // Whether this tick's update asked for what flies to be advanced, while the level runs it.
+    private bool _projectilesDue;
+
+    /// <summary>Advances what flies, or where the level runs it, asks the level to this tick.</summary>
     internal void TickProjectiles()
+    {
+        if (ProjectilesRunByLevel)
+        {
+            _projectilesDue = true;
+            return;
+        }
+
+        StepProjectiles();
+    }
+
+    /// <summary>Advances what flies where the level's Dynamic tasks run, on a tick this player's update asked for it.</summary>
+    /// <returns><see langword="true"/> when they were advanced.</returns>
+    internal bool RunDeferredProjectiles()
+    {
+        if (!_projectilesDue)
+        {
+            return false;
+        }
+
+        _projectilesDue = false;
+        StepProjectiles();
+        return true;
+    }
+
+    /// <summary>
+    /// Advances what flies as the level's <c>Dynamic</c> task runs it: every tick the level runs, whether or not this
+    /// player's update ran -- under a cut-scene too (<c>0x4F0660</c> runs its children unless the level is paused, and
+    /// nothing in the original ever pauses it).
+    /// </summary>
+    /// <returns><see langword="true"/> when the level runs them and they were advanced.</returns>
+    internal bool RunProjectilesByLevel()
+    {
+        if (!ProjectilesRunByLevel)
+        {
+            return false;
+        }
+
+        _projectilesDue = false;
+        StepProjectiles();
+        return true;
+    }
+
+    // The grenades, the rockets and the launcher's rounds, a tick.
+    private void StepProjectiles()
     {
         // Detonations are drained by the game, which owns the effects and the blast's victims.
         _grenades.Tick(GrenadeWalls ?? _body.Walls);

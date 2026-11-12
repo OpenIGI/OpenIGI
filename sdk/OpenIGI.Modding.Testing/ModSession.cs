@@ -83,7 +83,7 @@ public sealed class ModSession
     }
 
     // The games' installations as the test machine has them.
-    private sealed class InstalledGames : ITitleDataLocator
+    internal sealed class InstalledGames : ITitleDataLocator
     {
         public bool TryGetDataRoot(GameTitle title, [NotNullWhen(true)] out string? dataRoot)
         {

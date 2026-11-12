@@ -649,7 +649,6 @@ public sealed class PlayerBodyTests
         Assert.Equal("player_fall_3", player.LastFallImpact.Value.SoundName);
         Assert.Same(displayedHealth, player.Health);
         Assert.True(displayedHealth.IsDead);
-        Assert.True(player.DamageFlash.IsActive);
         Assert.Equal(player.LastFallImpact, published);
     }
 

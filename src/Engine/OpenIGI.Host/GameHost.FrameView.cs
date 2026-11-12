@@ -109,7 +109,7 @@ public sealed partial class GameHost
         // backwards after every tick, then glide forwards again. Retail presents the cinematic
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
         bool smoothPresentation = !MenuPausesGame
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && (!_options.Lockstep || _options.CaptureRate > _loop.Clock.TickRate)
             && FrameCVars.SmoothPresentation.Value;
         double pacingWall = _loop.Clock.FrameInstantMilliseconds;
@@ -126,7 +126,7 @@ public sealed partial class GameHost
             pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
         _pacing.SampleGate(
             _menuFlow.PauseMenu,
-            _mission.Cutscenes?.IsPlaying == true,
+            _mission.Scenes?.IsPlaying == true,
             _options.Lockstep,
             FrameCVars.SmoothPresentation.Value);
         if (_loop.Clock.FrameCount % 600 == 0)
@@ -438,7 +438,7 @@ public sealed partial class GameHost
                     ThirdPersonAllowed: !_session.FailedMenu
                         && !_computerOpen
                         && !_entry.IsCameraActive
-                        && _mission.Cutscenes?.IsPlaying != true
+                        && _mission.Scenes?.IsPlaying != true
                         && mapScene is null
                         && !_menuFlow.OverShowcase,
                     Paused: _menuFlow.MenuMode,
@@ -462,7 +462,7 @@ public sealed partial class GameHost
             && !_session.FailedMenu
             && !_computerOpen
             && !_entry.IsCameraActive
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && mapScene is null
             && !_menuFlow.OverShowcase
             && Viewpoint?.HasPlayer == true;

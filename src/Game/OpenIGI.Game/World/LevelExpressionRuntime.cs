@@ -86,6 +86,26 @@ public sealed class LevelExpressionRuntime
         return true;
     }
 
+    /// <summary>Evaluates a compiled slot in the float walk, against the mission's variables and natives.</summary>
+    /// <param name="expression">The expression.</param>
+    /// <returns>Its value, or nought when it is empty.</returns>
+    public double Evaluate(LevelExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return expression.Evaluate(_context);
+    }
+
+    /// <summary>Evaluates a line of script as it stands (<c>Script_EvalExpr</c>): its constants folded, no word taken for a task.</summary>
+    /// <param name="source">The line.</param>
+    /// <returns>Its value, or nought when it is empty or does not parse.</returns>
+    public double EvaluateLine(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        // The second game's compile is the one that rewrites no word naming a task, which is all that is wanted of it here.
+        return new LevelExpression(source, null, Constant, LevelExpressionDialect.Igi2).Evaluate(_context);
+    }
+
     /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
     public int Execute(string? source, GameTask? owner = null) => EvaluateInt32(source, 0, owner);
 
@@ -116,7 +136,7 @@ public sealed class LevelExpressionRuntime
         "TRUE" => 1,
         "FALSE" => 0,
         "GAME_FREQUENCY" => 30,
-        _ => null,
+        _ => Igi1AreaCriteria.Constant(name),
     };
 
     // The mission's variables and natives. The compile has already answered this. and .isExists.

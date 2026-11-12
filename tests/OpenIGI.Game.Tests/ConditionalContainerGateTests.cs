@@ -34,7 +34,7 @@ public sealed class ConditionalContainerGateTests
         natives.RegisterConstant("FALSE", 0);
 
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(types);
         PlayerTaskTypes.RegisterAll(types);
 
         QvmProgram program = QvmProgram.Read(QvmExpression.BuildProgram(statements));

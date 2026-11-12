@@ -44,7 +44,7 @@ public sealed class MissionFourteenAnyaTests : IDisposable
 
             var loop = host.Loop();
             TaskTree tree = host.Mission().LevelRoot!.Tree;
-            Assert.True(((DeclaredTask)tree.FromId(1811)!).TryGet("Position", out Vector3d bomb));
+            Assert.True(tree.FromId(1811)!.TryGetScriptValue("Position", out Vector3d bomb));
             StringBuilder trace = new();
             bool counted = false;
             // The player guards her while she works ("Anya says. Guard me!"): once a second, a hostile within 40 m of her is hit

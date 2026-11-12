@@ -76,7 +76,7 @@ public sealed partial class GameHost
         if (said is not null)
         {
             _logger.Information("Saves", said + ".");
-            _mission.Objectives?.ShowTransientMessage(said);
+            _mission.Progress?.ShowTransientMessage(said);
         }
     }
 

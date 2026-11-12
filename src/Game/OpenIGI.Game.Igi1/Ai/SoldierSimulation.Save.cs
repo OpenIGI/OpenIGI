@@ -40,7 +40,9 @@ public sealed partial class SoldierSimulation : ISavedStateSource
     /// </summary>
     internal void RemakeForLoad()
     {
+        // The soldiers are made again as the level made them: their guns' tasks stand where the level's did.
         _rounds.Clear();
+        _rounds.LevelRunning = false;
         _damage.ClearForLoad();
         _footsteps.Clear();
         _combatClipMissing.Clear();
@@ -72,13 +74,13 @@ public sealed partial class SoldierSimulation : ISavedStateSource
             ((IExchangedState)view).Exchange(exchange);
             ((IExchangedState)context.HealthOf(view)).Exchange(exchange);
 
-            SoldierAgent? agent = context.FindAgent(view) ?? (context.GoneBodies.TryGetValue(view, out var gone) ? gone.Agent : null);
+            SoldierAgent? agent = context.FindAgent(view) ?? (view.GoneBody?.Agent);
             bool armed = exchange.Bool(agent?.WeaponType is not null);
             int rounds = exchange.Int(agent?.AmmoInClip ?? 0);
             int cooldown = exchange.Int(agent?.FireCooldown ?? 0);
             int reload = exchange.Int(agent?.ReloadTicks ?? 0);
             ((IExchangedState)brain).Exchange(exchange);
-            bool left = exchange.Bool(context.GoneBodies.ContainsKey(view));
+            bool left = exchange.Bool(view.GoneBody is not null);
             if (!exchange.IsReading)
             {
                 return;
@@ -102,7 +104,7 @@ public sealed partial class SoldierSimulation : ISavedStateSource
                 footsteps.Forget(view);
             }
 
-            if (left && !context.GoneBodies.ContainsKey(view))
+            if (left && view.GoneBody is null)
             {
                 context.RemoveBody(view);
             }

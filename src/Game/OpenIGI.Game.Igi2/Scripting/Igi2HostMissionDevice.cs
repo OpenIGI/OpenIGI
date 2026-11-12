@@ -1,5 +1,4 @@
-using OpenIGI.Core;
-using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi2.Scripting;
 
@@ -15,71 +14,21 @@ namespace OpenIGI.Game.Igi2.Scripting;
 /// (<see cref="Igi2GenericScripts"/>): the host's own scripts beside it are compiled against the host's natives.
 /// </para>
 /// </remarks>
-public sealed class Igi2HostMissionDevice : IFileDevice
+/// <param name="missionDirectory">The host mission's directory.</param>
+/// <param name="scripts">I.G.I. 2's generic scripts.</param>
+public sealed class Igi2HostMissionDevice(string missionDirectory, Igi2GenericScripts scripts) : AiScriptDevice(missionDirectory)
 {
-    /// <summary>The device's name.</summary>
-    public const string DeviceName = "MISSION";
+    private readonly Igi2GenericScripts _scripts = scripts ?? throw new ArgumentNullException(nameof(scripts));
 
-    private readonly LocalFileDevice _mission;
-    private readonly Igi2GenericScripts _scripts;
-
-    /// <summary>Initializes a new instance of the <see cref="Igi2HostMissionDevice"/> class.</summary>
-    /// <param name="missionDirectory">The host mission's directory.</param>
-    /// <param name="scripts">I.G.I. 2's generic scripts.</param>
-    public Igi2HostMissionDevice(string missionDirectory, Igi2GenericScripts scripts)
+    /// <inheritdoc/>
+    /// <remarks>A soldier's is the generic soldier's script; a squad's, <c>AI/Squad_&lt;id&gt;.qvm</c>, the generic squad's.</remarks>
+    protected override byte[]? Fallback(ReadOnlySpan<char> stem)
     {
-        ArgumentException.ThrowIfNullOrEmpty(missionDirectory);
-        _mission = new LocalFileDevice(missionDirectory, DeviceName);
-        _scripts = scripts ?? throw new ArgumentNullException(nameof(scripts));
-    }
-
-    /// <inheritdoc/>
-    public string Name => DeviceName;
-
-    /// <summary>
-    /// Gets the scripts written for soldiers of the host's own, by their minds' ids (<see cref="Igi2SoldierScript"/>), which a
-    /// soldier reads in place of the generic one.
-    /// </summary>
-    public IDictionary<int, byte[]> SoldierScripts { get; } = new Dictionary<int, byte[]>();
-
-    /// <inheritdoc/>
-    public bool Exists(string path) => Script(path) is not null || _mission.Exists(path);
-
-    /// <inheritdoc/>
-    public bool TryOpenRead(string path, out Stream? stream)
-    {
-        if (Script(path) is { } script)
-        {
-            stream = new MemoryStream(script, writable: false);
-            return true;
-        }
-
-        return _mission.TryOpenRead(path, out stream);
-    }
-
-    /// <inheritdoc/>
-    public IEnumerable<string> EnumerateFiles(string path, string searchPattern) => _mission.EnumerateFiles(path, searchPattern);
-
-    /// <inheritdoc/>
-    public IEnumerable<string> EnumerateDirectories(string path) => _mission.EnumerateDirectories(path);
-
-    // The script a path names: a soldier's AI/<id>.qvm, its own where one was written, else the generic one; or a squad's
-    // AI/Squad_<id>.qvm.
-    private byte[]? Script(string path)
-    {
-        string normal = ResourcePath.Normalize(path).TrimStart(ResourcePath.DirectorySeparator);
-        if (!normal.StartsWith("ai/", StringComparison.OrdinalIgnoreCase)
-            || !normal.EndsWith(".qvm", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        ReadOnlySpan<char> stem = normal.AsSpan(3, normal.Length - 7);
         if (stem.StartsWith("squad_", StringComparison.OrdinalIgnoreCase))
         {
             return int.TryParse(stem[6..], out _) ? _scripts.Squad : null;
         }
 
-        return int.TryParse(stem, out int id) ? SoldierScripts.TryGetValue(id, out byte[]? own) ? own : _scripts.Soldier : null;
+        return int.TryParse(stem, out _) ? _scripts.Soldier : null;
     }
 }

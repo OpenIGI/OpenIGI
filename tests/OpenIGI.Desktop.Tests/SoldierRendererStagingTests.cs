@@ -153,7 +153,7 @@ public sealed class SoldierRendererStagingTests
         }
         Assert.False(distantGuard.IsDead);
 
-        DeclaredTask area154 = Assert.IsType<DeclaredTask>(scenario.Root.Tree.FromId(154));
+        GameTask area154 = Assert.IsAssignableFrom<GameTask>(scenario.Root.Tree.FromId(154));
         Bounds rescue = BoundsOf(area154);
         int? firstInside = null;
         int firstInsideTick = -1;
@@ -243,11 +243,11 @@ public sealed class SoldierRendererStagingTests
         Assert.True(ConditionalContainerGate.IsTaskActive(scenario.Root.Tree.FromId(431)!));
     }
 
-    private static Bounds BoundsOf(DeclaredTask task)
+    private static Bounds BoundsOf(GameTask task)
     {
-        Assert.True(task.TryGetValue("Position", out object? position));
-        Assert.True(task.TryGetValue("Orientation", out object? orientation));
-        Assert.True(task.TryGetValue("Dimensions", out object? dimensions));
+        Assert.True(task.TryGetScriptValue("Position", out object? position));
+        Assert.True(task.TryGetScriptValue("Orientation", out object? orientation));
+        Assert.True(task.TryGetScriptValue("Dimensions", out object? dimensions));
         Vector3d centre = Assert.IsType<Vector3d>(position);
         Vector3f angles = Assert.IsType<Vector3f>(orientation);
         Matrix3f rotation = Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z);

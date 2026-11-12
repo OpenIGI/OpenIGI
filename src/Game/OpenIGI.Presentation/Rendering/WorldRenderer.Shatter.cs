@@ -127,7 +127,7 @@ public sealed partial class WorldRenderer : IShatterableWorld
     private bool IsGone(WorldPlacement placement) =>
         placement.IsSuppressed || placement.IsRotor
         || _transforms.Shattered.Contains(placement) || _subsets.IsBreached(placement)
-        || _transforms.Destructibles?.IsDestroyed(placement) == true || _transforms.Destruction?.IsDestroyed(placement) == true;
+        || _transforms.IsBroken(placement);
 
     private static Vector3d CentreOf(WorldPlacement placement, BoundingSphere bounds)
     {

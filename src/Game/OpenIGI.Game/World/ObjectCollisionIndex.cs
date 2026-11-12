@@ -525,11 +525,11 @@ public sealed partial class ObjectCollisionIndex
     /// <summary>Whether an owner's collision is switched off by <see cref="SetPassable"/>.</summary>
     internal bool IsPassable(GameTask owner) => _passable.Contains(owner);
 
-    /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
-    public GenericPickupRegistry? GenericPickups { get; set; }
+    /// <summary>Gets or sets what says a pickup was taken, and so is out of the collision world.</summary>
+    public Func<GameTask, bool>? PickupTaken { get; set; }
 
-    /// <summary>Gets or sets the live destructible placement states removed after retail destruction.</summary>
-    public DestructibleObjectRegistry? Destructibles { get; set; }
+    /// <summary>Gets or sets what says a placement was destroyed: its intact model is out of the world, its wreck in.</summary>
+    public Func<WorldPlacement, bool>? PlacementDestroyed { get; set; }
 
     /// <summary>Whether an entry is out of the world: an intact model once destroyed, a wreck until then.</summary>
     /// <remarks>
@@ -539,5 +539,5 @@ public sealed partial class ObjectCollisionIndex
     /// (<c>0x481A60</c>) likewise changes what its own object collides with.
     /// </remarks>
     internal bool IsRetired(ObjectCollisionEntry entry) =>
-        (Destructibles?.IsDestroyed(entry.Placement) == true) != entry.IsDestroyedModel;
+        (PlacementDestroyed?.Invoke(entry.Placement) == true) != entry.IsDestroyedModel;
 }

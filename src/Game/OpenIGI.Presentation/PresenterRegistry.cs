@@ -130,6 +130,29 @@ public sealed class PresenterRegistry
         return this;
     }
 
+    /// <summary>
+    /// Registers a presenter tried before whatever is registered for the pair: where it has nothing to draw, the one before it is
+    /// made -- a mod's own while its player stands, the game's otherwise.
+    /// </summary>
+    /// <typeparam name="TRequest">What the presenter is made from.</typeparam>
+    /// <typeparam name="TPresenter">The interface it is used through.</typeparam>
+    /// <param name="factory">What makes it, or answers <see langword="null"/> to leave it to the one before.</param>
+    /// <returns>This registry.</returns>
+    public PresenterRegistry Before<TRequest, TPresenter>(PresenterFactory<TRequest, TPresenter> factory)
+        where TPresenter : class
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        if (!_factories.TryGetValue((typeof(TRequest), typeof(TPresenter)), out Delegate? previous))
+        {
+            return Add(factory);
+        }
+
+        PresenterFactory<TRequest, TPresenter> after = (PresenterFactory<TRequest, TPresenter>)previous;
+        _factories[(typeof(TRequest), typeof(TPresenter))] = (PresenterFactory<TRequest, TPresenter>)((in TRequest request) =>
+            factory(in request) ?? after(in request));
+        return this;
+    }
+
     /// <summary>Gets whether a presenter is registered for the pair.</summary>
     /// <typeparam name="TRequest">What the presenter is made from.</typeparam>
     /// <typeparam name="TPresenter">The interface it is used through.</typeparam>

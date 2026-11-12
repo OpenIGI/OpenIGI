@@ -16,15 +16,14 @@ namespace OpenIGI.Game.World;
 /// is dropped again as the mission is released. Held in one place so that what reads the level -- the inspector, the
 /// sounds, the effects -- is handed the mission rather than the whole host. A title with a simulation of its own extends it.
 /// </remarks>
-public class MissionState : IInspectableMission
+public class MissionState
 {
     /// <summary>Gets the parts of the level a match's rounds put back, in the order they go back.</summary>
     /// <remarks>
     /// Lifts before doors, so a door riding a car is re-placed against the car where it stands again. A title with parts of
     /// its own adds them (<see cref="ILevelReset"/>); every part listed here that is <see langword="null"/> is skipped.
     /// </remarks>
-    protected virtual IEnumerable<ILevelReset?> LevelParts =>
-        [Elevators, Doors, Interactions, GunPickups, GenericPickups, AlarmSpeakers, Destructibles, SecurityCameras, RotatingObjects, Objectives];
+    protected virtual IEnumerable<ILevelReset?> LevelParts => [];
 
     /// <summary>Records the whole level as it stands now, as what <see cref="ResetToLevelStart"/> puts back.</summary>
     public void MarkLevelStart()
@@ -46,35 +45,34 @@ public class MissionState : IInspectableMission
 
     private LevelCollision _collision = LevelCollision.Empty;
 
-    /// <summary>Gets or sets the doors.</summary>
-    public DoorRegistry? Doors { get; set; }
+    /// <summary>Gets the mission's objects as the picture asks after them, or <see langword="null"/> for a mission with none of its own.</summary>
+    public virtual IPlacementObjects? Placements => null;
 
-    /// <summary>Gets or sets the elevators.</summary>
-    public ElevatorRegistry? Elevators { get; set; }
+    /// <summary>Gets which of their models the mission's own objects make placements wear, or <see langword="null"/> when none change.</summary>
+    public virtual IPlacementVariant? PlacementVariants => null;
 
-    /// <summary>Gets or sets what the player and the soldiers use: switches, terminals, ladders and the rest.</summary>
-    public WorldInteractionRegistry? Interactions { get; set; }
+    /// <summary>Gets the mission's cut-scenes, or <see langword="null"/> before they are built.</summary>
+    public virtual Hosting.IMissionCutscenes? Scenes => null;
 
-    /// <summary>Gets or sets the weapons lying in the level.</summary>
-    public GunPickupRegistry? GunPickups { get; set; }
+    /// <summary>Gets the mission's objectives and status messages, or <see langword="null"/> before they are built.</summary>
+    public virtual Hosting.IMissionObjectives? Progress => null;
 
-    /// <summary>Gets or sets the level's other pickups.</summary>
-    public GenericPickupRegistry? GenericPickups { get; set; }
+    /// <summary>Gets the weapons lying in the level, or <see langword="null"/> before they are built.</summary>
+    public virtual IReadOnlyList<GunPickup>? LyingGuns => null;
 
-    /// <summary>Gets or sets the alarm speakers.</summary>
-    public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
+    /// <summary>Gets the security cameras whose status lights are drawn, or <see langword="null"/> when the level has none.</summary>
+    public virtual IReadOnlyList<SecurityCamera>? StatusCameras => null;
 
-    /// <summary>Gets or sets what can be destroyed.</summary>
-    public DestructibleObjectRegistry? Destructibles { get; set; }
+    /// <summary>Gets the flares the level's turning alarm lights throw at an eye.</summary>
+    /// <param name="eyeUnits">Where the eye is, in engine units.</param>
+    /// <param name="tickFraction">How far the frame is between two ticks.</param>
+    /// <returns>The flares; none for a level without alarm lights.</returns>
+    public virtual IReadOnlyList<WorldGlow> AlarmFlares(Vector3d eyeUnits, float tickFraction) => [];
 
-    /// <summary>Gets or sets the security cameras.</summary>
-    public SecurityCameraRegistry? SecurityCameras { get; set; }
-
-    /// <summary>Gets or sets the radar dishes and the authored rotating tasks.</summary>
-    public RotatingObjectRegistry? RotatingObjects { get; set; }
-
-    /// <summary>Gets or sets the cutscene runtime, which also walks the level each tick.</summary>
-    public CutsceneRuntime? Cutscenes { get; set; }
+    /// <summary>Drops what the soldiers' bring-up made of the level's alarms and what can be destroyed, as a mission is left.</summary>
+    public virtual void ReleaseAlarmsAndDestructibles()
+    {
+    }
 
     /// <summary>
     /// Gets or sets whether an intro skipped at load (no cinematics, or <c>OPENIGI_BREAK_CUTSCENE</c>) is still playing
@@ -83,37 +81,25 @@ public class MissionState : IInspectableMission
     public bool IntroSkipPending { get; set; }
 
     /// <summary>Gets the cutscene frame to present: none while a skipped intro is still closing.</summary>
-    public CutsceneFrame? CutsceneFrameShown => IntroSkipPending ? null : Cutscenes?.Frame;
-
-    /// <summary>Gets or sets the objective runtime.</summary>
-    public MissionObjectiveRuntime? Objectives { get; set; }
+    public virtual CutsceneFrame? CutsceneFrameShown => null;
 
     /// <summary>Gets or sets the difficulty the player's damage is scaled by.</summary>
     public int PlayerDifficulty { get; set; }
 
-    /// <summary>Gets or sets the player's full health.</summary>
-    public float PlayerMaximumHealth { get; set; }
-
-    /// <summary>Gets or sets how far the player's body animations carry it, the human type's delta translation scale.</summary>
-    public float PlayerDeltaTranslationScale { get; set; } = HumanMotion.DefaultDeltaTranslationScale;
-
-    /// <summary>Gets or sets the player's health.</summary>
-    public HumanHealth PlayerHealth { get; set; } = null!;
-
     /// <summary>Gets or sets a value indicating whether the player has died.</summary>
-    public bool IsPlayerDead { get; set; }
+    public virtual bool IsPlayerDead { get; set; }
 
-    /// <summary>Gets or sets the tick the player may grunt at being hit again — <c>0x4637C0</c>'s per-human gate.</summary>
-    public int PlayerHitQuietUntil { get; set; }
+    /// <summary>
+    /// Gets the level's one expression runtime, which everything of the level compiles and evaluates through, or
+    /// <see langword="null"/> for a mission that keeps none or before its level is up.
+    /// </summary>
+    public virtual LevelExpressionRuntime? Expressions => null;
 
-    /// <summary>Gets or sets a value indicating whether the soldiers update inside the level walk.</summary>
-    public bool SoldiersInWalk { get; set; }
-
-    /// <summary>Gets or sets a value indicating whether the lifts update inside the level walk.</summary>
-    public bool ElevatorsInWalk { get; set; }
-
-    /// <summary>Gets or sets a value indicating whether the security cameras and their controls update inside the level walk.</summary>
-    public bool CamerasInWalk { get; set; }
+    /// <summary>
+    /// Gets or sets a value indicating whether the level's objects -- its lifts, its cameras and their controls, its soldiers --
+    /// update where the level's walk reaches them. <see langword="false"/> only for a level stepped without its walk.
+    /// </summary>
+    public bool ObjectsInWalk { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the player updates inside the level walk.</summary>
     public bool PlayerInWalk { get; set; }
@@ -226,21 +212,12 @@ public class MissionState : IInspectableMission
     /// <summary>Gets the engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes and the other draws that share its stream.</summary>
     public IgiRandom SoundRandom { get; } = new();
 
-    /// <summary>Gets or sets the red wash a hit on the player raises, which the HUD draws.</summary>
-    public HumanDamageFlash DamageFlash { get; set; } = null!;
-
     /// <summary>Drops the level's runtimes as the mission is left: the objectives, the cutscenes, the walk and the cameras.</summary>
-    public void ReleaseRuntimes()
+    public virtual void ReleaseRuntimes()
     {
-        Objectives?.Release();
-        Objectives = null;
-        Cutscenes = null;
         IntroSkipPending = false;
-        SoldiersInWalk = false;
+        ObjectsInWalk = false;
         PlayerInWalk = false;
-        ElevatorsInWalk = false;
-        CamerasInWalk = false;
-        SecurityCameras = null;
     }
 
     /// <summary>Takes the tables the running title publishes.</summary>
@@ -256,41 +233,30 @@ public class MissionState : IInspectableMission
         VehiclePhysics = services.TryGet(out VehiclePhysicsRegistry? vehicles) ? vehicles : null;
     }
 
-    /// <summary>Starts the player's life afresh: full health, alive, and no wash on the screen.</summary>
+    /// <summary>Starts the player's life afresh at a difficulty: alive, and what the title keeps of its life reset.</summary>
     /// <param name="difficulty">The profile difficulty the player's own hits are scaled by.</param>
     public virtual void ResetPlayerLife(int difficulty)
     {
-        // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
-        // soldiers' 100 -- humanplayer.qvm overrides the executable's default. The player's
-        // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
-        // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
         PlayerDifficulty = difficulty;
-
-        // 0x489C30 supplies the universal base value first. Mission loading replaces it with argument 7
-        // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
-        // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
-        PlayerMaximumHealth = HumanHitZoneTable.MaximumHealth;
-        PlayerHealth = new(HumanHitZoneTable.Player, PlayerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(PlayerDifficulty),
-        };
         IsPlayerDead = false;
-
-        // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
-        // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
-        // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
-        DamageFlash = new();
     }
 
-    /// <summary>Starts a fresh life at the same difficulty: the last one's death and its wash do not carry over.</summary>
-    public virtual void StartFreshLife()
+    /// <summary>Starts a fresh life at the same difficulty: the last one's death does not carry over.</summary>
+    public virtual void StartFreshLife() => IsPlayerDead = false;
+
+    /// <summary>
+    /// Gets a value indicating whether the mission has a player of its own standing: the one its game's level places, rather than
+    /// another game's standing in it or none.
+    /// </summary>
+    public virtual bool HasOwnPlayer => false;
+
+    /// <summary>Gets the rockets the mission's own player has fired, in the air; <see langword="null"/> without a player of its own.</summary>
+    public virtual Weapons.MissileSimulation? PlayerMissiles => null;
+
+    /// <summary>Holds the mission's own player in its computer, or lets it go, as the computer opens and closes.</summary>
+    /// <param name="open">Whether the computer is open.</param>
+    public virtual void SetPlayerComputerOpen(bool open)
     {
-        PlayerHealth = new(HumanHitZoneTable.Player, PlayerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(PlayerDifficulty),
-        };
-        IsPlayerDead = false;
-        DamageFlash = new();
     }
 
     /// <summary>Forgets the title's own player, as another takes the level or the level goes.</summary>
@@ -316,13 +282,7 @@ public class MissionState : IInspectableMission
         TerrainMaterialRow = null;
         Solids = null;
         LevelRoot = null;
-        Destructibles = null;
         Materials = null;
-        Doors = null;
-        Elevators = null;
-        Interactions = null;
-        GunPickups = null;
-        GenericPickups = null;
         VehicleMissiles.Clear();
     }
 }

@@ -508,22 +508,8 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
     private WeaponAttachSlot? SlotOf(string modelName) =>
         SlotByTaskType.TryGetValue(TaskTypeOf(modelName), out WeaponAttachSlot slot) ? slot : null;
 
-    private static (LoadedPack Pack, MtpInstance Instance)? FindInstance(LoadedMission mission, string modelName)
-    {
-        foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
-        {
-            foreach (MtpInstance instance in pack.Instances)
-            {
-                if (pack.TryGetModel(instance, out MefModel? _)
-                    && string.Equals(instance.Name, modelName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return (pack, instance);
-                }
-            }
-        }
-
-        return null;
-    }
+    private static (LoadedPack Pack, MtpInstance Instance)? FindInstance(LoadedMission mission, string modelName) =>
+        mission.TryFindInstance(modelName, out LoadedPack? pack, out MtpInstance instance, modelled: true) ? (pack, instance) : null;
 
     private void Release()
     {

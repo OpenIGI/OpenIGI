@@ -34,7 +34,7 @@ public sealed class MissionRestartTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -43,7 +43,7 @@ public sealed class MissionRestartTests
         LevelTask first = Load(loop, missions, fs, resources);
         MissionObjectiveRuntime objectives = new(first, loop.Variables);
         Vector3d inside = Assert.IsType<Vector3d>(
-            Assert.IsType<DeclaredTask>(first.Tree.FromId(175)).TryGetValue("Position", out object? centre)
+            Assert.IsAssignableFrom<GameTask>(first.Tree.FromId(175)).TryGetScriptValue("Position", out object? centre)
                 ? centre
                 : null);
         objectives.TickLevelState(inside, playerTeam: 0);

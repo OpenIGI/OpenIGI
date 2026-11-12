@@ -16,6 +16,10 @@ namespace OpenIGI.Modding;
 /// </remarks>
 public sealed class ModSettings
 {
+    // One declaration at a time: sessions configure their mods on their own threads -- a preview's beside the game's -- and a
+    // setting both declare is made once and shared.
+    private static readonly Lock Declaring = new();
+
     private readonly string _prefix;
     private readonly CVarRegistry _registry;
 
@@ -86,12 +90,15 @@ public sealed class ModSettings
         where TVar : class, ICVar
     {
         string full = NameOf(name);
-        if (_registry.TryGet(full, out ICVar? existing))
+        lock (Declaring)
         {
-            return existing as TVar
-                ?? throw new InvalidOperationException($"The setting '{full}' is already declared as another kind of setting.");
-        }
+            if (_registry.TryGet(full, out ICVar? existing))
+            {
+                return existing as TVar
+                    ?? throw new InvalidOperationException($"The setting '{full}' is already declared as another kind of setting.");
+            }
 
-        return declare(full);
+            return declare(full);
+        }
     }
 }

@@ -7,7 +7,7 @@ namespace OpenIGI.Game.Level;
 /// The base of every typed task of either title, and of any a mod adds. The default runs nothing; a container that should
 /// run its children calls <see cref="LevelRun.RunChildren"/> from its own <see cref="Run"/>.
 /// </remarks>
-public abstract class TickedTask : GameTask
+public abstract class TickedTask : GameTask, ILevelTicked
 {
     /// <summary>Runs this task for one tick.</summary>
     /// <param name="level">The level's run, which runs any children it is handed.</param>

@@ -230,8 +230,8 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>The radius of a soldier's sphere (<c>Human+160</c>) in world units: its model's bound, or the default.</summary>
     /// <param name="view">The soldier.</param>
     /// <returns>The radius the ray and segment visits test against.</returns>
-    public double BoundUnitsOf(SoldierView view) =>
-        (_context.DetectorMarkerScaleMetres.TryGetValue(view, out float bound) && bound > 0f
+    public static double BoundUnitsOf(SoldierView view) =>
+        (view.DetectorMarkerScaleMetres is > 0f and var bound
             ? bound
             : DefaultHumanBoundMetres) * WorldScene.UnitsPerMetre;
 
