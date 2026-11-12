@@ -219,11 +219,8 @@ public sealed partial class SoldierSimulation
     /// <summary>Gets the soldiers as the simulation walks them: each drawn group's roster, in the groups' order.</summary>
     internal List<SoldierModelGroup> Roster => _context.Roster;
 
-    /// <summary>Gets each soldier's damage state.</summary>
-    internal Dictionary<SoldierView, HumanHealth> Health => _context.Health;
-
-    /// <inheritdoc cref="SoldierContext.DetectorMarkerScaleMetres"/>
-    internal Dictionary<SoldierView, float> DetectorMarkerScaleMetres => _context.DetectorMarkerScaleMetres;
+    /// <summary>Gets the damage state of every soldier that has been hit.</summary>
+    internal IEnumerable<HumanHealth> Healths => _context.Healths;
 
     /// <summary>Gets each soldier's brain.</summary>
     internal Dictionary<SoldierView, Igi1HumanAi> Brains => _context.Brains;
@@ -790,8 +787,8 @@ public sealed partial class SoldierSimulation
     internal bool ClearSightForTesting(Vector3d from, Vector3d to) => _sight.ClearSightForTesting(from, to);
 
     /// <summary>A soldier's accumulated damage, for scenario runs.</summary>
-    internal float DamageForTesting(SoldierView soldier) =>
-        Health.TryGetValue(soldier, out HumanHealth? health) ? health.Damage : 0f;
+    internal static float DamageForTesting(SoldierView soldier) =>
+        soldier.Health is { } health ? health.Damage : 0f;
 
     /// <inheritdoc cref="SoldierSightQueries.DescribeSightForTesting"/>
     internal string DescribeSightForTesting(Vector3d from, Vector3d to) => _sight.DescribeSightForTesting(from, to);

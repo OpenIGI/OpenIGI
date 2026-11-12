@@ -166,7 +166,7 @@ public sealed class RetailSoldierWeaponTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
@@ -181,7 +181,7 @@ public sealed class RetailSoldierWeaponTests
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
 

@@ -191,7 +191,7 @@ public sealed class RetailAmmoTypeTests
         resources = new ResourceRegistry(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         natives = loop.Natives;
 
         weapons = new WeaponTypeRegistry();

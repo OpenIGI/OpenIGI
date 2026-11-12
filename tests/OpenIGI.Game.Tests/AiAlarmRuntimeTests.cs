@@ -388,7 +388,7 @@ public sealed class AiAlarmRuntimeTests
         TaskTypeRegistry types = new();
         OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         EngineTaskTypes.Register(types);
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);

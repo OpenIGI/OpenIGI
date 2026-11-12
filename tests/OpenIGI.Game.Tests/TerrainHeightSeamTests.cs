@@ -126,7 +126,7 @@ public sealed class TerrainHeightSeamTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Scan(fileSystem, resources, loop.Natives);

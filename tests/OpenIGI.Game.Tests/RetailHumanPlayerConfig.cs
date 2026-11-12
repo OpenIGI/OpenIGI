@@ -33,7 +33,7 @@ internal static class RetailHumanPlayerConfig
                 fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
                 ResourceRegistry resources = new(fileSystem);
                 GameLoop loop = new(new ManualTimeSource());
-                OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+                OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
                 // ORDER MATTERS. WEAPON_ID_* and AMMO_ID_* are pattern-registered symbols: they get
                 // their values as the weapon roster and the ammunition table are read. Running

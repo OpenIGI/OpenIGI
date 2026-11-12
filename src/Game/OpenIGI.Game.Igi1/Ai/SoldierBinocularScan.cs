@@ -102,8 +102,8 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
 
             // 0x470F70 sizes the marker as projectionScale * Human+0xA0 / depth, where Human+0xA0 is the model's authored
             // MESH+0x78 bound (~0.94 m for the soldier LODs), and 0x471B60 centres it on the human's origin (Human+32).
-            if (!_context.DetectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
-                || markerScaleMetres <= 0f)
+            float markerScaleMetres = view.DetectorMarkerScaleMetres;
+            if (markerScaleMetres <= 0f)
             {
                 continue;
             }

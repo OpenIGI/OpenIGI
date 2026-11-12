@@ -42,7 +42,7 @@ public sealed class MissionEightAirstrikeTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -56,6 +56,7 @@ public sealed class MissionEightAirstrikeTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         LevelExpressionRuntime expressions = new(loop.Variables);
         ConditionalContainerTask su27 = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(454));
         DeclaredTask launcher = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(2500));

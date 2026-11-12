@@ -66,7 +66,7 @@ public sealed class ConditionalContainerRunTests
     {
         TaskTypeRegistry types = new();
         TaskType containerType = types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(types);
         TaskType childType = types.Register<Child>("Child");
         TaskTree tree = new(types);
         var container = (ConditionalContainerTask)tree.New(tree.Root, containerType);

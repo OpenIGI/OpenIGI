@@ -30,7 +30,7 @@ public sealed class GenericPickupRegistryTests
     public void CollectionPublishesIsPickedUpAndKeepsTheTaskForMissionExpressions()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -68,7 +68,7 @@ public sealed class GenericPickupRegistryTests
     public void AmmoScriptStoredInModelIsNormalizedToItsWorldMesh()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",

@@ -40,7 +40,7 @@ public static class MissionFixture
         AiTaskTypes.RegisterAll(loop.Types);
         // The level's own task classes, as the game's content registers them: a door, a lift, a mounted gun and the rest are
         // told by their class.
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

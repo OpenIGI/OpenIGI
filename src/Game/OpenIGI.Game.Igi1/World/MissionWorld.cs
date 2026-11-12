@@ -19,6 +19,27 @@ public sealed class MissionWorld : MissionState, IInspectableMission
     /// <summary>Initializes a new instance of the <see cref="MissionWorld"/> class.</summary>
     public MissionWorld() => _mineWaits = new MineFieldWaits(this);
 
+    /// <inheritdoc/>
+    IReadOnlyList<PlacedDoor>? IInspectableMission.Doors => Doors?.Doors;
+
+    /// <inheritdoc/>
+    IReadOnlyList<PlacedElevator>? IInspectableMission.Elevators => Elevators?.Elevators;
+
+    /// <inheritdoc/>
+    IReadOnlyList<WorldInteraction>? IInspectableMission.Interactions => Interactions?.Items;
+
+    /// <inheritdoc/>
+    IReadOnlyList<GunPickup>? IInspectableMission.GunPickups => GunPickups?.Items;
+
+    /// <inheritdoc/>
+    IReadOnlyList<GenericPickup>? IInspectableMission.GenericPickups => GenericPickups?.Items;
+
+    /// <inheritdoc/>
+    IReadOnlyList<AlarmSpeaker>? IInspectableMission.AlarmSpeakers => AlarmSpeakers?.Speakers;
+
+    /// <inheritdoc/>
+    IReadOnlyList<SecurityCamera>? IInspectableMission.SecurityCameras => SecurityCameras?.Cameras;
+
     /// <summary>Gets or sets the doors.</summary>
     public DoorRegistry? Doors { get; set; }
 

@@ -177,7 +177,7 @@ public sealed class Issue105Tests
             Assert.True(cabinet.IsSearched);
         }
 
-        objectives.Tick();
+        objectives.StepFlow();
         Assert.True(variables.TryRead("StatusMessage_706.isSendt", out QvmValue completed));
         Assert.Equal(1, completed.Integer);
     }
@@ -437,7 +437,7 @@ public sealed class Issue105Tests
         for (int tick = 0; tick < 12_000 && ConditionalContainerGate.IsTaskActive(limo); tick++)
         {
             objectives.SetVehicleOccupants(runtime.Vehicles.VehicleOccupants());
-            objectives.TickLevelState();
+            objectives.StepLevelState();
             if (variables.TryRead("AreaActivate_162.nActive", out QvmValue active)
                 && active.ToInt32() > 0)
             {
@@ -669,7 +669,7 @@ public sealed class Issue105Tests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

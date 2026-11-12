@@ -138,7 +138,7 @@ public sealed class RetailAnimTriggerTests
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         AnimTriggerRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Load(resources, loop.Natives);

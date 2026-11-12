@@ -41,7 +41,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     private readonly Vector3d _authoredMarker;
     private readonly Vector3d _markerLocal;
 
-    internal WorldInteraction(
+    public WorldInteraction(
         DeclaredTask task,
         InteractionActivateType type,
         Vector3d anchor,
@@ -89,12 +89,12 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     // As the match began: every latch, press, power and placement this task's play can change.
     private Start _start;
 
-    internal void MarkLevelStart() => _start = new Start(
+    public void MarkLevelStart() => _start = new Start(
         _pressStamp, _humming, _useStamp, _completeStamp, _wireOrigin, _offset, Pressed.Value, Pressed.Last, InUse.Value, InUse.Last,
         IsOn, IsElectrified, IsCompleted, CompletedThisTick, IsSearched, IsPicked, IsLocked, IsDestroyed, MirroredOn,
         MirroredElectrified, PlacedFacing, LastOn, LastDestroyed, ModelSlot, PlacedPosition, PlacedOrientation);
 
-    internal void ResetToLevelStart()
+    public void ResetToLevelStart()
     {
         Start s = _start;
         (_pressStamp, _humming, _useStamp, _completeStamp, _wireOrigin, _offset) = (s.PressStamp, s.Humming, s.UseStamp, s.CompleteStamp, s.WireOrigin, s.Offset);
@@ -217,19 +217,19 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     /// <summary>Marks the interaction completed, as its completion does, for the scenario runs that script one.</summary>
     internal void CompleteForTesting() => IsCompleted = true;
     public bool CompletedThisTick { get; private set; }
-    public bool IsSearched { get; internal set; }
+    public bool IsSearched { get; set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
-    public bool IsDestroyed { get; internal set; }
+    public bool IsDestroyed { get; set; }
 
     /// <summary>
     /// Gets or sets the co-op server's word on <see cref="IsOn"/>, which a client's update takes in place of its own On
     /// expression; <see langword="null"/> where the level decides for itself.
     /// </summary>
-    internal bool? MirroredOn { get; set; }
+    public bool? MirroredOn { get; set; }
 
     /// <summary>Gets or sets the co-op server's word on whether a fence is electrified, in place of its Electric Expression.</summary>
-    internal bool? MirroredElectrified { get; set; }
+    public bool? MirroredElectrified { get; set; }
 
     /// <summary>Gets the facing of the last plant, which with <see cref="PlacedPosition"/> places the charge.</summary>
     public float PlacedFacing { get; private set; }
@@ -240,9 +240,9 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
 
     /// <summary>Whether this end pressed the switch itself within the last ticks, so a server's word of a press is its own come back.</summary>
     /// <param name="ticks">How many ticks back.</param>
-    internal bool PressedHereWithin(int ticks) => _ownPressStamp is { } at && Clock() - at <= ticks;
+    public bool PressedHereWithin(int ticks) => _ownPressStamp is { } at && Clock() - at <= ticks;
 
-    internal void PressAsServerDid()
+    public void PressAsServerDid()
     {
         Pressed.Shift(true);
         _pressStamp = Clock();
@@ -252,7 +252,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     /// The task is finished as a co-op server's was: its this-tick pulse and stamp and the latch it leaves -- a cabinet searched,
     /// a lock picked, a terminal hacked, a TBA done. A picked door's swing is the doors' own to send.
     /// </summary>
-    internal void FinishAsServerDid()
+    public void FinishAsServerDid()
     {
         CompletedThisTick = true;
         _completeStamp = Clock();
@@ -271,10 +271,10 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     }
 
     /// <summary>Gets or sets what <see cref="IsOn"/> was the last tick the task ran, its <c>isLastOn</c>.</summary>
-    internal bool LastOn { get; set; } = true;
+    public bool LastOn { get; set; } = true;
 
     /// <summary>Gets or sets what <see cref="IsDestroyed"/> was the last tick the task ran, its <c>isLastDestroyed</c>.</summary>
-    internal bool LastDestroyed { get; set; }
+    public bool LastDestroyed { get; set; }
 
     /// <summary>Gets a value indicating whether a round breaks this switch, its <c>Destructable</c> flag.</summary>
     public bool IsDestructable { get; init; }
@@ -289,7 +289,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     public (float First, float Second)? FenceSpan { get; init; }
 
     /// <summary>Gets or sets where the task's sounds go.</summary>
-    internal Action<InteractionSoundEvent>? Sounds
+    public Action<InteractionSoundEvent>? Sounds
     {
         get => _sounds;
         set => _sounds = value;
@@ -444,7 +444,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     public Vector3d WireOrigin => _wireOrigin + _offset;
 
     /// <summary>Gets the wire model's origin as authored, before any carrier moves it.</summary>
-    internal Vector3d WireOriginAuthored
+    public Vector3d WireOriginAuthored
     {
         get => _wireOrigin;
         init => _wireOrigin = value;
@@ -709,7 +709,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     }
 
     /// <summary>Gets or sets the level's tick, which a press, a use and a completion are stamped with.</summary>
-    internal Func<int> Clock { get; set; } = static () => 0;
+    public Func<int> Clock { get; set; } = static () => 0;
 
     /// <summary>The switch is pressed (<c>0x444BC0</c>): <c>isPressed</c> shifts into <c>isLastPressed</c>, is set, and is stamped.</summary>
     public void Press()
@@ -807,7 +807,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         IsLocked = locked != 0;
     }
 
-    internal void SetConditions(
+    public void SetConditions(
         Func<bool?>? on,
         Func<double>? locked,
         Func<bool>? open = null,
@@ -824,7 +824,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         IsLocked = locked is not null && unchecked((byte)(long)locked()) != 0;
     }
 
-    internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
+    public void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
 
     /// <summary>Sets where this task's marker is carried to, as the frame presents it.</summary>
     /// <remarks>
@@ -832,11 +832,11 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     /// simulation's own offset has to be the tick's exact value, because activation is decided on it,
     /// while a marker has to sit where the object is being drawn this frame or it judders against it.
     /// </remarks>
-    internal void SetPresentedOffset(Func<float, Vector3d> offset) => _presentedOffset = offset;
+    public void SetPresentedOffset(Func<float, Vector3d> offset) => _presentedOffset = offset;
 
-    internal void SetPressHandler(Action handler) => _onPress = handler;
+    public void SetPressHandler(Action handler) => _onPress = handler;
 
-    internal bool SegmentTouchesFence(Vector3d from, Vector3d to)
+    public bool SegmentTouchesFence(Vector3d from, Vector3d to)
     {
         if (Type != InteractionActivateType.Fence || !IsElectrified || !HasLocalBounds)
         {
@@ -857,7 +857,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
                 ref enter, ref exit);
     }
 
-    internal bool PointTouchesFence(Vector3d point)
+    public bool PointTouchesFence(Vector3d point)
         => SegmentTouchesFence(point, point);
 
     private static bool Slab(

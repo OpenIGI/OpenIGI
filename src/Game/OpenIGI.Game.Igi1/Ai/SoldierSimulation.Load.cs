@@ -98,7 +98,8 @@ public sealed partial class SoldierSimulation
             group.Roster.Add(new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor });
             if (group.Roster.Body.Model is { NativeMarkerBound: > 0f } model && float.IsFinite(model.NativeMarkerBound))
             {
-                DetectorMarkerScaleMetres[view] = model.NativeMarkerBound / (float)WorldScene.UnitsPerMetre;
+                view.DetectorMarkerScaleMetres = model.NativeMarkerBound / (float)WorldScene.UnitsPerMetre;
+                _context.Keep(view);
             }
         }
 
@@ -112,8 +113,8 @@ public sealed partial class SoldierSimulation
     public void Clear()
     {
         Roster.Clear();
-        Health.Clear();
-        DetectorMarkerScaleMetres.Clear();
+        _context.ForgetHealth();
+        _context.ForgetMarkerScales();
         BinocularDetected.Clear();
         BinocularOverlay.Clear();
         BinocularVisibility.Clear();

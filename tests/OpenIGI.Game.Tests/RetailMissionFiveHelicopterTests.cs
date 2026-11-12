@@ -27,7 +27,7 @@ public sealed class RetailMissionFiveHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);

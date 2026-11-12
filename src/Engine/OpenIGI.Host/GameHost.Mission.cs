@@ -316,11 +316,9 @@ public sealed partial class GameHost
             // What the mission arms you with is declared, not computed: weapon tasks hang off the
             // level's own HumanPlayer, and every WEAPON_ID_* resolves to a roster entry naming a
             // Gun Model. With the rig in place that model can finally be put where the game puts it.
-            _gunPickupRenderer?.Dispose();
-            _gunPickupRenderer = null;
+            WorldView?.ReleaseLyingWeaponsAndMarks();
             _heldWeapon?.Dispose();
             _hud?.Dispose();
-            _marks?.Dispose();
             _effects.Release();
             _heldWeapon = null;
 
@@ -336,8 +334,7 @@ public sealed partial class GameHost
                 playerSetup.ConnectSoldiers(_hosted.Sounds.PlayRicochet);
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
-                _marks?.Dispose();
-                _marks = _presentation.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(EffectsRequest());
+                WorldView?.LoadMarks(WorldObjects(loaded));
 
                 // The world's effects: the bursts where rounds land, the original's own dust, chips and blood,
                 // the fireball every blast shares, and the smoke rockets and blasts leave.
@@ -368,24 +365,8 @@ public sealed partial class GameHost
                 }
             }
 
-            if (_mission.LyingGuns is { } pickups)
-            {
-                _gunPickupRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGunPickupPresenter>(ViewModelRequest());
-                if (_gunPickupRenderer is not null)
-                {
-                    _gunPickupRenderer.Materials = _materials;
-                    _gunPickupRenderer.Load(loaded, pickups);
-                }
-            }
-
-            // The grenades in the air, drawn with their own retail models. Loaded beside the
-            // pickups because it is the same model machinery at a transform the simulation owns.
-            _grenadeRenderer?.Dispose();
-            _grenadeRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGrenadePresenter>(ViewModelRequest());
-            _grenadeRenderer?.Load(loaded);
-            _missileRenderer?.Dispose();
-            _missileRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(ViewModelRequest());
-            _missileRenderer?.Load(loaded);
+            // The weapons lying in the level and what flies in it are the title's to draw, with its own models.
+            WorldView?.LoadLooseObjects(WorldObjects(loaded), _mission.LyingGuns);
             LightLooseModels(_world?.Shading.Sun);
 
             EndStage("the loadout, the bullet marks and the HUD");
@@ -593,16 +574,12 @@ public sealed partial class GameHost
         DisposeModePoints();
         _menuBackdrop.ReleaseSoldiers();
         _heldWeapon?.Dispose();
-        _gunPickupRenderer?.Dispose();
+        WorldView?.ReleaseLevel();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _debugOverlay?.Dispose();
-        _marks?.Dispose();
         _effects.Release();
-        _cameraStatusLights?.Dispose();
         _modelGlows?.Dispose();
-        _grenadeRenderer?.Dispose();
-        _missileRenderer?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
         _sky = null;
@@ -617,15 +594,10 @@ public sealed partial class GameHost
         _world = null;
         _soldiers = null;
         _heldWeapon = null;
-        _gunPickupRenderer = null;
         _hud = null;
         _remasteredHud = null;
         _debugOverlay = null;
-        _marks = null;
-        _cameraStatusLights = null;
         _modelGlows = null;
-        _grenadeRenderer = null;
-        _missileRenderer = null;
         _arms = null;
         _titleFeatures = null;
         _titleArms = null;
@@ -690,6 +662,10 @@ public sealed partial class GameHost
 
     /// <summary>The three things the small world-effect presenters are built from.</summary>
     private EffectsPresentationRequest EffectsRequest() => new(_device, _resources, _logger);
+
+    /// <summary>What the title's world view makes its loose objects' presenters from, for a loaded level.</summary>
+    private WorldObjectsRequest WorldObjects(LoadedMission loaded) =>
+        new(_presentation.Presenters, ViewModelRequest(), EffectsRequest(), loaded, _materials);
 
     /// <summary>The four things every first-person and projectile presenter is built from.</summary>
     /// <remarks>
@@ -771,19 +747,6 @@ public sealed partial class GameHost
     private void LightLooseModels(FixedFunctionSun? sun)
     {
         _bombSun = sun;
-        if (_gunPickupRenderer is { } pickups)
-        {
-            pickups.Sun = sun;
-        }
-
-        if (_grenadeRenderer is { } grenades)
-        {
-            grenades.Sun = sun;
-        }
-
-        if (_missileRenderer is { } missiles)
-        {
-            missiles.Sun = sun;
-        }
+        WorldView?.Light(sun);
     }
 }

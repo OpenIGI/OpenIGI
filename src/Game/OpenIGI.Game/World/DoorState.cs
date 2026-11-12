@@ -26,7 +26,7 @@ namespace OpenIGI.Game.World;
 /// expression only while fully closed, the close expression only while fully open, and the locked
 /// expression every tick. The ticks-open counter (<c>+664</c>) is exposed for those conditions.
 /// The mid-swing doorway ray that re-opens a closing door off a human standing in it is driven by
-/// <see cref="DoorRegistry.SetDoorwayBlockedQuery"/>.
+/// <c>DoorRegistry.SetDoorwayBlockedQuery</c>.
 /// </para>
 /// </remarks>
 public sealed class DoorState : Saves.IExchangedState

@@ -511,7 +511,7 @@ public sealed class AiScenarioHarness : IDisposable
                     double distance = Vector3d.Distance(view.Position, feet);
                     if (IsEnemy(view) && distance <= 80.0 * Metre)
                     {
-                        field.Append(CultureInfo.InvariantCulture, $" {view.Soldier.Id}:{distance / Metre:0.0}m/{soldiers.Simulation.DamageForTesting(view):0.00}{(view.IsDead ? "X" : string.Empty)}");
+                        field.Append(CultureInfo.InvariantCulture, $" {view.Soldier.Id}:{distance / Metre:0.0}m/{OpenIGI.Game.Igi1.Ai.SoldierSimulation.DamageForTesting(view):0.00}{(view.IsDead ? "X" : string.Empty)}");
                         if (view.Soldier.Id == EnvInt("OPENIGI_AI_SCENARIO_TRACK", -1))
                         {
                             field.Append(CultureInfo.InvariantCulture, $"@{view.Position.X / Metre:0.00},{view.Position.Y / Metre:0.00}[{brain.Activity}]");
@@ -538,7 +538,7 @@ public sealed class AiScenarioHarness : IDisposable
         {
             if (IsEnemy(view) && Vector3d.Distance(view.Position, spawn) <= 80.0 * Metre)
             {
-                log.AppendLine(CultureInfo.InvariantCulture, $"  s{view.Soldier.Id} dmg={soldiers.Simulation.DamageForTesting(view):0.00} dead={view.IsDead} {brain.DescribeTick()}");
+                log.AppendLine(CultureInfo.InvariantCulture, $"  s{view.Soldier.Id} dmg={OpenIGI.Game.Igi1.Ai.SoldierSimulation.DamageForTesting(view):0.00} dead={view.IsDead} {brain.DescribeTick()}");
             }
         }
 

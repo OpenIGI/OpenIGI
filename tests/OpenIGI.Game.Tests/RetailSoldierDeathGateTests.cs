@@ -54,7 +54,7 @@ public sealed class RetailSoldierDeathGateTests
 
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
 
         MissionRegistry registry = new();

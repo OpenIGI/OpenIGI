@@ -16,7 +16,7 @@ public sealed class DestructibleObjectRegistryTests
     public void OneDeclaredExplodeObjectSharesItsDestroyedStateWithEveryOwnedPlacement()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -58,7 +58,7 @@ public sealed class DestructibleObjectRegistryTests
         // Mission 7's Generator_99 authors an empty Destroyed model, and its own On expression is
         // !Generator_99.isExploded (issue #134).
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -110,7 +110,7 @@ public sealed class DestructibleObjectRegistryTests
     public void AnExplodeObjectWithNoHealthGoesOffAtAnyBlast()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -147,7 +147,7 @@ public sealed class DestructibleObjectRegistryTests
         // TASKTYPE_RADIO (0x43AD80) registers under ExplodeObject (word_54097C): a round only arms the
         // countdown, and the explosion that follows swaps the model and raises isExploded (issue #125).
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -190,7 +190,7 @@ public sealed class DestructibleObjectRegistryTests
     public void FiveGlockRoundsLeaveAnExplodeObjectJustShort()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",

@@ -68,7 +68,7 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -109,6 +109,7 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
             models,
             name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         GameTask truck1501 = root.Tree.FromId(1501)!;
         GameTask truck1507 = root.Tree.FromId(1507)!;

@@ -128,7 +128,7 @@ internal sealed class GuardGeneratorSpawner(
         // the replacement comes on E+303. Probed on mission 9's generator 700.
         if (decision == GuardSpawnDecision.FirstSpawn
             || !view.IsDead
-            || !_context.GoneBodies.TryGetValue(view, out (SoldierAgent Agent, SoldierModelGroup Group) body))
+            || view.GoneBody is not { } body)
         {
             return;
         }
@@ -180,12 +180,12 @@ internal sealed class GuardGeneratorSpawner(
         // The server's dead guard left the world the tick before it cloned the next; this client's, which runs no mind to
         // take it out, goes now -- or its body would lie on in the world beside its replacement, both standing for one task.
         // Gone already when a clone that failed is tried again.
-        if (!_context.GoneBodies.ContainsKey(dead))
+        if (dead.GoneBody is null)
         {
             _context.RemoveBody(dead);
         }
 
-        if (!_context.GoneBodies.TryGetValue(dead, out (SoldierAgent Agent, SoldierModelGroup Group) body)
+        if (dead.GoneBody is not { } body
             || SpawnGeneratedGuard(generator, dead, body.Agent, body.Group, runtimeId) is not { } fresh)
         {
             return null;
@@ -225,8 +225,8 @@ internal sealed class GuardGeneratorSpawner(
             return null;
         }
 
-        _context.DetectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale);
-        _context.Combat.TryGetValue(deadView, out AiCombatParameters? combat);
+        float markerScale = deadView.DetectorMarkerScaleMetres;
+        AiCombatParameters? combat = deadView.Combat;
         if (Clone(generator.Name, deadView, deadBrain, deadAgent, group, runtimeId ?? _context.NewRuntimeId(), cutsceneActor: false, markerScale, combat) is not { } freshView)
         {
             return null;
@@ -235,10 +235,10 @@ internal sealed class GuardGeneratorSpawner(
         // 0x487EE0 deletes the dead child (0x4015F0) as it clones the next; its body has already left the world. The task it
         // stood for is the replacement's, so the human list keeps it.
         _context.Forget(deadView);
-        _context.GoneBodies.Remove(deadView);
-        _context.Health.Remove(deadView);
-        _context.Combat.Remove(deadView);
-        _context.DetectorMarkerScaleMetres.Remove(deadView);
+        deadView.GoneBody = null;
+        deadView.Health = null;
+        deadView.Combat = null;
+        deadView.DetectorMarkerScaleMetres = 0f;
 
         _context.Logger.Information(
             SoldierContext.LogCategory,
@@ -263,27 +263,24 @@ internal sealed class GuardGeneratorSpawner(
         foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains.ToArray())
         {
             brain.Retire();
-            if (!_context.GoneBodies.ContainsKey(view))
+            if (view.GoneBody is null)
             {
                 _context.RemoveBody(view);
             }
 
-            if (!_context.GoneBodies.TryGetValue(view, out (SoldierAgent Agent, SoldierModelGroup Group) body))
+            if (view.GoneBody is not { } body)
             {
                 _context.Logger.Warning(SoldierContext.LogCategory, $"{view.Soldier.Name} has no body to be made afresh from.");
                 continue;
             }
 
-            _context.DetectorMarkerScaleMetres.TryGetValue(view, out float markerScale);
-            _context.Combat.TryGetValue(view, out AiCombatParameters? combat);
+            float markerScale = view.DetectorMarkerScaleMetres;
+            AiCombatParameters? combat = view.Combat;
             old.Add((view, brain, body.Agent, body.Group, markerScale, combat, GeneratorOf(view)));
         }
 
         _context.ClearBrains();
-        _context.GoneBodies.Clear();
-        _context.Health.Clear();
-        _context.Combat.Clear();
-        _context.DetectorMarkerScaleMetres.Clear();
+        _context.ForgetBodyState();
         _context.ViewsByTask.Clear();
         foreach ((SoldierView view, Igi1HumanAi brain, SoldierAgent agent, SoldierModelGroup group, float markerScale, AiCombatParameters? combat, GuardGeneratorTask? generator) in old)
         {
@@ -348,15 +345,18 @@ internal sealed class GuardGeneratorSpawner(
 
         if (markerScale > 0f)
         {
-            _context.DetectorMarkerScaleMetres[freshView] = markerScale;
+            freshView.DetectorMarkerScaleMetres = markerScale;
+            _context.Keep(freshView);
         }
 
         if (combat is not null)
         {
-            _context.Combat[freshView] = combat;
+            freshView.Combat = combat;
+            _context.Keep(freshView);
         }
 
-        _context.Health[freshView] = _context.NewHealth(freshView);
+        freshView.Health = _context.NewHealth(freshView);
+        _context.Keep(freshView);
 
         Igi1HumanAi freshBrain = deadBrain.Respawned(
             freshView.Position,

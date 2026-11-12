@@ -21,7 +21,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void VehicleCriteriaCountsCarsButNotHumans()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -60,7 +60,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void AreaActivationCountsOnlySoldiersRegisteredIntoTheLiveWorld()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -126,10 +126,10 @@ public sealed class MissionObjectiveRuntimeTests
         // The write alone registers nothing: the container brings its subtree into the world when the level's
         // walk next reaches it (0x4874E0), and only then does the area count the soldier.
         Assert.True(loop.Variables.TryWrite("ConditionalContainer_901.isRun", QvmValue.FromInt32(1)));
+        runtime.OwnWalk.HoldContainer = static _ => true; // the walk keeps what was written, not the "0" the level declares
         runtime.TickLevelState();
-        Assert.Equal(1, ReadActive(loop));
+        Assert.Equal(1, ReadActive(loop)); // the area stands ahead of the container: counted before the walk opened it
 
-        new LevelUpdateWalker(loop.Tasks.Root).Tick();
         runtime.TickLevelState();
         Assert.Equal(2, ReadActive(loop));
 
@@ -196,7 +196,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void AreaActivationUsesTheLoadedUpperZBound()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -234,7 +234,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void TransientStatusMessageUsesTheMissionMessageSlotsWithoutWritingTheComputerLog()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
 
         Assert.True(runtime.ShowTransientMessage("PICKEDUPWEAPONAK-47"));
@@ -247,7 +247,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void ClearMessagesEmptiesEverySlotAndFinishesTheAuthoredMessages()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -326,7 +326,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void AuthoredInterfaceTimerStartsAtTheRetailMaximumAndStopsAtZero()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -369,7 +369,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void LevelFlowFailureBindingReachesAuthoredStatusMessageOnTheFollowingTickAndReleases()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -462,7 +462,7 @@ public sealed class MissionObjectiveRuntimeTests
         Assert.True(loop.Variables.TryWrite("StatusMessage_23.nTickSendt", QvmValue.FromInt32(-211)));
         Assert.True(loop.Variables.TryWrite("EditVariable_2.nValue", QvmValue.FromInt32(1)));
 
-        runtime.Tick();
+        runtime.StepFlow();
 
         Assert.True(runtime.IsFailed);
         Assert.True(loop.Variables.TryRead("LevelFlow_17.isFailed", out QvmValue failureAfterFlow));
@@ -477,7 +477,7 @@ public sealed class MissionObjectiveRuntimeTests
         Assert.True(loop.Variables.TryRead("StatusMessage_23.isSendt", out QvmValue sentBeforeBinding));
         Assert.Equal(0, sentBeforeBinding.ToInt32());
 
-        runtime.Tick();
+        runtime.StepFlow();
 
         Assert.True(loop.Variables.TryRead("StatusMessage_23.isSendt", out QvmValue sentAfterBinding));
         Assert.Equal(1, sentAfterBinding.ToInt32());
@@ -498,7 +498,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void LevelFlowStoresItsResultTheWayTheOriginalUpdateDoes()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -621,7 +621,7 @@ public sealed class MissionObjectiveRuntimeTests
         foreach (string script in scripts)
         {
             GameLoop loop = new();
-            OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
             LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
             ResourceRegistry resources = new(new VirtualFileSystem());
             const string resourceName = "LOCAL:level/objects.qvm";
@@ -723,7 +723,7 @@ public sealed class MissionObjectiveRuntimeTests
     private static (GameLoop Loop, MissionObjectiveRuntime Runtime) BuildPlayerAreaRuntime()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",

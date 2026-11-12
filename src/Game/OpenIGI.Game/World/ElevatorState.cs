@@ -177,7 +177,7 @@ public sealed class ElevatorState : Saves.IExchangedState
     /// <param name="motion">The other copy's <see cref="Motion"/>.</param>
     /// <remarks>
     /// A co-op client's lift takes the server's this way. The previous position stays where the car was, so the collision
-    /// placed after it (<see cref="ElevatorRegistry.Restore"/>) moves the car and what rides it by the jump.
+    /// placed after it (<c>ElevatorRegistry.Restore</c>) moves the car and what rides it by the jump.
     /// </remarks>
     public void Restore(ElevatorMotion motion)
     {

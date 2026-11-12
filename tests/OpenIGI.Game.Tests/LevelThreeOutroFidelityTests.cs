@@ -166,7 +166,7 @@ public sealed class LevelThreeOutroFidelityTests
         // Leave the opening cinematic through the same native break edge used by the desktop host,
         // then satisfy Objective3's authored outro gate.
         runtime.RequestBreak();
-        objectives.TickLevelState();
+        objectives.StepLevelState();
         runtime.Tick();
         runtime.FinishExpressionTick();
         Assert.True(loop.Variables.TryWrite("EditVariable_3068.nValue", QvmValue.FromInt32(1)));
@@ -223,9 +223,9 @@ public sealed class LevelThreeOutroFidelityTests
         CutsceneRuntime runtime,
         Vector3d? playerPosition = null)
     {
-        objectives.TickLevelState(playerPosition);
+        objectives.StepLevelState(playerPosition);
         runtime.Tick();
-        objectives.TickAfterLevelState();
+        objectives.StepAfterLevelState();
         runtime.FinishExpressionTick();
     }
 
@@ -241,7 +241,7 @@ public sealed class LevelThreeOutroFidelityTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

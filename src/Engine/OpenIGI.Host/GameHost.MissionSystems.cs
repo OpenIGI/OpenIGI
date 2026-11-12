@@ -354,12 +354,9 @@ public sealed partial class GameHost
     {
         IWorldPresenter world = b.World!;
 
-        _cameraStatusLights?.Dispose();
-        _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
-        if (_cameraStatusLights is not null && !_cameraStatusLights.Load(_fileSystem))
+        if (b.Loaded is { } loaded)
         {
-            _cameraStatusLights.Dispose();
-            _cameraStatusLights = null;
+            WorldView?.LoadLamps(WorldObjects(loaded), _fileSystem);
         }
 
         world.Objects = _mission.Placements;

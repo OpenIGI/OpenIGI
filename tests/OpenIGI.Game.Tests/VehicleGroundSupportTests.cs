@@ -37,7 +37,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -126,6 +126,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
                     ? WorldScene.WheelRadius(model)
                     : 0f);
             MissionObjectiveRuntime objectives = new(levelRoot, loop.Variables, native: runtime.TryInvokeNative);
+            objectives.AttachTo(runtime.Walker);
 
             runtime.RequestBreak();
             Step();

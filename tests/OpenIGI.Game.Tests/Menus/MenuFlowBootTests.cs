@@ -115,7 +115,7 @@ public sealed class MenuFlowBootTests
         ManualTimeSource time = new();
         RecordingHost host = new();
         GameLoop loop = new(time: time, host: host);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         MenuSystem? menu = null;
         host.OnShowMainMenu = () =>

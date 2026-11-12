@@ -38,7 +38,7 @@ internal static class RetailPlayerParameters
                 ResourceRegistry resources = new(fileSystem);
 
                 GameLoop loop = new(new ManualTimeSource());
-                OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+                OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
                 HumanPlayerConfig config = new();
                 config.Register(loop.Natives);
                 config.Load(resources, loop.Natives);

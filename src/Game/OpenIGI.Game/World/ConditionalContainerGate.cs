@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This evaluates the initial registration state. <see cref="CutsceneRuntime"/> then reproduces the
+/// This evaluates the initial registration state. <c>CutsceneRuntime</c> then reproduces the
 /// per-tick <c>ConditionalContainer_RunHandler</c>, including start/stop expressions, and exposes the result as
 /// <see cref="ConditionalContainerTask.IsRun"/>. The operands are the script variables the level's tasks
 /// export — <c>CutScene_1203.isFinished</c>, <c>EditVariable_199.nValue</c>,

@@ -364,12 +364,9 @@ public sealed partial class GameHost
         _heldWeapon = null;
         _hud = null;
         _debugOverlay = null;
-        _marks = null;
         _effects.Forget();
-        _cameraStatusLights = null;
+        WorldView?.ReleaseLevel();
         _modelGlows = null;
-        _grenadeRenderer = null;
-        _missileRenderer = null;
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;

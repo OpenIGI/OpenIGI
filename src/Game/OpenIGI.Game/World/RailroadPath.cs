@@ -20,7 +20,7 @@ namespace OpenIGI.Game.World;
 /// high inside the crate he leans on once the wagon reached the flat, where the two agree again.
 /// </para>
 /// </remarks>
-internal sealed class RailroadPath
+public sealed class RailroadPath
 {
     private const float Pi = 3.1415927f;
 
@@ -487,7 +487,7 @@ internal sealed class RailroadPath
 /// first and then each child Train's in order, all signed by the LEAD's flip; <c>0x42A7C0</c> lays each child on
 /// the next pair. Each car keeps its own pivot fraction and displacement.
 /// </remarks>
-internal sealed class RailroadConsist(RailroadPath railroad)
+public sealed class RailroadConsist(RailroadPath railroad)
 {
     private readonly List<Car> _cars = [];
 

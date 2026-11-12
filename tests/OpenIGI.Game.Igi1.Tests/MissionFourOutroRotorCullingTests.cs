@@ -89,7 +89,7 @@ public sealed class MissionFourOutroRotorCullingTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
@@ -109,6 +109,7 @@ public sealed class MissionFourOutroRotorCullingTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime cutscenes = new(root, loop.Variables, vehiclePhysics: physics);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: cutscenes.TryInvokeNative);
+        objectives.AttachTo(cutscenes.Walker);
 
         // Retail objects.qvm gates ConditionalContainer_3902 ("Outro cutscene") on AreaActivate_156.
         // Put the player at the authored activation volume, then run the normal level/cutscene phases.

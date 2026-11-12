@@ -1,3 +1,4 @@
+using OpenIGI.Scripting.Qsc;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
@@ -62,110 +63,96 @@ public static class AiGuardScript
     public static byte[] Build(AiGuardOrders orders, bool squads)
     {
         ArgumentNullException.ThrowIfNull(orders);
-        QvmWriter writer = new();
-        QvmCodeWriter code = writer.Code;
-        QvmLabel notCreate = code.CreateLabel();
-        QvmLabel notIdle = code.CreateLabel();
-        QvmLabel notAlarm = code.CreateLabel();
-        QvmLabel end = code.CreateLabel();
 
-        EventIs(writer, "AIEVENT_CREATE", notCreate);
-        Statement(writer, QvmExpression.Call("AIFunction_DefaultHandler"));
+        List<QscStatement> create = [Statement("AIFunction_DefaultHandler")];
         if (orders.ViewLength is { } length)
         {
-            Statement(writer, QvmExpression.Call("AIFunction_SetViewLength", QvmExpression.Real(length)));
+            create.Add(Statement("AIFunction_SetViewLength", new QscRealLiteral(length)));
         }
 
         if (orders.ViewGamma is { } gamma)
         {
-            Statement(writer, QvmExpression.Call("AIFunction_SetViewGamma", QvmExpression.Real(gamma)));
+            create.Add(Statement("AIFunction_SetViewGamma", new QscRealLiteral(gamma)));
         }
 
         if (orders.AlarmControlId is { } control)
         {
-            Statement(writer, QvmExpression.Call("AIFunction_SetAlarmControlID", QvmExpression.Int(control)));
+            create.Add(Statement("AIFunction_SetAlarmControlID", new QscIntLiteral(control)));
         }
 
         if (orders.AlarmTriggerId is { } alarmTrigger)
         {
-            Statement(writer, QvmExpression.Call("AIFunction_SetAlarmTriggerID", QvmExpression.Int(alarmTrigger)));
+            create.Add(Statement("AIFunction_SetAlarmTriggerID", new QscIntLiteral(alarmTrigger)));
         }
 
         if (orders.GunnerId is { } gunner)
         {
-            Statement(writer, QvmExpression.Call("AIFunction_SetGunnerID", QvmExpression.Int(gunner)));
+            create.Add(Statement("AIFunction_SetGunnerID", new QscIntLiteral(gunner)));
         }
 
         if (orders.AlarmAccess is { } access)
         {
-            Statement(writer, QvmExpression.Call(
+            create.Add(Statement(
                 "AIFunction_SetAlarmAccess",
-                QvmExpression.Symbol(access == AiAlarmAccess.AfterCombat ? "AIALARMACCESS_AFTERCOMBAT" : "AIALARMACCESS_BEFORECOMBAT")));
+                new QscSymbol(access == AiAlarmAccess.AfterCombat ? "AIALARMACCESS_AFTERCOMBAT" : "AIALARMACCESS_BEFORECOMBAT")));
         }
 
         if (orders.IsInvulnerable is { } invulnerable)
         {
-            Statement(writer, QvmExpression.Call("AIFunction_SetInvulnerability", QvmExpression.Int(invulnerable ? 1 : 0)));
+            create.Add(Statement("AIFunction_SetInvulnerability", new QscIntLiteral(invulnerable ? 1 : 0)));
         }
 
         foreach ((string native, float value) in orders.Tunings)
         {
-            Statement(writer, QvmExpression.Call(native, QvmExpression.Real(value)));
+            create.Add(Statement(native, new QscRealLiteral(value)));
         }
 
-        code.Branch(QvmOpcode.Bra, end);
-        code.MarkLabel(notCreate);
+        // Built inside out: the last arm is the default handler, and each event test wraps what follows it as its else,
+        // which is the if / else-if chain the games' own scripts compile to.
+        List<QscStatement> rest = [Statement("AIFunction_DefaultHandler")];
+        if (orders.AlarmPatrolPathId is { } alarmPath)
+        {
+            List<QscStatement> alarm =
+                [Statement("AIAction_Patrol", new QscIntLiteral(alarmPath), new QscIntLiteral(orders.AlarmPatrolStart), Flags(squads))];
+            if (squads)
+            {
+                alarm.Add(Statement("AIFunction_PassEventOnToSquad"));
+            }
+
+            rest = [EventIs("AIEVENT_ALARMON", alarm, rest)];
+        }
 
         if (orders.PatrolPathId is { } path)
         {
-            EventIs(writer, "AIEVENT_IDLE", notIdle);
-            Statement(writer, QvmExpression.Call("AIAction_Patrol", QvmExpression.Int(path), QvmExpression.Int(orders.PatrolStart), Flags(squads)));
+            List<QscStatement> idle =
+                [Statement("AIAction_Patrol", new QscIntLiteral(path), new QscIntLiteral(orders.PatrolStart), Flags(squads))];
             if (squads)
             {
-                Statement(writer, QvmExpression.Call("AIAction_Idle", QvmExpression.Int(1)));
-                Statement(writer, QvmExpression.Call("AIFunction_PassEventOnToSquad"));
+                idle.Add(Statement("AIAction_Idle", new QscIntLiteral(1)));
+                idle.Add(Statement("AIFunction_PassEventOnToSquad"));
             }
-            code.Branch(QvmOpcode.Bra, end);
-            code.MarkLabel(notIdle);
+
+            rest = [EventIs("AIEVENT_IDLE", idle, rest)];
         }
 
-        if (orders.AlarmPatrolPathId is { } alarmPath)
-        {
-            EventIs(writer, "AIEVENT_ALARMON", notAlarm);
-            Statement(writer, QvmExpression.Call(
-                "AIAction_Patrol", QvmExpression.Int(alarmPath), QvmExpression.Int(orders.AlarmPatrolStart), Flags(squads)));
-            if (squads)
-            {
-                Statement(writer, QvmExpression.Call("AIFunction_PassEventOnToSquad"));
-            }
-            code.Branch(QvmOpcode.Bra, end);
-            code.MarkLabel(notAlarm);
-        }
-
-        Statement(writer, QvmExpression.Call("AIFunction_DefaultHandler"));
-        code.MarkLabel(end);
-        code.Emit(QvmOpcode.Brk);
-        return writer.Build();
+        // One writer for every script the engine makes: the syntax tree the decompiler, the parser and the config writer
+        // share, compiled as the games' own compiler laid its scripts out.
+        return QscCompiler.Compile(new QscScript([EventIs("AIEVENT_CREATE", create, rest)], QvmProgram.IgiVersion));
     }
 
-    // if (AIFunction_GetCurrentEventType() == kind) ... else goto otherwise.
-    private static void EventIs(QvmWriter writer, string kind, QvmLabel otherwise)
-    {
-        QvmExpression.Call("AIFunction_GetCurrentEventType").EmitTo(writer);
-        writer.PushSymbol(kind);
-        writer.Code.Emit(QvmOpcode.Eq);
-        writer.Code.Branch(QvmOpcode.Bf, otherwise);
-    }
+    // if (AIFunction_GetCurrentEventType() == kind) { then } else { otherwise }
+    private static QscIf EventIs(string kind, List<QscStatement> then, List<QscStatement> otherwise) =>
+        new(
+            new QscBinary(QscBinaryOperator.Equal, new QscCall("AIFunction_GetCurrentEventType", []), new QscSymbol(kind)),
+            then,
+            otherwise);
 
     // A call whose value is dropped.
-    private static void Statement(QvmWriter writer, QvmExpression call)
-    {
-        call.EmitTo(writer);
-        writer.Code.Emit(QvmOpcode.Pop);
-    }
+    private static QscExpressionStatement Statement(string native, params QscExpression[] arguments) =>
+        new(new QscCall(native, arguments));
 
     // A patrol's flags: I.G.I. 2's soldiers' 1, Project I.G.I.'s guards' AIACTIONFLAG_NONE.
-    private static QvmExpression Flags(bool squads) => squads ? QvmExpression.Int(1) : QvmExpression.Symbol("AIACTIONFLAG_NONE");
+    private static QscExpression Flags(bool squads) => squads ? new QscIntLiteral(1) : new QscSymbol("AIACTIONFLAG_NONE");
 
     // The natives a script calls, kept as orders rather than done.
     private sealed class Recorder

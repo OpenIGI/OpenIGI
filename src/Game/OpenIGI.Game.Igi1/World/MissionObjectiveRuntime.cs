@@ -48,6 +48,9 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     /// <summary>The LevelFlow the original's <c>flt_BC2360</c> points at: the last one initialised.</summary>
     private readonly LevelFlowTask? _levelFlow;
     private bool _attached;
+
+    // The walk this runtime makes for itself when it is given none: a level stepped by its objectives alone.
+    private LevelUpdateWalker? _ownWalk;
     private int _tick;
     private bool _released;
 
@@ -502,18 +505,38 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         bool playerAlive = true)
     {
         SetLevelStateInputs(playerPosition, playerTeam, extraPlayerPosition, playerAlive);
-        if (_attached)
+
+        // The level's walk updates each area, counter, definition, flow and message where the tree places it. A runtime no
+        // walk was given to (AttachTo) walks its level itself, the same way: there is one path.
+        if (!_attached)
         {
-            // The level walk updates them where the tree places them; running them here too would step each
-            // edit variable twice in one tick.
-            return;
+            _ = OwnWalk;
         }
 
-        // No walk reaches them: each area counted afresh, then each counter's own run, in the tree's order.
-        _areas.RecountAll(DetachedRun());
-        foreach (EditVariableTask edit in _editVariables)
+        _ownWalk?.Tick();
+    }
+
+    /// <summary>
+    /// Gets the walk a runtime that was given none walks its level with, made on first use: what a level stepped by its
+    /// objectives alone is run by.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The runtime rides another's walk (<see cref="AttachTo"/>).</exception>
+    public LevelUpdateWalker OwnWalk
+    {
+        get
         {
-            edit.Run(DetachedRun());
+            if (_ownWalk is null)
+            {
+                if (_attached)
+                {
+                    throw new InvalidOperationException("The objectives ride the walk they were attached to; they have none of their own.");
+                }
+
+                _ownWalk = new LevelUpdateWalker(_levelRoot);
+                AttachTo(_ownWalk);
+            }
+
+            return _ownWalk;
         }
     }
 
@@ -538,6 +561,12 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         Func<AreaPlayer>? player = null)
     {
         ArgumentNullException.ThrowIfNull(walker);
+        if (!ReferenceEquals(walker, _ownWalk))
+        {
+            // A walk given from outside takes the level over from the runtime's own.
+            _ownWalk = null;
+        }
+
         _attached = true;
         walker.CurrentObjectives = _walker?.CurrentObjectives;
         _walker = walker;
@@ -589,16 +618,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
 
         _messages.Tick(ExtraMessageHoldSeconds);
 
-        // A level flow runs itself where the level's walk reaches it (0x489290): its children first, then its verdicts. With
-        // no walk, each concludes here.
-        if (!_attached)
-        {
-            LevelUpdateWalker run = DetachedRun();
-            foreach (LevelFlowTask flow in _levelFlows)
-            {
-                flow.Conclude(run);
-            }
-        }
+        // A level flow runs itself where the level's walk reaches it (0x489290): its children first, then its verdicts.
 
         // The number row, as the end of 0x489290 samples it.
         if (_levelFlows.Count > 0)
@@ -607,18 +627,6 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         }
 
         _tick++;
-    }
-
-    // The run a level no walk is attached to is stepped by.
-    private LevelUpdateWalker DetachedRun()
-    {
-        if (_walker is null)
-        {
-            _walker = new LevelUpdateWalker(_levelRoot) { Expressions = _expressions, IsReplica = Mirrored };
-            _areas.Register(_walker.Areas);
-        }
-
-        return _walker;
     }
 
     private static string DigitKeySymbol(int digit) => $"Key{digit}.isPressed";
@@ -662,17 +670,8 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     /// </remarks>
     private void PublishObjectives()
     {
-        LevelUpdateWalker run = _attached ? _walker! : DetachedRun();
-        if (!_attached)
-        {
-            foreach (DefineComputerObjectiveTask definition in _definitions)
-            {
-                definition.Run(run);
-            }
-        }
-
         List<MissionObjective> current = [];
-        if (run.CurrentObjectives is { } active)
+        if (_walker?.CurrentObjectives is { } active)
         {
             for (int index = 0; index < active.Objectives.Count; index++)
             {

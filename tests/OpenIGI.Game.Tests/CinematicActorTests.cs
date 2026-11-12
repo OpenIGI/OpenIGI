@@ -21,7 +21,7 @@ public sealed class CinematicActorTests
     {
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         ConditionalContainerTask container = (ConditionalContainerTask)loop.Tasks.New(
             loop.Tasks.Root, loop.Types.Get(ConditionalContainerTask.TypeName));
         container.Condition = condition;

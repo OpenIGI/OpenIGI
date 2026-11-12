@@ -395,6 +395,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1666));
         GameTask car1888 = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1888));
         GameTask introContainer = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(4001));
@@ -458,6 +459,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         ConditionalContainerTask intro = Walk(root).OfType<ConditionalContainerTask>()
             .First(container => container.Label.Contains("Intro cutscene", StringComparison.OrdinalIgnoreCase));
 
@@ -499,6 +501,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         // The retail camera recorded at scene tick N is the one set on the level's (N+1)th tick: a running
         // scene sets its camera from the tick it is on and counts on afterwards, so its first tick shows time
         // nought. One runtime tick more than the scene tick, then.
@@ -649,6 +652,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         Assert.InRange((carPlacement.Position - initialCarPosition).Length, 0d, 0.0001d);
 
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         for (int tick = 0; tick < 2250; tick++)
         {
             objectives.TickLevelState();

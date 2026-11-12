@@ -43,23 +43,81 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Gets the soldiers as the simulation walks them: each drawn group's roster, in the groups' order.</summary>
     public List<SoldierModelGroup> Roster { get; } = [];
 
-    /// <summary>Gets each soldier's damage state.</summary>
-    public Dictionary<SoldierView, HumanHealth> Health { get; } = [];
+    // Every body that has been given state of its own -- a health, a settings row, a bound, a place out of the world --
+    // so a new level can take it all back. The state itself is the body's (SoldierView).
+    private readonly List<SoldierView> _bodies = [];
 
-    /// <summary>Gets each soldier's detector marker scale, in metres.</summary>
-    // FUN_004D9620 writes Human+0xA0 from FUN_004D0950(model), which reads the authored model bound
-    // at model+0x78. This is the exact value used by the retail detector; the derived vertex radius is
-    // not a substitute because it is materially smaller for the retail soldier models.
-    public Dictionary<SoldierView, float> DetectorMarkerScaleMetres { get; } = [];
+    /// <summary>Notes a body that now carries state, to be cleared with the level.</summary>
+    /// <param name="view">The body.</param>
+    public void Keep(SoldierView view)
+    {
+        if (!_bodies.Contains(view))
+        {
+            _bodies.Add(view);
+        }
+    }
+
+    /// <summary>Gets every body that carries state of its own, to be walked without allocating.</summary>
+    public IReadOnlyList<SoldierView> Bodies => _bodies;
+
+    /// <summary>Gets the damage state of every body that has been hit: for tests and reports, not the tick.</summary>
+    public IEnumerable<HumanHealth> Healths
+    {
+        get
+        {
+            foreach (SoldierView body in _bodies)
+            {
+                if (body.Health is { } health)
+                {
+                    yield return health;
+                }
+            }
+        }
+    }
+
+    /// <summary>Takes back what every body carries of a level: its health, its settings row, its bound and its place out of the world.</summary>
+    public void ForgetBodyState()
+    {
+        foreach (SoldierView body in _bodies)
+        {
+            body.Health = null;
+            body.Combat = null;
+            body.DetectorMarkerScaleMetres = 0f;
+            body.GoneBody = null;
+        }
+
+        _bodies.Clear();
+    }
+
+    /// <summary>Takes back every body's damage state.</summary>
+    public void ForgetHealth()
+    {
+        foreach (SoldierView body in _bodies)
+        {
+            body.Health = null;
+        }
+    }
+
+    /// <summary>Takes back every body's settings row.</summary>
+    public void ForgetCombat()
+    {
+        foreach (SoldierView body in _bodies)
+        {
+            body.Combat = null;
+        }
+    }
+
+    /// <summary>Takes back every body's authored bound.</summary>
+    public void ForgetMarkerScales()
+    {
+        foreach (SoldierView body in _bodies)
+        {
+            body.DetectorMarkerScaleMetres = 0f;
+        }
+    }
 
     /// <summary>Gets or sets the stream the soldiers draw from -- the level's one global stream.</summary>
     public IgiRandom AiRandom { get; set; } = new();
-
-    /// <summary>Gets each soldier's combat row.</summary>
-    // Each soldier's combat row, resolved from its own AIType at the difficulty in force. It is what
-    // gives a guard its maximum health -- sub_406F70 writes the row's "Damage scale" over Human+600,
-    // so a guard is worth 0.3 of a person on easy and 0.8 on hard, not the constructor's 1.0.
-    public Dictionary<SoldierView, AiCombatParameters> Combat { get; } = [];
 
     /// <summary>Gets each soldier's brain.</summary>
     // A dead soldier cannot stay in a shared group: the group is skinned from ONE representative's pose, so
@@ -355,10 +413,6 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Gets or sets what is told when a dead body leaves the world, for whoever draws it.</summary>
     public Action<SoldierAgent>? BodyRemoved { get; set; }
 
-    /// <summary>Gets each body that has left the world, by its soldier, with the roster group it was drawn in.</summary>
-    /// <remarks>A generator clones its replacement from what is kept here; the brain stays until then.</remarks>
-    public Dictionary<SoldierView, (SoldierAgent Agent, SoldierModelGroup Group)> GoneBodies { get; } = [];
-
     /// <summary>Takes a dead body out of the world, as <c>Human_DeactivateHandler</c> (<c>0x4609A0</c>) does.</summary>
     /// <param name="view">The soldier whose body leaves.</param>
     /// <remarks>
@@ -379,7 +433,8 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         }
 
         view.Soldier.IsOutOfWorld = true;
-        GoneBodies[view] = (agent, group);
+        view.GoneBody = (agent, group);
+        Keep(view);
         BodyRemoved?.Invoke(agent);
     }
 
@@ -451,10 +506,11 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Gets a soldier's damage state, creating it on the first hit.</summary>
     public HumanHealth HealthOf(SoldierView soldier)
     {
-        if (!Health.TryGetValue(soldier, out HumanHealth? health))
+        if (soldier.Health is not { } health)
         {
             health = NewHealth(soldier);
-            Health[soldier] = health;
+            soldier.Health = health;
+            Keep(soldier);
         }
 
         return health;
@@ -468,7 +524,7 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     {
         HumanHealth health = new(
             soldier.Soldier.Class.HitZones,
-            Combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.MaximumHealth : HumanHitZoneTable.MaximumHealth);
+            soldier.Combat is { } row ? row.MaximumHealth : HumanHitZoneTable.MaximumHealth);
         health.RescaleMaximumHealth(health.BaseMaximumHealth * _healthScale);
         return health;
     }
@@ -492,9 +548,9 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
             }
 
             _healthScale = value;
-            foreach (HumanHealth health in Health.Values)
+            for (int i = 0; i < _bodies.Count; i++)
             {
-                if (!health.IsDead)
+                if (_bodies[i].Health is { IsDead: false } health)
                 {
                     health.RescaleMaximumHealth(health.BaseMaximumHealth * value);
                 }

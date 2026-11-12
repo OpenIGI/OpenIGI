@@ -294,7 +294,7 @@ public sealed class Igi1MissionSetup(
         mission.Interactions.Sounds = audio.PlayInteractionSound;
         mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, host.Game.Variables, placements);
 
-        solids.GenericPickups = mission.GenericPickups;
+        solids.PickupTaken = owner => mission.GenericPickups?.IsCollected(owner) == true;
 
         // A taken AmmoPickup's task is deleted by its own update where the walk reaches it (0x46D740).
         if (mission.Cutscenes is { } pickupWalk)
@@ -618,7 +618,7 @@ public sealed class Igi1MissionSetup(
             random: mission.SoundRandom,
             made: cutscenes.Vehicles.VehiclePartMade,
             expressions: mission.LevelExpressions);
-        solids.Destructibles = mission.Destructibles;
+        solids.PlacementDestroyed = placement => mission.Destructibles?.IsDestroyed(placement) == true;
         cutscenes.Destructibles = mission.Destructibles;
     }
 

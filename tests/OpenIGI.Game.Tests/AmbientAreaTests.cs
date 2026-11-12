@@ -205,7 +205,7 @@ public sealed class AmbientAreaTests
         // The walk steps an area where the tree places it; the registry's own tick is for the areas no walk reaches. An
         // area whose fade has moved must still be known as walked, or it is stepped twice a tick and draws twice.
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         GameTask task = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         PlacedAmbientArea area = new(
             task, default, Matrix3f.Identity, new Vector3d(1.0, 1.0, 1.0),
@@ -235,7 +235,7 @@ public sealed class AmbientAreaTests
         // 0x4E8840: a one-shot instance deletes itself once its clock, a tick's worth a tick from the tick after it was made,
         // reaches the sample's length; the area finds the slot empty the tick after and draws a fresh gap (0x44C370).
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         Igi1AmbientAreaTask task = (Igi1AmbientAreaTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(Igi1AmbientAreaTask.TypeName));
         PlacedAmbientArea area = new(

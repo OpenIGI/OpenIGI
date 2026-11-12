@@ -21,7 +21,7 @@ public sealed partial class WorldInteraction
     /// expressions are its own update's (<see cref="PlacedDoor.Conditions"/>).
     /// </para>
     /// </remarks>
-    internal void Run(int now)
+    public void Run(int now)
     {
         switch (Type)
         {
@@ -47,7 +47,7 @@ public sealed partial class WorldInteraction
 
     /// <summary>A switch's update (<c>0x4450F0</c>): its On expression, its press pulse, and the model and click a change brings.</summary>
     /// <param name="now">The level's tick.</param>
-    internal void RunSwitch(int now)
+    public void RunSwitch(int now)
     {
         TakeOffset();
         if ((MirroredOn ?? _onCondition?.Invoke()) is bool switchedOn)
@@ -80,7 +80,7 @@ public sealed partial class WorldInteraction
     /// finished-this-tick bytes cleared two ticks past their stamps.
     /// </summary>
     /// <param name="now">The level's tick.</param>
-    internal void RunTimed(int now)
+    public void RunTimed(int now)
     {
         TakeOffset();
         if ((MirroredOn ?? _onCondition?.Invoke()) is bool on)
@@ -97,14 +97,14 @@ public sealed partial class WorldInteraction
 
     /// <summary>A cabinet's update (<c>0x444590</c>): its in-use byte cleared two ticks past its stamp.</summary>
     /// <param name="now">The level's tick.</param>
-    internal void RunCabinet(int now)
+    public void RunCabinet(int now)
     {
         TakeOffset();
         ClearUse(now);
     }
 
     /// <summary>A fence's update (<c>0x43FC30</c>): electrified as its expression says, or not at all, and humming while it is.</summary>
-    internal void RunFence()
+    public void RunFence()
     {
         TakeOffset();
         IsElectrified = MirroredElectrified ?? _electricCondition?.Invoke() ?? false;
@@ -113,7 +113,7 @@ public sealed partial class WorldInteraction
     }
 
     /// <summary>The update of a thing that is only held while used -- a wire, a mounted gun: its in-use byte's last value.</summary>
-    internal void RunHeld()
+    public void RunHeld()
     {
         TakeOffset();
         InUse.CommitTick();

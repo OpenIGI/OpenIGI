@@ -493,7 +493,7 @@ public sealed class ScratchProbeTests
         magic.Load(resources, loop.Natives);
 
         PlayerTaskTypes.RegisterAll(loop.Types);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);

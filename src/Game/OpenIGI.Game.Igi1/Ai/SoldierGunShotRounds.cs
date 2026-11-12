@@ -455,7 +455,7 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
                 // 0x45F800 reaches the body's shapes only through 0x45F580: the segment has to pass within the model's
                 // bound (Human+160) of the origin (Human+32). The skinned mesh reaches past it -- a head in a flinch
                 // stands out of the sphere -- and retail's rounds go over it.
-                double bound = _sight.BoundUnitsOf(soldier);
+                double bound = SoldierSightQueries.BoundUnitsOf(soldier);
                 if (!SoldierSightQueries.SegmentMeetsSphere(origin, end, SoldierContext.OccupantOrigin(soldier), bound))
                 {
                     continue;

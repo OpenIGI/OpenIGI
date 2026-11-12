@@ -97,6 +97,6 @@ internal sealed class RetailMissionFixture
     {
         PlayerTaskTypes.RegisterAll(types);
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(types);
     }
 }

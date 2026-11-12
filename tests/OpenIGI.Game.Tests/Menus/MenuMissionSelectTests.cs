@@ -191,7 +191,7 @@ public sealed class MenuMissionSelectTests
         ManualTimeSource time = new();
         PointerHost host = new();
         GameLoop loop = new(time: time, host: host);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         GameMissionState missions = new();
         missions.Register(loop.Natives);

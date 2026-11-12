@@ -9,7 +9,7 @@ namespace OpenIGI.Game.Ai;
 /// evaluates its power. <see cref="SecurityCameraRegistry"/> keeps the level's cameras; the task runs its own where the
 /// level's walk reaches it.
 /// </remarks>
-public sealed class SecurityCameraTask : DeclaredLevelTask
+public sealed class SecurityCameraTask : DeclaredLevelTask, ISecurityCameraDeclaration
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SCamera";

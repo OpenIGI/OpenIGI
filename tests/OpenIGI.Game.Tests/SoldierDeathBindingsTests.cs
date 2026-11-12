@@ -33,7 +33,7 @@ public sealed class SoldierDeathBindingsTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -73,7 +73,7 @@ public sealed class SoldierDeathBindingsTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -111,7 +111,7 @@ public sealed class SoldierDeathBindingsTests
         objectives.SetSoldierOccupants([new HumanOccupant(400, 0, plateau, IsDead: false)]);
         for (int tick = 0; tick < 600; tick++)
         {
-            objectives.Tick();
+            objectives.StepFlow();
             if (loop.Variables.TryRead("StatusMessage_987.isSendt", out QvmValue sent) && sent.ToInt32() != 0)
             {
                 return;
@@ -144,7 +144,7 @@ public sealed class SoldierDeathBindingsTests
             new HumanOccupant(406, 1, anywhere, IsDead: true),
             new HumanOccupant(407, 1, anywhere, IsDead: false),
         ]);
-        objectives.TickLevelState();
+        objectives.StepLevelState();
 
         Assert.True(loop.Variables.TryRead("HumanSoldier_406.isDead", out QvmValue dead),
             "HumanSoldier_406.isDead must be readable after the host reports it");
@@ -168,7 +168,7 @@ public sealed class SoldierDeathBindingsTests
             new HumanOccupant(407, 1, anywhere, IsDead: true),
             new HumanOccupant(408, 1, anywhere, IsDead: true),
         ]);
-        objectives.TickLevelState();
+        objectives.StepLevelState();
 
         Assert.True(loop.Variables.TryRead("EditVariable_752.nValue", out QvmValue gate),
             "EditVariable_752.nValue must be bound by the runtime");

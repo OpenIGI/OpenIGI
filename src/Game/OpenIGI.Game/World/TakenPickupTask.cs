@@ -20,7 +20,7 @@ namespace OpenIGI.Game.World;
 /// (<c>0x46D1D0</c>, <c>0x46D930</c>) removes the <c>%s.isPickedUp</c> symbol. A <c>GenericPickup</c> is never deleted: its
 /// update (<c>0x46C3C0</c>) only takes the item out of the world.</para>
 /// </remarks>
-internal static class TakenPickupTask
+public static class TakenPickupTask
 {
     /// <summary>The variable each pickup exports.</summary>
     internal const string PickedUpField = "isPickedUp";
@@ -30,7 +30,7 @@ internal static class TakenPickupTask
     /// <param name="task">The pickup's task.</param>
     /// <param name="get">Reads the flag.</param>
     /// <param name="set">Writes the flag.</param>
-    internal static void Export(ScriptVarRegistry variables, GameTask task, Func<bool> get, Action<bool> set)
+    public static void Export(ScriptVarRegistry variables, GameTask task, Func<bool> get, Action<bool> set)
     {
         if (task.Id >= 0)
         {
@@ -43,7 +43,7 @@ internal static class TakenPickupTask
     /// <param name="task">The pickup's task.</param>
     /// <param name="isTaken">Whether it has been taken.</param>
     /// <param name="variables">Where its <c>isPickedUp</c> is exported, or <see langword="null"/>.</param>
-    internal static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, ScriptVarRegistry? variables) =>
+    public static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, ScriptVarRegistry? variables) =>
         BindUpdate(walker, task, isTaken, static () => false, variables, null);
 
     /// <summary>Gives a pickup's task its update: once the pickup is taken the task goes, or is withdrawn until it is put back.</summary>
@@ -54,7 +54,7 @@ internal static class TakenPickupTask
     /// <param name="variables">The level's variables, or <see langword="null"/>.</param>
     /// <param name="export">Exports the task's field again when a withdrawn pickup comes back.</param>
     /// <exception cref="InvalidOperationException">The level is the walk's own and the task was made without its class.</exception>
-    internal static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, Func<bool> withdraws, ScriptVarRegistry? variables, Action? export)
+    public static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, Func<bool> withdraws, ScriptVarRegistry? variables, Action? export)
     {
         if (LevelTaskClass.TryAs(task, walker, out PickupTask? pickup))
         {
@@ -65,7 +65,7 @@ internal static class TakenPickupTask
     /// <summary>Deletes a taken pickup's task, as its delete handler does.</summary>
     /// <param name="task">The task.</param>
     /// <param name="variables">Where its <c>isPickedUp</c> is exported, or <see langword="null"/>.</param>
-    internal static void Delete(GameTask task, ScriptVarRegistry? variables)
+    public static void Delete(GameTask task, ScriptVarRegistry? variables)
     {
         if (task.IsDeleted)
         {

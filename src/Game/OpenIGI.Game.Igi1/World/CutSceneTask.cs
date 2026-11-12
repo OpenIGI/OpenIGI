@@ -20,7 +20,7 @@ namespace OpenIGI.Game.World;
 /// <c>nTick</c>, and latches <c>isFinished</c> after the final nested EditCamera duration.
 /// </para>
 /// </remarks>
-public partial class CutSceneTask : GameTask, Level.ILevelTicked
+public partial class CutSceneTask : GameTask, Level.ILevelTicked, ICutsceneScene
 {
     /// <summary>The script name the level data instantiates this type under.</summary>
     public const string TypeName = "CutScene";

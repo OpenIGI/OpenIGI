@@ -130,7 +130,7 @@ public sealed class MenuMemberAccessTests
     private static MenuSystem Load()
     {
         GameLoop loop = new();
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MenuSystem menu = MenuSystem.Load(File.ReadAllBytes(GameData.Resolve("menusystem/mainmenu.qvm")), loop);
         menu.Manager.Initialize(menu, new SilentHost());
         return menu;

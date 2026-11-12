@@ -3,7 +3,7 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>One status message's send latch and on-screen state: an authored <c>StatusMessage</c> task, or a transient one with no task.</summary>
-/// <remarks>Sent, slotted and advanced by <see cref="MissionStatusMessages"/>.</remarks>
+/// <remarks>Sent, slotted and advanced by <c>MissionStatusMessages</c>.</remarks>
 internal sealed class StatusMessage(
     GameTask? owner,
     string sendExpression,

@@ -405,10 +405,8 @@ public sealed class Igi1CoopPairTests
 
             // And for one whose health is made afterwards -- a generator's replacement, a soldier a script brings in.
             Game.Igi1.Player.SoldierView later = soldiers.SoldierViews.First(static s => !s.IsDead);
-            object context = typeof(Game.Igi1.Ai.SoldierSimulation)
-                .GetField("_context", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(soldiers)!;
-            var healths = (System.Collections.IDictionary)context.GetType().GetProperty("Health")!.GetValue(context)!;
-            healths.Remove(later);
+            // A body carries its own health: taken away, the next asked for is made afresh.
+            typeof(Game.Igi1.Player.SoldierView).GetProperty("Health")!.SetValue(later, null);
             Game.Player.HumanHealth fresh = soldiers.HealthOf(later);
             Assert.Equal(fresh.BaseMaximumHealth * 2.5f, fresh.MaximumHealth, 3);
 

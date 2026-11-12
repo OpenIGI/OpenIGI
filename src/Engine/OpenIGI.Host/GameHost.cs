@@ -250,7 +250,6 @@ public sealed partial class GameHost : IDisposable
 
     // --- The player, the held weapon, the HUD and the soldiers ---
     private IHeldWeaponPresenter? _heldWeapon;
-    private IGunPickupPresenter? _gunPickupRenderer;
 
     // The over-the-shoulder camera's and the flashlight's wall cast, cached against the collision it is built from.
     private DebugOverlayRenderer? _debugOverlay;
@@ -263,16 +262,12 @@ public sealed partial class GameHost : IDisposable
     private long _titleCycleLeg;
     private int _missionCycleMission;
 
-    private IBulletMarkPresenter? _marks;
 
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
     // and the player's own material lookup already use.
 
-    private ICameraStatusLightPresenter? _cameraStatusLights;
     private ModelGlowRenderer? _modelGlows;
-    private IGrenadePresenter? _grenadeRenderer;
-    private IMissilePresenter? _missileRenderer;
 
     // How the level's models give up detail with distance, or none.
     private ModelLodPolicy? _modelLod;
@@ -954,7 +949,6 @@ public sealed partial class GameHost : IDisposable
         _menuBackdrop.Dispose();
         _menuFlow.Dispose();
         _heldWeapon?.Dispose();
-        _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _touchIcons?.Dispose();
@@ -963,12 +957,9 @@ public sealed partial class GameHost : IDisposable
         _mapComputerDevice?.Dispose();
         _tacticalComputer?.Dispose();
         _messages?.Dispose();
-        _marks?.Dispose();
+        (_worldView as IDisposable)?.Dispose();
         _effects.Dispose();
-        _cameraStatusLights?.Dispose();
         _modelGlows?.Dispose();
-        _grenadeRenderer?.Dispose();
-        _missileRenderer?.Dispose();
         _retailMenus?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();

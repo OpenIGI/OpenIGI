@@ -43,7 +43,7 @@ public sealed class Level4WatchOutTests
         Assert.True(ConditionalContainerGate.IsTaskActive(guard));
 
         runtime.SetSoldierOccupants([new HumanOccupant(guard.Id, guard.Team, inside, IsDead: false)]);
-        runtime.Tick();
+        runtime.StepFlow();
 
         Assert.Equal(1, Active(loop));
         Assert.Contains(runtime.Log, entry => entry.TextResource == WatchOutMessage);
@@ -55,7 +55,7 @@ public sealed class Level4WatchOutTests
     {
         (GameLoop loop, _, MissionObjectiveRuntime runtime, Vector3d inside) = Load();
 
-        runtime.Tick(inside);
+        runtime.StepFlow(inside);
 
         Assert.Equal(0, Active(loop));
         Assert.DoesNotContain(runtime.Log, entry => entry.TextResource == WatchOutMessage);
@@ -65,7 +65,7 @@ public sealed class Level4WatchOutTests
     {
         GameLoop loop = new();
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         ResourceRegistry resources = new(new VirtualFileSystem());
         const string resourceName = "LOCAL:level4/objects.qvm";

@@ -371,8 +371,8 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         _generators.GuardExpressions = variables is null ? null : expressions ?? new LevelExpressionRuntime(variables);
         ScriptVariables = variables;
         LastDetectionShoutTick = -1;
-        _context.Combat.Clear();
-        Health.Clear();
+        _context.ForgetCombat();
+        _context.ForgetHealth();
         _brains.ClearActivations();
         _context.PlayerTarget = new AiCombatTarget("HumanPlayer");
         _levelRoot = levelRoot;

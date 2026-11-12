@@ -24,7 +24,7 @@ public sealed class HumanExportVarsTests
     private static GameLoop Loop()
     {
         GameLoop loop = new(new ManualTimeSource());
-        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         return loop;
     }

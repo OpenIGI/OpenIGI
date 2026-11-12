@@ -34,7 +34,7 @@ internal struct ObjectCollisionTraceTest(ObjectCollisionIndex index, WorldTraceR
         if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
             || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
             || (request.IgnoredPlacement is not null && ReferenceEquals(entry.Placement, request.IgnoredPlacement))
-            || index.GenericPickups?.IsCollected(entry.Owner) == true
+            || index.PickupTaken?.Invoke(entry.Owner) == true
             || index.IsRetired(entry)
             || index.IsPassable(entry.Owner)
             || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))

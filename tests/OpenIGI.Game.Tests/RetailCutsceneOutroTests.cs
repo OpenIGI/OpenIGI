@@ -27,6 +27,7 @@ public sealed class RetailCutsceneOutroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         // Leave the intro through the same native edge the Escape key uses, then trigger the authored
         // mission-success variable that registers ConditionalContainer 4007.
@@ -169,6 +170,7 @@ public sealed class RetailCutsceneOutroTests
             vehicleObstacleReleased: obstacle => doors.Doors
                 .FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         RefreshCutsceneCollision(solids, world, runtime);
         RefreshDoorCollision(solids, doors);
         AssertGateCollisionState(solids, gate, expected: !gateStartsOpen);

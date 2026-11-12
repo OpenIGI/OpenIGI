@@ -167,6 +167,7 @@ public sealed partial class GameHost
         _presentation = binding.Presentation;
         _hudOverlay = null;
         _firstPerson = null;
+        (_worldView as IDisposable)?.Dispose();
         _worldView = null;
         _viewpoint = null;
         _worldBuilder = binding.WorldBuilder;
