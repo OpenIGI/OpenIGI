@@ -215,7 +215,7 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
     public bool IsOn(AlarmSpeaker speaker)
     {
         ArgumentNullException.ThrowIfNull(speaker);
-        if (speaker.IsDestroyed)
+        if (IsOut(speaker))
         {
             return false;
         }
@@ -235,7 +235,7 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
     public string SoundNow(AlarmSpeaker speaker)
     {
         ArgumentNullException.ThrowIfNull(speaker);
-        if (speaker.IsDestroyed)
+        if (IsOut(speaker))
         {
             return speaker.FaultySound.Length > 0
                 && !string.IsNullOrWhiteSpace(speaker.AlarmExpression)
@@ -245,6 +245,22 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
         }
 
         return IsOn(speaker) ? speaker.SirenSound : string.Empty;
+    }
+
+    /// <summary>
+    /// Gets or sets what says whether a task's <c>ExplodeObject</c> has exploded: the level's destructibles, which a
+    /// <c>Siren</c> is one of (<c>0x4494D0</c> reads its own <c>exploded</c> byte, <c>+400</c>).
+    /// </summary>
+    public Func<GameTask, bool>? Exploded { get; set; }
+
+    /// <summary>Gets whether a speaker is out for good: shot out itself, or a siren whose <c>ExplodeObject</c> has exploded.</summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <returns><see langword="true"/> once it is.</returns>
+    public bool IsOut(AlarmSpeaker speaker)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        return speaker.IsDestroyed
+            || (string.Equals(speaker.Task.Type.Name, WorldScene.SirenType, StringComparison.Ordinal) && Exploded?.Invoke(speaker.Task) == true);
     }
 
     private readonly List<AlarmLightReflector> _reflectors = [];
@@ -640,7 +656,11 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
                 FirstNonBlankTextNamed(sirenTask, "on expression"),
                 FirstNonBlankTextNamed(sirenTask, "working sound"),
                 FirstNonBlankTextNamed(sirenTask, "explosion sound"),
-                FaultySound: FirstNonBlankTextNamed(sirenTask, "faulty sound")));
+                FaultySound: FirstNonBlankTextNamed(sirenTask, "faulty sound"),
+
+                // A Siren is an ExplodeObject: what a round or a blast does to it, and its own blast, are that object's
+                // (the level's destructibles). Here it only sounds, working or faulty, by whether it has exploded.
+                CanBeDestroyed: false));
         }
         else if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "AlarmLight", StringComparison.Ordinal))

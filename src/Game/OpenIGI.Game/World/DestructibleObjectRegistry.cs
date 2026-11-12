@@ -671,8 +671,9 @@ public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateS
     // The ExplodeObject family, traced in IGI.exe through each type's parent: Generator (0x43B6E0),
     // Terminal (0x443680) and Radio (0x43AD80, through sub_481340) call the ExplodeObject base
     // (word_54097C), and SCameraControl (0x440C20) and AlarmControl (0x440710) are registered under
-    // Terminal (word_53C680). Siren and MineField declare the same parameters but their bases are not
-    // traced, so they keep the older rule.
+    // Terminal (word_53C680). A Siren is registered under ExplodeObject too (TaskType_New("Siren", ..., ExplodeObject's type),
+    // and its run handler 0x4494D0 calls the ExplodeObject's first). MineField declares the same parameters but is an
+    // EditorRigidObj, and keeps the older rule.
     private static readonly HashSet<string> ExplodeObjectFamily = new(StringComparer.Ordinal)
     {
         ExplodeObjectType,
@@ -681,6 +682,7 @@ public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateS
         RadioType,
         SecurityCameraControlType,
         AlarmControlType,
+        WorldScene.SirenType,
     };
 
     private static bool ExplodesWithoutDestroyedModel(DeclaredTask task) =>

@@ -522,6 +522,9 @@ public sealed class Igi1MissionSetup(
             () => soldiers.AnyAlarmOn,
             mission.LevelExpressions);
         mission.AlarmSpeakers.BindScene(scene.Placements);
+
+        // A siren is an ExplodeObject: whether it has exploded is the destructibles' to say, built after this.
+        mission.AlarmSpeakers.Exploded = task => mission.Destructibles?.IsDestroyed(task) == true;
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
         // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
