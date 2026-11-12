@@ -80,6 +80,20 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         _shots.ClearImpacts();
         _shots.TickProjectiles();
     }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether what this player threw and fired is run by the level after its own objects,
+    /// as the original's Dynamic tasks are, rather than inside this player's update.
+    /// </summary>
+    public bool ProjectilesRunByLevel
+    {
+        get => _shots.ProjectilesRunByLevel;
+        set => _shots.ProjectilesRunByLevel = value;
+    }
+
+    /// <summary>Runs what flies where the level's Dynamic tasks run, on a tick this player's update asked for it.</summary>
+    /// <returns><see langword="true"/> when they were advanced.</returns>
+    public bool RunDeferredProjectiles() => _shots.RunDeferredProjectiles();
     private readonly PlayerInteractionDriver _interaction;
     private readonly PlayerLadderController _ladder;
     private readonly PlayerFootsteps _footsteps;

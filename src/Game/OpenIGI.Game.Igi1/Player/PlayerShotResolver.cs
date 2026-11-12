@@ -484,8 +484,49 @@ internal sealed class PlayerShotResolver
         }
     }
 
-    /// <summary>Advances what flies: the grenades, the rockets and the launcher's rounds.</summary>
+    /// <summary>
+    /// Gets or sets a value indicating whether what flies is run by the level, after its own objects, rather than inside
+    /// this player's update.
+    /// </summary>
+    /// <remarks>
+    /// The original makes a grenade, a mine, a rocket and a launcher's round under the level's Dynamic task
+    /// (<c>Grenade_Throw</c>, <c>Missile_New</c>: <c>Level_GetDynamic</c>, <c>0x4F0EE0</c>), whose children run after the
+    /// level's objects (<c>0x4F0660</c>). A mission that walks its level sets this for its own player and runs them there
+    /// (<see cref="RunDeferredProjectiles"/>); a player with no such walk around it runs them in its own update.
+    /// </remarks>
+    internal bool ProjectilesRunByLevel { get; set; }
+
+    // Whether this tick's update asked for what flies to be advanced, while the level runs it.
+    private bool _projectilesDue;
+
+    /// <summary>Advances what flies, or where the level runs it, asks the level to this tick.</summary>
     internal void TickProjectiles()
+    {
+        if (ProjectilesRunByLevel)
+        {
+            _projectilesDue = true;
+            return;
+        }
+
+        StepProjectiles();
+    }
+
+    /// <summary>Advances what flies where the level's Dynamic tasks run, on a tick this player's update asked for it.</summary>
+    /// <returns><see langword="true"/> when they were advanced.</returns>
+    internal bool RunDeferredProjectiles()
+    {
+        if (!_projectilesDue)
+        {
+            return false;
+        }
+
+        _projectilesDue = false;
+        StepProjectiles();
+        return true;
+    }
+
+    // The grenades, the rockets and the launcher's rounds, a tick.
+    private void StepProjectiles()
     {
         // Detonations are drained by the game, which owns the effects and the blast's victims.
         _grenades.Tick(GrenadeWalls ?? _body.Walls);

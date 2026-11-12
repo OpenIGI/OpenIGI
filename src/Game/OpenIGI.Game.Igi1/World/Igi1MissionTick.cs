@@ -91,6 +91,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // The partners, when the mission's own player did not run them this tick.
         RunPartners();
 
+        // What the level made while it runs, after its own objects.
+        RunDynamicTasks();
+
         if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.Player is not null)
         {
             ResolvePlayerTick();
@@ -528,6 +531,15 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         // A co-op session's other players, each on its client's command for this tick, after the mission's own.
         RunPartners();
+        if (player.ProjectilesRunByLevel)
+        {
+            // A grenade's creation is heard as it is thrown (the type 17 event, sent from the throw); the rest of what
+            // flies is the level's Dynamic tasks' to say, after its objects (RunDynamicTasks).
+            CheckRunOver();
+            NotifyGrenadesThrown(player);
+            return true;
+        }
+
         mission.TickVehicleMissiles();
         CheckRunOver();
 
@@ -535,6 +547,49 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
         NotifyGrenadeAiEvents();
         return true;
+    }
+
+    /// <summary>
+    /// Runs the tasks the level made while it runs -- the grenades, mines, rockets and launcher rounds of the mission's own
+    /// player's pool, then the vehicles' rockets -- where the original runs them: under the level's Dynamic task
+    /// (<c>Level_GetDynamic</c>, <c>0x4F0EE0</c>), after the level's own objects (<c>0x4F0660</c>).
+    /// </summary>
+    /// <remarks>
+    /// On the ticks the player's update asked for it, so what flies stops where it stopped before: under a cut-scene. Their
+    /// bounces, mine triggers and blasts are heard by the soldiers from here, so at each soldier's next update.
+    /// </remarks>
+    private void RunDynamicTasks()
+    {
+        if (mission.Player is not { } player)
+        {
+            return;
+        }
+
+        // Set here rather than as the player is stood: a level stepped without its walk keeps them in the player's update.
+        player.ProjectilesRunByLevel = mission.ObjectsInWalk;
+        if (!player.RunDeferredProjectiles())
+        {
+            return;
+        }
+
+        mission.TickVehicleMissiles();
+        NotifyGrenadeAiEvents();
+    }
+
+    // The grenades thrown this tick, heard as they leave the hand.
+    private void NotifyGrenadesThrown(PlayerCamera rig)
+    {
+        if (mission.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        foreach (Vector3d origin in rig.Grenades.Thrown)
+        {
+            soldiers.NotifyGrenadeThrown(origin);
+        }
+
+        rig.Grenades.ClearThrownEvents();
     }
 
     // Whether there is a living player to step, and no failure screen over it.
@@ -874,7 +929,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     // sirens and the alarm lights.
     private void StepLevelWhileDown(PlayerCamera player)
     {
+        // Past the level's objects already: where its Dynamic tasks run.
         player.TickProjectilesAlone();
+        player.RunDeferredProjectiles();
         mission.TickVehicleMissiles();
         NotifyGrenadeAiEvents();
         blasts.ResolveGrenadeDetonations();
