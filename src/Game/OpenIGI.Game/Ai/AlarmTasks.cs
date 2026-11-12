@@ -30,6 +30,8 @@ public sealed class AlarmLightTask : DeclaredLevelTask
             return;
         }
 
+        // Its sound first, by what it was as the handler began: a light that comes on is heard from the next tick.
+        speakers.SoundLight(light);
         if (light.IsDestroyed)
         {
             // Nothing runs, the reflector neither: it only comes to rest where it stopped.
@@ -56,11 +58,21 @@ public sealed class SirenTask : DeclaredLevelTask, IExplodeObjectTask
     /// <inheritdoc/>
     public ExplodeObjectUpdate? Explosion { get; set; }
 
+    /// <summary>Gets or sets the siren as the level's speakers keep it, or <see langword="null"/> until they do.</summary>
+    internal AlarmSpeaker? Speaker { get; set; }
+
+    /// <summary>Gets or sets the level's speakers.</summary>
+    internal AlarmSpeakerRegistry? Speakers { get; set; }
+
     /// <inheritdoc/>
     public override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);
         Explosion?.Run();
+        if (Speaker is { } speaker)
+        {
+            Speakers?.SoundSiren(speaker);
+        }
     }
 }

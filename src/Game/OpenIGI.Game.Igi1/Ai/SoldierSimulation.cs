@@ -426,6 +426,8 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         TickCount++;
         Enemy = enemy;
         Ticked.Clear();
+        _rounds.LevelRunning = true;
+        _rounds.BeginTick();
         CollectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         bool collectDiagnostics = CollectDiagnostics;
         if (collectDiagnostics)
@@ -476,7 +478,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
                     // A soldier's run handler only runs its children (0x45CF90, 0x45EEA0); its HumanAI child moves it.
                     if (SoldierContext.FindMind(view) is { } mind)
                     {
-                        human.Runner = HumanChildren.Instance;
+                        human.Runner = _humanChildren;
                         mind.Runner = new SoldierMindRun(this, human);
 
                         // Its Gun is a task of its own, ahead of its HumanAI: the weapon's clock runs there.
@@ -544,10 +546,11 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// <summary>A human's run handler (<c>0x45EEA0</c>): its children, and nothing of its own.</summary>
     private sealed class HumanChildren : OpenIGI.Game.Level.ITaskRun<HumanTask>
     {
-        public static HumanChildren Instance { get; } = new();
-
         public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level) => level.RunChildren(task);
     }
+
+    // What runs every soldier's own task: it has no state of its own.
+    private readonly HumanChildren _humanChildren = new();
 
     // The bodies one soldier task owns, in the soldiers' order, asked for again only when a soldier joins or leaves.
     private sealed class SoldierBodies(SoldierSimulation soldiers, HumanTask owner)
@@ -698,9 +701,18 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
             }
         }
 
-        // The level's dynamic container ticks after its static objects: every gun's GunShot task, then the chips.
+        // Every gun's GunShot task is a child of the level's Dynamic task. The walk has marched those the level was built
+        // with as it left the child each stands after (MarchRoundsMadeUnder); what is left is Dynamic's tail. A level
+        // stepped without its walk marches them all here.
         TickingSoldierId = -1;
-        _rounds.MarchRounds();
+        if (_rounds.MarchedInWalk || _walker?.AfterDynamicChild is not null)
+        {
+            _rounds.MarchTail();
+        }
+        else
+        {
+            _rounds.MarchRounds();
+        }
 
         // Un-brained cutscene actors ride their vehicles the same way; the brained ones did as they updated.
         _staging.AttachStagedActorsToVehicles();
@@ -837,6 +849,18 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// <param name="task">The soldier's task.</param>
     /// <returns>The soldier, or <see langword="null"/> when the task is not one of these soldiers.</returns>
     public SoldierView? ViewOf(HumanTask task) => _context.ViewsByTask.TryGetValue(task, out SoldierView? view) ? view : null;
+
+    /// <summary>
+    /// Marches the rounds of the soldiers' guns made under one child of the level's <c>Dynamic</c> task, as the walk leaves
+    /// that child: a gun's <c>GunShot</c> task is made with the gun, at <c>Dynamic</c>'s tail as it then stood.
+    /// </summary>
+    /// <param name="anchor">The child of <c>Dynamic</c> the walk has just run.</param>
+    public void MarchRoundsMadeUnder(GameTask anchor)
+    {
+        ArgumentNullException.ThrowIfNull(anchor);
+        TickingSoldierId = -1;
+        _rounds.MarchUnder(anchor);
+    }
 
     // A new soldier's gun's GunShot task, after every gun made before it, and this simulation's handlers for its hit events.
     private void Enlist(SoldierView view)

@@ -508,7 +508,36 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
 
         foreach (AlarmSpeaker speaker in mission.AlarmSpeakers.Speakers)
         {
-            string sound = mission.AlarmSpeakers.SoundNow(speaker);
+            // One whose own task sounded it from the level's walk has been sounded already, where the tree places it.
+            if (!_speakersSounded.Contains(speaker))
+            {
+                SoundSpeaker(speaker, mission.AlarmSpeakers.SoundNow(speaker));
+            }
+        }
+
+        _speakersSounded.Clear();
+    }
+
+    // The speakers their own tasks sounded this tick.
+    private readonly HashSet<AlarmSpeaker> _speakersSounded = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Starts, swaps or stops one speaker's loop for the sound it should be making now: called from a siren's and an alarm
+    /// light's own run handlers (<c>0x4494D0</c>, <c>0x43A270</c>), and for the rest after the walk.
+    /// </summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <param name="sound">The definition it should be sounding, or empty for none.</param>
+    public void SoundSpeaker(AlarmSpeaker speaker, string sound)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        ArgumentNullException.ThrowIfNull(sound);
+        _speakersSounded.Add(speaker);
+        if (host.SoundOutput is null)
+        {
+            return;
+        }
+
+        {
             bool on = sound.Length > 0;
             bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
 
@@ -577,6 +606,34 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         }
 
         foreach (SecurityCamera camera in cameras.Cameras)
+        {
+            // One whose own task sounded it from the level's walk has been sounded already.
+            if (!_camerasSounded.Contains(camera))
+            {
+                SoundCamera(camera);
+            }
+        }
+
+        _camerasSounded.Clear();
+    }
+
+    // The cameras their own tasks sounded this tick.
+    private readonly HashSet<SecurityCamera> _camerasSounded = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Keeps one camera's beep and motor loops as its lens now stands: called as the camera's own task has run (the
+    /// <c>SCamera</c>'s update, <c>0x442610</c>, whose lens makes them), and for the rest after the walk.
+    /// </summary>
+    /// <param name="camera">The camera.</param>
+    public void SoundCamera(SecurityCamera camera)
+    {
+        ArgumentNullException.ThrowIfNull(camera);
+        _camerasSounded.Add(camera);
+        if (host.SoundOutput is null)
+        {
+            return;
+        }
+
         {
             string beep = camera.Beep switch
             {

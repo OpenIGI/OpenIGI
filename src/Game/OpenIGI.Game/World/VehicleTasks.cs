@@ -21,7 +21,16 @@ public abstract class VehicleTask : DeclaredLevelTask
         {
             level.RunChildren(this);
         }
+
+        // The last thing a car's run does is its own destruction (Car_Run's tail, 0x42E320 -> 0x42E5A0).
+        Dying?.Invoke();
     }
+
+    /// <summary>
+    /// Gets or sets the vehicle's destruction for this tick -- the blasts of one that was hit, its countdown and its wreck --
+    /// or <see langword="null"/> for a vehicle the level's destructibles do not keep.
+    /// </summary>
+    internal Action? Dying { get; set; }
 
     /// <summary>Runs the type's own handler.</summary>
     /// <param name="vehicles">The level's vehicles.</param>

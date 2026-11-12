@@ -253,6 +253,23 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
     /// </summary>
     public Func<GameTask, bool>? Exploded { get; set; }
 
+    /// <summary>
+    /// Gets or sets what plays a speaker's sound, given the definition it should be sounding now (empty for none): a siren's
+    /// and an alarm light's sounds are started and stopped in their own run handlers.
+    /// </summary>
+    public Action<AlarmSpeaker, string>? Sound { get; set; }
+
+    /// <summary>A siren's sounds, in its run handler (<c>0x4494D0</c>): by its expression as read now, working or faulty.</summary>
+    /// <param name="siren">The siren.</param>
+    internal void SoundSiren(AlarmSpeaker siren) => Sound?.Invoke(siren, SoundNow(siren));
+
+    /// <summary>
+    /// An alarm light's sound, at the head of its run handler (<c>0x43A270</c>): by whether it was on as the handler began
+    /// -- the tick before's reading -- and never once it is shot out.
+    /// </summary>
+    /// <param name="light">The light.</param>
+    internal void SoundLight(AlarmSpeaker light) => Sound?.Invoke(light, light.WasOn && !light.IsDestroyed ? light.SirenSound : string.Empty);
+
     /// <summary>Gets whether a speaker is out for good: shot out itself, or a siren whose <c>ExplodeObject</c> has exploded.</summary>
     /// <param name="speaker">The speaker.</param>
     /// <returns><see langword="true"/> once it is.</returns>
@@ -310,6 +327,11 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
                 task.Light = light;
                 task.Speakers = this;
                 _walkedLights.Add(light);
+            }
+            else if (light.Task is SirenTask siren)
+            {
+                siren.Speaker = light;
+                siren.Speakers = this;
             }
         }
     }

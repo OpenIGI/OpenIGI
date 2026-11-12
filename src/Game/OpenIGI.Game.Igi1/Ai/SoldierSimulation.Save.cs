@@ -40,7 +40,9 @@ public sealed partial class SoldierSimulation : ISavedStateSource
     /// </summary>
     internal void RemakeForLoad()
     {
+        // The soldiers are made again as the level made them: their guns' tasks stand where the level's did.
         _rounds.Clear();
+        _rounds.LevelRunning = false;
         _damage.ClearForLoad();
         _footsteps.Clear();
         _combatClipMissing.Clear();

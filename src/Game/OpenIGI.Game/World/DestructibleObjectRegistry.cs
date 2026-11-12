@@ -382,6 +382,13 @@ public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateS
                 task.Explosion = new ExplodeObjectUpdate(this, item);
                 _walked.Add(item);
             }
+            else if (item.Kind == DestructibleObjectKind.Vehicle && item.Owner is VehicleTask vehicle && adopted.Add(item.Owner))
+            {
+                // A car's destruction is the end of its own run handler (0x42E320 -> 0x42E5A0), where its draws fall.
+                DestructibleObject dying = item;
+                vehicle.Dying = () => RunFromWalk(dying);
+                _walked.Add(item);
+            }
         }
     }
 

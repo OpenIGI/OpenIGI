@@ -127,12 +127,32 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
             return;
         }
 
-        RunChildren(task);
-        if (task is DynamicTask)
+        if (task is not DynamicTask)
         {
-            DynamicTail?.Invoke();
+            RunChildren(task);
+            return;
         }
+
+        // Dynamic's children are the level's objects and, among them, the tasks made under it while the level was built: a
+        // gun's GunShot task is made as the gun is (Gun's create handler, 0x478540 -> Task_New on Level_GetDynamic, which
+        // links at the tail), so it stands after the child of Dynamic its gun was made under, and before the next.
+        GameTask? child = task.FirstChild;
+        while (child is not null)
+        {
+            GameTask? next = child.NextSibling;
+            Run(child);
+            AfterDynamicChild?.Invoke(child);
+            child = next;
+        }
+
+        DynamicTail?.Invoke();
     }
+
+    /// <summary>
+    /// Gets or sets the run of the tasks made under <c>Dynamic</c> while one of its children was built -- the
+    /// <c>GunShot</c> tasks of the guns under that child -- which the walk reaches as it leaves the child.
+    /// </summary>
+    public Action<GameTask>? AfterDynamicChild { get; set; }
 
     /// <summary>
     /// Gets or sets the run of the tasks the level made while it runs -- what was thrown and fired, <c>Level_GetDynamic</c>'s
