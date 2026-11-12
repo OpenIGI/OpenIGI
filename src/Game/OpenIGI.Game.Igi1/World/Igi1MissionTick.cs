@@ -91,7 +91,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // The partners, when the mission's own player did not run them this tick.
         RunPartners();
 
-        // What the level made while it runs, after its own objects.
+        // What the level made while it runs, after its own objects: the walk ran it as it left the Dynamic task; here for a
+        // level whose player updates after the walk, or one stepped without it.
         RunDynamicTasks();
 
         if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.Player is not null)
@@ -741,6 +742,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         LevelUpdateWalker walker = cutscenes.Walker;
         mission.ObjectsInWalk = true;
+
+        // What the level made while it runs is the Dynamic task's, reached as the walk leaves that task's own children.
+        walker.DynamicTail = RunDynamicTasks;
 
         // A lift updates where the walk reaches it (Elevator's UPDATE, 0x43D280): its children first -- the
         // doors, switches and indicators that ride it -- then its own floor expressions and its move, after

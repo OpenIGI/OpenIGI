@@ -92,6 +92,7 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <param name="brain">Its brain, its runtime id already given.</param>
     public void Register(SoldierView view, Igi1HumanAi brain)
     {
+        BrainsVersion++;
         Brains[view] = brain;
         BrainsByRuntimeId[brain.RuntimeId] = brain;
         _highestRuntimeId = Math.Max(_highestRuntimeId, brain.RuntimeId);
@@ -107,9 +108,24 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Forgets every brain, for the next level.</summary>
     public void ClearBrains()
     {
+        BrainsVersion++;
         Brains.Clear();
         BrainsByRuntimeId.Clear();
         _highestRuntimeId = 0;
+    }
+
+    /// <summary>
+    /// Gets a count that moves whenever a soldier joins or leaves <see cref="Brains"/>: a soldier's task asks again for the
+    /// bodies it owns only then.
+    /// </summary>
+    public int BrainsVersion { get; private set; }
+
+    /// <summary>Takes a soldier out of the brains: a generator's dead guard, as its replacement is cloned.</summary>
+    /// <param name="view">The soldier.</param>
+    public void Forget(SoldierView view)
+    {
+        BrainsVersion++;
+        Brains.Remove(view);
     }
 
     /// <summary>Gets each soldier's view by its task, for the hit events the task receives.</summary>

@@ -32,7 +32,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// them share one <see cref="SoldierContext"/>, so every part reads the same roster, brains and random stream.
 /// </para>
 /// </remarks>
-public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level.ITaskRun<HumanTask>, OpenIGI.Game.Level.ITaskRun<GuardGeneratorTask>
+public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level.ITaskRun<GuardGeneratorTask>
 {
     /// <summary>The damage factor a knife stab carries into a soldier with no fight on (<c>0x46DFB0</c>: <c>0x447A0000</c>).</summary>
     public const float KnifeUnawareDamageFactor = 1000f;
@@ -473,7 +473,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
             {
                 if (OpenIGI.Game.Level.LevelTaskClass.TryAs(view.Soldier, walker, out HumanTask? human))
                 {
-                    human.Runner = this;
+                    human.Runner = new SoldierTaskRun(this, human);
                 }
             }
         }
@@ -487,12 +487,42 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         AlarmControls?.AttachTo(walker, () => TickCount, _ => AlarmControlTicked());
     }
 
-    /// <inheritdoc/>
-    /// <remarks>A soldier's update, then its children, where the level's walk reaches its task.</remarks>
-    void OpenIGI.Game.Level.ITaskRun<HumanTask>.Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+    /// <summary>
+    /// One soldier task's part of the level's walk: the update of every body the task owns, then its children, as a
+    /// <c>HumanSoldier</c>'s run handler updates itself and then its view, its gun and its <c>HumanAI</c>.
+    /// </summary>
+    /// <remarks>
+    /// The task holds its own bodies -- one, or a generator's dead guard and its replacement, which share a task -- in the
+    /// order the soldiers are kept in, and asks for them again only when a soldier has joined or left.
+    /// </remarks>
+    private sealed class SoldierTaskRun(SoldierSimulation soldiers, HumanTask owner) : OpenIGI.Game.Level.ITaskRun<HumanTask>
     {
-        TickSoldierTask(task);
-        level.RunChildren(task);
+        private readonly List<(SoldierView View, Igi1HumanAi Brain)> _bodies = [];
+        private int _version = -1;
+
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+        {
+            SoldierContext context = soldiers._context;
+            if (_version != context.BrainsVersion)
+            {
+                _version = context.BrainsVersion;
+                _bodies.Clear();
+                foreach ((SoldierView view, Igi1HumanAi brain) in context.Brains)
+                {
+                    if (ReferenceEquals(view.Soldier, owner))
+                    {
+                        _bodies.Add((view, brain));
+                    }
+                }
+            }
+
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                soldiers.TickSoldier(_bodies[i].View, _bodies[i].Brain);
+            }
+
+            level.RunChildren(task);
+        }
     }
 
     /// <inheritdoc/>
@@ -737,18 +767,6 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         _context.ViewsByTask[view.Soldier] = view;
         view.Soldier.Events = this;
         view.Soldier.Body = new Player.Igi1SoldierBody(view, () => Brains.TryGetValue(view, out Igi1HumanAi? brain) && brain.IsCrouching);
-    }
-
-    /// <summary>Updates every body a soldier task owns -- a generator's dead guard and its replacement share one.</summary>
-    private void TickSoldierTask(GameTask task)
-    {
-        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
-        {
-            if (ReferenceEquals(view.Soldier, task))
-            {
-                TickSoldier(view, brain);
-            }
-        }
     }
 
     // The authored animation triggers the clip crossed this tick, and the melee strike its impact frame delivers.

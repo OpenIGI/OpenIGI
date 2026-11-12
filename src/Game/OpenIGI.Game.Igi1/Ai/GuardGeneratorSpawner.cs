@@ -225,7 +225,7 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
 
         // 0x487EE0 deletes the dead child (0x4015F0) as it clones the next; its body has already left the world. The task it
         // stood for is the replacement's, so the human list keeps it.
-        _context.Brains.Remove(deadView);
+        _context.Forget(deadView);
         _context.GoneBodies.Remove(deadView);
         _context.Health.Remove(deadView);
         _context.Combat.Remove(deadView);

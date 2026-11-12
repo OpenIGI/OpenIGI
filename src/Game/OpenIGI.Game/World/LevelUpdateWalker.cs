@@ -115,7 +115,10 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
     void IConditionalContainerRules.TakeChildrenOutOfWorld(ConditionalContainerTask container) => Deactivate(container);
 
     /// <inheritdoc/>
-    /// <remarks><c>Static</c> and <c>Idle</c> do nothing; anything else walks its children.</remarks>
+    /// <remarks>
+    /// <c>Static</c> and <c>Idle</c> do nothing; anything else walks its children. <c>Dynamic</c> (<c>0x4F0660</c>) walks its
+    /// children, and what the level made while it runs is among them, added at the end: <see cref="DynamicTail"/>.
+    /// </remarks>
     protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
@@ -125,7 +128,18 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
         }
 
         RunChildren(task);
+        if (task is DynamicTask)
+        {
+            DynamicTail?.Invoke();
+        }
     }
+
+    /// <summary>
+    /// Gets or sets the run of the tasks the level made while it runs -- what was thrown and fired, <c>Level_GetDynamic</c>'s
+    /// children (<c>0x4F0EE0</c>) -- which the walk reaches after the <c>Dynamic</c> task's own children, where the original
+    /// keeps them.
+    /// </summary>
+    public Action? DynamicTail { get; set; }
 
     /// <inheritdoc/>
     /// <remarks>I.G.I.'s walk reaches every linked child, deleted or not.</remarks>
