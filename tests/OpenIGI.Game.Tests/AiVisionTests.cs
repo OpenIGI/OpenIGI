@@ -49,7 +49,7 @@ public sealed class AiVisionTests
     {
         // IGI.EXE 0x489B20 reads the float at 0x534230 after the ray query. Both Ghidra and
         // radare2 identify a real five-block function here and the retail dword is 0.790000021.
-        Assert.Equal(0.79000002, Igi1HumanAi.SightObstructionTolerance, 8);
+        Assert.Equal(0.79000002, Igi1HumanAi.MinimumSightVisibility, 8);
 
         // The recovered value belongs to a richer native query. This port's sight cast excludes
         // Humans, so every finite early hit is world geometry and must remain opaque.

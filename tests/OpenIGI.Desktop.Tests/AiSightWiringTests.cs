@@ -25,7 +25,7 @@ public sealed class AiSightWiringTests
             return false;
         };
 
-        Assert.True(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
+        Assert.True(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.MinimumSightVisibility));
 
         Assert.Equal(WorldTraceMask.World, captured.Mask);
         Assert.False(captured.TracePortals);
@@ -35,20 +35,46 @@ public sealed class AiSightWiringTests
     [InlineData(WorldTraceHitKind.StaticObject, 8_200.0, false)]
     [InlineData(WorldTraceHitKind.StaticObject, 7_000.0, false)]
     [InlineData(WorldTraceHitKind.Terrain, 9_500.0, false)]
-    [InlineData(WorldTraceHitKind.DynamicObject, 8_000.0, true)]
+    [InlineData(WorldTraceHitKind.DynamicObject, 9_900.0, false)]
+    [InlineData(WorldTraceHitKind.DynamicObject, 8_000.0, false)]
     [InlineData(WorldTraceHitKind.DynamicObject, 7_000.0, false)]
-    public void PlacedGeometryHidesTheTargetWhereverItIsMet(WorldTraceHitKind kind, double distance, bool seen)
+    public void SolidGeometryHidesTheTargetWhereverItIsMet(WorldTraceHitKind kind, double distance, bool seen)
     {
-        // 0x489B20 accepts a returned fraction of 0.79 or more, but for terrain and placed geometry the retail
-        // casts only ever return 0.0 when blocked -- measured with the probe, including a static roof met 82%
-        // along. Only a moving object is still given the tolerance.
+        // The 0.79 that 0x489B20 compares is a visibility -- what the materials along the line let through -- and not
+        // a place along it: a solid surface leaves nothing wherever it stands (0x4C35F0), which is what the probe
+        // measured as 0.0 on every blocked cast, a static roof met 82% along among them. A moving object is no
+        // different: a door leaf a pace in front of the target hides it, where a tolerance by distance let a guard
+        // see, shout at and fire on a player standing at a closed door.
         WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
         {
-            hit = new WorldTraceHit(default, default, distance, distance / 10_000.0, Material: 0, kind);
+            hit = new WorldTraceHit(default, default, distance, distance / 10_000.0, Material: 3, kind);
             return true;
         };
 
-        Assert.Equal(seen, SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
+        Assert.Equal(seen, SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.MinimumSightVisibility));
+    }
+
+    [Theory]
+    [InlineData(14, 3, true)]
+    [InlineData(18, 1, true)]
+    [InlineData(18, 2, false)]
+    public void WhatIsSeenThroughTakesItsMaterialsShare(int material, int surfaces, bool seen)
+    {
+        // DefineQMaterial's first argument: Glass lets the whole line through, Fence 0.8 of it. A soldier wants 0.79
+        // left, so one run of chain-link is seen through and two (0.64) are not.
+        Vector3f facingTheEye = new(0f, -1f, 0f);
+        int met = 0;
+        WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            bool found = met < surfaces;
+            hit = found
+                ? new WorldTraceHit(default, facingTheEye, 1_000.0, 0.1, material, WorldTraceHitKind.StaticObject)
+                : default;
+            met++;
+            return found;
+        };
+
+        Assert.Equal(seen, SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.MinimumSightVisibility));
     }
 
     [Fact]
@@ -67,9 +93,9 @@ public sealed class AiSightWiringTests
             return atStand;
         };
 
-        Assert.False(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
-        Assert.False(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance, standsAside: _ => false));
+        Assert.False(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.MinimumSightVisibility));
+        Assert.False(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.MinimumSightVisibility, standsAside: _ => false));
         Assert.True(SoldierSimulation.HasLineOfSight(
-            trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance, standsAside: owner => ReferenceEquals(owner, gun)));
+            trace, Eye, Mark, Igi1HumanAi.MinimumSightVisibility, standsAside: owner => ReferenceEquals(owner, gun)));
     }
 }

@@ -72,7 +72,7 @@ internal sealed class Igi1VehicleArming(
         runtime.Vehicles.GunHolderSubjects = Subjects;
         runtime.Vehicles.VehicleCombatLineOfSight = (owner, from, to) =>
             mission.Trace is null
-            || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.SightObstructionTolerance, owner);
+            || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.MinimumSightVisibility, owner);
         runtime.Vehicles.VehicleCombatShotFired = Fire;
         host.Logger.Information(LogCategory, $"{armed} armed vehicle(s) and gun holder(s).");
     }

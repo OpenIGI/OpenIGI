@@ -90,6 +90,26 @@ public sealed class GameMaterial
     public static bool IsSightTransparent(int globalMaterial) =>
         globalMaterial is 2 or 14 or 18 or 22 or 23;
 
+    /// <summary>How much of a sight line is left after it crosses a surface of this global material row.</summary>
+    /// <param name="globalMaterial">A row of the retail material table.</param>
+    /// <returns>
+    /// One for what is seen through whole -- Glass (14), MetalLadder (22) and MetalFence (23); 0.8 for Fence (18); nothing
+    /// for every other row, Water (2) among them.
+    /// </returns>
+    /// <remarks>
+    /// The first argument of the row's <c>DefineQMaterial</c> in <c>material/material.qvm</c>, which the object
+    /// handlers of the sight cast <c>0x4CE410</c> read at the head of the material record. A soldier wants 0.79 of the
+    /// line left (<c>0x489B20</c>), so one run of chain-link is seen through and two are not. Air (0) and
+    /// HumanCollision (21) declare one as well and are left opaque here, as they were: the terrain trace reports
+    /// row 0 by default, and no object face of either row has been measured against the original.
+    /// </remarks>
+    public static double SightVisibility(int globalMaterial) => globalMaterial switch
+    {
+        14 or 22 or 23 => 1d,
+        18 => 0.8,
+        _ => 0d,
+    };
+
     /// <summary>Whether a blast wave passes through this global material row.</summary>
     /// <param name="globalMaterial">A row of the retail material table.</param>
     /// <returns>

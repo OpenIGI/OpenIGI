@@ -7,15 +7,16 @@ namespace OpenIGI.Game.Igi1.Ai;
 public sealed partial class Igi1HumanAi
 {
     /// <summary>
-    /// The fraction of the eye-to-mark segment beyond which an object contact no longer hides the target —
-    /// <c>0x489B20</c>'s <c>fraction &gt;= 0.79000002</c>.
+    /// How much of a sight line has to be left for the target to be seen — <c>0x489B20</c>'s
+    /// <c>visibility &gt;= 0.79000002</c>.
     /// </summary>
     /// <remarks>
-    /// Terrain always blocks (<c>0x4CE410</c> forces its fraction to zero). An object — a crate, a wall, a
-    /// building, most of what the levels are made of — hides the target only when it is nearer than this,
-    /// so cover pressed up against the target leaves it visible.
+    /// The float the cast <c>0x4CE410</c> hands back is what the surfaces along the line let through, each taking its
+    /// material's share (<see cref="OpenIGI.Game.World.GameMaterial.SightVisibility"/>), and not a place along the
+    /// line: terrain and anything solid — a crate, a wall, a door leaf — leave nothing wherever they stand, cover
+    /// pressed up against the target included. One run of chain-link leaves 0.8 and is seen through; two leave 0.64.
     /// </remarks>
-    public const double SightObstructionTolerance = 0.79000002;
+    public const double MinimumSightVisibility = 0.79000002;
 
     /// <summary>
     /// How far above its feet a standing human reports itself to detection — the Z offset the descriptor

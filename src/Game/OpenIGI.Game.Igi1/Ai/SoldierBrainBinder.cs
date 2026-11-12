@@ -222,7 +222,7 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                         sight,
                         from,
                         to,
-                        Igi1HumanAi.SightObstructionTolerance,
+                        Igi1HumanAi.MinimumSightVisibility,
                         standsAside: seen is { } looked ? owner => _context.GunStandsAside(owner, looker, looked) : null));
                 }
 

@@ -480,10 +480,10 @@ public sealed partial class SoldierSimulation
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
-        double objectTolerance,
+        double minimumVisibility,
         GameTask? ignoredOwner = null,
         Func<GameTask, bool>? standsAside = null) =>
-        SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner, standsAside);
+        SoldierSightQueries.HasLineOfSight(trace, from, to, minimumVisibility, ignoredOwner, standsAside);
 
     /// <inheritdoc cref="SoldierBodyQueries.MapHumans"/>
     public IReadOnlyList<(GameTask Task, int Team, Vector3d Position, float Facing, bool Live)> MapHumans() => _bodies.MapHumans();
