@@ -44,6 +44,9 @@ public abstract class MotorVehicleTask : VehicleTask
     /// <summary>Gets a value indicating whether the vehicle is a helicopter, whose eye sits at its origin and tilts with it.</summary>
     public abstract bool IsHelicopter { get; }
 
+    /// <summary>Gets the model it is drawn as, whose attachments are its guns ("Model"), or <see langword="null"/> where the level names none.</summary>
+    public string? Model => TryGetValue("Model", out object? value) ? value as string : null;
+
     /// <summary>Gets the expression that opens its door ("Open door").</summary>
     public string OpenDoor => DeclaredTaskValues.TextOrEmpty(this, "Open door");
 
@@ -130,6 +133,9 @@ public sealed class StationaryGunHolderTask : VehicleTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = StationaryGunHolders.TypeName;
+
+    /// <summary>Gets the model that holds its guns as attachments ("Holder model"), or <see langword="null"/> where the level names none.</summary>
+    public string? HolderModel => TryGetValue("Holder model", out object? value) ? value as string : null;
 
     /// <summary>Gets the expression that gives the team of the holder ("Team expression").</summary>
     public string TeamExpression => DeclaredTaskValues.TextOrEmpty(this, "Team expression");

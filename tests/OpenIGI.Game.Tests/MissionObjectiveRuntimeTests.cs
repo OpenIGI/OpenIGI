@@ -179,8 +179,11 @@ public sealed class MissionObjectiveRuntimeTests
     }
 
     [Fact]
-    public void AreaActivationExcludesDeadPlayerProjections()
+    public void AreaActivationStillCountsADeadPlayer()
     {
+        // 0x460A70 and 0x460A10 walk the human list with no death test, and a human leaves that list only when its
+        // task is deleted (0x45EF40). A level that streams its building through its areas would otherwise take the
+        // room a player died in out of the world.
         (GameLoop loop, MissionObjectiveRuntime runtime) = BuildPlayerAreaRuntime();
 
         runtime.TickLevelState(
@@ -189,7 +192,7 @@ public sealed class MissionObjectiveRuntimeTests
             extraPlayerPosition: new Vector3d(2.0, 0.0, 0.0),
             playerAlive: false);
 
-        Assert.Equal(0, ReadPlayerAreaActive(loop));
+        Assert.Equal(1, ReadPlayerAreaActive(loop));
     }
 
     [Fact]

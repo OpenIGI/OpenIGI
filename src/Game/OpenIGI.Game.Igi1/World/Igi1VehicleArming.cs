@@ -40,7 +40,6 @@ internal sealed class Igi1VehicleArming(
     MagicObjectRegistry magic)
 {
     private const string LogCategory = "Ai";
-    private const string ModelField = "Model";
 
     // The weapon models the armed guns carry, which their mount models do not include.
     private readonly List<string> _weaponModels = [];
@@ -53,7 +52,7 @@ internal sealed class Igi1VehicleArming(
     public void Arm(LevelTask levelRoot)
     {
         int armed = 0;
-        foreach (DeclaredTask vehicle in levelRoot.Descendants().OfType<DeclaredTask>())
+        foreach (VehicleTask vehicle in levelRoot.Descendants().OfType<VehicleTask>())
         {
             ConfigureDeathZones(vehicle);
             if (GunModelOf(vehicle) is { } model && ArmGuns(vehicle, model))
@@ -77,33 +76,25 @@ internal sealed class Igi1VehicleArming(
         host.Logger.Information(LogCategory, $"{armed} armed vehicle(s) and gun holder(s).");
     }
 
-    private static bool IsVehicle(DeclaredTask task) => task is CarTask or HeliTask;
-
-    private static string? Text(DeclaredTask task, string field) =>
-        task.TryGetValue(field, out object? raw) ? raw as string : null;
-
     // The model whose attachments are a task's guns, or null for one that carries none. A gun holder carries its guns as
     // attachments of its holder model, as a car does of its own. A helicopter's gun runs only while its AnimTask flies it;
     // CutsceneRuntime gates that.
-    private static string? GunModelOf(DeclaredTask task)
+    private static string? GunModelOf(VehicleTask task) => task switch
     {
-        if (task.Type.Name == "AIStationaryGunHolder" && Text(task, "Holder model") is { } holderModel)
-        {
-            return holderModel;
-        }
+        StationaryGunHolderTask { HolderModel: { } holderModel } => holderModel,
+        MotorVehicleTask motor when !string.IsNullOrWhiteSpace(motor.CanFire) => motor.Model,
+        _ => null,
+    };
 
-        return IsVehicle(task) && !string.IsNullOrWhiteSpace(Text(task, "Can fire")) ? Text(task, ModelField) : null;
-    }
-
-    private void ConfigureDeathZones(DeclaredTask task)
+    private void ConfigureDeathZones(VehicleTask task)
     {
-        if (IsVehicle(task) && Text(task, ModelField) is { } zoneModel)
+        if (task is MotorVehicleTask { Model: { } zoneModel })
         {
             runtime.Vehicles.ConfigureDeathZones(task, VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
         }
     }
 
-    private bool ArmGuns(DeclaredTask carrier, string modelName)
+    private bool ArmGuns(VehicleTask carrier, string modelName)
     {
         IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
             modelName,

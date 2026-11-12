@@ -95,7 +95,9 @@ public sealed class CutsceneProjectionTests
             cameraOutsideMetres,
             freeViewMetres: null,
             playerAlive: false);
-        Assert.Equal(0, ReadPlayerAreaActive(loop));
+
+        // A dead player still stands in its areas: the original's area scans have no death test (0x460A70, 0x460A10).
+        Assert.Equal(1, ReadPlayerAreaActive(loop));
     }
 
     private static (GameLoop Loop, MissionObjectiveRuntime Runtime) BuildPlayerAreaRuntime()
