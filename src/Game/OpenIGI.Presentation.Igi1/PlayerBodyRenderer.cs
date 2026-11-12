@@ -403,7 +403,9 @@ internal sealed class PlayerBodyRenderer(
     public BoneAttachment? HandAttachment()
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
-        if (!_state.Following || _state.View is not { } view || _member is not { } member)
+        // A fallen body holds nothing. Its hand is the corpse's from then on, and the clip's hand asked for here is
+        // not where that is drawn: a gun hung off it stayed in the air over the body until it was stood up again.
+        if (_active || !_state.Following || _state.View is not { } view || _member is not { } member)
         {
             return null;
         }
