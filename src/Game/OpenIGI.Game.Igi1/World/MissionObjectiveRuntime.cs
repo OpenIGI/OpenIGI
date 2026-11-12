@@ -482,8 +482,8 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     /// at most one player to each area. The host chooses projections according to its camera/body policy.
     /// </param>
     /// <param name="playerAlive">
-    /// Whether the logical player can occupy authored areas. A dead player contributes no occupancy,
-    /// matching the retail human-registration scan used by <c>AreaActivate</c>.
+    /// Whether the logical player lives; a dead one latches <c>isDead</c>. It still occupies its areas: the original's
+    /// criteria scan (<c>0x460A70</c>) has no death test, and a human leaves the list only with its task.
     /// </param>
     /// <remarks>
     /// These tasks precede the mission's <c>AlarmControl</c>s in retail update order. Keeping this phase
@@ -581,7 +581,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
     /// <param name="playerTeam">The player's team.</param>
     /// <param name="extraPlayerPosition">An alternate projection of the same player.</param>
-    /// <param name="playerAlive">Whether the player can occupy areas.</param>
+    /// <param name="playerAlive">Whether the player lives; a dead one still stands in its areas.</param>
     public void SetLevelStateInputs(Vector3d? playerPosition, int playerTeam, Vector3d? extraPlayerPosition, bool playerAlive)
     {
         _areas.SetLevelStateInputs(playerPosition, playerTeam, extraPlayerPosition, playerAlive);

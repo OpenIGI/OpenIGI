@@ -110,7 +110,7 @@ internal sealed class MissionAreaActivation
     /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
     /// <param name="playerTeam">The player's team.</param>
     /// <param name="extraPlayerPosition">An alternate projection of the same player.</param>
-    /// <param name="playerAlive">Whether the player can occupy areas.</param>
+    /// <param name="playerAlive">Whether the player lives; a dead one latches <c>isDead</c> and still stands in its areas.</param>
     public void SetLevelStateInputs(Vector3d? playerPosition, int playerTeam, Vector3d? extraPlayerPosition, bool playerAlive)
     {
         _playerAlive = playerAlive;
@@ -208,8 +208,11 @@ internal sealed class MissionAreaActivation
         return count;
     }
 
+    // A player counts alive or dead: 0x460A70 and 0x460A10 walk the human list with no death test, and a human leaves that
+    // list only when its task is deleted (0x45EF40). The last mission streams its building through
+    // AreaActivate_N.nActive containers; dropping a dead player took the room it died in out of the world -- no walls for
+    // the death camera to stop at, nothing drawn, only fog.
     private static bool Holds(AreaActivateTask area, AreaPlayer player) =>
-        player.Alive
-        && ((player.Position is { } point && area.IsInside(point))
-            || (player.ExtraPosition is { } extra && area.IsInside(extra)));
+        (player.Position is { } point && area.IsInside(point))
+        || (player.ExtraPosition is { } extra && area.IsInside(extra));
 }
