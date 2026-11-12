@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
 public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick,
-    OpenIGI.Game.Level.ITaskRun<HumanTask>, OpenIGI.Game.Level.ITaskRun<ElevatorTask>
+    OpenIGI.Game.Level.ITaskRun<HumanTask>, OpenIGI.Game.Level.ITaskRun<HumanPlayerInputTask>, OpenIGI.Game.Level.ITaskRun<ElevatorTask>
 {
     // Partners' guns are voiced below every soldier's runtime id, which counts up from zero.
     private const int PartnerVoiceBase = -1_000_000;
@@ -706,11 +706,30 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     }
 
     /// <inheritdoc/>
-    /// <remarks>The player's update, then its children, where the level's walk reaches the player's task.</remarks>
+    /// <remarks>The player's update, then its children: for a player task with no input child to move it.</remarks>
     void OpenIGI.Game.Level.ITaskRun<HumanTask>.Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
     {
         UpdatePlayer();
         level.RunChildren(task);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The player's update, where the walk reaches its <c>HumanPlayerInput</c> child: that task reads the controls and sends
+    /// them to the <c>HumanPlayer</c> above it, whose control handler runs its update.
+    /// </remarks>
+    void OpenIGI.Game.Level.ITaskRun<HumanPlayerInputTask>.Run(HumanPlayerInputTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        UpdatePlayer();
+        level.RunChildren(task);
+    }
+
+    // The player's run handler (0x45EEA0): its children, and nothing of its own.
+    private sealed class PlayerChildren : OpenIGI.Game.Level.ITaskRun<HumanTask>
+    {
+        public static PlayerChildren Instance { get; } = new();
+
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level) => level.RunChildren(task);
     }
 
     /// <inheritdoc/>
@@ -807,7 +826,17 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             if (OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
             {
-                human.Runner = this;
+                // The player's run handler only runs its children (0x45EEA0); its HumanPlayerInput child moves it.
+                if (playerTask.Children.OfType<HumanPlayerInputTask>().FirstOrDefault() is { } input)
+                {
+                    human.Runner = PlayerChildren.Instance;
+                    input.Runner = this;
+                }
+                else
+                {
+                    human.Runner = this;
+                }
+
                 mission.PlayerInWalk = true;
             }
         }

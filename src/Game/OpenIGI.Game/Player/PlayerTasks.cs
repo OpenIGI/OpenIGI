@@ -378,8 +378,30 @@ public sealed class HumanSoldierPistolTask : HumanSoldierTask
 /// the demo, and the expression is the script-bound condition at <c>+404</c>.
 /// </para>
 /// </remarks>
-public partial class HumanPlayerInputTask : GameTask
+public partial class HumanPlayerInputTask : GameTask, OpenIGI.Game.Level.ILevelTicked
 {
+    /// <summary>
+    /// Gets or sets what carries out this task's run handler: the game whose player it drives; <see langword="null"/> while
+    /// nothing does.
+    /// </summary>
+    public OpenIGI.Game.Level.ITaskRun<HumanPlayerInputTask>? Runner { get; set; }
+
+    /// <summary>Runs the task for one tick, where the level's walk reaches it.</summary>
+    /// <param name="level">The level's run.</param>
+    /// <remarks>The original moves the player from here: <c>HumanPlayerInput</c>'s run handler (<c>0x45DB70</c>'s type) reads the controls and sends them to the <c>HumanPlayer</c> above it, whose control handler runs its update. The player's own run handler (<c>0x45EEA0</c>) only runs its children.</remarks>
+    public void Run(OpenIGI.Game.Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
+
     /// <summary>Gets or sets whether sampled frames are recorded to <see cref="File"/>.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Record")]
     public bool Record { get; set; }

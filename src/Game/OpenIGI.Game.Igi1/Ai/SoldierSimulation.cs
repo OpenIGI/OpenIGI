@@ -473,7 +473,16 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
             {
                 if (OpenIGI.Game.Level.LevelTaskClass.TryAs(view.Soldier, walker, out HumanTask? human))
                 {
-                    human.Runner = new SoldierTaskRun(this, human);
+                    // A soldier's run handler only runs its children (0x45CF90, 0x45EEA0); its HumanAI child moves it.
+                    if (SoldierContext.FindMind(view) is { } mind)
+                    {
+                        human.Runner = HumanChildren.Instance;
+                        mind.Runner = new SoldierMindRun(this, human);
+                    }
+                    else
+                    {
+                        human.Runner = new SoldierTaskRun(this, human);
+                    }
                 }
             }
         }
@@ -497,10 +506,49 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// </remarks>
     private sealed class SoldierTaskRun(SoldierSimulation soldiers, HumanTask owner) : OpenIGI.Game.Level.ITaskRun<HumanTask>
     {
+        private readonly SoldierBodies _bodies = new(soldiers, owner);
+
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+        {
+            _bodies.Tick();
+            level.RunChildren(task);
+        }
+    }
+
+    /// <summary>
+    /// A soldier's <c>HumanAI</c> child's part of the level's walk: the soldier's update -- its mind, then the body its
+    /// controls move -- and the task's own children.
+    /// </summary>
+    /// <remarks>
+    /// <c>HumanAI</c>'s update (<c>0x44F410</c>) sends its controls to the <c>HumanSoldier</c> above it, whose input
+    /// handler (<c>0x45D040</c>) runs the body's update: the soldier moves where the walk reaches its mind.
+    /// </remarks>
+    private sealed class SoldierMindRun(SoldierSimulation soldiers, HumanTask owner) : OpenIGI.Game.Level.ITaskRun<HumanAiTask>
+    {
+        private readonly SoldierBodies _bodies = new(soldiers, owner);
+
+        public void Run(HumanAiTask task, OpenIGI.Game.Level.LevelRun level)
+        {
+            _bodies.Tick();
+            level.RunChildren(task);
+        }
+    }
+
+    /// <summary>A human's run handler (<c>0x45EEA0</c>): its children, and nothing of its own.</summary>
+    private sealed class HumanChildren : OpenIGI.Game.Level.ITaskRun<HumanTask>
+    {
+        public static HumanChildren Instance { get; } = new();
+
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level) => level.RunChildren(task);
+    }
+
+    // The bodies one soldier task owns, in the soldiers' order, asked for again only when a soldier joins or leaves.
+    private sealed class SoldierBodies(SoldierSimulation soldiers, HumanTask owner)
+    {
         private readonly List<(SoldierView View, Igi1HumanAi Brain)> _bodies = [];
         private int _version = -1;
 
-        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+        public void Tick()
         {
             SoldierContext context = soldiers._context;
             if (_version != context.BrainsVersion)
@@ -520,8 +568,6 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
             {
                 soldiers.TickSoldier(_bodies[i].View, _bodies[i].Brain);
             }
-
-            level.RunChildren(task);
         }
     }
 
