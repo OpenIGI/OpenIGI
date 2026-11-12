@@ -41,6 +41,13 @@ public sealed partial class GameHost
                 // headless -runat capture, which has no scrollback to read.
                 context.Print(pose);
                 _logger.Information("Camera", pose);
+
+                // And the sector the cull found that eye in, which says whether a view has left its rooms.
+                if (_world?.Visibility?.DescribeView() is { } sector)
+                {
+                    context.Print(sector);
+                    _logger.Information("Camera", sector);
+                }
             });
 
         // The other way round: stands the walking player at a place, in metres as campos prints them. For scripted runs that

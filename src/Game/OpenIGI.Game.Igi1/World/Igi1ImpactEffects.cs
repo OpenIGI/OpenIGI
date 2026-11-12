@@ -132,6 +132,9 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// <summary>Gets or sets what a co-op server does with each round's mark as it lands: sends it to every client.</summary>
     public Action<OpenIGI.Game.Multiplayer.ReplicatedImpact>? Recorded { get; set; }
 
+    /// <summary>Gets or sets what <c>death_test</c> runs: the mission's own player's death, from a killer at a place in units.</summary>
+    public Action<Vector3d>? KillOwnPlayer { get; set; }
+
     /// <summary>Shows a round another player's game resolved: the surface found by tracing through the point, or the wound.</summary>
     /// <param name="impact">Where it landed and which way it was going.</param>
     /// <param name="bloodOwner">What the blood is kept against, so a body's systems are reused across its wounds.</param>
@@ -457,6 +460,25 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             "ragdoll_test",
             "Kills a soldier with a round: ragdoll_test [gun|pistol|shotgun|grenade|list] [soldier id]; ragdoll_test bleed [id] fires a harmless round along the view, or at where that soldier lies.",
             context => KillForRagdollTest(context, logger));
+
+        console.Commands.Add(
+            "death_test",
+            "Kills the mission's own player with a round from in front of it, so a run can watch its death camera and body.",
+            context =>
+            {
+                if (KillOwnPlayer is not { } kill || mission.Player is not { } player || mission.IsPlayerDead)
+                {
+                    context.Warn("No living player to kill.");
+                    return;
+                }
+
+                Vector3d feet = player.Body.Position;
+                Vector3d from = new(feet.X + (Math.Sin(player.Body.Yaw) * 4096.0), feet.Y + (Math.Cos(player.Body.Yaw) * 4096.0), feet.Z);
+                kill(from);
+                string report = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"death_test: killed at feet ({feet.X:F0}, {feet.Y:F0}, {feet.Z:F0}).");
+                context.Print(report);
+                logger.Information("Impact", report);
+            });
 
         console.Commands.Add(
             "bomb_test",

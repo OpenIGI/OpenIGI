@@ -26,6 +26,7 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
         Impacts.Explosions.Sound = (sound, at, priority) => host.PlayDefinition(sound, at, priority);
         PlayerSurroundings = new Igi1MissionPlayerSurroundings(World, Sounds, Audio, host);
         Harm = new Igi1PlayerHarm(World, PlayerSurroundings);
+        Impacts.KillOwnPlayer = from => Harm.BeginPlayerDeath(from, zone: 0, bone: -1, OpenIGI.Game.Weapons.WeaponCategory.Gun);
         Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
         World.TouchGlass = Blasts.TouchGlass;
         World.RoundContact = Blasts.ApplyRoundContact;
