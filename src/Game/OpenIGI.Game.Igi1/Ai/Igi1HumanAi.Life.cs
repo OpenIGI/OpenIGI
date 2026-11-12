@@ -239,23 +239,9 @@ public sealed partial class Igi1HumanAi
         _deathClipEnded |= deathClipEnded;
         double x = Position.X + world.X + slide.X;
         double y = Position.Y + world.Y + slide.Y;
-        double z = Position.Z + world.Z + slide.Z;
-
-        if (_ground is not null && _ground(x, y, z + GroundProbeAboveUnits, out double groundZ))
-        {
-            z = groundZ;
-        }
-        else if (_ground is not null)
-        {
-            // Some placed upper floors are visual-only in the remaster's collision index. A live guard
-            // on one of those floors stays at the authored/nav height, but the death clip's descending
-            // root delta used to push its Human position below that plane. The renderer then also applies
-            // the clip's current root height, putting the entire corpse under the floor (Mission 4 guards
-            // 417-419). When a world ground service exists but cannot find a replacement support, retain
-            // the last valid feet height; the death pose still lowers the pelvis through RootSample.
-            z = Position.Z;
-        }
-
+        // Some placed upper floors are visual-only in the remaster's collision index (Mission 4 guards 417-419): with no support
+        // found the corpse keeps its last height rather than following the clip's root under the floor.
+        double z = SoldierDeathFall.SettleOnGround(_ground, x, y, Position.Z + world.Z + slide.Z, Position.Z, GroundProbeAboveUnits);
         Position = new Vector3d(x, y, z);
     }
 

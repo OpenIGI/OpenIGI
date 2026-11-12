@@ -251,12 +251,8 @@ internal sealed class PlayerBodyRenderer(
 
         double px = _state.View.Position.X + world.X;
         double py = _state.View.Position.Y + world.Y;
-        double pz = _state.View.Position.Z + world.Z;
-        if (_ground is { } ground
-            && ground(px, py, pz + SoldierSimulation.ProbeAboveInUnits, out double groundZ))
-        {
-            pz = groundZ;
-        }
+        double pz = SoldierDeathFall.SettleOnGround(
+            _ground, px, py, _state.View.Position.Z + world.Z, _state.View.Position.Z, SoldierSimulation.ProbeAboveInUnits);
 
         _state.View.PlaceAt(new Vector3d(px, py, pz), _state.View.Orientation);
 

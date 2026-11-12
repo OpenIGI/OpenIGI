@@ -262,5 +262,28 @@ public static class SoldierDeathFall
         return new Vector3d((cos * v.X) - (sin * v.Y), (sin * v.X) + (cos * v.Y), v.Z);
     }
 
+    /// <summary>The height a falling body stands at after a tick's move: whatever the ground query finds under it.</summary>
+    /// <param name="ground">The ground query, or <see langword="null"/> for none.</param>
+    /// <param name="x">Where the body moved to, in world units.</param>
+    /// <param name="y">Where the body moved to, in world units.</param>
+    /// <param name="movedZ">The height the death clip's root carried it to.</param>
+    /// <param name="lastZ">The height it stood at before the move.</param>
+    /// <param name="probeAboveUnits">How far above <paramref name="movedZ"/> the query starts.</param>
+    /// <returns>The ground's height; <paramref name="movedZ"/> with no query; <paramref name="lastZ"/> when the query finds nothing.</returns>
+    /// <remarks>
+    /// The original's mover sweeps the body against the world, so it never passes through a floor. A query that finds no
+    /// support -- a floor only the player's collision carries, or the edge of a lift shaft -- keeps the last height: the
+    /// clip's descending root would otherwise carry the feet under the floor, and the drawn pose lowers the pelvis again.
+    /// </remarks>
+    public static double SettleOnGround(Ai.Igi1HumanAi.GroundQuery? ground, double x, double y, double movedZ, double lastZ, double probeAboveUnits)
+    {
+        if (ground is null)
+        {
+            return movedZ;
+        }
+
+        return ground(x, y, movedZ + probeAboveUnits, out double groundZ) ? groundZ : lastZ;
+    }
+
     private static Vector3d Scale(Vector3d v, double by) => new(v.X * by, v.Y * by, v.Z * by);
 }
