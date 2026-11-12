@@ -343,7 +343,7 @@ public sealed class Igi1GuestLevel
     // The type a soldier's guns are made as: the game's levels declare it, and a guest session of it, which reads no level, has
     // it declared with what the game reads of a gun (PlayerLoadout.WeaponsOf).
     private TaskType GunTaskType() =>
-        _loop.Types.TryGet(GunType, out TaskType? declared)
+        _loop.Types.TryGet(GunType, out TaskType? declared) && declared.IsDeclared
             ? declared
             : _loop.Types.Declare(GunType, [new(PlayerLoadout.IdParameter, ScriptParamType.String32), new(PlayerLoadout.SlotParameter, ScriptParamType.Int32)]);
 

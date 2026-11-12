@@ -116,7 +116,9 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
         }
         else if (member is not null)
         {
-            if (member.FireCooldown > 0)
+            // The Gun's own run handler counts its cooldown down (0x478640), ahead of the soldier's update: here only for a
+            // soldier whose Gun task did not run this tick.
+            if (member.CooldownCountedTick != _context.TickCount && member.FireCooldown > 0)
             {
                 member.FireCooldown--;
             }

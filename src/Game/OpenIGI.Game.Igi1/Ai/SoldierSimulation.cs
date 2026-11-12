@@ -478,6 +478,13 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
                     {
                         human.Runner = HumanChildren.Instance;
                         mind.Runner = new SoldierMindRun(this, human);
+
+                        // Its Gun is a task of its own, ahead of its HumanAI: the weapon's clock runs there.
+                        if (human.Children.OfType<Igi1GunTask>().FirstOrDefault() is { } gun)
+                        {
+                            SoldierBodies carried = new(this, human);
+                            gun.Clock = carried.CountCooldown;
+                        }
                     }
                     else
                     {
@@ -550,23 +557,54 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
 
         public void Tick()
         {
-            SoldierContext context = soldiers._context;
-            if (_version != context.BrainsVersion)
-            {
-                _version = context.BrainsVersion;
-                _bodies.Clear();
-                foreach ((SoldierView view, Igi1HumanAi brain) in context.Brains)
-                {
-                    if (ReferenceEquals(view.Soldier, owner))
-                    {
-                        _bodies.Add((view, brain));
-                    }
-                }
-            }
+            Refresh();
 
             for (int i = 0; i < _bodies.Count; i++)
             {
                 soldiers.TickSoldier(_bodies[i].View, _bodies[i].Brain);
+            }
+        }
+
+        private void Refresh()
+        {
+            SoldierContext context = soldiers._context;
+            if (_version == context.BrainsVersion)
+            {
+                return;
+            }
+
+            _version = context.BrainsVersion;
+            _bodies.Clear();
+            foreach ((SoldierView view, Igi1HumanAi brain) in context.Brains)
+            {
+                if (ReferenceEquals(view.Soldier, owner))
+                {
+                    _bodies.Add((view, brain));
+                }
+            }
+        }
+
+        // The Gun's run handler (0x478640), for the weapon each of the task's bodies carries in its hands.
+        public void CountCooldown()
+        {
+            Refresh();
+            SoldierContext context = soldiers._context;
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                (SoldierView view, Igi1HumanAi brain) = _bodies[i];
+                if (brain.MountedGun is not null
+                    || !ConditionalContainerGate.IsTaskActive(view.Soldier)
+                    || context.FindAgent(view) is not { } agent)
+                {
+                    continue;
+                }
+
+                if (agent.FireCooldown > 0)
+                {
+                    agent.FireCooldown--;
+                }
+
+                agent.CooldownCountedTick = context.TickCount;
             }
         }
     }
