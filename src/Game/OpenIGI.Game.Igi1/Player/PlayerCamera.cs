@@ -94,6 +94,26 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// <summary>Runs what flies where the level's Dynamic tasks run, on a tick this player's update asked for it.</summary>
     /// <returns><see langword="true"/> when they were advanced.</returns>
     public bool RunDeferredProjectiles() => _shots.RunDeferredProjectiles();
+
+    /// <summary>Runs what flies as the level's Dynamic task does: every tick the level runs, this player's update or not.</summary>
+    /// <returns><see langword="true"/> when the level runs them and they were advanced.</returns>
+    public bool RunProjectilesByLevel() => _shots.RunProjectilesByLevel();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this player's rounds are marched by the level, where their gun's
+    /// <c>GunShot</c> task runs (<c>0x47B690</c>), rather than inside this player's update.
+    /// </summary>
+    public bool RoundsRunByLevel
+    {
+        get => _shots.RoundsRunByLevel;
+        set => _shots.RoundsRunByLevel = value;
+    }
+
+    /// <summary>Gets a value indicating whether the rounds waiting are a picked-up gun's, marched at <c>Dynamic</c>'s tail.</summary>
+    public bool PendingRoundsAtTail => _shots.PendingRoundsAtTail;
+
+    /// <summary>Marches the rounds this tick's update fired, where the level runs their gun's <c>GunShot</c> task.</summary>
+    public void RunDeferredRounds() => _shots.RunDeferredRounds();
     private readonly PlayerInteractionDriver _interaction;
     private readonly PlayerLadderController _ladder;
     private readonly PlayerFootsteps _footsteps;

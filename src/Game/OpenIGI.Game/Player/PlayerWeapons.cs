@@ -310,6 +310,12 @@ public sealed class PlayerWeapons
     /// </remarks>
     public WeaponAction CurrentAction => _machine.CurrentAction;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the level is running: a weapon carried from now on is a gun made at run time
+    /// (<see cref="HeldGun.MadeAtRunTime"/>), not one the level declared.
+    /// </summary>
+    public bool LevelRunning { get; set; }
+
     /// <summary>Adds a weapon to what the player carries.</summary>
     /// <param name="weapon">The roster record.</param>
     /// <param name="ammo">Its ammunition record, or <see langword="null"/> when it names no calibre.</param>
@@ -323,7 +329,7 @@ public sealed class PlayerWeapons
     {
         ArgumentNullException.ThrowIfNull(weapon);
 
-        HeldGun gun = new(weapon, ammo);
+        HeldGun gun = new(weapon, ammo) { MadeAtRunTime = LevelRunning };
         _carried.Add(new CarriedWeapon(weapon, gun));
         ApplyCheatsTo(gun);
         return gun;

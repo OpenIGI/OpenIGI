@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Player;
@@ -35,6 +36,18 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
     // The child of Dynamic each gun was made under as the level was built, after which its GunShot task stands; none for a
     // gun made while the level runs, whose task stands at Dynamic's tail.
     private readonly Dictionary<GunShotTask, GameTask> _anchors = new(ReferenceEqualityComparer.Instance);
+
+    // The guns made under each child of Dynamic, in the order the level made them: the order of their tasks in its tree,
+    // each with its place in that order (a task is made before its children, Task_New's script handler).
+    private readonly Dictionary<GameTask, List<(int Order, SoldierView View, GunShotTask Task)>> _anchored =
+        new(ReferenceEqualityComparer.Instance);
+    private bool _anchoredStale = true;
+
+    // For a gun made while the level runs: how many pickups had been made when it was, plus one.
+    private readonly Dictionary<GunShotTask, long> _madeBefore = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Gets or sets what counts the pickups made while the level runs, the dropped guns among them.</summary>
+    public Func<long>? PickupsMade { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the level is running: a gun made now has its task at Dynamic's tail.</summary>
     public bool LevelRunning { get; set; }
@@ -106,6 +119,31 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
         _gunShots.Clear();
         _gunShotOrder.Clear();
         _anchors.Clear();
+        _anchored.Clear();
+        _madeBefore.Clear();
+        _anchoredStale = true;
+    }
+
+    /// <summary>
+    /// Makes a soldier's gun's task anew at the tail of <c>Dynamic</c>: a guard generator's guard is cloned from its
+    /// template as the generator first turns on (<c>0x487EE0</c> -> <c>0x488000</c>), its gun and that gun's task with it.
+    /// </summary>
+    /// <param name="view">The soldier.</param>
+    public void MadeNow(SoldierView view)
+    {
+        if (!_gunShots.TryGetValue(view, out GunShotTask? task) || _anchors.ContainsKey(task))
+        {
+            return;
+        }
+
+        int at = _gunShotOrder.FindIndex(entry => ReferenceEquals(entry.Task, task));
+        if (at >= 0)
+        {
+            _gunShotOrder.RemoveAt(at);
+        }
+
+        _gunShotOrder.Add((view, task));
+        _madeBefore[task] = (PickupsMade?.Invoke() ?? 0) + 1;
     }
 
     /// <summary>Gives a soldier's gun its <c>GunShot</c> task, after every gun made before it.</summary>
@@ -120,9 +158,95 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
         GunShotTask task = new();
         _gunShots[view] = task;
         _gunShotOrder.Add((view, task));
-        if (!LevelRunning && DynamicChildOver(view.Soldier) is { } anchor)
+        // A guard generator deletes the guard its level declared as it snapshots it (0x488200), that guard's gun and its
+        // GunShot task with it; every guard it makes is made while the level runs.
+        if (!LevelRunning && !UnderGenerator(view.Soldier) && DynamicChildOver(view.Soldier) is { } anchor)
         {
             _anchors[task] = anchor;
+            _anchoredStale = true;
+        }
+        else
+        {
+            _madeBefore[task] = (PickupsMade?.Invoke() ?? 0) + 1;
+        }
+    }
+
+    private static bool UnderGenerator(GameTask task)
+    {
+        for (GameTask? at = task.Parent; at is not null; at = at.Parent)
+        {
+            if (at is GuardGeneratorTask)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Gets a task's place among the tasks under a child of <c>Dynamic</c>, in the order the level made them.</summary>
+    /// <param name="anchor">The child of <c>Dynamic</c>.</param>
+    /// <param name="task">The task.</param>
+    /// <returns>The place, or -1 for a task not under it.</returns>
+    public static int OrderUnder(GameTask anchor, GameTask task)
+    {
+        int order = 0;
+        return Find(anchor, task, ref order) ? order : -1;
+
+        static bool Find(GameTask at, GameTask sought, ref int order)
+        {
+            if (ReferenceEquals(at, sought))
+            {
+                return true;
+            }
+
+            order++;
+            for (GameTask? child = at.FirstChild; child is not null; child = child.NextSibling)
+            {
+                if (Find(child, sought, ref order))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    private void OrderAnchored()
+    {
+        _anchoredStale = false;
+        _anchored.Clear();
+        foreach ((SoldierView view, GunShotTask task) in _gunShotOrder)
+        {
+            if (!_anchors.TryGetValue(task, out GameTask? anchor))
+            {
+                continue;
+            }
+
+            if (!_anchored.TryGetValue(anchor, out List<(int Order, SoldierView View, GunShotTask Task)>? under))
+            {
+                _anchored[anchor] = under = [];
+            }
+
+            under.Add((OrderUnder(anchor, view.Soldier), view, task));
+        }
+
+        foreach (List<(int Order, SoldierView View, GunShotTask Task)> under in _anchored.Values)
+        {
+            // Stable: two bodies of one task keep the order they were enlisted in.
+            for (int i = 1; i < under.Count; i++)
+            {
+                (int Order, SoldierView View, GunShotTask Task) moved = under[i];
+                int j = i - 1;
+                while (j >= 0 && under[j].Order > moved.Order)
+                {
+                    under[j + 1] = under[j];
+                    j--;
+                }
+
+                under[j + 1] = moved;
+            }
         }
     }
 
@@ -145,16 +269,29 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
     /// <c>GunShot</c> tasks stand there in the original's tree.
     /// </summary>
     /// <param name="anchor">The child of <c>Dynamic</c> the walk has just run.</param>
-    public void MarchUnder(GameTask anchor)
+    /// <param name="from">The first place under the child (<see cref="OrderUnder"/>) whose gun is marched.</param>
+    /// <param name="before">The place the march stops short of.</param>
+    public void MarchUnder(GameTask anchor, int from = int.MinValue, int before = int.MaxValue)
     {
         if (_gunShotWorld is not { } world || _gunShotSounds is not { } sounds || _anchors.Count == 0)
         {
             return;
         }
 
-        foreach ((SoldierView view, GunShotTask task) in _gunShotOrder)
+        if (_anchoredStale)
         {
-            if (_anchors.TryGetValue(task, out GameTask? under) && ReferenceEquals(under, anchor))
+            OrderAnchored();
+        }
+
+        if (!_anchored.TryGetValue(anchor, out List<(int Order, SoldierView View, GunShotTask Task)>? under))
+        {
+            return;
+        }
+
+        for (int i = 0; i < under.Count; i++)
+        {
+            (int order, SoldierView view, GunShotTask task) = under[i];
+            if (order >= from && order < before)
             {
                 March(view, task, world, sounds);
                 MarchedInWalk = true;
@@ -166,11 +303,16 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
     /// The tail of <c>Dynamic</c>, once the walk has marched the guns the level was built with: the guns made while it runs,
     /// the lines filed from outside the soldiers' guns, then the chips.
     /// </summary>
-    public void MarchTail()
+    /// <param name="runMadeBefore">
+    /// Runs the level's other tail tasks made before a given place -- the dropped guns -- ahead of the gun made at it, and
+    /// with <see cref="long.MaxValue"/> the rest; or <see langword="null"/> when nothing else stands there.
+    /// </param>
+    public void MarchTail(Action<long>? runMadeBefore = null)
     {
         AgeFiled();
         if (_gunShotWorld is not { } world || _gunShotSounds is not { } sounds)
         {
+            runMadeBefore?.Invoke(long.MaxValue);
             return;
         }
 
@@ -178,10 +320,16 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
         {
             if (!_anchors.ContainsKey(task))
             {
+                if (runMadeBefore is not null && _madeBefore.TryGetValue(task, out long made))
+                {
+                    runMadeBefore(made);
+                }
+
                 March(view, task, world, sounds);
             }
         }
 
+        runMadeBefore?.Invoke(long.MaxValue);
         _afterGunShots?.Invoke();
     }
 

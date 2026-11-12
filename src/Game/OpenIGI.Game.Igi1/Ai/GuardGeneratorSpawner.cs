@@ -20,8 +20,13 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="context">The soldiers, their brains, health and combat rows.</param>
 /// <param name="sight">Gives a replacement its eye.</param>
 /// <param name="enlist">Gives a replacement its gun's <c>GunShot</c> task and this simulation's hit handlers.</param>
-internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSightQueries sight, Action<SoldierView> enlist)
+/// <param name="firstLife">Told of a generator's first guard as it is made: its gun's <c>GunShot</c> task is made then.</param>
+internal sealed class GuardGeneratorSpawner(
+    SoldierContext context, SoldierSightQueries sight, Action<SoldierView> enlist, Action<SoldierView>? firstLife = null)
 {
+    // Told of a generator's first guard as it is made (0x487EE0 -> 0x488000): its gun's GunShot task is made then.
+    private readonly Action<SoldierView>? _firstLife = firstLife;
+
     private readonly SoldierContext _context = context;
 
     private readonly SoldierSightQueries _sight = sight;
@@ -111,6 +116,10 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
         // until its mesh and runtime subtree have actually been created. A transient upload failure
         // must leave the generator eligible to retry on the next tick.
         GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
+        if (decision == GuardSpawnDecision.FirstSpawn)
+        {
+            _firstLife?.Invoke(view);
+        }
 
         // A REPLACEMENT WAITS FOR THE BODY TO LEAVE. The generator replaces its guard only once he is dead (Human+3317) AND
         // out of the world (+3318 clear, 0x463190), deleting the body as it clones (0x487EE0 -> 0x4015F0, 0x488000). What

@@ -56,6 +56,13 @@ public sealed class HeldGun
 
     private readonly List<GunProjectile> _projectiles = [];
 
+    /// <summary>
+    /// Gets a value indicating whether the gun was made while its level runs -- picked up -- rather than declared by the
+    /// level. Project I.G.I. makes a gun's <c>GunShot</c> task with the gun (<c>0x478540</c>), at the tail of the level's
+    /// <c>Dynamic</c> task as it then stands: after the level's own objects for a gun picked up (<c>0x45FFC0</c>).
+    /// </summary>
+    public bool MadeAtRunTime { get; init; }
+
     /// <summary>Initializes a new instance of the <see cref="HeldGun"/> class.</summary>
     /// <param name="weapon">The roster record this gun is.</param>
     /// <param name="ammo">

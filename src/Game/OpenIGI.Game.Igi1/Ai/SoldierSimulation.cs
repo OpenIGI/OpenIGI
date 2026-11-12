@@ -111,7 +111,9 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         _footsteps.LandSound = (sound, at) => scriptSound(sound, at, null);
         _rounds = new SoldierGunShotRounds(_context, _sight, _noise);
         _fire = new SoldierWeaponFire(_context, _rounds, _noise);
-        _generators = new GuardGeneratorSpawner(_context, _sight, Enlist);
+        _generators = new GuardGeneratorSpawner(_context, _sight, Enlist, _rounds.MadeNow);
+        _rounds.PickupsMade = () => DroppedWeaponPickups?.MadeCount ?? 0;
+        _runPickupsMadeBefore = RunPickupsMadeBefore;
         _brains = new SoldierBrainBinder(_context, _sight, Enlist);
         _ragdolls = new SoldierRagdolls(_context);
         _diagnostics = new SoldierDiagnostics(_context);
@@ -428,6 +430,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         Ticked.Clear();
         _rounds.LevelRunning = true;
         _rounds.BeginTick();
+        _dynamicTailRan = false;
         CollectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         bool collectDiagnostics = CollectDiagnostics;
         if (collectDiagnostics)
@@ -705,7 +708,11 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         // with as it left the child each stands after (MarchRoundsMadeUnder); what is left is Dynamic's tail. A level
         // stepped without its walk marches them all here.
         TickingSoldierId = -1;
-        if (_rounds.MarchedInWalk || _walker?.AfterDynamicChild is not null)
+        if (_dynamicTailRan)
+        {
+            // The walk ran Dynamic's tail as it left that task (RunDynamicTail).
+        }
+        else if (_rounds.MarchedInWalk || _walker?.AfterDynamicChild is not null)
         {
             _rounds.MarchTail();
         }
@@ -735,7 +742,12 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// <summary>After the corpses moved: the dropped weapons, and the poses of the bodies no brain drives.</summary>
     internal void TickAfterCorpses()
     {
-        DroppedWeaponPickups?.Tick(RagdollWorldForCorpses());
+        // The dropped guns ran at Dynamic's tail when the walk ran it; here for a level stepped without its walk.
+        if (!_dynamicTailRan)
+        {
+            DroppedWeaponPickups?.Tick(RagdollWorldForCorpses());
+        }
+
         foreach (SoldierModelGroup group in Roster)
         {
             if (group.Body.Model is null)
@@ -855,12 +867,40 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// that child: a gun's <c>GunShot</c> task is made with the gun, at <c>Dynamic</c>'s tail as it then stood.
     /// </summary>
     /// <param name="anchor">The child of <c>Dynamic</c> the walk has just run.</param>
-    public void MarchRoundsMadeUnder(GameTask anchor)
+    /// <param name="from">The first place under the child whose gun is marched (<see cref="OrderUnder"/>).</param>
+    /// <param name="before">The place the march stops short of.</param>
+    public void MarchRoundsMadeUnder(GameTask anchor, int from = int.MinValue, int before = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(anchor);
         TickingSoldierId = -1;
-        _rounds.MarchUnder(anchor);
+        _rounds.MarchUnder(anchor, from, before);
     }
+
+    /// <summary>Gets a task's place among the tasks under a child of <c>Dynamic</c>, in the order the level made them.</summary>
+    /// <param name="anchor">The child of <c>Dynamic</c>.</param>
+    /// <param name="task">The task.</param>
+    /// <returns>The place, or -1 for a task not under it.</returns>
+    public static int OrderUnder(GameTask anchor, GameTask task) => SoldierGunShotRounds.OrderUnder(anchor, task);
+
+    // Whether the walk ran Dynamic's tail this tick, and what runs the pickups made before a gun there.
+    private bool _dynamicTailRan;
+    private readonly Action<long> _runPickupsMadeBefore;
+
+    /// <summary>
+    /// The tail of the level's <c>Dynamic</c> task, as the walk leaves it: the tasks made while the level runs, in the order
+    /// they were made -- the <c>GunShot</c> task of each gun made since (a generator's guards', <c>0x478540</c>) and each
+    /// gun the dead dropped (<c>GunPickup</c>, made on <c>Level_GetDynamic</c> by <c>0x479C20</c>, run by <c>0x46CEA0</c>).
+    /// </summary>
+    public void RunDynamicTail()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TickingSoldierId = -1;
+        DroppedWeaponPickups?.BeginRun();
+        _rounds.MarchTail(_runPickupsMadeBefore);
+        _dynamicTailRan = true;
+    }
+
+    private void RunPickupsMadeBefore(long made) => DroppedWeaponPickups?.RunMadeBefore(RagdollWorldForCorpses(), made);
 
     // A new soldier's gun's GunShot task, after every gun made before it, and this simulation's handlers for its hit events.
     private void Enlist(SoldierView view)

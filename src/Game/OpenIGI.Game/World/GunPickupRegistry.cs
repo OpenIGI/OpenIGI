@@ -100,6 +100,12 @@ public sealed class GunPickup
     /// <summary>Gets whether the pickup has already been consumed.</summary>
     public bool IsCollected { get; internal set; }
 
+    /// <summary>
+    /// Gets the pickup's place among those made while the level runs, from one; zero for one the level placed. A dropped
+    /// gun is a task made under the level's <c>Dynamic</c> task (<c>0x479C20</c>), run there after everything made before it.
+    /// </summary>
+    internal long Made { get; set; }
+
     /// <summary>Gets the rounds its magazine holds, for one a player dropped; <see langword="null"/> for a full one.</summary>
     public int? Rounds { get; internal set; }
 
@@ -279,6 +285,13 @@ public sealed class GunPickup
 public sealed class GunPickupRegistry : ILevelReset
 {
     private readonly List<GunPickup> _items = [];
+
+    // How many pickups were made while the level runs, and how far this tick's run has come through the list.
+    private long _made;
+    private int _ran;
+
+    /// <summary>Gets how many pickups have been made while the level runs.</summary>
+    public long MadeCount => _made;
     private readonly List<GunPickupImpact> _impacts = [];
     private readonly AmmoTypeRegistry _ammunition;
     private ScriptVarRegistry? _variables;
@@ -478,6 +491,7 @@ public sealed class GunPickupRegistry : ILevelReset
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null) { Rounds = rounds, HeldOffFrom = droppedBy };
         pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
+        pickup.Made = ++_made;
         _items.Add(pickup);
         Spawned?.Invoke(pickup);
         return pickup;
@@ -504,6 +518,7 @@ public sealed class GunPickupRegistry : ILevelReset
             Launch = (position, orientation, velocity),
         };
         pickup.StartFalling(realistic: true, velocity);
+        pickup.Made = ++_made;
         _items.Add(pickup);
         Spawned?.Invoke(pickup);
         return pickup;
@@ -520,6 +535,7 @@ public sealed class GunPickupRegistry : ILevelReset
         ArgumentNullException.ThrowIfNull(weapon);
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null) { Rounds = rounds };
+        pickup.Made = ++_made;
         _items.Add(pickup);
         Spawned?.Invoke(pickup);
         return pickup;
@@ -606,6 +622,7 @@ public sealed class GunPickupRegistry : ILevelReset
         ArgumentNullException.ThrowIfNull(weapon);
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
+        pickup.Made = ++_made;
         _items.Add(pickup);
         return pickup;
     }
@@ -687,19 +704,40 @@ public sealed class GunPickupRegistry : ILevelReset
     /// <summary>Advances runtime gun drops; authored level pickups remain fixed in place.</summary>
     public void Tick(RagdollWorld world)
     {
-        ArgumentNullException.ThrowIfNull(world);
+        BeginRun();
+        RunMadeBefore(world, long.MaxValue);
+    }
+
+    /// <summary>Opens a tick's run of the pickups: none has run, none has landed.</summary>
+    public void BeginRun()
+    {
         _impacts.Clear();
-        foreach (GunPickup pickup in _items)
+        _ran = 0;
+    }
+
+    /// <summary>
+    /// Runs the pickups not yet run this tick that were made before a given one: a <c>GunPickup</c>'s own run
+    /// (<c>0x46CEA0</c>), in the order the level's <c>Dynamic</c> task holds them.
+    /// </summary>
+    /// <param name="world">What a falling gun is stopped by.</param>
+    /// <param name="made">The place (<see cref="MadeCount"/> plus one, as it stood) of the task these run ahead of.</param>
+    public void RunMadeBefore(RagdollWorld world, long made)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        while (_ran < _items.Count && _items[_ran].Made < made)
         {
-            if (!pickup.IsCollected)
+            GunPickup pickup = _items[_ran++];
+            if (pickup.IsCollected)
             {
-                pickup.Tick(world);
-                if (pickup.TryTakeImpact(out Vector3d at, out double speed))
-                {
-                    GunPickupImpact impact = new(pickup, at, speed);
-                    _impacts.Add(impact);
-                    Landed?.Invoke(impact);
-                }
+                continue;
+            }
+
+            pickup.Tick(world);
+            if (pickup.TryTakeImpact(out Vector3d at, out double speed))
+            {
+                GunPickupImpact impact = new(pickup, at, speed);
+                _impacts.Add(impact);
+                Landed?.Invoke(impact);
             }
         }
     }
