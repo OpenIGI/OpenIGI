@@ -434,7 +434,7 @@ internal sealed unsafe class D3D12Context : IDisposable
 
             AdapterDesc1 description;
             adapter->GetDesc1(&description);
-            string name = new((char*)description.Description);
+            string name = new(description.Description);
 
             // The software rasteriser is an adapter too, and would "succeed" at a frame a second.
             if ((description.Flags & (uint)AdapterFlag.Software) != 0)

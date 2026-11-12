@@ -148,7 +148,7 @@ public sealed class AiVehicleScenarios : IDisposable
             {
                 File.AppendAllText(progress, string.Create(
                     CultureInfo.InvariantCulture,
-                    $"step={step} tick={tick} engine={soldiers!.Simulation.TickCount} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
+                    $"step={step} tick={tick} engine={soldiers.Simulation.TickCount} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
             }
 
             if (god)
@@ -166,7 +166,7 @@ public sealed class AiVehicleScenarios : IDisposable
                 break;
             }
 
-            int engine = soldiers!.Simulation.TickCount;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -454,7 +454,7 @@ public sealed class AiVehicleScenarios : IDisposable
                 player.Body.Pitch = (float)Math.Atan2(dz, Math.Sqrt((dx * dx) + (dy * dy)));
             }
 
-            InputState vehicleInput = host.ScriptedViewInput!;
+            InputState vehicleInput = host.ScriptedViewInput;
             if (vehicleWeaponKey > 0)
             {
                 vehicleInput.Keyboard.SetKey(KeyCode.D1 + (byte)(vehicleWeaponKey - 1), down: tick == vehicleWeaponTick);

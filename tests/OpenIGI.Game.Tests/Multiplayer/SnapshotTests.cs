@@ -252,7 +252,7 @@ public sealed class SnapshotTests
         history.Acknowledge(4);
         Assert.Equal(5, history.Baseline!.Tick);
         history.Acknowledge(1);
-        Assert.Equal(5, history.Baseline!.Tick);
+        Assert.Equal(5, history.Baseline.Tick);
 
         for (long tick = 7; tick <= 12; tick++)
         {

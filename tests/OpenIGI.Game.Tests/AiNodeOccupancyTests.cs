@@ -42,7 +42,7 @@ public sealed class AiNodeOccupancyTests
         // pushes the second claimant to a neighbour instead. Either way they do not stack.
         if (a == b)
         {
-            Assert.NotEqual(firstSlot!.Value, secondSlot!.Value);
+            Assert.NotEqual(firstSlot.Value, secondSlot.Value);
         }
         else
         {

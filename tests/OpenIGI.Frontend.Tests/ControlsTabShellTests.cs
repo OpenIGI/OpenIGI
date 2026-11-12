@@ -28,7 +28,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             tabs.SelectedIndex = 3; // Controls
             Pump(shell, 0.1f);
 
-            Assert.Equal(PlayerProfile.BindingCount, screen.Root!.Descendants().OfType<KeyBindingRow>().Count());
+            Assert.Equal(PlayerProfile.BindingCount, screen.Root.Descendants().OfType<KeyBindingRow>().Count());
             KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "MoveLeft");
             KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "Fire");
             Assert.Equal(KeyCode.A, moveLeft.BoundKey);
@@ -61,7 +61,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             tabs.SelectedIndex = 3;
             Pump(shell, 0.1f);
 
-            KeyBindingRow moveLeft = screen.Root!.Descendants().OfType<KeyBindingRow>()
+            KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "MoveLeft");
             KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Fire");
@@ -110,7 +110,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
             screen.Root!.Descendants().OfType<TabStrip>().First().SelectedIndex = 3;
             Pump(shell, 0.1f);
-            KeyBindingRow crouch = screen.Root!.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Crouch");
+            KeyBindingRow crouch = screen.Root.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Crouch");
             KeyBindingRow walk = screen.Root.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Walk/run");
             Assert.DoesNotContain(screen.Root.Descendants().OfType<KeyBindingRow>(), r => r.Action == "ToggleWalkRun");
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
@@ -149,7 +149,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             tabs.SelectedIndex = 3;
             Pump(shell, 0.1f);
 
-            KeyBindingRow fire = screen.Root!.Descendants().OfType<KeyBindingRow>()
+            KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Fire");
             UiVec2 centre = fire.Bounds.Center;
             InputState input = new();
@@ -203,7 +203,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             tabs.SelectedIndex = 3;
             Pump(shell, 0.1f);
 
-            KeyBindingRow moveUp = screen.Root!.Descendants().OfType<KeyBindingRow>()
+            KeyBindingRow moveUp = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "MoveUp");
             moveUp.Activate();
             Assert.True(moveUp.TryCaptureKey(KeyCode.F));
@@ -251,7 +251,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             tabs.SelectedIndex = 3;
             Pump(shell, 0.1f);
 
-            KeyBindingRow fire = screen.Root!.Descendants().OfType<KeyBindingRow>()
+            KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Fire");
             UiVec2 centre = fire.Bounds.Center;
             InputState input = new();
@@ -305,7 +305,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             tabs.SelectedIndex = 3;
             Pump(shell, 0.1f);
 
-            KeyBindingRow fire = screen.Root!.Descendants().OfType<KeyBindingRow>()
+            KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Fire");
             UiVec2 centre = fire.Bounds.Center;
             InputState input = new();

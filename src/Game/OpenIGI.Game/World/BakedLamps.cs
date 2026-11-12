@@ -176,7 +176,7 @@ public static class BakedLamps
                     break;
                 }
 
-                (float span, float flat, float mean) = Bake(geometry, subset.MaterialSlot, lightmap);
+                (float span, float flat, _) = Bake(geometry, subset.MaterialSlot, lightmap);
 
                 if (span > MaximumSpan || flat < MinimumFlatArea)
                 {

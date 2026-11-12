@@ -15,7 +15,8 @@ internal static class ServerArguments
     public static string[] TakeConfig(string[] args, ref string path)
     {
         List<string> rest = [];
-        for (int i = 0; i < args.Length; i++)
+        int i = 0;
+        while (i < args.Length)
         {
             if (string.Equals(args[i], "-config", StringComparison.OrdinalIgnoreCase))
             {
@@ -25,6 +26,8 @@ internal static class ServerArguments
             {
                 rest.Add(args[i]);
             }
+
+            i++;
         }
 
         return [.. rest];

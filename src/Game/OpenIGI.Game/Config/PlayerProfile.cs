@@ -513,8 +513,8 @@ public static class InputBindingKeyNames
     public static string ToRetailMouseButton(MouseButton button)
     {
         int index = (int)button;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(button));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, MouseState.ButtonCount, nameof(button));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, MouseState.ButtonCount);
         return $"MOUSE_BUTTON_{index + 1}";
     }
 

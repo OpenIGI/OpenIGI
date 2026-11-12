@@ -463,7 +463,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Advances the day and the lamps on real elapsed time.</summary>
-    private void AdvanceWorldClocks(FrameLoopState state)
+    private void AdvanceWorldClocks()
     {
         // The day/night cycle is advanced on every pass, on real elapsed time, so holding [ or ] sweeps
         // the sun smoothly whatever the frame rate -- the same reasoning the camera below is advanced by.
@@ -646,7 +646,7 @@ public sealed partial class GameHost
                 string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
                 string stem = Path.GetFileNameWithoutExtension(flightPath);
                 string extension = Path.GetExtension(flightPath);
-                string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{state.FlightFrame:0000}{extension}"));
+                string numbered = Path.Combine(directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{stem}.{state.FlightFrame:0000}{extension}"));
                 BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
             }
 
@@ -676,8 +676,8 @@ public sealed partial class GameHost
             string path = Path.Combine(
                 state.CutsceneCaptureDirectory!,
                 state.CutsceneCaptureEvery > 0
-                    ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}.bmp")
-                    : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
+                    ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}.bmp")
+                    : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
             BitmapWriter.Write(path, _window.Width, _window.Height, capture);
             _logger.Information("CutsceneCapture", $"Wrote {path}.");
             state.CutsceneCaptureTick += state.CutsceneCaptureEvery;

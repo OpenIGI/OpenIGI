@@ -144,12 +144,9 @@ internal sealed partial class MissionSolver
                 break;
             }
 
-            if (tick % 1000 == 0)
+            if (tick % 1000 == 0 && LogFile is not null)
             {
-                if (LogFile is not null)
-                {
-                    File.WriteAllText(LogFile, _log.ToString());
-                }
+                File.WriteAllText(LogFile, _log.ToString());
             }
 
             Goal goal = Need(target, _levelFlow) ?? Goal.Wait("nothing to work on");
@@ -339,7 +336,7 @@ internal sealed partial class MissionSolver
                     NeedVehicle(task, word),
                 ("AreaActivate", "nActive") => new Goal(GoalKind.Stand, task, word),
                 ("GunPickup" or "GenericPickup" or "AmmoPickup", "isPickedUp") => new Goal(GoalKind.Take, task, word),
-                ("Switch" or "Terminal" or "Cabinet" or "GenericTBA" or "Door", _) => NeedUsable(task, owner) ?? new Goal(GoalKind.Use, task, word),
+                ("Switch" or "Terminal" or "Cabinet" or "GenericTBA" or "Door", _) => NeedUsable(task) ?? new Goal(GoalKind.Use, task, word),
                 _ => NeedOn(task) ?? Goal.Wait($"{word} under {Chain(task)}"),
             };
         }
@@ -356,7 +353,7 @@ internal sealed partial class MissionSolver
             : Need(Parse(container.Condition, container), container);
 
     // A terminal or TBA is offered only while its On Expression holds (0x443C80 asks that it is on).
-    private Goal? NeedUsable(GameTask task, GameTask owner)
+    private Goal? NeedUsable(GameTask task)
     {
         if (_mission.Interactions is { } interactions
             && interactions.TryGet(task, out WorldInteraction? interaction)

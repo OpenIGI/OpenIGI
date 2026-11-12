@@ -388,7 +388,7 @@ internal sealed class ContentRow : Grid, IReorderItem
 
         if (item.Conflict.CoveredBy.Count > 0)
         {
-            (string name, int files) = item.Conflict.CoveredBy[0];
+            (string name, _) = item.Conflict.CoveredBy[0];
             string more = item.Conflict.CoveredBy.Count > 1 ? $" AND {item.Conflict.CoveredBy.Count - 1} MORE" : string.Empty;
             return ($"{Files(item.Conflict.CoveredFiles)} COVERED BY {name.ToUpperInvariant()}{more}", ContentInk.Conflict);
         }

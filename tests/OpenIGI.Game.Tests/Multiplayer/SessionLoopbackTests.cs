@@ -193,7 +193,7 @@ public sealed class SessionLoopbackTests
         Assert.True(client.CommandPacketsHeld > 0, "the line never filled");
 
         // Its commands still get there, several to a packet, and its player walks on the server.
-        Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 600 * 100, $"walked only {world.PlayerOf(client.EntityId!.Value).Position.X}");
+        Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 600 * 100, $"walked only {world.PlayerOf(client.EntityId.Value).Position.X}");
     }
 
     [Fact]
@@ -739,7 +739,7 @@ public sealed class SessionLoopbackTests
         // Welcomed as nobody, sent the player it does not have, and no player of the match or the server's.
         Assert.Equal(ServerSession.WatcherEntity, watcher.EntityId);
         Assert.NotNull(player.EntityId);
-        Assert.True(watcher.Latest is { } seen && seen.TryGet(player.EntityId!.Value, out _), "the watcher was never sent the player");
+        Assert.True(watcher.Latest is { } seen && seen.TryGet(player.EntityId.Value, out _), "the watcher was never sent the player");
         Assert.Single(server.Clients);
         Assert.Single(server.Match.Players.Keys, k => k != ServerSession.HostSlot);
         Assert.Null(watcher.EndReason);

@@ -213,7 +213,7 @@ public sealed partial class ServerSession : IModeHost
                     ReadProof(e.Peer, pending, e.Message.Data);
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _clients.TryGetValue(e.Peer, out ClientState? client):
-                    ReadMessage(e.Peer, client, e.Message.Data, serverTick);
+                    ReadMessage(e.Peer, client, e.Message.Data);
                     break;
             }
         }
@@ -346,7 +346,7 @@ public sealed partial class ServerSession : IModeHost
     public void Send(double now, long tick)
     {
         TickSay(now);
-        foreach ((string name, (int parked, double since)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
+        foreach ((string name, (int parked, _)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
         {
             _world.ForgetPlayer(parked);
             Match.Leave(parked);
@@ -948,7 +948,7 @@ public sealed partial class ServerSession : IModeHost
         return entity == HostEntity ? HostSlot : -1;
     }
 
-    private void ReadMessage(int slot, ClientState client, byte[] data, long serverTick)
+    private void ReadMessage(int slot, ClientState client, byte[] data)
     {
         BitReader reader = new(data);
         switch ((SessionMessage)reader.ReadBits(8))

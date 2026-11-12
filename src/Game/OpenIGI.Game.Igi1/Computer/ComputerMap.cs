@@ -50,7 +50,6 @@ public sealed partial class ComputerMap : IComputerScreen
     public ComputerMap(Igi1Computer computer)
     {
         _computer = computer ?? throw new ArgumentNullException(nameof(computer));
-        IIgi1ComputerWorld world = computer.World;
         if (computer.MapStartTask is { } start)
         {
             LookAtTask(start);

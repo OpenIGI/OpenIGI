@@ -61,10 +61,8 @@ public sealed class MissionEntryCameraTests
         MissionEntryCamera entry = Begin(out CameraPose showcase, out CameraPose landing);
 
         var steps = new List<double>();
-        Vector3d previous = showcase.Position;
-
         entry.Update(Frame, showcase, landing);
-        previous = entry.Pose.Position;
+        Vector3d previous = entry.Pose.Position;
 
         while (entry.Phase is not (MissionEntryPhase.Chrome or MissionEntryPhase.Done))
         {

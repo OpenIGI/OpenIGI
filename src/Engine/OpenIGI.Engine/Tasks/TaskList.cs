@@ -53,7 +53,7 @@ public sealed class TaskList<T>
     {
         get
         {
-            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)index, (uint)Count, nameof(index));
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)index, (uint)Count);
             return _tasks[index];
         }
     }

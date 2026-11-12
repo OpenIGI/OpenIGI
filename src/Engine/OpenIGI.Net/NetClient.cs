@@ -130,7 +130,7 @@ public sealed class NetClient : IDisposable
             case NetClientState.Requesting or NetClientState.Responding when now - _lastHandshakeSend >= HandshakeResendInterval:
                 SendHandshake(now);
                 break;
-            case NetClientState.Connected when now - Connection!.LastReceiveTime > Timeout:
+            case NetClientState.Connected when Connection is { } live && now - live.LastReceiveTime > Timeout:
                 EndConnection(TimedOutReason);
                 break;
         }
@@ -227,25 +227,25 @@ public sealed class NetClient : IDisposable
                 _events.Enqueue(new NetEvent(NetEventKind.Rejected, -1, default, PacketCodec.ReadString(packet[(prefix + 8)..]), null));
                 return;
 
-            case PacketKind.Payload when State == NetClientState.Connected
+            case PacketKind.Payload when State == NetClientState.Connected && Connection is { } live
                                          && packet.Length >= prefix + NetConstants.PayloadHeaderSize
-                                         && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == Connection!.Salt:
+                                         && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == live.Salt:
                 _messages.Clear();
-                Connection.ReceivePayload(packet, now, _messages);
+                live.ReceivePayload(packet, now, _messages);
                 foreach (NetMessage message in _messages)
                 {
                     _events.Enqueue(new NetEvent(NetEventKind.Message, Slot, message, string.Empty, null));
                 }
 
-                if (Connection.IsFaulted)
+                if (live.IsFaulted)
                 {
                     Disconnect("protocol error", now);
                 }
 
                 return;
 
-            case PacketKind.Disconnect when State == NetClientState.Connected
-                                            && Connection!.TryReadDisconnect(packet, out string left):
+            case PacketKind.Disconnect when State == NetClientState.Connected && Connection is { } leaving
+                                            && leaving.TryReadDisconnect(packet, out string left):
                 EndConnection(left);
                 return;
         }

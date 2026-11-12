@@ -29,7 +29,7 @@ public sealed class LevelFourIntroOccupantTests
     [RequiresGameDataFact]
     public void IntroCameraMustNotTripTheOutroGate()
     {
-        (GameLoop loop, LevelTask root, MissionObjectiveRuntime objectives, CutsceneRuntime runtime) = LoadLevel();
+        (GameLoop loop, _, MissionObjectiveRuntime objectives, CutsceneRuntime runtime) = LoadLevel();
 
         List<string> transitions = [];
         bool c3902 = false;

@@ -52,7 +52,7 @@ public sealed class AiScenarioHarness : IDisposable
         StringBuilder log = new();
 
         // Every tracer a soldier gun's march files (0x47C4C0), as the probe's [tracer] add.
-        OpenIGI.Game.Igi1.Weapons.GunShotTask.TracerFiled = (task, tracer) => log.AppendLine(FormattableString.Invariant(
+        OpenIGI.Game.Igi1.Weapons.GunShotTask.TracerFiled = (task, tracer) => log.AppendLine(string.Create(CultureInfo.InvariantCulture,
             $"[tracer] add count={task.Tracers.Count} from=({tracer.Start.X:0},{tracer.Start.Y:0},{tracer.Start.Z:0}) to=({tracer.End.X:0},{tracer.End.Y:0},{tracer.End.Z:0}) head={tracer.StartDistance:0} tail={tracer.EndDistance:0} range={tracer.Range:0}"));
         using RecordingGraphicsDevice device = new();
         HeadlessGameWindow window = new();
@@ -87,12 +87,12 @@ public sealed class AiScenarioHarness : IDisposable
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
         // The level is withheld through its warm-up and insertion: wait until the AI has run a second.
-        for (int i = 0; i < 100_000 && soldiers!.Simulation.TickCount < 30; i++)
+        for (int i = 0; i < 100_000 && soldiers.Simulation.TickCount < 30; i++)
         {
             Assert.True(host.Step());
         }
 
-        Assert.True(soldiers!.Simulation.TickCount >= 30, "the AI never ticked");
+        Assert.True(soldiers.Simulation.TickCount >= 30, "the AI never ticked");
 
         IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> pairs = soldiers.Simulation.BrainPairsForTesting;
         int playerTeam = soldiers.Simulation.PlayerTeam;
@@ -239,7 +239,7 @@ public sealed class AiScenarioHarness : IDisposable
         int lastLogged = -1;
         for (int step = 0; step < ticks * 8; step++)
         {
-            int engine = soldiers!.Simulation.TickCount;
+            int engine = soldiers.Simulation.TickCount;
             if (engine - lastLogged < 1 && step > 0)
             {
                 // Log once per engine tick.
@@ -282,7 +282,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            engine = soldiers!.Simulation.TickCount;
+            engine = soldiers.Simulation.TickCount;
             if (engine == lastLogged)
             {
                 continue;
@@ -436,7 +436,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            int engine = soldiers!.Simulation.TickCount;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -636,7 +636,7 @@ public sealed class AiScenarioHarness : IDisposable
                     break;
                 }
 
-                int engine = soldiers!.Simulation.TickCount;
+                int engine = soldiers.Simulation.TickCount;
                 if (engine == last)
                 {
                     continue;
@@ -699,7 +699,7 @@ public sealed class AiScenarioHarness : IDisposable
 
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
-        for (int i = 0; i < 100_000 && soldiers!.Simulation.TickCount < 30; i++)
+        for (int i = 0; i < 100_000 && soldiers.Simulation.TickCount < 30; i++)
         {
             Assert.True(host.Step());
         }

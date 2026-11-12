@@ -244,7 +244,7 @@ public sealed class RetailIgi2WaterTests
         IresEntry? entry = archive.Entries.FirstOrDefault(e => FileNameOf(e.Name) == wanted);
 
         Assert.True(entry is not null, $"'{wanted}' is not in the archive.");
-        return BitmapImage.Read(entry!.Data.Span);
+        return BitmapImage.Read(entry.Data.Span);
     }
 
     /// <summary>Reduces a resource name to the filename both sides can be compared on.</summary>

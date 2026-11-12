@@ -246,19 +246,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // while the player is down.
         host.StepWeather();
 
-        if (mission.Elevators is { } elevators)
+        // A level the walk does not reach steps its lifts here, ahead of everything else.
+        if (mission.Elevators is { } elevators && !mission.ObjectsInWalk)
         {
-            // The player's position is for carrying a passenger, not for starting a car: the original
-            // starts one on its own script alone.
-            elevators.SetPlayerPositionProvider(mission.Player is not null || mission.PlayerStandIn is not null ? () => PlayerFeet : null);
-
-            // A level the walk does not reach steps its lifts here, ahead of everything else.
-            if (!mission.ObjectsInWalk)
+            foreach (PlacedElevator elevator in elevators.Elevators)
             {
-                foreach (PlacedElevator elevator in elevators.Elevators)
-                {
-                    StepElevator(elevators, elevator);
-                }
+                StepElevator(elevators, elevator);
             }
         }
 
@@ -997,23 +990,21 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             soldiers.AttachTo(walker);
         }
 
-        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
+        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask
+            && OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
         {
-            if (OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
+            // The player's run handler only runs its children (0x45EEA0); its HumanPlayerInput child moves it.
+            if (playerTask.Children.OfType<HumanPlayerInputTask>().FirstOrDefault() is { } input)
             {
-                // The player's run handler only runs its children (0x45EEA0); its HumanPlayerInput child moves it.
-                if (playerTask.Children.OfType<HumanPlayerInputTask>().FirstOrDefault() is { } input)
-                {
-                    human.Runner = _playerChildren;
-                    input.Runner = this;
-                }
-                else
-                {
-                    human.Runner = this;
-                }
-
-                mission.PlayerInWalk = true;
+                human.Runner = _playerChildren;
+                input.Runner = this;
             }
+            else
+            {
+                human.Runner = this;
+            }
+
+            mission.PlayerInWalk = true;
         }
     }
 

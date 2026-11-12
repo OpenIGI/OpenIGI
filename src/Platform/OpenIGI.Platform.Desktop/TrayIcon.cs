@@ -160,6 +160,7 @@ public sealed unsafe partial class TrayIcon : IDisposable
                 catch (Exception)
 #pragma warning restore CA1031
                 {
+                    // Nothing to do: the failure is expected here and leaves nothing to undo.
                 }
 
                 return 0;
@@ -187,7 +188,7 @@ public sealed unsafe partial class TrayIcon : IDisposable
     {
         NotifyIconData data = NewData();
         data.Flags = NifMessage | NifIcon | NifTip;
-        data.CallbackMessage = CallbackMessage;
+        data.MessageId = CallbackMessage;
         data.Icon = _icon;
         Copy(_tooltip, data.Tip, 128);
         _added = ShellNotifyIconW(NimAdd, &data) || ShellNotifyIconW(NimModify, &data);
@@ -339,7 +340,7 @@ public sealed unsafe partial class TrayIcon : IDisposable
         public nint Window;
         public uint Id;
         public uint Flags;
-        public uint CallbackMessage;
+        public uint MessageId;
         public nint Icon;
         public fixed char Tip[128];
         public uint State;

@@ -79,7 +79,7 @@ public sealed class RetailBulletSoundTests
             Assert.True(definitions.TryResolve(name, out SoundDefinition? definition),
                 $"Level {level}: retail definition '{name}' is absent.");
             Assert.NotNull(definition);
-            Assert.True(bank.TryGet(definition!.BankKey, out _),
+            Assert.True(bank.TryGet(definition.BankKey, out _),
                 $"Level {level}: definition '{name}' points at missing bank key '{definition.BankKey}'.");
         }
     }

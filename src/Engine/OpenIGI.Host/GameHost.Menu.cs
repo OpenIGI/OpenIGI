@@ -257,7 +257,7 @@ public sealed partial class GameHost
         // worker, so this is the whole of what a backdrop swap costs the render thread.
         _logger.Information(
             "Preview",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms ({stages} ms), {SinceProcessStart():0} ms after the process started."));
     }
 

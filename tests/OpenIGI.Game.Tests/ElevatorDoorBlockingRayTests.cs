@@ -28,7 +28,7 @@ public sealed class ElevatorDoorBlockingRayTests
     [RequiresGameDataFact]
     public void ABlockedClosingDoorIsForcedBackOpenAndNeverSeals()
     {
-        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
+        (LevelTask root, ScriptVarRegistry variables, _) = Load(14);
         DoorRegistry doors = DoorRegistry.Build(root);
 
         (PlacedDoor? door, Vector3d a, Vector3d b) = PickElevatorDoor(root, variables, doors);
@@ -87,7 +87,7 @@ public sealed class ElevatorDoorBlockingRayTests
     [RequiresGameDataFact]
     public void AHumanInsideTheDoorwayBlocksItWhileAHumanOutsideDoesNot()
     {
-        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
+        (LevelTask root, ScriptVarRegistry variables, _) = Load(14);
         DoorRegistry doors = DoorRegistry.Build(root);
 
         (PlacedDoor? door, Vector3d a, Vector3d b) = PickElevatorDoor(root, variables, doors);
@@ -202,9 +202,6 @@ public sealed class ElevatorDoorBlockingRayTests
         {
             return;
         }
-
-        // The lift only moves with the player inside — stand the player in the cab.
-        elevators.SetPlayerPositionProvider(() => withDoor.State.Position);
 
         // Start from a sealed door and no human: the lift should run.
         doors.SetDoorwayBlockedQuery(null);

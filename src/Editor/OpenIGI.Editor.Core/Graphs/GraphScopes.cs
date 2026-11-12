@@ -143,7 +143,7 @@ public static class GraphScopes
             }
             else if (readers.Contains(node.Key) || node.LatchCondition is not null || (placed?.Invoke(node.Key) == true && !node.Definition.IsContainer))
             {
-                ScopeFor(HomeOf(graph, node)).Members.Add(node.Key);
+                ScopeFor(HomeOf(node)).Members.Add(node.Key);
             }
         }
 
@@ -389,7 +389,7 @@ public static class GraphScopes
     }
 
     // A logic task's container: the one directly holding it, so each sub-container of a big gate is a graph of its own.
-    private static GraphNodeKey? HomeOf(MissionGraph graph, TaskGraphNode node) => node.Frame;
+    private static GraphNodeKey? HomeOf(TaskGraphNode node) => node.Frame;
 
     // The scope listed above a container's: the nearest enclosing container that is a scope, made on demand.
     private static string? ParentOf(MissionGraph graph, GraphNodeKey? container, Dictionary<string, GraphScope> scopes, Func<GraphNodeKey?, GraphScope> scopeFor)

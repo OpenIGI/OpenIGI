@@ -69,15 +69,15 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     public PresenterRegistry Presenters { get; }
 
     /// <inheritdoc/>
-    private ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new OpenIGI.Presentation.Igi2.Hud.Igi2HudRenderer(request.Device, request.Logger);
+    private static ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new OpenIGI.Presentation.Igi2.Hud.Igi2HudRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
-    private ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
+    private static ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
         new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
 
     /// <inheritdoc/>
-    private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
+    private static IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
         new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi2, request.Logger);
 
     /// <inheritdoc/>
@@ -259,7 +259,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     }
 
     /// <inheritdoc/>
-    private ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
+    private static ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);
@@ -390,7 +390,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// absent is not drawn, as the original returns before drawing one with no valid reflection.
     /// </para>
     /// </remarks>
-    private IWaterPresenter? CreateWater(in ScenePresentationRequest request)
+    private static IWaterPresenter? CreateWater(in ScenePresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);

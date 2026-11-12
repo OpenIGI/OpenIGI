@@ -709,13 +709,18 @@ public sealed class GrenadeSimulation
             }
         }
 
-        for (int i = 0; i < _mines.Count; i++)
+        int i = 0;
+        while (i < _mines.Count)
         {
             PlacedMine mine = _mines[i];
             if (mine.Run())
             {
                 _mineBlasts.Add(mine);
-                _mines.RemoveAt(i--);
+                _mines.RemoveAt(i);
+            }
+            else
+            {
+                i++;
             }
         }
     }

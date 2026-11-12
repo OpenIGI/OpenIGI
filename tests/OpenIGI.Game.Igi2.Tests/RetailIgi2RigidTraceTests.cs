@@ -45,7 +45,7 @@ public sealed class RetailIgi2RigidTraceTests
                 WorldIntersection hit = trace.Intersections[0];
                 Assert.True(expected is not null, $"{name} face {f}: the reference finds nothing.");
                 Assert.True(hit.IsHit, $"{name} face {f}: the line through the face's centre struck nothing.");
-                Assert.InRange(hit.Distance, expected!.Value - 0.5, expected.Value + 41.0);
+                Assert.InRange(hit.Distance, expected.Value - 0.5, expected.Value + 41.0);
                 Assert.Same(name, hit.HitObject?.Owner);
                 checkedLines++;
             }

@@ -163,6 +163,6 @@ internal static class PackRecompress
     }
 
     private static bool IsUnderTextures(string relative) =>
-        relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+        relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar])
             .Any(part => part.Equals("textures", StringComparison.OrdinalIgnoreCase));
 }

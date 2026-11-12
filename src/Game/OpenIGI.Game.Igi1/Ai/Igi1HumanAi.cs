@@ -473,7 +473,6 @@ public sealed partial class Igi1HumanAi
     // instant combat turn to 2 degrees and HOLD until `duration` seconds after the behaviour's first
     // tick; complete only when both aimed and expired. Owns the tick while it runs, as a pending
     // action does.
-    private Vector3d? _lookAtPoint;
     private int _lookAtDurationTicks;
     private int _lookAtDeadline;
 
@@ -539,7 +538,6 @@ public sealed partial class Igi1HumanAi
     // action ends or the soldier dies.
     private AiActivationClaims? _claims;
     private ActivateTask? _activate;
-    private int _activateTaskId = -1;
     private int _activateClaimA = -1;
     private int _activateClaimB = -1;
 

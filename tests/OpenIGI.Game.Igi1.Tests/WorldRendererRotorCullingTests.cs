@@ -37,7 +37,7 @@ public sealed class WorldRendererRotorCullingTests
 
         // Make these actual retail models resident before the whole scene draws, so their handles mark
         // only rotor submissions in the recording device, even when a nearby object enters the frustum.
-        foreach ((WorldPlacement rotor, int index) in scenario.Scene.Placements
+        foreach ((_, int index) in scenario.Scene.Placements
             .Select((placement, index) => (placement, index))
             .Where(entry => rotors.Contains(entry.placement)))
         {

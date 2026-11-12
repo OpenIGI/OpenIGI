@@ -22,7 +22,6 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
 
     private int _pressStamp;
     private bool _humming;
-    private Action<InteractionSoundEvent>? _sounds;
     private int _useStamp;
     private int _completeStamp;
     private Func<bool?>? _onCondition;
@@ -289,11 +288,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     public (float First, float Second)? FenceSpan { get; init; }
 
     /// <summary>Gets or sets where the task's sounds go.</summary>
-    public Action<InteractionSoundEvent>? Sounds
-    {
-        get => _sounds;
-        set => _sounds = value;
-    }
+    public Action<InteractionSoundEvent>? Sounds { get; set; }
 
     /// <summary>Gets a value indicating whether a GenericTBA runs ExplodeObject's update, and its children with it: its <c>Explodable</c> flag (<c>+568</c>).</summary>
     public bool IsExplodable { get; init; }
@@ -443,12 +438,14 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     /// <summary>Gets the wire model's origin, the middle of its authored span, which the ride is measured from.</summary>
     public Vector3d WireOrigin => _wireOrigin + _offset;
 
+#pragma warning disable S2292 // Set at construction by callers and again by ResetToLevelStart: an init accessor over a field the class also writes.
     /// <summary>Gets the wire model's origin as authored, before any carrier moves it.</summary>
     public Vector3d WireOriginAuthored
     {
         get => _wireOrigin;
         init => _wireOrigin = value;
     }
+#pragma warning restore S2292
 
     /// <summary>Gets where the cable starts along its own axis from <see cref="WireOrigin"/>: magic vertex 0's stretched local Y.</summary>
     public double WireStartLocalY { get; init; }

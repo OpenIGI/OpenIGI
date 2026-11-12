@@ -134,7 +134,7 @@ public sealed partial class UpscaleRejectShadingVariantTests
         ShaderEntryPoint entryPoint = reflection.EntryPointFor(ShaderStage.Compute);
 
         Assert.NotNull(entryPoint.WorkgroupSize);
-        Assert.Equal(new[] { groupWidth, groupHeight, 1 }, entryPoint.WorkgroupSize!);
+        Assert.Equal(new[] { groupWidth, groupHeight, 1 }, entryPoint.WorkgroupSize);
     }
 
     /// <summary>An adapter one byte short of a form gets the next form down.</summary>

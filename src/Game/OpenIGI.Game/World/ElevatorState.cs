@@ -374,7 +374,7 @@ public sealed class ElevatorState : Saves.IExchangedState
                 : Math.Max(_maxSpeed, _speed - _inertia);
         }
 
-        AdvanceToward(targetIndex, _speed * TickSeconds);
+        AdvanceToward(_speed * TickSeconds);
         FinishExports(paramBefore, wantedBefore, canStart);
     }
 
@@ -438,7 +438,7 @@ public sealed class ElevatorState : Saves.IExchangedState
         _pendingTargetFloor = floorIndex;
     }
 
-    private void AdvanceToward(int targetIndex, double stepUnits)
+    private void AdvanceToward(double stepUnits)
     {
         int guard = _floors.Count + 1;
         while (stepUnits > 0.0 && TargetFloorIndex is int dest && dest != CurrentFloorIndex && guard-- > 0)

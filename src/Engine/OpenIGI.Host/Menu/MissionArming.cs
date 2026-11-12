@@ -34,8 +34,6 @@ public sealed class MissionArming
     private readonly WorldScene _scene;
     private readonly IWorldPresenter _world;
     private readonly IOpenIgiLogger _logger;
-    private readonly Stopwatch _spent = new();
-
     private int _placement;
     private double _totalMilliseconds;
     private bool _reported;
@@ -117,7 +115,7 @@ public sealed class MissionArming
         _reported = true;
         _logger.Information(
             "Preview",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"Mission {MissionId}'s backdrop is armed: {_scene.Placements.Count} placement(s) made resident over {_totalMilliseconds:F0} ms of idle menu frames."));
     }
 }

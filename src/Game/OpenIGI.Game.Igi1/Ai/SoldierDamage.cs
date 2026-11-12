@@ -254,7 +254,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         // authoritative position, the clip that moves it and what the guards around it are told are all
         // exactly what they were. The ragdoll its renderer seeds from the fall replaces THE POSE THAT IS
         // DRAWN, and nothing else.
-        if (_context.FindAgent(view) is { } agent)
+        if (_context.FindAgent(view) is not null)
         {
             Vector3f carried = view.RootMotion();
             double grounded = _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);

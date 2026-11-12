@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Editor.Core.Missions;
@@ -81,8 +82,8 @@ public sealed record NavGraphLayout(IReadOnlyList<(int Id, Vector3d PositionMetr
         Dictionary<(int, int), List<(int, int)>> next = [];
         foreach (((int, int) a, (int, int) b) in pairs)
         {
-            (next.TryGetValue(a, out List<(int, int)>? fromA) ? fromA : next[a] = []).Add(b);
-            (next.TryGetValue(b, out List<(int, int)>? fromB) ? fromB : next[b] = []).Add(a);
+            next.GetOrAdd(a).Add(b);
+            next.GetOrAdd(b).Add(a);
         }
 
         HashSet<(int, int)> best = [];

@@ -19,6 +19,7 @@ namespace OpenIGI.Game.Player;
 /// screen rather than the world, as the era's key-binding dialogs were.
 /// </para>
 /// </remarks>
+[Flags]
 public enum PlayerAction
 {
     /// <summary>Strafe left.</summary>

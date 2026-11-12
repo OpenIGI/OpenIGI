@@ -68,7 +68,7 @@ public sealed class CutsceneFidelityLevels4to6Tests
         foreach (CutSceneTask scene in Walk(root).OfType<CutSceneTask>())
         {
             List<DeclaredTask> authored = Walk(scene)
-                .Where(static t => t is DeclaredTask d && string.Equals(t.Type.Name, "EditCamera", StringComparison.Ordinal))
+                .Where(static t => t is DeclaredTask && string.Equals(t.Type.Name, "EditCamera", StringComparison.Ordinal))
                 .Cast<DeclaredTask>()
                 .ToList();
             Assert.NotEmpty(authored);
@@ -104,7 +104,6 @@ public sealed class CutsceneFidelityLevels4to6Tests
                 starts[i] = acc;
                 acc += shots[i].Duration;
             }
-            int finalTick = (int)Math.Ceiling(total * 30);
 
             for (int i = 0; i < shots.Count; i++)
             {
@@ -130,7 +129,7 @@ public sealed class CutsceneFidelityLevels4to6Tests
                 // Retail knot selection: the LAST entry whose start is not past the time wins, so
                 // zero-duration marker knots sharing a start are skipped in favour of their successor.
                 int expectedIndex = SelectIndex(starts, time);
-                if (frame!.ShotIndex != expectedIndex)
+                if (frame.ShotIndex != expectedIndex)
                 {
                     failures.Add($"{prefix}: ShotIndex {frame.ShotIndex} != expected {expectedIndex}");
                     continue;

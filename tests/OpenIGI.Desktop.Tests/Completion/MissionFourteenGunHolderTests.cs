@@ -90,7 +90,7 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
             trace.AppendLine(guards);
             Assert.True(fired > 0, $"No hacked gun fired on a guard:\n{trace}");
             Assert.All(
-                mission.Soldiers!.SoldierViews.Where(view => RoomGuards.Contains(view.Soldier.Id)),
+                mission.Soldiers.SoldierViews.Where(view => RoomGuards.Contains(view.Soldier.Id)),
                 view => Assert.True(view.IsDead, $"{view.Soldier.Name} survived the hacked guns:\n{trace}"));
         }
         finally

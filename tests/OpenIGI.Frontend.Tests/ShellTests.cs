@@ -190,8 +190,8 @@ public sealed class ShellTests : ShellTestHarness
 
             shell.OpenOn("extras");
             Pump(shell, 0.3f);
-            Assert.Null(Find<GroupHeader>(shell.Stack.Top!, header => header.Title == "CHEATS"));
-            Assert.Null(Find<Toggle>(shell.Stack.Top!, toggle => toggle.Label is "Enable cheats" or "Infinite ammo"));
+            Assert.Null(Find<GroupHeader>(shell.Stack.Top, header => header.Title == "CHEATS"));
+            Assert.Null(Find<Toggle>(shell.Stack.Top, toggle => toggle.Label is "Enable cheats" or "Infinite ammo"));
         }
         finally
         {

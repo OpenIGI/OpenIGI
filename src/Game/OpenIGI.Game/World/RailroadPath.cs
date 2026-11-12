@@ -276,7 +276,7 @@ public sealed class RailroadPath
                     double beta = Acos((float)((toA - toB - ((double)pieceLength * pieceLength)) / ((double)toEnd * pieceLength * -2.0)));
                     float sinBeta = (float)Math.Sin(beta);
                     float rest = (float)(Pi - beta);
-                    double apex = rest - Asin((float)(sinBeta / span * toEnd));
+                    double apex = rest - Asin((sinBeta / span * toEnd));
                     if (apex <= 0.001)
                     {
                         double toStart = Math.Sqrt(toA);
@@ -327,7 +327,7 @@ public sealed class RailroadPath
                         double alpha = Acos((float)((toB - (double)toA - ((double)pieceLength * pieceLength)) / ((double)toStart * pieceLength * -2.0)));
                         float sinAlpha = (float)Math.Sin(alpha);
                         float rest = (float)(Pi - alpha);
-                        double apex = rest - Asin((float)(sinAlpha / step * toStart));
+                        double apex = rest - Asin((sinAlpha / step * toStart));
                         fraction = apex <= 0.001
                             ? (float)((step - toStart) / (Math.Sqrt(toB) - toStart))
                             : (float)(Math.Sin(apex) * step / sinAlpha / pieceLength);

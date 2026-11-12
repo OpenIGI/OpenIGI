@@ -120,7 +120,7 @@ internal sealed class TerrainTool(IEditorHost host, MissionWorkspace workspace, 
                 workspace.History.Record(paint);
             }
 
-            string where = _at is { } spot ? FormattableString.Invariant($" at {spot.X:0}, {spot.Y:0}") : string.Empty;
+            string where = _at is { } spot ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $" at {spot.X:0}, {spot.Y:0}") : string.Empty;
             host.Logger.Information("Editor", paint.IsEmpty
                 ? $"The paint stroke{where} changed nothing: the ground there already had that material, or lies outside its square."
                 : $"Painted {paint.Count} cell(s){where}.");

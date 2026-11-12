@@ -22,7 +22,7 @@ public sealed class RetailIgi2BoneMeshTests
 
             skinned++;
             Assert.True(model.BoneHierarchy is not null, $"{name} is skinned but carries no hierarchy.");
-            Assert.Equal(model.BoneHierarchy!.BoneCount, model.BoneNames.Count);
+            Assert.Equal(model.BoneHierarchy.BoneCount, model.BoneNames.Count);
             Assert.True(model.HighestSkinBone < model.BoneHierarchy.BoneCount, $"{name} skins to a bone it does not have.");
         }
 

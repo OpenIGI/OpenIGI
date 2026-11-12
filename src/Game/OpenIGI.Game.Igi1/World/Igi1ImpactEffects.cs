@@ -342,7 +342,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             player.PlayModeClip(-1, 0f);
         }
 
-        string report = FormattableString.Invariant(
+        string report = string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"bomb_test {verb}: holds {Multiplayer.Igi1BombWeapon.Holds(player)}, mode clip {player.ModeAnimation}, arms {player.FirstPersonBombClip}.");
         context.Print(report);
         logger.Warning("Bomb", report);
@@ -365,11 +365,11 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                 Vector3d at = view.Position / WorldScene.UnitsPerMetre;
                 logger.Warning(
                     "Impact",
-                    FormattableString.Invariant($"ragdoll_test: soldier {view.Soldier.Id} at {at.X:0.00},{at.Y:0.00},{at.Z:0.00}"));
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ragdoll_test: soldier {view.Soldier.Id} at {at.X:0.00},{at.Y:0.00},{at.Z:0.00}"));
             }
 
             Vector3d eyeAt = _eye().Position;
-            logger.Warning("Impact", FormattableString.Invariant($"ragdoll_test: eye at {eyeAt.X:0.00},{eyeAt.Y:0.00},{eyeAt.Z:0.00}"));
+            logger.Warning("Impact", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ragdoll_test: eye at {eyeAt.X:0.00},{eyeAt.Y:0.00},{eyeAt.Z:0.00}"));
             return;
         }
 
@@ -498,7 +498,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                     probe: mission.Player?.MarkProbe,
                     placement: struck);
                 Runtime.SpawnSurfaceImpact(hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
-                string where = FormattableString.Invariant($"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
+                string where = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
                 string report =
                     $"{material.Name} at {where}: {Runtime.PuffCount} dust quad(s), "
                         + $"{Runtime.FragmentCount} chip(s) of {material.Entry.Model}.";

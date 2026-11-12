@@ -186,7 +186,7 @@ public sealed partial class GameHost
         int coloured = triangles.Count(t => MathF.Abs(t.Albedo.X - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Y - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Z - 0.5f) > 0.02f);
         _logger.Information(
             "Lightmap",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"Albedo: {coloured}/{triangles.Length} triangles got a resolved colour; samples ({triangles[0].Albedo.X:F2},{triangles[0].Albedo.Y:F2},{triangles[0].Albedo.Z:F2}) ({triangles[triangles.Length / 2].Albedo.X:F2},{triangles[triangles.Length / 2].Albedo.Y:F2},{triangles[triangles.Length / 2].Albedo.Z:F2})."));
         LightmapBvh bvh = LightmapBvh.Build(triangles);
         _logger.Information("Lightmap", $"Built a BVH over {triangles.Length} triangle(s); gathering bounces.");
@@ -209,7 +209,7 @@ public sealed partial class GameHost
             Vector3d origin = scene.Placements[sample.PlacementIndex].Position;
             _logger.Information(
                 "Lightmap",
-                FormattableString.Invariant(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"Largest page p{sample.PlacementIndex} {sample.Width}x{sample.Height}: {sampleCovered} covered, placement at ({origin.X:F1},{origin.Y:F1},{origin.Z:F1})."));
 
             int shown = 0;
@@ -224,7 +224,7 @@ public sealed partial class GameHost
                 Vector3f rad = sample.Radiance[i];
                 _logger.Information(
                     "Lightmap",
-                    FormattableString.Invariant(
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"  texel {i}: pos ({t.WorldPosition.X:F1},{t.WorldPosition.Y:F1},{t.WorldPosition.Z:F1}) n ({t.Normal.X:F2},{t.Normal.Y:F2},{t.Normal.Z:F2}) rad ({rad.X:F2},{rad.Y:F2},{rad.Z:F2})"));
                 shown++;
             }
@@ -233,7 +233,7 @@ public sealed partial class GameHost
         int dumped = 0;
         foreach (LightmapTarget target in targets.OrderByDescending(t => t.Texels.Length).Take(6))
         {
-            string stem = FormattableString.Invariant(
+            string stem = string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"lm_p{target.PlacementIndex}_r{target.RecordIndex}_{target.Width}x{target.Height}");
 
             Bgra32[] normals = new Bgra32[target.Texels.Length];

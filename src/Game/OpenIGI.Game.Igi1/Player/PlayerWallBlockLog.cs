@@ -96,7 +96,7 @@ internal sealed class PlayerWallBlockLog
 
         double probeMetres = bestHeight / PlayerCamera.UnitsPerMetre;
         double aheadMetres = best / PlayerCamera.UnitsPerMetre;
-        string line = FormattableString.Invariant(
+        string line = string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"BLOCKED by {label} at ({nearest.Position.X:F0}, {nearest.Position.Y:F0}, {nearest.Position.Z:F0}) — probe {probeMetres:F2}m, {aheadMetres:F2}m ahead; player ({_body.Position.X:F0}, {_body.Position.Y:F0}, {_body.Position.Z:F0}) yaw {_body.Yaw:F2}");
 
         _logger.Information("Player", line);

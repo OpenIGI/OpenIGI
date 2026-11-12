@@ -122,6 +122,7 @@ public sealed class DeferredAgreementTests(ITestOutputHelper output)
                 new RhiDepthAttachment(targets.View(SceneTargetId.Depth), DepthClearValue: 0.5f),
                 Label: "gbuffer")))
             {
+                // The pass is begun and ended with nothing drawn in it: the clears are the test.
             }
 
             device.Submit([encoder.Finish()]);

@@ -18,7 +18,6 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
     private readonly List<PlacedElevator> _elevators = [];
     private readonly List<ElevatorCommand> _commands = [];
     private Action<PlacedElevator, ElevatorSoundEvent>? _sounds;
-    private Func<Vector3d>? _playerPositionProvider;
     private readonly HashSet<PlacedElevator> _collisionPlaced = new(ReferenceEqualityComparer.Instance);
 
     public ElevatorRegistry()
@@ -36,15 +35,6 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
 
     /// <summary>Sets the callback for elevator start/stop sounds.</summary>
     public void SetSoundSink(Action<PlacedElevator, ElevatorSoundEvent>? sink) => _sounds = sink;
-
-    /// <summary>Sets the provider that returns the human player's current world position.</summary>
-    /// <remarks>
-    /// Cabin requests must not move the lift without the player inside the cab. Authored exterior hall
-    /// calls are the exception: those requests are allowed to bring an empty cab to the caller. This
-    /// provider lets the start gate read the player's position each tick; without it the player-inside
-    /// check is skipped (data-only tests that do not wire a player still pass).
-    /// </remarks>
-    public void SetPlayerPositionProvider(Func<Vector3d>? provider) => _playerPositionProvider = provider;
 
     public static ElevatorRegistry Build(GameTask root, ScriptVarRegistry variables) =>
         Build(root, variables, doors: null);
@@ -946,9 +936,4 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
             count,
             linear);
     }
-
-    private static Matrix3f ReadOrientation(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is Vector3f angles
-            ? WorldScene.ToOrientation(angles)
-            : Matrix3f.Identity;
 }

@@ -33,7 +33,7 @@ public sealed class DiagCrew2
             missions, fs, resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
             terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
-        WorldScene scene = WorldScene.Build(mission, root, magic);
+        _ = WorldScene.Build(mission, root, magic);
         ConditionalContainerGate gate = new(loop.Variables);
         int dormant = gate.Prepare(root);
         _output.WriteLine($"=== dormant containers: {dormant} ===");

@@ -202,7 +202,7 @@ public sealed partial class Igi1PlayerSetup(
             Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), animations.Body, host.Logger);
         Candidate = candidate;
         _bringUp = (loaded, levelRoot, solids, missionText);
-        WirePlayer(candidate, loaded, solids, missionText);
+        WirePlayer(candidate, loaded);
 
         // ORDER MATTERS, and it is the original's: Igi1Arsenal reads the tables before humanplayer.qvm runs, or every id in
         // its weapon cycle is a placeholder and the cycle names weapons nobody carries. Empty until then, so a mission whose
@@ -298,10 +298,8 @@ public sealed partial class Igi1PlayerSetup(
     /// <summary>Wires a player's rig into the level: its animations, walls, grenades and missiles, ladders, interactions and pickups.</summary>
     /// <param name="candidate">The rig.</param>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
-    /// <param name="solids">The collision index over the placed objects.</param>
-    /// <param name="missionText">The mission's text.</param>
     /// <remarks>Everything <see cref="Begin"/> does for the one rig it makes; a co-op session's other players are wired the same way.</remarks>
-    private void WirePlayer(PlayerCamera candidate, LoadedMission loaded, ObjectCollisionIndex solids, MissionStringResolver missionText)
+    private void WirePlayer(PlayerCamera candidate, LoadedMission loaded)
     {
         // The mine weapon lays nothing on a pane, a door or a vehicle (0x4755A0); its model's bound and magic vertex 0 are
         // what a blast is measured against and where its own starts.
@@ -412,7 +410,7 @@ public sealed partial class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         PlayerCamera extra = Igi1PlayerRig.Build(
             Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), animations.Body, host.Logger);
-        WirePlayer(extra, loaded, solids, missionText);
+        WirePlayer(extra, loaded);
         WirePickups(extra, missionText);
         // Tuned, rigged and then armed, in the order the mission's own player is.
         if (_config is { } config)

@@ -59,7 +59,7 @@ public sealed class TitleSelectionTests
     public void A_known_title_id_resolves(string id)
     {
         Assert.True(TitleCatalog.TryResolve(id, out Engine.Titles.IGameTitleRuntime? runtime));
-        Assert.Equal(id.Trim(), runtime!.Title.Id, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(id.Trim(), runtime.Title.Id, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>An id this build does not run resolves to nothing rather than to the default.</summary>

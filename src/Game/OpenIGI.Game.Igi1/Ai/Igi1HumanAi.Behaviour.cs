@@ -67,11 +67,7 @@ public sealed partial class Igi1HumanAi
     internal IReadOnlyList<AiWaypoint> Waypoints => _route;
 
     /// <summary>Gets or sets the point he looks at until he gets there or is told otherwise, or <see langword="null"/> for none.</summary>
-    internal Vector3d? LookingAt
-    {
-        get => _lookAtPoint;
-        set => _lookAtPoint = value;
-    }
+    internal Vector3d? LookingAt { get; set; }
 
     /// <summary>Gets the name of the action he is running, or <see langword="null"/>.</summary>
     internal string? RunningActionName => _runningAction;
@@ -130,7 +126,7 @@ public sealed partial class Igi1HumanAi
     {
         if (_weapon is { } weapon)
         {
-            RunSharedSubAction(point, weapon(), point);
+            RunSharedSubAction(weapon(), point);
         }
     }
 
@@ -140,7 +136,7 @@ public sealed partial class Igi1HumanAi
     {
         if (_weapon is { } weapon)
         {
-            RunSharedSubAction(enemy, weapon());
+            RunSharedSubAction(weapon());
         }
     }
 

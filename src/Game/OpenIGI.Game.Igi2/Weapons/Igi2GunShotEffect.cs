@@ -73,7 +73,7 @@ public static class Igi2GunShotEffect
     }
 
     /// <summary>One of the explosion's three angles: a sixteen-bit draw over a tenth of a turn, kept as a float.</summary>
-    private static float Angle(IgiRandom random) => ((new Fpu(random.NextDouble()) * FragmentSpan)).F;
+    private static float Angle(IgiRandom random) => (new Fpu(random.NextDouble()) * FragmentSpan).F;
 
     /// <summary>
     /// The two puffs: from twelve centimetres off the face along its unit normal, the second a quarter of the size higher;

@@ -97,23 +97,8 @@ public sealed partial class Igi1HumanAi
     // 0x452580's clamp on both angles, in radians -- 0x3CD4629B.
     private const float LookAtTurnClamp = 0.025925925f;
 
-    private bool IsFacing(Vector3d target, float tolerance)
-    {
-        double dx = target.X - Position.X;
-        double dy = target.Y - Position.Y;
-        if ((dx * dx) + (dy * dy) < 1.0)
-        {
-            return true;
-        }
-
-        return Math.Abs(Igi1AiGeometry.Wrap((float)Math.Atan2(-dx, dy) - Facing)) <= tolerance;
-    }
-
     /// <summary>How far above the soldier's feet the ground probe starts — 0.5 m.</summary>
     private const double GroundProbeAboveUnits = 2048.0;
-
-    /// <summary>How far below the soldier's feet the ground probe reaches — 2 m (the sliding step-down budget).</summary>
-    private const double GroundProbeBelowUnits = 8192.0;
 
     /// <summary>
     /// The part of the body's update the AI's frame drives — <c>0x45D080</c>: turn (<c>0x4610C0</c>), then

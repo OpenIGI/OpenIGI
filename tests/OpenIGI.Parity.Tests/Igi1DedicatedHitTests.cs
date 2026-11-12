@@ -279,7 +279,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
             30 * 3);
         shooter.Input.Mouse.SetButton(MouseButton.Left, false);
         Assert.True(seen is not null, "the shot's torso clip never reached the other game");
-        Assert.False(seen!.Value, "the other game loops the shot's torso clip");
+        Assert.False(seen.Value, "the other game loops the shot's torso clip");
     }
 
     [RequiresGameDataFact]
@@ -435,7 +435,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
             return (0, 0, "(no gun in hand)");
         }
 
-        int before = shooterThere.Player.Weapons!.ShotSequence;
+        int before = shooterThere.Player.Weapons.ShotSequence;
         float damage = targetThere.Health.Damage;
         float startDamage = damage;
         int landed = 0;

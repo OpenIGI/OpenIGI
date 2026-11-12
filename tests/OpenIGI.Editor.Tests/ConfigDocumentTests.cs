@@ -22,7 +22,7 @@ public sealed class ConfigDocumentTests
             ConfigDocument document = ConfigDocument.TryRead(bytes) ?? throw new Xunit.Sdk.XunitException($"{path} is not a config");
             ConfigCall call = Assert.Single(document.Calls);
             Assert.NotNull(call.Schema);
-            Assert.True(call.Values.Count >= call.Schema!.Fields.Count, path);
+            Assert.True(call.Values.Count >= call.Schema.Fields.Count, path);
             Assert.Equal(QscPrinter.Print(QscDecompiler.Decompile(bytes)), QscPrinter.Print(QscDecompiler.Decompile(document.Compile())));
             Assert.False(document.IsDirty);
             weapons += call.Name == "DefineWeaponType" ? 1 : 0;

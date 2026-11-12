@@ -582,7 +582,7 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
         // failed roll flies the round on to the next one behind.
         candidates.Sort(static(a, b) => a.distance.CompareTo(b.distance));
 
-        foreach ((HumanHealth health, SoldierView struckView, HumanHit candidate, _) in candidates)
+        foreach ((_, SoldierView struckView, HumanHit candidate, _) in candidates)
         {
             // No probability roll against a soldier: the Human's evaluate (0x45E3E0) rolls the round's
             // probability only when the struck human is player 0. Any other body is hit outright unless

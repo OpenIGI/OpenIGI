@@ -214,7 +214,7 @@ public sealed class DestructibleModelReplacementTests
                 Assert.True(
                     ownedPlacement.DestroyedReplacement is not null,
                     $"Mission {mission}, {family} '{task.Name}': {ownedPlacement.Instance.Name} has no binding for {destroyedModel}.");
-                WorldModelBinding replacement = ownedPlacement.DestroyedReplacement!;
+                WorldModelBinding replacement = ownedPlacement.DestroyedReplacement;
 
                 Assert.Equal(destroyedModel, replacement.Instance.Name);
                 Assert.Equal(destroyedModel, destructible.DestroyedModelName);

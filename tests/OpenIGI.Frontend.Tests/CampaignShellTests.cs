@@ -107,12 +107,12 @@ public sealed class CampaignShellTests : ShellTestHarness
             var screen = Assert.IsType<CampaignScreen>(shell.Stack.Top);
             OptionCycler campaigns = Assert.Single(screen.Root!.Descendants().OfType<OptionCycler>(), static c => c.Label == "CAMPAIGN");
             Assert.Equal(["The game", "Nightfall"], campaigns.Options);
-            Assert.Equal(["Mission One", "Mission Two"], screen.Root!.Descendants().OfType<ListCard>().Select(static r => r.Title));
+            Assert.Equal(["Mission One", "Mission Two"], screen.Root.Descendants().OfType<ListCard>().Select(static r => r.Title));
 
             campaigns.Step(1);
             Pump(shell, 0.6f);
 
-            List<ListCard> rows = [.. shell.Stack.Top!.Root!.Descendants().OfType<ListCard>()];
+            List<ListCard> rows = [.. shell.Stack.Top.Root!.Descendants().OfType<ListCard>()];
             Assert.Equal(["Nightfall One", "Nightfall Two"], rows.Select(static r => r.Title));
             Assert.All(rows, static row => Assert.True(row.IsEnabled));
             Assert.Equal(901, host.Previewed);

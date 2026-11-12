@@ -25,7 +25,7 @@ public static class WgpuLibrary
     /// <summary>The environment variable that names the library file outright.</summary>
     public const string OverrideVariable = "OPENIGI_WGPU_NATIVE";
 
-    private static readonly object Gate = new();
+    private static readonly Lock Gate = new();
     private static readonly HashSet<Assembly> Registered = [];
     private static bool _registered;
 

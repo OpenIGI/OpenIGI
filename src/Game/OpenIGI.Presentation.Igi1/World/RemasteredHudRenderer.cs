@@ -669,13 +669,9 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         }
     }
 
-    /// <summary>The badge's face. Opaque, so each layer drawn over it composites predictably.</summary>
-    private static Bgra32 BadgeFace => Bgra32.FromRgb(13, 16, 21);
-
     private static Bgra32 BlastRed => Bgra32.FromRgb(255, 72, 48);
 
     private static Bgra32 Text => UiPalette.Text;
     private static Bgra32 Muted => UiPalette.TextSecondary;
     private static Bgra32 Accent => UiPalette.Accent;
-    private static Bgra32 Signal => UiPalette.Success;
 }

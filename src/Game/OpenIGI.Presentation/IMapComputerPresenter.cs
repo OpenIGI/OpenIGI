@@ -121,7 +121,7 @@ public interface ITacticalComputerPresenter : IDisposable
     OpenIGI.Game.Computer.IComputerSaves? Saves
     {
         get => null;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>
@@ -131,7 +131,7 @@ public interface ITacticalComputerPresenter : IDisposable
     Action<string>? PlaySound
     {
         get => null;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Loads the fonts the display is drawn from.</summary>

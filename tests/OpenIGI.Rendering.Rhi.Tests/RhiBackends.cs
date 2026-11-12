@@ -210,6 +210,7 @@ public static class RhiBackends
 
 /// <summary>A theory comparing each backend with the reference, run only where there is something to compare.</summary>
 /// <remarks>Pair it with <c>[MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]</c>.</remarks>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class AgreementTheoryAttribute : TheoryAttribute
 {
     /// <summary>Initialises a new instance of the <see cref="AgreementTheoryAttribute"/> class.</summary>
@@ -218,6 +219,7 @@ public sealed class AgreementTheoryAttribute : TheoryAttribute
 
 /// <summary>A fact about the reference backend alone, run only where it opens.</summary>
 /// <remarks>For what only the reference can do yet; a comparison wants <see cref="AgreementTheoryAttribute"/>.</remarks>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class ReferenceFactAttribute : FactAttribute
 {
     /// <summary>Initialises a new instance of the <see cref="ReferenceFactAttribute"/> class.</summary>

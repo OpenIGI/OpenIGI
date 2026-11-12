@@ -307,7 +307,7 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
         _lastNoiseLogTick = _context.TickCount;
         _context.Logger.Information(
             SoldierContext.LogCategory + ".Flow",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"noise {kind} heard by {heard} soldier(s) (radius {radiusUnits / 4096.0:0.0} m)"));
     }
 
@@ -315,14 +315,14 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
     // miss is weighed listener by listener, so it carries no record of its own: another game's humans hear a round go by
     // through the level's bodies instead.
     private void Broadcast(Igi1Noise noise) =>
-        Broadcast(noise, new HumanAiEvent(Type: -1, Team: -1, Flags: 0, Radius: 0f, Position: null, Source: null, Subject: null, Context: noise));
+        Broadcast(new HumanAiEvent(Type: -1, Team: -1, Flags: 0, Radius: 0f, Position: null, Source: null, Subject: null, Context: noise));
 
     // The broadcast of a record the way its sender posts it, which another game's humans read; this game's read the noise.
     private void Broadcast(
         Igi1Noise noise, AiEvent type, int team, AiEventFilter filter, double radius, Vector3d position, GameTask? source, Vector3f direction = default) =>
-        Broadcast(noise, new HumanAiEvent((int)type, team, (int)filter, (float)radius, position, source, source, noise, direction));
+        Broadcast(new HumanAiEvent((int)type, team, (int)filter, (float)radius, position, source, source, noise, direction));
 
-    private void Broadcast(Igi1Noise noise, in HumanAiEvent aiEvent) =>
+    private void Broadcast(in HumanAiEvent aiEvent) =>
         HumanAiEvents.Send(
             (Humans.Count > 0 ? Humans : _context.Brains.Keys.Select(static view => (IHumanAiEventTarget)view.Soldier))
                 .Concat(Joined?.Humans ?? []),

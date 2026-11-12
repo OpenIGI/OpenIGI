@@ -83,8 +83,8 @@ public static class RuntimePaths
         finally
         {
             try { File.Delete(probe); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            catch (IOException) { /* Nothing to do: the failure is expected here and leaves nothing to undo. */ }
+            catch (UnauthorizedAccessException) { /* Nothing to do: the failure is expected here and leaves nothing to undo. */ }
         }
     }
 }

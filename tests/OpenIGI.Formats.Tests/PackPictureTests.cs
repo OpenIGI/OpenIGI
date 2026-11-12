@@ -172,7 +172,7 @@ public sealed class PackPictureTests
         SpriteAsset sprite = SpriteLoader.Load(file, "pack.pic");
 
         Assert.NotNull(sprite.TileLayout);
-        Assert.Equal(2, sprite.TileLayout!.Columns);
+        Assert.Equal(2, sprite.TileLayout.Columns);
         Assert.Equal(1, sprite.TileLayout.GetFrameIndex(0, 0));
         Assert.Equal(0, sprite.TileLayout.GetFrameIndex(1, 0));
     }
@@ -248,7 +248,7 @@ public sealed class PackPictureTests
 
         Assert.Equal(3, surface.Diffuse.GetLevel(0)[0].R);
         Assert.NotNull(surface.Detail);
-        Assert.Equal(77, surface.Detail!.GetLevel(0)[0].R);
+        Assert.Equal(77, surface.Detail.GetLevel(0)[0].R);
     }
 
     [Fact]

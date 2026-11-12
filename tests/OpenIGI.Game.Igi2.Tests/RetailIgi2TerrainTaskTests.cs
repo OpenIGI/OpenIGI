@@ -241,7 +241,7 @@ public sealed class RetailIgi2TerrainTaskTests
     {
         string name = EntryNameOf(tile, kind);
         Assert.True(archive.TryGetEntry(name, out IresEntry? entry), $"'{name}' is not in the archive.");
-        return Igi2TerrainMap.Read(entry!.Data, kind);
+        return Igi2TerrainMap.Read(entry.Data, kind);
     }
 
     /// <summary>Strips the alias off a resource name, leaving the name the archive files it under.</summary>

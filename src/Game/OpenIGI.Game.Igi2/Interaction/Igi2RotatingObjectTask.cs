@@ -32,7 +32,6 @@ public sealed partial class Igi2RotatingObjectTask : Igi2Task, IIgi2PlacedTask, 
     private Igi2Pose? _built;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private LevelExpression? _on;
-    private Igi2Sound? _sound;
     private bool _soundAsked;
     private float _targetX;
     private float _targetY;
@@ -162,7 +161,10 @@ public sealed partial class Igi2RotatingObjectTask : Igi2Task, IIgi2PlacedTask, 
         if (!_soundAsked)
         {
             _soundAsked = true;
-            _sound = RotateSound.Length > 0 ? Sounds?.New(RotateSound, Position, parameters: () => _level) : null;
+            if (RotateSound.Length > 0)
+            {
+                Sounds?.New(RotateSound, Position, parameters: () => _level);
+            }
         }
 
         _level[0] = RotationRule.SoundLevel(speed.X, speed.Y, speed.Z, SpeedX, SpeedY, SpeedZ);
@@ -200,7 +202,6 @@ public sealed partial class Igi2RotatingObjectTask : Igi2Task, IIgi2PlacedTask, 
         Speed = new Vector3f(SpeedX, SpeedY, SpeedZ);
         Angles = default;
         IsDestroyed = false;
-        _sound = null;
         _soundAsked = false;
     }
 }

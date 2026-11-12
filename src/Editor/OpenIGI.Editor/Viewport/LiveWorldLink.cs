@@ -198,12 +198,9 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
     {
         foreach (MissionTask task in tasks.SelectMany(static t => t.SelfAndSubtree()))
         {
-            if (hidden ? _hidden.Add(task) : _hidden.Remove(task))
+            if ((hidden ? _hidden.Add(task) : _hidden.Remove(task)) && _links.TryGetValue(task, out (Vector3d, Matrix3f, PlacementKey Key) link))
             {
-                if (_links.TryGetValue(task, out (Vector3d, Matrix3f, PlacementKey Key) link))
-                {
-                    host.SetPlacementHidden(link.Key, hidden);
-                }
+                host.SetPlacementHidden(link.Key, hidden);
             }
         }
     }

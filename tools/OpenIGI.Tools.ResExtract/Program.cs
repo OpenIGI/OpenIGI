@@ -161,7 +161,8 @@ static int Pack(ToolContext ctx)
     IReadOnlyList<string> args = ctx.Arguments;
     PackBuild.Options options = new();
     List<string> positional = [];
-    for (int i = 1; i < args.Count; i++)
+    int i = 1;
+    while (i < args.Count)
     {
         switch (args[i])
         {
@@ -179,6 +180,8 @@ static int Pack(ToolContext ctx)
                 positional.Add(args[i]);
                 break;
         }
+
+        i++;
     }
 
     if (positional.Count != 2)
@@ -241,16 +244,20 @@ static int Compress(ToolContext ctx)
     IReadOnlyList<string> args = ctx.Arguments;
     BlockQuality quality = BlockQuality.Balanced;
     List<string> positional = [];
-    for (int i = 1; i < args.Count; i++)
+    int i = 1;
+    while (i < args.Count)
     {
         if (args[i] == "--quality" && i + 1 < args.Count && Enum.TryParse(args[i + 1], true, out BlockQuality chosen))
         {
             quality = chosen;
             i++;
+            i++;
             continue;
         }
 
         positional.Add(args[i]);
+
+        i++;
     }
 
     if (positional.Count != 2)

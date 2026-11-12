@@ -76,7 +76,7 @@ public sealed class RetailPatrolPathTests
                 Assert.True(
                     type.HasValue,
                     $"level {id} has a HumanAI naming the unregistered type '{ai.AiTypeName}'");
-                seen.Add(type!.Value);
+                seen.Add(type.Value);
                 Assert.NotNull(ai.Archetype);
             }
         }

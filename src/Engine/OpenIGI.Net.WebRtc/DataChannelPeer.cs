@@ -164,7 +164,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     {
         get
         {
-            if (_relayed is { } known || _state != RtcPeerState.Open)
+            if (_relayed is not null || _state != RtcPeerState.Open)
             {
                 return _relayed ?? false;
             }
@@ -222,7 +222,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     {
         get
         {
-            if (_route is { } known || _state != RtcPeerState.Open)
+            if (_route is not null || _state != RtcPeerState.Open)
             {
                 return _route ?? "not open";
             }

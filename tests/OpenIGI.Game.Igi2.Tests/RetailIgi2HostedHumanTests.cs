@@ -53,10 +53,10 @@ public sealed class RetailIgi2HostedHumanTests
             m.Tree[0], new ResourceRegistry(files), m.Run.Natives, m.Run.Functions, player.Human, [player.Human, .. soldiers.Bodies], random,
             () => m.Run.LevelFlow?.Tick ?? 0)
         {
-            FireTaskTypes = m.Services!.Require<Igi2HumanWeapons>().FireTaskTypes,
-            Config = m.Services!.TryGet(out Igi2HumanAiConfig? config) ? config : null,
+            FireTaskTypes = m.Services.Require<Igi2HumanWeapons>().FireTaskTypes,
+            Config = m.Services.TryGet(out Igi2HumanAiConfig? config) ? config : null,
             Difficulty = 1,
-            World = m.Services!.Require<Igi2AiWorld>(),
+            World = m.Services.Require<Igi2AiWorld>(),
         });
 
         Assert.Same(standIn, ai.TaskById(claimed.Id));

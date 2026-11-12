@@ -193,7 +193,7 @@ public sealed class RetailIgi2InventoryTests
 
         Assert.Equal(Constant("WEAPONCATEGORY_PRIMARY"), weapons.ActiveCategory);
         Assert.Equal(mp5.StandingPrecisionDegrees, weapons.ActivePrecision!.Value.Standing);
-        Assert.Equal(mp5.TurningPrecisionModifier, weapons.ActivePrecision!.Value.TurningModifier);
+        Assert.Equal(mp5.TurningPrecisionModifier, weapons.ActivePrecision.Value.TurningModifier);
         Assert.False(weapons.ActiveIsMissileLauncher);
 
         Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint spawn));

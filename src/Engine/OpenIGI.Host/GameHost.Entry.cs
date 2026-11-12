@@ -109,7 +109,7 @@ public sealed partial class GameHost
                 (Stopwatch.GetTimestamp() - _stageStartedAt) * 1000.0 / Stopwatch.Frequency;
             _logger.Information(
                 "Mission",
-                FormattableString.Invariant($"  {what}: {milliseconds:F1} ms."));
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {what}: {milliseconds:F1} ms."));
         }
 
         // One more share of the loading bar, and a frame to show it on: the load is the one stretch
@@ -132,7 +132,7 @@ public sealed partial class GameHost
         {
             _logger.Information(
                 "Mission",
-                FormattableString.Invariant($"  {what}: {milliseconds:F1} ms."));
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {what}: {milliseconds:F1} ms."));
         }
     }
 
@@ -148,7 +148,7 @@ public sealed partial class GameHost
         _watchingFramePasses = false;
         _logger.Information(
             "Mission",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"{what}: the worst single frame cost {_worstPassMilliseconds:F1} ms."));
     }
 
@@ -175,9 +175,6 @@ public sealed partial class GameHost
     /// </remarks>
     private const float LetterboxFraction = 0.11f;
 
-    // The shell's own faces, so the shot's title is set in the same type the menu is. Borrowed, not
-    // owned: the composition root builds and disposes them.
-    private UiFont? _shellBodyFont;
     private UI.Kit.IgiTypography? _shellType;
 
     /// <summary>Draws the shot's own chrome: the cinematic bars.</summary>

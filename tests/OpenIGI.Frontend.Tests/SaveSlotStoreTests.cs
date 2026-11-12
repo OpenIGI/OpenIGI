@@ -55,7 +55,7 @@ public sealed class SaveSlotStoreTests
             var reloaded = new SaveSlotStore(dir);
             SaveSlot? read = reloaded.Find(0);
             Assert.NotNull(read);
-            Assert.Equal("Joe", read!.ProfileName);
+            Assert.Equal("Joe", read.ProfileName);
             Assert.Equal(3, read.MissionId);
             Assert.Equal(when, read.SavedAt);
         }

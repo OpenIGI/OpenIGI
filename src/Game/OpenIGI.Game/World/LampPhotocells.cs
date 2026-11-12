@@ -272,7 +272,8 @@ public sealed class LampPhotocells
     /// </remarks>
     private static Circuit NewCircuit(ref uint rng)
     {
-        uint own = (rng = (rng * 0x2C9277B5u) + 0xAC564B05u) | 1u;
+        rng = (rng * 0x2C9277B5u) + 0xAC564B05u;
+        uint own = rng | 1u;
         float onSine = XorShift32.NextUnit(ref own) * 0.07f;
 
         if (XorShift32.NextUnit(ref own) < 0.12f)

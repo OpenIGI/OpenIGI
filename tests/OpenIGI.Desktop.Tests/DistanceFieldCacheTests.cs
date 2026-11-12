@@ -50,7 +50,7 @@ public sealed class DistanceFieldCacheTests : IDisposable
         SceneDistanceField? loaded = cache.TryLoad(missionId: 3, resolution: 8);
 
         Assert.NotNull(loaded);
-        Assert.Equal(original.FieldCount, loaded!.FieldCount);
+        Assert.Equal(original.FieldCount, loaded.FieldCount);
         Assert.Equal(original.InstanceCount, loaded.InstanceCount);
         Assert.Equal(original.BytesUsed, loaded.BytesUsed);
 

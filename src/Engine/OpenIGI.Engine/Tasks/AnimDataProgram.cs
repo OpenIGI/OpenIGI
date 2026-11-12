@@ -50,8 +50,8 @@ public sealed class AnimDataProgram
         _entries = [.. entries];
         foreach (AnimDataEntry entry in _entries)
         {
-            ArgumentOutOfRangeException.ThrowIfNegative(entry.Code, nameof(entries));
-            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(entry.Code, ChannelCount, nameof(entries));
+            ArgumentOutOfRangeException.ThrowIfNegative(entry.Code);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(entry.Code, ChannelCount);
         }
     }
 

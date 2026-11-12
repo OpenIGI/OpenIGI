@@ -372,7 +372,7 @@ internal sealed class LampShadowMaps
 
         if (_device.CachesLampShadowMaps)
         {
-            RenderKept(slots, pass, scene, world, characters, fixtures, people);
+            RenderKept(slots, pass, scene, world, characters, people);
             return;
         }
 
@@ -451,7 +451,6 @@ internal sealed class LampShadowMaps
         WorldScene? scene,
         IWorldPresenter? world,
         ICharacterPresenter? characters,
-        IReadOnlyList<LightFixture> fixtures,
         Action<List<Vector3d>> people)
     {
         // What changed among the static casters, and which kept maps that makes untrue.

@@ -42,7 +42,7 @@ public static partial class Igi2AiContent
         Vector3f r = context.RelativePosition;
         Vector3d at = body.Position;
         double py = (o[3] * r.X) + (o[5] * r.Z) + (o[4] * r.Y);
-        float pz = (float)((o[6] * r.X) + (o[8] * r.Z) + (o[7] * r.Y));
+        float pz = ((o[6] * r.X) + (o[8] * r.Z) + (o[7] * r.Y));
         Vector3d place = new((o[2] * r.Z) + (o[1] * r.Y) + (o[0] * r.X) + at.X, py + at.Y, pz + at.Z);
         if (leader.Graph is not { } graph)
         {
@@ -130,7 +130,7 @@ public static partial class Igi2AiContent
         context.RelativePosition = r;
         float[] o = leader.Soldier.OrientationRows;
         Vector3d at = leader.Soldier.Position;
-        float pz = (float)((o[8] * r.Z) + (o[7] * r.Y) + (o[6] * r.X));
+        float pz = ((o[8] * r.Z) + (o[7] * r.Y) + (o[6] * r.X));
         double py = (o[5] * r.Z) + (o[4] * r.Y) + (o[3] * r.X);
         Vector3d place = new((o[2] * r.Z) + (o[1] * r.Y) + (o[0] * r.X) + at.X, py + at.Y, pz + at.Z);
         if (leader.Graph is { } graph && graph.NodeAt(leader.CurrentNode) is { } start && graph.ClosestNodeFromStartingNode(start, place, 20) is { } node)

@@ -280,9 +280,9 @@ public sealed class RetailSplineSegment
             {
                 // X takes the double t, Y and Z its float copy (+0x5C), as the listing does.
                 float tf = X87.ToFloat(t);
-                points[3 * k] = ((X87)((X87)p1.X - p0.X) * t + p0.X - middle.X).F;
-                points[(3 * k) + 1] = ((X87)((X87)p1.Y - p0.Y) * tf + p0.Y - middle.Y).F;
-                points[(3 * k) + 2] = ((X87)((X87)p1.Z - p0.Z) * tf + p0.Z - middle.Z).F;
+                points[3 * k] = (((X87)p1.X - p0.X) * t + p0.X - middle.X).F;
+                points[(3 * k) + 1] = (((X87)p1.Y - p0.Y) * tf + p0.Y - middle.Y).F;
+                points[(3 * k) + 2] = (((X87)p1.Z - p0.Z) * tf + p0.Z - middle.Z).F;
                 if (k == 0)
                 {
                     float dx = ((X87)p1.X - p0.X).F, dy = ((X87)p1.Y - p0.Y).F, dz = ((X87)p1.Z - p0.Z).F;

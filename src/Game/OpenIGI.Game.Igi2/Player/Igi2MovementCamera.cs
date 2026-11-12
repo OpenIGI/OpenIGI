@@ -254,7 +254,7 @@ internal sealed class Igi2MovementCamera
         {
             double share = 1.0 / hits;
             float shareF = (float)share;
-            float pushZ = (float)(shareF * (float)sz);
+            float pushZ = (shareF * (float)sz);
             position = new Vector3d(
                 (sx * share) + position.X,
                 ((double)shareF * (float)sy) + position.Y,

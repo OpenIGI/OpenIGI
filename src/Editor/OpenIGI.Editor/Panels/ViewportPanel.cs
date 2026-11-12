@@ -56,7 +56,6 @@ internal sealed partial class ViewportPanel : EditorElement
     private readonly BoxGizmo _box = new();
     private readonly TerrainTool _terrain;
     private MissionTask? _graphTask;
-    private readonly List<InspectableEntity> _entities = [];
     private readonly EditorCamera _camera = new();
     private readonly Dictionary<MissionTask, Vector3d> _moveStarts = new(ReferenceEqualityComparer.Instance);
     private double? _gridHeight;

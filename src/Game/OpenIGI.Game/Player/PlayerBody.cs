@@ -817,15 +817,12 @@ public sealed partial class PlayerBody
         // loses the terrain forever. The retail mover casts the move before its endpoint ground query;
         // preserve that continuous part for terrain by taking the first upward-facing triangle crossed
         // by the feet. This is what prevents a high fall tunnelling under the map.
-        if (terrain is not null && !IsGrounded && position.Z < movementStart.Z)
+        if (terrain is not null && !IsGrounded && position.Z < movementStart.Z
+            && terrain.TryTraceDescent(movementStart, position, out TerrainGround crossed) && crossed.NormalZ > 0.0)
         {
-            if (terrain.TryTraceDescent(movementStart, position, out TerrainGround crossed)
-                && crossed.NormalZ > 0.0)
-            {
-                found = true;
-                height = crossed.Height;
-                normal = new Vector3f((float)crossed.NormalX, (float)crossed.NormalY, (float)crossed.NormalZ);
-            }
+            found = true;
+            height = crossed.Height;
+            normal = new Vector3f((float)crossed.NormalX, (float)crossed.NormalY, (float)crossed.NormalZ);
         }
 
         // 0x462390's downward cast, terrain half: from four metres over the probe a long way down. A body whose feet

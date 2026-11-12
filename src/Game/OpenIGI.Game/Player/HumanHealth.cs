@@ -70,6 +70,7 @@ public sealed class HumanHealth : Saves.IExchangedState
         Damage = Math.Clamp(maximumHealth * (1f - remaining), 0f, maximumHealth);
     }
 
+#pragma warning disable S2292 // Set at construction by callers and again by UseBody: an init accessor over a field the class also writes.
     /// <summary>
     /// Gets the scale every hit on this human is multiplied by — the <b>player's difficulty scale</b>.
     /// </summary>
@@ -82,6 +83,7 @@ public sealed class HumanHealth : Saves.IExchangedState
     /// this defaults to 1 and is set only on the player's instance.
     /// </remarks>
     public float DamageScale { get => _damageScale; init => _damageScale = value; }
+#pragma warning restore S2292
 
     private float _damageScale = 1f;
 

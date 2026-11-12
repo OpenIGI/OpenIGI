@@ -89,7 +89,7 @@ public sealed partial class Igi1EditableTerrain : IEditableTerrain
 
     /// <inheritdoc/>
     public string LimitDescription =>
-        FormattableString.Invariant($"Project I.G.I.'s heightmap can lift the ground at most {MostRaise:0.#} m above its original shape and sink it {-MostSink:0} m below.");
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Project I.G.I.'s heightmap can lift the ground at most {MostRaise:0.#} m above its original shape and sink it {-MostSink:0} m below.");
 
     /// <inheritdoc/>
     public int TakeClampCount()

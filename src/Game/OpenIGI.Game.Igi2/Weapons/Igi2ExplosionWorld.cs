@@ -509,7 +509,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
 
         Vector3f d = axis;
         Fpu z0 = (Fpu)d.Z * 0f;
-        Vector3f across = new((((Fpu)d.Y - z0)).F, (-((Fpu)d.X - z0)).F, (((Fpu)d.X * 0f) - ((Fpu)d.Y * 0f)).F);
+        Vector3f across = new(((Fpu)d.Y - z0).F, (-((Fpu)d.X - z0)).F, (((Fpu)d.X * 0f) - ((Fpu)d.Y * 0f)).F);
         Vector3f up;
         float length = Fpu.Sqrt((((Fpu)across.X * across.X) + ((Fpu)across.Y * across.Y)) + ((Fpu)across.Z * across.Z)).F;
         if (length <= 0.1f)

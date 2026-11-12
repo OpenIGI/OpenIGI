@@ -523,22 +523,6 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _armoury.ArmVehicleGuns(mission, weaponModels, guns);
     }
 
-    private SoldierGroup? FindGroup(SoldierView view)
-    {
-        foreach (SoldierGroup group in _groups)
-        {
-            foreach (SoldierMember member in group.Soldiers)
-            {
-                if (ReferenceEquals(member.Agent.View, view))
-                {
-                    return group;
-                }
-            }
-        }
-
-        return null;
-    }
-
     private SoldierMember? FindMember(SoldierView view)
     {
         foreach (SoldierGroup group in _groups)

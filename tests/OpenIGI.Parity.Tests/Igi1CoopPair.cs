@@ -86,7 +86,6 @@ internal sealed class Igi1CoopPair : IDisposable
     private Igi1CoopPair(
         IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null, bool dedicated = false)
     {
-        _mode = mode;
         _joinerMode = joinerMode ?? mode;
         bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
@@ -229,8 +228,6 @@ internal sealed class Igi1CoopPair : IDisposable
         };
     }
 
-    // The mode both play, and the one the joiner is told before it is welcomed.
-    private readonly string _mode;
     private readonly string _joinerMode;
 
     // The joiner's identity, kept across its reconnections as its game keeps its key file.

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
@@ -60,6 +61,9 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     // per-brain enemy selection swaps the default target onto one of these when an opposing soldier is
     // nearer than any hostile player, so Harrison's team at the gate trades fire with the guards.
     private readonly Dictionary<SoldierView, AiCombatTarget> _npcTargets = [];
+
+    // The record a soldier is known to the others by, made the first time one of them looks at it.
+    private static AiCombatTarget NewTarget(SoldierView view) => new($"Soldier{view.Soldier.Id}");
 
     // What CandidatesFor hands back, refilled on every call; see there.
     private readonly List<AiDetectionCandidate> _candidates = [];
@@ -393,8 +397,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             // The mark a sight ray aims at is the human's view position (0x465820): its origin raised 0.7 m, or 0.35 m
             // with the crouch byte -- so it kneels with a kneeling soldier and lies with a corpse.
             Vector3d soldierMark = SoldierContext.ViewPosition(view, other);
-            AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
-                ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
+            AiCombatTarget record = _npcTargets.GetOrAdd(view, NewTarget);
             humans.Add(new AiDetectionCandidate(
                 view.Soldier.Id,
                 view.Soldier.Team != self.Soldier.Team,
@@ -475,8 +478,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             view.Position.Y,
             _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
         Vector3d soldierMark = SoldierContext.ViewPosition(view, other);
-        AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
-            ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
+        AiCombatTarget record = _npcTargets.GetOrAdd(view, NewTarget);
         return new AiDetectionCandidate(
             view.Soldier.Id,
             otherSide,

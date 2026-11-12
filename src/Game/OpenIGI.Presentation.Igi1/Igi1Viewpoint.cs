@@ -112,10 +112,10 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
         return
         [
             "mode: WALK",
-            FormattableString.Invariant($"pos units ({pu.X:F0}, {pu.Y:F0}, {pu.Z:F0})"),
-            FormattableString.Invariant($"pos m     ({pm.X:F2}, {pm.Y:F2}, {pm.Z:F2})"),
-            FormattableString.Invariant($"yaw {player.Yaw * 180f / MathF.PI:F1}  pitch {player.Pitch * 180f / MathF.PI:F1}"),
-            FormattableString.Invariant($"grounded {player.IsGrounded}  crouch {player.IsCrouched}  wall {player.TouchedWall}"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"pos units ({pu.X:F0}, {pu.Y:F0}, {pu.Z:F0})"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"pos m     ({pm.X:F2}, {pm.Y:F2}, {pm.Z:F2})"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"yaw {player.Yaw * 180f / MathF.PI:F1}  pitch {player.Pitch * 180f / MathF.PI:F1}"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"grounded {player.IsGrounded}  crouch {player.IsCrouched}  wall {player.TouchedWall}"),
         ];
     }
 

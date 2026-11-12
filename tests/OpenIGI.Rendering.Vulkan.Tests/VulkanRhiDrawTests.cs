@@ -63,7 +63,7 @@ public sealed class VulkanRhiDrawTests(ITestOutputHelper output)
     {
         HeadlessVulkan? vulkan = HeadlessVulkan.TryCreate(out string? reason);
         Assert.True(vulkan is not null, reason);
-        return vulkan!;
+        return vulkan;
     }
 
     private static ulong Occlude(VulkanRhiDevice device, float offsetX)

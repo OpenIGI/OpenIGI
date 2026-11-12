@@ -73,7 +73,7 @@ public sealed class RetailDirlightProbe(ITestOutputHelper output)
         null => "null",
         float f => f.ToString("0.#####", CultureInfo.InvariantCulture),
         bool b => b ? "true" : "false",
-        Vector3f v => FormattableString.Invariant($"({v.X:0.####},{v.Y:0.####},{v.Z:0.####})"),
+        Vector3f v => string.Create(CultureInfo.InvariantCulture, $"({v.X:0.####},{v.Y:0.####},{v.Z:0.####})"),
         _ => value.ToString() ?? "?",
     };
 

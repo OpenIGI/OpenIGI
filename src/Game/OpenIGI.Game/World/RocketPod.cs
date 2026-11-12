@@ -115,8 +115,8 @@ public sealed class RocketPod
 
                 Vector3d origin = new(
                     position.X + (forward.X * Reach),
-                    position.Y + (float)(forward.Y * Reach),
-                    position.Z + (float)(forward.Z * Reach));
+                    position.Y + (forward.Y * Reach),
+                    position.Z + (forward.Z * Reach));
                 fire(new RocketPodLaunch(origin, orientation, (vehicleSpeed * SpeedScale) + SpeedOverVehicle, enemy));
                 Countdown = (int)random.NextBounded((uint)DelayTicks) + DelayTicks;
                 fired++;

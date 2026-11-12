@@ -26,7 +26,6 @@ namespace OpenIGI.Rendering.Vulkan;
 /// </remarks>
 internal sealed unsafe class VulkanSwapchain : IDisposable
 {
-    private readonly Vk _vk;
     private readonly VulkanDevice _device;
     private readonly KhrSurface _khrSurface;
     private readonly KhrSwapchain _khrSwapchain;
@@ -53,7 +52,6 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(device);
-        _vk = instance.Vk;
         _device = device;
         _khrSurface = instance.KhrSurface;
         _khrSwapchain = device.Swapchain;

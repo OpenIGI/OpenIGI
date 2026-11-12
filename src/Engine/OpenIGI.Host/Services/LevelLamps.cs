@@ -132,7 +132,7 @@ internal sealed class LevelLamps(IGraphicsDevice device, ILevelLampsHost host) :
         }
 
         act(board, index);
-        context.Print(FormattableString.Invariant(
+        context.Print(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"Lamp {index} at {distance:0.#} m is now {Describe(board, index)}."));
     }
 
@@ -369,10 +369,10 @@ internal sealed class LevelLamps(IGraphicsDevice device, ILevelLampsHost host) :
 
         LightFixture fixture = host.Gi.LightFixtures[index];
         string daylight = _lampDaylight.Photocells is { } cells && cells.Follows(index)
-            ? FormattableString.Invariant($"dusk circuit {cells.CircuitOf(index)} on below {cells.ThresholdsOf(index).On:0.000}")
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"dusk circuit {cells.CircuitOf(index)} on below {cells.ThresholdsOf(index).On:0.000}")
             : "kept on by day";
 
-        return FormattableString.Invariant(
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"lamp: #{index} {Describe(board, index)} at {board.LevelOf(index) * 100f:F0}%, {distance:F1}m, {fixture.Texture}, {board.CharacterOf(index)}, {daylight}");
     }
 }

@@ -228,9 +228,9 @@ public sealed class RagdollHumanTests
     // The test rig with a person's joints: hinged elbows and knees, everything else a ball.
     private static RagdollSkeleton HingedRig()
     {
-        float Rad(float degrees) => degrees * MathF.PI / 180f;
-        RagdollJointSpec Ball(float swing, float twist) => new(RagdollJointKind.Ball, Rad(swing), -Rad(twist), Rad(twist));
-        RagdollJointSpec Hinge(float high, Vector3f toward) =>
+        static float Rad(float degrees) => degrees * MathF.PI / 180f;
+        static RagdollJointSpec Ball(float swing, float twist) => new(RagdollJointKind.Ball, Rad(swing), -Rad(twist), Rad(twist));
+        static RagdollJointSpec Hinge(float high, Vector3f toward) =>
             new(RagdollJointKind.Hinge, 0f, 0f, 0f, Rad(-3f), Rad(high), toward);
 
         Vector3f forwards = new(0f, 1f, 0f);

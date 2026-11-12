@@ -213,6 +213,6 @@ public sealed partial class GameHost
             return;
         }
 
-        _logger.Information("Renderer", FormattableString.Invariant($"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_timeOfDay.DayNight.TimeHours:F2}."));
+        _logger.Information("Renderer", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_timeOfDay.DayNight.TimeHours:F2}."));
     }
 }

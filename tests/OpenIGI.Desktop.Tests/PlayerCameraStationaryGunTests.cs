@@ -131,7 +131,7 @@ public sealed class PlayerCameraStationaryGunTests
         // 0x474360 passes the gun no origin, so 0x478BA0 fires from the gun's own muzzle.
         Assert.True(fired);
         Assert.True(firstOrigin.HasValue);
-        AssertClose(muzzleUnits, firstOrigin!.Value);
+        AssertClose(muzzleUnits, firstOrigin.Value);
         Assert.NotEqual(camera.EyeUnits, firstOrigin.Value);
         Assert.True(target.IsDead);
         Assert.Equal(-1, gun.RemainingAmmunition);

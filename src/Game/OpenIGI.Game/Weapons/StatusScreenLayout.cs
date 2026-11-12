@@ -310,7 +310,7 @@ public static class StatusScreenLayout
         int seconds = wholeSeconds % 60;
         string minuteSuffix = minutes == 1 ? string.Empty : "s";
         string secondSuffix = seconds == 1 ? string.Empty : "s";
-        return FormattableString.Invariant(
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"Time Left: {minutes} minute{minuteSuffix}, {seconds} second{secondSuffix}");
     }
 

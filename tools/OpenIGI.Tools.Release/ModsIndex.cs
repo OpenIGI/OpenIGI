@@ -300,7 +300,7 @@ internal static class ModsIndex
                     problems.Add($"{where}/{name}: the commit is a full 40-digit hash.");
                 }
 
-                if (string.IsNullOrWhiteSpace(source.Project) || Path.IsPathRooted(source.Project) || source.Project.Split('/', '\\').Contains(".."))
+                if (string.IsNullOrWhiteSpace(source.Project) || Path.IsPathRooted(source.Project) || source.Project.Split(['/', '\\']).Contains(".."))
                 {
                     problems.Add($"{where}/{name}: the project is a path inside the repository.");
                 }

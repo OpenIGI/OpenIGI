@@ -101,14 +101,14 @@ public interface ITitleWorldModelPresenter
     Rendering.ModelLodPolicy? Lod
     {
         get => null;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Gets or sets a value indicating whether a cutscene holds the model-detail bias off (<c>CutScene_isRunning</c>).</summary>
     bool LodBiasHeld
     {
         get => false;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>

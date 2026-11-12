@@ -75,7 +75,7 @@ public sealed class RetailIgi2ConveyorBeltTests
         WorldIntersection onBelt = new() { EnterMaterial = row };
         Assert.Equal(belt.Push(Igi2ConveyorBeltTask.MaterialName), player.Human.Surroundings.PushOnConveyor(solid, onBelt));
 
-        Igi2RigidObject other = m.Collision!.Objects.First(o => o.Owner is Igi2CollisionOwner { TypeName: not Igi2ConveyorBeltTask.TypeName });
+        Igi2RigidObject other = m.Collision.Objects.First(o => o.Owner is Igi2CollisionOwner { TypeName: not Igi2ConveyorBeltTask.TypeName });
         Assert.Equal(default(Vector3f), player.Human.Surroundings.PushOnConveyor(other, onBelt));
     }
 

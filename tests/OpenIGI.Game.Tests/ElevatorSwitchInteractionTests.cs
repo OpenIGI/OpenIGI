@@ -42,9 +42,6 @@ public sealed class ElevatorSwitchInteractionTests
                     continue;
                 }
 
-                // The lift only moves with the player inside — stand the player in the cab.
-                elevators.SetPlayerPositionProvider(() => elevator.State.Position);
-
                 int settleFloor = Settle(elevator, interactions, elevators, doors);
 
                 // The player calls from a floor different from where the lift currently is, so a real
@@ -130,7 +127,6 @@ public sealed class ElevatorSwitchInteractionTests
         // A hall call is made from outside the cab. The player provider remains outside for the
         // entire ride, proving that the exterior switch source—not cab occupancy—authorises travel.
         Vector3d outside = elevator.State.Position + new Vector3d(100000, 0, 0);
-        elevators.SetPlayerPositionProvider(() => outside);
         callSwitch.Press();
 
         bool arrived = false;
@@ -179,9 +175,6 @@ public sealed class ElevatorSwitchInteractionTests
                 {
                     continue;
                 }
-
-                // The lift only moves with the player inside — stand the player in the cab.
-                elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
                 int settleFloor = Settle(elevator, interactions, elevators, doors);
                 int playerFloor = settleFloor == 0 && elevator.State.FloorCount > 1

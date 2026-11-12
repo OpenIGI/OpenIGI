@@ -145,7 +145,7 @@ public sealed class LightmapBake
         double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
         log.Information(
             LogCategory,
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"Lightmap bake took {seconds:0.00} s over {baked.ObjectCount} object(s); it swaps in from the next frame."));
 
         done(baked);

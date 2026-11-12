@@ -71,7 +71,7 @@ public sealed class DxilFormTests
         Assert.All(globals.Fields, field =>
         {
             Assert.NotNull(field.HlslOffset);
-            Assert.InRange(field.HlslOffset!.Value, 0, globals.HlslSize!.Value - 1);
+            Assert.InRange(field.HlslOffset.Value, 0, globals.HlslSize.Value - 1);
         });
 
         // Two fields at one HLSL place would be two parameters written over each other.

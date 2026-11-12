@@ -135,7 +135,7 @@ public sealed partial class GameHost
         }
         SightZoomFrame sight = _playerMode && Viewpoint?.SightZoom(tickBlend) is { } playerSight
             ? playerSight
-            : _playerMode && TitlePlayer is { } titleLens
+            : _playerMode && TitlePlayer is not null
                 ? new SightZoomFrame(_titlePresentation.FieldOfView(_titlePresentationBlend), HumanView.DefaultViewModelTanX)
                 : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 

@@ -202,12 +202,14 @@ public static partial class SaveScript
     {
         StringBuilder current = new();
         bool quoted = false;
-        for (int i = 0; i < script.Length; i++)
+        int i = 0;
+        while (i < script.Length)
         {
             char c = script[i];
             if (quoted && c == '\\' && i + 1 < script.Length)
             {
                 current.Append(c).Append(script[++i]);
+                i++;
                 continue;
             }
 
@@ -225,10 +227,13 @@ public static partial class SaveScript
                 }
 
                 current.Clear();
+                i++;
                 continue;
             }
 
             current.Append(c);
+
+            i++;
         }
     }
 
@@ -375,7 +380,8 @@ public static partial class SaveScript
             arguments = new TextArguments();
             StringBuilder current = new();
             bool quoted = false, wasQuoted = false;
-            for (int i = open + 1; i < close; i++)
+            int i = open + 1;
+            while (i < close)
             {
                 char c = statement[i];
                 if (quoted && c == '\\' && i + 1 < close)
@@ -402,6 +408,8 @@ public static partial class SaveScript
                 {
                     current.Append(c);
                 }
+
+                i++;
             }
 
             if (current.Length > 0 || wasQuoted || arguments.Count > 0)

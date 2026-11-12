@@ -676,7 +676,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameTask heli356 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(356));
         Assert.True(runtime.TryGetDrawTransform(heli356, out Vector3d start, out _));
 
-        CutSceneTask intro = WalkTree(root).OfType<CutSceneTask>().First(cut => cut.Id == 1000);
+        _ = WalkTree(root).OfType<CutSceneTask>().First(cut => cut.Id == 1000);
 
         // The authored intro intentionally changes coordinate scale: the opening exterior is a
         // world-space view, while the HQ cabin shots are authored near the origin. The native

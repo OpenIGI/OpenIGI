@@ -528,7 +528,7 @@ internal sealed partial class EditorSession : IEditorSession
     {
         ActionTable actions = _root.Actions;
         IReadOnlyList<MenuItem> missions = [.. _host.Missions.Select(m => MenuItem.Command(
-            FormattableString.Invariant($"{m.Id}. {_host.MissionName(m)}"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{m.Id}. {_host.MissionName(m)}"),
             () => AfterSaving(() => _host.OpenMission(m.Id))))];
 
         return new MenuBar(_theme)
@@ -833,7 +833,7 @@ internal sealed partial class EditorSession : IEditorSession
     private void UpdateStatus()
     {
         _status.Segments.Clear();
-        if (_workspace.Document is { } document)
+        if (_workspace.Document is not null)
         {
             _status.Segments.Add($"{_workspace.TaskCount} objects");
             _status.Segments.Add($"{_workspace.Selection.Count} selected");

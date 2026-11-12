@@ -394,7 +394,7 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
             string name = HumanAiConfigRegistry.NameOf(difficulty);
             _context.Logger.Information(
                 SoldierContext.LogCategory,
-                FormattableString.Invariant(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"AI accuracy [{type}] x{count} @ {name}: hit@0m={row.HitProbabilityAtMinimumRange:F3} hit@far={row.HitProbabilityAtMaximumRange:F3} clip%={row.MinimumClipFraction:F2}+{row.RandomClipFraction:F2} aimPrec={row.AimPrecision:F2}"));
         }
     }

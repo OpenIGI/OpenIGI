@@ -28,7 +28,7 @@ public sealed partial class Igi1HumanAi
         AiCombatWeaponState weapon = _weapon!();
         TrackTargetNode(LiveTargetNodePoint() ?? LiveTargetFeet(enemy));
         ChoosePatrolEvasion(tick, enemy);
-        if (RunPatrolChild(enemy, weapon) || RunPatrolMovement(enemy) || WaitForPatrolPosture())
+        if (RunPatrolChild(weapon) || RunPatrolMovement(enemy) || WaitForPatrolPosture())
         {
             return;
         }
@@ -78,10 +78,9 @@ public sealed partial class Igi1HumanAi
     }
 
     /// <summary>Runs whatever child the arm has installed — a roll, the prone hold, a one-shot, or a fire or reload.</summary>
-    /// <param name="enemy">Where the target is.</param>
     /// <param name="weapon">The held weapon's state this tick.</param>
     /// <returns><see langword="true"/> when the child owns the tick and the chooser is not asked.</returns>
-    private bool RunPatrolChild(Vector3d enemy, AiCombatWeaponState weapon)
+    private bool RunPatrolChild(AiCombatWeaponState weapon)
     {
         // 0x48D830/0x48D870 keep writing the same raw slot until the body reports the kneeling stance.
         // The body then falls through state 19 to standing after the child stops writing.
@@ -145,7 +144,7 @@ public sealed partial class Igi1HumanAi
         {
             _channelWrites.Clear();
             HoldPosture();
-            RunSharedSubAction(enemy, weapon);
+            RunSharedSubAction(weapon);
             return true;
         }
 
@@ -483,7 +482,7 @@ public sealed partial class Igi1HumanAi
             case AiPatrolAction.Fire:
             case AiPatrolAction.Reload:
             default:
-                RunSharedSubAction(enemy, weapon);
+                RunSharedSubAction(weapon);
                 return;
         }
     }
@@ -625,10 +624,9 @@ public sealed partial class Igi1HumanAi
     private Vector3d TrueAimPoint() => TargetHuman?.Candidate.NodeQueryPoint ?? AimPointOf(TargetFeet, TargetCrouching);
 
     /// <summary>The fire and reload sub-actions the two arms share.</summary>
-    /// <param name="enemy">Where the target is.</param>
     /// <param name="weapon">The held weapon's state this tick.</param>
     /// <param name="suppressAt">A point to fire at in place of the target, seen or not (Igi1HumanAi.FireBurstAt); null for the target.</param>
-    private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon, Vector3d? suppressAt = null)
+    private void RunSharedSubAction(AiCombatWeaponState weapon, Vector3d? suppressAt = null)
     {
         Vector3d aim = suppressAt ?? TrueAimPoint();
         AiCombatSense sense = new(
@@ -738,9 +736,6 @@ public sealed partial class Igi1HumanAi
         // The combat walk finishes at the claimed sub-slot inside the node (0x4522A0 with ai+16048).
         return GoTo(node, _combatFreePosition);
     }
-
-    /// <summary>How close to the claimed sub-slot counts as standing on it — half a metre.</summary>
-    private const double FreePositionArrivalInUnits = 2048.0;
 
     /// <summary>Steps the soldier along its combat route, the same walk the patrol path uses.</summary>
     /// <remarks>

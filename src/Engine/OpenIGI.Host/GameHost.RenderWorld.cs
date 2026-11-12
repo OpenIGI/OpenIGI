@@ -82,8 +82,7 @@ public sealed partial class GameHost
 
         _gi.LightScene(state, view.Eye, captured, view.SceneTarget, view.UnjitteredProjection);
 
-        SubmitLocalLights(
-            state, captured, view.Eye, view.UnjitteredProjection, view.FlashlightShown, view.FlashlightBody, view.MapScene,
+        SubmitLocalLights( captured, view.Eye, view.UnjitteredProjection, view.FlashlightShown, view.FlashlightBody, view.MapScene,
             view.SceneTarget);
 
         DrawForwardPass(
@@ -227,7 +226,7 @@ public sealed partial class GameHost
             Vector3f scaledAmbient = light.Ambient * LightingCVars.AmbientScale.Value;
 
             _dumpWorldSun = light.Direction;
-            _device.SetLighting(_dumpLighting = new SceneLighting(
+            _dumpLighting = new SceneLighting(
                 _gi.EffectiveLighting,
                 viewSunDirection,
                 scaledSun,
@@ -266,7 +265,8 @@ public sealed partial class GameHost
                     ? GlobalIlluminationCVars.SunlessLightmapShare.Value
                     : (GlobalIlluminationCVars.NightLightmapShare.Value >= 0f
                         ? GlobalIlluminationCVars.NightLightmapShare.Value
-                        : _missionLook.NightBake ?? 0f) * _timeOfDay.DayNight.Nightfall));
+                        : _missionLook.NightBake ?? 0f) * _timeOfDay.DayNight.Nightfall);
+            _device.SetLighting(_dumpLighting);
             _device.BeginPass(ScenePass.Geometry);
 
             // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

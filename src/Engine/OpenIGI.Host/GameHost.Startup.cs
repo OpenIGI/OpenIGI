@@ -114,7 +114,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Puts the device's settings in force and keeps them so as they change.</summary>
-    private void BindDeviceVariables(FrameLoopState state)
+    private void BindDeviceVariables()
     {
         // Set before anything uploads a texture: the sampler a texture is created with is the one it
         // keeps, so a level loaded before this would keep the filtering it started with.
@@ -287,7 +287,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Loads what every level draws with: the fog presets, the materials, the lamp manifest and the detail maps.</summary>
-    private void LoadSharedRenderData(FrameLoopState state)
+    private void LoadSharedRenderData()
     {
         _materials = MaterialLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
@@ -508,7 +508,6 @@ public sealed partial class GameHost
             UiTheme shellTheme = state.ShellTypography.CreateTheme();
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
-            _shellBodyFont = state.ShellTypography.Body;
             _shellType = state.ShellTypography;
 
             // The real DefineMission data, resolved to display strings through the language table, in the
@@ -519,6 +518,28 @@ public sealed partial class GameHost
             state.Saves = new SaveSlotStore(SavesDirectory());
 
             _coop ??= CreateCoop();
+            _resumeMission = () =>
+            {
+                // Nothing is reloaded and nobody is placed again: the level was never torn down, only
+                // left un-ticked, so resuming is this loop putting the menu away.
+                state.Shell?.ClosePauseMenu();
+                _menuFlow.MenuMode = false;
+                _menuFlow.PauseMenu = false;
+                _window.CursorVisible = false;
+
+                // Back from the failed page too, when a co-op squad stood again at its checkpoint.
+                _session.FailedMenu = false;
+                _session.ClearFailure();
+            };
+
+            _restartMission = () =>
+            {
+                if (_session.Mission is { } mission)
+                {
+                    GoIntoMission(state, mission.Id);
+                }
+            };
+
             state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
@@ -633,26 +654,8 @@ public sealed partial class GameHost
                         _timeOfDay.DayNight.ResetForLevel(_timeOfDay.Sun, ExposureCVars.TimeOfDay.Value);
                     }
                 },
-                resumeMission: _resumeMission = () =>
-                {
-                    // Nothing is reloaded and nobody is placed again: the level was never torn down, only
-                    // left un-ticked, so resuming is this loop putting the menu away.
-                    state.Shell?.ClosePauseMenu();
-                    _menuFlow.MenuMode = false;
-                    _menuFlow.PauseMenu = false;
-                    _window.CursorVisible = false;
-
-                    // Back from the failed page too, when a co-op squad stood again at its checkpoint.
-                    _session.FailedMenu = false;
-                    _session.ClearFailure();
-                },
-                restartMission: _restartMission = () =>
-                {
-                    if (_session.Mission is { } mission)
-                    {
-                        GoIntoMission(state, mission.Id);
-                    }
-                },
+                resumeMission: _resumeMission,
+                restartMission: _restartMission,
                 abandonMission: () =>
                 {
                     // Out of the mission is out of its room -- or out of the server the command line joined or hosted, whose
@@ -836,7 +839,7 @@ public sealed partial class GameHost
 
         _logger.Information(
             "Render",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"Camera effects: r_motion_blur {PostCVars.MotionBlur.Value:0.###}, r_hdr {FrameCVars.OffscreenScene.Value}, r_deferred {LightingCVars.Deferred.Value}, r_taa {ReconstructionCVars.TemporalFeedback.Value:0.###}, r_smooth {FrameCVars.SmoothPresentation.Value}, r_scale {ReconstructionCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => state.Running = false;

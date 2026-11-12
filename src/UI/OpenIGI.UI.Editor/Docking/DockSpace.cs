@@ -179,7 +179,7 @@ public sealed class DockSpace : EditorElement
         if (drop.Side is null)
         {
             int index = drop.TabIndex;
-            if (ReferenceEquals(source, drop.Target) && source!.Panels.IndexOf(panel) < index)
+            if (ReferenceEquals(source, drop.Target) && source.Panels.IndexOf(panel) < index)
             {
                 index--;
             }
@@ -190,7 +190,7 @@ public sealed class DockSpace : EditorElement
         }
         else
         {
-            if (ReferenceEquals(source, drop.Target) && source!.Panels.Count == 1)
+            if (ReferenceEquals(source, drop.Target) && source.Panels.Count == 1)
             {
                 return;
             }

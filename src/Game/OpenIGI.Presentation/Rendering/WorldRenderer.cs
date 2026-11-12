@@ -189,9 +189,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
     {
         ArgumentNullException.ThrowIfNull(into);
 
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"sub-meshes {LastDrawCount}   lightmapped {LastLightmappedCount}   triangles {LastTriangleCount}"));
-        into.Add(FormattableString.Invariant($"placements occlusion-culled {LastOccludedCount}"));
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"placements occlusion-culled {LastOccludedCount}"));
     }
 
     /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
@@ -483,7 +483,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure
                 // built only from what the frustum passed can never hold it.
                 SubmitTracedOnly(
-                    scene, model, displayed, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
+                    scene, model, displayed, baseModelView,
                     tracedOnly);
                 continue;
             }
@@ -524,8 +524,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                         // Hidden from the camera is not hidden from a ray. A wall standing between the
                         // two is exactly what a window reflects around.
                         SubmitTracedOnly(
-                            scene, model, displayed, baseModelView,
-                            viewX, viewY, viewZ, bounds.Radius, tracedOnly);
+                            scene, model, displayed, baseModelView, tracedOnly);
                         continue;
                     }
                 }
@@ -792,10 +791,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <param name="model">The model that was culled.</param>
     /// <param name="displayed">Its placement as displayed.</param>
     /// <param name="modelView">Where it stands, relative to the camera.</param>
-    /// <param name="viewX">Its bounding sphere's centre in view space.</param>
-    /// <param name="viewY">Its bounding sphere's centre in view space.</param>
-    /// <param name="viewZ">Its bounding sphere's centre in view space.</param>
-    /// <param name="radius">That sphere's radius, in metres.</param>
     /// <param name="wanted">Whether this pass is the one that feeds the traced world at all.</param>
     /// <remarks>
     /// <para>
@@ -823,10 +818,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
         ResolvedWorldModel model,
         WorldPlacement displayed,
         in Matrix4f modelView,
-        float viewX,
-        float viewY,
-        float viewZ,
-        float radius,
         bool wanted)
     {
         if (!wanted)

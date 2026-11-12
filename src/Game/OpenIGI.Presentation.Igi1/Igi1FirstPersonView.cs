@@ -166,12 +166,9 @@ internal sealed class Igi1FirstPersonView(
 
             // Cycling weapons changes the model as well as the animations, so the renderer has to
             // follow whatever the cycle put in hand.
-            if (frame.LoadedForWeapon is { } missionForWeapon)
+            if (frame.LoadedForWeapon is { } missionForWeapon && frame.Held is { } heldToFollow)
             {
-                if (frame.Held is { } heldToFollow)
-                {
-                    FollowHeldWeapon(heldToFollow, missionForWeapon);
-                }
+                FollowHeldWeapon(heldToFollow, missionForWeapon);
             }
 
             if (mission.Player.Weapons?.HideFirstPersonWeapon != true

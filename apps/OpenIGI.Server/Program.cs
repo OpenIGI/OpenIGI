@@ -87,7 +87,7 @@ if (hostOptions.Title is { } requested && !TitleCatalog.TryResolve(requested, ou
     return 2;
 }
 
-GameTitle title = titleRuntime!.Title;
+GameTitle title = titleRuntime.Title;
 string? gamePath = hostOptions.GamePath ?? Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title)) ?? (GameInstalls.Find(title) is [var found, ..] ? found : null);
 if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
 {

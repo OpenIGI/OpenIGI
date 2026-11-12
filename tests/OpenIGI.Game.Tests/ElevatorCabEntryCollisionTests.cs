@@ -35,13 +35,13 @@ public sealed class ElevatorCabEntryCollisionTests
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
             WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
                 root, mission, doors, variables, elevators);
-            MagicObjectRegistry magic = MagicFor(root);
+            MagicObjectRegistry magic = MagicFor();
             WorldScene scene = WorldScene.Build(mission, root, magic);
             ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
 
             foreach (PlacedElevator elevator in elevators.Elevators)
             {
-                if (elevator.Task is not DeclaredTask declared)
+                if (elevator.Task is not DeclaredTask)
                 {
                     continue;
                 }
@@ -164,7 +164,7 @@ public sealed class ElevatorCabEntryCollisionTests
         for (int missionId = 1; missionId <= 14; missionId++)
         {
             (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
-            MagicObjectRegistry magic = MagicFor(root);
+            MagicObjectRegistry magic = MagicFor();
             WorldScene scene = WorldScene.Build(mission, root, magic);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
             ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
@@ -291,7 +291,7 @@ public sealed class ElevatorCabEntryCollisionTests
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(5);
         ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
-        MagicObjectRegistry magic = MagicFor(root);
+        MagicObjectRegistry magic = MagicFor();
         WorldScene scene = WorldScene.Build(mission, root, magic);
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
         PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
@@ -317,7 +317,7 @@ public sealed class ElevatorCabEntryCollisionTests
         Assert.True(moved, "mission 5 Elevator_51 did not leave its waypoint");
     }
 
-    private static MagicObjectRegistry MagicFor(LevelTask root)
+    private static MagicObjectRegistry MagicFor()
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));

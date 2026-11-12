@@ -142,12 +142,9 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
             return;
         }
 
-        if (_poseIsStale || !_mesh.IsValid)
+        if ((_poseIsStale || !_mesh.IsValid) && !Reskin(view))
         {
-            if (!Reskin(view))
-            {
-                return;
-            }
+            return;
         }
 
         // Drawn at the object's position with its own 3x3. The skin itself is built from a pose whose

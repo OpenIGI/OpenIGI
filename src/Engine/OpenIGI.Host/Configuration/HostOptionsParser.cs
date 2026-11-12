@@ -95,7 +95,8 @@ internal static class HostOptionsParser
 
         List<string> startupCommands = [];
 
-        for (int i = 0; i < args.Length; i++)
+        int i = 0;
+        while (i < args.Length)
         {
             // `+name value...` is a console statement to run once the console exists, the convention
             // every game with a console uses. Its arguments run to the next `+` or `-`, so
@@ -113,6 +114,7 @@ internal static class HostOptionsParser
                     startupCommands.Add(string.Join(' ', statement));
                 }
 
+                i++;
                 continue;
             }
 
@@ -438,6 +440,8 @@ internal static class HostOptionsParser
             {
                 throw new ArgumentException($"Unknown option '{args[i]}'.", nameof(args));
             }
+
+            i++;
         }
 
         // Borderless unless told otherwise. Naming a size is by itself a request for a window, because
@@ -587,7 +591,7 @@ internal static class HostOptionsParser
     private static (int Width, int Height) NextSize(string[] args, ref int index, string option)
     {
         string value = Next(args, ref index, option);
-        string[] parts = value.Split('x', 'X');
+        string[] parts = value.Split(['x', 'X']);
         if (parts.Length != 2
             || !int.TryParse(parts[0], out int width)
             || !int.TryParse(parts[1], out int height)

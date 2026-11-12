@@ -128,15 +128,6 @@ public static partial class MissionValidator
         }
     }
 
-    // A task scripts name as Type_Id, or null for one they name otherwise (this, a native's prefix).
-    private static (string Type, int Id)? Referenced(string subject)
-    {
-        int split = subject.LastIndexOf('_');
-        return split > 0 && int.TryParse(subject.AsSpan(split + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int id)
-            ? (subject[..split], id)
-            : null;
-    }
-
     // The lowest id in the game's table no task has.
     private static int? FreeId(HashSet<int> used)
     {

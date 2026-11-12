@@ -250,17 +250,17 @@ internal sealed class WorldFrameState
 
             // What nothing claims is drawn where it stands, as the original draws an object from its own matrix (0x49DF60):
             // asked once, and again only when a claim is made or let go.
-            int epoch = entry.Displayed!.Owner.PlacementEpoch + _transforms.Swaps;
+            int epoch = entry.Displayed.Owner.PlacementEpoch + _transforms.Swaps;
             if (entry.ClaimEpoch != epoch || !ReferenceEquals(entry.ClaimFor, entry.Displayed))
             {
-                entry.Unclaimed = !_transforms.IsClaimed(entry.Displayed!);
+                entry.Unclaimed = !_transforms.IsClaimed(entry.Displayed);
                 entry.ClaimEpoch = epoch;
                 entry.ClaimFor = entry.Displayed;
             }
 
             if (entry.Unclaimed)
             {
-                entry.Position = entry.Displayed!.Position;
+                entry.Position = entry.Displayed.Position;
                 entry.Orientation = entry.Displayed.Orientation;
                 entry.Rotor = default;
                 entry.HasRotor = false;
@@ -268,7 +268,7 @@ internal sealed class WorldFrameState
             else
             {
                 _transforms.ResolveDrawTransform(
-                    entry.Displayed!,
+                    entry.Displayed,
                     out entry.Position,
                     out entry.Orientation,
                     out entry.Rotor,

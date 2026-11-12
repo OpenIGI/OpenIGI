@@ -1,3 +1,5 @@
+using OpenIGI.Core.Collections;
+
 namespace OpenIGI.Editor.Core.Graphs;
 
 /// <summary>Places the nodes of a scope that its layout has no position for, so a graph reads the first time it is opened.</summary>
@@ -68,7 +70,7 @@ public static class GraphAutoLayout
         void Put(GraphNodeKey key, int column, double target)
         {
             double height = HeightOf(graph, key, scope);
-            List<(double Top, double Bottom)> taken = columns.TryGetValue(column, out List<(double, double)>? list) ? list : columns[column] = [];
+            List<(double Top, double Bottom)> taken = columns.GetOrAdd(column);
             double at = Math.Max(top, target);
             for (bool moved = true; moved;)
             {

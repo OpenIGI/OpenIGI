@@ -3,6 +3,7 @@ using Xunit;
 namespace OpenIGI.TestSupport;
 
 /// <summary>A <see cref="FactAttribute"/> that skips when no original game installation is configured.</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RequiresGameDataFactAttribute : FactAttribute
 {
     /// <summary>Initializes a new instance of the <see cref="RequiresGameDataFactAttribute"/> class.</summary>
@@ -16,6 +17,7 @@ public sealed class RequiresGameDataFactAttribute : FactAttribute
 }
 
 /// <summary>A <see cref="TheoryAttribute"/> that skips when no original game installation is configured.</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RequiresGameDataTheoryAttribute : TheoryAttribute
 {
     /// <summary>Initializes a new instance of the <see cref="RequiresGameDataTheoryAttribute"/> class.</summary>
@@ -36,6 +38,7 @@ public sealed class RequiresGameDataTheoryAttribute : TheoryAttribute
 /// — so each title's tests carry their own attribute and skip independently.
 /// </remarks>
 /// <param name="titleIds">The titles' stable ids, for example <c>igi2</c>: a test of one game's soldiers in another's names both.</param>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RequiresTitleDataFactAttribute(params string[] titleIds) : FactAttribute
 {
     private string[] TitleIds { get; } = titleIds;
@@ -58,6 +61,7 @@ public sealed class RequiresTitleDataFactAttribute(params string[] titleIds) : F
 
 /// <summary>A <see cref="TheoryAttribute"/> that skips unless the named title's installation is configured.</summary>
 /// <param name="titleId">The title's stable id, for example <c>igi2</c>.</param>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RequiresTitleDataTheoryAttribute(string titleId) : TheoryAttribute
 {
     private string TitleId { get; } = titleId;
@@ -81,6 +85,7 @@ public sealed class RequiresTitleDataTheoryAttribute(string titleId) : TheoryAtt
 /// </remarks>
 /// <param name="variable">The environment variable naming the directory.</param>
 /// <param name="what">What the directory should hold, for the skip message.</param>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RequiresDirectoryFactAttribute(string variable, string what) : FactAttribute
 {
     private string Variable { get; } = variable;
@@ -110,6 +115,7 @@ public sealed class RequiresDirectoryFactAttribute(string variable, string what)
 /// needs to say it did not run.
 /// </remarks>
 /// <param name="titleIds">The titles' stable ids, for example <c>igi1</c> and <c>igi2</c>.</param>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RequiresTitlesDataFactAttribute(params string[] titleIds) : FactAttribute
 {
     private string[] TitleIds { get; } = titleIds;

@@ -720,13 +720,11 @@ internal sealed class VehicleBodies(
                 if (ReferenceEquals(obstacle, latchedDoor))
                 {
                     blocked = false;
-                    obstacle = null;
                 }
             }
             else
             {
                 blocked = true;
-                obstacle ??= latchedDoor;
             }
         }
 

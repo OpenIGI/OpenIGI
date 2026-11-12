@@ -467,7 +467,9 @@ internal sealed unsafe class D3D12RhiTextureView : IRhiTextureView
             {
                 Format = D3D12Translation.ViewFormat(Descriptor.Format),
                 Flags = readOnly
+#pragma warning disable S3265 // D3D12_DSV_FLAGS is a bit mask; the binding's enum is declared without [Flags].
                     ? DsvFlags.ReadOnlyDepth | (Descriptor.Format.HasStencil() ? DsvFlags.ReadOnlyStencil : DsvFlags.None)
+#pragma warning restore S3265
                     : DsvFlags.None,
             };
 

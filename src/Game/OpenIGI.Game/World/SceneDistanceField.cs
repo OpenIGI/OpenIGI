@@ -448,7 +448,7 @@ public sealed class SceneDistanceField
 
         float voxel = MathF.Max(MathF.Max(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z);
 
-        return FormattableString.Invariant(
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"field {winner.FieldIndex} reported {nearest:0.##}; voxel {voxel:0.#}, band {field.Range:0.#}, span ({span.X:0}, {span.Y:0}, {span.Z:0})");
     }
 

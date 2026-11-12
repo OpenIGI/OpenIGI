@@ -65,26 +65,6 @@ internal sealed class VehicleGroundSupport(LevelMotionContext context)
             ? "NaN"
             : (units / WorldScene.UnitsPerMetre).ToString("F3", CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Finds the highest supporting surface height under a point, preferring an elevated placed object (a
-    /// pad, crate or rooftop) over lower terrain.
-    /// </summary>
-    /// <param name="position">The body position, in world units.</param>
-    /// <param name="surfaceHeight">Receives the highest supporting surface height found.</param>
-    /// <returns>
-    /// <see langword="true"/> when at least one surface answers; <see langword="false"/> when neither the
-    /// terrain nor the collision index reports a surface under the point.
-    /// </returns>
-    /// <remarks>
-    /// Retail's terrain half (<c>0x4CBE40</c>) and placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>)
-    /// are two answers for the same question. The higher of the two is the surface the body actually rests
-    /// on: a heli parked on a pad must rest on the pad's top, not the terrain below it. Both queries run and
-    /// the higher answer wins, so an elevated collision surface takes precedence over terrain without losing
-    /// the terrain answer when no object is present.
-    /// </remarks>
-    private bool TryFindSupportHeight(Vector3d position, out double surfaceHeight) =>
-        TryFindSupportHeight(position, ignoredOwner: null, allowDeepRecovery: true, out surfaceHeight);
-
     private bool TryFindSupportHeight(
         Vector3d position,
         GameTask? ignoredOwner,
@@ -457,25 +437,6 @@ internal sealed class VehicleGroundSupport(LevelMotionContext context)
             + $"latched={transform.TerminalLandingLatched} "
             + $"ctl=({transform.Control.X:F3},{transform.Control.Y:F3},{transform.Control.Z:F3})");
     }
-
-    /// <summary>Finds the height a helicopter should rest at under a body position.</summary>
-    /// <param name="position">The body's current position, in world units.</param>
-    /// <param name="offset">The model's measured rest height above a supporting surface.</param>
-    /// <param name="rest">Receives the height the body should rest at when one is found.</param>
-    /// <returns>
-    /// <see langword="true"/> with <paramref name="rest"/> when a supporting surface is under the
-    /// point; <see langword="false"/> when nothing holds the body there.
-    /// </returns>
-    /// <remarks>
-    /// The terrain query mirrors retail's terrain half (<c>0x4CBE40</c>) but not the placed-model sweep
-    /// (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>), so a heli landing on a pad, crate or rooftop finds nothing
-    /// and would sink straight through. When the terrain misses, cast the collision index down from
-    /// well above the body and rest on the solid object the ray hits instead. A NaN rest offset from
-    /// the terrain measurement does not disable the object fallback: a heli resting on a pad measures
-    /// its rest height from the pad's surface below the body.
-    /// </remarks>
-    private bool TryGetLandingHeight(Vector3d position, double offset, out double rest) =>
-        TryGetLandingHeight(position, offset, ignoredOwner: null, out rest);
 
     private bool TryGetLandingHeight(
         Vector3d position,

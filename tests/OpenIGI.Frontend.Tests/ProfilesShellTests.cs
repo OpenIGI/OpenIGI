@@ -36,7 +36,7 @@ public sealed class ProfilesShellTests : ShellTestHarness
             Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
             Pump(shell, 0.1f);
 
-            ProfileCard alex = screen.Root!.Descendants().OfType<ProfileCard>().Single(card => card.Visibility == Visibility.Visible && card.Name == "Alex");
+            ProfileCard alex = screen.Root.Descendants().OfType<ProfileCard>().Single(card => card.Visibility == Visibility.Visible && card.Name == "Alex");
             Assert.True(alex.Active);
             Assert.Equal("Hard difficulty", alex.Difficulty);
             Assert.Equal(1, host.SaveProfilesCalls);
@@ -83,7 +83,7 @@ public sealed class ProfilesShellTests : ShellTestHarness
             List<ProfileCard> visible = [.. screen.Root!.Descendants().OfType<ProfileCard>().Where(card => card.Visibility == Visibility.Visible)];
             Assert.Single(visible);
             Assert.Equal("Joe", visible[0].Name);
-            Assert.All(screen.Root!.Descendants().OfType<SlotTile>(), slot => Assert.True(slot.IsEmpty));
+            Assert.All(screen.Root.Descendants().OfType<SlotTile>(), slot => Assert.True(slot.IsEmpty));
             Assert.Equal(2, host.SaveProfilesCalls);
             Assert.False(Find<Button>(screen, button => button.Text == "DELETE PROFILE")!.IsEnabled);
         }

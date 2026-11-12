@@ -517,7 +517,7 @@ public sealed class TouchLayoutEditorTests
 
         Assert.NotNull(saved);
         Assert.Equal(1, savedSlot);
-        Assert.Contains("c.Jump=", saved![0], StringComparison.Ordinal);
+        Assert.Contains("c.Jump=", saved[0], StringComparison.Ordinal);
         Assert.Equal(string.Empty, saved[1]);
         Assert.False(_editor.Dirty);
         Assert.True(_editor.IsOpen);

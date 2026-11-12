@@ -61,7 +61,7 @@ public sealed class RetailIgi2PlayerDeathPresentationTests
             TitleWorldModel body = Assert.Single(player.WorldModels, m => ReferenceEquals(m.Instance, human));
             poseChanged |= !body.Pose!.Positions.SequenceEqual(firstPose);
             Igi2CameraClearance.AssertClear(mission.Collision!, human, player.EyePosition);
-            Assert.Equal(clip, animation.Main.Clip!.Name);
+            Assert.Equal(clip, animation.Main.Clip.Name);
             Assert.Null(player.FirstPerson);
         }
         Assert.True(poseChanged);

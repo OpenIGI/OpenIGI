@@ -264,6 +264,7 @@ public sealed class SettingsScreen : ShellScreen
             {
                 while (input.Keyboard.TryDequeuePress(out _))
                 {
+                    // The loop's condition does the work.
                 }
 
                 _armingBindingRow = row;

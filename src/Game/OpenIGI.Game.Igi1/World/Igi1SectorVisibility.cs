@@ -99,7 +99,7 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
     public string DescribeView() =>
         _inside is null
             ? "sector: none"
-            : FormattableString.Invariant(
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"sector: {_inside.Task.Name} {(_eyeSector is { IsShell: false } room ? "room " + room.Room : "shell")}, {(_outsideWindow is null ? "sees no way out" : "sees out")}, inside sphere r {_sphereRadius / WorldScene.UnitsPerMetre:0.0} m");
 
     /// <inheritdoc/>
@@ -129,7 +129,8 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
         {
             if (!byOwner.TryGetValue(placement.Owner, out List<WorldPlacement>? list))
             {
-                byOwner.Add(placement.Owner, list = []);
+                list = [];
+                byOwner.Add(placement.Owner, list);
             }
 
             list.Add(placement);

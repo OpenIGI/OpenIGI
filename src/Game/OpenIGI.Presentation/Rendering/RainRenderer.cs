@@ -65,7 +65,6 @@ public sealed class RainRenderer : IDisposable
     private bool _active;
     private bool _authoredAvailable;
     private float _speedMultiplier = 1f;
-    private bool _indoors;
     private float _startMeters = 10.0f;
     private float _endMeters = 2.0f;
     private float _alpha = 0.5f;
@@ -91,17 +90,13 @@ public sealed class RainRenderer : IDisposable
     }
 
     /// <summary>Gets a value indicating whether rain rendering is active and visible.</summary>
-    public bool IsActive => _active && !_indoors;
+    public bool IsActive => _active && !Indoors;
 
     /// <summary>Gets whether rain is enabled before the indoor visibility test.</summary>
     public bool IsWeatherEnabled => _active;
 
     /// <summary>Gets or sets whether the player/camera is currently indoors (suppressing rain rendering).</summary>
-    public bool Indoors
-    {
-        get => _indoors;
-        set => _indoors = value;
-    }
+    public bool Indoors { get; set; }
 
     /// <summary>Gets the rain height start in meters above camera.</summary>
     public float StartMeters => _startMeters;

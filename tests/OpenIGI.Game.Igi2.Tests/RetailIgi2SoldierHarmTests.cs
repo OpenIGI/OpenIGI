@@ -35,7 +35,7 @@ public sealed class RetailIgi2SoldierHarmTests
 
         WorldIntersection? hit = Shoot(m.Collision!, body, height: 4096.0, includes: null);
         Assert.NotNull(hit);
-        Igi2BoneCollider collider = Assert.IsType<Igi2BoneCollider>(hit!.HitObject);
+        Igi2BoneCollider collider = Assert.IsType<Igi2BoneCollider>(hit.HitObject);
         Assert.Same(body, collider.Owner);
         Assert.InRange(hit.Sector, 0, body.Animation.Rig!.BoneCount - 1);
         Assert.NotNull(hit.EnterMaterial);
@@ -235,7 +235,7 @@ public sealed class RetailIgi2SoldierHarmTests
         pickups.PlaySound = (name, _) => sounds.Add(name);
         int placed = pickups.Items.Count;
         Igi2Gameplay.SpawnSoldiers(
-            m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
+            m.Tree[0], m.Services, m.Collision!, clips, m.Level.ModelFor, m.Services.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
             Game.Ai.AiDifficulty.Normal, pickups);
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
@@ -521,7 +521,7 @@ public sealed class RetailIgi2SoldierHarmTests
         Igi2Grenades grenades = new(
             m.Services!.Require<OpenIGI.Game.Physics.PhysicsObjectTypes>(), m.Level.ModelFor, new Physics.Igi2PhysicsWorld(m.Collision!, m.Materials), new OpenIGI.Game.World.DynamicTasks());
         Igi2Gameplay.SpawnSoldiers(
-            m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
+            m.Tree[0], m.Services, m.Collision!, clips, m.Level.ModelFor, m.Services.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
             Game.Ai.AiDifficulty.Normal, grenades: grenades);
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);

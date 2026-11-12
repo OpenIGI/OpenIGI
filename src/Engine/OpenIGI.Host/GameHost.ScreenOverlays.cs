@@ -121,7 +121,6 @@ public sealed partial class GameHost
 
     /// <summary>What the mission's HUD draws from this frame.</summary>
     private MissionHudFrame HudFrame(
-        FrameLoopState state,
         bool remasterHud,
         bool remasteredOptics,
         bool showFirstPersonHud,
@@ -214,7 +213,6 @@ public sealed partial class GameHost
         bool showPlayerHud = view.ShowPlayerHud;
         bool smoothPresentation = view.SmoothPresentation;
         float tickBlend = view.TickBlend;
-        SightZoomFrame sight = view.Sight;
         bool worldInteractionPrompt = view.WorldInteractionPrompt;
         Camera3D eye = view.Eye;
         float horizontalTangent = view.HorizontalTangent;
@@ -238,7 +236,6 @@ public sealed partial class GameHost
             _device.EndSceneCapture();
             UpdateModPostPasses();
             _device.ResolveScene(postProcess);
-            captured = false;
             EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
         }
 
@@ -259,7 +256,7 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        MissionHudFrame hudFrame = HudFrame(state, remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
+        MissionHudFrame hudFrame = HudFrame(remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
         _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
         DrawRemasteredBinoculars(state, view, binocularRangeMetres);
 

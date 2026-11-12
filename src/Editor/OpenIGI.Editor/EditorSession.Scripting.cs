@@ -111,10 +111,10 @@ internal sealed partial class EditorSession
                 }
 
                 _viewport.ScriptDrag(file, new UI.Layout.UiVec2(fx, fy), drop);
-                _host.Logger.Information("Editor", FormattableString.Invariant($"{(drop ? "Dropped" : "Dragging")} {file.Name} at {fx}, {fy} of the view."));
+                _host.Logger.Information("Editor", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(drop ? "Dropped" : "Dragging")} {file.Name} at {fx}, {fy} of the view."));
                 return true;
             });
-            return FormattableString.Invariant($"{(drop ? "Dropping" : "Dragging")} '{dragged}' at {fx}, {fy} of the view once it is up.");
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(drop ? "Dropping" : "Dragging")} '{dragged}' at {fx}, {fy} of the view once it is up.");
         }
 
         if (arguments is [string move, string dx, string dy, string dz] && move.Equals("move", StringComparison.OrdinalIgnoreCase))
@@ -138,7 +138,7 @@ internal sealed partial class EditorSession
         {
             // Turns the selection about the world's up axis, as a drag of the rotate gizmo's up ring would: for scripted checks.
             _pendingSteps.Enqueue(() => TurnSelection(degrees));
-            return FormattableString.Invariant($"Turning the selection {degrees}° once something is selected.");
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Turning the selection {degrees}° once something is selected.");
         }
 
         if (arguments is [string pick] && pick.Equals("pick", StringComparison.OrdinalIgnoreCase))
@@ -168,7 +168,7 @@ internal sealed partial class EditorSession
                 _host.Logger.Information("Editor", _viewport.SculptAtCentre(holdFor, inverted) ? "Sculpted at the middle of the view." : "No sculptable ground under the middle of the view.");
                 return true;
             });
-            return FormattableString.Invariant($"Sculpting for {holdFor:0.##} s once the view is up.");
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Sculpting for {holdFor:0.##} s once the view is up.");
         }
 
         if (arguments is [string brushVerb, ..] && brushVerb.Equals("brush", StringComparison.OrdinalIgnoreCase))
@@ -197,7 +197,7 @@ internal sealed partial class EditorSession
                 }
             }
 
-            return FormattableString.Invariant($"Brush: {_terrainTool.Brush.RadiusMetres:0.#} m, paint layer {_terrainTool.Brush.PaintLayer}.");
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Brush: {_terrainTool.Brush.RadiusMetres:0.#} m, paint layer {_terrainTool.Brush.PaintLayer}.");
         }
 
         if (arguments is [string near, string sx, string sy, ..] && near.Equals("near", StringComparison.OrdinalIgnoreCase)
@@ -210,7 +210,7 @@ internal sealed partial class EditorSession
                 ? within
                 : 0.0;
             _pendingSteps.Enqueue(() => SelectNear(nx, ny, radius));
-            return FormattableString.Invariant($"Selecting near ({nx}, {ny}) once the mission is open.");
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Selecting near ({nx}, {ny}) once the mission is open.");
         }
 
         if (arguments is [string make, string from, _, ..] && make.Equals("newmission", StringComparison.OrdinalIgnoreCase)
@@ -312,7 +312,7 @@ internal sealed partial class EditorSession
         }
 
         _workspace.Execute(moves.Count == 1 ? moves[0] : new CompositeCommand("Move", moves));
-        _host.Logger.Information("Editor", FormattableString.Invariant($"Moved {moves.Count} object(s) by ({by.X}, {by.Y}, {by.Z}) m: {string.Join(", ", names)}."));
+        _host.Logger.Information("Editor", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Moved {moves.Count} object(s) by ({by.X}, {by.Y}, {by.Z}) m: {string.Join(", ", names)}."));
         return true;
     }
 
@@ -336,7 +336,7 @@ internal sealed partial class EditorSession
         _workspace.Execute(carried.Count == 0 || TaskPresentation.PositionMetres(turning) is not { } pivot
             ? turn
             : new CompositeCommand(turn.Name, [turn, .. ObjectCarry.Turn(document, ObjectCarry.Snapshot(carried), pivot, world)]));
-        _host.Logger.Information("Editor", FormattableString.Invariant($"Turned {TaskPresentation.Name(turning)} {degrees}° with {carried.Count} carried: {orientation.Name} now {angles.X:0.###}, {angles.Y:0.###}, {angles.Z:0.###}."));
+        _host.Logger.Information("Editor", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Turned {TaskPresentation.Name(turning)} {degrees}° with {carried.Count} carried: {orientation.Name} now {angles.X:0.###}, {angles.Y:0.###}, {angles.Z:0.###}."));
         return true;
     }
 

@@ -48,6 +48,7 @@ public sealed class WebGpuAvailable
 }
 
 /// <summary>A fact that runs only where a WebGPU device can be had.</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class WebGpuFactAttribute : FactAttribute
 {
     /// <summary>Initialises a new instance of the <see cref="WebGpuFactAttribute"/> class.</summary>

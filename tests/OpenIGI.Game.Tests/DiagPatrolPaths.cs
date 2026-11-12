@@ -35,7 +35,7 @@ public sealed class DiagPatrolPaths
             missions, fs, resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
             terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
-        WorldScene scene = WorldScene.Build(mission, root, magic);
+        _ = WorldScene.Build(mission, root, magic);
 
         AiPatrolPathRegistry registry = AiPatrolPathRegistry.Build(root);
         _output.WriteLine($"total paths: {registry.Count}");

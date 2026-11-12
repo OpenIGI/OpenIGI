@@ -20,7 +20,7 @@ public sealed class SoldierRendererTests
     [RequiresGameDataFact]
     public void LivingSoldiersRemainQueryTargetsBeforeHealthIsCreated()
     {
-        (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission, LevelTask levelRoot) =
+        (_, ResourceRegistry resources, LoadedMission mission, LevelTask levelRoot) =
             LoadRetailMission();
         RecordingGraphicsDevice device = new();
         using SoldierRenderer renderer = new(device, resources);

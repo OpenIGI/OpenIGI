@@ -107,7 +107,7 @@ public sealed class RetailIgi2MissionCatalogueTests
         // title's to supply.
         Igi2Runtime title = new Igi2Runtime();
         GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: title.Layout.StructuralTaskTypes);
-        TitleSession session = TitleSession.Start(title.Modules, loop, files, resources, loadTables: false);
+        _ = TitleSession.Start(title.Modules, loop, files, resources, loadTables: false);
 
         LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);

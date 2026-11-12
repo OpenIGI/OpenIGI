@@ -101,7 +101,9 @@ public sealed partial class GraphicsDevice
         [System.Runtime.CompilerServices.InlineArray(GlintsPerDraw)]
         private struct Glints
         {
+#pragma warning disable S1144 // An inline array is declared by its one field, which nothing names.
             private ScopeGlint _first;
+#pragma warning restore S1144
         }
     }
 }

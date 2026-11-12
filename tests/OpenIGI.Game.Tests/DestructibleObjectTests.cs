@@ -83,8 +83,8 @@ public sealed class DestructibleObjectTests
         Assert.NotNull(first.Placement);
         Assert.NotNull(sibling.Placement);
         Assert.Same(first, registry.TryDestroy(first.Owner, first.Placement, first.ExplosionDamageThreshold));
-        Assert.True(registry.IsDestroyed(first.Placement!));
-        Assert.False(registry.IsDestroyed(sibling.Placement!));
+        Assert.True(registry.IsDestroyed(first.Placement));
+        Assert.False(registry.IsDestroyed(sibling.Placement));
     }
 
     [RequiresGameDataFact]

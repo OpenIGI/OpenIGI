@@ -112,9 +112,9 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
     /// <inheritdoc/>
     public string DescribeView() =>
         EyeRoom is { } room
-            ? FormattableString.Invariant(
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"sector: {room.Model} (room {room.Room} of {_graph.Objects[room.ObjectIndex].Shell.Model}), {(_outsideWindows is null ? "sees no way out" : "sees out")}, {ReachedCount} sectors reached")
-            : FormattableString.Invariant($"sector: none, {ReachedCount} sectors reached");
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sector: none, {ReachedCount} sectors reached");
 
     /// <summary>Gets how many sectors the last frame reached.</summary>
     public int ReachedCount { get; private set; }

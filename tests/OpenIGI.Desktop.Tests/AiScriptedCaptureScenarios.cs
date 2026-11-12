@@ -247,7 +247,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                     + $"rootSampleZ={soldiers.PlayerBodyRootSampleZForTesting:0.0} walkOrigin=({feet.X:0},{feet.Y:0},{feet.Z + OriginAboveFeet:0}) "
                     + $"grounded={player.Body.IsGrounded}");
 
-            foreach ((int at, string op, double[] args) in script.Where(command => command.Tick == tick))
+            foreach ((_, string op, double[] args) in script.Where(command => command.Tick == tick))
             {
                 switch (op)
                 {
@@ -424,7 +424,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                 break;
             }
 
-            int engine = soldiers!.Simulation.TickCount;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -441,7 +441,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                 lastState = key;
             }
 
-            foreach ((int at, string op, double[] args) in script.Where(command => command.Tick == tick))
+            foreach ((_, string op, double[] args) in script.Where(command => command.Tick == tick))
             {
                 switch (op)
                 {

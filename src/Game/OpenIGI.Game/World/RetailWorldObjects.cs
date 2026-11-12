@@ -447,8 +447,8 @@ public sealed class RetailWorldObjects : ILevelReset
             || level0 is null
             || Value(previous, "Position") is not Vector3d p0
             || Value(waypoint, "Position") is not Vector3d p1
-            || Value(previous, "Orientation") is not Vector3f a0
-            || Value(waypoint, "Orientation") is not Vector3f a1
+            || Value(previous, "Orientation") is not Vector3f
+            || Value(waypoint, "Orientation") is not Vector3f
             || Value(waypoint, "NumAreas") is not int count
             || count < 1)
         {

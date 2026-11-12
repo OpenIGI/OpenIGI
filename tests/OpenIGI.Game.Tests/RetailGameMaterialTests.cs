@@ -152,6 +152,6 @@ public sealed class RetailGameMaterialTests
             m => string.Equals(m.Name, name, StringComparison.Ordinal));
 
         Assert.True(found is not null, $"no material named '{name}'.");
-        return found!;
+        return found;
     }
 }

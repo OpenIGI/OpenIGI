@@ -168,17 +168,14 @@ public sealed class Igi2PickupList
     /// </remarks>
     public void Run()
     {
-        for (int i = 0; i < _items.Count; i++)
+        int i = 0;
+        while (i < _items.Count)
         {
             Igi2GunPickup pickup = _items[i];
-            if (pickup.IsDriven)
+            // A pickup that left the list as it stepped has the next one in its place.
+            if (pickup.IsDriven || Step(pickup))
             {
-                continue;
-            }
-
-            if (!Step(pickup))
-            {
-                i--;
+                i++;
             }
         }
     }

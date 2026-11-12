@@ -241,7 +241,7 @@ public sealed class DiagMission4Plane
 
         foreach (GameTask task in Walk(root))
         {
-            if (task is not DeclaredTask declared)
+            if (task is not DeclaredTask)
             {
                 continue;
             }
@@ -312,7 +312,7 @@ public sealed class DiagMission4Plane
 
             if (tick >= 428 && tick <= 445 || tick % 50 == 0)
             {
-                ProbeRuntime(_output, runtime, root, tick);
+                ProbeRuntime(_output, runtime, tick);
             }
             if (tick % 100 == 0 && root.Tree.FromId(356) is GameTask hp356
                 && runtime.TryGetDrawTransform(hp356, out Vector3d hp36, out _))
@@ -468,7 +468,7 @@ public sealed class DiagMission4Plane
         // Report each heli's final position and the terrain height at that XY regardless of the body's Z.
         foreach (GameTask task in Walk(root))
         {
-            if (task is not DeclaredTask declared || task.Type.Name is not "Heli")
+            if (task is not DeclaredTask || task.Type.Name is not "Heli")
             {
                 continue;
             }
@@ -487,7 +487,7 @@ public sealed class DiagMission4Plane
                     _output.WriteLine(
                         $"  HELI final id={task.Id} finalZ={fin.Z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                         + $"terrainAtXY={groundZ.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
-                        + $"delta={((fin.Z - groundZ)).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m");
+                        + $"delta={(fin.Z - groundZ).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m");
                 }
                 else
                 {
@@ -518,7 +518,7 @@ public sealed class DiagMission4Plane
     }
 
     /// <summary>Dumps the runtime's animation and transform state for heli 356.</summary>
-    private static void ProbeRuntime(ITestOutputHelper output, CutsceneRuntime runtime, GameTask root, int tick)
+    private static void ProbeRuntime(ITestOutputHelper output, CutsceneRuntime runtime, int tick)
     {
         try
         {

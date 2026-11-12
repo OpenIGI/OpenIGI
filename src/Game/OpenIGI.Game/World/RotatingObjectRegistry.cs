@@ -6,7 +6,6 @@ namespace OpenIGI.Game.World;
 /// <summary>One rotating world placement (radar dish or generic rotating object).</summary>
 public sealed class PlacedRotatingObject : Saves.IExchangedState
 {
-    private const float DegreesToRadians = MathF.PI / 180f;
     private const float DeltaTime = 1.0f / 30.0f;
 
     /// <summary>The world placement associated with this rotating object.</summary>

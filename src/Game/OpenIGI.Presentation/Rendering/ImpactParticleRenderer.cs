@@ -610,34 +610,6 @@ public sealed partial class ImpactParticleRenderer : IDisposable
         });
     }
 
-    private void EmitRetailSprite(
-        Vector3d positionUnits,
-        Vector3f velocity,
-        float sizeMetres,
-        int lifeTicks,
-        bool smoke)
-    {
-        ImpactParticle particle = new()
-        {
-            Position = positionUnits,
-            PreviousPosition = positionUnits,
-            Velocity = velocity,
-            LifeTicks = Math.Max(1, lifeTicks),
-            Size = Math.Max(0.01f, sizeMetres),
-            Growth = smoke ? Math.Max(0.005f, sizeMetres * 0.02f) : 0f,
-            GravityScale = smoke ? -0.04f : 0f,
-            Drag = smoke ? 0.98f : 1f,
-            Red = 1f,
-            Green = 1f,
-            Blue = 1f,
-            IsSpark = !smoke,
-            IsRetailSprite = true,
-            IsRetailSmoke = smoke,
-        };
-        SelectRetailSpriteFrame(ref particle, smoke, frameIndex: 0);
-        Emit(particle);
-    }
-
     private void EmitDust(Vector3d positionUnits, Vector3f normal, ImpactSurfaceKind kind)
     {
         float speed = (0.6f + ((float)_random.NextDouble() * 1.6f)) * UnitsPerMetre / 30f;

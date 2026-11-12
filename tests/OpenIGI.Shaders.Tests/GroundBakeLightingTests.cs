@@ -56,6 +56,6 @@ public sealed class GroundBakeLightingTests
             ShaderModuleId.Shading, new ShaderVariant("software"));
 
         Assert.NotNull(reflection.PushBlock);
-        Assert.Equal(96, reflection.PushBlock!.Size);
+        Assert.Equal(96, reflection.PushBlock.Size);
     }
 }

@@ -284,21 +284,15 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
 
         // The emplacement's barrel is aimed by its own task; a carried gun points where the soldier looks.
         Vector3f forward;
-        Vector3f right;
-        Vector3f up;
         if (mounted is not null)
         {
             Vector3d line = target - origin;
             forward = new Vector3f((float)(line.X / reach), (float)(line.Y / reach), (float)(line.Z / reach)).Normalized();
-            right = Vector3f.Cross(forward, new Vector3f(0f, 0f, 1f)).Normalized();
-            up = Vector3f.Cross(right, forward).Normalized();
         }
         else
         {
             Matrix3f view = brain.ViewOrientation.Transposed();
             forward = ToFloat(view.Transform(new Vector3d(0.0, 1.0, 0.0)));
-            right = ToFloat(view.Transform(new Vector3d(1.0, 0.0, 0.0)));
-            up = ToFloat(view.Transform(new Vector3d(0.0, 0.0, 1.0)));
         }
 
         int roundsThisPull = member?.RoundsThisPull ?? 0;

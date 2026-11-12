@@ -143,21 +143,18 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
             // looking, the human looked at), and a contact the line comes back from at a fraction of exactly 0 -- a wall, the
             // ground -- is occluded: it keeps its slot, refreshed, but is not drawn.
             bool visible = true;
-            if (_context.SightTrace is { } trace)
+            if (_context.SightTrace is { } trace && (simulationTick == int.MinValue || !Visibility.TryGetValue(view, out visible)))
             {
-                if (simulationTick == int.MinValue || !Visibility.TryGetValue(view, out visible))
+                int seen = view.Soldier.Id;
+                visible = SoldierSightQueries.HasLineOfSight(
+                    trace,
+                    eyeUnits,
+                    brain.EyePosition(),
+                    double.Epsilon,
+                    standsAside: owner => _context.GunStandsAside(owner, AiDetectionCandidate.PlayerId, seen));
+                if (simulationTick != int.MinValue)
                 {
-                    int seen = view.Soldier.Id;
-                    visible = SoldierSightQueries.HasLineOfSight(
-                        trace,
-                        eyeUnits,
-                        brain.EyePosition(),
-                        double.Epsilon,
-                        standsAside: owner => _context.GunStandsAside(owner, AiDetectionCandidate.PlayerId, seen));
-                    if (simulationTick != int.MinValue)
-                    {
-                        Visibility[view] = visible;
-                    }
+                    Visibility[view] = visible;
                 }
             }
 

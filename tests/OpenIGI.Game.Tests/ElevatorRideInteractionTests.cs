@@ -18,8 +18,6 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class ElevatorRideInteractionTests
 {
-    private static readonly Vector3d BasePosition = new(0, 0, 0);
-
     private static string? ReadString(DeclaredTask task, string name) =>
         task.TryGetValue(name, out object? value) && value is string text ? text : null;
 
@@ -57,7 +55,7 @@ public sealed class ElevatorRideInteractionTests
     {
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
 
@@ -94,7 +92,7 @@ public sealed class ElevatorRideInteractionTests
     {
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
 
@@ -124,7 +122,6 @@ public sealed class ElevatorRideInteractionTests
 
                 // Wire a player position provider that places the player inside the cab.
                 Vector3d platformPosition = elevator.State.Position;
-                elevators.SetPlayerPositionProvider(() => platformPosition);
 
                 // Request a different floor so there is somewhere to go.
                 int targetFloor = elevator.State.CurrentFloorIndex == 0 ? 1 : 0;
@@ -158,7 +155,6 @@ public sealed class ElevatorRideInteractionTests
         }
         _ = WorldInteractionRegistry.Build(root, mission, doors, variables, elevators);
 
-        elevators.SetPlayerPositionProvider(() => elevator.State.Position + new Vector3d(100000, 0, 0));
         elevator.State.RequestFloor(1);
         elevators.Tick();
         Assert.True(elevator.State.IsMoving, "the Level 5 elevator waited for a passenger the original never asks for");
@@ -169,7 +165,7 @@ public sealed class ElevatorRideInteractionTests
     {
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
 
@@ -190,7 +186,6 @@ public sealed class ElevatorRideInteractionTests
 
                 // Player inside.
                 Vector3d platformPosition = elevator.State.Position;
-                elevators.SetPlayerPositionProvider(() => platformPosition);
 
                 // Leave all doors open (not fully closed).
                 foreach (PlacedDoor door in doors.Doors)
@@ -222,7 +217,7 @@ public sealed class ElevatorRideInteractionTests
     {
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
 
@@ -243,7 +238,6 @@ public sealed class ElevatorRideInteractionTests
 
                 // Player inside.
                 Vector3d platformPosition = elevator.State.Position;
-                elevators.SetPlayerPositionProvider(() => platformPosition);
 
                 // Close all doors.
                 foreach (PlacedDoor door in doors.Doors)
@@ -272,7 +266,7 @@ public sealed class ElevatorRideInteractionTests
     {
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
 
@@ -299,7 +293,7 @@ public sealed class ElevatorRideInteractionTests
     {
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
             ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
 

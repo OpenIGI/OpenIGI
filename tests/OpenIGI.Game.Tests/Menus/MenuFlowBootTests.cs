@@ -23,7 +23,7 @@ public sealed class MenuFlowBootTests
 
         // The walk reaches the manager: it entered the screen the script named and measured it.
         Assert.NotNull(harness.Menu.Manager.CurrentScreen);
-        Assert.Equal(harness.Menu.Manager.CurrentMenuScreen, harness.Menu.Manager.CurrentScreen!.Id);
+        Assert.Equal(harness.Menu.Manager.CurrentMenuScreen, harness.Menu.Manager.CurrentScreen.Id);
         Assert.True(harness.Host.Prepared > 0);
     }
 
@@ -45,7 +45,7 @@ public sealed class MenuFlowBootTests
 
         Assert.NotEmpty(harness.Menu.Manager.Selection.Items);
         Assert.NotNull(harness.Menu.Manager.Selection.Selected);
-        Assert.True(harness.Menu.Manager.Selection.Selected!.IsHighlighted);
+        Assert.True(harness.Menu.Manager.Selection.Selected.IsHighlighted);
     }
 
     [RequiresGameDataFact]
@@ -132,7 +132,7 @@ public sealed class MenuFlowBootTests
         }
 
         Assert.NotNull(menu);
-        return new Harness(loop, time, host, menu!);
+        return new Harness(loop, time, host, menu);
     }
 
     private sealed record Harness(GameLoop Loop, ManualTimeSource Time, RecordingHost Host, MenuSystem Menu);

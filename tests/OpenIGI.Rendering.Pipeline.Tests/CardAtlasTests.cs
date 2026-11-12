@@ -20,6 +20,7 @@ public sealed class CardAtlasTests
 
         using (atlas.Begin(encoder))
         {
+            // The pass is begun and ended with nothing drawn in it.
         }
 
         device.Submit([encoder.Finish()]);
@@ -44,6 +45,7 @@ public sealed class CardAtlasTests
 
         using (atlas.Begin(encoder))
         {
+            // The pass is begun and ended with nothing drawn in it.
         }
 
         device.Submit([encoder.Finish()]);

@@ -22,8 +22,6 @@ namespace OpenIGI.Game.World;
 public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSource
 {
     private const string RadarDishTaskType = "TASKTYPE_RADARDISH";
-    private const string RotatingObjectTaskType = "RotatingObject";
-
     private static readonly Dictionary<string, (float Speed, float Accel)> KnownRadarDishes = new(StringComparer.OrdinalIgnoreCase)
     {
         ["436_02_1"] = (90f, 15f),

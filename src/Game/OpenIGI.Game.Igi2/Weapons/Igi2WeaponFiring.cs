@@ -385,7 +385,7 @@ public sealed class Igi2WeaponFiring
             byte heldTime = (byte)(owner.Ticks - _fireTypes[FireType].FireStatusTick);
             SingleFire(Message(item.Number, 0, heldTime, owner.GetFireFrame(addInaccuracy: true)));
 
-            Igi2WeaponItem active = _inventory.Current!;
+            Igi2WeaponItem active = _inventory.Current;
             int slot = FireType;
             if (active.Loaded(slot) == 0 || _fireTypes[slot].RoundsFired >= active.WeaponType.RoundsInSuccession(active.ActiveFireMode))
             {

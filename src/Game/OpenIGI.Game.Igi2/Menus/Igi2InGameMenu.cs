@@ -187,7 +187,7 @@ public sealed class Igi2InGameMenu
     public void Register(NativeRegistry natives, Scripting.Igi2ScriptFunctions? functions)
     {
         ArgumentNullException.ThrowIfNull(natives);
-        void Fn(string name, Scripting.Igi2ScriptFunction function, int arguments, QvmValueKind kind = QvmValueKind.None) =>
+        void Fn(string name, Scripting.Igi2ScriptFunction function, int arguments) =>
             Scripting.Igi2ScriptCall.Register(natives, functions, name, function, arguments);
 
         Fn("MenuManager_RequestScreen", c => Do(() => Navigator.Request(c.GetInt32(0), c.GetInt32(1) != 0)), 2);
@@ -221,7 +221,7 @@ public sealed class Igi2InGameMenu
         // ControlsMenu_ConvertFloatFromOffsetCB and ControlsMenu_ConvertOffsetFromFloatCB: the scroll bar shows a forty-third of the
         // rows a step.
         Fn(
-            "ControlsMenu_ConvertFloatFromOffset", c => QvmValue.FromDouble(c.GetInt32(0) * 0.023255813866853714), 1, QvmValueKind.Float);
+            "ControlsMenu_ConvertFloatFromOffset", c => QvmValue.FromDouble(c.GetInt32(0) * 0.023255813866853714), 1);
         Fn(
             "ControlsMenu_ConvertOffsetFromFloat", c => QvmValue.FromInt32((int)((c.GetSingle(0) * 43.0) + 0.5)), 1);
 

@@ -61,7 +61,7 @@ internal sealed partial class GraphPanel
             return entries;
         }
 
-        foreach ((string name, string text, ScriptTypeKind gives) in Operators.Where(o => new ScriptType(o.Gives).ConnectsTo(wanted)))
+        foreach ((string name, string text, _) in Operators.Where(o => new ScriptType(o.Gives).ConnectsTo(wanted)))
         {
             entries.Add(new PaletteEntry(name, () => Insert(graph, input, owner, text.Contains(' ', StringComparison.Ordinal) ? $"({text})" : text))
             {

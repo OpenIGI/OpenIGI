@@ -21,7 +21,7 @@ public sealed class PartyTests
         Assert.True(leader.IsLeader);
         Assert.NotNull(leader.Code);
 
-        using Party member = Party.Join(Master, leader.Code!.ToLowerInvariant(), "Bob", master.Line);
+        using Party member = Party.Join(Master, leader.Code.ToLowerInvariant(), "Bob", master.Line);
         Settle(member, now, null);
         Assert.False(member.IsLeader);
         Assert.Equal(["Ann", "Bob"], member.State!.Members.Select(m => m.Name));
@@ -37,7 +37,7 @@ public sealed class PartyTests
         Settle(leader, now, "QWERTY");
         now += Party.AskSeconds;
         Assert.Null(Settle(member, now, "qwerty"));
-        Assert.Equal("QWERTY", member.State!.Target);
+        Assert.Equal("QWERTY", member.State.Target);
     }
 
     [Fact]

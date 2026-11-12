@@ -91,7 +91,7 @@ public static class BreachCutter
                 FracturePolygon? rest = new([mesh.Vertices[a], mesh.Vertices[b], mesh.Vertices[c]], s);
                 foreach (FracturePlane plane in ball)
                 {
-                    rest!.Split(plane, out FracturePolygon? inside, out FracturePolygon? outside);
+                    rest.Split(plane, out FracturePolygon? inside, out FracturePolygon? outside);
                     if (outside is not null && !Append(outside, vertices, indices))
                     {
                         return null;

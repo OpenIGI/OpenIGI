@@ -104,8 +104,8 @@ public sealed class MouseState
     public void SetButton(MouseButton button, bool down)
     {
         int index = (int)button;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(button));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ButtonCount, nameof(button));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ButtonCount);
         _current[index] = down;
     }
 
@@ -117,8 +117,8 @@ public sealed class MouseState
     public void TakePress(MouseButton button)
     {
         int index = (int)button;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(button));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ButtonCount, nameof(button));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ButtonCount);
         _held[index] = _current[index];
     }
 

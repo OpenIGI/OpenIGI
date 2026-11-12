@@ -329,7 +329,7 @@ public sealed partial class GameHost
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
-            EditorFailed(state, error);
+            EditorFailed(error);
             return false;
         }
 
@@ -363,14 +363,14 @@ public sealed partial class GameHost
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
-            EditorFailed(state, error);
+            EditorFailed(error);
         }
 
         state.Batch.End();
         _device.EndStageTiming();
     }
 
-    private void EditorFailed(FrameLoopState state, Exception error)
+    private void EditorFailed(Exception error)
     {
         _logger.Error("Editor", $"The editor failed and was closed: {error}");
         _editorCloseWanted = true;

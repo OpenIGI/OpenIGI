@@ -10,7 +10,7 @@ public sealed class LiveVoice(int sampleRate, int framesPerBuffer) : ISampleSour
 {
     private readonly Queue<short> _waiting = new();
     private readonly SmoothedLowPass _muffle = new(sampleRate);
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
 
     /// <inheritdoc/>
     public AudioFormat Format { get; } = new(sampleRate, 1);

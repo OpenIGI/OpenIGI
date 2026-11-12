@@ -51,15 +51,12 @@ public static class TouchControlsRenderer
         float stroke = MathF.Max(1.5f, context.Px(4f));
 
         bool editing = controls.Mode == TouchControlMode.Edit;
-        if (controls.Mode == TouchControlMode.Play || editing)
+        // A stick taken off the screen is still shown to the editor, ghosted, to be put back.
+        if ((controls.Mode == TouchControlMode.Play || editing) && (controls.StickShown || editing))
         {
-            // A stick taken off the screen is still shown to the editor, ghosted, to be put back.
-            if (controls.StickShown || editing)
-            {
-                painter.PushOpacity(controls.StickShown ? controls.StickOpacity : HiddenOpacity);
-                DrawStick(painter, controls, rim, stroke);
-                painter.PopOpacity();
-            }
+            painter.PushOpacity(controls.StickShown ? controls.StickOpacity : HiddenOpacity);
+            DrawStick(painter, controls, rim, stroke);
+            painter.PopOpacity();
         }
 
         bool offered = model is { Actions.Count: > 0 };

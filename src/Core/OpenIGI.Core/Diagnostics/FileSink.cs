@@ -204,6 +204,7 @@ public sealed class FileSink : ILogSink
         }
         catch (IOException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 }

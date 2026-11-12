@@ -170,7 +170,7 @@ public sealed partial class GameHost
                 "Light",
                 $"Objects without a bake are lit by the level's sun: ambient {fixedFunctionSun.Ambient}, "
                     + $"colour {fixedFunctionSun.Colour}, towards {fixedFunctionSun.Direction}; "
-                    + FormattableString.Invariant($"bakes are multiplied by {shading.LightmapGain:G2}."));
+                    + string.Create(System.Globalization.CultureInfo.InvariantCulture, $"bakes are multiplied by {shading.LightmapGain:G2}."));
         }
     }
 
@@ -276,7 +276,6 @@ public sealed partial class GameHost
     {
         LoadedMission loaded = b.Loaded;
         LevelTask levelRoot = b.LevelRoot;
-        int id = b.Id;
         MissionStringResolver missionText = b.MissionText!;
         WorldScene scene = b.Scene!;
         ObjectCollisionIndex solids = b.Solids!;

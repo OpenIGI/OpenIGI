@@ -332,6 +332,7 @@ public sealed class Party : IDisposable
         }
         catch (System.Text.Json.JsonException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
 
         return (response.StatusCode, answer);

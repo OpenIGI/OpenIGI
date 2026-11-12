@@ -114,8 +114,8 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         {
             Assert.True(
                 pair.RunUntil(
-                    () => pair.Host!.World.LevelRoot is { } h && !ReferenceEquals(h, hostLevel)
-                        && pair.Joiner!.World.LevelRoot is { } j && !ReferenceEquals(j, joinerLevel)
+                    () => pair.Host.World.LevelRoot is { } h && !ReferenceEquals(h, hostLevel)
+                        && pair.Joiner.World.LevelRoot is { } j && !ReferenceEquals(j, joinerLevel)
                         && pair.Host.World.NetworkPlayers.Count == 1 && pair.Host.World.Player is not null && pair.Joiner.World.Player is not null
                         && pair.Joiner.World.PlayerTicks > 30,
                     4000) >= 0,
@@ -123,7 +123,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         }
 
         pair.RunUntil(() => false, 60);
-        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
         Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host.World.Soldiers!;
         var guards = soldiers.SoldierViews
             .Where(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier))

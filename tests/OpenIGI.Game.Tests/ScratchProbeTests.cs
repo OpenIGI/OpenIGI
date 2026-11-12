@@ -215,8 +215,8 @@ public sealed class ScratchProbeTests
     {
         (LoadedMission mission, LevelTask root, ResourceRegistry resources) = Load(level);
         DatIndex dat = ReadDat(resources, mission.LevelPack);
-        ReportArchiveCollisions(mission, resources, level);
-        ScanAllInstances(mission, resources, dat, level);
+        ReportArchiveCollisions(resources, level);
+        ScanAllInstances(mission, dat, level);
         int soldierCount = 0;
         foreach (HumanSoldierTask soldier in FindAll<HumanSoldierTask>(root))
         {
@@ -234,13 +234,13 @@ public sealed class ScratchProbeTests
                 continue;
             }
 
-            RequestTextureBindings(mission, resources, dat, soldier, modelName);
+            RequestTextureBindings(mission, resources, dat, modelName);
         }
 
         _output.WriteLine($"LEVEL {level}: {soldierCount} soldiers");
     }
 
-    private void ScanAllInstances(LoadedMission mission, ResourceRegistry resources, DatIndex dat, int level)
+    private void ScanAllInstances(LoadedMission mission, DatIndex dat, int level)
     {
         int checkedCount = 0;
         int mismatchCount = 0;
@@ -286,7 +286,7 @@ public sealed class ScratchProbeTests
         _output.WriteLine($"LEVEL {level}: scanned {checkedCount} instances, {mismatchCount} mismatches vs .dat");
     }
 
-    private void ReportArchiveCollisions(LoadedMission mission, ResourceRegistry resources, int level)
+    private void ReportArchiveCollisions(ResourceRegistry resources, int level)
     {
         Dictionary<string, ResourceEntry> common = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ResourceEntry> levelP = new(StringComparer.OrdinalIgnoreCase);
@@ -334,7 +334,6 @@ public sealed class ScratchProbeTests
         LoadedMission mission,
         ResourceRegistry resources,
         DatIndex dat,
-        HumanSoldierTask soldier,
         string modelName)
     {
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);

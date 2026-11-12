@@ -38,7 +38,8 @@ internal static class SiteCommand
 
         HashSet<string> flags = new(StringComparer.Ordinal);
         Dictionary<string, string> options = new(StringComparer.Ordinal);
-        for (int i = 1; i < args.Count; i++)
+        int i = 1;
+        while (i < args.Count)
         {
             if (args[i] is "--no-web")
             {
@@ -52,6 +53,8 @@ internal static class SiteCommand
             {
                 return context.Usage(Usage, $"{args[i]} needs a value.");
             }
+
+            i++;
         }
 
         if (!options.TryGetValue("--out", out string? output))

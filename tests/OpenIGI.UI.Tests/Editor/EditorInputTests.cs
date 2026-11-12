@@ -127,7 +127,7 @@ public sealed class EditorInputTests
         ui.Frame();
 
         ui.Click(new UiVec2(bar.Bounds.X + 20f, bar.Bounds.Center.Y));
-        MenuPopup menu = Assert.IsType<MenuPopup>(Assert.Single(ui.Root.Popups));
+        _ = Assert.IsType<MenuPopup>(Assert.Single(ui.Root.Popups));
 
         ui.Key(KeyCode.Down);
         ui.Key(KeyCode.Down);
@@ -138,7 +138,7 @@ public sealed class EditorInputTests
         Assert.Empty(ui.Root.Popups);
 
         ui.Click(new UiVec2(bar.Bounds.X + 20f, bar.Bounds.Center.Y));
-        menu = Assert.IsType<MenuPopup>(Assert.Single(ui.Root.Popups));
+        MenuPopup menu = Assert.IsType<MenuPopup>(Assert.Single(ui.Root.Popups));
         UiVec2 first = new(menu.Bounds.Center.X, menu.Bounds.Y + ui.Theme.Px(4f) + (ui.Theme.RowHeight * 0.5f));
         ui.Click(first);
         Assert.Equal("new", chosen);

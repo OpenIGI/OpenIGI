@@ -27,7 +27,6 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
     private readonly VulkanDevice _device;
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
-    private readonly IOpenIgiLogger _logger;
     private readonly List<DescriptorPoolState> _pools = [];
     private DescriptorPoolState? _pool;
     private bool _disposed;
@@ -60,7 +59,6 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         _device = device;
         _allocator = allocator;
         _commands = commands;
-        _logger = logger;
 
         // A one-off goes to the queue around the frame, so anything it may read that is still queued here
         // -- a texture created or written since the last submission -- has to reach the queue before it.
@@ -497,9 +495,9 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
             _device.DescribeMemoryBudget(),
             "Vulkan allocations:",
             _allocator.Describe(),
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"  descriptor pools: {_pools.Count}, {liveSets} live set(s), {_setFrees.Count} waiting to be freed"),
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"  upload staging: {_freeStaging.Count} spare chunk(s), {_loose.Count} loose submission(s) in flight"));
     }
 

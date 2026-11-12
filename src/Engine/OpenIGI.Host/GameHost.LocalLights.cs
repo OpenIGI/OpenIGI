@@ -89,8 +89,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Submits the level's lamps and the player's flashlight as point lights for the deferred pass.</summary>
-    private void SubmitLocalLights(
-        FrameLoopState state, bool captured, Camera3D eye, Matrix4f unjitteredProjection, bool flashlightShown, Camera3D flashlightBody,
+    private void SubmitLocalLights( bool captured, Camera3D eye, Matrix4f unjitteredProjection, bool flashlightShown, Camera3D flashlightBody,
         MapSceneView? mapScene, SceneTargetDescription sceneTarget)
     {
         // The level's lamp fixtures, submitted as real point lights for the deferred pass that

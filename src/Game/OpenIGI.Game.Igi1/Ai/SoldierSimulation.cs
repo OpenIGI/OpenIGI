@@ -193,7 +193,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         int animationBefore = view.CurrentAnimation;
         if (!view.IsDead && view.Bones.SourceOf(0) is { } bone0)
         {
-            PlayClipEvents(view, brain, bone0);
+            PlayClipEvents(view, bone0);
         }
 
         // Child Train collision starts at its authored placeholder and receives its derived consist
@@ -231,13 +231,10 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         // the state, since the ids arrive only once the CREATE dispatch has run the script.
         bool alarmOn = false;
         bool alarmWasOn = false;
-        if (brain.AlarmControlId != -1)
+        if (brain.AlarmControlId != -1 && AlarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
         {
-            if (AlarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
-            {
-                alarmOn = watched!.IsOn;
-                alarmWasOn = watched.WasOn;
-            }
+            alarmOn = watched!.IsOn;
+            alarmWasOn = watched.WasOn;
         }
 
         // The detection scan is offered every human -- the player and every soldier -- and the brain
@@ -474,27 +471,24 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         HashSet<GameTask> soldiers = new(ReferenceEqualityComparer.Instance);
         foreach (SoldierView view in Brains.Keys)
         {
-            if (soldiers.Add(view.Soldier))
+            if (soldiers.Add(view.Soldier) && OpenIGI.Game.Level.LevelTaskClass.TryAs(view.Soldier, walker, out HumanTask? human))
             {
-                if (OpenIGI.Game.Level.LevelTaskClass.TryAs(view.Soldier, walker, out HumanTask? human))
+                // A soldier's run handler only runs its children (0x45CF90, 0x45EEA0); its HumanAI child moves it.
+                if (SoldierContext.FindMind(view) is { } mind)
                 {
-                    // A soldier's run handler only runs its children (0x45CF90, 0x45EEA0); its HumanAI child moves it.
-                    if (SoldierContext.FindMind(view) is { } mind)
-                    {
-                        human.Runner = _humanChildren;
-                        mind.Runner = new SoldierMindRun(this, human);
+                    human.Runner = _humanChildren;
+                    mind.Runner = new SoldierMindRun(this, human);
 
-                        // Its Gun is a task of its own, ahead of its HumanAI: the weapon's clock runs there.
-                        if (human.Children.OfType<Igi1GunTask>().FirstOrDefault() is { } gun)
-                        {
-                            SoldierBodies carried = new(this, human);
-                            gun.Clock = carried.CountCooldown;
-                        }
-                    }
-                    else
+                    // Its Gun is a task of its own, ahead of its HumanAI: the weapon's clock runs there.
+                    if (human.Children.OfType<Igi1GunTask>().FirstOrDefault() is { } gun)
                     {
-                        human.Runner = new SoldierTaskRun(this, human);
+                        SoldierBodies carried = new(this, human);
+                        gun.Clock = carried.CountCooldown;
                     }
+                }
+                else
+                {
+                    human.Runner = new SoldierTaskRun(this, human);
                 }
             }
         }
@@ -820,34 +814,34 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     /// <c>Human</c>'s evaluate (<c>0x45E3E0</c>), for a soldier: never the shooter or what the shot ignores, and a round from
     /// someone on the soldier's side passes through it. The probability roll is the player's alone.
     /// </remarks>
-    bool IHumanEvents.EvaluateWeaponCollision(HumanTask soldier, in WeaponCollisionQuery query)
+    bool IHumanEvents.EvaluateWeaponCollision(HumanTask human, in WeaponCollisionQuery query)
     {
-        if (ReferenceEquals(soldier, query.Shooter) || ReferenceEquals(soldier, query.Ignore))
+        if (ReferenceEquals(human, query.Shooter) || ReferenceEquals(human, query.Ignore))
         {
             return false;
         }
 
-        return query.Shooter is not HumanTask shooter || shooter.Team != soldier.Team;
+        return query.Shooter is not HumanTask shooter || shooter.Team != human.Team;
     }
 
     /// <inheritdoc/>
-    void IHumanEvents.WeaponHit(HumanTask soldier, in WeaponHit hit)
+    void IHumanEvents.WeaponHit(HumanTask human, in WeaponHit hit)
     {
-        if (!_context.ViewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (!_context.ViewsByTask.TryGetValue(human, out SoldierView? view))
         {
             return;
         }
 
-        // Another game's round: where it meets the soldier's body is this game's to find.
+        // Another game's round: where it meets the human's body is this game's to find.
         Matrix3f m = view.Orientation;
         _damage.TakeRound(view, hit.Context as Igi1WeaponHit
             ?? Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, view.Position, new Vector3f(m.M12, m.M22, m.M32))));
     }
 
     /// <inheritdoc/>
-    void IHumanEvents.ExplosionHit(HumanTask soldier, in ExplosionHit hit)
+    void IHumanEvents.ExplosionHit(HumanTask human, in ExplosionHit hit)
     {
-        if (!_context.ViewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (!_context.ViewsByTask.TryGetValue(human, out SoldierView? view))
         {
             return;
         }
@@ -918,7 +912,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
     }
 
     // The authored animation triggers the clip crossed this tick, and the melee strike its impact frame delivers.
-    private void PlayClipEvents(SoldierView view, Igi1HumanAi brain, BoneClip bone0)
+    private void PlayClipEvents(SoldierView view, BoneClip bone0)
     {
         // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
         // event 1040 plays "bodyfall_9", etc. None for a soldier a mod has silenced (SilentDeaths).

@@ -122,9 +122,7 @@ public interface IGameMode
     bool PlaysAgain
     {
         get => true;
-        set
-        {
-        }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Begins the match on the tick given.</summary>

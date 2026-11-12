@@ -91,7 +91,7 @@ public sealed class RetailIgi1GuestLevelTests(ITestOutputHelper output)
 
         Assert.True(soldier.IsDead);
         hosted.Leave();
-        Assert.DoesNotContain(((IHostCollisionWorld)m.Collision!) is Collision.Igi2CollisionWorld world ? world.OtherColliders : [], c => ReferenceEquals(c.Owner, soldier));
+        Assert.DoesNotContain(((IHostCollisionWorld)m.Collision) is Collision.Igi2CollisionWorld world ? world.OtherColliders : [], c => ReferenceEquals(c.Owner, soldier));
     }
 
     [RequiresTitleDataFact("igi1", "igi2")]
@@ -155,7 +155,7 @@ public sealed class RetailIgi1GuestLevelTests(ITestOutputHelper output)
         {
             public GameTask Task => target;
 
-            public bool TryMeet(Vector3d origin, Vector3d end, out HumanHit hit)
+            public bool TryMeet(Vector3d origin, Vector3d target, out HumanHit hit)
             {
                 hit = new HumanHit(origin + new Vector3d(8192.0, 0, 0), 8192.0, 1, 0f, 0f);
                 return true;

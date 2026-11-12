@@ -656,5 +656,12 @@ internal sealed class VulkanRhiWorkMarker : IRhiWorkMarker
     }
 
     /// <inheritdoc/>
-    public bool IsComplete => _complete || (_complete = _device.CompletedValue >= _ticket);
+    public bool IsComplete
+    {
+        get
+        {
+            _complete = _complete || _device.CompletedValue >= _ticket;
+            return _complete;
+        }
+    }
 }

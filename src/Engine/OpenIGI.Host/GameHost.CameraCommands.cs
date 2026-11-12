@@ -34,7 +34,7 @@ public sealed partial class GameHost
                 float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
                 float yaw = MathF.Atan2(forward.X, forward.Y);
 
-                string pose = FormattableString.Invariant(
+                string pose = string.Create(CultureInfo.InvariantCulture,
                     $"-campos {eye.Position.X:0.##},{eye.Position.Y:0.##},{eye.Position.Z:0.##} -yaw {yaw:0.####} -pitch {pitch:0.####}");
 
                 // To the log as well as the scrollback, because the caller that most wants this is a
@@ -61,7 +61,7 @@ public sealed partial class GameHost
 
                 float yaw = float.TryParse(context[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float turned) ? turned : player.Heading ?? 0f;
                 bool stood = placement.TryPlace(new Vector3d(x, y, z) * Game.World.WorldScene.UnitsPerMetre, yaw);
-                string said = stood ? FormattableString.Invariant($"Standing at {x:0.##},{y:0.##},{z:0.##}.") : "Nothing to stand on there.";
+                string said = stood ? string.Create(CultureInfo.InvariantCulture, $"Standing at {x:0.##},{y:0.##},{z:0.##}.") : "Nothing to stand on there.";
                 context.Print(said);
                 _logger.Information("Camera", said);
             });

@@ -158,7 +158,7 @@ internal sealed partial class ContentPanel
         Bgra32[] pixels = [.. picture.GetLevel(0)];
         _image = _images.CreateImage(picture.Width, picture.Height, pixels);
         _imageSize = (picture.Width, picture.Height, picture.MipLevels);
-        _facts += FormattableString.Invariant($"  •  {picture.Width} × {picture.Height}, {picture.MipLevels} mip level(s)");
+        _facts += string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  •  {picture.Width} × {picture.Height}, {picture.MipLevels} mip level(s)");
         return true;
     }
 
@@ -184,7 +184,7 @@ internal sealed partial class ContentPanel
         MefModel model = MefModel.Read(bytes, AssetFormatProfile.Permissive);
         _model.Show(model, Path.GetFileNameWithoutExtension(node.Name));
         _model.Visibility = Visibility.Visible;
-        _facts += FormattableString.Invariant(
+        _facts += string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"  •  {model.Vertices.Length} vertices, {model.TriangleCount} triangles{Detail(node.Name, model)}  •  {_model.Facts}  •  drag to turn");
         return true;
     }
@@ -195,7 +195,7 @@ internal sealed partial class ContentPanel
     {
         string stem = Path.GetFileNameWithoutExtension(name);
         return model.Format == MefMeshFormat.Skinned && stem.Length > 2 && stem[^2] == '_' && stem[^1] is >= '2' and <= '9'
-            ? FormattableString.Invariant($"  •  level of detail {stem[^1]}, for far away (the full one is {stem[..^1]}1)")
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  •  level of detail {stem[^1]}, for far away (the full one is {stem[..^1]}1)")
             : string.Empty;
     }
 
@@ -279,9 +279,9 @@ internal sealed partial class ContentPanel
 
     private static string Size(int bytes) => bytes switch
     {
-        < 1024 => FormattableString.Invariant($"{bytes} B"),
-        < 1024 * 1024 => FormattableString.Invariant($"{bytes / 1024.0:0.#} KB"),
-        _ => FormattableString.Invariant($"{bytes / (1024.0 * 1024.0):0.#} MB"),
+        < 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes} B"),
+        < 1024 * 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / 1024.0:0.#} KB"),
+        _ => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024.0):0.#} MB"),
     };
 
     private void DrawImage(UiPainter painter, UiImage image, UiRect area)

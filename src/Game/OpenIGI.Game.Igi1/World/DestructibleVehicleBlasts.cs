@@ -188,7 +188,8 @@ internal sealed class DestructibleVehicleBlasts
     /// </summary>
     internal void TickVehicleBlasts()
     {
-        for (int i = 0; i < _pendingVehicleBlasts.Count; i++)
+        int i = 0;
+        while (i < _pendingVehicleBlasts.Count)
         {
             VehicleBlast blast = _pendingVehicleBlasts[i];
             if (blast.DelayTicks > 0)
@@ -199,7 +200,11 @@ internal sealed class DestructibleVehicleBlasts
             if (blast.DelayTicks == 0)
             {
                 _readyVehicleBlasts.Add(blast);
-                _pendingVehicleBlasts.RemoveAt(i--);
+                _pendingVehicleBlasts.RemoveAt(i);
+            }
+            else
+            {
+                i++;
             }
         }
     }

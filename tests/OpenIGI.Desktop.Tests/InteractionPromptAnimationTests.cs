@@ -46,7 +46,7 @@ public sealed class InteractionPromptAnimationTests
         // Still drawn, and still the door it was pinned to -- otherwise the marker would vanish the
         // instant the player's aim left it rather than falling away from it.
         Assert.NotNull(animation.Visible);
-        Assert.Equal(7, animation.Visible!.Value.Id);
+        Assert.Equal(7, animation.Visible.Value.Id);
         Assert.Equal(0.5f, animation.Opacity, 3);
 
         Advance(animation, target: null, InteractionPromptAnimation.FadeOutSeconds);

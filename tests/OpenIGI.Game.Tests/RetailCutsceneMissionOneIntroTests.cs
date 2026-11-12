@@ -149,7 +149,7 @@ public sealed class RetailCutsceneMissionOneIntroTests
         List<CutSceneTask> scenes = Walk(root).OfType<CutSceneTask>().ToList();
         Assert.True(runtime.ActiveScene is not null,
             string.Join(" | ", scenes.Select(scene => $"{scene.Id}: initial={scene.InitialRun} run='{scene.Run}' active={scene.IsRun} finished={scene.IsFinished} parentActive={ConditionalContainerGate.IsTaskActive(scene)}")));
-        CutSceneTask scene = runtime.ActiveScene!;
+        CutSceneTask scene = runtime.ActiveScene;
         CutsceneFrame opening = Assert.IsType<CutsceneFrame>(runtime.Frame);
         int before = scene.Ticks;
 

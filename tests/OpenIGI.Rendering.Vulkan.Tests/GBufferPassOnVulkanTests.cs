@@ -33,7 +33,7 @@ public sealed class GBufferPassOnVulkanTests(ITestOutputHelper output)
 
         using (vulkan)
         {
-            byte[] pixels = DrawIntoGBuffer(vulkan!.Rhi);
+            byte[] pixels = DrawIntoGBuffer(vulkan.Rhi);
 
             output.WriteLine($"centre: {Describe(pixels, Size / 2, Size / 2)}");
             output.WriteLine($"corner: {Describe(pixels, 2, Size - 2)}");

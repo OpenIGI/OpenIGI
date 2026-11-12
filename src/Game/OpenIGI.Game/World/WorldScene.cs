@@ -149,18 +149,13 @@ public sealed class WorldScene
 
         // AmmoPickup stores its visual identity in ID and its quantity in Ammo; it has no Model
         // parameter. The native AmmoType record supplies the same mesh name used by the retail scene.
-        if (string.Equals(task.Type.Name, "AmmoPickup", StringComparison.Ordinal)
-            && task.TryGetValue("ID", out object? rawAmmoId)
-            && rawAmmoId is string ammoId
-            && AmmoPickupCatalog.ModelNameForScriptId(ammoId) is { Length: > 0 } ammoModel)
+        // Some shipped AmmoPickup tasks carry both fields. The native constructor resolves the
+        // ID as a fallback, not as a second object; emitting both creates duplicate meshes at the
+        // same coordinates and makes one pickup appear missing/incorrect in the live scene.
+        if (string.Equals(task.Type.Name, "AmmoPickup", StringComparison.Ordinal) && task.TryGetValue("ID", out object? rawAmmoId) && rawAmmoId is string ammoId && AmmoPickupCatalog.ModelNameForScriptId(ammoId) is { Length: > 0 } ammoModel
+            && !string.Equals(declaredModelName, ammoModel, StringComparison.OrdinalIgnoreCase))
         {
-            // Some shipped AmmoPickup tasks carry both fields. The native constructor resolves the
-            // ID as a fallback, not as a second object; emitting both creates duplicate meshes at the
-            // same coordinates and makes one pickup appear missing/incorrect in the live scene.
-            if (!string.Equals(declaredModelName, ammoModel, StringComparison.OrdinalIgnoreCase))
-            {
-                yield return ammoModel;
-            }
+            yield return ammoModel;
         }
 
         // GenericPickup revisions can carry the ammo identity in ID while omitting Model.  Keep

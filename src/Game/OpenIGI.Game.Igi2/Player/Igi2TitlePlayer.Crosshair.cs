@@ -28,7 +28,7 @@ public sealed partial class Igi2TitlePlayer
     public static CrosshairShape ShapeOf(Igi2WeaponTypeTask weapon)
     {
         ArgumentNullException.ThrowIfNull(weapon);
-        if (weapon.WeaponType == (int)Igi2WeaponTypeKind.Knife)
+        if (weapon.WeaponType == Igi2WeaponTypeKind.Knife)
         {
             return CrosshairShape.Melee;
         }

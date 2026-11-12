@@ -73,7 +73,7 @@ public sealed class PlayerCameraLauncherTests
 
         camera.Tick(input, terrain: null);
 
-        Assert.Equal(roundsBefore, camera.Weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(roundsBefore, camera.Weapons.InHand.Value.Gun.RoundsInClip);
         Assert.Empty(camera.Weapons.Shots);
         Assert.Equal(MissileSimulation.MaximumLive, camera.Missiles.Missiles.Count);
     }

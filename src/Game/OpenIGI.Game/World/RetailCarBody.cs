@@ -237,7 +237,7 @@ public sealed class RetailCarBody : RetailRigidBody
         {
             float[] p = Points[point].Position;
             PointVelocity(p[0], p[1], p[2], out float x, out float y, out float z);
-            speed = Math.Sqrt((double)(((X87)x * x) + ((X87)y * y) + ((X87)z * z)).Value);
+            speed = Math.Sqrt((((X87)x * x) + ((X87)y * y) + ((X87)z * z)).Value);
         }
         else if (entry.IsEngine && DrivenWheels > 0)
         {

@@ -306,8 +306,8 @@ public sealed class ConvexHull
             Vector3d d = Vector3d.Cross(v1 - v0, v2 - v0);
 
             Subexpressions(v0.X, v1.X, v2.X, out double f1x, out double f2x, out double f3x, out double g0x, out double g1x, out double g2x);
-            Subexpressions(v0.Y, v1.Y, v2.Y, out double f1y, out double f2y, out double f3y, out double g0y, out double g1y, out double g2y);
-            Subexpressions(v0.Z, v1.Z, v2.Z, out double f1z, out double f2z, out double f3z, out double g0z, out double g1z, out double g2z);
+            Subexpressions(v0.Y, v1.Y, v2.Y, out _, out double f2y, out double f3y, out double g0y, out double g1y, out double g2y);
+            Subexpressions(v0.Z, v1.Z, v2.Z, out _, out double f2z, out double f3z, out double g0z, out double g1z, out double g2z);
 
             integral[0] += d.X * f1x;
             integral[1] += d.X * f2x;

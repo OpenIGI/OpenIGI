@@ -28,7 +28,8 @@ internal static class ModsIndexCommand
         string index = args[1];
         List<string> positional = [];
         Dictionary<string, string> options = new(StringComparer.Ordinal);
-        for (int i = 2; i < args.Count; i++)
+        int i = 2;
+        while (i < args.Count)
         {
             if (args[i].StartsWith("--", StringComparison.Ordinal))
             {
@@ -43,6 +44,8 @@ internal static class ModsIndexCommand
             {
                 positional.Add(args[i]);
             }
+
+            i++;
         }
 
         try

@@ -165,10 +165,10 @@ public sealed partial class GameHost
         Vector3d eye = player.EyePosition;
         _logger.Information(
             "Player",
-            FormattableString.Invariant($"The title's player stands at {player.Position}; F1 for the free camera; eye at -campos ")
-                + FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The title's player stands at {player.Position}; F1 for the free camera; eye at -campos ")
+                + string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}")
-                + (player.Heading is { } heading ? FormattableString.Invariant($" -yaw {heading:F4}") : string.Empty)
+                + (player.Heading is { } heading ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $" -yaw {heading:F4}") : string.Empty)
                 + ".");
     }
 
@@ -394,7 +394,7 @@ public sealed partial class GameHost
                     + $"canPreview={_titleFeatures?.Look is { CanPreviewLook: true }}, "
                     + $"lastGameplayLiveLook={_titleLastLiveLook}, lastGameplayCameraMatches={_titleLastCameraMatches}";
                 context.Print(gates);
-                context.Print(FormattableString.Invariant(
+                context.Print(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"blend={_titlePresentationBlend:F4}, pendingMouse=({_titleMouseX:F3},{_titleMouseY:F3}), ticks={_loop.Clock.TickCount}, renders={_loop.Clock.FrameCount}, titleTickMs mean={_titleTickMilliseconds / Math.Max(1, _titleMeasuredTicks):F3} max={_titleTickMaximumMilliseconds:F3} samples={_titleMeasuredTicks}"));
                 _pacing.Report("title_presentation");
             });
@@ -444,7 +444,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void DrawTitleFirstPerson(in Camera3D eye)
     {
-        if (_titleFeatures?.FirstPerson is not { } hands || _titleArms is not { } arms
+        if (_titleFeatures?.FirstPerson is null || _titleArms is not { } arms
             || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true
             || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {

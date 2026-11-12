@@ -292,6 +292,7 @@ public static class ModLoader
             }
             catch (Exception ex) when (ex is FileNotFoundException or FileLoadException)
             {
+                // Nothing to do: the failure is expected here and leaves nothing to undo.
             }
 
             return _resolver.ResolveAssemblyToPath(assemblyName) is { } path ? LoadFromAssemblyPath(path) : null;

@@ -159,7 +159,7 @@ public sealed class Igi2ImpactGrenade : IDynamicTask
         if (_trail is { } trail)
         {
             IgiRandom random = _explosions.Random;
-            float rise = (((Fpu)Draw(random) * 0.75 + 0.15) * 4096000.0 * 9.259259059035685e-06).F;
+            float rise = ((Draw(random) * 0.75 + 0.15) * 4096000.0 * 9.259259059035685e-06).F;
             float intensity = ((Draw(random) + 1.0) * 0.35).F;
             Fpu spin = Draw(random);
             float rotation = ((((spin - 0.5) + spin) - 0.5) * 0.05235987901687622 + 0.012799081392586231).F;

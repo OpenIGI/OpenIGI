@@ -116,7 +116,7 @@ public sealed class ConfigTests
         input.Active.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT");
         input.Active.MouseSensitivity = 0.25f;
         Assert.True(input.CreateProfile("Second", 2));
-        input.Active!.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A");
+        input.Active.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A");
         input.Active.MouseSensitivity = 0.75f;
         input.Active.DeviceGuid = "custom-device";
 
@@ -359,7 +359,7 @@ public sealed class ConfigTests
 
         Assert.Equal(2, config.Profiles.Count);
         Assert.Equal(1, config.ActiveIndex);
-        Assert.Equal("Alex", config.Active!.Name);
+        Assert.Equal("Alex", config.Active.Name);
         Assert.Equal(3, config.Active.Difficulty);
         Assert.Equal(0.25f, config.Active.MusicVolume);
         Assert.Equal(PlayerProfile.BindingCount + 1, config.Active.Bindings.Count);

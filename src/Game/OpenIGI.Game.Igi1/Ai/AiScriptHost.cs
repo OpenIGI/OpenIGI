@@ -236,6 +236,7 @@ public sealed class AiScriptHost
                     }
                     catch (EngineFatalException)
                     {
+                        // Nothing to do: the failure is expected here and leaves nothing to undo.
                     }
                     finally
                     {

@@ -313,10 +313,6 @@ internal sealed class PlayerWeaponStateMachine
         Request(WeaponAction.None);
     }
 
-    /// <summary>Whether the grenade in hand has nothing left to throw — clip and reserve both empty.</summary>
-    private bool OutOfThrowables() =>
-        InHand is not { } held || (held.Gun.RoundsInClip <= 0 && held.Gun.Reserve(Ammunition) <= 0);
-
     // 0x4EC1E0: the state's per-tick runs once a tick, and a transition calls only the target's ENTRY, which installs the
     // target's per-tick and returns (0x40E9B0, 0x40EF60, 0x40F170 and every sibling). So the new state's per-tick first runs on
     // the next tick, against that tick's input and clip flags -- never against the outgoing clip's. Measured against retail on

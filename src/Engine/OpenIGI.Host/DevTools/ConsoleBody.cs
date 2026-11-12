@@ -804,12 +804,4 @@ public sealed class ConsoleBody : UiElement
         ConsoleSeverity.Error => "error",
         _ => "info",
     };
-
-    private static string FormatTime(double seconds)
-    {
-        TimeSpan span = TimeSpan.FromSeconds(seconds);
-        return string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
-            $"{span.Hours:00}:{span.Minutes:00}:{span.Seconds:00}.{span.Milliseconds:000}");
-    }
 }

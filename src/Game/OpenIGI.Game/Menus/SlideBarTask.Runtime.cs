@@ -279,7 +279,7 @@ public partial class SlideBarTask
     /// </remarks>
     public void MeasureFromParts()
     {
-        int along = 4;
+        int along;
         int across = 4;
 
         if (Horizontal)

@@ -25,7 +25,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     public const string AirframePathLogCategory = "Airframe.Path";
 
     private readonly LevelMotionContext _context;
-    private readonly ScriptVarRegistry _variables;
     private readonly List<ConditionalContainerTask> _containers = [];
     private readonly List<CutsceneSceneState> _scenes = [];
     private readonly List<Flow.LevelTimerTask> _timers = [];
@@ -107,7 +106,6 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         }
 
         _walker = walker ?? new LevelUpdateWalker(levelRoot);
-        _variables = variables;
         _hostNative = native;
         _soundChanged = soundChanged;
         _context = new LevelMotionContext(

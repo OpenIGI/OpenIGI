@@ -24,7 +24,7 @@ public sealed class LogLevelPolicy
     /// <summary>The older variable that named only a <see cref="LogVerbosity"/>; still honoured.</summary>
     public const string LegacyEnvironmentVariable = "OPENIGI_LOG_VERBOSITY";
 
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private volatile ImmutableDictionary<string, LogLevel> _overrides =
         ImmutableDictionary.Create<string, LogLevel>(StringComparer.OrdinalIgnoreCase);
     private volatile ConcurrentDictionary<string, LogLevel> _resolved = NewCache();

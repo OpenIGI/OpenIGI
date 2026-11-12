@@ -43,10 +43,6 @@ public sealed partial class GameHost : IDisposable
     private const float NearPlane = ViewPlanes.NearMetres;
     private const float FarPlane = ViewPlanes.FarMetres;
 
-    // How long a load will hold for the lighting before giving up and letting the player in anyway. A
-    // level that somehow never finishes tracing must not become a game that never starts.
-    private const int LightingWaitMilliseconds = 30_000;
-
     // How long -entrytime lets the backdrop show the chosen hour before -entrycam presses Play: about a
     // second of the menu, as a player choosing it would leave.
     private const int EntryTimeSettleFrames = 60;
@@ -56,7 +52,6 @@ public sealed partial class GameHost : IDisposable
     private readonly IWorkScheduler _work;
     private readonly ILoadGate _loadGate;
     private readonly IGameWindow _window;
-    private readonly IAudioDeviceFactory _audioFactory;
     // The games this build can run. Held rather than resolved once, because the shell can change which
     // one is running: a switch resolves a different title's four services through the same catalogue the
     // first one came from, so there is no second path that could answer differently.
@@ -148,17 +143,13 @@ public sealed partial class GameHost : IDisposable
 
     // --- The player's own life, damage and death ---
 
-
     /// <summary>The wall clock the third-person move is advanced on; it is a camera move, not a tick.</summary>
 
     /// <summary>The pull-in ray, kept so a frame does not allocate one; rebuilt when the level's does.</summary>
 
-
-
     // What the level says about its own light, for a title that authors that rather than a sky. Null for
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
     private DeferredLighting? _deferredLighting;
-
 
     // What a person has said outright about which models are lamps, which beats anything the detector
     // works out. One file for the whole game; see Assets/lamps.json.
@@ -266,7 +257,6 @@ public sealed partial class GameHost : IDisposable
     private long _titleCycleLeg;
     private int _missionCycleMission;
 
-
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
     // and the player's own material lookup already use.
@@ -372,7 +362,6 @@ public sealed partial class GameHost : IDisposable
                 return report;
             },
             logger);
-        _audioFactory = audioFactory;
         _work = work;
         _loadGate = loadGate;
         _titles = titles;
@@ -412,6 +401,7 @@ public sealed partial class GameHost : IDisposable
 
         while (Step())
         {
+            // The loop's condition does the work.
         }
 
         Stop();
@@ -598,7 +588,7 @@ public sealed partial class GameHost : IDisposable
         // which is collected below, before the first line that reads it.
         Task audioReady = _work.Run(OpenAudioDevice);
 
-        BindDeviceVariables(state);
+        BindDeviceVariables();
 
         CreateClocksAndLighting(state);
 
@@ -615,7 +605,7 @@ public sealed partial class GameHost : IDisposable
 
         ResetPlayerAndCaptures(state);
 
-        LoadSharedRenderData(state);
+        LoadSharedRenderData();
 
         ForgetLevel(state);
 
@@ -698,7 +688,7 @@ public sealed partial class GameHost : IDisposable
             {
                 RunSessionCycles(state);
                 RunDeferredCommands(state);
-                AdvanceWorldClocks(state);
+                AdvanceWorldClocks();
             }
             else
             {
@@ -711,7 +701,7 @@ public sealed partial class GameHost : IDisposable
                 UpdateMenuBackdrop(state);
                 HandleDeveloperKeys(state);
                 HandleSaveKeys();
-                AdvanceWorldClocks(state);
+                AdvanceWorldClocks();
                 UpdateFlyingView(state);
             }
 
@@ -762,7 +752,7 @@ public sealed partial class GameHost : IDisposable
                 state.FirstFrameReported = true;
                 _logger.Information(
                     "Desktop",
-                    FormattableString.Invariant($"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
             }
 
             // Retire finished voices, refill streaming buffers and advance any crossfade. This sits

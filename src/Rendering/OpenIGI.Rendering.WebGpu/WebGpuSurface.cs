@@ -57,7 +57,6 @@ public readonly record struct WebGpuWindowHandles(WebGpuWindowSystem System, nin
 public sealed unsafe class WebGpuSurface : IDisposable
 {
     private WGPUSurface _handle;
-    private WGPUDevice _device;
     private bool _configured;
     private bool _disposed;
     private RhiTextureUsage _usage = RhiTextureUsage.RenderTarget;
@@ -261,7 +260,6 @@ public sealed unsafe class WebGpuSurface : IDisposable
 
         Wgpu.wgpuSurfaceConfigure(_handle, &configuration);
 
-        _device = device;
         _configured = true;
         Format = format;
         Width = width;
@@ -337,8 +335,6 @@ public sealed unsafe class WebGpuSurface : IDisposable
             Wgpu.wgpuSurfaceRelease(_handle);
             _handle = default;
         }
-
-        _device = default;
     }
 }
 

@@ -32,7 +32,7 @@ public sealed class MissionSavesShellTests : ShellTestHarness
             Pump(shell, 0.1f);
 
             Assert.Equal(0, saves.Loads);
-            Assert.Contains(screen.Root!.Descendants().OfType<Label>(), static label => label.Text.Contains("nightfall 1.2", StringComparison.Ordinal));
+            Assert.Contains(screen.Root.Descendants().OfType<Label>(), static label => label.Text.Contains("nightfall 1.2", StringComparison.Ordinal));
 
             slot.Activate();
             Pump(shell, 0.1f);

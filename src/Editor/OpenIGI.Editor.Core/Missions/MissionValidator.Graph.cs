@@ -97,7 +97,7 @@ public static partial class MissionValidator
         }
 
         foreach (ExpressionGraphNode call in graph.Nodes.Values.OfType<ExpressionGraphNode>()
-            .Where(n => n.Owner.Task == node.Key && n.Kind == ExpressionNodeKind.Call && n.Native is { } native))
+            .Where(n => n.Owner.Task == node.Key && n.Kind == ExpressionNodeKind.Call && n.Native is not null))
         {
             int arguments = graph.Links.Count(l => l.To.Node == call.Key);
             if (!call.Native!.Accepts(arguments))

@@ -111,6 +111,7 @@ internal sealed class HeadlessVulkan : IDisposable
 }
 
 /// <summary>A fact that runs only where a headless Vulkan device can be had.</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class VulkanFactAttribute : FactAttribute
 {
     private static readonly Lazy<string?> Probe = new(

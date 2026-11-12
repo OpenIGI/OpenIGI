@@ -8,7 +8,7 @@ namespace OpenIGI.Core.Diagnostics;
 /// </remarks>
 public sealed class MemorySink : ILogSink, IOpenIgiLogger
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly LogRecord[] _records;
     private int _start;
     private int _count;

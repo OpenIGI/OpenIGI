@@ -20,18 +20,18 @@ public sealed partial class GameHost
     private sealed class MissionHostServices(GameHost host) : IMissionHostServices
     {
 
-        public void SpawnImpactBurst(in WorldRayHit worldHit)
+        public void SpawnImpactBurst(in WorldRayHit hit)
         {
             if (host._effects.Particles is { } bursts
                 && CombatEffectCVars.ImpactParticles.Value is > 0f and var intensity)
             {
                 string material = host._mission.Materials is { } names
-                    && names.TryGet(worldHit.Material, out GameMaterial struck)
+                    && names.TryGet(hit.Material, out GameMaterial struck)
                     ? struck.Name
                     : string.Empty;
                 bursts.SpawnBurst(
-                    worldHit.Position,
-                    worldHit.Normal,
+                    hit.Position,
+                    hit.Normal,
                     ImpactParticleRenderer.KindOf(material),
                     intensity);
             }

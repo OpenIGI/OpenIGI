@@ -76,7 +76,7 @@ internal sealed partial class RemasteredHudRenderer
             float padX = size * 0.62f;
             float bar = MathF.Max(2f, size * 0.16f);
             // Far off, how far: a teammate across the compound is found by the number as much as the name.
-            string label = distance > NameTagDistanceMetres ? FormattableString.Invariant($"{tag.Name}  {distance:0} m") : tag.Name;
+            string label = distance > NameTagDistanceMetres ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{tag.Name}  {distance:0} m") : tag.Name;
             float width = font.MeasureWidth(label, size) + (padX * 2f) + bar;
             float height = size * 1.75f;
             var plate = new UiRect(headX - (width * 0.5f), headY - height - context.Px(6f * scale), width, height);

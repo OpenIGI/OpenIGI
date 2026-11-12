@@ -485,11 +485,11 @@ internal sealed class DebugOverlays(
 
         if (measured.Milliseconds <= 0.0)
         {
-            return FormattableString.Invariant(
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"gpu      {summed.Milliseconds:0.00} ms summed   (frame not measured)");
         }
 
-        return FormattableString.Invariant(
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
     }
 
@@ -542,23 +542,23 @@ internal sealed class DebugOverlays(
 
         if (!device.Capabilities.SupportsRayQuery)
         {
-            return FormattableString.Invariant(
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"cascaded map, {ShadowCVars.ShadowCascades.Value} cascades at {ShadowCVars.Shadows.Value} (no ray tracing on this backend)");
         }
 
         if (!RayTracingCVars.HardwareRayTracing.Value)
         {
-            return FormattableString.Invariant(
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"cascaded map, {ShadowCVars.ShadowCascades.Value} cascades at {ShadowCVars.Shadows.Value}  [F6 traces everything]");
         }
 
         if (!RayTracingCVars.TracedSunShadows.Value)
         {
-            return FormattableString.Invariant(
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"cascaded map, {ShadowCVars.ShadowCascades.Value} cascades at {ShadowCVars.Shadows.Value}  [F7 traces the sun; rest of the frame is traced]");
         }
 
-        return FormattableString.Invariant(
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"ray query, sun disc {ShadowCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
     }
 

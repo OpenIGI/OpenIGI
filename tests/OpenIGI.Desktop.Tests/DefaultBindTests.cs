@@ -50,7 +50,7 @@ public sealed class DefaultBindTests
                 CVarRegistry.Default.TryGet(name, out ICVar? variable) && variable is not null,
                 $"The default bind on {key} toggles {name}, which is not a variable that exists.");
 
-            if (variable!.Flags.HasFlag(CVarOptions.Archive))
+            if (variable.Flags.HasFlag(CVarOptions.Archive))
             {
                 archived.Add($"{key} -> {name}");
             }

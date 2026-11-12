@@ -698,11 +698,6 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         Objectives = current;
     }
 
-    private static Matrix3f Orientation(DeclaredTask task) =>
-        task.TryGetValue("Orientation", out object? value) && value is Vector3f angles
-            ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
-            : Matrix3f.Identity;
-
     // Where a task a row points to stands: its graph position where it has one, else its position, whatever class makes it.
     private static Vector3d FindPosition(GameTask task) =>
         task.TryGetScriptValue("Graph position", out Vector3d graphPosition) ? graphPosition

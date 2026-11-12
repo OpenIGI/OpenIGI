@@ -134,7 +134,7 @@ public sealed class Igi1ComputerTests
     [Fact]
     public void AZoomFlaresTheInterferenceFromTheGamesStream()
     {
-        Igi1Computer computer = Open(out FakeWorld world);
+        Igi1Computer computer = Open(out _);
         ComputerMap map = (ComputerMap)computer.Screen!;
         PointAt(computer, 7);
 

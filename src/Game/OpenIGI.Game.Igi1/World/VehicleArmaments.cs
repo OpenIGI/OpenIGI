@@ -416,9 +416,6 @@ internal sealed class VehicleArmaments(
             }
 
             (float radius, float bearing) = GunFiring.SampleCone(cone, draws);
-            Vector3f side = Vector3f.Cross(barrel, Vector3f.UnitZ);
-            side = side.Length > 1e-6f ? side.Normalized() : Vector3f.UnitX;
-            Vector3f up = Vector3f.Cross(side, barrel).Normalized();
             barrel = GunFiring.RetailConeDirection(barrel, radius, bearing);
         }
 

@@ -358,7 +358,6 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 /// <summary>Records WebGPU dispatches.</summary>
 public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 {
-    private readonly WebGpuRhiDevice _device;
     private readonly WebGpuPushRing _pushes;
     private readonly int _pushGroup;
     private WGPUComputePassEncoder _handle;
@@ -379,7 +378,7 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
         _handle = handle;
         _pushes = pushes;
         _pushGroup = pushGroup;
-        _device = device;
+        _ = device;
     }
 
     /// <summary>Gets the group the push block is bound as.</summary>

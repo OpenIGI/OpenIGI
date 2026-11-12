@@ -155,7 +155,7 @@ public interface IWorldPresenter : IDisposable
     bool FaceGroupBlending
     {
         get => false;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Gets or sets the detail textures the world is shaded with, or null for none.</summary>
@@ -214,7 +214,7 @@ public interface IWorldPresenter : IDisposable
     bool CollectGlows
     {
         get => false;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Gets the glows of the models the eye's last opaque draw showed, when <see cref="CollectGlows"/> asked for them.</summary>

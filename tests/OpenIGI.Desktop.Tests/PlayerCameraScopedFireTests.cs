@@ -82,7 +82,7 @@ public sealed class PlayerCameraScopedFireTests
         }
 
         Assert.NotNull(camera.Weapons?.InHand);
-        Assert.Equal(HumanWeaponState.Ready, camera.Weapons!.State);
+        Assert.Equal(HumanWeaponState.Ready, camera.Weapons.State);
     }
 
     private static BoneAnimationSet LoadViewSet() => BoneAnimationSet.Read(File.ReadAllBytes(

@@ -66,7 +66,7 @@ public sealed class RetailIgi2LevelAiTests
         // The desktop's shared soldier renderer registers the first game's AI before standing the title player.
         _ = new OpenIGI.Game.Igi1.Ai.AiScriptHost(promoted.Natives);
         Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(new Igi2Gameplay().CreatePlayer(
-            new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
+            new TitlePlayerRequest(world, built, m.Services, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
         Assert.NotNull(player.Level);
         Assert.NotNull(player.Ai);
         Assert.Same(promoted.Natives, player.Ai.Natives);
@@ -74,7 +74,7 @@ public sealed class RetailIgi2LevelAiTests
         Assert.NotEmpty(minds);
         Assert.All(minds, static mind => Assert.NotNull(mind.Script));
         // HumanSoldier_UpdateInternalDataAfterLoadHandler: living soldiers of team 1 are off the detection list in mission 11.
-        Assert.All(player.Soldiers!.Bodies.Where(static body => body.Team == 1 && !body.IsDead),
+        Assert.All(player.Soldiers.Bodies.Where(static body => body.Team == 1 && !body.IsDead),
             body => Assert.DoesNotContain(body, player.Ai.Detection!.Detectables));
         Assert.Contains(player.Human, player.Ai.Detection!.Detectables);
         player.Human.Damage.MaxDamage = 1000000f;
@@ -389,7 +389,7 @@ public sealed class RetailIgi2LevelAiTests
         (Igi2HumanPlayer armed, _, _) = Igi2PlayerFakes.OnFloor(weapons);
         m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = armed;
         Pickups.Igi2PickupList pickups = Pickups.Igi2PickupList.Build(
-            m.Tree[0], m.Services!.Require<Igi2HumanWeapons>().Tables, m.Level.ModelFor, m.Collision!, m.Materials);
+            m.Tree[0], m.Services.Require<Igi2HumanWeapons>().Tables, m.Level.ModelFor, m.Collision!, m.Materials);
         SaveContext context = Saves.Igi2SaveFormat.Context(null, pickups, m.Tree[0]);
 
         string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), context)!;
@@ -730,7 +730,7 @@ public sealed class RetailIgi2LevelAiTests
         player.Human.Collider = new Collision.Igi2BoneCollider(player.Human, player.Human);
         m.Collision!.AddBody(player.Human.Collider);
 
-        Igi2DetectionWorld detection = new(m.Collision!, m.Materials)
+        Igi2DetectionWorld detection = new(m.Collision, m.Materials)
         {
             FlowTicks = () => m.Run.Ticks,
             LevelTick = () => m.Run.LevelFlow?.Tick ?? 0,
@@ -762,10 +762,10 @@ public sealed class RetailIgi2LevelAiTests
             () => m.Run.LevelFlow?.Tick ?? 0)
         {
             Detection = detection,
-            FireTaskTypes = m.Services!.Require<Igi2HumanWeapons>().FireTaskTypes,
-            Config = m.Services!.TryGet(out Igi2HumanAiConfig? config) ? config : null,
+            FireTaskTypes = m.Services.Require<Igi2HumanWeapons>().FireTaskTypes,
+            Config = m.Services.TryGet(out Igi2HumanAiConfig? config) ? config : null,
             Difficulty = 1,
-            World = m.Services!.Require<Igi2AiWorld>(),
+            World = m.Services.Require<Igi2AiWorld>(),
         });
         return (m, soldiers, ai, player);
     }

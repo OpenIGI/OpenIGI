@@ -343,7 +343,7 @@ public sealed partial class Igi1HumanAi
         "AIAction_WalkToNode" or "AIAction_RunToNode" or "AIAction_MoveToEvent" => _goToNode >= 0,
         "AIAction_FireAtNode" or "AIAction_FireAtTask" => _scriptedFire is not null,
         "AIAction_PlayAnimation" => _scriptedAnimation,
-        "AIAction_LookAtEvent" => _lookAtPoint is not null,
+        "AIAction_LookAtEvent" => LookingAt is not null,
         "AIAction_Stunned" => _stunnedDurationTicks >= 0,
         "AIAction_KickGrenade" => _hasKickableGrenade,
         "AIAction_RunPanicking" => _panicDestination >= 0,
@@ -405,7 +405,7 @@ public sealed partial class Igi1HumanAi
                 break;
 
             case "AIAction_LookAtEvent":
-                _lookAtPoint = null;
+                LookingAt = null;
                 break;
 
             case "AIAction_Stunned":

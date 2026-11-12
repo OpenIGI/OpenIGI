@@ -293,8 +293,8 @@ public sealed class AiEventQueues
     private static int Index(AiEvent type)
     {
         int index = (int)type;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(type));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, TypeCount, nameof(type));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, TypeCount);
         return index;
     }
 }

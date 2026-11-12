@@ -136,7 +136,7 @@ public sealed partial class WorldInteraction
             _humming = true;
             double middle = ((double)second + first) * 0.5;
             Vector3f offset = Orientation.Transposed().Transform(new Vector3f((float)middle, 0f, 8192f));
-            _sounds?.Invoke(new InteractionSoundEvent(
+            Sounds?.Invoke(new InteractionSoundEvent(
                 Task,
                 InteractionSound.AreaStarted,
                 FenceSound,
@@ -147,7 +147,7 @@ public sealed partial class WorldInteraction
     }
 
     private void Sound(InteractionSound what, string sound, Vector3d at) =>
-        _sounds?.Invoke(new InteractionSoundEvent(Task, what, sound, at, Matrix3f.Identity, default));
+        Sounds?.Invoke(new InteractionSoundEvent(Task, what, sound, at, Matrix3f.Identity, default));
 
     private void ClearUse(int now)
     {

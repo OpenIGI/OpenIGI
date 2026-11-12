@@ -87,7 +87,7 @@ public sealed class RainRendererTests
 
         GameTask? found = RainRenderer.FindRainEffect(tree.Root);
         Assert.NotNull(found);
-        Assert.Equal("RainEffect", found!.Type.Name);
+        Assert.Equal("RainEffect", found.Type.Name);
     }
 
     [Fact]

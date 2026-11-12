@@ -155,6 +155,6 @@ public sealed class RetailSkinnedViewModelTests
         LoadedMission mission = loader.Load(1);
 
         Assert.True(mission.TryGetModel(HumanView.ModelName, out MefModel? model) && model is not null);
-        return model!;
+        return model;
     }
 }

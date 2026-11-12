@@ -64,7 +64,7 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public string DescribeMemory() =>
-        FormattableString.Invariant($"Graphics device: {_textures.Count} texture(s), {_materials.Count} material group(s).\n")
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Graphics device: {_textures.Count} texture(s), {_materials.Count} material group(s).\n")
         + _device.DescribeMemory();
 
     /// <inheritdoc/>

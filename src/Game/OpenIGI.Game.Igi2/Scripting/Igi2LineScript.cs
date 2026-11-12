@@ -104,18 +104,19 @@ public static class Igi2LineScript
 
     private static int CommentStart(string line)
     {
-        for (int i = 0; i < line.Length; i++)
+        int i = 0;
+        while (i < line.Length)
         {
             if (line[i] == '"')
             {
-                for (i++; i < line.Length && line[i] != '"'; i++)
+                // To the closing quote, an escaped character stepped over with its backslash.
+                i++;
+                while (i < line.Length && line[i] != '"')
                 {
-                    if (line[i] == '\\' && i + 1 < line.Length)
-                    {
-                        i++;
-                    }
+                    i += line[i] == '\\' && i + 1 < line.Length ? 2 : 1;
                 }
 
+                i++;
                 continue;
             }
 
@@ -123,6 +124,8 @@ public static class Igi2LineScript
             {
                 return i;
             }
+
+            i++;
         }
 
         return line.Length;

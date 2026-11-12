@@ -304,7 +304,6 @@ public sealed class MefCollisionMesh
                 + $"not a whole number of {rows.VertexStride}-byte records.");
         }
 
-        vertexCount = vertexBytes.Length / rows.VertexStride;
         ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, meshIndex, sphereCount, rows.SphereStride);
         ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, meshIndex, materialCount, rows.MaterialStride);
         int payloadVertexCount = vertexBytes.Length / rows.VertexStride;

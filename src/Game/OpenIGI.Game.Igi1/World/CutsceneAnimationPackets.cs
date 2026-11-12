@@ -59,7 +59,6 @@ internal sealed class CutsceneAnimationPackets(
             return;
         }
 
-        float yaw = MathF.Atan2(transform.Orientation.M21, transform.Orientation.M11);
         if (string.Equals(type, "Car", StringComparison.Ordinal))
         {
             ApplyCar(target, transform, simulationOrder, program, channels);

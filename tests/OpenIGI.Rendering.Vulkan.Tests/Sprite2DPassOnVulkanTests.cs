@@ -35,7 +35,7 @@ public sealed class Sprite2DPassOnVulkanTests(ITestOutputHelper output)
 
         using (vulkan)
         {
-            byte[] pixels = DrawQuad(vulkan!.Rhi);
+            byte[] pixels = DrawQuad(vulkan.Rhi);
 
             output.WriteLine($"top-left: {Describe(pixels, 8, 8)}");
             output.WriteLine($"top-right: {Describe(pixels, Size - 8, 8)}");

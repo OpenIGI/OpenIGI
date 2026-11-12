@@ -11,14 +11,14 @@ public sealed partial class Igi1HumanAi
     public int SweepPhase => _schedule.Phase;
 
     /// <summary>Diagnostics: <c>+15852/+15856/+15848</c> -- the tracked target node, the re-search flag, the Follow node.</summary>
-    public string FollowState => FormattableString.Invariant(
+    public string FollowState => string.Create(System.Globalization.CultureInfo.InvariantCulture,
         $"{_followTargetNode}/{(_followResearch ? 1 : 0)}/{_patrol?.DestinationNodeId ?? -1}");
 
     /// <summary>Diagnostics: this soldier's detection slot for one human -- retail's slot +16/+20/+40/+41/+42.</summary>
     /// <param name="target">The human's task id.</param>
     /// <returns>The cooldowns and flags, or <c>-</c> when the human is not tracked.</returns>
     public string SlotState(int target) => _tracked.TryGetValue(target, out Igi1AiTrackedHuman? human)
-        ? FormattableString.Invariant(
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"cone={human.Slot.ConeCooldown} ray={human.Slot.RayCooldown} incone={(human.Slot.IsInCone ? 1 : 0)} visible={(human.Slot.IsVisible ? 1 : 0)} registered={(human.Slot.IsRegistered ? 1 : 0)}")
         : "-";
 
@@ -147,14 +147,14 @@ public sealed partial class Igi1HumanAi
             Vector3d eye = ViewPositionProvider?.Invoke() ?? EyePosition();
             Vector3d trk = _combat?.TrackedAim ?? default;
             Vector3d tgt = TargetHuman is null ? default : TrueAimPoint();
-            return FormattableString.Invariant(
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"eye=({eye.X:0.0},{eye.Y:0.0},{eye.Z:0.0}) trk=({trk.X:0.0},{trk.Y:0.0},{trk.Z:0.0}) tgt=({tgt.X:0.0},{tgt.Y:0.0},{tgt.Z:0.0}) vp={ViewPitch:0.000000}");
         }
     }
 
     /// <summary>Diagnostics: the claimed cell's position (<c>HumanAI+16048</c>), x and y.</summary>
     public string ClaimedPositionText => _combatFreePosition is { } p
-        ? FormattableString.Invariant($"({p.X:0.0},{p.Y:0.0})")
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"({p.X:0.0},{p.Y:0.0})")
         : "-";
 
     /// <summary>The last claiming free-position search, for scenario traces.</summary>

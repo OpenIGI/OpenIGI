@@ -26,9 +26,6 @@ public sealed class MenuConfigHost(
     Func<IMissionCatalogue<MissionDescriptor>?> missions,
     Func<MenuStringTable?> strings) : IConfigHost
 {
-    /// <summary>The id the mission chain starts at. <c>0x417090</c> returns this constant.</summary>
-    private const int FirstMissionId = MissionRegistry.FirstMissionId;
-
     private readonly List<(int Width, int Height)> _modes = [];
 
     /// <inheritdoc/>

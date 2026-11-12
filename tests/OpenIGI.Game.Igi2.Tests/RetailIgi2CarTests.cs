@@ -108,7 +108,7 @@ public sealed class RetailIgi2CarTests
         };
         driver.Prepare(ai);
         Assert.Same(car, driver.Car);
-        Igi2AiGraphNode node = ai.Graphs!.Graph(driver.GraphId)!.NodeAt(65)!;
+        Igi2AiGraphNode node = ai.Graphs.Graph(driver.GraphId)!.NodeAt(65)!;
         Vector3d start = car.CurrentPosition;
         double before = (node.Position - start).Length;
 
@@ -262,7 +262,7 @@ public sealed class RetailIgi2CarTests
 
         Igi2Sound? unheard = new Igi2Sounds(m.Sounds.Definitions, null).New("apc_sounds", at, parameters: () => channels);
         Assert.True(unheard!.IsAlive);
-        engine!.Delete();
+        engine.Delete();
         Assert.True(heard.Silenced);
     }
 
@@ -306,10 +306,10 @@ public sealed class RetailIgi2CarTests
         car.Magic = m.Services!.Require<Igi2MagicObjTypes>();
         car.Bind(m.Collision!.SolidsOf(Igi2CarTask.TypeName, car.Id));
         car.Prepare(
-            m.Services!.Require<PhysicsObjectTypes>(),
+            m.Services.Require<PhysicsObjectTypes>(),
             m.Level.ModelFor,
-            new Igi2PhysicsWorld(m.Collision!, m.Materials, static owner => !Collision.Igi2ObjectCollision.PassesThrough(owner)),
-            m.Services!.Require<Weapons.Igi2HumanWeapons>(),
+            new Igi2PhysicsWorld(m.Collision, m.Materials, static owner => !Collision.Igi2ObjectCollision.PassesThrough(owner)),
+            m.Services.Require<Weapons.Igi2HumanWeapons>(),
             null);
         return (m, car);
     }

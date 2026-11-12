@@ -160,7 +160,7 @@ public sealed class PlayerMedipackTests
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
 
         Assert.True(weapons.TryUseMedipack(health));
-        Assert.Equal(GunTiming.UnloadedClipSentinel, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(GunTiming.UnloadedClipSentinel, weapons.InHand.Value.Gun.RoundsInClip);
         Assert.Equal(49, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
         Assert.Equal(0.5f, health.Damage, 3);
     }

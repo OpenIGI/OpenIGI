@@ -84,7 +84,7 @@ public sealed class RetailMenuScriptTests
         foreach ((string name, int count) in expected)
         {
             Assert.True(menu.Types.TryGet(name, out TaskType? type), $"'{name}' was never declared.");
-            Assert.Equal(count, type!.Parameters.Count);
+            Assert.Equal(count, type.Parameters.Count);
         }
     }
 
