@@ -946,6 +946,7 @@ public sealed partial class GameHost : IDisposable
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _touchIcons?.Dispose();
+        _missionPictures?.Dispose();
         _debugOverlay?.Dispose();
         _mapComputer?.Dispose();
         _mapComputerDevice?.Dispose();

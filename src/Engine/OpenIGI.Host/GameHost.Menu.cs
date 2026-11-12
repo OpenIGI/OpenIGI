@@ -13,6 +13,9 @@ namespace OpenIGI.Host;
 
 public sealed partial class GameHost
 {
+    // The missions' pictures the menu shows of maps whose level is not behind it; made when the first is asked for.
+    private Menu.MissionPictures? _missionPictures;
+
     /// <summary>
     /// Makes a preview built on a worker the live backdrop, doing on the render thread only what has to
     /// happen there.

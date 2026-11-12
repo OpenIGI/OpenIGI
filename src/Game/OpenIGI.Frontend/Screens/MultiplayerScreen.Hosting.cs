@@ -213,7 +213,12 @@ public sealed partial class MultiplayerScreen
         MissionInfo? mission = missions.Count > 0 ? missions[Math.Clamp(_mission, 0, missions.Count - 1)] : null;
         string name = mission?.Name ?? "No missions";
         var top = new StackPanel { Orientation = Orientation.Vertical };
-        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, $"Mission · {name}", 220f) { Margin = new Thickness(20f, 20f, 20f, 0f) });
+        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, HostingCoop ? "Mission" : "Map", name, 220f)
+        {
+            Mode = HostMode,
+            Picture = mission is null ? null : Context.Host.MissionPicture(mission.Id),
+            Margin = new Thickness(20f, 20f, 20f, 0f),
+        });
 
         if (coop.ServerStatus is { } running)
         {
@@ -233,7 +238,7 @@ public sealed partial class MultiplayerScreen
 
         var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(24f, 22f, 24f, 0f) };
         about.AddChild(new Eyebrow(theme, "Your game"));
-        about.AddChild(new Label(theme.Heading, name.ToUpperInvariant(), 38f, theme.TextBright) { Wrap = true });
+        about.AddChild(new Label(theme.Heading, GameModes.Title(HostMode).ToUpperInvariant(), 30f, ModeLook.Colour(HostMode)) { Wrap = true });
         about.AddChild(Body(theme, HostSummary(), theme.TextLabel, 16f));
         top.AddChild(about);
 

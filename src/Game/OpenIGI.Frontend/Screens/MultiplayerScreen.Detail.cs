@@ -6,8 +6,9 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <content>
-/// The line picked, on the right while browsing: its map's plate, its kind and region with SAVE, its name large, its mode,
-/// players and ping, who is in it, and JOIN -- FULL when it has no room. Under JOIN, a box to join a friend's room by its code.
+/// The line picked, on the right while browsing: its map's plate in its mode's colour, its kind and region with SAVE, its name
+/// large, its mode, players and ping, its places as squares filled for who is in it, and JOIN -- FULL when it has no room. Under JOIN, a box to join a friend's room by its code:
+/// ENTER in it joins, as its own JOIN does once there is a code to join by.
 /// </content>
 public sealed partial class MultiplayerScreen
 {
@@ -22,7 +23,12 @@ public sealed partial class MultiplayerScreen
         var top = new StackPanel { Orientation = Orientation.Vertical };
         MissionInfo? mission = room is null ? null : Context.Missions.FirstOrDefault(m => m.Id == room.MissionId);
         string map = room is null ? string.Empty : MapName(room.MissionId);
-        top.AddChild(new MissionPlate(theme, mission is null ? string.Empty : mission.Number.ToString("00", CultureInfo.InvariantCulture), room is null ? "No game picked" : $"Map · {map}", 130f) { Margin = new Thickness(20f, 20f, 20f, 0f) });
+        top.AddChild(new MissionPlate(theme, mission is null ? string.Empty : mission.Number.ToString("00", CultureInfo.InvariantCulture), room is null ? "Nothing picked" : "Map", room is null ? "Pick a game" : map, 156f)
+        {
+            Mode = room is { Mode.Length: > 0 } ? room.Mode : null,
+            Picture = room is null ? null : Context.Host.MissionPicture(room.MissionId),
+            Margin = new Thickness(20f, 20f, 20f, 0f),
+        });
 
         if (room is null)
         {
@@ -33,7 +39,7 @@ public sealed partial class MultiplayerScreen
         }
 
         ServerLine line = LineOf(room);
-        var tags = new Grid { Margin = new Thickness(24f, 20f, 24f, 8f) };
+        var tags = new Grid { Margin = new Thickness(24f, 16f, 24f, 6f) };
         tags.RowDefinitions.Add(GridLength.Auto);
         tags.ColumnDefinitions.Add(GridLength.Auto);
         tags.ColumnDefinitions.Add(GridLength.Star);
@@ -61,29 +67,33 @@ public sealed partial class MultiplayerScreen
         top.AddChild(tags);
         top.AddChild(new Label(theme.Heading, room.Name, 34f, theme.TextBright) { Wrap = true, Margin = new Thickness(24f, 0f, 24f, 0f) });
 
-        var stats = new Grid { Margin = new Thickness(24f, 18f, 24f, 0f) };
+        var stats = new Grid { Margin = new Thickness(24f, 0f) };
         stats.RowDefinitions.Add(GridLength.Auto);
         stats.ColumnSpacing = 40f;
         stats.ColumnDefinitions.Add(GridLength.Auto);
         stats.ColumnDefinitions.Add(GridLength.Auto);
         stats.ColumnDefinitions.Add(GridLength.Star);
-        stats.Add(new Stat(theme, "Mode") { Value = line.Mode, Margin = new Thickness(0f, 14f) }, 0, 0);
-        stats.Add(new Stat(theme, "Players") { Value = string.Create(CultureInfo.InvariantCulture, $"{room.Players} / {room.MaxPlayers}"), ValueColor = line.Full ? theme.Danger : null, Margin = new Thickness(0f, 14f) }, 0, 1);
-        stats.Add(new Stat(theme, "Ping") { Value = room.PingMs is { } ms ? string.Create(CultureInfo.InvariantCulture, $"{ms} ms") : room.Dedicated ? "—" : "P2P", Margin = new Thickness(0f, 14f) }, 0, 2);
-        top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.07f), Margin = new Thickness(24f, 18f, 24f, 0f) });
+        stats.Add(new Stat(theme, "Mode") { Value = line.Mode, Margin = new Thickness(0f, 12f) }, 0, 0);
+        stats.Add(new Stat(theme, "Players") { Value = string.Create(CultureInfo.InvariantCulture, $"{room.Players} / {room.MaxPlayers}"), ValueColor = line.Full ? theme.Danger : null, Margin = new Thickness(0f, 12f) }, 0, 1);
+        stats.Add(new Stat(theme, "Ping") { Value = room.PingMs is { } ms ? string.Create(CultureInfo.InvariantCulture, $"{ms} ms") : room.Dedicated ? "—" : "P2P", Margin = new Thickness(0f, 12f) }, 0, 2);
+        top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.07f), Margin = new Thickness(24f, 14f, 24f, 0f) });
         top.AddChild(stats);
         top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.07f), Margin = new Thickness(24f, 0f) });
         body.Add(top, 0, 0);
 
-        var inside = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(24f, 16f, 24f, 16f) };
+        var inside = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(24f, 14f, 24f, 12f) };
         inside.AddChild(new Eyebrow(theme, "In this game") { TextSize = 10f });
-        string about = !room.Compatible ? "This server runs another version of the game, so it can't be joined from this one."
+        inside.AddChild(new PlayerSlots { Players = room.Players, MaxPlayers = room.MaxPlayers, Colour = line.Full ? theme.Danger : ModeLook.Colour(room.Mode), Margin = new Thickness(0f, 2f, 0f, 4f) });
+
+        // The squares say who is in it; a line under them only for what they can't: why it can't be joined, that it waits
+        // for its first player, that it asks for a password.
+        string? about = !room.Compatible ? "This server runs another version of the game, so it can't be joined from this one."
+            : room.Passworded ? "It asks for a password."
             : room.Players == 0 ? "Nobody here yet. Join and the match starts when players arrive."
-            : room.Players == 1 ? "One player in it." : string.Create(CultureInfo.InvariantCulture, $"{room.Players} players in it.");
-        inside.AddChild(Body(theme, about, room.Compatible ? theme.TextSecondary : theme.Danger, 15f));
-        if (room.Passworded)
+            : null;
+        if (about is not null)
         {
-            inside.AddChild(Body(theme, "It asks for a password.", theme.TextMuted, 15f));
+            inside.AddChild(Body(theme, about, room.Compatible ? theme.TextSecondary : theme.Danger, 15f));
         }
 
         body.Add(inside, 1, 0);
@@ -110,13 +120,29 @@ public sealed partial class MultiplayerScreen
         line.RowDefinitions.Add(GridLength.Auto);
         line.ColumnDefinitions.Add(GridLength.Star);
         line.ColumnDefinitions.Add(GridLength.Auto);
-        var code = new TextBox(theme) { Id = "room-code", Placeholder = "HAVE A ROOM CODE?", MaxLength = 6, VerticalAlignment = VerticalAlignment.Center, Tooltip = "A friend's room code: six letters and digits." };
+        var code = new TextBox(theme) { Id = RoomCodeId, Placeholder = "HAVE A ROOM CODE?", MaxLength = 6, VerticalAlignment = VerticalAlignment.Center, Tooltip = "A friend's room code: six letters and digits." };
         code.Text = _code;
-        code.TextChanged += text => _code = text;
-        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(20f, 13f) };
-        join.Activated += _ => coop.Join(_code);
+        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(20f, 13f), IsEnabled = HasCode(_code) };
+        code.TextChanged += text =>
+        {
+            _code = text;
+            join.IsEnabled = HasCode(text);
+        };
+        join.Activated += _ => JoinByCode(coop);
         line.Add(code, 0, 0);
         line.Add(join, 0, 1);
         return line;
     }
+
+    // Joins the room whose code is in the box, when one is.
+    private void JoinByCode(ICoopRooms coop)
+    {
+        if (HasCode(_code))
+        {
+            coop.Join(_code.Trim());
+        }
+    }
+
+    // Whether a code box holds anything to join by.
+    private static bool HasCode(string code) => !string.IsNullOrWhiteSpace(code);
 }

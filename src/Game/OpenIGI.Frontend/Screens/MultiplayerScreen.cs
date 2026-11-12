@@ -1,7 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Input;
 using OpenIGI.UI;
-using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -29,6 +27,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
     private float _sinceListed;
     private string _code = string.Empty;
 
+    // The control that held the keys on the page this one replaces, as KeyOf names it, or null for none.
+    private string? _keptFocus;
+
     // Browsing (0) or hosting (1); the strip that picks it and the two tabs' content, kept so a switch slides the strip's block
     // and swaps the content without a rebuild.
     private int _tab;
@@ -48,8 +49,8 @@ public sealed partial class MultiplayerScreen : ShellScreen
 
     /// <inheritdoc/>
     protected override IReadOnlyList<KeyHint> Hints => _tab == 0
-        ? [new("↑↓", "Select"), new("ENTER", "Join"), new("F", "Quick play"), new("ESC", "Back")]
-        : [new("←→", "Adjust"), new("ENTER", "Host"), new("ESC", "Back")];
+        ? [new("↑↓", "Select"), new("ENTER", "Join"), new("F", "Quick play"), new("R", "Refresh"), new("TAB", "Host"), new("ESC", "Back")]
+        : [new("↑↓", "Select"), new("←→", "Adjust"), new("TAB", "Browse"), new("ESC", "Back")];
 
     private ICoopRooms? Coop => Context.Host.Coop;
 
@@ -57,6 +58,11 @@ public sealed partial class MultiplayerScreen : ShellScreen
     protected override UiElement? BuildContent(LayoutContext context)
     {
         UiTheme theme = Context.Theme;
+        (_keptFocus, float? scrolled) = LeavePlace();
+        _page = null;
+        _listScroll = null;
+        _tabs = null;
+        _rows.Clear();
         if (Coop is not { } coop)
         {
             var notHere = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f, Margin = new Thickness(SideMargin, 56f) };
@@ -83,6 +89,12 @@ public sealed partial class MultiplayerScreen : ShellScreen
         page.Add(_browseTab, 3, 0);
         page.Add(_hostTab, 3, 0);
         ShowContent();
+        if (scrolled is { } offset)
+        {
+            _listScroll?.RestoreOffset(offset);
+        }
+
+        _page = page;
         return page;
     }
 
@@ -101,27 +113,6 @@ public sealed partial class MultiplayerScreen : ShellScreen
     }
 
     /// <inheritdoc/>
-    protected override bool HandleInput(UiNavigation nav, InputState input)
-    {
-        if (Coop is { } coop && Focus?.Focused is not TextBox && _tab == 0)
-        {
-            if (input.Keyboard.WasPressed(KeyCode.F))
-            {
-                coop.QuickPlay();
-                return false;
-            }
-
-            if (input.Keyboard.WasPressed(KeyCode.Return) && Focus?.Focused is ServerRow row && _rowCodes.TryGetValue(row, out string? code))
-            {
-                coop.Join(code);
-                return false;
-            }
-        }
-
-        return base.HandleInput(nav, input);
-    }
-
-    /// <inheritdoc/>
     /// <remarks>
     /// The room, the list and the party change in the background; the page is rebuilt when any does. Out of a game the list is
     /// asked for again every few seconds, so a server that opens while the page is up shows without a press of REFRESH.
@@ -133,6 +124,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
             return;
         }
 
+        _clock += elapsedSeconds;
         _sinceListed += elapsedSeconds;
         if (coop.Status.Phase == CoopPhase.None && _sinceListed >= RelistSeconds)
         {
@@ -188,6 +180,10 @@ public sealed partial class MultiplayerScreen : ShellScreen
         {
             _tab = index;
             ShowContent();
+
+            // The tab shown now was collapsed when this frame was laid out, so it has no place yet -- or last time's. Laid
+            // out again before the draw, it is never seen at the corner of the screen for a frame.
+            RequestLayout();
             Focus?.Validate();
             RefreshHints();
         };
@@ -235,12 +231,13 @@ public sealed partial class MultiplayerScreen : ShellScreen
         }
     }
 
-    // Moves to a tab as its strip does, the block sliding across.
+    // Moves to a tab as its strip does, the block sliding across; the keys go to the strip, off the tab left behind.
     private void SwitchTab(int index)
     {
         if (_tabs is { } tabs)
         {
             tabs.SelectedIndex = index;
+            Focus?.Focus(tabs);
         }
     }
 
@@ -279,13 +276,13 @@ public sealed partial class MultiplayerScreen : ShellScreen
                 line.AddChild(new Label(theme.Body, "Friends join with this code, on the desktop or at openigi.com.", 15f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
                 break;
             case CoopPhase.Playing:
-                line.AddChild(Body(theme, status.Code is { } room ? $"In room {room}." : "On a server.", UiPalette.TextBody));
+                line.AddChild(StatusText(theme, status.Code is { } room ? $"In room {room}." : "On a server.", UiPalette.TextBody));
                 break;
             case CoopPhase.Connecting:
-                line.AddChild(Body(theme, status.Hosting ? "Opening a room…" : status.Code is { } finding ? $"Finding room {finding}…" : "Reaching the server…", UiPalette.TextBody));
+                line.AddChild(StatusText(theme, status.Hosting ? "Opening a room…" : status.Code is { } finding ? $"Finding room {finding}…" : "Reaching the server…", UiPalette.TextBody));
                 break;
             default:
-                line.AddChild(Body(theme, $"Couldn't play together: {status.Error}.", theme.Danger));
+                line.AddChild(StatusText(theme, $"Couldn't play together: {status.Error}.", theme.Danger));
                 break;
         }
 
@@ -308,6 +305,11 @@ public sealed partial class MultiplayerScreen : ShellScreen
             : since.TotalDays < 1 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalHours}h ago")
             : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalDays}d ago");
     }
+
+    // A part of a status or party line: as wide as its words, so what follows it -- LEAVE, KICK -- stands beside it. A wrapping label
+    // in a row takes the row's whole width and pushes the rest off the page.
+    private static Label StatusText(UiTheme theme, string text, Bgra32 colour, float size = 16f) =>
+        new(theme.Body, text, size, colour) { VerticalAlignment = VerticalAlignment.Center };
 
     private static Label Body(UiTheme theme, string text, Bgra32 colour, float size = 16f) =>
         new(theme.Body, text, size, colour) { Wrap = true, Margin = new Thickness(0f, 2f, 0f, 2f) };

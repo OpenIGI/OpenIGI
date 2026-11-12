@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -135,8 +136,10 @@ internal sealed class CheckChip : Control
 }
 
 /// <summary>
-/// A mission's plate at the top of the page's side panel: dark hatching, the mission's number large in its corner, and a
-/// caption naming it. It stands in for a picture of the map.
+/// A map's plate at the top of the page's side panel: the mission's picture filling it, shaded for the words to stand on, the
+/// map's name large along its foot under a small caption, and -- when a mode is played on it -- the mode's badge in its top
+/// corner and the mode's colour along its lower edge. A map with no picture is dark hatching instead, the mission's number
+/// large in its corner.
 /// </summary>
 internal sealed class MissionPlate : UiElement
 {
@@ -145,24 +148,35 @@ internal sealed class MissionPlate : UiElement
     /// <summary>Initializes a new instance of the <see cref="MissionPlate"/> class.</summary>
     /// <param name="theme">The theme.</param>
     /// <param name="number">The mission's number, or empty.</param>
-    /// <param name="caption">The line along its foot.</param>
+    /// <param name="caption">The small line over the title.</param>
+    /// <param name="title">The map's name, or what stands for it.</param>
     /// <param name="height">Its height, in design units.</param>
-    public MissionPlate(UiTheme theme, string number, string caption, float height)
+    public MissionPlate(UiTheme theme, string number, string caption, string title, float height)
     {
         _theme = theme;
         Number = number;
         Caption = caption.ToUpperInvariant();
+        Title = title.ToUpperInvariant();
         PlateHeight = height;
     }
 
     /// <summary>Gets the mission's number.</summary>
     public string Number { get; }
 
-    /// <summary>Gets the line along its foot.</summary>
+    /// <summary>Gets the small line over the title.</summary>
     public string Caption { get; }
+
+    /// <summary>Gets the map's name.</summary>
+    public string Title { get; }
 
     /// <summary>Gets its height, in design units.</summary>
     public float PlateHeight { get; }
+
+    /// <summary>Gets or sets the mode played on the map, by its id, or <see langword="null"/> for none: its badge and colour.</summary>
+    public string? Mode { get; set; }
+
+    /// <summary>Gets or sets the mission's picture, or <see langword="null"/> for the hatching.</summary>
+    public MissionPicture? Picture { get; set; }
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(PlateHeight));
@@ -172,7 +186,62 @@ internal sealed class MissionPlate : UiElement
     {
         LayoutContext context = painter.Context;
         UiRect box = Bounds;
-        painter.FillRect(box, Bgra32.FromRgba(36, 35, 31, 220));
+        Bgra32 colour = Mode is { } mode ? ModeLook.Colour(mode) : UiPalette.White(0.4f);
+        if (Picture is { } picture && picture.Width > 0 && picture.Height > 0)
+        {
+            DrawPicture(painter, box, picture);
+        }
+        else
+        {
+            DrawHatching(painter, box, colour);
+        }
+
+        float pad = context.Px(18f);
+        float edge = context.Px(3f);
+        painter.FillRect(new UiRect(box.X, box.Bottom - edge, box.Width, edge), Mode is null ? UiPalette.White(0.1f) : colour);
+
+        float titleSize = context.Px(34f);
+        float captionSize = context.Px(10f);
+        float titleTop = box.Bottom - edge - context.Px(12f) - (titleSize * 0.72f);
+        var titleBox = new UiRect(box.X, titleTop, box.Width, titleSize * 0.72f);
+        string title = ServerRow.Fit(Title, _theme.Display, titleSize, box.Width - (pad * 2f));
+        painter.DrawLabel(_theme.Display, title, new UiVec2(box.X + pad, UiRowStyle.CapsCenterY(_theme.Display, titleSize, titleBox)), titleSize, _theme.TextBright, 0.04f);
+        painter.DrawLabel(_theme.Mono, Caption, new UiVec2(box.X + pad, titleTop - context.Px(8f) - _theme.Mono.LineHeight(captionSize)), captionSize, _theme.TextMuted, 0.24f);
+
+        if (Mode is { } played)
+        {
+            // The mode's badge: its code on its colour.
+            float size = context.Px(13f);
+            string code = ModeLook.Code(played);
+            float width = UiPainter.MeasureLabel(_theme.Heading, code, size, 0.12f) + context.Px(20f);
+            var badge = new UiRect(box.X + pad, box.Y + pad, width, context.Px(24f));
+            painter.FillRect(badge, colour);
+            painter.DrawLabel(_theme.Heading, code, new UiVec2(badge.X + context.Px(10f), UiRowStyle.CapsCenterY(_theme.Heading, size, badge)), size, _theme.OnAccent, 0.12f);
+        }
+    }
+
+    // The picture, filling the plate: scaled to cover it and cut to it about its middle, then shaded from the foot and from
+    // the left so the name reads over whatever the picture is of.
+    private static void DrawPicture(UiPainter painter, UiRect box, MissionPicture picture)
+    {
+        float plate = box.Width / MathF.Max(1f, box.Height);
+        float shot = picture.Width / (float)picture.Height;
+        UiRect source = shot > plate
+            ? new UiRect((1f - (plate / shot)) / 2f, 0f, plate / shot, 1f)
+            : new UiRect(0f, (1f - (shot / plate)) / 2f, 1f, shot / plate);
+        painter.DrawSprite(picture.Image, box, source, Bgra32.FromRgb(255, 255, 255));
+
+        Span<UiGradientStop> foot = [new(0f, UiPalette.InkAt(0.18f)), new(0.45f, UiPalette.InkAt(0.1f)), new(1f, UiPalette.InkAt(0.82f))];
+        painter.FillGradient(box, foot, UiGradientDirection.Vertical);
+        Span<UiGradientStop> side = [new(0f, UiPalette.InkAt(0.5f)), new(0.6f, UiPalette.InkAt(0f))];
+        painter.FillGradient(box, side, UiGradientDirection.Horizontal);
+    }
+
+    // No picture: dark hatching, the mode's colour rising faintly from the foot, and the mission's number large in the corner.
+    private void DrawHatching(UiPainter painter, UiRect box, Bgra32 colour)
+    {
+        LayoutContext context = painter.Context;
+        painter.FillRect(box, Bgra32.FromRgba(30, 30, 27, 235));
         painter.PushClip(box);
         float step = context.Px(20f);
         Bgra32 stripe = Bgra32.FromRgba(48, 47, 42, 200);
@@ -181,15 +250,77 @@ internal sealed class MissionPlate : UiElement
             painter.StrokeLine(new UiVec2(x, box.Bottom), new UiVec2(x + box.Height, box.Y), context.Px(7f), stripe);
         }
 
+        Span<UiGradientStop> glow = [new(0f, colour.WithAlpha(0)), new(1f, colour.WithAlpha((byte)(Mode is null ? 0 : 46)))];
+        painter.FillGradient(box, glow, UiGradientDirection.Vertical);
+        Span<UiGradientStop> shade = [new(0f, UiPalette.InkAt(0.62f)), new(0.7f, UiPalette.InkAt(0f))];
+        painter.FillGradient(box, shade, UiGradientDirection.Horizontal);
+
         if (Number.Length > 0)
         {
-            float big = context.Px(PlateHeight * 0.62f);
+            float big = context.Px(PlateHeight * 0.86f);
             float width = _theme.Display.MeasureWidth(Number, big);
-            painter.DrawText(_theme.Display, Number, new UiVec2(box.Right - width - context.Px(18f), box.Y + context.Px(6f)), big, UiPalette.White(0.07f));
+            painter.DrawText(_theme.Display, Number, new UiVec2(box.Right - width - context.Px(16f), box.Y + ((box.Height - _theme.Display.LineHeight(big)) / 2f)), big, colour.WithAlpha((byte)(Mode is null ? 22 : 44)));
         }
 
         painter.PopClip();
-        float size = context.Px(11f);
-        painter.DrawLabel(_theme.Mono, Caption, new UiVec2(box.X + context.Px(14f), box.Bottom - context.Px(14f) - _theme.Mono.LineHeight(size)), size, _theme.TextMuted, 0.15f);
+    }
+}
+
+/// <summary>
+/// The places in a game, a square for each: the ones taken filled in the game's colour, the open ones outlined. It wraps to
+/// as many rows as it needs, and a game too large to show a square for each shows as many as fit in two rows.
+/// </summary>
+internal sealed class PlayerSlots : UiElement
+{
+    private const float Size = 20f;
+    private const float Gap = 5f;
+    private const int MostRows = 2;
+
+    /// <summary>Gets or sets how many play.</summary>
+    public int Players { get; set; }
+
+    /// <summary>Gets or sets how many may.</summary>
+    public int MaxPlayers { get; set; }
+
+    /// <summary>Gets or sets the colour a taken place is filled in.</summary>
+    public Bgra32 Colour { get; set; } = UiPalette.Accent;
+
+    /// <inheritdoc/>
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
+    {
+        (int _, int rows) = Grid(context, available.X);
+        return new UiVec2(available.X, (rows * context.Px(Size)) + (Math.Max(0, rows - 1) * context.Px(Gap)));
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDraw(UiPainter painter)
+    {
+        LayoutContext context = painter.Context;
+        (int across, int rows) = Grid(context, Bounds.Width);
+        int places = Math.Min(Math.Max(MaxPlayers, 0), across * rows);
+        int taken = MaxPlayers <= places ? Math.Min(Players, places) : (int)MathF.Ceiling(Players * places / (float)MaxPlayers);
+        float size = context.Px(Size);
+        float pitch = size + context.Px(Gap);
+        for (int i = 0; i < places; i++)
+        {
+            var box = new UiRect(Bounds.X + (i % across * pitch), Bounds.Y + (i / across * pitch), size, size);
+            if (i < taken)
+            {
+                painter.FillRect(box, Colour);
+            }
+            else
+            {
+                painter.StrokeRect(box, context.Px(1f), UiPalette.White(0.16f));
+            }
+        }
+    }
+
+    // How many places a row holds in a width, and how many rows the game's places take, up to the most shown.
+    private (int Across, int Rows) Grid(LayoutContext context, float width)
+    {
+        float pitch = context.Px(Size + Gap);
+        int across = Math.Max(1, (int)((width + context.Px(Gap)) / pitch));
+        int rows = Math.Clamp((Math.Max(MaxPlayers, 1) + across - 1) / across, 1, MostRows);
+        return (across, rows);
     }
 }

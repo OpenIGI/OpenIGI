@@ -337,6 +337,32 @@ public sealed class FocusTests
     }
 
     [Fact]
+    public void A_viewport_built_anew_takes_up_the_offset_it_is_given_once_laid_out()
+    {
+        UiTheme theme = Theme();
+        var scroll = new ScrollView(theme) { Height = 200f };
+        var rows = new StackPanel { Orientation = Orientation.Vertical };
+        for (int i = 0; i < 20; i++)
+        {
+            rows.AddChild(new Button(theme, $"Row {i}"));
+        }
+
+        scroll.SetContent(rows);
+
+        // Before a layout the viewport does not know how far it scrolls, so the offset waits for one; then it is there at
+        // once, not glided to, and an offset past the end stops at the end.
+        scroll.RestoreOffset(120f);
+        Layout(scroll);
+        Layout(scroll);
+        Assert.Equal(120f, scroll.ScrollOffset, 2);
+        Assert.Equal(-120f, rows.Bounds.Y - scroll.Bounds.Y, 2);
+
+        scroll.RestoreOffset(1e6f);
+        Layout(scroll);
+        Assert.Equal(scroll.MaxScroll, scroll.ScrollOffset, 2);
+    }
+
+    [Fact]
     public void A_dropdown_button_lists_a_disabled_choice_but_will_not_pick_it()
     {
         UiTheme theme = Theme();

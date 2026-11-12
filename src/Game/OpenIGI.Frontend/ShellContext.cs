@@ -85,6 +85,9 @@ public sealed class ShellContext
     /// </remarks>
     public MissionConditions Conditions { get; set; } = MissionConditions.Default;
 
+    /// <summary>Gets where the header's underline stands, which each page's header glides its own from.</summary>
+    public Screens.SectionUnderline SectionUnderline { get; } = new();
+
     /// <summary>Gets the theme screens draw from.</summary>
     public UiTheme Theme { get; }
 

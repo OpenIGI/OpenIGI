@@ -8,7 +8,7 @@ namespace OpenIGI.Frontend.Screens;
 /// <content>
 /// The party, in the page's header: friends who play together. A square for each member -- its initial, the leader's
 /// underlined -- and open places, which invite a friend; the party's code with COPY; JOIN A PARTY to join a friend's by its
-/// code. A member's square picks it, and its line opens under the header: where it plays, and for the leader LEAD and KICK.
+/// code, in a box ENTER joins from and ESC shuts. A member's square picks it, and its line opens under the header: where it plays, and for the leader LEAD and KICK.
 /// </content>
 public sealed partial class MultiplayerScreen
 {
@@ -107,16 +107,15 @@ public sealed partial class MultiplayerScreen
         else if (_joiningParty)
         {
             var join = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6f, VerticalAlignment = VerticalAlignment.Center };
-            var box = new TextBox(theme) { Id = "party-code", Placeholder = "PARTY CODE", MaxLength = 6, Width = 170f, VerticalAlignment = VerticalAlignment.Center };
+            var box = new TextBox(theme) { Id = PartyCodeId, Placeholder = "PARTY CODE", MaxLength = 6, Width = 170f, VerticalAlignment = VerticalAlignment.Center };
             box.Text = _partyCode;
-            box.TextChanged += text => _partyCode = text;
-            var go = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(18f, 14f), Tooltip = "Join a friend's party by its code." };
-            go.Activated += _ =>
+            var go = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(18f, 14f), IsEnabled = HasCode(_partyCode), Tooltip = "Join a friend's party by its code." };
+            box.TextChanged += text =>
             {
-                parties.Join(_partyCode);
-                _joiningParty = false;
-                Invalidate();
+                _partyCode = text;
+                go.IsEnabled = HasCode(text);
             };
+            go.Activated += _ => JoinParty(parties);
             join.AddChild(box);
             join.AddChild(go);
             cluster.AddChild(join);
@@ -126,7 +125,9 @@ public sealed partial class MultiplayerScreen
             var open = new Button(theme, "JOIN A PARTY") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(18f, 14f), VerticalAlignment = VerticalAlignment.Center };
             open.Activated += _ =>
             {
+                // The box opens with the keys already in it, so the code is typed straight away.
                 _joiningParty = true;
+                _focusNext = PartyCodeId;
                 Invalidate();
             };
             cluster.AddChild(open);
@@ -147,18 +148,18 @@ public sealed partial class MultiplayerScreen
                 return null;
             }
 
-            note.AddChild(Body(theme, $"The party was lost: {lost}.", theme.Danger, 15f));
+            note.AddChild(StatusText(theme, $"The party was lost: {lost}.", theme.Danger, 15f));
             return note;
         }
 
         if (parties.OrderError is { } refused)
         {
-            note.AddChild(Body(theme, $"Couldn't do that: {refused}.", theme.Danger, 15f));
+            note.AddChild(StatusText(theme, $"Couldn't do that: {refused}.", theme.Danger, 15f));
         }
 
         if (_copied is { } link)
         {
-            note.AddChild(Body(theme, $"Copied {link}", theme.Accent, 15f));
+            note.AddChild(StatusText(theme, $"Copied {link}", theme.Accent, 15f));
         }
 
         if (party.Members.FirstOrDefault(m => m.Id == _picked) is not { } member)
@@ -166,7 +167,7 @@ public sealed partial class MultiplayerScreen
             string where = party.Code is null ? "Reaching the party…"
                 : party.Playing is { } playing ? party.Leading ? $"You lead it, in {playing}." : $"Following {party.Leader} to {playing}."
                 : party.Leading ? "You lead it: host or join a game and the party follows." : $"Waiting for {party.Leader} to play somewhere.";
-            note.AddChild(Body(theme, where, theme.TextMuted, 15f));
+            note.AddChild(StatusText(theme, where, theme.TextMuted, 15f));
             return note;
         }
 
@@ -216,6 +217,19 @@ public sealed partial class MultiplayerScreen
             _copied = parties.CopyInvite();
         }
 
+        Invalidate();
+    }
+
+    // Joins the party whose code is in the box, when one is, and shuts the box.
+    private void JoinParty(IPartyPanel parties)
+    {
+        if (!HasCode(_partyCode))
+        {
+            return;
+        }
+
+        parties.Join(_partyCode.Trim());
+        _joiningParty = false;
         Invalidate();
     }
 

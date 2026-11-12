@@ -110,6 +110,11 @@ public interface IShellHost
     /// <summary>Gets parties (friends who follow their leader from game to game), where this build can play them; <see langword="null"/> where it can't.</summary>
     IPartyPanel? Party => null;
 
+    /// <summary>A mission's picture, taken beforehand: what a page shows of a map whose level is not behind the menu.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <returns>The picture, or <see langword="null"/> where the host has none of it.</returns>
+    MissionPicture? MissionPicture(int missionId) => null;
+
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;
 

@@ -24,6 +24,9 @@ public class TabStrip : Control
     private int _selected;
     private int _hovered = -1;
 
+    // The tab the block starts on when the strip is first laid out, or null for the selected one; see SlideFrom.
+    private int? _slideFrom;
+
     // Per-tab geometry resolved during Arrange, so hit testing does not depend on a draw having happened.
     private UiRect[] _tabRects = [];
     private float[] _tabCenters = [];
@@ -60,6 +63,24 @@ public class TabStrip : Control
 
     /// <summary>Gets or sets the captions' size, in design units; zero for the theme's label size.</summary>
     public float TextSize { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the dark tray and its hairline are drawn behind the segments.</summary>
+    /// <remarks>Off for a strip that sits on a panel of its own, where the block and the captions are enough.</remarks>
+    public bool ShowTray { get; set; } = true;
+
+    /// <summary>Starts the block on another tab, so it slides from there to the selected one when the strip first shows.</summary>
+    /// <param name="index">The tab the selection was on before.</param>
+    /// <remarks>
+    /// For a strip built anew by a page that rebuilds itself when the selection changes: the new strip is told where the
+    /// old one's block stood, and the slide plays across the rebuild as it does inside one strip.
+    /// </remarks>
+    public void SlideFrom(int index)
+    {
+        if (index >= 0 && index < _tabs.Count)
+        {
+            _slideFrom = index;
+        }
+    }
 
     /// <summary>Gets the tab captions.</summary>
     public IReadOnlyList<string> Tabs => _tabs;
@@ -155,11 +176,7 @@ public class TabStrip : Control
         if (_selected < _tabCenters.Length)
         {
             // The first frame there is a layout, the block starts where it belongs instead of sliding in.
-            if (_indicatorWidth.Value <= 0f)
-            {
-                _indicator.SnapTo(_tabRects[_selected].X);
-                _indicatorWidth.SnapTo(_tabRects[_selected].Width);
-            }
+            PlaceBlock();
 
             _indicator.Target = _tabRects[_selected].X;
             _indicatorWidth.Target = _tabRects[_selected].Width;
@@ -220,16 +237,15 @@ public class TabStrip : Control
         float focus = Visual.Focus;
 
         // The tray: dark glass with a hairline, the segments set inside it.
-        painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(153), appear));
-        painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), focus), appear));
+        if (ShowTray)
+        {
+            painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(153), appear));
+            painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), focus), appear));
+        }
 
         // The sliding block; before its first update it is drawn where the selection is.
         UiRect selected = _tabRects[_selected];
-        if (_indicatorWidth.Value <= 0f)
-        {
-            _indicator.SnapTo(selected.X);
-            _indicatorWidth.SnapTo(selected.Width);
-        }
+        PlaceBlock();
 
         painter.FillRect(
             new UiRect(_indicator.Value, selected.Y, _indicatorWidth.Value, selected.Height),
@@ -262,6 +278,20 @@ public class TabStrip : Control
                 painter.DrawLabel(Theme.Mono, note, new UiVec2(end.X + context.Px(NoteGap), UiRowStyle.CapsCenterY(Theme.Mono, notePx, rect)), notePx, UiPalette.Fade(noteColor, appear * 0.85f), 0.12f);
             }
         }
+    }
+
+    // Puts the block down the first time there is a layout: on the selected tab, or on the one it is to slide from.
+    private void PlaceBlock()
+    {
+        if (_indicatorWidth.Value > 0f)
+        {
+            return;
+        }
+
+        UiRect start = _tabRects[_slideFrom is { } from && from < _tabRects.Length ? from : _selected];
+        _indicator.SnapTo(start.X);
+        _indicatorWidth.SnapTo(start.Width);
+        _slideFrom = null;
     }
 
     private float CaptionSize => TextSize > 0f ? TextSize : Theme.LabelTextSize;

@@ -6,6 +6,7 @@
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\..\src\UI\OpenIGI.UI\OpenIGI.UI.csproj" />
     <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Skia\OpenIGI.UI.Skia.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
@@ -15,6 +16,13 @@
   <ItemGroup>
     <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\*.ttf"
           Link="Assets\fonts\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The shipped mission pictures, so the multiplayer page is drawn with what the game shows. -->
+  <ItemGroup>
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\missions\**\*.jpg"
+          Link="Assets\missions\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

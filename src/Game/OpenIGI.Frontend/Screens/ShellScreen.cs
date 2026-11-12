@@ -213,14 +213,14 @@ public abstract class ShellScreen : Screen
 
         row.Add(BuildTitle(theme));
 
-        var nav = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 8f };
+        var nav = new SectionTabs(theme, Context.SectionUnderline) { Orientation = Orientation.Horizontal, Gap = 8f };
         nav.Add(new KeyCapLabel(theme, "Q") { Margin = new Thickness(0f, 0f, 12f, 0f) });
         foreach (ShellTab tab in Order)
         {
-            var button = new HeaderTab(theme, tab == ShellTab.Coop ? "Multiplayer" : tab.ToString()) { Selected = tab == Tab };
+            var button = new HeaderTab(theme, tab == ShellTab.Coop ? "Multiplayer" : tab.ToString());
             ShellTab target = tab;
             button.Activated += _ => GoTo(target);
-            nav.Add(button);
+            nav.AddTab(button, current: tab == Tab);
         }
 
         nav.Add(new KeyCapLabel(theme, "E") { Margin = new Thickness(12f, 0f, 0f, 0f) });
