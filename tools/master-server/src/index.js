@@ -247,7 +247,11 @@ export class ServerList {
       const title = url.searchParams.get("title");
       const protocol = url.searchParams.get("protocol");
       const matches = (s) => (!title || s.title === title) && (!protocol || s.protocol === protocol);
-      const servers = [...this.servers.values()].filter(matches).map((s) => publicView(s, this.verified(s)));
+      // A server names the room browsers join it through; a room that has since closed is not passed on, or every browser
+      // sent to it would be told there is no such room.
+      const servers = [...this.servers.values()]
+        .filter(matches)
+        .map((s) => publicView(s.room !== null && !this.rooms.has(s.room) ? { ...s, room: null } : s, this.verified(s)));
       // A dedicated server's own room is the server, listed once.
       const servedRooms = new Set(servers.map((s) => s.room).filter(Boolean));
       const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view) && !servedRooms.has(r.view.room)).map((r) => r.view);
