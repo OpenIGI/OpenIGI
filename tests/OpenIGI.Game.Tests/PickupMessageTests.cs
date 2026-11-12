@@ -1,7 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;

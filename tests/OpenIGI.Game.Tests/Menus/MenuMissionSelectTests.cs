@@ -6,7 +6,6 @@ using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.Config;
 using OpenIGI.Game.Menus;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests.Menus;
 

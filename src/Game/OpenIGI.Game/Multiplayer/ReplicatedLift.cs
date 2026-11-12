@@ -1,4 +1,3 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;

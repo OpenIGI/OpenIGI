@@ -1,4 +1,3 @@
-using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Numerics;
 using Xunit;

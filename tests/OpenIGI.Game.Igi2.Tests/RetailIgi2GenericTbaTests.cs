@@ -3,7 +3,6 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;

@@ -5,7 +5,6 @@ using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Scripting;
-using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.World;

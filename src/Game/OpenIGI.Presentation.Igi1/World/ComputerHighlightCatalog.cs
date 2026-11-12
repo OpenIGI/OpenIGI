@@ -1,8 +1,6 @@
-using OpenIGI.Presentation;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

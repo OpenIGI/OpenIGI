@@ -1,9 +1,7 @@
 ﻿using System.Diagnostics;
 using OpenIGI.Core.Configuration.Presets;
-using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;

@@ -1,13 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
-using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Textures;
-using OpenIGI.Formats.World;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

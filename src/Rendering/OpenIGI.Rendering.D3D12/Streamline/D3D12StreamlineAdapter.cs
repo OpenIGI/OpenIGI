@@ -3,7 +3,6 @@ using OpenIGI.Rendering.D3D12.Rhi;
 using OpenIGI.Rendering.D3D12.Sync;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Streamline;
-using Silk.NET.Direct3D12;
 
 namespace OpenIGI.Rendering.D3D12.Streamline;
 

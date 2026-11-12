@@ -1,9 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Net;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;

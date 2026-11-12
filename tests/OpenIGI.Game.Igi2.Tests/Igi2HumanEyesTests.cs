@@ -1,9 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Game.Igi2.World;
 using Xunit;
-using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

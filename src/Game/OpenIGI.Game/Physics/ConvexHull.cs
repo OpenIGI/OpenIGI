@@ -285,7 +285,7 @@ public sealed class ConvexHull
         out Vector3d centre,
         out Matrix3d inertia)
     {
-        const double mult0 = 1.0 / 6.0, mult1 = 1.0 / 24.0, mult2 = 1.0 / 60.0, mult3 = 1.0 / 120.0;
+        const double Mult0 = 1.0 / 6.0, Mult1 = 1.0 / 24.0, Mult2 = 1.0 / 60.0, Mult3 = 1.0 / 120.0;
         double[] integral = new double[10];
 
         // Integrate relative to a point inside the hull to keep the sums well conditioned far from
@@ -321,16 +321,16 @@ public sealed class ConvexHull
             integral[9] += d.Z * ((v0.X * g0z) + (v1.X * g1z) + (v2.X * g2z));
         }
 
-        integral[0] *= mult0;
-        integral[1] *= mult1;
-        integral[2] *= mult1;
-        integral[3] *= mult1;
-        integral[4] *= mult2;
-        integral[5] *= mult2;
-        integral[6] *= mult2;
-        integral[7] *= mult3;
-        integral[8] *= mult3;
-        integral[9] *= mult3;
+        integral[0] *= Mult0;
+        integral[1] *= Mult1;
+        integral[2] *= Mult1;
+        integral[3] *= Mult1;
+        integral[4] *= Mult2;
+        integral[5] *= Mult2;
+        integral[6] *= Mult2;
+        integral[7] *= Mult3;
+        integral[8] *= Mult3;
+        integral[9] *= Mult3;
 
         volume = integral[0];
         if (!(volume > 0.0))

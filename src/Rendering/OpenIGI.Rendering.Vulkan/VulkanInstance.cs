@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Capabilities;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Core;

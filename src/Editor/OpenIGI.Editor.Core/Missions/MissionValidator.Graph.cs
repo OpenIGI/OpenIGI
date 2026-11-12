@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Graphs;
 using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Scripting.Expressions;

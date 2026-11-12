@@ -5,8 +5,6 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Presentation.Igi2.World;
 using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Presentation.Igi2.Hud;

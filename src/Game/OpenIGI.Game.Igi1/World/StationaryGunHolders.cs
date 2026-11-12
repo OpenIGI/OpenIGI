@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
-using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 

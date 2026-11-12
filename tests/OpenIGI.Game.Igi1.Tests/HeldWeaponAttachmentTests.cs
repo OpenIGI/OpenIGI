@@ -11,7 +11,6 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi1.World;

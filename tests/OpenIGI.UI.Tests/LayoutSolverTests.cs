@@ -1,6 +1,4 @@
-﻿using System.Linq;
-using OpenIGI.Core.Graphics;
-using OpenIGI.UI;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;

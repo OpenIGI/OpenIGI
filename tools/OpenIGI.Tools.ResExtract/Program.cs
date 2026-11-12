@@ -2,7 +2,6 @@ using System.Globalization;
 using OpenIGI.Core;
 using OpenIGI.Core.Audio;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Legacy;
 using OpenIGI.Formats.Sound;

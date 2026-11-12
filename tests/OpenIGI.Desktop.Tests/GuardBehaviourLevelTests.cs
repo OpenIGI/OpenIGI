@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 using static OpenIGI.Desktop.Tests.SoldierRendererScenario;

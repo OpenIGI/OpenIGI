@@ -1,7 +1,5 @@
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 

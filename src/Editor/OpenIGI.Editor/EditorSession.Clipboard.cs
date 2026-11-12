@@ -1,4 +1,3 @@
-using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Scripting.Qsc;
 using OpenIGI.UI.Editor.Actions;

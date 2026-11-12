@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Http;
 using System.Text.Json.Nodes;
 
 namespace OpenIGI.Net.Rooms;

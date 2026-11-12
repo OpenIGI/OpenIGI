@@ -1,9 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
-using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
-using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Presentation.Rendering;

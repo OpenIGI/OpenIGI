@@ -1,5 +1,4 @@
 using OpenIGI.Presentation.Hud.Remastered.Touch;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Presentation.Hud.Remastered;

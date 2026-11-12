@@ -1,6 +1,5 @@
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Desktop;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;

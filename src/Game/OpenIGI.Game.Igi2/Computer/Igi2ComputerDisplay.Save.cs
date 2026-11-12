@@ -1,4 +1,3 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Computer;
 
 namespace OpenIGI.Game.Igi2.Computer;

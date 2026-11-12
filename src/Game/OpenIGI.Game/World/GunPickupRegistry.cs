@@ -1,8 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Level;
 using OpenIGI.Game.Physics;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.World;

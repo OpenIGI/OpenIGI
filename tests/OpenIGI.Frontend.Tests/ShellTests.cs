@@ -6,7 +6,6 @@ using OpenIGI.Frontend.Screens;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
-using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Screens;

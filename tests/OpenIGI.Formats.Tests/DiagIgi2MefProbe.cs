@@ -1,7 +1,6 @@
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.TestSupport;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace OpenIGI.Formats.Tests;

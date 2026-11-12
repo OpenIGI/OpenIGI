@@ -2,8 +2,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Presentation.Igi2.Hud;
 

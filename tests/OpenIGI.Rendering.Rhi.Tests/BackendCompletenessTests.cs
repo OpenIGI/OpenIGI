@@ -1,5 +1,4 @@
 using System.Reflection;
-using OpenIGI.Rendering.Rhi;
 using Xunit;
 using Xunit.Abstractions;
 

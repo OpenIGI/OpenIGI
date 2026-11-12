@@ -1,5 +1,4 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.UI.Drawing;
 using OpenIGI.Input;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;

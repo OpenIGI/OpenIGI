@@ -1,5 +1,4 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;

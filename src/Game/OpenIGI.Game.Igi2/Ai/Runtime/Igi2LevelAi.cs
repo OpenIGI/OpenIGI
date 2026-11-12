@@ -5,7 +5,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Scripting;
-using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Runtime;
 

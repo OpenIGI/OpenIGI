@@ -2,7 +2,6 @@ using OpenIGI.Frontend.Screens;
 using OpenIGI.Input;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
-using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;

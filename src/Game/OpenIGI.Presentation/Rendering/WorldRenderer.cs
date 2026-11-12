@@ -4,7 +4,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;

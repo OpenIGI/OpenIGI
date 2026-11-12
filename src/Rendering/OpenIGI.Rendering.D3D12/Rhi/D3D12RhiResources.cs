@@ -2,7 +2,6 @@ using OpenIGI.Rendering.D3D12.Interop;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 using Silk.NET.Direct3D12;
-using Silk.NET.DXGI;
 
 namespace OpenIGI.Rendering.D3D12.Rhi;
 

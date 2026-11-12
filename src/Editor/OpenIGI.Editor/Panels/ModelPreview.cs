@@ -2,7 +2,6 @@ using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Viewport;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Editor;

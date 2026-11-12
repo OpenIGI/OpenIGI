@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Presentation.Hud.Remastered.Touch;

@@ -2,7 +2,6 @@ using System.IO.Compression;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.Lighting;
 

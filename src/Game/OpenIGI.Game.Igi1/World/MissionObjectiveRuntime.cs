@@ -5,7 +5,6 @@ using OpenIGI.Input;
 using OpenIGI.Net;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
-using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 

@@ -1,5 +1,4 @@
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Rendering.WebGpu.Native;
 using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.WebGpu;

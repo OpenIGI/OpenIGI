@@ -9,11 +9,9 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Editor;
 using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
-using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Editor.Panels;

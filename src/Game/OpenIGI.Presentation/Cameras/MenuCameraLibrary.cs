@@ -1,4 +1,3 @@
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Core.Diagnostics;
 using System.Text.Json.Serialization;
 using System.Text.Json;

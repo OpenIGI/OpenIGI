@@ -3,8 +3,6 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.World;
 using OpenIGI.Net;
-using OpenIGI.Scripting.Runtime;
-using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.Ai;
 

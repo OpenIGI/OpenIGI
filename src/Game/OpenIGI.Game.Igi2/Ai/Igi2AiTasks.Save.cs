@@ -1,5 +1,3 @@
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Ai;
 
 /// <content>

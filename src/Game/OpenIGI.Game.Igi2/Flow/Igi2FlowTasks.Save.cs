@@ -1,5 +1,3 @@
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Flow;
 
 /// <content>Its save state, <c>ConditionalContainer_ptSerializeParameterList</c>: whether its children are in the world, and whether it runs.</content>

@@ -4,7 +4,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Hud.Remastered.Widgets;
-using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 

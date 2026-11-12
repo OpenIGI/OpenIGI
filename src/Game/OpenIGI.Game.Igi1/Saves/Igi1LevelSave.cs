@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Saves;
-using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Saves;
 

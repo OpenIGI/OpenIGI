@@ -1,4 +1,3 @@
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI;
 

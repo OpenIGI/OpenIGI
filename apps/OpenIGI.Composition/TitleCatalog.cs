@@ -13,7 +13,6 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation.Igi2;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Titles;
 using OpenIGI.Presentation;
 

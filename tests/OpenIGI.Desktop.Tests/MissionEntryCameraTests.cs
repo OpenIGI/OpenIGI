@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Presentation.Cameras;
 using Xunit;
 

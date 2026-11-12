@@ -3,7 +3,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Pipeline.Sky;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Sky;
 using Xunit;
 using Xunit.Abstractions;

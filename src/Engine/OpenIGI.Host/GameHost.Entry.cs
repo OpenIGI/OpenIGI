@@ -1,8 +1,6 @@
 ﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;

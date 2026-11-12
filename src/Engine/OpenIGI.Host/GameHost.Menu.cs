@@ -6,7 +6,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 

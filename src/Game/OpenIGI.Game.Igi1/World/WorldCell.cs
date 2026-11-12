@@ -1,5 +1,3 @@
-using OpenIGI.Game.World;
-
 namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>

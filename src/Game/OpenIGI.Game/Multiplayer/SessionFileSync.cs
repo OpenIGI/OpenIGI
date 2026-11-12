@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Game.Multiplayer;

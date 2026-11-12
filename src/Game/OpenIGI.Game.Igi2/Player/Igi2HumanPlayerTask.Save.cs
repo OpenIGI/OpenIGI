@@ -1,5 +1,3 @@
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <content>Its save state: the player's, with its weapon and its view as the child tasks retail keeps them as.</content>

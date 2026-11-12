@@ -1,5 +1,4 @@
 using OpenIGI.Rendering.D3D12;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
 using Xunit;

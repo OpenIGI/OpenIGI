@@ -1,6 +1,5 @@
 using System.Globalization;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi1.Player;
 

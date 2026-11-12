@@ -115,7 +115,7 @@ public sealed partial class Igi1HumanAi
             return new Vector3d(
                 Position.X,
                 Position.Y,
-                Position.Z + (low ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits));
+                Position.Z + HumanOriginAboveFeet(low));
         }
     }
 

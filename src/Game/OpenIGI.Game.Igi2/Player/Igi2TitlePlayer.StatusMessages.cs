@@ -1,5 +1,4 @@
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Player;

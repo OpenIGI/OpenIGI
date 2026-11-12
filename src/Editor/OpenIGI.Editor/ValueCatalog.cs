@@ -1,4 +1,3 @@
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Host.Editor;
 using OpenIGI.UI.Editor.Widgets;

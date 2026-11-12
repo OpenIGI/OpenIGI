@@ -1,4 +1,3 @@
-using OpenIGI.Game.Player;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;

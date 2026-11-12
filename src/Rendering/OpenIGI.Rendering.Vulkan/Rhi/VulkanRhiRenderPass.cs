@@ -1,5 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering.Rhi;
+﻿using OpenIGI.Rendering.Rhi;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Rhi;

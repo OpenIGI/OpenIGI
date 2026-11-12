@@ -1,7 +1,6 @@
 using System.Diagnostics;
 
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 

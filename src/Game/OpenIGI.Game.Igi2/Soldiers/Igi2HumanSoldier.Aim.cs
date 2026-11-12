@@ -1,7 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
-using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
 

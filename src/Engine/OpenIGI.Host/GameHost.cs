@@ -12,7 +12,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Hosting;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;

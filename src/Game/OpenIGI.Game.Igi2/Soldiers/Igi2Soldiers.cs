@@ -2,13 +2,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Ai;
-using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.ViewModel;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Soldiers;

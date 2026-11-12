@@ -1,4 +1,3 @@
-using OpenIGI.Releases;
 using Xunit;
 
 namespace OpenIGI.Releases.Tests;

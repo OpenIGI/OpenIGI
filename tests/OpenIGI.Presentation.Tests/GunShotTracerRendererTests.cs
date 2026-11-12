@@ -4,7 +4,6 @@ using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Rendering.Headless;
 

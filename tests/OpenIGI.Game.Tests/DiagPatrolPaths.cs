@@ -1,6 +1,6 @@
 // Dump the authored PatrolPath task ids in a level, to confirm the friendlies' paths exist.
-using System;
-using System.Linq;
+
+
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -11,9 +11,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
-using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

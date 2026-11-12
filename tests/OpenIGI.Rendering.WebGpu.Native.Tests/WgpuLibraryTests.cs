@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using OpenIGI.Rendering.WebGpu.Native;
 using Xunit;
 
 namespace OpenIGI.Rendering.WebGpu.Native.Tests;

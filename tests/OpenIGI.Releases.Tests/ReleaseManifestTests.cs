@@ -1,4 +1,3 @@
-using OpenIGI.Releases;
 using OpenIGI.Tools.Release;
 using Xunit;
 

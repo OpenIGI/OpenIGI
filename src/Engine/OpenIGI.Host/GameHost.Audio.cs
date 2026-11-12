@@ -7,7 +7,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Services;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 

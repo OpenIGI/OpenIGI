@@ -1,4 +1,3 @@
-using OpenIGI.Input;
 using Xunit;
 
 namespace OpenIGI.Input.Tests;

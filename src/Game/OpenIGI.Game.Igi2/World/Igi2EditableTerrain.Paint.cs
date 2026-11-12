@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;

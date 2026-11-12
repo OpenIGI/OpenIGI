@@ -1,6 +1,5 @@
 using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Detection;
 
 namespace OpenIGI.Game.Igi2.Humans;
 

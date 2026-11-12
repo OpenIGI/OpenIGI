@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;

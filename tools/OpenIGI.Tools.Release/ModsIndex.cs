@@ -3,7 +3,6 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using OpenIGI.Core.Content;
 using OpenIGI.Releases;
 
 namespace OpenIGI.Tools.Release;

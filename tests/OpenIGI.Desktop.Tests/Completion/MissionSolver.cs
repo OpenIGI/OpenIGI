@@ -1,14 +1,11 @@
 using System.Globalization;
 using System.Text;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Host;
 using OpenIGI.Input;

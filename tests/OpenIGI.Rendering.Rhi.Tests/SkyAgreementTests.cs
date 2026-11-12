@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Sky;
 using Xunit;
 using Xunit.Abstractions;

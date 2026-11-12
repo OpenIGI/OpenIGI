@@ -5,7 +5,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
 using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Presentation.Igi2.World;

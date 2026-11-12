@@ -4,12 +4,9 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.World;
 

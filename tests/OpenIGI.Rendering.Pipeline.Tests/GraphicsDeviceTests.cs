@@ -1,7 +1,6 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 using OpenIGI.TestSupport.Rhi;
 using Xunit;

@@ -2,11 +2,8 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1;
 

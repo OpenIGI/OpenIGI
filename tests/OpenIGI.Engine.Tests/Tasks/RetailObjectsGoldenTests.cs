@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;

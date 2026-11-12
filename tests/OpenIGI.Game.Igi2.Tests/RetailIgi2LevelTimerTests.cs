@@ -1,5 +1,4 @@
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.TestSupport;
 using Xunit;
 

@@ -2,7 +2,6 @@ using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Igi2.Ai;
-using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.World;

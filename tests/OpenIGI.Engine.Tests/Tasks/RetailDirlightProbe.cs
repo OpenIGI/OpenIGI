@@ -5,7 +5,6 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace OpenIGI.Engine.Tests.Tasks;

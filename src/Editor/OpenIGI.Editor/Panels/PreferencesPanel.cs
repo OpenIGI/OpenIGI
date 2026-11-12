@@ -1,6 +1,5 @@
 using OpenIGI.Host.Editor;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.UI;
 using OpenIGI.UI.Editor.Actions;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;

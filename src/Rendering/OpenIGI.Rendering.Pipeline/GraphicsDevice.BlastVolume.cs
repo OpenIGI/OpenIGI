@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Compute;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Passes;

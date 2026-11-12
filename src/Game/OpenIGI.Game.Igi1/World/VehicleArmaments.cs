@@ -3,7 +3,6 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
 using static OpenIGI.Game.World.CutscenePoses;
-using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 

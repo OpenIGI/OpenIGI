@@ -1,7 +1,6 @@
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Streamline;
 using OpenIGI.Rendering.Vulkan.Streamline;
-using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Rhi;
 

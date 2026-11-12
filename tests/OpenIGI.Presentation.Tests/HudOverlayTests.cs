@@ -5,7 +5,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Presentation.Hud;
-using OpenIGI.TestSupport;
 using OpenIGI.UI.Layout;
 using Xunit;
 using OpenIGI.Rendering.Headless;

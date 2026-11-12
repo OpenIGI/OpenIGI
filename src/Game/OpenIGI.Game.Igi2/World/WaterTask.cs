@@ -2,7 +2,6 @@ using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.World;
 

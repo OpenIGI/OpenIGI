@@ -1,5 +1,3 @@
-using OpenIGI.Platform.Web;
-
 namespace OpenIGI.Platform.Web.Tests;
 
 /// <summary>A page that queues what a test says happened and records what the window asked of it.</summary>

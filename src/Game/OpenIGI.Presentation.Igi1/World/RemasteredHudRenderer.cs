@@ -1,11 +1,7 @@
-using OpenIGI.Presentation.Igi1;
-using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
@@ -15,8 +11,6 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
-using System.Globalization;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

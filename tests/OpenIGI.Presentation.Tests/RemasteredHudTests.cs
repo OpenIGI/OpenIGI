@@ -1,14 +1,11 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Presentation.Igi1.Hud;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
-using OpenIGI.TestSupport;
-using OpenIGI.UI.Layout;
 using Xunit;
 using OpenIGI.Rendering.Headless;
 

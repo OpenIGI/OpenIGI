@@ -4,7 +4,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
-using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;

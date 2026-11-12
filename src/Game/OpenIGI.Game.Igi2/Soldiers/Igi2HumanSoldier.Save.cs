@@ -1,5 +1,4 @@
 using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.Saves;
 
 namespace OpenIGI.Game.Igi2.Soldiers;
 

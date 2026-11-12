@@ -1,6 +1,5 @@
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

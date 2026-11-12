@@ -1,9 +1,7 @@
-using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;

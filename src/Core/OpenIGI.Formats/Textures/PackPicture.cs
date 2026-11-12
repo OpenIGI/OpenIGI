@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using OpenIGI.Core;
 using OpenIGI.Core.Graphics;
 
 namespace OpenIGI.Formats.Textures;

@@ -1,8 +1,5 @@
-using OpenIGI.Presentation;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Player;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Animation;
 using System.Globalization;
 

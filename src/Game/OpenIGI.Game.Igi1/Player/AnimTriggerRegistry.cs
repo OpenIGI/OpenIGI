@@ -2,7 +2,6 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.Player;
 

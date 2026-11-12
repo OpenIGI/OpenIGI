@@ -2,7 +2,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Player;
 

@@ -8,8 +8,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.UI;
 
 namespace OpenIGI.Presentation;
 

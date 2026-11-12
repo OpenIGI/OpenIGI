@@ -1,7 +1,3 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Flow;
 
 /// <content>Its save state, <c>SoundGenerator_ptSerializeParameterList</c>: its sound, and whether it plays.</content>

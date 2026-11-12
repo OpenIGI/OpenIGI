@@ -1,8 +1,5 @@
-using System;
-using System.IO;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.TestSupport;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace OpenIGI.Scripting.Tests;

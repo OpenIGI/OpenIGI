@@ -4,9 +4,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation;

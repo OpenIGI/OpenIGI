@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.Igi2.World;

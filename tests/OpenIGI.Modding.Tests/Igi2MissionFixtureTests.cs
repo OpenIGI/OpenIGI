@@ -1,6 +1,5 @@
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Systems;
-using OpenIGI.Game.Player;
 using OpenIGI.Modding.Testing;
 using OpenIGI.TestSupport;
 using Xunit;

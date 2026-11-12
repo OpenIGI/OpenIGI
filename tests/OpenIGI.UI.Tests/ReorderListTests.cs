@@ -1,4 +1,3 @@
-using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using Xunit;

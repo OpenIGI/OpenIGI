@@ -4,10 +4,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 

@@ -1,6 +1,4 @@
 ﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Configuration.Presets;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;

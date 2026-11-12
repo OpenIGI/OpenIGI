@@ -4,7 +4,6 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;

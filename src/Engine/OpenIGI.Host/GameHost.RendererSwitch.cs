@@ -1,7 +1,6 @@
 ﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
 using OpenIGI.Host.Services;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;

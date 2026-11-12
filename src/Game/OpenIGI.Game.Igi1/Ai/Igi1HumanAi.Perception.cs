@@ -51,6 +51,11 @@ public sealed partial class Igi1HumanAi
     /// <summary>How far above its feet a crouched human's origin is — 0.46 m, measured on the retail player.</summary>
     public const double HumanOriginCrouchedInUnits = 0.46 * 4096.0;
 
+    /// <summary>How far above its feet a human's origin (<c>Human+32</c>) is, standing or crouched.</summary>
+    /// <param name="crouching">Whether the human is crouched.</param>
+    /// <returns>The height in units.</returns>
+    public static double HumanOriginAboveFeet(bool crouching) => crouching ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits;
+
     /// <summary>How far above its feet a human's detection mark is: its origin plus <c>sub_465820</c>'s raise.</summary>
     /// <param name="crouching">Whether the human is crouched.</param>
     /// <returns>The height in units.</returns>

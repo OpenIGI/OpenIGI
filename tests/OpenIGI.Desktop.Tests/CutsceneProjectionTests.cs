@@ -5,7 +5,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Host;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

@@ -1,9 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Time;
-using OpenIGI.Engine.Titles;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;

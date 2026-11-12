@@ -1,4 +1,3 @@
-using OpenIGI.Formats;
 using Xunit;
 
 namespace OpenIGI.Formats.Tests;

@@ -1,8 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Ai;
-using OpenIGI.Game.Igi2.Animation;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
 

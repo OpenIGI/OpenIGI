@@ -4,7 +4,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Rendering.Headless;
 

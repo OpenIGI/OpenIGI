@@ -270,7 +270,7 @@ public sealed partial class Igi1HumanAi
             return candidate.Origin ?? new Vector3d(
                 candidate.Feet.X,
                 candidate.Feet.Y,
-                candidate.Feet.Z + (candidate.Crouching ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits));
+                candidate.Feet.Z + HumanOriginAboveFeet(candidate.Crouching));
         }
 
         if (_locateTask is not null && _locateTask(_currentEventSubject, out Vector3d position))

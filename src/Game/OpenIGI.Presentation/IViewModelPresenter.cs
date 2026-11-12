@@ -2,11 +2,9 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation;

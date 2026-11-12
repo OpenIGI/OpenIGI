@@ -1,4 +1,3 @@
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.TestSupport;

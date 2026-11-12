@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.TestSupport.Rhi;
 using Xunit;
 

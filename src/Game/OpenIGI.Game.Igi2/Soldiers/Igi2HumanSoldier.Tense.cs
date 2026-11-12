@@ -1,4 +1,3 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Soldiers;

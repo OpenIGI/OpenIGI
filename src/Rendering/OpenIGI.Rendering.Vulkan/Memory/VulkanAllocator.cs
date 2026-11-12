@@ -1,5 +1,4 @@
 using System.Numerics;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 

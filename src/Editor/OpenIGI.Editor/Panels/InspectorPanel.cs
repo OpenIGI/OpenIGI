@@ -4,7 +4,6 @@ using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qsc;
-using OpenIGI.UI;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
 using OpenIGI.UI.Editor.Widgets;

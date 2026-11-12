@@ -3,7 +3,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Game.World;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Rendering;
 

@@ -8,7 +8,6 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation;
-using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Host;

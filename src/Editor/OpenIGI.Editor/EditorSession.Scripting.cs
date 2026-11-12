@@ -1,24 +1,9 @@
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Configuration;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Editor.Core.Projects;
-using OpenIGI.Editor.Panels;
-using OpenIGI.Editor.Terrain;
 using OpenIGI.Editor.Viewport;
-using OpenIGI.Host.Editor;
-using OpenIGI.Input;
-using OpenIGI.UI;
 using OpenIGI.UI.Editor.Actions;
-using OpenIGI.UI.Editor.Docking;
-using OpenIGI.UI.Editor.Input;
-using OpenIGI.UI.Editor.Theme;
-using OpenIGI.UI.Editor.Widgets;
-using OpenIGI.UI.Kit;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI.Rhi;
-using OpenIGI.UI.Text;
 
 namespace OpenIGI.Editor;
 

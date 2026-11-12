@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Multiplayer;
-using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Input;
 using OpenIGI.TestSupport;

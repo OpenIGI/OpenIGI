@@ -1,5 +1,3 @@
-using OpenIGI.Audio;
-
 namespace OpenIGI.Audio.OpenAL;
 
 /// <summary>One slot in the device's voice pool: a <see cref="VoiceSlot"/> that owns an OpenAL source.</summary>

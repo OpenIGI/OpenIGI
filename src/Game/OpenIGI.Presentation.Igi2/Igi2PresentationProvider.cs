@@ -6,12 +6,9 @@ using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ilff;
-using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.World;
-using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Game.Igi2;
 using OpenIGI.Presentation.Igi2.ViewModel;
 using OpenIGI.Presentation.Igi2.World;
 

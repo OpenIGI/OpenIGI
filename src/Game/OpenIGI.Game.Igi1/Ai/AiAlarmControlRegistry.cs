@@ -1,7 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi1.Ai;
 

@@ -1,10 +1,8 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
-using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Audio;

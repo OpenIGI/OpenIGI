@@ -1,7 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.TestSupport;

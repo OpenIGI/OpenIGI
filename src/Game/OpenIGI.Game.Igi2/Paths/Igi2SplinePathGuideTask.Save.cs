@@ -1,6 +1,3 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Paths;
 
 /// <content>

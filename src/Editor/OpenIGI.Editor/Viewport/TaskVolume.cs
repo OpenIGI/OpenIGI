@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.World;
 
 namespace OpenIGI.Editor.Viewport;
 

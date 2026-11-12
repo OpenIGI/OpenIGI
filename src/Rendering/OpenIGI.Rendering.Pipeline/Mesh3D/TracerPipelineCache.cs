@@ -1,4 +1,3 @@
-using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 

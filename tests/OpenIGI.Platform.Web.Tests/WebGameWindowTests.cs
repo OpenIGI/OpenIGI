@@ -1,5 +1,4 @@
 using OpenIGI.Input;
-using OpenIGI.Platform.Web;
 using Xunit;
 
 namespace OpenIGI.Platform.Web.Tests;

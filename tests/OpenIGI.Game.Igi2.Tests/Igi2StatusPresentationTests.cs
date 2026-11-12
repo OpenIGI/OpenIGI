@@ -1,14 +1,11 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Presentation.Igi2.Hud;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;

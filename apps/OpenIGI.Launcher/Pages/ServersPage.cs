@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Net.Browsing;
 using OpenIGI.UI;

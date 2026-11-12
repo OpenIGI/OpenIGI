@@ -3,7 +3,6 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Config;
 using OpenIGI.Game.Menus;
-using OpenIGI.Game.World;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.TestSupport;
 using Xunit;

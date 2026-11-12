@@ -1,7 +1,5 @@
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Player;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Igi1.Hud;

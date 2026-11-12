@@ -1,8 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline;
-using OpenIGI.Rendering.Pipeline.SurfaceCache;
-using OpenIGI.Rendering.Rhi;
 using Xunit;
 using Xunit.Abstractions;
 

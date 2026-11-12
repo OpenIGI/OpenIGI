@@ -1,6 +1,5 @@
 using System.Text.Json;
 using OpenIGI.Formats.World;
-using OpenIGI.Tools;
 
 namespace OpenIGI.Tools.ResExtract;
 

@@ -28,7 +28,6 @@ using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.D3D12;
 using OpenIGI.Rendering.D3D12.Rhi;
 using OpenIGI.Rendering.Streamline;
-using OpenIGI.Rendering.Vulkan;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering;

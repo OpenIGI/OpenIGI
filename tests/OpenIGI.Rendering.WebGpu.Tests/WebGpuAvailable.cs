@@ -1,4 +1,3 @@
-using OpenIGI.Rendering.WebGpu;
 using Xunit;
 
 namespace OpenIGI.Rendering.WebGpu.Tests;

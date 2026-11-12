@@ -1,17 +1,10 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
-using OpenIGI.Editor.Terrain;
 using OpenIGI.Editor.Viewport;
-using OpenIGI.Formats.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Editor;
-using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI;
-using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;

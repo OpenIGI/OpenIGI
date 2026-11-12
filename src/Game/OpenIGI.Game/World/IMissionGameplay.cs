@@ -1,5 +1,3 @@
-using OpenIGI.Game.Player;
-
 namespace OpenIGI.Game.World;
 
 /// <summary>A title's own mission, as the host holds it: the thing its presenters are built over.</summary>

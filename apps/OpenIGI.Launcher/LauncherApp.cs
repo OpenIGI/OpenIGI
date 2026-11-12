@@ -10,7 +10,6 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Screens;
 using OpenIGI.UI.Skia;
 using OpenIGI.UI.Widgets;
-using Silk.NET.Core.Contexts;
 using Silk.NET.GLFW;
 using Silk.NET.Input;
 using Silk.NET.Input.Glfw;

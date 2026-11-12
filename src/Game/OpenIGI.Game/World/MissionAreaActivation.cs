@@ -1,8 +1,3 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Flow;
-using OpenIGI.Game.Player;
-
 namespace OpenIGI.Game.World;
 
 /// <summary>The bits of Project I.G.I.'s area criteria, each a script constant a level's <c>Criteria</c> slot names.</summary>

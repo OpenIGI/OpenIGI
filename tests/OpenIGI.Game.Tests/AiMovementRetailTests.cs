@@ -1,7 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;

@@ -7,7 +7,6 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi1;
 using OpenIGI.Scripting.Qsc;
 using OpenIGI.Scripting.Qvm;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Vocabulary;
 using Xunit;
 

@@ -2,9 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
 

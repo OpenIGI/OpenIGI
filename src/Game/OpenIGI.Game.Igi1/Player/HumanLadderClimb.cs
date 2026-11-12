@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.Player;
 

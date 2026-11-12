@@ -3,7 +3,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
@@ -480,193 +479,21 @@ public sealed partial class Igi1PlayerSetup(
     }
 
     /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
-    /// <remarks>
-    /// <para>
-    /// A vehicle's guns are attachments of its model (<c>0x4F4800</c> spawns them through <c>0x4C4950</c>);
-    /// each <c>TASKTYPE_AISTATIONARYGUN</c> names its weapon by model (<c>0x413C00</c>). A gun mounted on
-    /// another gun -- a T80's coaxial M2HB on its turret -- sits at the sum of both attachment offsets.
-    /// </para>
-    /// <para>
-    /// Missile rows (T80, APC) launch into the vehicle missile simulation; gunshot rows (M2HB, MIL) go
-    /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
-    /// </para>
-    /// </remarks>
     /// <param name="loaded">The mission, whose packs hold the vehicles' models.</param>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="roster">The weapon table.</param>
     /// <param name="player">The player the guns aim at.</param>
+    /// <seealso cref="Igi1VehicleArming"/>
     public void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
     {
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(player);
-        if (mission.Cutscenes is not { } runtime || mission.MagicObjects is not { } magic)
+        if (mission.Cutscenes is { } runtime && mission.MagicObjects is { } magic)
         {
-            return;
+            new Igi1VehicleArming(mission, host, loaded, roster, player, runtime, magic).Arm(levelRoot);
         }
-
-        int armed = 0;
-        List<string> weaponModels = [];
-        foreach (DeclaredTask vehicle in levelRoot.Descendants().OfType<DeclaredTask>())
-        {
-            if (vehicle is (CarTask or HeliTask)
-                && vehicle.TryGetValue("Model", out object? rawZoneModel)
-                && rawZoneModel is string zoneModel)
-            {
-                runtime.Vehicles.ConfigureDeathZones(
-                    vehicle,
-                    VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
-            }
-
-            // A gun holder carries its guns as attachments of its holder model, as a car does of its own.
-            if (vehicle.Type.Name == "AIStationaryGunHolder"
-                && vehicle.TryGetValue("Holder model", out object? rawHolderModel)
-                && rawHolderModel is string holderModel)
-            {
-                armed += ArmGuns(vehicle, holderModel) ? 1 : 0;
-                continue;
-            }
-
-            // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
-            if (vehicle is not (CarTask or HeliTask)
-                || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
-                || rawCanFire is not string canFire
-                || string.IsNullOrWhiteSpace(canFire)
-                || !vehicle.TryGetValue("Model", out object? rawModel)
-                || rawModel is not string modelName)
-            {
-                continue;
-            }
-
-            armed += ArmGuns(vehicle, modelName) ? 1 : 0;
-        }
-
-        if (armed == 0)
-        {
-            return;
-        }
-
-        // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
-        if (host.Scene is { } armedScene)
-        {
-            runtime.Vehicles.BindVehicleGunPlacements(armedScene);
-        }
-
-        mission.SoldierPresenter?.ArmVehicleGuns(loaded, weaponModels, runtime.Vehicles.VehicleGunVisuals);
-
-        // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
-        // about a metre over the feet standing and half that crouched -- not the eye.
-        // The rig, or another game's player standing in its stead: where its feet are and whether it keeps low.
-        (Vector3d Feet, bool Low)? Target() =>
-            mission.IsPlayerDead || mission.PlayerLife.Health.IsDead ? null
-            : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
-            : (player.Body.Position, player.Body.IsCrouched);
-        runtime.Vehicles.VehicleCombatTarget = () => Target() is { } aim
-            ? aim.Feet + new Vector3d(
-                0d,
-                0d,
-                aim.Low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
-            : null;
-        // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
-        // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.Vehicles.VehicleSightTarget = () => Target() is { } seen
-            ? seen.Feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(seen.Low))
-            : null;
-        // A holder's record is offered every human in the global list's order (0x489750), each described by itself
-        // (0x45FE30): the player, the partners, then the soldiers.
-        List<AiDetectable> detectables = [];
-        runtime.Vehicles.GunHolderSubjects = () =>
-        {
-            detectables.Clear();
-            int playerTeam = mission.Soldiers?.PlayerTeam ?? 0;
-            object playerKey = (object?)mission.PlayerStandIn ?? player;
-            (Vector3d feet, bool low) = mission.PlayerStandIn is { } standIn
-                ? (standIn.Feet, standIn.IsKeepingLow)
-                : (player.Body.Position, player.Body.IsCrouched);
-            detectables.Add(HumanDetectable(playerKey, feet, low, playerTeam, alive: Target() is not null));
-            foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
-            {
-                detectables.Add(HumanDetectable(
-                    partner, partner.Player.Body.Position, partner.Player.IsCrouched, playerTeam, alive: !partner.IsDead));
-            }
-
-            mission.Soldiers?.AddDetectables(detectables);
-            return detectables;
-        };
-        runtime.Vehicles.VehicleCombatLineOfSight = (owner, from, to) =>
-            mission.Trace is null
-            || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.SightObstructionTolerance, owner);
-        runtime.Vehicles.VehicleCombatShotFired = shot =>
-        {
-            if (shot.IsHitscan)
-            {
-                if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
-                {
-                    mission.VehicleRoundOwner = shot.Owner;
-                    try
-                    {
-                        mission.Soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
-                    }
-                    finally
-                    {
-                        mission.VehicleRoundOwner = null;
-                    }
-                }
-
-                return;
-            }
-
-            // The report is the gun's, on the hold edges Gun_Fire plays it on (VehicleSoundPlayer); the missile
-            // task makes no launch sound of its own.
-            mission.VehicleMissiles.Spawn(
-                shot.Origin,
-                shot.Target,
-                shot.MissileType,
-                shot.MuzzleVelocityMetresPerSecond,
-                shot.Direction,
-                shot.ModelName,
-                collisionOwner: shot.Owner,
-                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
-        };
-        host.Logger.Information("Ai", $"{armed} armed vehicle(s) and gun holder(s).");
-
-        bool ArmGuns(DeclaredTask carrier, string modelName)
-        {
-            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
-                modelName,
-                ModelOf,
-                magic,
-                roster,
-                (attachment, weaponModel) => host.Logger.Warning(
-                    "Ai",
-                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
-            if (guns.Count == 0)
-            {
-                return false;
-            }
-
-            runtime.Vehicles.ConfigureVehicleGuns(carrier, guns);
-            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
-            host.Logger.Information(
-                "Ai",
-                $"{carrier.Type.Name} {carrier.Id} ({modelName}) carries "
-                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
-            return true;
-        }
-
-        // A human as it describes itself to a record: its mark over the feet, its origin, its side, whether it lives.
-        static AiDetectable HumanDetectable(object key, Vector3d feet, bool low, int team, bool alive) => new(
-            key,
-            feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(low)),
-            feet + new Vector3d(0d, 0d, low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits),
-            team,
-            alive);
-
-        MefModel? ModelOf(string name) =>
-            loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
-                ? mef
-                : null;
     }
 
     /// <summary>Hands the player everything the mission declares, with the ammunition each weapon draws from.</summary>

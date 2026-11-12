@@ -1,8 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation.Igi1;

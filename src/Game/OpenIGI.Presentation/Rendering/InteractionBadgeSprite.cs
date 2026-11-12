@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
-using OpenIGI.UI.Layout;
 using OpenIGI.UI;
 
 namespace OpenIGI.Presentation.Rendering;

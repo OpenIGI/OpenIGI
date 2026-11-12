@@ -1,4 +1,3 @@
-using OpenIGI.Frontend;
 using OpenIGI.Input;
 using OpenIGI.UI.Screens;
 using OpenIGI.UI;

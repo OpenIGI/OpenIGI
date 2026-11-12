@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using Xunit;

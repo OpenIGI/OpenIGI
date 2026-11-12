@@ -6,8 +6,6 @@ using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Presentation.Igi2.Hud;
 

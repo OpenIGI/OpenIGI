@@ -1,6 +1,5 @@
 using System.Globalization;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qsc;
 

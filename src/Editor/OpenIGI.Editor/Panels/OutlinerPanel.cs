@@ -1,11 +1,9 @@
-using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.UI;
 using OpenIGI.UI.Editor.Actions;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
 using OpenIGI.UI.Editor.Widgets;
-using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Editor.Panels;

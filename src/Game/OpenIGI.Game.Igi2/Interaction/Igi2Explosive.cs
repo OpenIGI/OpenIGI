@@ -4,9 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Expressions;
-using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 

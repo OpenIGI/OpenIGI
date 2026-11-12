@@ -4,7 +4,6 @@ using System.Text;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering.D3D12.Interop;
-using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 
 namespace OpenIGI.Rendering.D3D12.Pipelines;

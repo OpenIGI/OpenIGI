@@ -1,5 +1,3 @@
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Interaction;
 
 /// <content>Its save state, <c>ExplodeObject_ptSerializeParameterList</c>.</content>

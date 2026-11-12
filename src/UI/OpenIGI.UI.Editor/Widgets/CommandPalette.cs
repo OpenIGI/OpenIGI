@@ -1,5 +1,4 @@
 using OpenIGI.Core.Configuration;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
