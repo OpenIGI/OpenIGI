@@ -59,11 +59,12 @@ public sealed class Igi1HumanCamera
     // 0x483EC0's depth multiplier.
     private const double DeathPull = 1.05;
 
-    // The eight points 0x483A00 tests around a body: 1433.6 to every side, at the feet and 2662.4 up.
+    // The eight points 0x483A00 tests around a body: 716.8 to every side (0x1.666666p+9), at the origin and 2662.4 up.
+    // Twice that put the points of a body backed against a wall through it, where they could see a camera behind the wall.
     private static readonly Vector3d[] BodyPoints =
     [
-        new(-1433.6, 1433.6, 0.0), new(1433.6, 1433.6, 0.0), new(-1433.6, -1433.6, 0.0), new(1433.6, -1433.6, 0.0),
-        new(-1433.6, 1433.6, 2662.4), new(1433.6, 1433.6, 2662.4), new(-1433.6, -1433.6, 2662.4), new(1433.6, -1433.6, 2662.4),
+        new(-716.8, 716.8, 0.0), new(716.8, 716.8, 0.0), new(-716.8, -716.8, 0.0), new(716.8, -716.8, 0.0),
+        new(-716.8, 716.8, 2662.4), new(716.8, 716.8, 2662.4), new(-716.8, -716.8, 2662.4), new(716.8, -716.8, 2662.4),
     ];
 
     private Camera3D _camera = Camera3D.Default;
