@@ -76,4 +76,34 @@ public sealed class UiScaleTests
         Assert.Equal(expected, UiScale.Desktop(requested, height));
         Assert.Equal(3, UiScale.Resolve(UiScale.Automatic, 2560, 1440));
     }
+
+    /// <summary>
+    /// The menus are drawn at no less than 0.85 of their authored size on a short wide screen, are left alone from 918
+    /// lines up, and are never made narrower than the 1440 units a 4:3 screen already gives them.
+    /// </summary>
+    [Theory]
+    [InlineData(1280f, 720f, 0.85f)]
+    [InlineData(1366f, 768f, 0.85f)]
+    [InlineData(1280f, 800f, 0.85f)]
+    [InlineData(1600f, 900f, 0.85f)]
+    [InlineData(1920f, 1080f, 1f)]
+    [InlineData(2560f, 1440f, 1.3333f)]
+    [InlineData(1024f, 768f, 0.7111f)]
+    [InlineData(800f, 600f, 0.5556f)]
+    [InlineData(1152f, 720f, 0.8f)]
+    public void The_menus_stay_readable_on_a_small_screen(float width, float height, float effective)
+    {
+        float boost = UiScale.MenuBoost(width, height);
+
+        Assert.True(boost >= 1f);
+        Assert.Equal(effective, boost * height / 1080f, 3);
+        Assert.True(width / (boost * height / 1080f) >= UiScale.MenuNarrowestWidth - 0.5f || boost == 1f);
+    }
+
+    [Fact]
+    public void A_window_with_no_size_asks_for_no_enlargement()
+    {
+        Assert.Equal(1f, UiScale.MenuBoost(0f, 0f));
+        Assert.Equal(1f, UiScale.MenuBoost(1280f, 0f));
+    }
 }

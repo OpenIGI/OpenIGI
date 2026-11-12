@@ -213,7 +213,7 @@ public sealed partial class GameHost
             float shellElapsed = Math.Clamp((shellNow - state.LastShellMilliseconds) / 1000f, 0f, 0.1f);
             state.LastShellMilliseconds = shellNow;
 
-            var shellFrame = new LayoutContext(_window.Width, _window.Height);
+            LayoutContext shellFrame = ShellLayout();
             state.Shell.Update(shellFrame, _window.Input, shellElapsed);
             DrainPressQueue(state, executeBinds: false);
             if (!state.Console.IsOpen)
@@ -524,7 +524,7 @@ public sealed partial class GameHost
 
             _device.BeginStageTiming(RenderStage.UserInterface);
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            var shellPainter = UiPainter.Create(state.Batch, new LayoutContext(_window.Width, _window.Height));
+            var shellPainter = UiPainter.Create(state.Batch, ShellLayout());
             state.Batch.Begin();
 
             // The going-in sequence's picture: the level exactly as it is drawn, before any of the

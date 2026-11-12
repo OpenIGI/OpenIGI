@@ -838,6 +838,10 @@ public sealed partial class UiPainter
         UiVec2 origin = _transform.Apply(topLeft);
         float deviceSize = sizePx * scale;
         Bgra32 faded = Fade(color);
+
+        // Small text is drawn from the face's smaller rasterisation when it has one. They measure alike, so
+        // the pen ends where the caller's measurement of the font it passed says it does.
+        font = font.ForDrawSize(deviceSize);
         var run = new GlyphRun(font, text, deviceSize, origin);
         while (run.MoveNext())
         {
