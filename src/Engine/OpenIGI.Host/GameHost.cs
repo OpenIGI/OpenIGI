@@ -81,6 +81,11 @@ public sealed partial class GameHost : IDisposable
     /// <summary>Gets the window height, or the authored 240 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowHeight => _window.Height > 0 ? _window.Height : 240;
 
+    /// <summary>Gets the layout the menus are updated and drawn in this frame: the window's, enlarged on a small screen.</summary>
+    /// <remarks>The shell's update and its draw both take this one, so a pointer lands on what is drawn.</remarks>
+    private OpenIGI.UI.Layout.LayoutContext ShellLayout() =>
+        new(SafeWindowWidth, SafeWindowHeight, userScale: UiScale.MenuBoost(_window.Width, _window.Height));
+
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
     private readonly HostOptions _options;

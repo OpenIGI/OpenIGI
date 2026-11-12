@@ -30,6 +30,7 @@ public sealed class UiFont : IDisposable
     private readonly Dictionary<int, GlyphInfo> _glyphs;
     private readonly IUiImageFactory? _owner;
     private readonly int _fallbackCodepoint;
+    private UiFont[] _reductions = [];
     private bool _disposed;
 
     private UiFont(FontAtlasData atlas, IUiImageFactory? owner, UiImage texture, byte[]? fontData)
@@ -99,6 +100,48 @@ public sealed class UiFont : IDisposable
 
         UiImage texture = images.CreateImage(atlas.Width, atlas.Height, pixels);
         return new UiFont(atlas, images, texture, fontData);
+    }
+
+    /// <summary>Gives the font a smaller rasterisation of the same face, to draw small text from.</summary>
+    /// <param name="smaller">The same face rasterised at a lower pixel height. The font owns it from here and disposes it.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="smaller"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="smaller"/> is another kind of atlas, or is not smaller.</exception>
+    /// <remarks>
+    /// A coverage atlas is sharp only near the size it was rasterised at: sampled with one bilinear tap, a glyph
+    /// drawn at less than half its atlas size skips texels, so thin stems fade and the text greys out. A second,
+    /// smaller rasterisation gives small text a source of its own size. Glyph metrics are the outline's, scaled,
+    /// so every rasterisation of a face measures the same and <see cref="ForDrawSize"/> can swap one for another
+    /// without moving the pen.
+    /// </remarks>
+    public void AddReduction(UiFont smaller)
+    {
+        ArgumentNullException.ThrowIfNull(smaller);
+        if (smaller.Kind != Kind || smaller.BasePixelHeight >= BasePixelHeight)
+        {
+            throw new ArgumentException("A reduction is the same kind of atlas at a lower pixel height.", nameof(smaller));
+        }
+
+        _reductions = [.. _reductions, smaller];
+        Array.Sort(_reductions, static (a, b) => a.BasePixelHeight.CompareTo(b.BasePixelHeight));
+    }
+
+    /// <summary>Gets the rasterisation of this face to draw from at a size on the screen.</summary>
+    /// <param name="devicePx">The text size in back-buffer pixels.</param>
+    /// <returns>
+    /// The smallest rasterisation that is at least as large as the text, so the atlas is never magnified and is
+    /// minified as little as the rasterisations at hand allow; this font when it has no reductions.
+    /// </returns>
+    public UiFont ForDrawSize(float devicePx)
+    {
+        foreach (UiFont reduction in _reductions)
+        {
+            if (reduction.BasePixelHeight >= devicePx)
+            {
+                return reduction;
+            }
+        }
+
+        return this;
     }
 
     /// <summary>Gets the scale from atlas pixels to a requested pixel size.</summary>
@@ -245,6 +288,11 @@ public sealed class UiFont : IDisposable
         if (Texture.IsValid)
         {
             _owner?.DestroyImage(Texture);
+        }
+
+        foreach (UiFont reduction in _reductions)
+        {
+            reduction.Dispose();
         }
     }
 }

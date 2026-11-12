@@ -122,4 +122,37 @@ public static class UiScale
         float grown = 1f + (MathF.Max(0f, screenHeight - 1440f) / 1440f);
         return Math.Clamp(MathF.Round(grown * 4f) / 4f, 1f, 2f);
     }
+
+    /// <summary>The smallest the menus are drawn, as a share of their authored 1080-line size, where the screen has room.</summary>
+    public const float MenuReadableScale = 0.85f;
+
+    /// <summary>The narrowest the menus' canvas is made to keep them readable, in authored units: a 4:3 screen's.</summary>
+    public const float MenuNarrowestWidth = 1440f;
+
+    /// <summary>Gets how much larger than in proportion to the screen the menus are drawn, so they can be read on a small one.</summary>
+    /// <param name="screenWidth">The screen's width in pixels.</param>
+    /// <param name="screenHeight">The screen's height in pixels.</param>
+    /// <returns>
+    /// One on a screen of 918 lines or more, and on one with no size. Below that, the factor that brings the menus
+    /// up to <see cref="MenuReadableScale"/> of their authored size -- or as near it as leaves their canvas
+    /// <see cref="MenuNarrowestWidth"/> units wide, and never less than one.
+    /// </returns>
+    /// <remarks>
+    /// The menus are authored on a 1080-line canvas and scaled with the screen's height, which on a 720-line
+    /// laptop makes 17-unit body text 11 pixels tall and an 11-unit caption 7. Drawing them larger costs canvas:
+    /// at the floor a 1280 by 720 screen is 1506 by 847 units, which the pages reflow and scroll within. The
+    /// width is held to what a 4:3 screen already gives them, the narrowest they are laid out for, so a
+    /// 1024 by 768 screen is left as it was.
+    /// </remarks>
+    public static float MenuBoost(float screenWidth, float screenHeight)
+    {
+        if (screenWidth <= 0f || screenHeight <= 0f)
+        {
+            return 1f;
+        }
+
+        float natural = screenHeight / 1080f;
+        float wanted = MathF.Min(MenuReadableScale, screenWidth / MenuNarrowestWidth);
+        return wanted > natural ? wanted / natural : 1f;
+    }
 }
