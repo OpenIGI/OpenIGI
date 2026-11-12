@@ -55,7 +55,7 @@ public sealed partial class GameHost
                 HoldPlayerStill();
                 _window.CursorLocked = false;
             }
-            else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu))
+            else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu, _menuFlow.MenuMode && state.Shell is not null))
             {
                 // A paused view does not turn, and the cursor has to be free to reach the menu. The
                 // release is repeated every pass rather than done once on the way in, so nothing can

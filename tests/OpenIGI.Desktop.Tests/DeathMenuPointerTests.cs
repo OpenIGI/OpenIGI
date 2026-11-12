@@ -17,19 +17,28 @@ public sealed class DeathMenuPointerTests
         //
         // Standing a single branch down is not enough: the chain simply falls through to the next one
         // that locks. The screen has to stop the chain here, the way the pause menu does.
-        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: true));
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: true, frontEnd: false));
     }
 
     [Fact]
     public void ThePauseMenuStillOwnsThePointer()
     {
-        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: false));
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: false, frontEnd: false));
     }
 
     [Fact]
     public void BothAtOnceIsStillTheMenu()
     {
-        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: true));
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: true, frontEnd: false));
+    }
+
+    [Fact]
+    public void TheFrontEndOwnsThePointerOverALevelThatWasLeft()
+    {
+        // Abandoning a mission the player died in leaves the death orbit believing it still has a body
+        // to turn around. It locked the cursor under the main menu, and a locked pointer has no edges:
+        // the shell's cursor went wherever the mouse had been pushed, far off the screen.
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: false, frontEnd: true));
     }
 
     [Fact]
@@ -37,6 +46,6 @@ public sealed class DeathMenuPointerTests
     {
         // With no menu up the chain must fall through, so the look and the death orbit keep the lock
         // that makes the view keep turning however far the mouse is moved.
-        Assert.False(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: false));
+        Assert.False(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: false, frontEnd: false));
     }
 }

@@ -910,9 +910,16 @@ public sealed partial class GameHost : IDisposable
     /// below them takes it back: the death orbit, the ladder camera, the look. Whichever runs last in
     /// the frame wins, so a menu that does not stop the chain here ends up fighting one of them and the
     /// pointer flashes between locked and free without ever moving.
+    /// <para>
+    /// The front end is the third. A level that has been left is released, but what its cameras read is
+    /// not: a player who died, or was on a ladder, when the mission was abandoned is still dead or still
+    /// climbing as far as the viewpoint knows, and the death orbit and the ladder camera lock the cursor
+    /// whether or not a level is up. Locked, the backend's pointer is a virtual one with no edges, and
+    /// the shell draws its cursor wherever that says -- which is any distance off the screen.
+    /// </para>
     /// </remarks>
-    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu) =>
-        pauseMenu || missionFailedMenu;
+    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu, bool frontEnd) =>
+        pauseMenu || missionFailedMenu || frontEnd;
 
     /// <summary>
     /// Releases the GPU-backed resources the game owns. The window, device and developer console are owned
