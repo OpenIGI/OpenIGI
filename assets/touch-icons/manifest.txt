@@ -1,7 +1,7 @@
 # The touch controls' icons, in the atlas's order: <TouchButton>=<svg file, without its extension>.
 # Baked into src/Game/OpenIGI.Presentation/Hud/Remastered/Touch/touch-icons.bin by tools/OpenIGI.Tools.IconAtlas.
-# Sources: the Xnix Circular Interface Icons collection on SVG Repo, CC0 (see LICENSE.txt).
-Fire=bullseye-pointer
+# Sources: the Xnix Circular Interface Icons collection on SVG Repo, CC0 (see LICENSE.txt); bullet is the project's own.
+Fire=bullet
 Scope=locate-1
 Reload=reload
 Jump=top-arrow-4
