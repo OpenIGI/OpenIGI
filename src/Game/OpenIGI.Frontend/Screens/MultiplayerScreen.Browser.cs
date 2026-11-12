@@ -21,6 +21,9 @@ public sealed partial class MultiplayerScreen
     // Which modes show: any, or one; the ids the lines carry.
     private static readonly string[] FilterModes = [string.Empty, GameModes.Coop, GameModes.TeamDeathmatch, GameModes.FreeForAll, GameModes.Elimination, GameModes.SearchAndDestroy];
 
+    // How many lines' shapes stand in for the list while it has not been heard yet.
+    private const int SkeletonRows = 7;
+
     // How soon a second click on a line must follow the first to join it. Seconds.
     private const float DoubleClickSeconds = 0.4f;
 
@@ -76,14 +79,23 @@ public sealed partial class MultiplayerScreen
 
         _rows.Clear();
         var rows = new StackPanel { Orientation = Orientation.Vertical };
-        string? empty = all is null ? "Looking for servers…"
+        if (all is null)
+        {
+            // Not heard yet: the list's shape in place of its lines, so the panel is not a blank while it waits.
+            for (int i = 0; i < SkeletonRows; i++)
+            {
+                rows.AddChild(new ServerRowSkeleton(i, SkeletonRows));
+            }
+        }
+
+        string? empty = all is null ? null
             : coop.ListingError is { } error && shown.Count == 0 ? $"Couldn't list servers: {error}."
             : shown.Count == 0 ? all.Count == 0 ? "No games are open right now. Host one, and it shows here for everyone." : "No games match these filters."
             : null;
         if (empty is not null)
         {
             bool failed = coop.ListingError is not null && all is not null;
-            string heading = all is null ? "Searching" : failed ? "No answer" : all.Count == 0 ? "No games open" : "Nothing matches";
+            string heading = failed ? "No answer" : all is { Count: 0 } ? "No games open" : "Nothing matches";
             var nothing = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(24f, 72f, 24f, 56f) };
             nothing.AddChild(new Label(theme.Display, heading.ToUpperInvariant(), 40f, failed ? theme.Danger : theme.TextBright) { HorizontalAlignment = HorizontalAlignment.Center });
             nothing.AddChild(new Label(theme.Body, empty, 16f, theme.TextSecondary) { HorizontalAlignment = HorizontalAlignment.Center });
@@ -95,7 +107,11 @@ public sealed partial class MultiplayerScreen
             rows.AddChild(BuildRow(theme, room));
         }
 
-        rows.AddChild(BuildHostCard(theme));
+        if (all is not null)
+        {
+            rows.AddChild(BuildHostCard(theme));
+        }
+
         var scroll = new ScrollView(theme);
         scroll.SetContent(rows);
         _listScroll = scroll;
@@ -211,8 +227,9 @@ public sealed partial class MultiplayerScreen
             Selected = code == _selectedCode,
             Saved = room.Favourite,
             Locked = room.Passworded,
-            Unjoinable = !room.Compatible,
-            Tooltip = !room.Compatible ? "This server runs another version of the game."
+            Unjoinable = !room.Compatible || !room.Reachable,
+            Tooltip = !room.Reachable ? "This server is listed but isn't answering, so it can't be joined from here."
+                : !room.Compatible ? "This server runs another version of the game."
                 : room.Players >= room.MaxPlayers ? "This game is full."
                 : room.Passworded ? "This game asks for a password. Double-click or ENTER joins it." : "Double-click or ENTER joins it.",
         };
@@ -243,8 +260,8 @@ public sealed partial class MultiplayerScreen
         }
     }
 
-    // Whether a line can be joined: this build's version, and room in it.
-    private static bool Joinable(CoopRoomInfo room) => room.Compatible && room.Players < room.MaxPlayers;
+    // Whether a line can be joined: this build's version, within reach, and room in it.
+    private static bool Joinable(CoopRoomInfo room) => room.Compatible && room.Reachable && room.Players < room.MaxPlayers;
 
     // Asks for the list again, and counts the wait for the next asking from now.
     private void Refresh(ICoopRooms coop)

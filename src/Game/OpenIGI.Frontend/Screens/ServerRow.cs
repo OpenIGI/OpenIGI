@@ -317,3 +317,64 @@ internal sealed class ServerRow : Control
         return "…";
     }
 }
+
+/// <summary>
+/// The shape of a line of the server browser, shown while the list has not been heard yet: a block where each of a line's
+/// parts will stand -- the badge, the name and what is under it, the map, the players, the ping -- with a soft light passing
+/// along them, and each line fainter than the one above so the list tails off rather than ends.
+/// </summary>
+internal sealed class ServerRowSkeleton : UiElement
+{
+    private readonly int _index;
+    private readonly int _count;
+    private float _time;
+
+    /// <summary>Initializes a new instance of the <see cref="ServerRowSkeleton"/> class.</summary>
+    /// <param name="index">Which line it is, from the top.</param>
+    /// <param name="count">How many there are.</param>
+    public ServerRowSkeleton(int index, int count)
+    {
+        _index = index;
+        _count = Math.Max(1, count);
+    }
+
+    /// <inheritdoc/>
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(68f));
+
+    /// <inheritdoc/>
+    protected override void OnUpdate(float elapsedSeconds) => _time += elapsedSeconds;
+
+    /// <inheritdoc/>
+    protected override void OnDraw(UiPainter painter)
+    {
+        LayoutContext context = painter.Context;
+        UiRect bounds = Bounds;
+        float mid = bounds.Y + (bounds.Height / 2f);
+        float fade = 1f - (0.75f * _index / _count);
+        painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.05f * fade));
+
+        float inset = context.Px(ServerColumns.Inset);
+        float[] lefts = ServerColumns.Lefts(bounds.Width - (inset * 2f));
+        float Left(int column) => bounds.X + inset + lefts[column];
+        float Room(int column) => (column + 1 < lefts.Length ? Left(column + 1) : bounds.Right - inset) - Left(column) - context.Px(14f);
+
+        // A block, lit by where the passing light is: it crosses the row from the left about once every two seconds,
+        // each row a little behind the one above.
+        void Block(float x, float y, float width, float height)
+        {
+            float along = (x + (width / 2f) - bounds.X) / MathF.Max(1f, bounds.Width);
+            float wave = 0.5f + (0.5f * MathF.Sin(MathF.Tau * ((_time * 0.55f) - along - (_index * 0.06f))));
+            painter.FillRect(new UiRect(x, y, width, height), UiPalette.White((0.05f + (0.07f * wave * wave)) * fade));
+        }
+
+        // Names of different lengths, so the rows do not read as a ruled table.
+        float name = Room(1) * (0.34f + (0.22f * ((_index * 7 % 5) / 4f)));
+        Block(Left(0), mid - context.Px(15f), MathF.Min(Room(0), context.Px(64f)), context.Px(30f));
+        Block(Left(1), mid - context.Px(15f), name, context.Px(14f));
+        Block(Left(1), mid + context.Px(7f), context.Px(96f), context.Px(8f));
+        Block(Left(2), mid - context.Px(6f), MathF.Min(Room(2), context.Px(120f)), context.Px(12f));
+        Block(Left(3), mid - context.Px(14f), context.Px(40f), context.Px(10f));
+        Block(Left(3), mid + context.Px(5f), MathF.Min(Room(3), context.Px(104f)), context.Px(5f));
+        Block(Left(4), mid - context.Px(6f), context.Px(64f), context.Px(12f));
+    }
+}

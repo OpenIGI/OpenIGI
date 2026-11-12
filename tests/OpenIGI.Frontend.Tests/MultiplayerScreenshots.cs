@@ -50,11 +50,11 @@ public sealed class MultiplayerScreenshots
 
         foreach ((int width, int height) in Sizes)
         {
-            foreach (string state in new[] { "browse", "empty", "host", "switch", "glide", "connecting", "failed" })
+            foreach (string state in new[] { "browse", "loading", "empty", "host", "switch", "glide", "connecting", "failed" })
             {
                 var rooms = new FakeRooms
                 {
-                    Listing = state == "empty" ? [] : Games(),
+                    Listing = state == "loading" ? null : state == "empty" ? [] : Games(),
                     Status = state switch
                     {
                         "connecting" => new CoopStatus(CoopPhase.Connecting),
@@ -203,6 +203,7 @@ public sealed class MultiplayerScreenshots
         new("OLD1", "Night Shift (old build)", 2, 3, 16, false) { Mode = GameModes.TeamDeathmatch, PingMs = 88, Region = "eu", Dedicated = true, Compatible = false },
         new("P4T9ZA", "Jones and friends", 3, 3, 4, true) { Mode = GameModes.Coop },
         new("EU3", "Covert Ops 24/7", 5, 0, 16, false) { Mode = GameModes.SearchAndDestroy, PingMs = 57, Region = "eu", Dedicated = true },
+        new("AS1", "RPi Server", 1, 0, 16, false) { Mode = GameModes.TeamDeathmatch, Region = "as", Dedicated = true, Reachable = false },
     ];
 
     private static PartyView Squad() => new(

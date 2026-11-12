@@ -55,6 +55,14 @@ public sealed record CoopRoomInfo(string Code, string Name, int MissionId, int P
 
     /// <summary>Gets a value indicating whether this build can join it.</summary>
     public bool Compatible { get; init; } = true;
+
+    /// <summary>
+    /// Gets a value indicating whether this game can reach it at all: a listed server that does not answer where it is
+    /// asked after, or -- where it can only be joined through a room, as in the browser -- has no room open, cannot be.
+    /// </summary>
+    /// <remarks>The master lists every server that tells it it is running; it cannot tell that one sits behind a router
+    /// nothing gets through.</remarks>
+    public bool Reachable { get; init; } = true;
 }
 
 /// <summary>

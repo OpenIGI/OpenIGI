@@ -23,7 +23,10 @@ public sealed partial class MultiplayerScreen
         var top = new StackPanel { Orientation = Orientation.Vertical };
         MissionInfo? mission = room is null ? null : Context.Missions.FirstOrDefault(m => m.Id == room.MissionId);
         string map = room is null ? string.Empty : MapName(room.MissionId);
-        top.AddChild(new MissionPlate(theme, mission is null ? string.Empty : mission.Number.ToString("00", CultureInfo.InvariantCulture), room is null ? "Nothing picked" : "Map", room is null ? "Pick a game" : map, 156f)
+
+        // The list has not been heard yet: the panel says it is being asked for, not that nothing was picked.
+        bool searching = room is null && coop.Listing is null;
+        top.AddChild(new MissionPlate(theme, mission is null ? string.Empty : mission.Number.ToString("00", CultureInfo.InvariantCulture), room is not null ? "Map" : searching ? "Searching" : "Nothing picked", room is not null ? map : searching ? "Finding games" : "Pick a game", 156f)
         {
             Mode = room is { Mode.Length: > 0 } ? room.Mode : null,
             Picture = room is null ? null : Context.Host.MissionPicture(room.MissionId),
@@ -32,7 +35,7 @@ public sealed partial class MultiplayerScreen
 
         if (room is null)
         {
-            top.AddChild(new Label(theme.Body, "Pick a game in the list to see it here, or join a friend's room by its code below.", 16f, theme.TextSecondary) { Wrap = true, Margin = new Thickness(24f, 20f, 24f, 0f) });
+            top.AddChild(new Label(theme.Body, searching ? "Asking for the servers and rooms that are open. A friend's room can be joined by its code below meanwhile." : "Pick a game in the list to see it here, or join a friend's room by its code below.", 16f, theme.TextSecondary) { Wrap = true, Margin = new Thickness(24f, 20f, 24f, 0f) });
             body.Add(top, 0, 0);
             body.Add(BuildCodeJoin(theme, coop), 2, 0);
             return Panel(theme, body, side: true);
@@ -87,22 +90,23 @@ public sealed partial class MultiplayerScreen
 
         // The squares say who is in it; a line under them only for what they can't: why it can't be joined, that it waits
         // for its first player, that it asks for a password.
-        string? about = !room.Compatible ? "This server runs another version of the game, so it can't be joined from this one."
+        string? about = !room.Reachable ? "This server is listed, but it isn't answering: it may be behind a router that lets nothing in. It can't be joined from here."
+            : !room.Compatible ? "This server runs another version of the game, so it can't be joined from this one."
             : room.Passworded ? "It asks for a password."
             : room.Players == 0 ? "Nobody here yet. Join and the match starts when players arrive."
             : null;
         if (about is not null)
         {
-            inside.AddChild(Body(theme, about, room.Compatible ? theme.TextSecondary : theme.Danger, 15f));
+            inside.AddChild(Body(theme, about, room.Compatible && room.Reachable ? theme.TextSecondary : theme.Danger, 15f));
         }
 
         body.Add(inside, 1, 0);
 
         var foot = new StackPanel { Orientation = Orientation.Vertical, Spacing = 12f };
-        bool joinable = room.Compatible && !line.Full;
-        var join = new PrimaryAction(theme, line.Full ? "Full" : "Join")
+        bool joinable = Joinable(room);
+        var join = new PrimaryAction(theme, !room.Reachable ? "No answer" : line.Full ? "Full" : "Join")
         {
-            Subtitle = line.Full ? "WAIT FOR A SLOT OR PICK ANOTHER GAME" : $"{map.ToUpperInvariant()} · {line.Mode.ToUpperInvariant()}",
+            Subtitle = !room.Reachable ? "THE SERVER ISN'T ANSWERING: PICK ANOTHER GAME" : line.Full ? "WAIT FOR A SLOT OR PICK ANOTHER GAME" : $"{map.ToUpperInvariant()} · {line.Mode.ToUpperInvariant()}",
             IsEnabled = joinable,
             Margin = new Thickness(20f, 0f, 20f, 0f),
         };
