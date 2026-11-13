@@ -151,13 +151,14 @@ public static class SettingsFile
     /// <summary>Writes the current settings.</summary>
     /// <param name="console">The console whose registry, aliases and bindings are written.</param>
     /// <param name="path">The file to write.</param>
+    /// <param name="presets">The graphics presets, whose lock decides what a managed variable is measured against; see <see cref="Render"/>.</param>
     /// <returns><see langword="true"/> when the file was written.</returns>
     /// <remarks>
     /// The write is atomic — a temporary file beside the target is replaced into place — so a crash
     /// or a power cut during the save cannot leave a truncated settings file behind.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="console"/> is <see langword="null"/>.</exception>
-    public static bool Save(ConsoleSystem console, string path)
+    public static bool Save(ConsoleSystem console, string path, Presets.GraphicsPresetRegistry? presets = null)
     {
         ArgumentNullException.ThrowIfNull(console);
 
@@ -166,7 +167,7 @@ public static class SettingsFile
             return false;
         }
 
-        string text = Render(console);
+        string text = Render(console, presets);
         string temporary = path + ".tmp";
 
         try
@@ -202,10 +203,14 @@ public static class SettingsFile
 
     /// <summary>Renders the settings that would be written.</summary>
     /// <param name="console">The console whose registry, aliases and bindings are rendered.</param>
+    /// <param name="presets">
+    /// The graphics presets, or <see langword="null"/> where none is locked. Under a lock, a variable the locked preset sets is
+    /// recorded when it differs from the preset's value rather than from its own default.
+    /// </param>
     /// <returns>The file's contents.</returns>
     /// <remarks>Exposed so tests and the <c>dump_settings</c> command can inspect it without writing a file.</remarks>
     /// <exception cref="ArgumentNullException"><paramref name="console"/> is <see langword="null"/>.</exception>
-    public static string Render(ConsoleSystem console)
+    public static string Render(ConsoleSystem console, Presets.GraphicsPresetRegistry? presets = null)
     {
         ArgumentNullException.ThrowIfNull(console);
 
@@ -214,7 +219,11 @@ public static class SettingsFile
         builder.AppendLine("// Only values that differ from their default are recorded.");
         builder.AppendLine();
 
-        List<ICVar> modified = [.. console.Variables.Modified(CVarOptions.Archive)];
+        // A build locked to one preset has it applied at every start, before this file is read. There a managed variable is
+        // the player's own where it differs from the preset, not from its default.
+        List<ICVar> modified = presets?.LockedPreset is null
+            ? [.. console.Variables.Modified(CVarOptions.Archive)]
+            : [.. console.Variables.Modified(CVarOptions.Archive, presets.LockedValue)];
         List<KeyValuePair<string, string>> kept =
             [.. Ordered(console.KeptSettings).Where(entry => !console.Variables.TryGet(entry.Key, out _))];
         if (modified.Count > 0 || kept.Count > 0)

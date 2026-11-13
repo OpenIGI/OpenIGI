@@ -121,6 +121,17 @@ public sealed class HostConsole : IDisposable
         Game.Generated.CVarRegistrations.RegisterAll();
         Generated.CVarRegistrations.RegisterAll();
 
+        // The lock first: the preset is this build's picture, and the file then puts back only what the player changed
+        // from it -- the file of a locked build records a managed variable where it differs from the preset
+        // (SettingsFile.Render). Applied after the file, the lock undid every such change at every start: a player who
+        // turned an option of the Gameplay page on found it off again on the next visit. Before the command line, so a
+        // +gfx_preset there is refused like one typed later.
+        if (lockedPreset is { } locked)
+        {
+            _logger.Information(LogCategory, $"This build is locked to the {locked} graphics preset.");
+            GraphicsPresetRegistry.Default.Lock(locked);
+        }
+
         bool settingsLoaded = false;
         if (IsolatedFromSavedSettings)
         {
@@ -134,14 +145,7 @@ public sealed class HostConsole : IDisposable
             _logger.Information(LogCategory, $"Loaded settings from {_settingsPath}.");
         }
 
-        // After the file, so a saved choice cannot outlive the lock, and before the command line, so a
-        // +gfx_preset there is refused like one typed later.
-        if (lockedPreset is { } locked)
-        {
-            _logger.Information(LogCategory, $"This build is locked to the {locked} graphics preset.");
-            GraphicsPresetRegistry.Default.Lock(locked);
-        }
-        else if (!IsolatedFromSavedSettings && !settingsLoaded)
+        if (lockedPreset is null && !IsolatedFromSavedSettings && !settingsLoaded)
         {
             _logger.Information(LogCategory, $"No saved settings found; using the {firstRunPreset} graphics preset.");
             GraphicsPresetRegistry.Default.Apply(firstRunPreset);
@@ -375,7 +379,7 @@ public sealed class HostConsole : IDisposable
         // carries it just before the file is rendered rather than being written on every drag.
         _view.SaveLayout();
 
-        bool saved = SettingsFile.Save(System, _settingsPath);
+        bool saved = SettingsFile.Save(System, _settingsPath, GraphicsPresetRegistry.Default);
         if (!saved)
         {
             _logger.Warning(LogCategory, $"Could not write {_settingsPath}; settings were not saved.");
