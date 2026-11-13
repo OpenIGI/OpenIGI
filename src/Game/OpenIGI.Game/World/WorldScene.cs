@@ -88,6 +88,13 @@ public sealed class WorldScene
     /// <summary>The stationary-gun task type, whose holder is engine-created outside lightmap enumeration.</summary>
     public const string StationaryGunType = "StationaryGun";
 
+    /// <summary>The task type of a gun that fires by itself: Project I.G.I.'s sentry gun.</summary>
+    /// <remarks>
+    /// An object like any other with a model (<c>0x46E7F0</c> gives it the model its "Holder model" names, at its own
+    /// position and orientation), and the one whose attachments are its turning head and the weapon in it.
+    /// </remarks>
+    public const string GunHolderType = "AIStationaryGunHolder";
+
     /// <summary>The interactive switch task type, whose model a task declares in <see cref="SwitchModelParameter"/>.</summary>
     public const string SwitchType = "Switch";
 
@@ -172,8 +179,13 @@ public sealed class WorldScene
         // StationaryGun carries its visible holder in "Holder model", not Model.
         // The native task still owns the world transform, so this is a normal placement rather than an
         // attachment to the enemy's animated gunner.
+        //
+        // And so does the gun that fires by itself (0x46E7F0): its holder is the base on the ceiling, whose attachment is
+        // the dome that turns and carries the weapon. Left out, the base was never placed, so the dome that hangs from it
+        // was never made, and mission 14's sentries were a bare weapon in the air.
         if (declaredModelName is null
-            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && (string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+                || string.Equals(task.Type.Name, GunHolderType, StringComparison.Ordinal))
             && task.TryGetValue("Holder model", out object? rawHolderModel)
             && rawHolderModel is string holderModel
             && holderModel.Length > 0)
@@ -254,10 +266,14 @@ public sealed class WorldScene
             : "switch";
 
     /// <summary>Lists the models the retail lightmap walker enumerates for a task.</summary>
-    /// <remarks>StationaryGun's holder is created by the engine after the lightmap list is built.</remarks>
+    /// <remarks>
+    /// StationaryGun's holder is created by the engine after the lightmap list is built. A gun holder carries no lightmap
+    /// either: nothing in a level declares one under it.
+    /// </remarks>
     private static IEnumerable<string> LightmapModelNames(DeclaredTask task)
     {
-        if (string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal))
+        if (string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            || string.Equals(task.Type.Name, GunHolderType, StringComparison.Ordinal))
         {
             yield break;
         }

@@ -52,6 +52,19 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
                 Assert.Equal((1, false), runtime.Vehicles.GunHolderState(holder));
             }
 
+            // Each is an object of its own (0x46E7F0): the base its "Holder model" names, and under it the dome that is the
+            // gun's mount, an attachment of that base. Without the base there was no dome, and the weapon hung in the air.
+            WorldScene scene = host.Scene()!;
+            foreach (GameTask holder in holders)
+            {
+                WorldPlacement[] own = [.. scene.Placements.Where(placement => ReferenceEquals(placement.Owner, holder))];
+                Assert.Contains(own, placement => placement.Instance.Name == "456_11_1");
+                WorldPlacement dome = Assert.Single(own, placement => placement.Instance.Name == "456_12_1");
+                Assert.True(
+                    runtime.TryGetPlacementDrawTransform(dome, out _, out _),
+                    $"holder {holder.Id}'s dome is not drawn on its gun's mount");
+            }
+
             // On, still the guards' side: the guards are friends, the player (far off) its only enemy, and nothing fires.
             Assert.True(host.Loop().Variables.TryWrite("EditVariable_1451.nValue", QvmValue.FromInt32(2)));
             for (int tick = 0; tick < 30 * 3; tick++)
@@ -68,6 +81,7 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
             // Terminal_301.isHacked is bound read-only off the interaction: hack it as its completion does.
             mission.Interactions!.Items.Single(item => item.Task.Id == 301).CompleteForTesting();
             int fired = 0;
+            HashSet<GameTask> domeTurned = new(ReferenceEqualityComparer.Instance);
             for (int tick = 0; tick < 30 * 20; tick++)
             {
                 Step(host, 1);
@@ -76,6 +90,16 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
                     Assert.Equal(0, runtime.Vehicles.GunHolderState(holder)!.Value.Team);
                     VehicleGunTurret turret = runtime.Vehicles.GunTurret(holder, 0)!;
                     fired += turret.Firing ? 1 : 0;
+                    // The dome turns with the gun: its draw pose is the base's turned by the gun's traverse (0x46FBA0).
+                    if (turret.Yaw != 0f && !domeTurned.Contains(holder))
+                    {
+                        WorldPlacement dome = scene.Placements.Single(placement =>
+                            ReferenceEquals(placement.Owner, holder) && placement.Instance.Name == "456_12_1");
+                        Assert.True(runtime.TryGetPlacementDrawTransform(dome, out _, out OpenIGI.Core.Numerics.Matrix3f turned));
+                        Assert.NotEqual(dome.Orientation, turned);
+                        domeTurned.Add(holder);
+                    }
+
                     if (tick % 30 == 0)
                     {
                         trace.AppendLine(CultureInfo.InvariantCulture,
@@ -89,6 +113,7 @@ public sealed class MissionFourteenGunHolderTests : IDisposable
                 .Select(view => $"{view.Soldier.Name} dead {view.IsDead}"));
             trace.AppendLine(guards);
             Assert.True(fired > 0, $"No hacked gun fired on a guard:\n{trace}");
+            Assert.NotEmpty(domeTurned);
             Assert.All(
                 mission.Soldiers.SoldierViews.Where(view => RoomGuards.Contains(view.Soldier.Id)),
                 view => Assert.True(view.IsDead, $"{view.Soldier.Name} survived the hacked guns:\n{trace}"));
