@@ -393,7 +393,7 @@ public static class Igi2DrawableScene
             Igi2VisibilityKind.Object, placement.LevelId, placement.Model, pose.Position, Igi2Sector.Shell, centre, model.RenderSphereRadius)
         {
             RegistersInRooms = Igi2SectorInteriorTypes.RegistersInRooms(placement.TypeName),
-            IsShownUnseen = Igi2SectorInteriorTypes.IsShownUnseen(placement.TypeName),
+            SkipsRoomTest = Igi2SectorInteriorTypes.SkipsRoomTest(placement.TypeName),
         };
     }
 

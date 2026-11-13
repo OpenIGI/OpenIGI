@@ -123,11 +123,11 @@ public sealed class RetailIgi2SectorVisibilityTests
     }
 
     /// <summary>
-    /// <c>Direct3DRender_DrawRigidMesh</c>: from a room that cannot see out, every mesh standing in no room is left out -- a fence,
-    /// a wire, a crate -- except the doors and the conveyor belts, which stay to the frustum.
+    /// <c>RigidDynCubeObj_EnterHandler</c>: from a room that cannot see out, every interior object standing in no room is left
+    /// out -- a fence, a wire, a crate -- and what is not an interior object, a door or a lift, stays to the frustum.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
-    public void Unseen_from_inside_only_doors_and_conveyor_belts_stand_outside_the_rooms()
+    public void Unseen_from_inside_only_what_skips_the_room_test_stands_outside_the_rooms()
     {
         Setup m = Mission1.Value;
         Igi2SectorVisibility visibility = m.Visibility(static (_, _) => false);
@@ -135,9 +135,9 @@ public sealed class RetailIgi2SectorVisibilityTests
 
         List<Igi2VisibilityKey> unroomed = [.. Igi2SectorVisibility.KeysOf(m.Scene)
             .Where(k => k.Kind == Igi2VisibilityKind.Object && visibility.SectorOf(k) is null)];
-        Assert.Contains(unroomed, static k => k.IsShownUnseen);
-        Assert.Contains(unroomed, static k => !k.IsShownUnseen && !k.RegistersInRooms);
-        Assert.All(unroomed, k => Assert.Equal(k.IsShownUnseen, visibility.IsVisible(k)));
+        Assert.Contains(unroomed, static k => k.SkipsRoomTest);
+        Assert.Contains(unroomed, static k => !k.SkipsRoomTest && k.RegistersInRooms);
+        Assert.All(unroomed, k => Assert.Equal(k.SkipsRoomTest, visibility.IsVisible(k)));
         Assert.Null(visibility.OutsideClip);
     }
 

@@ -12,8 +12,9 @@ public enum Igi2VisibilityKind
     Room,
 
     /// <summary>
-    /// Any other rigid object: drawn by the room its centre stands in when its type registers into rooms, and otherwise only
-    /// while the outside is seen, unless its type is drawn whatever the camera stands in (<see cref="Igi2VisibilityKey.IsShownUnseen"/>).
+    /// Any other rigid object: left to the view alone unless its type is tested against the rooms
+    /// (<see cref="Igi2VisibilityKey.SkipsRoomTest"/>); one that is, is drawn by the room its centre stands in, and standing in
+    /// none only while the outside is seen.
     /// </summary>
     Object,
 }
@@ -47,10 +48,10 @@ public sealed record Igi2VisibilityKey(
     public bool RegistersInRooms { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether the object is drawn, standing in no room, even while the camera is in a building that does
-    /// not see out: a door or a conveyor belt (<see cref="Igi2SectorInteriorTypes.IsShownUnseen"/>).
+    /// Gets a value indicating whether the object is left to the view alone, whatever room it or the camera stands in: a door,
+    /// a lift, a conveyor belt (<see cref="Igi2SectorInteriorTypes.SkipsRoomTest"/>).
     /// </summary>
-    public bool IsShownUnseen { get; init; }
+    public bool SkipsRoomTest { get; init; }
 
     /// <inheritdoc/>
     public bool Equals(Igi2VisibilityKey? other) => ReferenceEquals(this, other);
@@ -62,10 +63,17 @@ public sealed record Igi2VisibilityKey(
 /// <summary>What I.G.I. 2's sector cull makes of a task type.</summary>
 /// <remarks>
 /// <para>
-/// <c>Direct3DRender_DrawRigidMesh</c> (<c>e/3/pc/pc_direct3drender.c</c>) decides every rigid mesh: one registered in a room
-/// (<c>DynCubeObj_s.ptSector</c>) is drawn only while that room is reached and through its windows; any other, through the
-/// outside's windows while the outside is seen, and -- while the camera stands in a building that does not see out -- not at all,
-/// unless it is a <c>ConveyorBelt</c> or a <c>Door</c>.
+/// <c>RigidDynCubeObj_EnterHandler</c> (<c>e/3/pc/pc_rigiddyncubeobj.c</c>) decides a rigid object before it is drawn, and only a
+/// <c>SectorInteriorObject</c> is tested against the rooms there -- a <c>ConveyorBelt</c> and a <c>Mine</c> excepted. One
+/// registered in a room (<c>DynCubeObj_s.ptSector</c>) is drawn only while that room is reached and through its windows; one in
+/// no room, through the outside's windows while the outside is seen, and -- while the camera stands in a building that does not
+/// see out -- not at all.
+/// </para>
+/// <para>
+/// Every other type is tested against the view and nothing else, and handed on with the test marked as passed, which is what
+/// <c>Direct3DRender_DrawRigidMesh</c> reads before its own room test: a <c>Lift</c>, a <c>Door</c> and a
+/// <c>RotatingObject</c> derive from <c>RigidDynCubeObj</c> itself. A lift's car left out from inside its own shaft was the
+/// floor the player rides showing the fog through it.
 /// </para>
 /// <para>
 /// Only a <c>SectorInteriorObject</c> registers in a room (<c>SectorInteriorObject_RegisterHandler</c>): every type the client
@@ -106,10 +114,10 @@ public static class Igi2SectorInteriorTypes
     public static bool RegistersInRooms(string typeName) => Interior.Contains(typeName);
 
     /// <summary>
-    /// Gets a value indicating whether objects of a task type are drawn, standing in no room, while the camera is in a building
-    /// that does not see out: the two <c>Direct3DRender_DrawRigidMesh</c> names.
+    /// Gets a value indicating whether objects of a task type are left to the view alone, whatever room they or the camera
+    /// stand in: every type that is not a <c>SectorInteriorObject</c>, and the two of them the handler names.
     /// </summary>
     /// <param name="typeName">The task type's name.</param>
-    /// <returns><see langword="true"/> for a <c>ConveyorBelt</c> or a <c>Door</c>.</returns>
-    public static bool IsShownUnseen(string typeName) => typeName is "ConveyorBelt" or "Door";
+    /// <returns><see langword="false"/> for a <c>SectorInteriorObject</c> other than a <c>ConveyorBelt</c> or a <c>Mine</c>.</returns>
+    public static bool SkipsRoomTest(string typeName) => !Interior.Contains(typeName) || typeName is "ConveyorBelt" or "Mine";
 }
