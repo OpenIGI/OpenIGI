@@ -1,5 +1,7 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using OpenIGI.Shaders;
+using Silk.NET.Core.Contexts;
 using Silk.NET.SPIRV;
 using Silk.NET.SPIRV.Cross;
 using CrossApi = Silk.NET.SPIRV.Cross.Cross;
@@ -54,7 +56,7 @@ public static unsafe class GlslTranslator
         uint[] words = SpirvDepthImages.Clear(spirv);
         string where = $"{module}.{variant}";
 
-        CrossApi api = CrossApi.GetApi();
+        CrossApi api = OpenApi();
         Context* context = null;
         Check(api, null, api.ContextCreate(&context), where, "create a context");
 
@@ -82,6 +84,22 @@ public static unsafe class GlslTranslator
         {
             api.ContextDestroy(context);
         }
+    }
+
+    /// <summary>Opens SPIRV-Cross from the package's folder for this platform, beside the tool.</summary>
+    /// <remarks>
+    /// By its path, not by name: the binding looks for that folder under the distribution's own name
+    /// (<c>ubuntu.24.04-x64</c>) and knows the way from there to <c>linux-x64</c> for some distributions only,
+    /// so by name the library is not found on Ubuntu. Where the folder is not there, as in a published tool
+    /// with the library beside it, the binding's own search is what is left.
+    /// </remarks>
+    private static CrossApi OpenApi()
+    {
+        string name = OperatingSystem.IsWindows() ? "spirv-cross.dll"
+            : OperatingSystem.IsMacOS() ? "libspirv-cross.dylib"
+            : "libspirv-cross.so";
+        string path = Path.Combine(AppContext.BaseDirectory, "runtimes", RuntimeInformation.RuntimeIdentifier, "native", name);
+        return File.Exists(path) ? new CrossApi(new DefaultNativeContext(path)) : CrossApi.GetApi();
     }
 
     /// <summary>Throws with SPIRV-Cross's own message where a call failed.</summary>
