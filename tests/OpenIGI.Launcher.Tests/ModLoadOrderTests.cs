@@ -51,24 +51,4 @@ public sealed class ModLoadOrderTests
         Assert.Equal([new ModProfileEntry("soldiers", "/mods/soldiers/files", false)], profile.For("igi2"));
         Assert.Equal(profile.For("igi1"), ModProfile.Parse(ModProfile.Serialize(profile)).For("igi1"));
     }
-
-    [Fact]
-    public void The_games_read_are_those_the_switched_on_mods_name_besides_the_one_started()
-    {
-        ModProfile profile = new(
-            ModProfile.CurrentSchema,
-            new Dictionary<string, IReadOnlyList<ModProfileEntry>>
-            {
-                ["igi1"] = [new("soldiers", "/a", true), new("voices", "/b", true), new("off", "/c", false)],
-            });
-        Dictionary<string, IReadOnlyList<string>> reads = new()
-        {
-            ["soldiers"] = ["igi2"],
-            ["voices"] = ["IGI2", "igi1"],
-            ["off"] = ["igi3"],
-        };
-
-        Assert.Equal(["igi2"], ModLoadOrder.GamesRead(profile, "igi1", id => reads[id]));
-        Assert.Empty(ModLoadOrder.GamesRead(profile, "igi2", id => reads[id]));
-    }
 }

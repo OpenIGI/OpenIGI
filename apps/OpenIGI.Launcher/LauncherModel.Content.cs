@@ -428,6 +428,18 @@ internal sealed partial class LauncherModel
             Changed();
         }
 
+        // Where every other game is installed, as the player chose it here or as it was found. -game names the one being
+        // started and nothing else; the game finds the rest by each one's variable, which a player has not set. Without
+        // this the main menu could not change to a game whose folder was chosen in the launcher, and a mod that reads
+        // another game's data found none.
+        foreach (GameTitle other in GameTitle.All)
+        {
+            if (other != title && InstalledAt(other) is { } folder)
+            {
+                environment[other.GamePathVariable] = folder;
+            }
+        }
+
         AddModEnvironment(environment, title);
         return environment;
     }
