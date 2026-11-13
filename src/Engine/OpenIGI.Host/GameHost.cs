@@ -215,6 +215,41 @@ public sealed partial class GameHost : IDisposable
     /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
     private const int MaxTicksPerStep = 8;
 
+    /// <summary>How long the host may stay away between two steps before the time counts as not played, in milliseconds.</summary>
+    /// <remarks>
+    /// Longer than any frame a machine that can play the game takes -- a slow one catches up as it always did -- and far
+    /// shorter than a tab left for another.
+    /// </remarks>
+    private const int TimeAwayMilliseconds = 1000;
+
+    /// <summary>Leaves out of the schedule the time the host stayed away between two steps, when it was long.</summary>
+    /// <param name="leftAt">The clock's reading as the last step returned.</param>
+    /// <remarks>
+    /// <para>
+    /// A browser steps the game from its animation frames, and a tab that is hidden -- another tab, another window over it, the
+    /// screen locked -- gets none. The clock kept counting, so the player came back to a schedule minutes behind and a game
+    /// that ran several times too fast until it had caught up: guards sprinting, a cutscene over before it was seen.
+    /// </para>
+    /// <para>
+    /// Not in a session, whose clock is everyone's: there the page keeps stepping from a worker while it is hidden, and a
+    /// player who does fall behind has to catch up with the others. Not under lockstep, whose clock only the frames move.
+    /// The desktop never leaves its loop, so this finds nothing there.
+    /// </para>
+    /// </remarks>
+    private void ForgetTimeAway(int leftAt)
+    {
+        if (_options.Lockstep || TickObserver is not null)
+        {
+            return;
+        }
+
+        int away = unchecked(_loop.TimeSource.Milliseconds - leftAt);
+        if (away > TimeAwayMilliseconds)
+        {
+            _loop.Clock.ExcludeElapsed(away);
+        }
+    }
+
     /// <summary>Milliseconds since the process was started, for the start-up timings.</summary>
     /// <remarks>
     /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
@@ -635,7 +670,9 @@ public sealed partial class GameHost : IDisposable
             if (state.LastOutcome != FrameOutcome.Tick || ++state.TicksSinceStep >= MaxTicksPerStep)
             {
                 state.TicksSinceStep = 0;
+                int leftAt = _loop.TimeSource.Milliseconds;
                 yield return true;
+                ForgetTimeAway(leftAt);
             }
 
             // Until this pass runs the loop: one that ends before it has drawn nothing and ticked nothing.
