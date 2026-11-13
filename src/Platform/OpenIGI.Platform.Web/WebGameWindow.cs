@@ -16,7 +16,8 @@ namespace OpenIGI.Platform.Web;
 /// <b>A lost pointer lock is an Escape.</b> Escape is how a browser takes the lock back, and it keeps
 /// the key to itself when it does. A game that asked for the lock has lost it in the middle of play, and
 /// the one thing a player pressing Escape then expects is the pause menu -- so a lock lost while the game
-/// still wants it is handed on as that key, pressed for one frame.
+/// still wants it is handed on as that key going down. The page then says when it comes up: at once for a tap, and
+/// for as long as the key is held otherwise, which is what lets a cutscene be skipped by holding it.
 /// </para>
 /// <para>
 /// <b>Every press lasts a frame.</b> The page queues events for as long as a frame takes, and a quick click
@@ -385,8 +386,10 @@ public sealed class WebGameWindow : IGameWindow
                 PointerLockGranted = input.Down;
                 if (lost && _cursorLocked)
                 {
+                    // Down from here; the page says when it comes up (platform.js, escapeTaken), as it does for any key --
+                    // in this same frame for a tap, which the frame's press then outlasts like any other.
+                    _pressedThisFrame.Add(KeyCode.Escape);
                     Input.Keyboard.SetKey(KeyCode.Escape, down: true);
-                    _releaseNextFrame.Add(KeyCode.Escape);
                 }
 
                 break;

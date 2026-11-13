@@ -78,9 +78,33 @@ public sealed class WebGameWindowTests
         Assert.False(window.Input.Mouse.IsDown(MouseButton.Left));
     }
 
-    /// <summary>The browser takes the lock back on Escape and keeps the key: it is handed on for a frame.</summary>
+    /// <summary>The browser takes the lock back on Escape and keeps the key: it is handed on, down until the page says it is up.</summary>
     [Fact]
-    public void A_lock_lost_while_the_game_wants_it_is_an_escape_for_one_frame()
+    public void A_lock_lost_while_the_game_wants_it_is_an_escape_held_until_the_page_lets_it_go()
+    {
+        using WebGameWindow window = Open();
+        window.CursorLocked = true;
+
+        _page.Queue("lock 1");
+        window.PumpEvents();
+
+        _page.Queue("lock 0");
+        window.PumpEvents();
+        Assert.True(window.Input.Keyboard.WasPressed(KeyCode.Escape));
+
+        // Still held, as a cutscene's skip needs it: the page has not said the key came up.
+        window.PumpEvents();
+        Assert.True(window.Input.Keyboard.IsDown(KeyCode.Escape));
+        Assert.False(window.Input.Keyboard.WasPressed(KeyCode.Escape));
+
+        _page.Queue("key Escape 0");
+        window.PumpEvents();
+        Assert.False(window.Input.Keyboard.IsDown(KeyCode.Escape));
+    }
+
+    /// <summary>A tap of Escape: the page says the key is up in the frame the lock went, and the press still lasts that frame.</summary>
+    [Fact]
+    public void A_lock_lost_to_a_tap_of_escape_is_an_escape_for_one_frame()
     {
         using WebGameWindow window = Open();
         window.CursorLocked = true;
@@ -90,6 +114,7 @@ public sealed class WebGameWindowTests
         Assert.True(window.PointerLockGranted);
 
         _page.Queue("lock 0");
+        _page.Queue("key Escape 0");
         window.PumpEvents();
         Assert.True(window.Input.Keyboard.WasPressed(KeyCode.Escape));
 
