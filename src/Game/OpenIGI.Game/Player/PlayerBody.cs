@@ -577,6 +577,7 @@ public sealed partial class PlayerBody
         bool wasAirborne = !IsGrounded;
         float landingVelocityZ = Velocity.Z;
         Settle(ref next, terrain, start);
+        SlowHeldUpFall(start.Z - next.Z);
 
         // Then the other humans (0x462BA0, after 0x462390): a move that would end nearer one is refused.
         if (OtherHumans?.Invoke() is { } others)
@@ -902,6 +903,49 @@ public sealed partial class PlayerBody
 
         IsGrounded = false;
         GroundNormal = null;
+    }
+
+    /// <summary>How many ticks in a row a fall may be held up before its speed is taken to be what the body really moves at.</summary>
+    private const int HeldUpFallTicks = 3;
+
+    /// <summary>How little of the fall asked for the body may cover and still count as held up.</summary>
+    private const float HeldUpFallShare = 0.25f;
+
+    private int _heldUpFallTicks;
+
+    /// <summary>Takes the speed out of a fall the world is holding up.</summary>
+    /// <param name="descended">How far the body came down this tick, in units.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Not retail.</b> A body wedged in the air -- between a crate and a wall, on the lip of a roof its feet cannot settle
+    /// on -- is not on the ground, so gravity goes on adding to its fall every tick while the walls refuse every move. The
+    /// speed grew without limit, and the moment the body came free and touched down it landed at whatever that had reached:
+    /// dead, from a drop of a hand's width.
+    /// </para>
+    /// <para>
+    /// A fall that covers less than a quarter of what its speed asks, three ticks running, is no longer falling at that
+    /// speed. It keeps what it really moved. A free fall never meets the test, and a landing is the ground's to judge, so
+    /// neither changes.
+    /// </para>
+    /// </remarks>
+    private void SlowHeldUpFall(double descended)
+    {
+        if (IsGrounded || Velocity.Z >= 0f)
+        {
+            _heldUpFallTicks = 0;
+            return;
+        }
+
+        if (descended >= -Velocity.Z * HeldUpFallShare)
+        {
+            _heldUpFallTicks = 0;
+            return;
+        }
+
+        if (++_heldUpFallTicks >= HeldUpFallTicks)
+        {
+            Velocity = new Vector3f(Velocity.X, Velocity.Y, -(float)Math.Max(0.0, descended));
+        }
     }
 
     private void ProcessPendingLanding()
