@@ -206,6 +206,10 @@ public sealed class ConfigTests
         Assert.InRange(nextIndex, 0, profile.Bindings.Count - 1);
         Assert.InRange(prevIndex, 0, profile.Bindings.Count - 1);
 
+        // Off the wheel first, where a fresh profile now has them: the test is of moving an action onto it.
+        profile.Bindings[nextIndex] = new("NextWeapon", InputBindingKeyNames.MouseDevice, "MOUSE_BUTTON_4");
+        profile.Bindings[prevIndex] = new("PrevWeapon", InputBindingKeyNames.KeyboardDevice, "KEY_O");
+
         Assert.Equal(-1, profile.RebindMouseWheel(nextIndex, 1));
         Assert.Equal("MOUSE_WHEEL_UP", profile.Bindings[nextIndex].Key);
         Assert.Equal("Mouse Wheel Up", InputBindingKeyNames.DisplayName(profile.Bindings[nextIndex]));

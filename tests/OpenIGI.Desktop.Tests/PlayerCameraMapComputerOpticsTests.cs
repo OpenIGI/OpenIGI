@@ -120,7 +120,7 @@ public sealed class PlayerCameraMapComputerOpticsTests
 
     private static PlayerCamera Arm(params WeaponType[] weapons)
     {
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([.. weapons.Select(weapon => weapon.WeaponId)]);
         foreach (WeaponType weapon in weapons)
         {

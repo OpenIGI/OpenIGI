@@ -65,8 +65,9 @@ public sealed class ControlsTabShellTests : ShellTestHarness
                 .Single(row => row.Action == "MoveLeft");
             KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Fire");
-            KeyBindingRow nextWeapon = screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "NextWeapon");
+            // The right button is the sight's (alternate fire) in a fresh profile.
+            KeyBindingRow sight = screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "AlternateFire");
 
             fire.Activate();
             Assert.True(fire.TryCaptureKey(KeyCode.A));
@@ -80,7 +81,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Assert.True(moveLeft.TryCaptureMouseButton(MouseButton.Right));
 
             Assert.Equal("Mouse Button 2", moveLeft.BoundKeyName);
-            Assert.Equal("Mouse Button 1", nextWeapon.BoundKeyName);
+            Assert.Equal("Mouse Button 1", sight.BoundKeyName);
         }
         finally
         {

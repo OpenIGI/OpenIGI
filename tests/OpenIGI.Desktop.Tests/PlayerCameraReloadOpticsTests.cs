@@ -114,7 +114,7 @@ public sealed class PlayerCameraReloadOpticsTests
     private static PlayerCamera ArmedWith(string scriptId)
     {
         WeaponType weapon = LoadRoster().Weapons.Single(candidate => candidate.ScriptId == scriptId);
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([weapon.WeaponId]);
         camera.Carry(weapon, new AmmoType { AmmoId = AmmoId, CalibreId = weapon.CalibreId });
         camera.UseViewRig(LoadViewSet());

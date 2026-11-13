@@ -25,6 +25,8 @@ public sealed partial class GameHost
     private readonly HashSet<KeyCode> _touchKeysWanted = [];
     private readonly HashSet<MouseButton> _touchButtons = [];
     private readonly HashSet<MouseButton> _touchButtonsWanted = [];
+    private readonly HashSet<int> _touchWheels = [];
+    private readonly HashSet<int> _touchWheelsWanted = [];
     private (bool Up, bool Down, bool Left, bool Right) _touchStickHeld;
     private TouchIconAtlas? _touchIcons;
     private bool _touchSaveHeld;
@@ -147,6 +149,7 @@ public sealed partial class GameHost
         _touchControls.Update(input.Touch, mode, layout);
         _touchKeysWanted.Clear();
         _touchButtonsWanted.Clear();
+        _touchWheelsWanted.Clear();
         PlayerProfile? profile = _configuration.Active;
 
         // A quick save or load is asked for once as its button comes down, as its key asks.
@@ -288,6 +291,16 @@ public sealed partial class GameHost
             }
         }
 
+        foreach (int direction in _touchWheelsWanted)
+        {
+            if (!_touchWheels.Contains(direction))
+            {
+                input.Mouse.AddWheel(direction);
+            }
+        }
+
+        _touchWheels.Clear();
+        _touchWheels.UnionWith(_touchWheelsWanted);
         _touchKeys.Clear();
         _touchKeys.UnionWith(_touchKeysWanted);
         _touchButtons.Clear();
@@ -348,7 +361,12 @@ public sealed partial class GameHost
     {
         if (!PlayerProfileInputBindings.TryBoundControl(profile, action, out KeyCode key, out MouseButton? button))
         {
-            if (TouchFallbackKey(action) is { } fallback)
+            // On the wheel, which has nothing to hold down: the button turns it a notch as it is pressed.
+            if (PlayerProfileInputBindings.TryBoundWheel(profile, action, out int direction))
+            {
+                _touchWheelsWanted.Add(direction);
+            }
+            else if (TouchFallbackKey(action) is { } fallback)
             {
                 _touchKeysWanted.Add(fallback);
             }

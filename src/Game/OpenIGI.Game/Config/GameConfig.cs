@@ -61,8 +61,11 @@ public sealed class GameConfig
     public int ControlsVersion { get; set; }
 
     /// <summary>The revision <see cref="MigrateControls"/> brings a configuration to.</summary>
-    /// <remarks>One: the modern WASD layout with the mouse not inverted, for profiles never rebound.</remarks>
-    public const int CurrentControlsVersion = 1;
+    /// <remarks>
+    /// One: the modern WASD layout with the mouse not inverted, for profiles never rebound. Two: the sight on the right mouse
+    /// button, the weapons on the wheel, and leaning out and the zoom on keys a laptop has, for profiles that never moved them.
+    /// </remarks>
+    public const int CurrentControlsVersion = 2;
 
     /// <summary>Moves every profile still on the original's controls onto the modern ones, once.</summary>
     /// <returns><see langword="true"/> when anything was migrated, so the caller knows to save.</returns>
@@ -89,11 +92,13 @@ public sealed class GameConfig
 
         foreach (PlayerProfile profile in _profiles)
         {
-            if (profile.HasRetailDefaultControls())
+            if (ControlsVersion < 1 && profile.HasRetailDefaultControls())
             {
                 profile.AdoptModernControls();
                 changed = true;
             }
+
+            changed |= profile.AdoptReachableControls();
         }
 
         ControlsVersion = CurrentControlsVersion;

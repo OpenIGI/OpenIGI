@@ -27,15 +27,16 @@ public sealed class PlayerInputBindingTests
         input.Keyboard.SetKey(KeyCode.D, down: true);
         input.Keyboard.SetKey(KeyCode.W, down: true);
         input.Keyboard.SetKey(KeyCode.S, down: true);
-        input.Keyboard.SetKey(KeyCode.Backspace, down: true);
-        input.Keyboard.SetKey(KeyCode.PageUp, down: true);
+        input.Keyboard.SetKey(KeyCode.Equals, down: true);
         input.Keyboard.SetKey(KeyCode.Space, down: true);
         input.Keyboard.SetKey(KeyCode.B, down: true);
         input.Keyboard.SetKey(KeyCode.LeftShift, down: true);
-        input.Keyboard.SetKey(KeyCode.O, down: true);
         input.Keyboard.SetKey(KeyCode.D9, down: true);
         input.Mouse.SetButton(MouseButton.Left, down: true);
         input.Mouse.SetButton(MouseButton.Right, down: true);
+
+        // The weapons are on the wheel: a notch down is the next one, and a frame scrolls one way.
+        input.Mouse.AddWheel(-1f);
 
         PlayerInputFrame frame = PlayerInputSampler.SampleFrame(input, profile);
 
@@ -50,7 +51,7 @@ public sealed class PlayerInputBindingTests
         Assert.True(frame.IsSet(PlayerInputSlot.Binoculars));
         Assert.True(frame.IsSet(PlayerInputSlot.ToggleWalkRun));
         Assert.True(frame.IsSet(PlayerInputSlot.NextWeapon));
-        Assert.True(frame.IsSet(PlayerInputSlot.PreviousWeapon));
+        Assert.False(frame.IsSet(PlayerInputSlot.PreviousWeapon));
         Assert.True(frame.IsSet(PlayerInputSlot.WeaponCategory9));
     }
 

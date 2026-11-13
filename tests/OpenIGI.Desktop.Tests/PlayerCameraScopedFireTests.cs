@@ -24,7 +24,7 @@ public sealed class PlayerCameraScopedFireTests
     {
         WeaponType dragunov = LoadRoster().Weapons.Single(
             weapon => weapon.ScriptId == "WEAPON_ID_DRAGUNOV");
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([dragunov.WeaponId]);
         camera.Carry(dragunov, new AmmoType { AmmoId = 1, CalibreId = dragunov.CalibreId });
         camera.UseViewRig(LoadViewSet());

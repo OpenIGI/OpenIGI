@@ -39,7 +39,7 @@ public sealed class PlayerCameraBodyPenetrationTests
         Assert.True(materials.TryGet(Flesh, out GameMaterial flesh));
         Assert.Equal(1f, flesh.BulletResistance);
 
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([dragunov.WeaponId]);
         camera.Carry(dragunov, new AmmoType { AmmoId = 1, CalibreId = dragunov.CalibreId });
         camera.UseViewRig(LoadViewSet());

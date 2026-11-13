@@ -41,8 +41,9 @@ public sealed class PlayerProfile
 
     /// <summary>The bindings a fresh profile starts with.</summary>
     /// <remarks>
-    /// The port keeps the retail action set but uses a conflict-free modern movement layout. They must
-    /// live in the model rather than the Controls screen: a profile created before that page is opened
+    /// The port keeps the retail action set on a layout a hand on WASD and one on the mouse can reach: the sight (alternate
+    /// fire) on the right mouse button, the weapons on the wheel, leaning out on the left Alt and the zoom beside the digits.
+    /// They must live in the model rather than the Controls screen: a profile created before that page is opened
     /// still has to serialize to a complete configuration and provide usable input to the game.
     /// </remarks>
     public static IReadOnlyList<InputBinding> DefaultBindings { get; } =
@@ -56,15 +57,15 @@ public sealed class PlayerProfile
         new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
         new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_CTRL"),
         new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
-        new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_2"),
-        new("PrevWeapon", "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
-        new("AlternateFire", "INPUTPORT_DEVICE_KEYBOARD", "KEY_BACKSPACE"),
-        new("Peek", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD1"),
+        new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_WHEEL_DOWN"),
+        new("PrevWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_WHEEL_UP"),
+        new("AlternateFire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_2"),
+        new("Peek", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_ALT"),
         new("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_B"),
         new("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"),
         new("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_SHIFT"),
-        new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEUP"),
-        new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEDOWN"),
+        new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_EQUALS"),
+        new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_MINUS"),
         new("WeaponCategory1", "INPUTPORT_DEVICE_KEYBOARD", "KEY_1"),
         new("WeaponCategory2", "INPUTPORT_DEVICE_KEYBOARD", "KEY_2"),
         new("WeaponCategory3", "INPUTPORT_DEVICE_KEYBOARD", "KEY_3"),
@@ -79,6 +80,23 @@ public sealed class PlayerProfile
         new(ScoreboardAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_TAB"),
         new(BuyMenuAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_G"),
         new(nameof(Player.PlayerAction.DropWeapon), "INPUTPORT_DEVICE_KEYBOARD", "KEY_X"),
+    ];
+
+    /// <summary>What a fresh profile's bindings were before <see cref="GameConfig.CurrentControlsVersion"/> two, where they differ from today's.</summary>
+    /// <remarks>
+    /// The original's own keys for six actions, kept beside WASD: the sight on Backspace, the next weapon on the right mouse
+    /// button, leaning out on Numpad 1 and the zoom on Page Up and Page Down. A hand on WASD and one on the mouse reaches none
+    /// of them, and a laptop has no Numpad 1 at all -- its players found no way to lean. Kept to recognise a profile that
+    /// never moved them, which <see cref="AdoptReachableControls"/> then moves.
+    /// </remarks>
+    public static IReadOnlyList<InputBinding> PreviousDefaultBindings { get; } =
+    [
+        new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_2"),
+        new("PrevWeapon", "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
+        new("AlternateFire", "INPUTPORT_DEVICE_KEYBOARD", "KEY_BACKSPACE"),
+        new("Peek", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD1"),
+        new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEUP"),
+        new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEDOWN"),
     ];
 
     /// <summary>The binding that opens a match's buy menu.</summary>
@@ -263,6 +281,54 @@ public sealed class PlayerProfile
     {
         ResetBindingsToDefaults();
         InvertMouse = false;
+    }
+
+    /// <summary>Moves the six actions of <see cref="PreviousDefaultBindings"/> onto today's defaults, in a profile that never moved them.</summary>
+    /// <returns><see langword="true"/> when the profile changed.</returns>
+    /// <remarks>
+    /// All six or none: a profile with any original action rebound is one its player has arranged, and is left as it is. None,
+    /// too, where another action already has one of the new controls -- a control must not drive two actions.
+    /// </remarks>
+    public bool AdoptReachableControls()
+    {
+        static bool Same(InputBinding a, InputBinding b) =>
+            string.Equals(a.Action, b.Action, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(a.Device, b.Device, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(a.Key, b.Key, StringComparison.OrdinalIgnoreCase);
+
+        // The whole of the layout a fresh profile had: the six on their old keys, and every other original action on the key
+        // it is still given today. A profile with anything rebound is its player's own arrangement.
+        bool untouched = RetailDefaultBindings.All(retail =>
+        {
+            InputBinding was = PreviousDefaultBindings.FirstOrDefault(previous => string.Equals(previous.Action, retail.Action, StringComparison.OrdinalIgnoreCase));
+            InputBinding expected = was.Action is null
+                ? DefaultBindings.First(now => string.Equals(now.Action, retail.Action, StringComparison.OrdinalIgnoreCase))
+                : was;
+            return Bindings.Exists(binding => Same(binding, expected));
+        });
+        if (!untouched)
+        {
+            return false;
+        }
+
+        InputBinding[] moved = [.. DefaultBindings.Where(now =>
+            PreviousDefaultBindings.Any(previous => string.Equals(previous.Action, now.Action, StringComparison.OrdinalIgnoreCase)))];
+        bool taken = moved.Any(now => Bindings.Exists(binding =>
+            !PreviousDefaultBindings.Any(previous => string.Equals(previous.Action, binding.Action, StringComparison.OrdinalIgnoreCase))
+            && string.Equals(binding.Device, now.Device, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(binding.Key, now.Key, StringComparison.OrdinalIgnoreCase)));
+        if (taken)
+        {
+            return false;
+        }
+
+        foreach (InputBinding now in moved)
+        {
+            int index = Bindings.FindIndex(binding => string.Equals(binding.Action, now.Action, StringComparison.OrdinalIgnoreCase));
+            Bindings[index] = now;
+        }
+
+        return true;
     }
 
     /// <summary>Restores retail bindings missing from an older OpenIGI profile.</summary>
@@ -795,6 +861,30 @@ public static class PlayerProfileInputBindings
         }
 
         key = KeyCode.None;
+        return false;
+    }
+
+    /// <summary>Finds the wheel direction an action is bound to, for something that has to turn it: a touch screen's button.</summary>
+    /// <param name="profile">The player's profile, or <see langword="null"/> for the shipped defaults.</param>
+    /// <param name="action">The action's config name.</param>
+    /// <param name="direction">+1 for a notch up, -1 for one down.</param>
+    /// <returns>Whether the action's first binding is a wheel notch.</returns>
+    public static bool TryBoundWheel(PlayerProfile? profile, string action, out int direction)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(action);
+
+        direction = 0;
+        IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
+        foreach (InputBinding binding in bindings)
+        {
+            if (string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(binding.Device, InputBindingKeyNames.MouseDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseMouseWheel(binding.Key, out direction))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
