@@ -5,7 +5,8 @@ namespace OpenIGI.Desktop;
 /// <summary>Which backend a game starts on, and which one F10 moves to from the one running.</summary>
 /// <remarks>
 /// Named as <c>OPENIGI_RENDERER</c> and <c>r_renderer</c> name them. The switch steps through every backend
-/// this platform has, so the same view can be compared on each API without restarting the game by hand.
+/// this platform has, so the same view can be compared on each API without restarting the game by hand -- except
+/// OpenGL, the fallback for machines with none of the others, which is chosen by name and never stepped into.
 /// </remarks>
 internal static class RendererSwitchOrder
 {
@@ -26,6 +27,7 @@ internal static class RendererSwitchOrder
         "WEBGPU" => RendererBackend.WebGpu,
         "D3D12" or "DX12" or "DIRECT3D12" => RendererBackends.Resolve(RendererBackend.D3D12),
         "VULKAN" or "RHI" => RendererBackend.Vulkan,
+        "OPENGL" or "GL" => RendererBackend.OpenGL,
         _ => Default,
     };
 
@@ -34,7 +36,8 @@ internal static class RendererSwitchOrder
     /// <returns><see langword="true"/> when it is unset or names one.</returns>
     public static bool IsKnown(string? value) =>
         string.IsNullOrEmpty(value)
-        || value.Trim().ToUpperInvariant() is "AUTO" or "VULKAN" or "RHI" or "WEBGPU" or "D3D12" or "DX12" or "DIRECT3D12";
+        || value.Trim().ToUpperInvariant() is "AUTO" or "VULKAN" or "RHI" or "WEBGPU" or "D3D12" or "DX12" or "DIRECT3D12"
+            or "OPENGL" or "GL";
 
     /// <summary>The backend to switch to.</summary>
     /// <param name="current">The running one.</param>
@@ -44,7 +47,7 @@ internal static class RendererSwitchOrder
     /// <summary>The backend to switch to, on a platform that does or does not have Direct3D 12.</summary>
     /// <param name="current">The running one.</param>
     /// <param name="hasD3D12">Whether Direct3D 12 is one of the steps.</param>
-    /// <returns>The next one.</returns>
+    /// <returns>The next one; from OpenGL, the first of the others, since OpenGL is never a step.</returns>
     public static RendererBackend Next(RendererBackend current, bool hasD3D12) => current switch
     {
         RendererBackend.D3D12 => RendererBackend.Vulkan,
@@ -58,6 +61,7 @@ internal static class RendererSwitchOrder
     public static string Describe(RendererBackend backend) => backend switch
     {
         RendererBackend.WebGpu => "WebGPU",
+        RendererBackend.OpenGL => "OpenGL",
         RendererBackend.D3D12 => "Direct3D 12",
         RendererBackend.Vulkan => "Vulkan",
         _ => Describe(Default),

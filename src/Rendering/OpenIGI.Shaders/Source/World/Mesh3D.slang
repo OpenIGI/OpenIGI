@@ -131,7 +131,7 @@ struct VertexInput
 
 #if OPENIGI_INSTANCED_PUSH
     // Which of the frame's push blocks is this draw's.
-    uint instance : SV_InstanceID;
+    uint instance : OPENIGI_INSTANCE_INDEX;
 #endif
 
 #if OPENIGI_TERRAIN_ARENA

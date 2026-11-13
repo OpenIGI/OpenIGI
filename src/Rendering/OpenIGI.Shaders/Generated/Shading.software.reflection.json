@@ -223,7 +223,8 @@
         "class": "ConstantBuffer",
         "register": 1,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uScreenGi",
@@ -451,7 +452,8 @@
         "class": "ConstantBuffer",
         "register": 2,
         "space": 0
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uLampVisibility",
@@ -572,7 +574,8 @@
         "register": 20,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": {
@@ -584,7 +587,8 @@
       "class": "ConstantBuffer",
       "register": 3,
       "space": 0
-    }
+    },
+    "glslUnit": 2
   },
   "specializationConstants": [
     {
@@ -599,5 +603,106 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uBaseColour",
+      "unit": 0
+    },
+    {
+      "texture": "uNormal",
+      "unit": 1
+    },
+    {
+      "texture": "uMaterial",
+      "unit": 2
+    },
+    {
+      "texture": "uBaked",
+      "unit": 3
+    },
+    {
+      "texture": "uDepth",
+      "unit": 4
+    },
+    {
+      "texture": "uProbeRed",
+      "sampler": "uProbeRedSampler",
+      "unit": 5
+    },
+    {
+      "texture": "uProbeGreen",
+      "sampler": "uProbeGreenSampler",
+      "unit": 6
+    },
+    {
+      "texture": "uProbeBlue",
+      "sampler": "uProbeBlueSampler",
+      "unit": 7
+    },
+    {
+      "texture": "uProbeDistance",
+      "sampler": "uProbeDistanceSampler",
+      "unit": 8
+    },
+    {
+      "texture": "uScreenGi",
+      "sampler": "uScreenGiSampler",
+      "unit": 9
+    },
+    {
+      "texture": "uShadowMap",
+      "unit": 10
+    },
+    {
+      "texture": "uShadowMap",
+      "sampler": "uShadowMapSampler",
+      "unit": 11
+    },
+    {
+      "texture": "uOcclusion",
+      "sampler": "uOcclusionSampler",
+      "unit": 12
+    },
+    {
+      "texture": "uSkyView",
+      "unit": 13
+    },
+    {
+      "texture": "uSkyView",
+      "sampler": "uSkyViewSampler",
+      "unit": 14
+    },
+    {
+      "texture": "uTransmittanceLut",
+      "sampler": "uTransmittanceLutSampler",
+      "unit": 15
+    },
+    {
+      "texture": "uSkyIrradiance",
+      "unit": 16
+    },
+    {
+      "texture": "uSunShadow",
+      "sampler": "uSunShadowSampler",
+      "unit": 17
+    },
+    {
+      "texture": "uLampVisibility",
+      "unit": 18
+    },
+    {
+      "texture": "uFogVolume",
+      "sampler": "uFogVolumeSampler",
+      "unit": 19
+    },
+    {
+      "texture": "uShelterMap",
+      "unit": 20
+    },
+    {
+      "texture": "uFlashlightShadow",
+      "unit": 21
+    }
+  ]
 }

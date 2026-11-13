@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Capabilities;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Core;
@@ -73,7 +74,9 @@ internal sealed unsafe class VulkanInstance : IDisposable
         // plugins name their own images and buffers and mark their passes through it, which is what makes them
         // legible in a frame debugger (Streamline's programming guide asks for it), and without it every start
         // logs that the names and markers are off. Enabling it costs nothing until a tool listens.
-        if (vk is not null
+        // Pass markers ask for it too, so a GPU profiler shows the frame by pass without validation running.
+        bool marking = RhiPassMarkers.Requested;
+        if ((vk is not null || marking)
             && !extensions.Contains(ExtDebugUtils.ExtensionName)
             && InstanceExtensionAvailable(ExtDebugUtils.ExtensionName))
         {
@@ -97,6 +100,12 @@ internal sealed unsafe class VulkanInstance : IDisposable
             _debugMessenger = CreateDebugMessenger(debugUtils);
         }
 
+        if (marking && extensions.Contains(ExtDebugUtils.ExtensionName)
+            && Vk.TryGetInstanceExtension(Instance, out ExtDebugUtils passLabels))
+        {
+            PassLabels = passLabels;
+        }
+
         if (!Vk.TryGetInstanceExtension(Instance, out KhrSurface khrSurface))
         {
             throw new GraphicsDeviceException("VK_KHR_surface is not available on this instance.");
@@ -118,6 +127,9 @@ internal sealed unsafe class VulkanInstance : IDisposable
     /// <summary>Gets the presentable surface for the window.</summary>
     public SurfaceKHR Surface { get; }
 
+    /// <summary>Gets the labelling entry points passes are marked through, where pass markers were asked for.</summary>
+    public ExtDebugUtils? PassLabels { get; }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -135,6 +147,8 @@ internal sealed unsafe class VulkanInstance : IDisposable
             _debugUtils.DestroyDebugUtilsMessenger(Instance, _debugMessenger, null);
             _debugUtils.Dispose();
         }
+
+        PassLabels?.Dispose();
 
         if (_self.IsAllocated)
         {

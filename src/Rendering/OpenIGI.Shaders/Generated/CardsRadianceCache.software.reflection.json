@@ -27,7 +27,8 @@
         "class": "UnorderedAccess",
         "register": 2,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uCacheGreen",
@@ -43,7 +44,8 @@
         "class": "UnorderedAccess",
         "register": 3,
         "space": 0
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uCacheBlue",
@@ -59,7 +61,8 @@
         "class": "UnorderedAccess",
         "register": 4,
         "space": 0
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uCacheDistance",
@@ -75,7 +78,8 @@
         "class": "UnorderedAccess",
         "register": 5,
         "space": 0
-      }
+      },
+      "glslUnit": 3
     },
     {
       "name": "uPages",
@@ -91,7 +95,8 @@
         "register": 0,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uCells",
@@ -107,7 +112,8 @@
         "register": 0,
         "space": 0,
         "stride": 8
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uCellPages",
@@ -123,7 +129,8 @@
         "register": 1,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uAlbedo",
@@ -258,7 +265,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAlbedoSampler",
@@ -541,5 +549,31 @@
       }
     ],
     "hlslSize": 384
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uAlbedo",
+      "unit": 0
+    },
+    {
+      "texture": "uAlbedo",
+      "sampler": "uAlbedoSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uFinal",
+      "sampler": "uFinalSampler",
+      "unit": 4
+    }
+  ]
 }

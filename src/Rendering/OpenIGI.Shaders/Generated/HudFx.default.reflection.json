@@ -129,7 +129,8 @@
       "class": "ConstantBuffer",
       "register": 1,
       "space": 0
-    }
+    },
+    "glslUnit": 0
   },
   "specializationConstants": [
     {
@@ -144,5 +145,37 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uHud",
+      "sampler": "uHudSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uGlow0",
+      "sampler": "uHudSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uGlow1",
+      "sampler": "uHudSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uGlow2",
+      "sampler": "uHudSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uScene",
+      "sampler": "uHudSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uSceneBlur",
+      "sampler": "uHudSampler",
+      "unit": 5
+    }
+  ]
 }

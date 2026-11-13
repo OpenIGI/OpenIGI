@@ -158,7 +158,8 @@
             "OPENIGI_UPSCALE_GROUP": "16"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Glsl"
           ]
         },
         {

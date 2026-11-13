@@ -26,7 +26,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uLampGrid",
@@ -42,10 +43,12 @@
         "register": 0,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": []
 }

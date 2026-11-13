@@ -57,7 +57,8 @@
         "register": 0,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "p",
@@ -72,7 +73,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uMarker",
@@ -92,5 +94,15 @@
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uScene",
+      "unit": 0
+    },
+    {
+      "texture": "uMarker",
+      "unit": 1
+    }
+  ]
 }

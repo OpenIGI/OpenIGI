@@ -172,6 +172,12 @@ public enum ShaderSampleType
 /// Where the DXIL form reaches the same binding: its register class, register and space. Matched to this
 /// binding by name when the variant is compiled for Direct3D 12, and null where it is not.
 /// </param>
+/// <param name="GlslUnit">
+/// The binding point the GLSL form reaches a buffer or storage image through, in OpenGL's namespace for its
+/// kind: a uniform buffer's among the uniform buffer bindings, a storage buffer's among the shader storage
+/// bindings, a storage image's among the image units. Null for a texture or sampler, which OpenGL binds as
+/// pairs (<see cref="ShaderReflection.GlslSamplers"/>), and where the variant has no GLSL form.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
@@ -190,7 +196,26 @@ public sealed record ShaderBinding(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Comparison = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     ShaderSampleType SampleType = ShaderSampleType.Float,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? Hlsl = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? Hlsl = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? GlslUnit = null);
+
+/// <summary>One texture unit of the GLSL form: a texture and the sampler it is read through, bound together.</summary>
+/// <param name="Texture">The texture's binding name, as <see cref="ShaderBinding.Name"/> gives it.</param>
+/// <param name="Sampler">
+/// The sampler's binding name, or null where the texture is only ever fetched texel by texel and so is read
+/// through no sampler at all.
+/// </param>
+/// <param name="Unit">The texture unit both are bound to.</param>
+/// <remarks>
+/// OpenGL has no texture apart from a sampler: GLSL reads a <c>sampler2D</c>, which is a texture unit with
+/// whatever texture and sampler object are bound there. The library declares them apart, so its GLSL form
+/// joins each pair a stage reads into one unit, and a texture read through two samplers takes two units.
+/// A bind group's texture and sampler are bound to every unit a pair names.
+/// </remarks>
+public sealed record ShaderGlslSampler(
+    string Texture,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Sampler,
+    int Unit);
 
 /// <summary>Which register a resource binds in under HLSL: what Direct3D 12 calls a descriptor range's type.</summary>
 public enum ShaderHlslClass
@@ -309,6 +334,11 @@ public sealed record ShaderUniformBlock(
 /// <param name="Group">The bind group the WGSL target places it in.</param>
 /// <param name="Binding">The binding index within that group on the WGSL target.</param>
 /// <param name="Hlsl">The constant-buffer register the DXIL form reads it from, as root constants.</param>
+/// <param name="GlslUnit">
+/// The binding point the GLSL form reads it from. The GLSL form is translated from SPIR-V compiled without
+/// push constants, as the WGSL is, so the block is a uniform buffer there -- or, for a module that reads its
+/// blocks per instance, a storage buffer -- and this is its binding among buffers of that kind.
+/// </param>
 /// <remarks>
 /// The two targets do not lay the block out identically: WGSL receives it as a uniform buffer and so
 /// uses std140, while the SPIR-V push block is std430. The two agree for a block of vectors and
@@ -320,7 +350,8 @@ public sealed record ShaderPushBlock(
     int Size,
     int Group,
     int Binding,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? Hlsl = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? Hlsl = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? GlslUnit = null);
 
 /// <summary>A constant fixed when a pipeline is created rather than when the module is compiled.</summary>
 /// <param name="Name">The name the Slang source declares.</param>
@@ -361,6 +392,11 @@ public sealed record ShaderEntryPoint(string Name, ShaderStage Stage, IReadOnlyL
 /// The constant-buffer register the DXIL form reads its specialisation constants from, or
 /// <see langword="null"/> where it has none or no DXIL form.
 /// </param>
+/// <param name="GlslSamplers">
+/// The texture units of the GLSL form, one per texture-and-sampler pair any of its stages reads, or
+/// <see langword="null"/> where the variant has no GLSL form. A GLSL form's specialisation constants need no
+/// table: each is the macro <c>SPIRV_CROSS_CONSTANT_ID_</c> followed by its <see cref="ShaderSpecializationConstant.Id"/>.
+/// </param>
 /// <remarks>
 /// Written by <c>OpenIGI.Tools.ShaderBuild</c> from Slang's own reflection and committed beside the
 /// compiled output, so nothing at runtime parses SPIR-V or WGSL to find out how to bind a shader.
@@ -373,7 +409,8 @@ public sealed record ShaderReflection(
     ShaderPushBlock? PushBlock,
     IReadOnlyList<ShaderSpecializationConstant> SpecializationConstants,
     ShaderUniformBlock? Globals = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? HlslConstants = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? HlslConstants = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ShaderGlslSampler>? GlslSamplers = null)
 {
     /// <summary>Finds the entry point for a stage.</summary>
     /// <param name="stage">The stage wanted.</param>

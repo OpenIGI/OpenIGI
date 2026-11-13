@@ -69,6 +69,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         AdapterName = device.Selection.Name;
 
         CreateTimeline();
+        PassLabels = instance?.PassLabels;
 
         // Acceleration structures, where the adapter traces. The timeline is asked for as well: the traced
         // world above paces its structures' lifetimes by the submissions it marks, which needs one.
@@ -131,6 +132,9 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
 
     /// <summary>Gets the device everything lives on.</summary>
     public VulkanDevice Device => _device;
+
+    /// <summary>Gets the labelling entry points passes are marked through, where pass markers were asked for.</summary>
+    public Silk.NET.Vulkan.Extensions.EXT.ExtDebugUtils? PassLabels { get; }
 
     /// <inheritdoc/>
     public IRhiBuffer CreateBuffer(in RhiBufferDescriptor descriptor)

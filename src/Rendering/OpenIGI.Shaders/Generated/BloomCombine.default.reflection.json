@@ -206,7 +206,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "p",
@@ -221,10 +222,63 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uLevel0",
+      "sampler": "uLevel0Sampler",
+      "unit": 0
+    },
+    {
+      "texture": "uLevel1",
+      "unit": 1
+    },
+    {
+      "texture": "uLevel1",
+      "sampler": "uLevel1Sampler",
+      "unit": 2
+    },
+    {
+      "texture": "uLevel2",
+      "unit": 3
+    },
+    {
+      "texture": "uLevel2",
+      "sampler": "uLevel2Sampler",
+      "unit": 4
+    },
+    {
+      "texture": "uLevel3",
+      "unit": 5
+    },
+    {
+      "texture": "uLevel3",
+      "sampler": "uLevel3Sampler",
+      "unit": 6
+    },
+    {
+      "texture": "uLevel4",
+      "unit": 7
+    },
+    {
+      "texture": "uLevel4",
+      "sampler": "uLevel4Sampler",
+      "unit": 8
+    },
+    {
+      "texture": "uLevel5",
+      "unit": 9
+    },
+    {
+      "texture": "uLevel5",
+      "sampler": "uLevel5Sampler",
+      "unit": 10
+    }
+  ]
 }

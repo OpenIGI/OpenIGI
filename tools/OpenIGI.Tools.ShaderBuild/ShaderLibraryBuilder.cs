@@ -236,6 +236,23 @@ public sealed class ShaderLibraryBuilder
             }
         }
 
+        // GLSL one text per stage, as OpenGL compiles a shader object per stage and links them. Translated from
+        // a SPIR-V compiled without push constants, not from the Vulkan SPIR-V above; see GlslTranslator.
+        if (variant.Compiles(ShaderTarget.Glsl))
+        {
+            SlangOutput glslSpirv = _compiler.Compile(sourcePath, SlangTarget.SpirvForGlsl, variant.Defines, withReflection: false, scratch);
+            GlslForm glsl = GlslTranslator.Translate(module.Id, variant.Name, glslSpirv.Code, reflection);
+            reflection = glsl.Reflection;
+
+            foreach (GlslStage stage in glsl.Stages)
+            {
+                yield return Write(
+                    $"{module.Name}.{variant.Name}.{ShaderCatalog.StageName(stage.Stage)}.glsl",
+                    Encoding.UTF8.GetBytes(stage.Source),
+                    checkOnly);
+            }
+        }
+
         byte[] reflectionBytes = Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(reflection, ShaderJsonContext.Default.ShaderReflection));
 

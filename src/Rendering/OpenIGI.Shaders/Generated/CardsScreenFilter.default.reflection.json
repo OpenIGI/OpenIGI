@@ -26,7 +26,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAccum",
@@ -86,7 +87,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAccumSampler",
@@ -180,5 +182,20 @@
       }
     ],
     "hlslSize": 32
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uAccum",
+      "unit": 0
+    },
+    {
+      "texture": "uPosition",
+      "unit": 1
+    },
+    {
+      "texture": "uSceneNormal",
+      "sampler": "uSceneNormalSampler",
+      "unit": 2
+    }
+  ]
 }

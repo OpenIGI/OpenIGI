@@ -18,6 +18,7 @@ public sealed class LayeringTests
     [
         "OpenIGI.Rendering.Vulkan",
         "OpenIGI.Rendering.D3D12",
+        "OpenIGI.Rendering.OpenGL",
         "OpenIGI.Rendering.Streamline",
         "OpenIGI.Audio.OpenAL",
         "OpenIGI.Platform.Desktop",

@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- SPIRV-Cross is a C library reached through pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,6 +11,12 @@
          records and a change to the generated schema cannot reach only one of them. -->
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
     <ProjectReference Include="..\OpenIGI.Tools.Common\OpenIGI.Tools.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Translates the SPIR-V to the GLSL the OpenGL backend compiles. See GlslTranslator. -->
+    <PackageReference Include="Silk.NET.SPIRV.Cross" />
+    <PackageReference Include="Silk.NET.SPIRV.Cross.Native" />
   </ItemGroup>
 
 </Project>

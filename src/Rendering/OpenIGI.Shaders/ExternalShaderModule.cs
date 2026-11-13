@@ -13,12 +13,14 @@ namespace OpenIGI.Shaders;
 /// <param name="Spirv">Its SPIR-V, or <see langword="null"/> where it was not compiled for Vulkan.</param>
 /// <param name="Wgsl">Its WGSL, or <see langword="null"/> where it was not compiled for WebGPU.</param>
 /// <param name="Dxil">Its DXIL, one blob a stage; empty where it was not compiled for Direct3D 12.</param>
+/// <param name="Glsl">Its GLSL, one text a stage; empty or null where it was not compiled for OpenGL.</param>
 public sealed record ExternalShaderModule(
     string Name,
     ShaderReflection Reflection,
     byte[]? Spirv,
     string? Wgsl,
-    IReadOnlyDictionary<ShaderStage, byte[]> Dxil)
+    IReadOnlyDictionary<ShaderStage, byte[]> Dxil,
+    IReadOnlyDictionary<ShaderStage, string>? Glsl = null)
 {
     /// <summary>Reads a module the shader tool compiled into a folder: <c>{name}.default.*</c>, as the library files its own.</summary>
     /// <param name="directory">The folder, a mod's compiled shaders.</param>
@@ -48,12 +50,19 @@ public sealed record ExternalShaderModule(
         }
 
         Dictionary<ShaderStage, byte[]> dxil = [];
+        Dictionary<ShaderStage, string> glsl = [];
         foreach (ShaderStage stage in Enum.GetValues<ShaderStage>())
         {
             string path = $"{stem}.{ShaderCatalog.StageName(stage)}.dxil";
             if (File.Exists(path))
             {
                 dxil[stage] = File.ReadAllBytes(path);
+            }
+
+            string glslPath = $"{stem}.{ShaderCatalog.StageName(stage)}.glsl";
+            if (File.Exists(glslPath))
+            {
+                glsl[stage] = Encoding.UTF8.GetString(File.ReadAllBytes(glslPath));
             }
         }
 
@@ -62,7 +71,8 @@ public sealed record ExternalShaderModule(
             reflection,
             File.Exists(stem + ".spv") ? File.ReadAllBytes(stem + ".spv") : null,
             File.Exists(stem + ".wgsl") ? Encoding.UTF8.GetString(File.ReadAllBytes(stem + ".wgsl")) : null,
-            dxil);
+            dxil,
+            glsl);
     }
 
     /// <summary>Gets whether the module has a form for a target.</summary>
@@ -73,6 +83,7 @@ public sealed record ExternalShaderModule(
         ShaderTarget.Spirv => Spirv is not null,
         ShaderTarget.Wgsl => Wgsl is not null,
         ShaderTarget.Dxil => Dxil.Count > 0,
+        ShaderTarget.Glsl => Glsl is { Count: > 0 },
         _ => false,
     };
 }

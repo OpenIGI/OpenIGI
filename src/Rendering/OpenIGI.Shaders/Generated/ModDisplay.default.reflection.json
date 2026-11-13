@@ -50,5 +50,11 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uPicture",
+      "unit": 0
+    }
+  ]
 }

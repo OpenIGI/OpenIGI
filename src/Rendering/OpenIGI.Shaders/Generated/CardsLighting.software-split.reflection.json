@@ -27,7 +27,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uPages",
@@ -43,7 +44,8 @@
         "register": 1,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uTiles",
@@ -59,7 +61,8 @@
         "register": 2,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uLights",
@@ -91,7 +94,8 @@
         "register": 1,
         "space": 0,
         "stride": 8
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uCellPages",
@@ -107,7 +111,8 @@
         "register": 2,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 3
     },
     {
       "name": "uProbePos",
@@ -123,7 +128,8 @@
         "register": 3,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 4
     },
     {
       "name": "uActiveTiles",
@@ -139,7 +145,8 @@
         "register": 4,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 5
     },
     {
       "name": "uLampMapRecords",
@@ -291,7 +298,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAlbedoSampler",
@@ -664,5 +672,36 @@
       }
     ],
     "hlslSize": 448
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uAlbedo",
+      "unit": 0
+    },
+    {
+      "texture": "uAlbedo",
+      "sampler": "uAlbedoSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uNormal",
+      "sampler": "uNormalSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uPrevious",
+      "sampler": "uPreviousSampler",
+      "unit": 5
+    }
+  ]
 }

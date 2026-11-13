@@ -88,7 +88,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uShelterMap",
@@ -118,7 +119,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uClipmaps",
@@ -180,10 +182,39 @@
         "class": "ConstantBuffer",
         "register": 1,
         "space": 0
-      }
+      },
+      "glslUnit": 1
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uShadowMap",
+      "unit": 0
+    },
+    {
+      "texture": "uSkyIrradiance",
+      "unit": 1
+    },
+    {
+      "texture": "uHistory",
+      "sampler": "uHistorySampler",
+      "unit": 2
+    },
+    {
+      "texture": "uShelterMap",
+      "unit": 3
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uFogLampMaps",
+      "unit": 5
+    }
+  ]
 }

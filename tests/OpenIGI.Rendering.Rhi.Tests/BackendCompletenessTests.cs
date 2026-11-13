@@ -70,6 +70,7 @@ public sealed class BackendCompletenessTests(ITestOutputHelper output)
             typeof(OpenIGI.Rendering.WebGpu.WebGpuRhiDevice).Assembly,
             typeof(OpenIGI.Rendering.Vulkan.Rhi.VulkanRhiTranslation).Assembly,
             typeof(OpenIGI.Rendering.D3D12.Rhi.D3D12Rhi).Assembly,
+            typeof(OpenIGI.Rendering.OpenGL.GlRhiDevice).Assembly,
         })
         {
             foreach (Type type in assembly.GetTypes())
@@ -81,7 +82,7 @@ public sealed class BackendCompletenessTests(ITestOutputHelper output)
             }
         }
 
-        Assert.Equal(3, found.Count);
+        Assert.Equal(4, found.Count);
         return found;
     }
 

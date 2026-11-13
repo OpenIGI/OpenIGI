@@ -145,7 +145,8 @@
       "class": "ConstantBuffer",
       "register": 1,
       "space": 0
-    }
+    },
+    "glslUnit": 0
   },
   "specializationConstants": [
     {
@@ -160,5 +161,16 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uDiffuse",
+      "sampler": "uDiffuseSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uSceneDepth",
+      "unit": 1
+    }
+  ]
 }

@@ -311,14 +311,10 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
     private int _activeQuery;
 
     /// <inheritdoc/>
-    public void PushDebugGroup(string label)
-    {
-    }
+    public void PushDebugGroup(string label) => VulkanPassLabels.Begin(_device.PassLabels, _command, label);
 
     /// <inheritdoc/>
-    public void PopDebugGroup()
-    {
-    }
+    public void PopDebugGroup() => VulkanPassLabels.End(_device.PassLabels, _command);
 
     /// <inheritdoc/>
     public void EndPass()
@@ -334,6 +330,8 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
         {
             _device.Transition(_command, attachment, ImageLayout.General);
         }
+
+        VulkanPassLabels.End(_device.PassLabels, _command);
     }
 
     /// <inheritdoc/>

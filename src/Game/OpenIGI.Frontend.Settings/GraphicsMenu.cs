@@ -638,14 +638,16 @@ public static class GraphicsMenu
             "r_renderer",
             "Graphics API",
             "What the game draws through. Automatic is Direct3D 12 on Windows and Vulkan elsewhere; WebGPU "
-                + "is the browser version's, and the slowest of the three. Changing it rebuilds the renderer and "
-                + "puts you back where you were, which takes a few seconds.",
+                + "is the browser version's. OpenGL is for older graphics cards that have neither of the first two, "
+                + "and has no ray tracing or DLSS. Changing it rebuilds the renderer and puts you back where you "
+                + "were, which takes a few seconds.",
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["auto"] = "Automatic",
                 ["d3d12"] = "Direct3D 12",
                 ["vulkan"] = "Vulkan",
                 ["webgpu"] = "WebGPU",
+                ["opengl"] = "OpenGL",
             }),
         new GraphicsSetting(
             "r_window_mode",

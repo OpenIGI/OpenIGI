@@ -26,7 +26,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uInstances",
@@ -42,7 +43,8 @@
         "register": 1,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uCellOffsets",
@@ -58,7 +60,8 @@
         "register": 2,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uCellIndices",
@@ -74,7 +77,8 @@
         "register": 3,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uAtlas",
@@ -104,7 +108,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAtlasSampler",
@@ -180,5 +185,16 @@
       }
     ],
     "hlslSize": 48
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uAtlas",
+      "unit": 0
+    },
+    {
+      "texture": "uAtlas",
+      "sampler": "uAtlasSampler",
+      "unit": 1
+    }
+  ]
 }

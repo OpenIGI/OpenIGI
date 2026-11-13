@@ -7,7 +7,7 @@ namespace OpenIGI.Shaders;
 /// <para>
 /// The pass tiles a five-stage chain of 3x3 filters through group-shared memory, and the tiles are the
 /// group plus an apron, so their cost grows with the group and not with the frame. At the preferred
-/// sixteen-square group that is 39.8 KiB, which fits the 48 KiB a desktop Vulkan adapter reports and not
+/// sixteen-square group that is 39.8 KiB, which fits the 48 KiB a desktop Vulkan or OpenGL adapter reports and not
 /// the 32 KiB Direct3D 12 and Metal allow. Exceeding the limit is not a slow path: pipeline creation fails
 /// outright, so the choice has to be made before the module is handed to the driver.
 /// </para>
@@ -59,17 +59,23 @@ public static class UpscaleRejectShadingVariants
         return (2 * Tile(6)) + Tile(5) + (2 * Tile(4));
     }
 
-    /// <summary>Chooses the widest variant an adapter's shared memory can hold.</summary>
+    /// <summary>Chooses the widest variant an adapter's shared memory can hold, among those built for it.</summary>
     /// <param name="maxSharedMemoryBytes">What the adapter reports it allows one group.</param>
+    /// <param name="built">
+    /// Whether a variant was compiled for the adapter's shader target; every one when left out. A form that fits but
+    /// was not built gives way to the next one down, not straight to the compact form.
+    /// </param>
     /// <returns>The variant to load, and the group shape it dispatches in.</returns>
-    public static (ShaderVariant Variant, int GroupWidth, int GroupHeight) Select(uint maxSharedMemoryBytes)
+    public static (ShaderVariant Variant, int GroupWidth, int GroupHeight) Select(
+        uint maxSharedMemoryBytes,
+        Func<ShaderVariant, bool>? built = null)
     {
-        if (maxSharedMemoryBytes >= (uint)SharedBytes(PreferredGroupSize))
+        if (maxSharedMemoryBytes >= (uint)SharedBytes(PreferredGroupSize) && (built?.Invoke(Preferred) ?? true))
         {
             return (Preferred, PreferredGroupSize, PreferredGroupSize);
         }
 
-        if (maxSharedMemoryBytes >= (uint)SharedBytes(PreferredGroupSize, WideGroupHeight))
+        if (maxSharedMemoryBytes >= (uint)SharedBytes(PreferredGroupSize, WideGroupHeight) && (built?.Invoke(Wide) ?? true))
         {
             return (Wide, PreferredGroupSize, WideGroupHeight);
         }

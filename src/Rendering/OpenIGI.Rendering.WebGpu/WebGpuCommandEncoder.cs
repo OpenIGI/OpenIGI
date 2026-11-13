@@ -358,7 +358,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 /// <summary>Records WebGPU dispatches.</summary>
 public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 {
-    private readonly WebGpuPushRing _pushes;
+    private readonly RhiPushRing _pushes;
     private readonly int _pushGroup;
     private WGPUComputePassEncoder _handle;
     private bool _ended;
@@ -371,7 +371,7 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
     /// <param name="device">The device whose push group this binds.</param>
     public WebGpuComputePassEncoder(
         WGPUComputePassEncoder handle,
-        WebGpuPushRing pushes,
+        RhiPushRing pushes,
         int pushGroup,
         WebGpuRhiDevice device)
     {
@@ -432,7 +432,7 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 
         // The write AND the binding, for the reason the raster side gives: nothing above this knows the
         // ring, the group index or where the write landed.
-        WebGpuPushSlice landed = _pushes.Write(data);
+        RhiPushSlice landed = _pushes.Write(data);
         LastPushOffset = landed.Offset;
 
         uint at = landed.Offset;

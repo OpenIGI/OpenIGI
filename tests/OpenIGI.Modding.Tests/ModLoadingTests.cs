@@ -345,6 +345,7 @@ public sealed class ModLoadingTests : IDisposable
         Assert.Equal(
             [
                 "Greyscale.default.compute.dxil",
+                "Greyscale.default.compute.glsl",
                 "Greyscale.default.reflection.json",
                 "Greyscale.default.spv",
                 "Greyscale.default.wgsl",

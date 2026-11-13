@@ -38,7 +38,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     private const int MaxVertexBuffers = 8;
 
     private readonly WebGpuRhiDevice _device;
-    private readonly WebGpuPushRing _pushes;
+    private readonly RhiPushRing _pushes;
     private readonly int _pushGroup;
     private WGPURenderPassEncoder _handle;
 
@@ -59,12 +59,12 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     // is still bound needs neither a slice of the ring nor a rebind.
     private readonly byte[] _lastPush = new byte[256];
     private int _lastPushLength = -1;
-    private WebGpuPushSlice _lastSlice;
+    private RhiPushSlice _lastSlice;
 
-    // A pipeline whose layout reads its push block per instance (WebGpuInstancePushRing): its pushes go to that
+    // A pipeline whose layout reads its push block per instance (RhiInstancePushRing): its pushes go to that
     // ring, the chunk's group stays bound, and each draw names its block by its first instance. The slot is the
     // block the last push landed in, or -1 when the bytes in _lastPush have not been written there yet.
-    private WebGpuInstancePushRing? _instanceRing;
+    private RhiInstancePushRing? _instanceRing;
     private long _instanceSlot = -1;
 
     // The indexed draw being held back so that the next one, if it repeats it with the block in the next slot,
@@ -89,7 +89,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     /// <param name="device">The device whose push group this binds.</param>
     public WebGpuRenderPassEncoder(
         WGPURenderPassEncoder handle,
-        WebGpuPushRing pushes,
+        RhiPushRing pushes,
         int pushGroup,
         WebGpuRhiDevice device)
     {
@@ -118,7 +118,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         _pipeline = handle;
         WebGpuHotCalls.wgpuRenderPassEncoderSetPipeline(_handle.Handle, handle.Handle);
 
-        WebGpuInstancePushRing? ring = pipeline.Layout is WebGpuPipelineLayout { PushDataPerInstance: true } layout
+        RhiInstancePushRing? ring = pipeline.Layout is WebGpuPipelineLayout { PushDataPerInstance: true } layout
             ? layout.InstanceRing ??= _device.InstancePushRing(layout.PushDataBytes)
             : null;
 
@@ -212,7 +212,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     {
         if (_instanceRing is { } ring)
         {
-            WebGpuInstancePush placed = ring.Write(data);
+            RhiInstancePush placed = ring.Write(data);
             SetBindGroup(_pushGroup, placed.Group);
             _instanceSlot = placed.Slot;
             Remember(data, default);
@@ -222,13 +222,13 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         // The write AND the binding, because nothing above this knows any of the three things the
         // binding takes: the ring, the group index, and where the write landed in it. A pass that only
         // wrote would record a draw whose layout has an unbound group, which is refused outright.
-        WebGpuPushSlice landed = _pushes.Write(data);
+        RhiPushSlice landed = _pushes.Write(data);
         LastPushOffset = landed.Offset;
         SetPushGroup(landed.Group, landed.Offset);
         Remember(data, landed);
     }
 
-    private void Remember(ReadOnlySpan<byte> data, WebGpuPushSlice landed)
+    private void Remember(ReadOnlySpan<byte> data, RhiPushSlice landed)
     {
         if (data.Length <= _lastPush.Length)
         {

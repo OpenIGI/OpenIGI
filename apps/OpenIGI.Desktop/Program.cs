@@ -27,6 +27,7 @@ using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.D3D12;
 using OpenIGI.Rendering.D3D12.Rhi;
+using OpenIGI.Rendering.OpenGL;
 using OpenIGI.Rendering.Streamline;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
@@ -37,6 +38,9 @@ using OpenIGI.Rendering;
 DesktopConsole.AttachToParent();
 
 const string StartupLogCategory = "Startup";
+
+// What a run returns when no device would start over the window's API, so the caller can try OpenGL.
+const int NoRendererStarted = -1;
 
 using DesktopLogging logging = DesktopLogging.Start();
 IOpenIgiLogger logger = logging.Logger;
@@ -113,6 +117,13 @@ static int Fail(IOpenIgiLogger logger, string message, int exitCode = 2, Excepti
     DesktopConsole.ShowFailure("OpenIGI", message);
     return exitCode;
 }
+
+// What a window is made with for a renderer: a context of its own for OpenGL, and nothing for the rest, which each
+// make a swapchain on it. OPENIGI_GL_VALIDATION asks for a debug context, which reports what the driver finds wrong.
+static WindowGraphics GraphicsFor(RendererBackend backend) =>
+    backend != RendererBackend.OpenGL ? WindowGraphics.Native
+    : GlRhiDevice.ValidationFromEnvironment ? WindowGraphics.OpenGLDebug
+    : WindowGraphics.OpenGL;
 
 static int Run(string[] args, IOpenIgiLogger logger)
 {
@@ -269,13 +280,38 @@ FileSystemConfig
     .ApplyTo(fileSystem);
 
 DesktopPlatformHost platform = new();
+
+// The API the renderer runs over: d3d12 for Direct3D 12 on Windows, vulkan, webgpu -- the browser's API through
+// wgpu-native, which is how the web build's renderer is compared against the desktop's on one machine -- or opengl,
+// for a machine with none of the others. OPENIGI_RENDERER for this run, then r_renderer as the command line or the
+// settings page left it; neither, and it is RendererSwitchOrder.Default. Read before the window is made, because an
+// OpenGL renderer needs a window made with a context; and here rather than by the console, which loads the settings
+// only once there is a device to show it on -- and a capture reads no saved settings.
+string? requested = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
+string requestedBy = "OPENIGI_RENDERER";
+if (string.IsNullOrEmpty(requested))
+{
+    requested = SettingsFile.LastAssignment(options.StartupCommands, DisplayCVars.Renderer.Name)
+        ?? (options.Lockstep ? null : SettingsFile.ReadAssignment(SettingsPaths.GetSettingsPath(), DisplayCVars.Renderer.Name));
+    requestedBy = DisplayCVars.Renderer.Name;
+}
+
+if (!RendererSwitchOrder.IsKnown(requested))
+{
+    logger.Warning(
+        "Renderer",
+        $"{requestedBy}={requested} names no renderer; drawing over {RendererSwitchOrder.Describe(RendererSwitchOrder.Default)}.");
+}
+
+RendererBackend backend = RendererSwitchOrder.Parse(requested);
 WindowSettings settings = new(
     Title: "OpenIGI",
     Width: options.Width,
     Height: options.Height,
     Mode: options.Mode,
     CursorVisible: false,
-    VSync: options.VSync);
+    VSync: options.VSync,
+    Graphics: GraphicsFor(backend));
 
 SilkGameWindow window;
 try
@@ -295,7 +331,7 @@ if (OperatingSystem.IsMacOS())
     window.Show();
 }
 
-using (window)
+try
 {
     DisplayReport.Report(window, options, logger);
 
@@ -310,29 +346,7 @@ using (window)
         "1",
         StringComparison.Ordinal);
 
-    // The API the renderer runs over: d3d12 for Direct3D 12 on Windows, vulkan, or webgpu -- the browser's
-    // API through wgpu-native, which is how the web build's renderer is compared against the desktop's on
-    // one machine. OPENIGI_RENDERER for this run, then r_renderer as the command line or the settings page
-    // left it; neither, and it is RendererSwitchOrder.Default. Read here rather than by the console, which
-    // loads the settings only once there is a device to show it on -- and a capture reads no saved settings.
-    string? requested = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
-    string requestedBy = "OPENIGI_RENDERER";
-    if (string.IsNullOrEmpty(requested))
-    {
-        requested = SettingsFile.LastAssignment(options.StartupCommands, DisplayCVars.Renderer.Name)
-            ?? (options.Lockstep ? null : SettingsFile.ReadAssignment(SettingsPaths.GetSettingsPath(), DisplayCVars.Renderer.Name));
-        requestedBy = DisplayCVars.Renderer.Name;
-    }
-
-    if (!RendererSwitchOrder.IsKnown(requested))
-    {
-        logger.Warning(
-            "Renderer",
-            $"{requestedBy}={requested} names no renderer; drawing over {RendererSwitchOrder.Describe(RendererSwitchOrder.Default)}.");
-    }
-
-    RendererBackend backend = RendererSwitchOrder.Parse(requested);
-    if (window.VkSurface is null && OperatingSystem.IsWindows())
+    if (backend != RendererBackend.OpenGL && window.VkSurface is null && OperatingSystem.IsWindows())
     {
         // The window was made without Vulkan because there is no loader; Direct3D 12 is all there is.
         logger.Warning("Renderer", "No Vulkan loader on this machine; drawing over Direct3D 12.");
@@ -407,7 +421,40 @@ using (window)
     // API and on the same window, and put back where it was.
     while (true)
     {
+        // A window is made with an OpenGL context or without one, and only the OpenGL renderer draws into one with
+        // a context; changing between them is a new window, made before anything has been drawn into the old.
+        if ((backend == RendererBackend.OpenGL) != (window.Graphics != WindowGraphics.Native))
+        {
+            window.Dispose();
+            try
+            {
+                window = (SilkGameWindow)platform.CreateWindow(settings with { Graphics = GraphicsFor(backend) });
+            }
+            catch (PlatformException ex)
+            {
+                return Fail(logger, ex.Message, 3, ex);
+            }
+        }
+
         int code = RunOnce(ref backend, runOptions, out RendererSwitch? switched);
+
+        // Nothing would start over the window's API. OpenGL is the last thing there is to try: over a new window.
+        if (code == NoRendererStarted)
+        {
+            if (backend == RendererBackend.OpenGL)
+            {
+                return Fail(
+                    logger,
+                    "No graphics API would start: the game needs a driver offering Direct3D 12, Vulkan 1.2 or OpenGL 4.3. "
+                        + "Updating the graphics driver may add one.",
+                    3);
+            }
+
+            logger.Warning("Renderer", "Neither Direct3D 12 nor Vulkan would start here; drawing over OpenGL.");
+            backend = RendererBackend.OpenGL;
+            continue;
+        }
+
         if (switched is null || window.IsClosing)
         {
             return code;
@@ -442,6 +489,15 @@ using (window)
 
     int RunOnce(ref RendererBackend backend, HostOptions runOptions, out RendererSwitch? switched)
     {
+        switched = null;
+
+        // OpenGL where asked for, or where nothing else started: over a window made with its context.
+        using GlRhiDevice? openGl = backend == RendererBackend.OpenGL ? TryCreateOpenGL() : null;
+        if (backend == RendererBackend.OpenGL && openGl is null)
+        {
+            return NoRendererStarted;
+        }
+
         // WebGPU where asked for: a window it cannot present to, or a wgpu-native that will not start, says why and draws
         // over the native API instead of ending the game.
         using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu ? TryCreateWebGpu() : null;
@@ -463,18 +519,13 @@ using (window)
             backend = RendererBackend.Vulkan;
         }
 
-        using VulkanRhi? vulkan = backend == RendererBackend.Vulkan
-            ? VulkanRhi.CreateForSurface(
-                new VulkanSurfaceProvider(window.VkSurface!),
-                width,
-                height,
-                vsync: true,
-                logger,
-                vulkanValidation,
-                streamline)
-            : null;
+        using VulkanRhi? vulkan = backend == RendererBackend.Vulkan ? TryCreateVulkan() : null;
+        if (backend == RendererBackend.Vulkan && vulkan is null)
+        {
+            return NoRendererStarted;
+        }
 
-        IRhiDevice rhiDevice = d3d12?.Device ?? vulkan?.Device ?? webGpu!;
+        IRhiDevice rhiDevice = openGl ?? d3d12?.Device ?? vulkan?.Device ?? webGpu!;
 
         using IGraphicsDevice device = new GraphicsDevice(
             rhiDevice,
@@ -519,6 +570,52 @@ using (window)
         }
     }
 
+    VulkanRhi? TryCreateVulkan()
+    {
+        if (window.VkSurface is not { } surface)
+        {
+            logger.Warning("Renderer", "This window has no Vulkan surface; Vulkan cannot draw into it.");
+            return null;
+        }
+
+        // For trying the fallback on a machine that has Vulkan: as if it would not start.
+        if (Environment.GetEnvironmentVariable("OPENIGI_VULKAN_FORCE_FAIL") is "1")
+        {
+            logger.Warning("Renderer", "OPENIGI_VULKAN_FORCE_FAIL=1: Vulkan is treated as unavailable.");
+            return null;
+        }
+
+        try
+        {
+            return VulkanRhi.CreateForSurface(
+                new VulkanSurfaceProvider(surface),
+                width,
+                height,
+                vsync: true,
+                logger,
+                vulkanValidation,
+                streamline);
+        }
+        catch (GraphicsDeviceException ex)
+        {
+            logger.Warning("Renderer", $"Vulkan is not available here ({ex.Message}).");
+            return null;
+        }
+    }
+
+    GlRhiDevice? TryCreateOpenGL()
+    {
+        try
+        {
+            return GlRhiDevice.Create(new SilkGlSurface(window), width, height, vsync: true, logger, GlRhiDevice.ValidationFromEnvironment);
+        }
+        catch (OpenGLUnavailableException ex)
+        {
+            logger.Error("Renderer", ex.Message);
+            return null;
+        }
+    }
+
     D3D12Rhi? TryCreateD3D12()
     {
         if (window.NativeHandles is not { System: DesktopWindowSystem.Win32 } handles)
@@ -537,5 +634,9 @@ using (window)
             return null;
         }
     }
+}
+finally
+{
+    window.Dispose();
 }
 }

@@ -5,3 +5,5 @@
 // rather than the class, which fails to compile in a way that reads as a missing reference. An alias
 // says which was meant, once, for the whole project.
 global using Wgpu = OpenIGI.Rendering.WebGpu.Native.WebGpu;
+
+global using OpenIGI.Rendering.Rhi.Push;

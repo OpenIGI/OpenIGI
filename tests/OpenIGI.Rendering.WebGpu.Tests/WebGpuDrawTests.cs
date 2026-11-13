@@ -1,4 +1,5 @@
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Rhi.Push;
 using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
@@ -57,7 +58,7 @@ public sealed class WebGpuDrawTests(ITestOutputHelper output)
     public void The_push_ring_hands_out_a_distinct_aligned_slice_each_time()
     {
         using WebGpuRhiDevice device = WebGpuRhiDevice.Create();
-        WebGpuPushRing ring = device.PushRing;
+        RhiPushRing ring = device.PushRing;
 
         byte[] block = new byte[64];
         uint first = ring.Write(block).Offset;
@@ -77,10 +78,10 @@ public sealed class WebGpuDrawTests(ITestOutputHelper output)
         // Capturing the surface cache pushes thousands of times before a frame ends; the ring grows to
         // it rather than refusing, and the next frame starts over in the first chunk.
         using WebGpuRhiDevice device = WebGpuRhiDevice.Create();
-        using WebGpuPushRing ring = new(device, slices: 2);
+        using RhiPushRing ring = device.CreatePushRing(slices: 2);
 
         byte[] block = new byte[64];
-        WebGpuPushSlice[] landed = [ring.Write(block), ring.Write(block), ring.Write(block)];
+        RhiPushSlice[] landed = [ring.Write(block), ring.Write(block), ring.Write(block)];
 
         Assert.Equal(2, ring.Chunks);
         Assert.Same(landed[0].Group, landed[1].Group);

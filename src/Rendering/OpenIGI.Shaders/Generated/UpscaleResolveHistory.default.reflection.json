@@ -56,7 +56,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uVelocity",
@@ -191,10 +192,42 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uHistoryColour",
+      "sampler": "uHistoryColourSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uVelocity",
+      "unit": 1
+    },
+    {
+      "texture": "uVelocity",
+      "sampler": "uVelocitySampler",
+      "unit": 2
+    },
+    {
+      "texture": "uParallax",
+      "sampler": "uParallaxSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uShading",
+      "sampler": "uShadingSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uHistoryMetadata",
+      "sampler": "uHistoryMetadataSampler",
+      "unit": 5
+    }
+  ]
 }

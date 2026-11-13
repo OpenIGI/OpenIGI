@@ -117,7 +117,8 @@
         "class": "ConstantBuffer",
         "register": 2,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": {
@@ -129,7 +130,8 @@
       "class": "ConstantBuffer",
       "register": 1,
       "space": 0
-    }
+    },
+    "glslUnit": 1
   },
   "specializationConstants": [
     {
@@ -156,5 +158,22 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uDiffuse",
+      "sampler": "uDiffuseSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uLightmap",
+      "sampler": "uLightmapSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uDetail",
+      "sampler": "uDetailSampler",
+      "unit": 2
+    }
+  ]
 }
