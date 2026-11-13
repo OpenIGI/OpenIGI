@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -19,6 +20,12 @@ namespace OpenIGI.Host;
 /// The API to build next, where <c>r_renderer</c> named one; null for the next in the switch key's order.
 /// </param>
 /// <param name="ShellTab">The menu section to open on when there is no mission to resume, or null for the landing page.</param>
+/// <param name="Title">
+/// The game that was running, or null for the one the process started on. The shell changes games without the process
+/// restarting, and the file system it re-pointed outlives the switch: a game built again on the starting title would
+/// read the other game's installation, and the mission number carried here is that other game's.
+/// </param>
+/// <param name="DataRoot">The installation <paramref name="Title"/> was running from.</param>
 /// <remarks>
 /// A renderer is not swapped under a running game: every texture, mesh and pipeline the game holds was
 /// made by the one it has, and the host keeps them for the life of a level. So the game is ended, the
@@ -38,7 +45,9 @@ public sealed record RendererSwitch(
     RendererSwitchPose? Pose,
     RendererSwitchFrame? Frame = null,
     RendererBackend? Target = null,
-    string? ShellTab = null);
+    string? ShellTab = null,
+    GameTitle? Title = null,
+    string? DataRoot = null);
 
 /// <summary>A picture held across a switch of renderer.</summary>
 /// <param name="Width">Its width in pixels.</param>

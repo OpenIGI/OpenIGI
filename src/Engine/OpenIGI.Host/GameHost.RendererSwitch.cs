@@ -103,7 +103,11 @@ public sealed partial class GameHost
 
             // Chosen from the menu, where there is no mission to go back to: the player is put back on the
             // settings page they chose it on, not on the landing page.
-            ShellTab: target is not null && _session.Mission is null ? "settings" : null));
+            ShellTab: target is not null && _session.Mission is null ? "settings" : null,
+
+            // The game being played, which is not the one the process started on once the shell has changed games.
+            Title: ActiveTitle,
+            DataRoot: _gamePath));
         return true;
     }
 

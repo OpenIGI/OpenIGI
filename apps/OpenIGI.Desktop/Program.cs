@@ -393,6 +393,12 @@ try
 
     HostOptions runOptions = options;
 
+    // The game a run opens on, and where it is installed. The shell changes games without the process restarting, and
+    // the file system it re-points is this one, so a renderer switch has to build the game that was running again --
+    // not the one the process started on, which would read the other game's installation through its own readers.
+    GameTitle runTitle = titleRuntime.Title;
+    string runGamePath = gamePath;
+
     // Who this player is to every server: a key kept beside the settings, made on first play.
     using EcdsaPlayerIdentity identity = EcdsaPlayerIdentity.LoadOrCreate(SettingsPaths.GetFilePath("identity.key"));
     PlayerIdentities.Default = identity;
@@ -462,6 +468,8 @@ try
 
         // The API the settings page chose, or the next in F10's order.
         backend = switched.Target is { } target ? RendererBackends.Resolve(target) : RendererSwitchOrder.Next(backend);
+        runTitle = switched.Title ?? runTitle;
+        runGamePath = switched.DataRoot ?? runGamePath;
         runOptions = runOptions with
         {
             StartMission = switched.MissionId,
@@ -542,8 +550,8 @@ try
         // was built, after any fallback, so it can tell when r_renderer asks for a different one.
         using GameHost game = new(
             platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
-            TitleCatalog.Catalog, titleRuntime.Title,
-            fileSystem, runOptions with { Renderer = backend }, gamePath, logger);
+            TitleCatalog.Catalog, runTitle,
+            fileSystem, runOptions with { Renderer = backend }, runGamePath, logger);
         game.TickObserver = multiplayer as IHostTickObserver;
 
         // The editor ships with the desktop build only: the browser and server builds have no factory and so no editor.
