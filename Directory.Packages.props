@@ -37,7 +37,7 @@
          factory: a managed apphost cannot export D3D12SDKVersion, which is how a native exe asks for it. -->
     <PackageVersion Include="Silk.NET.Direct3D12" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.DXGI" Version="2.23.0" />
-    <PackageVersion Include="Microsoft.Direct3D.D3D12" Version="1.620.1" />
+    <PackageVersion Include="Microsoft.Direct3D.D3D12" Version="1.620.2" />
     <!-- The OpenGL backend uses Silk.NET.OpenGL, pinned below beside the launcher's use of it. -->
     <!-- SPIRV-Cross, for the shader build tool only: the OpenGL forms of the library are the SPIR-V Vulkan
          runs, translated to GLSL 4.30. Pinned here rather than taken from the Vulkan SDK because the GLSL is
@@ -83,7 +83,7 @@
          Miles (mss32.dll). NLayer is a pure-managed MIT decoder with no reflection and no native
          dependency, so it behaves the same on every platform the port targets and stays AOT-safe:
          the same reasoning that picked StbTrueTypeSharp above. -->
-    <PackageVersion Include="NLayer" Version="3.0.0" />
+    <PackageVersion Include="NLayer" Version="3.0.1" />
   </ItemGroup>
 
   <ItemGroup Label="Testing">
