@@ -112,6 +112,34 @@ internal static class ControlsSettingsTab
             }
         }
 
+        // The keys that run a command rather than one of the profile's actions: the third-person view, and a co-op room's
+        // mark and chat. A keyboard key each -- a command has no mouse button to answer to.
+        var commandRows = new List<(KeyBindingRow Row, string Statement)>();
+        foreach (CommandKey command in context.Host.CommandKeys)
+        {
+            var row = new KeyBindingRow(theme, command.Label, command.Key, CommandKeyName(command.Key))
+            {
+                Tooltip = $"Press this row, then a key, to rebind {command.Label}.",
+            };
+            string statement = command.Statement;
+            row.BindingChanged += key => { context.Host.BindCommandKey(statement, key); RefreshCommandRows(); };
+            row.MouseBindingChanged += _ => RefreshCommandRows();
+            row.MouseWheelBindingChanged += _ => RefreshCommandRows();
+            commandRows.Add((row, statement));
+        }
+
+        // Every row again from the binds themselves: a key taken from one command shows as taken, and a mouse button, which
+        // a command cannot have, shows the key it still is on.
+        void RefreshCommandRows()
+        {
+            IReadOnlyList<CommandKey> now = context.Host.CommandKeys;
+            foreach ((KeyBindingRow row, string statement) in commandRows)
+            {
+                KeyCode key = now.FirstOrDefault(command => command.Statement == statement).Key;
+                row.SetBinding(key, CommandKeyName(key));
+            }
+        }
+
         void Reset()
         {
             context.Host.ResetInputBindings(profile);
@@ -120,6 +148,8 @@ internal static class ControlsSettingsTab
                 visibleBindings.Bindings[i] = profile.Bindings[bindingIndices[i]];
                 RefreshBindingRow(bindingRows[i], visibleBindings.Bindings[i]);
             }
+
+            RefreshCommandRows();
         }
 
         resetBindings = Reset;
@@ -157,9 +187,11 @@ internal static class ControlsSettingsTab
             groups.Add(SettingsGroup.Of("Touch", touchRows));
         }
 
-        groups.Add(SettingsGroup.Of("Key bindings", [.. bindingRows]));
+        groups.Add(SettingsGroup.Of("Key bindings", [.. bindingRows, .. commandRows.Select(static command => command.Row)]));
         return groups;
     }
+
+    private static string CommandKeyName(KeyCode key) => key == KeyCode.None ? "Unbound" : key.ToString();
 
     private static void RefreshBindingRow(KeyBindingRow row, InputBinding binding)
     {

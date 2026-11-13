@@ -97,13 +97,7 @@ public sealed partial class GameHost
         // The keys the game binds for itself, each only where the player has not bound it to something
         // else, so a binding they saved is never stolen. What they are and the rule about what may be in
         // the table is in DefaultBinds.
-        foreach ((string key, string statement) in Configuration.DefaultBinds.All)
-        {
-            if (!state.Console.System.Binds.ContainsKey(key))
-            {
-                state.Console.System.SetBind(key, statement);
-            }
-        }
+        Configuration.DefaultBinds.Apply(state.Console.System);
 
         // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
         // the console and the flag can never report different things.
@@ -752,6 +746,31 @@ public sealed partial class GameHost
                 resetInputBindings: profile =>
                 {
                     TitleInputBindings.Reset(profile, ExtraBindings);
+
+                    // And the keys that run a command, back on the keys the game gives them.
+                    foreach ((string key, string statement) in Configuration.DefaultBinds.All)
+                    {
+                        if (Configuration.DefaultBinds.Listed.Any(listed => listed.Statement == statement))
+                        {
+                            Configuration.DefaultBinds.Rebind(state.Console.System, statement, key);
+                        }
+                    }
+                },
+                commandKeys: () =>
+                [
+                    .. Configuration.DefaultBinds.Listed.Select(listed => new CommandKey(
+                        listed.Label,
+                        listed.Statement,
+                        DevTools.BindKeyNames.TryParse(Configuration.DefaultBinds.KeyOf(state.Console.System.Binds, listed.Statement), out Input.KeyCode bound)
+                            ? bound
+                            : Input.KeyCode.None)),
+                ],
+                bindCommandKey: (statement, key) =>
+                {
+                    if (DevTools.BindKeyNames.NameOf(key) is { Length: > 0 } name)
+                    {
+                        Configuration.DefaultBinds.Rebind(state.Console.System, statement, name);
+                    }
                 },
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,

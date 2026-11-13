@@ -78,6 +78,16 @@ public interface IShellHost
     /// <param name="profile">The profile being edited.</param>
     void ResetInputBindings(OpenIGI.Game.Config.PlayerProfile profile) => profile.ResetBindingsToDefaults();
 
+    /// <summary>Gets the keys that run a command rather than a profile's action -- the third-person view -- for the Controls page to list.</summary>
+    IReadOnlyList<CommandKey> CommandKeys => [];
+
+    /// <summary>Moves one of <see cref="CommandKeys"/> onto another key.</summary>
+    /// <param name="statement">The command, as its <see cref="CommandKey.Statement"/> gives it.</param>
+    /// <param name="key">The key that runs it from now on.</param>
+    void BindCommandKey(string statement, OpenIGI.Input.KeyCode key)
+    {
+    }
+
     /// <summary>Gets the running mission's own save games, for a title that keeps them, or <see langword="null"/>.</summary>
     OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => null;
 
@@ -132,3 +142,9 @@ public interface IShellHost
     {
     }
 }
+
+/// <summary>A key that runs a command, as the Controls page shows it.</summary>
+/// <param name="Label">The row's name.</param>
+/// <param name="Statement">The command the key runs.</param>
+/// <param name="Key">The key, or <see cref="OpenIGI.Input.KeyCode.None"/> when no key runs it.</param>
+public readonly record struct CommandKey(string Label, string Statement, OpenIGI.Input.KeyCode Key);
