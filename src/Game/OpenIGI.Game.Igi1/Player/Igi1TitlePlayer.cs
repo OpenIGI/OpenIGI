@@ -170,7 +170,11 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     {
         rig.LookSettings = MouseLookSettings.FromSensitivity(input.MouseSensitivity, input.InvertMouse);
         rig.Look(input.MouseX, input.MouseY);
-        rig.Tick(input.Held, ground);
+
+        // A press that began and ended between two ticks is held for this one. The rig reads levels, as the original reads
+        // its keys' states, and a tick is 33 ms: a wheel notch, a touchpad's tap or a quick click lasts a frame and fell
+        // between two ticks more often than not, so an action bound to one fired now and then.
+        rig.Tick(input.Held | input.Pressed, ground);
         Ticks++;
     }
 
