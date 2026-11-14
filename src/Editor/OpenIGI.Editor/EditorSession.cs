@@ -152,7 +152,7 @@ internal sealed partial class EditorSession : IEditorSession
         _rules = new RulesPanel(_theme, host, _workspace, (message, isError) => Notify(message, isError));
         _dock.Register(new DockPanel("rules", "Rules", _rules) { Icon = KitIcon.Play });
         _logicWatch = new LogicWatch(host, _workspace);
-        _map = new MapPanel(_theme, host, _workspace, _guards);
+        _map = new MapPanel(_theme, host, _workspace, _guards) { Notify = (message, isError) => Notify(message, isError) };
         _map.GoTo += task =>
         {
             _dock.Show("viewport");

@@ -84,6 +84,31 @@ internal sealed partial class EditorSession
             return $"Showing {panel} once the mission is open.";
         }
 
+        // editor link #<id> #<id>: the ways the first object can be wired to the second, as a Ctrl-drag on the map offers them.
+        if (arguments is [string linkVerb, string fromId, string toId] && linkVerb.Equals("link", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is not { } document || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                MissionTask? Find(string id) => int.TryParse(id.TrimStart('#'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int value)
+                    ? document.EnumerateTasks().FirstOrDefault(t => t.Id == value)
+                    : null;
+                if (Find(fromId) is { } from && Find(toId) is { } to)
+                {
+                    _dock.Show("map");
+                    _workspace.Selection.Set([from, to]);
+                    _map.OfferLinks(from, to);
+                }
+
+                return true;
+            });
+            return "Offering the links once the mission is open.";
+        }
+
         // editor rule <when> then wait 2 then call Game_X() then do StatusMessage_40.Send: a rule made from one line, in the Rules panel.
         if (arguments is [string ruleVerb, _, ..] && ruleVerb.Equals("rule", StringComparison.OrdinalIgnoreCase))
         {

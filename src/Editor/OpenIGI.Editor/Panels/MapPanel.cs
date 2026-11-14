@@ -27,7 +27,7 @@ namespace OpenIGI.Editor.Panels;
 /// The picture is made once a mission, a ray cast down for every pixel (<see cref="IEditorHost.MakeOverheadMap"/>), so it is
 /// the level as it was loaded; Redraw makes it again. The marks are the document's, so they move as the mission is edited.
 /// </remarks>
-internal sealed class MapPanel : EditorElement
+internal sealed partial class MapPanel : EditorElement
 {
     private const int MapPixels = 1024;
 
@@ -70,6 +70,7 @@ internal sealed class MapPanel : EditorElement
     private UiVec2? _panFrom;
     private Mark? _hover;
     private (UiVec2 From, Vector3d Offset, bool Moved)? _drag;
+    private (Mark From, UiVec2 To)? _linkFrom;
 
     /// <summary>Initializes a new instance of the <see cref="MapPanel"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -106,6 +107,11 @@ internal sealed class MapPanel : EditorElement
 
         workspace.Changed += () => _marks = null;
     }
+
+    /// <summary>Gets or sets what shows a message: the text, and whether it is an error.</summary>
+    public Action<string, bool>? Notify { get => _notify; set => _notify = value; }
+
+    private Action<string, bool>? _notify;
 
     /// <summary>Raised when a mark is double-clicked: the task to look at in the viewport.</summary>
     public event Action<MissionTask>? GoTo;
@@ -233,6 +239,11 @@ internal sealed class MapPanel : EditorElement
                 string name = TaskPresentation.Name(mark.Task);
                 EditorDraw.Label(painter, Theme, name, new UiRect(p.X + r + Theme.Px(4f), p.Y - (Theme.RowHeight * 0.5f), Theme.Font.MeasureWidth(name, Theme.TextSize) + Theme.Px(4f), Theme.RowHeight), isSelected ? Theme.Accent : Theme.Text);
             }
+        }
+
+        if (_linkFrom is { } linking)
+        {
+            painter.StrokeLine(ToScreen(linking.From.At), linking.To, Theme.Px(2f), Theme.Accent);
         }
 
         painter.PopClip();
@@ -604,6 +615,12 @@ internal sealed class MapPanel : EditorElement
             return true;
         }
 
+        if (e.Control)
+        {
+            _linkFrom = (hit, e.Position);
+            return true;
+        }
+
         if (e.Shift)
         {
             _workspace.Selection.Toggle(hit.Task);
@@ -628,6 +645,13 @@ internal sealed class MapPanel : EditorElement
             return;
         }
 
+        if (_linkFrom is { } link)
+        {
+            _linkFrom = (link.From, e.Position);
+            _hover = Pick(e.Position);
+            return;
+        }
+
         if (_drag is { } drag)
         {
             UiVec2 d = e.Position - drag.From;
@@ -643,6 +667,17 @@ internal sealed class MapPanel : EditorElement
     protected override void OnPointerUp(in PointerEvent e)
     {
         _panFrom = null;
+        if (_linkFrom is { } link)
+        {
+            _linkFrom = null;
+            if (Pick(e.Position) is { } to && !ReferenceEquals(to.Task, link.From.Task))
+            {
+                OfferLinks(link.From.Task, to.Task);
+            }
+
+            return;
+        }
+
         if (_drag is { Moved: true } drag)
         {
             Move(drag.Offset);
@@ -655,6 +690,7 @@ internal sealed class MapPanel : EditorElement
     protected override void OnCaptureLost()
     {
         _panFrom = null;
+        _linkFrom = null;
         _drag = null;
     }
 
