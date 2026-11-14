@@ -225,7 +225,7 @@ public sealed class ExecLayerTests
         return MissionGraph.Build(document, TaskCatalogue.Build(document.Declarations.Values, vocabulary), vocabulary, LevelExpressionDialect.Igi1);
     }
 
-    private static Simulation Lower(ExecLayer layer, out MissionDocument document)
+    internal static Simulation Lower(ExecLayer layer, out MissionDocument document)
     {
         document = Document();
         Compile(layer, document).Apply();
@@ -233,7 +233,7 @@ public sealed class ExecLayerTests
     }
 
     /// <summary>The game's tick for the four task types lowering uses, over the game's own expression evaluator.</summary>
-    private sealed class Simulation(MissionDocument document) : IScriptExpressionContext
+    internal sealed class Simulation(MissionDocument document) : IScriptExpressionContext
     {
         private readonly Dictionary<string, double> _values = new(StringComparer.Ordinal);
         private readonly List<(string Name, int Value, int From)> _inputs = [];

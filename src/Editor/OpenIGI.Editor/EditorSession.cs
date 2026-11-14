@@ -42,7 +42,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed partial class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|rules|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -61,6 +61,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly ContentPanel _content;
     private readonly ProblemsPanel _problems;
     private readonly GraphPanel _logic;
+    private readonly RulesPanel _rules;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -142,7 +143,9 @@ internal sealed partial class EditorSession : IEditorSession
         _problems.GoTo += _viewport.Frame;
         _dock.Register(new DockPanel("problems", "Problems", _problems) { Icon = KitIcon.Search });
         _logic = new GraphPanel(_theme, host, _workspace, () => _problems.Issues, (message, isError) => Notify(message, isError));
-        _dock.Register(new DockPanel("logic", "Logic", _logic) { Icon = KitIcon.Graph });
+        _dock.Register(new DockPanel("logic", "Logic Graph", _logic) { Icon = KitIcon.Graph });
+        _rules = new RulesPanel(_theme, host, _workspace, (message, isError) => Notify(message, isError));
+        _dock.Register(new DockPanel("rules", "Rules", _rules) { Icon = KitIcon.Play });
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
         _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
@@ -156,6 +159,13 @@ internal sealed partial class EditorSession : IEditorSession
             // A layout saved before the preview had a panel of its own: it joins History's tabs, History still in front.
             _dock.Show("preview", beside: "history");
             _dock.Show("history");
+        }
+
+        if (saved is not null && !saved.Contains("rules", StringComparison.Ordinal) && _dock.GroupOf("viewport") is not null)
+        {
+            // A layout saved before the rules had a panel: it joins the viewport's tabs, the viewport still in front.
+            _dock.Show("rules", beside: "viewport");
+            _dock.Show("viewport");
         }
 
         _dock.LayoutChanged += SaveLayout;
@@ -504,7 +514,7 @@ internal sealed partial class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "logic", "terrain" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "rules", "logic", "terrain" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -598,6 +608,7 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["window.script"]),
                 MenuItem.For(actions["window.content"]),
                 MenuItem.For(actions["window.problems"]),
+                MenuItem.For(actions["window.rules"]),
                 MenuItem.For(actions["window.logic"]),
             ]);
     }

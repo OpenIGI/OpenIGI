@@ -56,6 +56,52 @@ public sealed class ScriptVocabulary
     /// <summary>Gets the global variables level expressions can read, such as I.G.I. 2's <c>NetMission_eCurrentObjective</c>.</summary>
     public IReadOnlyDictionary<string, NativeParameter> Globals => _globals;
 
+    private readonly Dictionary<(string TaskType, string Pin), TaskAction> _actions = [];
+    private readonly Dictionary<string, string> _states = new(StringComparer.Ordinal);
+
+    /// <summary>Gets what making a task's condition hold does, in plain words, for every condition the title has words for.</summary>
+    public IReadOnlyCollection<TaskAction> Actions => _actions.Values;
+
+    /// <summary>Adds what making tasks' conditions hold does.</summary>
+    /// <param name="actions">The actions; a later one for the same type and parameter replaces an earlier.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary Add(IEnumerable<TaskAction> actions)
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+        foreach (TaskAction action in actions)
+        {
+            _actions[(action.TaskType, action.Parameter)] = action;
+        }
+
+        return this;
+    }
+
+    /// <summary>What making a task's condition hold does, in plain words.</summary>
+    /// <param name="taskType">The task type.</param>
+    /// <param name="parameter">The condition parameter.</param>
+    /// <returns>The words (<c>Show the message</c>), or <see langword="null"/> when the title has none for it.</returns>
+    public string? ActionOf(string taskType, string parameter) =>
+        _actions.TryGetValue((taskType, parameter), out TaskAction? action) ? action.Verb : null;
+
+    /// <summary>Adds what exported fields say about their task, in plain words, by field name.</summary>
+    /// <param name="states">Each field's name and its words (<c>isHacked</c>, <c>is hacked</c>).</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary AddStates(IEnumerable<KeyValuePair<string, string>> states)
+    {
+        ArgumentNullException.ThrowIfNull(states);
+        foreach ((string field, string words) in states)
+        {
+            _states[field] = words;
+        }
+
+        return this;
+    }
+
+    /// <summary>What an exported field says about its task, in plain words.</summary>
+    /// <param name="field">The field's name.</param>
+    /// <returns>The words (<c>is hacked</c>), or <see langword="null"/> when the title has none for it.</returns>
+    public string? StateOf(string field) => _states.GetValueOrDefault(field);
+
     /// <summary>Adds the fields a task type exports.</summary>
     /// <param name="taskType">The task type's name.</param>
     /// <param name="fields">Its fields.</param>

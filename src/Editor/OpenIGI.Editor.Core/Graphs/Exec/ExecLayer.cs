@@ -73,6 +73,29 @@ public sealed record ExecNode(string Id, ExecNodeKind Kind)
 
     /// <summary>Gets the arguments of a node that gives none, one shared instance so equal nodes compare equal.</summary>
     public static IReadOnlyDictionary<string, string> NoArguments { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Gets what an event is called where its chain is listed as a rule (<c>Reach the exit</c>); empty for one not named.</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>Gets the group an event's rule is listed under, or <see langword="null"/>.</summary>
+    public string? Group { get; init; }
+
+    /// <summary>Gets a value indicating whether an event is switched off: kept, but lowered to nothing.</summary>
+    public bool IsDisabled { get; init; }
+
+    /// <summary>
+    /// Gets what else must hold for an event to start its chain, each as level-expression text: read the tick the
+    /// <see cref="Condition"/> holds, all of them together.
+    /// </summary>
+    public IReadOnlyList<string> Guards { get; init; } = NoGuards;
+
+    /// <summary>Gets the guards of a node that has none, one shared instance so equal nodes compare equal.</summary>
+    public static IReadOnlyList<string> NoGuards { get; } = [];
+
+    /// <summary>Gets everything an event waits for as one expression: its condition and every guard.</summary>
+    /// <returns>The expression's text.</returns>
+    public string FullCondition() =>
+        Guards.Count == 0 ? Condition : string.Join(" && ", ((IEnumerable<string>)[Condition, .. Guards]).Select(static part => $"({part})"));
 }
 
 /// <summary>An exec wire: from one node's output to the node that runs next. Several wires out of one output run in order.</summary>

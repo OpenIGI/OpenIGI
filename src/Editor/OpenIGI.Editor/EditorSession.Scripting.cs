@@ -55,6 +55,24 @@ internal sealed partial class EditorSession
             return $"Opening the {graphName} graph once the mission is open.";
         }
 
+        // editor rule <when> then wait 2 then call Game_X() then do StatusMessage_40.Send: a rule made from one line, in the Rules panel.
+        if (arguments is [string ruleVerb, _, ..] && ruleVerb.Equals("rule", StringComparison.OrdinalIgnoreCase))
+        {
+            string line = string.Join(' ', arguments.Skip(1));
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("rules");
+                _host.Logger.Information("Editor", _rules.AddFromLine(line) ? $"Made the rule: {line}" : $"Not a rule: {line}");
+                return true;
+            });
+            return "Making the rule once the mission is open.";
+        }
+
         if (arguments is [string find, ..] && find.Equals("find", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)
         {
             string query = string.Join(' ', arguments.Skip(1));

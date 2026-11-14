@@ -55,9 +55,9 @@ public static class ExecLayerCompiler
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(graph);
         Lowering lowering = new(layer, document, graph);
-        foreach (ExecNode root in layer.Nodes.Where(static n => n.Kind == ExecNodeKind.OnBecomesTrue))
+        foreach (ExecNode root in layer.Nodes.Where(static n => n is { Kind: ExecNodeKind.OnBecomesTrue, IsDisabled: false }))
         {
-            MissionTask latch = lowering.Latch(root, id => $"EditVariable_{id}.nValue == 0 && ({root.Condition})");
+            MissionTask latch = lowering.Latch(root, id => $"EditVariable_{id}.nValue == 0 && ({root.FullCondition()})");
             lowering.Chain(root, ExecNode.Then, Stage(latch));
         }
 
