@@ -43,6 +43,22 @@ function retakeScreen() {
 // Every device pixel, a phone's three to the CSS pixel included: drawn at fewer, the browser scaled the picture up and
 // the menus' small type smeared past reading.
 const ratio = () => window.devicePixelRatio || 1;
+
+// How far in from each edge the screen is clear of a notch, rounded corners and the home bar, in CSS pixels. The page
+// covers the whole screen (viewport-fit=cover), so the browser says only through env() what of it is hidden: read
+// off an element padded by those.
+let safeProbe = null;
+const safeInset = (side) => {
+  if (!safeProbe) {
+    safeProbe = document.createElement('div');
+    safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+      + 'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+    document.body.appendChild(safeProbe);
+  }
+  const style = getComputedStyle(safeProbe);
+  const value = parseFloat([style.paddingLeft, style.paddingTop, style.paddingRight, style.paddingBottom][side]);
+  return Number.isFinite(value) ? value * ratio() : 0;
+};
 const drawable = () => {
   const box = canvas.getBoundingClientRect();
   return [Math.max(1, Math.round(box.width * ratio())), Math.max(1, Math.round(box.height * ratio()))];
@@ -373,6 +389,8 @@ export function uninstall() {
 export const imports = {
   canvasWidth: () => drawable()[0],
   canvasHeight: () => drawable()[1],
+  pixelRatio: () => ratio(),
+  safeInset: (side) => safeInset(side),
   hasFocus: () => document.hasFocus(),
   isFullscreen: () => document.fullscreenElement !== null,
   takeEvents: () => {

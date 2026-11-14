@@ -49,16 +49,17 @@ public sealed partial class MultiplayerScreen
         tags.ColumnDefinitions.Add(GridLength.Auto);
         var kind = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f, VerticalAlignment = VerticalAlignment.Center };
         kind.AddChild(new Eyebrow(theme, line.Kind) { TextSize = 10f });
-        kind.AddChild(new Label(theme.Mono, line.Region, 11f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
+        kind.AddChild(new Label(theme.Mono, line.Region, 13f, theme.TextSecondary) { VerticalAlignment = VerticalAlignment.Center });
         tags.Add(kind, 0, 0);
         bool favourite = room.Favourite;
         string code = room.Code;
         var save = new Button(theme, favourite ? "SAVED" : "SAVE")
         {
             Accent = favourite ? ButtonAccent.Solid : ButtonAccent.Ghost,
-            TextSize = 13f,
-            Tracking = 0.25f,
-            Padding = new Thickness(10f, 4f),
+            TextSize = 14f,
+            Tracking = 0.12f,
+            Padding = new Thickness(12f, 0f),
+            Height = 32f,
             Tooltip = favourite ? "Take it off your saved servers." : "Keep it in your saved servers, asked after even when it isn't listed.",
         };
         save.Activated += _ =>
@@ -97,17 +98,18 @@ public sealed partial class MultiplayerScreen
             : null;
         if (about is not null)
         {
-            inside.AddChild(Body(theme, about, room.Compatible && room.Reachable ? theme.TextSecondary : theme.Danger, 15f));
+            inside.AddChild(Body(theme, about, room.Compatible && room.Reachable ? theme.TextSecondary : theme.Warning, 16f));
         }
 
         body.Add(inside, 1, 0);
 
         var foot = new StackPanel { Orientation = Orientation.Vertical, Spacing = 12f };
         bool joinable = Joinable(room);
-        var join = new PrimaryAction(theme, !room.Reachable ? "No answer" : line.Full ? "Full" : "Join")
+        var join = new PrimaryAction(theme, !room.Reachable ? "No answer" : !room.Compatible ? "Other version" : line.Full ? "Full" : "Join")
         {
             Subtitle = !room.Reachable ? "THE SERVER ISN'T ANSWERING: PICK ANOTHER GAME" : line.Full ? "WAIT FOR A SLOT OR PICK ANOTHER GAME" : $"{map.ToUpperInvariant()} · {line.Mode.ToUpperInvariant()}",
             IsEnabled = joinable,
+            Key = Context.Host.TouchScreen ? string.Empty : "Enter",
             Margin = new Thickness(20f, 0f, 20f, 0f),
         };
         join.Activated += _ => coop.Join(code);
@@ -126,7 +128,7 @@ public sealed partial class MultiplayerScreen
         line.ColumnDefinitions.Add(GridLength.Auto);
         var code = new TextBox(theme) { Id = RoomCodeId, Placeholder = "HAVE A ROOM CODE?", MaxLength = 6, VerticalAlignment = VerticalAlignment.Center, Tooltip = "A friend's room code: six letters and digits." };
         code.Text = _code;
-        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(20f, 13f), IsEnabled = HasCode(_code) };
+        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.12f, Padding = new Thickness(20f, 0f), Height = 44f, IsEnabled = HasCode(_code) };
         code.TextChanged += text =>
         {
             _code = text;

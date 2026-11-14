@@ -213,8 +213,11 @@ public sealed partial class GameHost
             float shellElapsed = Math.Clamp((shellNow - state.LastShellMilliseconds) / 1000f, 0f, 0.1f);
             state.LastShellMilliseconds = shellNow;
 
+            // Measured with the same smallest text it is drawn with below, so a caption made readable has its room.
             LayoutContext shellFrame = ShellLayout();
+            OpenIGI.UI.Text.UiFont.MinimumPixelHeight = ShellSmallestText;
             state.Shell.Update(shellFrame, _window.Input, shellElapsed);
+            OpenIGI.UI.Text.UiFont.MinimumPixelHeight = 0f;
             DrainPressQueue(state, executeBinds: false);
             if (!state.Console.IsOpen)
             {
@@ -582,7 +585,9 @@ public sealed partial class GameHost
 
                 shellPainter.PushOpacity(shellOpacity);
                 state.Shell.DrawBackdrop(shellPainter);
+                OpenIGI.UI.Text.UiFont.MinimumPixelHeight = ShellSmallestText;
                 state.Shell.Draw(shellPainter);
+                OpenIGI.UI.Text.UiFont.MinimumPixelHeight = 0f;
                 shellPainter.PopOpacity();
             }
 

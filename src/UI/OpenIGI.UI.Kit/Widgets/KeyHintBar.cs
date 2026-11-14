@@ -49,7 +49,7 @@ public class KeyHintBar : UiElement
         float width = 0f;
         for (int i = 0; i < _hints.Count; i++)
         {
-            width += HintWidth(context, i) + (i > 0 ? context.Px(32f) : 0f);
+            width += HintWidth(context, i) + (i > 0 ? context.Px(HintGap) : 0f);
         }
 
         return new UiVec2(width, KitDraw.MeasureKeyCap(context, Theme, "W").Y);
@@ -61,25 +61,47 @@ public class KeyHintBar : UiElement
         LayoutContext context = painter.Context;
         float total = MeasureContent(context, Bounds.Size).X;
         float x = Bounds.Right - total;
-        float labelSize = context.Px(16f);
+        float labelSize = context.Px(LabelSize);
         for (int i = 0; i < _hints.Count; i++)
         {
-            UiVec2 cap = KitDraw.MeasureKeyCap(context, Theme, _hints[i].Key);
-            var at = new UiVec2(x, Bounds.Y + ((Bounds.Height - cap.Y) * 0.5f));
-            UiRect box = KitDraw.KeyCap(painter, Theme, _hints[i].Key, at);
+            // "Q E" is two keys, each on a cap of its own.
+            float pen = x;
+            foreach (string key in Keys(i))
+            {
+                UiVec2 cap = KitDraw.MeasureKeyCap(context, Theme, key);
+                UiRect box = KitDraw.KeyCap(painter, Theme, key, new UiVec2(pen, Bounds.Y + ((Bounds.Height - cap.Y) * 0.5f)));
+                pen = box.Right + context.Px(CapGap);
+            }
+
             painter.DrawLabel(
                 Theme.Heading,
                 _labels[i],
-                new UiVec2(box.Right + context.Px(10f), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, Bounds)),
+                new UiVec2(pen - context.Px(CapGap) + context.Px(LabelGap), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, Bounds)),
                 labelSize,
-                UiPalette.TextTertiary,
-                0.16f);
-            x += HintWidth(context, i) + context.Px(32f);
+                Theme.TextSecondary,
+                LabelTracking);
+            x += HintWidth(context, i) + context.Px(HintGap);
         }
     }
 
-    private float HintWidth(LayoutContext context, int index) =>
-        KitDraw.MeasureKeyCap(context, Theme, _hints[index].Key).X
-        + context.Px(10f)
-        + UiPainter.MeasureLabel(Theme.Heading, _labels[index], context.Px(16f), 0.16f);
+    // Design units: the gap between two hints, between two caps of one hint, and between the caps and their label.
+    private const float HintGap = 32f;
+    private const float CapGap = 4f;
+    private const float LabelGap = 10f;
+    private const float LabelSize = 15f;
+    private const float LabelTracking = 0.12f;
+
+    private string[] Keys(int index) => _hints[index].Key.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+    private float HintWidth(LayoutContext context, int index)
+    {
+        float caps = 0f;
+        string[] keys = Keys(index);
+        for (int i = 0; i < keys.Length; i++)
+        {
+            caps += KitDraw.MeasureKeyCap(context, Theme, keys[i]).X + (i > 0 ? context.Px(CapGap) : 0f);
+        }
+
+        return caps + context.Px(LabelGap) + UiPainter.MeasureLabel(Theme.Heading, _labels[index], context.Px(LabelSize), LabelTracking);
+    }
 }

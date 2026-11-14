@@ -17,8 +17,17 @@ public class HeaderTab : Button
         : base(theme, text)
     {
         Accent = ButtonAccent.Underline;
-        Padding = new Thickness(22f, 0f);
-        TextSize = 21f;
+        if (theme.Large)
+        {
+            Padding = new Thickness(20f, 0f);
+            TextSize = 18f;
+            Tracking = 0.14f;
+        }
+        else
+        {
+            Padding = new Thickness(22f, 0f);
+            TextSize = 21f;
+        }
     }
 
     /// <summary>Gets or sets the count shown in a badge beside the caption; zero for none.</summary>
@@ -65,7 +74,7 @@ public class HeaderTab : Button
         float badgeWidth = BadgeWidth(context);
         float shift = (context.Px(8f) + badgeWidth) * 0.5f;
         painter.PushTransform(Drawing.UiTransform.Translate(-shift, 0f));
-        DrawCaption(painter, !IsEnabled ? Theme.TextDisabled : Animation.Interpolate.Lerp(Theme.TextMuted, Theme.TextBright, lit), appear);
+        DrawCaption(painter, !IsEnabled ? Theme.TextDisabled : Animation.Interpolate.Lerp(Theme.Large ? Theme.TextSecondary : Theme.TextMuted, Theme.TextBright, lit), appear);
         painter.PopTransform();
 
         float captionWidth = UiPainter.MeasureLabel(Face, ShownText, context.Px(CaptionSize), CaptionTracking);

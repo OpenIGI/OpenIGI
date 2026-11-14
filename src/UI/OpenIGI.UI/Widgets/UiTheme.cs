@@ -73,6 +73,20 @@ public sealed class UiTheme
     /// <summary>Gets or sets a settings row's height, in design units.</summary>
     public float RowHeight { get; set; } = 46f;
 
+    /// <summary>Gets or sets how far a row's caption and control stand in from its edges, in design units.</summary>
+    public float RowInset { get; set; } = 10f;
+
+    /// <summary>Gets or sets a value indicating whether rows and their controls take the large look: a ring round the row
+    /// in focus, a boxed readout beside a slider, a switch with its state spelled out beside it.</summary>
+    /// <remarks>
+    /// The look of a game's menus, read across a room and worked with a pad or a thumb: every target 44 units or more,
+    /// and the row in focus unmistakable. A desktop tool keeps the small one.
+    /// </remarks>
+    public bool Large { get; set; }
+
+    /// <summary>Gets or sets when a row shows the line of explanation under its caption.</summary>
+    public UiRowHints RowHints { get; set; } = UiRowHints.Always;
+
     /// <summary>Gets or sets a value indicating whether settings rows are ruled off from one another.</summary>
     public bool RowDividers { get; set; }
 
@@ -155,4 +169,17 @@ public sealed class UiTheme
 
     /// <summary>Gets or sets the border colour of an action that destroys something.</summary>
     public Bgra32 DestructiveBorder { get; set; } = UiPalette.DestructiveBorder;
+}
+
+/// <summary>When a row shows its line of explanation.</summary>
+public enum UiRowHints
+{
+    /// <summary>Under every row that has one.</summary>
+    Always,
+
+    /// <summary>Under the row in focus or under the pointer only: a page with no room for a column of explanations.</summary>
+    Focused,
+
+    /// <summary>Never: the page shows the explanation somewhere of its own.</summary>
+    Never,
 }

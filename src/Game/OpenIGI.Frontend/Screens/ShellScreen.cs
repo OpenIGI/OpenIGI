@@ -1,6 +1,7 @@
 using OpenIGI.Input;
 using OpenIGI.UI;
 using OpenIGI.UI.Focus;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -36,6 +37,11 @@ public enum ShellTab
 /// </summary>
 /// <remarks>
 /// <para>
+/// That is the frame on a monitor and a laptop. On a phone held sideways, or a small window, height is what there is
+/// least of and there are no keys to hint at: the sections become a rail down the left edge, the header and footer go,
+/// and the page has the rest (<see cref="ShellSize.Compact"/>). A page asks <see cref="Size"/> which it is building for.
+/// </para>
+/// <para>
 /// Navigation is by <em>replacement</em>, not a stack: selecting a tab resets the shell to that section,
 /// so there is only ever one page on screen. The header and footer are the page's chrome: drawn outside the
 /// page's fade, so they hold still while one page gives way to the next. Back returns to the home page.
@@ -52,13 +58,19 @@ public enum ShellTab
 public abstract class ShellScreen : Screen
 {
     /// <summary>The header's height, in design units.</summary>
-    protected const float HeaderHeight = 96f;
+    protected const float HeaderHeight = 72f;
 
     /// <summary>The footer's height, in design units.</summary>
-    protected const float FooterHeight = 72f;
+    protected const float FooterHeight = 56f;
 
-    /// <summary>The margin either side of the header, footer and pages, in design units.</summary>
-    protected const float SideMargin = 64f;
+    /// <summary>The width of the rail of sections a compact page has down its left edge, in design units.</summary>
+    protected const float RailWidth = 80f;
+
+    /// <summary>Gets the arrangement the page was last built for.</summary>
+    protected ShellSize Size { get; private set; }
+
+    /// <summary>Gets the margin either side of the header, footer and pages, in design units.</summary>
+    protected float SideMargin => ShellSizes.SideMargin(Size);
 
     private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
 
@@ -105,21 +117,67 @@ public abstract class ShellScreen : Screen
     /// <inheritdoc/>
     protected override UiElement BuildRoot(LayoutContext context)
     {
+        Size = ShellSizes.Of(context);
+        ShellSizes.Apply(Context.Theme, Size);
         var canvas = new Canvas();
+        bool compact = Size == ShellSize.Compact;
 
         // Content first in tree order so focus starts on it rather than on a tab.
         if (BuildContent(context) is { } content)
         {
-            canvas.Add(content, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(0f, HeaderHeight, 0f, FooterHeight)));
+            canvas.Add(content, new Anchor(UiVec2.Zero, UiVec2.One, compact
+                ? new Thickness(RailWidth, 0f, 0f, 0f)
+                : new Thickness(0f, HeaderHeight, 0f, FooterHeight)));
         }
 
         // The chrome spans the screen but only draws at its edges, so it lets the pointer through to the
         // page between them.
         _chrome = new Canvas { IsHitTestTransparent = true };
-        _chrome.Add(BuildFooter(), new Anchor(new UiVec2(0f, 1f), UiVec2.One, new Thickness(0f, -FooterHeight, 0f, 0f)));
-        _chrome.Add(BuildHeader(), new Anchor(UiVec2.Zero, new UiVec2(1f, 0f), new Thickness(0f, 0f, 0f, -HeaderHeight)));
+        if (compact)
+        {
+            _hints = null;
+            _title = null;
+            _chrome.Add(BuildRail(), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(0f, 0f, -RailWidth, 0f)));
+        }
+        else
+        {
+            _chrome.Add(BuildFooter(), new Anchor(new UiVec2(0f, 1f), UiVec2.One, new Thickness(0f, -FooterHeight, 0f, 0f)));
+            _chrome.Add(BuildHeader(context), new Anchor(UiVec2.Zero, new UiVec2(1f, 0f), new Thickness(0f, 0f, 0f, -HeaderHeight)));
+        }
+
         canvas.Add(_chrome);
         return canvas;
+    }
+
+    /// <summary>Puts a compact page's content in a viewport that scrolls, inside the page's margins.</summary>
+    /// <param name="content">The content, as tall as it measures.</param>
+    /// <returns>The viewport.</returns>
+    /// <remarks>A phone on its side shows some 390 units of height: a compact page is a column the finger drags.</remarks>
+    protected ScrollView ScrollPage(UiElement content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        content.Margin = new Thickness(SideMargin, 10f, SideMargin, 24f);
+        var scroll = new ScrollView(Context.Theme);
+        scroll.SetContent(content);
+        return scroll;
+    }
+
+    /// <summary>Gets how far the active profile is through the game's campaign.</summary>
+    /// <returns>The missions done, and how many there are.</returns>
+    protected (int Done, int Total) CampaignProgress()
+    {
+        List<MissionInfo> missions = [.. Context.Missions.Where(static mission => mission.Campaign is null)];
+        int active = Context.Config.Active?.ActiveMission ?? 0;
+        int done = Math.Max(0, missions.FindIndex(mission => mission.Id == active));
+        return (done, missions.Count);
+    }
+
+    /// <summary>Gets the active profile's difficulty, by name.</summary>
+    /// <returns>The name, or an empty string with no profile.</returns>
+    protected string DifficultyName()
+    {
+        string[] names = OpenIGI.Game.Ai.AiDifficultyNames.All;
+        return Context.Config.Active is { } profile ? names[Math.Clamp(profile.Difficulty, 0, names.Length - 1)] : string.Empty;
     }
 
     /// <inheritdoc/>
@@ -199,36 +257,71 @@ public abstract class ShellScreen : Screen
         GoTo(Order[next]);
     }
 
-    private EdgePanel BuildHeader()
+    /// <summary>The canvas width, in design units, under which the header draws its parts closer together.</summary>
+    /// <remarks>
+    /// The title, the five sections between their keys, the operative and Quit are some 1,520 units across at their full
+    /// spacing. A 4:3 screen is 1,440 and a 5:4 one 1,350: there the two key caps go and the gaps close up.
+    /// </remarks>
+    private const float RoomyHeaderWidth = 1600f;
+
+    private static string TabName(ShellTab tab) => tab == ShellTab.Coop ? "Multiplayer" : tab.ToString();
+
+    private EdgePanel BuildHeader(LayoutContext context)
     {
         UiTheme theme = Context.Theme;
         var bar = new EdgePanel(lineAtBottom: true);
 
+        bool roomy = ShellSizes.Canvas(context).X >= RoomyHeaderWidth;
         var row = new FlexPanel
         {
             Orientation = Orientation.Horizontal,
-            Gap = 64f,
-            Padding = new Thickness(SideMargin, 0f),
+            Gap = roomy ? 28f : 16f,
+            Padding = new Thickness(roomy ? SideMargin : 40f, 0f),
         };
 
         row.Add(BuildTitle(theme));
 
-        var nav = new SectionTabs(theme, Context.SectionUnderline) { Orientation = Orientation.Horizontal, Gap = 8f };
-        nav.Add(new KeyCapLabel(theme, "Q") { Margin = new Thickness(0f, 0f, 12f, 0f) });
+        var nav = new SectionTabs(theme, Context.SectionUnderline)
+        {
+            Orientation = Orientation.Horizontal,
+            Gap = 4f,
+            Margin = new Thickness(roomy ? 24f : 0f, 0f, 0f, 0f),
+        };
+        if (roomy)
+        {
+            nav.Add(new KeyCapLabel(theme, "Q") { VerticalAlignment = VerticalAlignment.Center });
+        }
+
         foreach (ShellTab tab in Order)
         {
-            var button = new HeaderTab(theme, tab == ShellTab.Coop ? "Multiplayer" : tab.ToString());
+            var button = new HeaderTab(theme, TabName(tab));
+            if (!roomy)
+            {
+                button.Padding = new Thickness(14f, 0f);
+            }
+
             ShellTab target = tab;
             button.Activated += _ => GoTo(target);
             nav.AddTab(button, current: tab == Tab);
         }
 
-        nav.Add(new KeyCapLabel(theme, "E") { Margin = new Thickness(12f, 0f, 0f, 0f) });
+        if (roomy)
+        {
+            nav.Add(new KeyCapLabel(theme, "E") { VerticalAlignment = VerticalAlignment.Center });
+        }
+
         row.Add(nav);
         row.Add(new Panel(), grow: 1f); // pushes what follows to the right edge
 
-        var right = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 36f };
-        var operative = new OperativeBadge(theme, Context.Config.Active?.Name ?? "No profile") { VerticalAlignment = VerticalAlignment.Center };
+        var right = new FlexPanel { Orientation = Orientation.Horizontal, Gap = roomy ? 28f : 16f };
+        (int done, int total) = CampaignProgress();
+        var operative = new OperativeBadge(theme, Context.Config.Active?.Name ?? "No profile")
+        {
+            Caption = Context.Config.Active is null || total == 0
+                ? string.Empty
+                : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{DifficultyName().ToUpperInvariant()} · {done}/{total}"),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         operative.Activated += _ => GoTo(ShellTab.Profile);
         right.Add(operative);
         right.Add(new Rule { VerticalAlignment = VerticalAlignment.Center });
@@ -237,38 +330,37 @@ public abstract class ShellScreen : Screen
         // player who opened the settings from the pause menu was otherwise stuck in the menu.
         if (Context.InGame && Context.Host.TouchScreen && Tab != ShellTab.Home)
         {
-            var resume = new Button(theme, "Resume")
-            {
-                Accent = ButtonAccent.Text,
-                TextSize = 19f,
-                Padding = new Thickness(0f, 8f),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            resume.Activated += _ =>
-            {
-                void Go() => Context.Host.ResumeMission();
-                if (!HoldDeparture(Go))
-                {
-                    Go();
-                }
-            };
+            Button resume = HeaderButton(theme, "Resume");
+            resume.Activated += _ => Resume();
             right.Add(resume);
         }
 
-        var quit = new Button(theme, "Quit")
-        {
-            Accent = ButtonAccent.Text,
-            TextSize = 19f,
-            Padding = new Thickness(0f, 8f),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        Button quit = HeaderButton(theme, "Quit");
         quit.Activated += _ => Context.Host.Quit();
-
         right.Add(quit);
         row.Add(right);
 
         bar.AddChild(row);
         return bar;
+    }
+
+    private static Button HeaderButton(UiTheme theme, string text) => new(theme, text)
+    {
+        Accent = ButtonAccent.Text,
+        TextSize = 17f,
+        Tracking = 0.12f,
+        Padding = new Thickness(0f, 12f),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    /// <summary>Goes back to the mission behind the menu, unless the page holds the player first.</summary>
+    protected void Resume()
+    {
+        void Go() => Context.Host.ResumeMission();
+        if (!HoldDeparture(Go))
+        {
+            Go();
+        }
     }
 
     private EdgePanel BuildFooter()
@@ -283,6 +375,24 @@ public abstract class ShellScreen : Screen
         bar.AddChild(_hints);
         return bar;
     }
+
+    // The compact page's sections: Home and the five, an icon over a word each, down the left edge.
+    private SectionRail BuildRail()
+    {
+        var rail = new SectionRail(Context.Theme);
+        rail.Add(KitIcon.None, "Home", Tab == ShellTab.Home, () => GoTo(ShellTab.Home));
+        rail.Add(KitIcon.Target, "Campaign", Tab == ShellTab.Campaign, () => GoTo(ShellTab.Campaign));
+        rail.Add(KitIcon.Globe, "Online", Tab == ShellTab.Coop, () => GoTo(ShellTab.Coop));
+        rail.Add(KitIcon.Sliders, "Settings", Tab == ShellTab.Settings, () => GoTo(ShellTab.Settings));
+        rail.Add(KitIcon.Person, "Profile", Tab == ShellTab.Profile, () => GoTo(ShellTab.Profile));
+        rail.Add(KitIcon.Archive, "Extras", Tab == ShellTab.Extras, () => GoTo(ShellTab.Extras));
+        return rail;
+    }
+
+    /// <summary>Builds the selector of which game is running, for a page that shows it itself.</summary>
+    /// <returns>The selector.</returns>
+    /// <remarks>The header holds it on a monitor; a compact page has no header, and its landing page carries it.</remarks>
+    protected GameSwitcher BuildGameSwitcher() => BuildTitle(Context.Theme);
 
     private GameSwitcher BuildTitle(UiTheme theme)
     {
@@ -308,8 +418,8 @@ public abstract class ShellScreen : Screen
 
         var title = new GameSwitcher(theme, count > 0 ? games[current] : string.Empty, games)
         {
-            Subtitle = count > 0 ? Tagline(Context.Games[current].Id, Context.Games[current].DisplayName) : string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
+            TitleSize = 22f,
 
             // The one running, not the first listed: opening the list after a switch must show the switch.
             CurrentIndex = current,
@@ -392,13 +502,20 @@ public abstract class ShellScreen : Screen
         _ => context.InGame ? new PauseScreen(context) : new MainMenuScreen(context),
     };
 
-    /// <summary>A transparent bar with a hairline along one edge: the header's bottom, the footer's top.</summary>
+    /// <summary>A bar that darkens toward the screen's edge, with a hairline along its inner one: the header's bottom, the footer's top.</summary>
+    /// <remarks>Dark enough to read the sections over a level in daylight, without a hard-edged slab across it.</remarks>
     private sealed class EdgePanel(bool lineAtBottom) : Panel
     {
         protected override void OnDraw(UiPainter painter)
         {
+            Span<OpenIGI.UI.Drawing.UiGradientStop> stops = lineAtBottom
+                ? [new(0f, UiPalette.InkAt(0.94f)), new(1f, UiPalette.InkAt(0.78f))]
+                : [new(0f, UiPalette.InkAt(0.55f)), new(1f, UiPalette.InkAt(0.9f))];
+            painter.FillGradient(Bounds, stops, OpenIGI.UI.Drawing.UiGradientDirection.Vertical);
             float t = painter.Context.Px(1f);
-            painter.FillRect(new UiRect(Bounds.X, lineAtBottom ? Bounds.Bottom - t : Bounds.Y, Bounds.Width, t), UiPalette.Rule);
+            painter.FillRect(
+                new UiRect(Bounds.X, lineAtBottom ? Bounds.Bottom - t : Bounds.Y, Bounds.Width, t),
+                UiPalette.White(lineAtBottom ? 0.12f : 0.07f));
         }
     }
 }

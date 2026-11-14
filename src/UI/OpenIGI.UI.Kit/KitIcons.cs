@@ -135,6 +135,39 @@ public enum KitIcon
 
     /// <summary>A star: a favourite.</summary>
     Star,
+
+    /// <summary>A ring with four ticks into it: a target, for the campaign.</summary>
+    Target,
+
+    /// <summary>Two sliders: settings.</summary>
+    Sliders,
+
+    /// <summary>A lidded box: the archive of extras.</summary>
+    Archive,
+
+    /// <summary>A broken ring with a stroke through the gap: quit.</summary>
+    Power,
+
+    /// <summary>A padlock: needs a password, or is not open yet.</summary>
+    Lock,
+
+    /// <summary>A turning arrow: refresh, reconnect, reset.</summary>
+    Refresh,
+
+    /// <summary>A pencil: rename.</summary>
+    Pencil,
+
+    /// <summary>An i in a ring: a note.</summary>
+    Info,
+
+    /// <summary>An exclamation mark in a triangle: something is wrong with this.</summary>
+    Warning,
+
+    /// <summary>Two people: a party.</summary>
+    People,
+
+    /// <summary>A keyboard: type a code.</summary>
+    Keyboard,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>

@@ -68,6 +68,12 @@ public class TabStrip : Control
     /// <remarks>Off for a strip that sits on a panel of its own, where the block and the captions are enough.</remarks>
     public bool ShowTray { get; set; } = true;
 
+    /// <summary>Gets or sets a value indicating whether the segments share the whole width given, each the same.</summary>
+    /// <remarks>On a narrow page the strip is the page's width, and five segments a thumb wide beat five as wide as their words.</remarks>
+    public bool Stretch { get; set; }
+
+    private float CaptionTracking => Theme.Large ? 0.12f : Theme.LabelTracking;
+
     /// <summary>Starts the block on another tab, so it slides from there to the selected one when the strip first shows.</summary>
     /// <param name="index">The tab the selection was on before.</param>
     /// <remarks>
@@ -195,10 +201,10 @@ public class TabStrip : Control
         float width = gap;
         for (int i = 0; i < _tabs.Count; i++)
         {
-            width += UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, Theme.LabelTracking) + NoteWidth(context, i) + (pad * 2f) + gap;
+            width += UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, CaptionTracking) + NoteWidth(context, i) + (pad * 2f) + gap;
         }
 
-        return new UiVec2(width, context.Px(SegmentHeight) + (gap * 2f));
+        return new UiVec2(Stretch && !float.IsPositiveInfinity(available.X) ? available.X : width, context.Px(SegmentHeight) + (gap * 2f));
     }
 
     /// <inheritdoc/>
@@ -216,11 +222,21 @@ public class TabStrip : Control
         float x = contentRect.X + gap;
         for (int i = 0; i < _tabs.Count; i++)
         {
-            float w = UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, Theme.LabelTracking) + NoteWidth(context, i);
+            float w = UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, CaptionTracking) + NoteWidth(context, i);
             _tabWidths[i] = w;
             _tabRects[i] = new UiRect(x, contentRect.Y + gap, w + (pad * 2f), height);
             _tabCenters[i] = _tabRects[i].Center.X;
             x += _tabRects[i].Width + gap;
+        }
+
+        if (Stretch && _tabs.Count > 0)
+        {
+            float each = (contentRect.Width - (gap * (_tabs.Count + 1))) / _tabs.Count;
+            for (int i = 0; i < _tabs.Count; i++)
+            {
+                _tabRects[i] = new UiRect(contentRect.X + gap + (i * (each + gap)), contentRect.Y + gap, each, height);
+                _tabCenters[i] = _tabRects[i].Center.X;
+            }
         }
     }
 
@@ -239,8 +255,9 @@ public class TabStrip : Control
         // The tray: dark glass with a hairline, the segments set inside it.
         if (ShowTray)
         {
-            painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(153), appear));
-            painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), focus), appear));
+            painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(Theme.Large ? (byte)140 : (byte)153), appear));
+            Bgra32 edge = Theme.Large ? UiPalette.White(0.28f) : Theme.Border;
+            painter.StrokeRect(Bounds, context.Px(Theme.Large && focus > 0.5f ? 2f : 1f), UiPalette.Fade(Interpolate.Lerp(edge, Theme.Large ? Theme.AccentHover : UiPalette.AccentAt(0.45f), focus), appear));
         }
 
         // The sliding block; before its first update it is drawn where the selection is.
@@ -249,7 +266,7 @@ public class TabStrip : Control
 
         painter.FillRect(
             new UiRect(_indicator.Value, selected.Y, _indicatorWidth.Value, selected.Height),
-            UiPalette.Fade(_hovered == _selected ? Theme.AccentHover : Theme.Accent, appear));
+            UiPalette.Fade(Theme.Large ? Theme.Text : _hovered == _selected ? Theme.AccentHover : Theme.Accent, appear));
 
         float sizePx = context.Px(CaptionSize);
         for (int i = 0; i < _tabs.Count; i++)
@@ -260,7 +277,7 @@ public class TabStrip : Control
             // follows the amber across rather than flipping when the selection lands.
             float overlap = MathF.Max(0f, MathF.Min(rect.Right, _indicator.Value + _indicatorWidth.Value) - MathF.Max(rect.X, _indicator.Value));
             float covered = rect.Width <= 0f ? 0f : Math.Clamp(overlap / rect.Width, 0f, 1f);
-            Bgra32 rest = _hovered == i ? Theme.TextBright : UiPalette.TextTertiary;
+            Bgra32 rest = _hovered == i ? Theme.TextBright : Theme.Large ? Theme.TextSecondary : UiPalette.TextTertiary;
             Bgra32 color = Interpolate.Lerp(rest, Theme.OnAccent, covered);
 
             string caption = Upper(_tabs[i]);
@@ -270,7 +287,7 @@ public class TabStrip : Control
                 new UiVec2(rect.X + ((rect.Width - _tabWidths[i]) * 0.5f), UiRowStyle.CapsCenterY(Theme.Heading, sizePx, rect)),
                 sizePx,
                 UiPalette.Fade(color, appear),
-                Theme.LabelTracking);
+                CaptionTracking);
             if (NoteOf(i) is { } note)
             {
                 float notePx = context.Px(NoteSize);

@@ -66,6 +66,13 @@ public sealed partial class MultiplayerScreen
             return false;
         }
 
+        // A sheet over the list takes back for itself: lowering it is what was meant.
+        if (nav.Back && _sheet)
+        {
+            CloseSheet();
+            return false;
+        }
+
         // The box to join a party by its code takes back for itself: shutting it is what was meant, not leaving the page.
         if (nav.Back && _joiningParty)
         {

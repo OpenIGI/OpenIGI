@@ -53,9 +53,24 @@ public class SectionTitle : UiElement
     /// <summary>Gets or sets the title's colour, or <see langword="null"/> for the theme's text colour.</summary>
     public Bgra32? TitleColor { get; set; }
 
+    // The large look: the line over the title in the label face at 14, the title at 56 unless the page set its own.
+    private float LargeTitle => TitleSize == 44f ? 56f : TitleSize;
+
+    private const float LargeEyebrow = 14f;
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
+        if (Theme.Large)
+        {
+            float size = context.Px(LargeTitle);
+            float wide = MathF.Max(
+                UiPainter.MeasureLabel(Theme.Heading, _eyebrow, context.Px(LargeEyebrow), 0.14f),
+                UiPainter.MeasureLabel(Theme.Display, _title, size, 0.03f));
+            float over = _eyebrow.Length > 0 ? context.Px(LargeEyebrow * 1.2f) + context.Px(8f) : 0f;
+            return new UiVec2(wide, over + (size * 0.74f));
+        }
+
         float title = context.Px(TitleSize);
         float width = MathF.Max(
             UiPainter.MeasureLabel(Theme.Mono, _eyebrow, context.Px(12f), 0.3f),
@@ -67,6 +82,23 @@ public class SectionTitle : UiElement
     protected override void OnDraw(UiPainter painter)
     {
         LayoutContext context = painter.Context;
+        if (Theme.Large)
+        {
+            float y = Bounds.Y;
+            if (_eyebrow.Length > 0)
+            {
+                float small = context.Px(LargeEyebrow);
+                var line = new UiRect(Bounds.X, y, Bounds.Width, small * 1.2f);
+                painter.DrawLabel(Theme.Heading, _eyebrow, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(Theme.Heading, small, line)), small, EyebrowColor ?? Theme.TextSecondary, 0.14f);
+                y = line.Bottom + context.Px(8f);
+            }
+
+            float large = context.Px(LargeTitle);
+            var titleBox = new UiRect(Bounds.X, y, Bounds.Width, large * 0.74f);
+            painter.DrawLabel(Theme.Display, _title, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(Theme.Display, large, titleBox)), large, TitleColor ?? Theme.Text, 0.03f);
+            return;
+        }
+
         float eyebrow = Theme.Mono.LineHeight(context.Px(12f));
         KitDraw.Eyebrow(painter, Theme, _eyebrow, Bounds.TopLeft, color: EyebrowColor);
 

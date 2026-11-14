@@ -53,7 +53,10 @@ public class ScrollView : UiElement, IWheelScrollable
     public float MaxScroll => MathF.Max(0f, _contentHeight - Bounds.Height);
 
     /// <summary>Gets or sets how far one wheel notch scrolls, in design units.</summary>
-    public float WheelStep { get; set; } = 110f;
+    public float WheelStep { get; set; } = DefaultWheelStep;
+
+    /// <summary>How far one wheel notch scrolls unless a viewport says otherwise, in design units.</summary>
+    public const float DefaultWheelStep = 110f;
 
     /// <summary>Gets or sets the gap kept between a revealed row and the viewport edge, in design units.</summary>
     public float RevealMargin { get; set; } = 14f;
@@ -228,7 +231,7 @@ public class ScrollView : UiElement, IWheelScrollable
         (float thumbY, float thumbHeight) = Thumb(_offset.Value);
 
         painter.FillRect(new UiRect(x, Bounds.Y, trackW, Bounds.Height), _theme.Border.WithAlpha(40), UiBlend.AlphaBlend);
-        painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Accent.WithAlpha(160), UiBlend.AlphaBlend);
+        painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Large ? UiPalette.White(0.42f) : _theme.Accent.WithAlpha(160), UiBlend.AlphaBlend);
     }
 
     // The thumb's top and length in pixels at a scroll offset: its length the fraction of the content shown.

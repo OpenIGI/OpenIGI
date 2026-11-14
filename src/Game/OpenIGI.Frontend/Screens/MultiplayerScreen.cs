@@ -16,8 +16,9 @@ namespace OpenIGI.Frontend.Screens;
 public sealed partial class MultiplayerScreen : ShellScreen
 {
     // The side panel's width, and the room between panels. Layout pixels.
-    private const float SideWidth = 520f;
-    private const float PanelGap = 24f;
+    private float SideWidth => Size == ShellSize.Wide ? 520f : 440f;
+
+    private const float PanelGap = 20f;
 
     // How often the list is asked for again while the page is up and this player plays nowhere.
     private const float RelistSeconds = 5f;
@@ -33,6 +34,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
     // Browsing (0) or hosting (1); the strip that picks it and the two tabs' content, kept so a switch slides the strip's block
     // and swaps the content without a rebuild.
     private int _tab;
+
+    /// <summary>Sets whether the page opens on HOST rather than BROWSE, for a capture.</summary>
+    public bool StartOnHost { init => _tab = value ? 1 : 0; }
     private TabStrip? _tabs;
     private UiElement? _browseTab;
     private UiElement? _hostTab;
@@ -75,7 +79,19 @@ public sealed partial class MultiplayerScreen : ShellScreen
         _shownListing = coop.Listing;
         _shownParty = PartyKey;
 
-        var page = new Grid { RowSpacing = 0f, Margin = new Thickness(SideMargin, 36f, SideMargin, 28f) };
+        if (Size == ShellSize.Compact)
+        {
+            Grid compact = BuildCompact(theme, coop);
+            if (scrolled is { } at)
+            {
+                _listScroll?.RestoreOffset(at);
+            }
+
+            _page = compact;
+            return compact;
+        }
+
+        var page = new Grid { RowSpacing = 0f, Margin = new Thickness(SideMargin, 32f, SideMargin, 16f) };
         page.ColumnDefinitions.Add(GridLength.Star);
         page.RowDefinitions.Add(GridLength.Auto);
         page.RowDefinitions.Add(GridLength.Auto);
@@ -145,7 +161,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
         header.RowDefinitions.Add(GridLength.Auto);
         header.ColumnDefinitions.Add(GridLength.Auto);
         header.ColumnDefinitions.Add(GridLength.Star);
-        header.Add(new SectionTitle(theme, "Together", "Multiplayer") { TitleSize = 56f, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom }, 0, 0);
+        header.Add(new SectionTitle(theme, "Together", "Multiplayer") { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom }, 0, 0);
         if (Parties is { } parties)
         {
             UiElement party = BuildPartyCluster(theme, parties);
@@ -160,7 +176,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
     // BROWSE and HOST on the left; QUICK PLAY and RECONNECT on the right.
     private Grid BuildModeBar(UiTheme theme, ICoopRooms coop)
     {
-        var bar = new Grid { Margin = new Thickness(0f, 30f, 0f, 0f) };
+        var bar = new Grid { Margin = new Thickness(0f, 20f, 0f, 0f) };
         bar.RowDefinitions.Add(GridLength.Auto);
         bar.ColumnDefinitions.Add(GridLength.Auto);
         bar.ColumnDefinitions.Add(GridLength.Star);
@@ -170,9 +186,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
         var tabs = new TabStrip(theme, ["Browse", "Host"])
         {
             Notes = [string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{games} {(games == 1 ? "GAME" : "GAMES")}"), "CREATE"],
-            SegmentHeight = 52f,
-            TabPadding = 56f,
-            TextSize = 19f,
+            SegmentHeight = 44f,
+            TabPadding = 28f,
+            TextSize = 17f,
             VerticalAlignment = VerticalAlignment.Center,
         };
         tabs.SelectedIndex = _tab;
@@ -196,8 +212,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
             Accent = ButtonAccent.Outline,
             Key = "F",
             TextSize = 17f,
-            Tracking = 0.3f,
-            Padding = new Thickness(26f, 16f),
+            Tracking = 0.12f,
+            Padding = new Thickness(22f, 0f),
+            Height = 52f,
             Tooltip = "Join the best open game listed: near, with people in it, room for you.",
         };
         quick.Activated += _ => coop.QuickPlay();
@@ -208,8 +225,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
             {
                 Accent = ButtonAccent.Ghost,
                 TextSize = 17f,
-                Tracking = 0.3f,
-                Padding = new Thickness(24f, 12f),
+                Tracking = 0.12f,
+                Padding = new Thickness(22f, 0f),
+                Height = 52f,
                 SubCaption = coop.LastPlayedAt is { } at ? $"{last} · {Ago(at)}" : last,
                 Tooltip = $"Join {last} again, where you last played.",
             };
@@ -244,7 +262,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
     // Between the bar and the panels: where this player plays, when it does; the party member picked, when one is.
     private StackPanel BuildNotes(UiTheme theme, ICoopRooms coop)
     {
-        var notes = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, Margin = new Thickness(0f, 18f, 0f, 18f) };
+        var notes = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, Margin = new Thickness(0f, 12f, 0f, 12f) };
         if (BuildStatus(theme, coop.Status) is { } status)
         {
             notes.AddChild(status);
@@ -271,9 +289,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
         switch (status.Phase)
         {
             case CoopPhase.Playing when status.Hosting:
-                line.AddChild(new Label(theme.Mono, "HOSTING ROOM", 12f, theme.Accent) { VerticalAlignment = VerticalAlignment.Center });
+                line.AddChild(new Label(theme.Heading, "HOSTING ROOM", 14f, theme.Accent) { VerticalAlignment = VerticalAlignment.Center });
                 line.AddChild(new Label(theme.Heading, status.Code ?? string.Empty, 30f, theme.TextBright) { VerticalAlignment = VerticalAlignment.Center });
-                line.AddChild(new Label(theme.Body, "Friends join with this code, on the desktop or at openigi.com.", 15f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
+                line.AddChild(new Label(theme.Body, "Friends join with this code, on the desktop or at openigi.com.", 16f, theme.TextSecondary) { VerticalAlignment = VerticalAlignment.Center });
                 break;
             case CoopPhase.Playing:
                 line.AddChild(StatusText(theme, status.Code is { } room ? $"In room {room}." : "On a server.", UiPalette.TextBody));
@@ -288,7 +306,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
 
         if (status.Phase is CoopPhase.Playing or CoopPhase.Connecting)
         {
-            var leave = new Button(theme, "LEAVE") { Accent = ButtonAccent.Ghost, TextSize = 14f, Tracking = 0.18f, Padding = new Thickness(16f, 8f), VerticalAlignment = VerticalAlignment.Center };
+            var leave = new Button(theme, "LEAVE") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.12f, Padding = new Thickness(16f, 0f), Height = 40f, VerticalAlignment = VerticalAlignment.Center };
             leave.Activated += _ => Coop?.Leave();
             line.AddChild(leave);
         }
@@ -317,13 +335,12 @@ public sealed partial class MultiplayerScreen : ShellScreen
     // A panel of the page: the glass the design draws its groups on, the accent along its top when it is the side panel.
     private static GlassPanel Panel(UiTheme theme, UiElement content, bool side = false, Thickness? padding = null)
     {
+        _ = side;
         var panel = new GlassPanel(theme)
         {
             Padding = padding ?? new Thickness(0f),
-            Tint = Bgra32.FromRgba(28, 28, 26, side ? (byte)230 : (byte)210),
-            TintBottom = Bgra32.FromRgba(22, 22, 20, side ? (byte)230 : (byte)210),
-            Border = side ? theme.Accent : UiPalette.White(0.07f),
-            BorderEdges = side ? UiEdges.Top : UiEdges.All,
+            Tint = Bgra32.FromRgba(12, 14, 15, ShellSizes.IsCompact(theme) ? (byte)235 : (byte)199),
+            Border = UiPalette.White(0.12f),
             VerticalAlignment = VerticalAlignment.Stretch,
         };
         panel.AddChild(content);

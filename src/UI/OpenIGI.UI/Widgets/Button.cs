@@ -199,7 +199,7 @@ public class Button : Control
             }
 
             case ButtonAccent.Text:
-                caption = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Theme.TextMuted, Theme.TextBright, hot);
+                caption = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Theme.Large ? Theme.TextSecondary : Theme.TextMuted, Theme.TextBright, hot);
                 break;
 
             case ButtonAccent.Link:
@@ -209,7 +209,7 @@ public class Button : Control
             case ButtonAccent.Underline:
             {
                 float lit = MathF.Max(hot, Selected ? 1f : 0f);
-                caption = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Theme.TextMuted, Theme.TextBright, lit);
+                caption = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Theme.Large ? Theme.TextSecondary : Theme.TextMuted, Theme.TextBright, lit);
                 if (Selected && DrawsSelectedUnderline)
                 {
                     float inset = context.Px(Padding.Left);

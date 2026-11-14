@@ -46,7 +46,7 @@ public static class UiRowStyle
         ArgumentNullException.ThrowIfNull(context);
         UiTheme theme = control.Theme;
         float caption = theme.Body.LineHeight(context.Px(theme.BodyTextSize)) + context.Px(12f);
-        if (control.Hint.Length > 0)
+        if (ShowsHint(control))
         {
             caption += context.Px(3f) + theme.Body.LineHeight(context.Px(HintSize(theme)));
         }
@@ -70,16 +70,22 @@ public static class UiRowStyle
         UiTheme theme = control.Theme;
         float appear = control.Visual.Appear;
 
-        if (highlight > 0.001f)
-        {
-            painter.FillRect(control.Bounds, UiPalette.Fade(theme.FocusFill, highlight * appear));
-        }
-
         UiRect bounds = control.Bounds;
         if (theme.RowDividers)
         {
             float t = painter.Context.Px(1f);
-            painter.FillRect(new UiRect(bounds.X, bounds.Bottom - t, bounds.Width, t), UiPalette.White(0.05f * appear));
+            painter.FillRect(new UiRect(bounds.X, bounds.Bottom - t, bounds.Width, t), UiPalette.White((theme.Large ? 0.07f : 0.05f) * appear));
+        }
+
+        if (highlight > 0.001f)
+        {
+            painter.FillRect(bounds, theme.Large ? UiPalette.White(0.07f * highlight * appear) : UiPalette.Fade(theme.FocusFill, highlight * appear));
+        }
+
+        // The row in focus is ringed: a pad or a keyboard moves it, and a wash alone is lost over a bright level.
+        if (theme.Large && control.Visual.Focus > 0.001f)
+        {
+            painter.StrokeRect(bounds, painter.Context.Px(2f), UiPalette.Fade(theme.AccentHover, control.Visual.Focus * appear));
         }
 
         if (caption.Length == 0)
@@ -89,10 +95,10 @@ public static class UiRowStyle
 
         float sizePx = painter.Context.Px(theme.BodyTextSize);
         Bgra32 color = !control.IsEnabled ? theme.TextDisabled : Interpolate.Lerp(theme.TextLabel, theme.TextBright, highlight);
-        float x = bounds.X + painter.Context.Px(Inset);
-        float room = MathF.Min(bounds.Right - painter.Context.Px(Inset), controlLeft - painter.Context.Px(Gap)) - x;
+        float x = bounds.X + painter.Context.Px(theme.RowInset);
+        float room = MathF.Min(bounds.Right - painter.Context.Px(theme.RowInset), controlLeft - painter.Context.Px(Gap)) - x;
         caption = TextFit.ToWidth(theme.Body, caption, sizePx, room);
-        if (control.Hint.Length == 0)
+        if (!ShowsHint(control))
         {
             float y = bounds.Y + ((bounds.Height - theme.Body.LineHeight(sizePx)) * 0.5f);
             painter.DrawText(theme.Body, caption, new UiVec2(x, y), sizePx, UiPalette.Fade(color, appear));
@@ -106,10 +112,24 @@ public static class UiRowStyle
         float top = bounds.Y + ((bounds.Height - block) * 0.5f);
         painter.DrawText(theme.Body, caption, new UiVec2(x, top), sizePx, UiPalette.Fade(color, appear));
         string hint = TextFit.ToWidth(theme.Body, control.Hint, hintPx, room);
-        painter.DrawText(theme.Body, hint, new UiVec2(x, top + theme.Body.LineHeight(sizePx) + gap), hintPx, UiPalette.Fade(theme.TextMuted, appear));
+        painter.DrawText(theme.Body, hint, new UiVec2(x, top + theme.Body.LineHeight(sizePx) + gap), hintPx, UiPalette.Fade(theme.Large ? theme.TextSecondary : theme.TextMuted, appear));
     }
 
     private static float HintSize(UiTheme theme) => theme.BodyTextSize * 0.89f;
+
+    /// <summary>Gets a value indicating whether a row shows its line of explanation now.</summary>
+    /// <param name="control">The row.</param>
+    /// <returns><see langword="true"/> when it has one and the theme shows it: always, or while the row has the focus or the pointer.</returns>
+    public static bool ShowsHint(Control control)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        return control.Hint.Length > 0 && control.Theme.RowHints switch
+        {
+            UiRowHints.Always => true,
+            UiRowHints.Focused => control.Visual.Focus > 0.5f || control.IsPointerOver,
+            _ => false,
+        };
+    }
 
     /// <summary>Gets the y of text centred vertically in a box.</summary>
     /// <param name="font">The font.</param>

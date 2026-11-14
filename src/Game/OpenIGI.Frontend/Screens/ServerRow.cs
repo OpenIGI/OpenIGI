@@ -72,8 +72,8 @@ internal sealed record ServerLine(string Name, string Kind, string ModeId, strin
 /// </summary>
 internal sealed class SortHeading : Control
 {
-    private const float TextSize = 11f;
-    private const float Tracking = 0.3f;
+    private const float TextSize = 13f;
+    private const float Tracking = 0.14f;
 
     private readonly string _text;
 
@@ -93,7 +93,7 @@ internal sealed class SortHeading : Control
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         float size = context.Px(TextSize);
-        return new UiVec2(UiPainter.MeasureLabel(Theme.Mono, _text, size, Tracking) + context.Px(16f), Theme.Mono.LineHeight(size) + context.Px(8f));
+        return new UiVec2(UiPainter.MeasureLabel(Theme.Heading, _text, size, Tracking) + context.Px(16f), Theme.Heading.LineHeight(size) + context.Px(8f));
     }
 
     /// <inheritdoc/>
@@ -101,9 +101,9 @@ internal sealed class SortHeading : Control
     {
         LayoutContext context = painter.Context;
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
-        Bgra32 ink = UiPalette.Fade(Order != 0 ? Theme.Accent : hot > 0.5f ? Theme.TextBright : Theme.TextMuted, Visual.Appear);
+        Bgra32 ink = UiPalette.Fade(Order != 0 ? Theme.Accent : hot > 0.5f ? Theme.TextBright : Theme.TextSecondary, Visual.Appear);
         float size = context.Px(TextSize);
-        UiVec2 end = painter.DrawLabel(Theme.Mono, _text, new UiVec2(Bounds.X, UiRowStyle.CenterY(Theme.Mono, size, Bounds)), size, ink, Tracking);
+        UiVec2 end = painter.DrawLabel(Theme.Heading, _text, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(Theme.Heading, size, Bounds)), size, ink, Tracking);
         if (Order == 0)
         {
             return;
@@ -150,8 +150,14 @@ internal sealed class ServerRow : Control
     /// <summary>Gets or sets a value indicating whether it can't be joined (another version), which greys it.</summary>
     public bool Unjoinable { get; set; }
 
+    /// <summary>Gets or sets why the line cannot be joined, shown under its name in place of its kind; empty when it can.</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a value indicating whether the line is drawn two deep for a narrow page: its name, and under it its mode, map and players.</summary>
+    public bool Compact { get; set; }
+
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(68f));
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(Compact ? 60f : 72f));
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
@@ -161,15 +167,26 @@ internal sealed class ServerRow : Control
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
         UiRect bounds = Bounds;
         float mid = bounds.Y + (bounds.Height / 2f);
-        if (Selected)
+        if (Selected && !Compact)
         {
-            Span<UiGradientStop> wash = [new(0f, UiPalette.AccentAt(0.2f * appear)), new(0.7f, UiPalette.AccentAt(0.05f * appear)), new(1f, UiPalette.AccentAt(0.02f * appear))];
-            painter.FillGradient(bounds, wash, UiGradientDirection.Horizontal);
-            painter.FillRect(new UiRect(bounds.X, bounds.Y, context.Px(3f), bounds.Height), UiPalette.Fade(Theme.Accent, appear));
+            painter.FillRect(bounds, UiPalette.AccentAt(0.13f * appear));
+            painter.StrokeRect(bounds, context.Px(1f), UiPalette.AccentAt(0.45f * appear));
+            painter.FillRect(new UiRect(bounds.X, bounds.Y, context.Px(4f), bounds.Height), UiPalette.Fade(Theme.Accent, appear));
         }
         else if (hot > 0.001f)
         {
-            painter.FillRect(bounds, UiPalette.White(0.045f * hot * appear));
+            painter.FillRect(bounds, UiPalette.White(0.07f * hot * appear));
+        }
+
+        if (Visual.Focus > 0.001f)
+        {
+            painter.StrokeRect(bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
+        }
+
+        if (Compact)
+        {
+            DrawCompact(painter);
+            return;
         }
 
         painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.05f * appear));
@@ -178,7 +195,8 @@ internal sealed class ServerRow : Control
         float[] lefts = ServerColumns.Lefts(bounds.Width - (inset * 2f));
         float Left(int column) => bounds.X + inset + lefts[column];
         float Room(int column) => (column + 1 < lefts.Length ? Left(column + 1) : bounds.Right - inset) - Left(column) - context.Px(14f);
-        Bgra32 Ink(Bgra32 colour) => UiPalette.Fade(Unjoinable ? Theme.TextDisabled : colour, appear);
+        // A line that cannot be joined is quieter, not gone: it has to be read to see why.
+        Bgra32 Ink(Bgra32 colour) => UiPalette.Fade(Unjoinable ? Theme.TextMuted : colour, appear);
 
         DrawBadge(painter, new UiRect(Left(0), mid - context.Px(15f), MathF.Min(Room(0), context.Px(64f)), context.Px(30f)), Ink(ModeLook.Colour(_line.ModeId)));
         DrawName(painter, Left(1), Room(1), Ink);
@@ -193,6 +211,68 @@ internal sealed class ServerRow : Control
         {
             painter.DrawChevron(new UiVec2(bounds.Right - inset + context.Px(4f), mid), context.Px(10f), UiDirection.Right, context.Px(1.5f), Ink(Selected ? Theme.Accent : Theme.TextMuted));
         }
+    }
+
+    // The line two deep: the name with its marks; under it the mode in its colour, the map and the players, or why it
+    // cannot be joined; and at the right the ping and the way in.
+    private void DrawCompact(UiPainter painter)
+    {
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
+        UiRect bounds = Bounds;
+        float pad = context.Px(12f);
+        float right = bounds.Right - pad;
+        painter.DrawChevron(new UiVec2(right - context.Px(4f), bounds.Center.Y), context.Px(10f), UiDirection.Right, context.Px(2f), UiPalette.Fade(Theme.TextSecondary, appear));
+        right -= context.Px(22f);
+
+        float pingSize = context.Px(15f);
+        string ping = _line.Ping is { } ms ? ms.ToString(System.Globalization.CultureInfo.InvariantCulture) : "—";
+        float pingWidth = Theme.Mono.MeasureWidth(ping, pingSize);
+        painter.DrawText(Theme.Mono, ping, new UiVec2(right - pingWidth, UiRowStyle.CenterY(Theme.Mono, pingSize, bounds)), pingSize, UiPalette.Fade(Unjoinable ? Theme.TextMuted : Theme.Text, appear));
+        right -= pingWidth + context.Px(8f);
+        float[] heights = [4f, 7f, 10f, 14f];
+        Bgra32 strength = _line.Bars switch { >= 3 => Theme.Success, 2 => Theme.Warning, _ => Theme.Danger };
+        float barX = right - context.Px(18f);
+        for (int i = 0; i < heights.Length; i++)
+        {
+            float h = context.Px(heights[i]);
+            painter.FillRect(new UiRect(barX + (i * context.Px(5f)), bounds.Center.Y + context.Px(7f) - h, context.Px(3f), h), UiPalette.Fade(i < _line.Bars ? strength : UiPalette.White(0.18f), appear));
+        }
+
+        right = barX - context.Px(12f);
+        float x = bounds.X + pad;
+        float nameSize = context.Px(17f);
+        float underSize = context.Px(14f);
+        float gap = context.Px(2f);
+        float block = Theme.Body.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
+        float top = bounds.Y + ((bounds.Height - block) / 2f);
+        float marks = (Locked ? context.Px(20f) : 0f) + (Saved ? context.Px(18f) : 0f);
+        string name = Fit(_line.Name, Theme.Body, nameSize, right - x - marks);
+        painter.DrawText(Theme.Body, name, new UiVec2(x, top), nameSize, UiPalette.Fade(Unjoinable ? Theme.TextMuted : Theme.Text, appear));
+        float markX = x + Theme.Body.MeasureWidth(name, nameSize) + context.Px(10f);
+        float markY = top + (Theme.Body.LineHeight(nameSize) / 2f);
+        if (Locked)
+        {
+            OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Lock, new UiVec2(markX + context.Px(6f), markY), context.Px(14f), UiPalette.Fade(Theme.TextSecondary, appear));
+            markX += context.Px(20f);
+        }
+
+        if (Saved)
+        {
+            painter.FillDiamond(new UiVec2(markX + context.Px(4f), markY), context.Px(9f), UiPalette.Fade(Theme.Accent, appear));
+        }
+
+        float underY = top + Theme.Body.LineHeight(nameSize) + gap;
+        if (Reason.Length > 0 && Unjoinable)
+        {
+            painter.DrawLabel(Theme.Heading, Reason, new UiVec2(x, underY + context.Px(2f)), context.Px(13f), UiPalette.Fade(Theme.Warning, appear), 0.08f);
+            return;
+        }
+
+        string code = ModeLook.Code(_line.ModeId);
+        UiVec2 end = painter.DrawText(Theme.Body, code, new UiVec2(x, underY), underSize, UiPalette.Fade(ModeLook.Colour(_line.ModeId), appear));
+        string rest = string.Create(System.Globalization.CultureInfo.InvariantCulture, $" · {_line.Map} · {_line.Players}/{_line.MaxPlayers}");
+        painter.DrawText(Theme.Body, Fit(rest, Theme.Body, underSize, right - end.X), new UiVec2(end.X, underY), underSize, UiPalette.Fade(_line.Full ? Theme.Danger : Theme.TextSecondary, appear));
     }
 
     // The mode: its code on a tint of its colour, the colour down the leading edge.
@@ -213,9 +293,9 @@ internal sealed class ServerRow : Control
         LayoutContext context = painter.Context;
         UiRect bounds = Bounds;
         float nameSize = context.Px(18f);
-        float underSize = context.Px(11f);
-        float gap = context.Px(5f);
-        float block = Theme.Body.LineHeight(nameSize) + gap + Theme.Mono.LineHeight(underSize);
+        float underSize = context.Px(13f);
+        float gap = context.Px(3f);
+        float block = Theme.Body.LineHeight(nameSize) + gap + Theme.Heading.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
         float marks = (Locked ? context.Px(21f) : 0f) + (Saved ? context.Px(20f) : 0f);
         string name = Fit(_line.Name, Theme.Body, nameSize, room - marks);
@@ -238,7 +318,14 @@ internal sealed class ServerRow : Control
             painter.FillDiamond(new UiVec2(markX + context.Px(4f), markY + context.Px(1f)), context.Px(9f), ink(Theme.Accent));
         }
 
-        painter.DrawLabel(Theme.Mono, _under, new UiVec2(x, top + Theme.Body.LineHeight(nameSize) + gap), underSize, ink(Theme.TextMuted), 0.18f);
+        bool why = Reason.Length > 0;
+        painter.DrawLabel(
+            Theme.Heading,
+            why ? Reason : _under,
+            new UiVec2(x, top + Theme.Body.LineHeight(nameSize) + gap),
+            underSize,
+            UiPalette.Fade(why ? Theme.Warning : Theme.TextSecondary, Visual.Appear),
+            0.08f);
     }
 
     // The players over a bar of places, one for each the game takes up to sixteen, filled as it fills; red when full.
@@ -329,6 +416,9 @@ internal sealed class ServerRowSkeleton : UiElement
     private readonly int _count;
     private float _time;
 
+    /// <summary>Gets or sets a value indicating whether it stands in for a line drawn two deep.</summary>
+    public bool Compact { get; set; }
+
     /// <summary>Initializes a new instance of the <see cref="ServerRowSkeleton"/> class.</summary>
     /// <param name="index">Which line it is, from the top.</param>
     /// <param name="count">How many there are.</param>
@@ -339,7 +429,7 @@ internal sealed class ServerRowSkeleton : UiElement
     }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(68f));
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(Compact ? 60f : 72f));
 
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds) => _time += elapsedSeconds;
@@ -365,6 +455,16 @@ internal sealed class ServerRowSkeleton : UiElement
             float along = (x + (width / 2f) - bounds.X) / MathF.Max(1f, bounds.Width);
             float wave = 0.5f + (0.5f * MathF.Sin(MathF.Tau * ((_time * 0.55f) - along - (_index * 0.06f))));
             painter.FillRect(new UiRect(x, y, width, height), UiPalette.White((0.05f + (0.07f * wave * wave)) * fade));
+        }
+
+        if (Compact)
+        {
+            float lead = bounds.X + context.Px(12f);
+            float wide = (bounds.Width * 0.3f) + (bounds.Width * 0.18f * ((_index * 7 % 5) / 4f));
+            Block(lead, mid - context.Px(14f), wide, context.Px(13f));
+            Block(lead, mid + context.Px(5f), context.Px(150f), context.Px(9f));
+            Block(bounds.Right - context.Px(90f), mid - context.Px(6f), context.Px(50f), context.Px(12f));
+            return;
         }
 
         // Names of different lengths, so the rows do not read as a ruled table.

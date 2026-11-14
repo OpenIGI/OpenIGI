@@ -31,7 +31,9 @@ namespace OpenIGI.Frontend.Tests;
 [Collection(ShellTestHarness.CollectionName)]
 public sealed class MultiplayerScreenshots
 {
-    private static readonly (int Width, int Height)[] Sizes = [(1920, 1080), (1366, 768)];
+    // A desktop, a laptop, a small window, and a phone held sideways: 844 by 390 as its owner sees it, three pixels to each.
+    private static readonly (int Width, int Height, float Density)[] Sizes =
+        [(1920, 1080, 1f), (1366, 768, 1f), (1024, 576, 1f), (2532, 1170, 3f)];
 
     [Fact]
     public void Draw_the_multiplayer_page()
@@ -48,7 +50,7 @@ public sealed class MultiplayerScreenshots
         using SkiaFontCache fonts = new();
         Dictionary<int, MissionPicture?> pictures = [];
 
-        foreach ((int width, int height) in Sizes)
+        foreach ((int width, int height, float density) in Sizes)
         {
             foreach (string state in new[] { "browse", "loading", "empty", "host", "switch", "glide", "connecting", "failed" })
             {
@@ -84,7 +86,12 @@ public sealed class MultiplayerScreenshots
                 var shell = new Shell(context);
                 context.Stack.Reset(new MultiplayerScreen(context), animate: false);
 
-                var layout = new LayoutContext(width, height);
+                // As the game lays the menus out: enlarged on a small screen, and no text smaller than can be read.
+                // A density below zero is a canvas of exactly this many design units, for looking at a page on a narrow one.
+                var layout = density < 0f
+                    ? new LayoutContext(width, height, userScale: 1080f / height)
+                    : new LayoutContext(width, height, userScale: OpenIGI.Core.Graphics.UiScale.MenuBoost(width, height, density));
+                UiFont.MinimumPixelHeight = OpenIGI.Core.Graphics.UiScale.MenuSmallestTextPixels * MathF.Max(1f, density);
                 var input = new InputState();
                 for (int frame = 0; frame < 90; frame++)
                 {
@@ -127,6 +134,7 @@ public sealed class MultiplayerScreenshots
                     renderer.Flush();
                 }
 
+                UiFont.MinimumPixelHeight = 0f;
                 using SKImage image = surface.Snapshot();
                 using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
                 using FileStream file = File.Create(Path.Combine(folder, $"multiplayer-{state}-{width}x{height}.png"));
@@ -136,7 +144,7 @@ public sealed class MultiplayerScreenshots
     }
 
     // Something for the glass to stand on: a dusk sky over dark hills, about as bright as a level behind the menu.
-    private static void DrawGround(SKCanvas canvas, int width, int height)
+    internal static void DrawGround(SKCanvas canvas, int width, int height)
     {
         using var sky = new SKPaint
         {
@@ -160,7 +168,7 @@ public sealed class MultiplayerScreenshots
     }
 
     // A mission's shipped picture, read by the game's own JPEG reader, or none when the mission has no file.
-    private static MissionPicture? Picture(SkiaImageStore images, Dictionary<int, MissionPicture?> known, int mission)
+    internal static MissionPicture? Picture(SkiaImageStore images, Dictionary<int, MissionPicture?> known, int mission)
     {
         if (!known.TryGetValue(mission, out MissionPicture? picture))
         {
@@ -177,7 +185,7 @@ public sealed class MultiplayerScreenshots
         return picture;
     }
 
-    private static UiFont LoadFont(IgiFontRequest request)
+    internal static UiFont LoadFont(IgiFontRequest request)
     {
         byte[] data = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", request.FileName));
         return UiFont.ForMeasurement(FontAtlasBuilder.Build(data, request.PixelHeight), data);
@@ -192,7 +200,7 @@ public sealed class MultiplayerScreenshots
         new(5, 5, "Radar Base", "The fifth briefing.", "mission5.spr"),
     ];
 
-    private static List<CoopRoomInfo> Games() =>
+    internal static List<CoopRoomInfo> Games() =>
     [
         new("EU1", "OpenIGI Official · Frankfurt #1", 1, 11, 16, false) { Mode = GameModes.TeamDeathmatch, PingMs = 38, Region = "eu", Dedicated = true, Favourite = true },
         new("EU2", "OpenIGI Official · Frankfurt #2", 3, 16, 16, false) { Mode = GameModes.SearchAndDestroy, PingMs = 41, Region = "eu", Dedicated = true },
@@ -206,14 +214,14 @@ public sealed class MultiplayerScreenshots
         new("AS1", "RPi Server", 1, 0, 16, false) { Mode = GameModes.TeamDeathmatch, Region = "as", Dedicated = true, Reachable = false },
     ];
 
-    private static PartyView Squad() => new(
+    internal static PartyView Squad() => new(
         "R3D7KQ",
         "Jones",
         true,
         [new(1, "Jones", true, true, "in the menus"), new(2, "Anya", false, false, "in the menus"), new(3, "Priboi", false, false, "in the menus")],
         null);
 
-    private sealed class FakeRooms : ICoopRooms
+    internal sealed class FakeRooms : ICoopRooms
     {
         public CoopStatus Status { get; init; }
 
@@ -264,7 +272,7 @@ public sealed class MultiplayerScreenshots
         }
     }
 
-    private sealed class FakeParty : IPartyPanel
+    internal sealed class FakeParty : IPartyPanel
     {
         public PartyView? Party { get; init; }
 

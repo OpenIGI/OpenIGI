@@ -58,6 +58,7 @@ public sealed class WebGameWindow : IGameWindow
         _title = settings.Title;
         _cursorVisible = settings.CursorVisible;
         _size = page.CanvasSize;
+        PixelDensity = Density(page);
         IsFocused = page.HasFocus;
 
         _page.SetTitle(_title);
@@ -102,6 +103,27 @@ public sealed class WebGameWindow : IGameWindow
             _mode = value;
             _page.RequestFullscreen(value != WindowMode.Windowed);
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The page's device pixel ratio, read again whenever the canvas changes size: a zoom or a move to another screen does both.</remarks>
+    public float PixelDensity { get; private set; }
+
+    /// <inheritdoc/>
+    /// <remarks>Read from the page each time: turning the phone moves the notch from one side to the other.</remarks>
+    public (float Left, float Top, float Right, float Bottom) SafeInsets =>
+        (Inset(0), Inset(1), Inset(2), Inset(3));
+
+    private float Inset(int side)
+    {
+        double inset = _page.SafeInset(side);
+        return inset > 0d && double.IsFinite(inset) ? (float)inset : 0f;
+    }
+
+    private static float Density(IBrowserPage page)
+    {
+        double ratio = page.PixelRatio;
+        return ratio > 0d && double.IsFinite(ratio) ? (float)ratio : 1f;
     }
 
     /// <inheritdoc/>
@@ -362,6 +384,7 @@ public sealed class WebGameWindow : IGameWindow
                 (int Width, int Height) size = ((int)input.X, (int)input.Y);
                 if (size != _size && size.Width > 0 && size.Height > 0)
                 {
+                    PixelDensity = Density(_page);
                     _size = size;
                     Resized?.Invoke(this, new WindowResizedEventArgs(size.Width, size.Height));
                 }

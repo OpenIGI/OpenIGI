@@ -77,8 +77,24 @@ public sealed partial class GameHost : IDisposable
 
     /// <summary>Gets the layout the menus are updated and drawn in this frame: the window's, enlarged on a small screen.</summary>
     /// <remarks>The shell's update and its draw both take this one, so a pointer lands on what is drawn.</remarks>
-    private OpenIGI.UI.Layout.LayoutContext ShellLayout() =>
-        new(SafeWindowWidth, SafeWindowHeight, userScale: UiScale.MenuBoost(_window.Width, _window.Height));
+    private OpenIGI.UI.Layout.LayoutContext ShellLayout()
+    {
+        // Clear of a phone's notch and home bar: the level behind the menus runs to the screen's edge, the menus do not.
+        (float left, float top, float right, float bottom) = _window.SafeInsets;
+        float scale = UiScale.MenuBoost(_window.Width, _window.Height, _window.PixelDensity);
+
+        // The scale is counted from the whole screen's height; the layout counts it from what is left inside the insets.
+        float inner = SafeWindowHeight - top - bottom;
+        if (inner > 1f)
+        {
+            scale *= SafeWindowHeight / inner;
+        }
+
+        return new(SafeWindowWidth, SafeWindowHeight, safeArea: new OpenIGI.UI.Layout.Thickness(left, top, right, bottom), userScale: scale);
+    }
+
+    /// <summary>Gets the smallest the menus' text is drawn on this window, in its own pixels.</summary>
+    private float ShellSmallestText => UiScale.MenuSmallestTextPixels * MathF.Max(1f, _window.PixelDensity);
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;

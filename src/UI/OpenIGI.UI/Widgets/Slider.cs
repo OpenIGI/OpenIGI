@@ -24,6 +24,12 @@ public class Slider : Control
     private const float ReadoutMinUnits = 44f;
     private const float ReadoutSizeUnits = 14f;
 
+    // The large look's: a 14 by 24 thumb a finger can take hold of, and a boxed readout 16 units off the track.
+    private const float LargeThumbWidthUnits = 14f;
+    private const float LargeThumbHeightUnits = 24f;
+    private const float LargeReadoutGapUnits = 16f;
+    private const float LargeReadoutSizeUnits = 15f;
+
     private readonly Spring _display;
     private float _value;
     private UiRect _track;
@@ -140,9 +146,13 @@ public class Slider : Control
         // The track is resolved here rather than in the draw so a click can be mapped onto it whether or
         // not the widget has been drawn yet. It sits at the right of the row, left of the readout.
         float readout = ReadoutWidth(context);
-        float width = context.Px(TrackUnits);
-        float right = contentRect.Right - context.Px(UiRowStyle.Inset) - readout - context.Px(ReadoutGapUnits);
-        float height = context.Px(ThumbHeightUnits);
+
+        // Large: the track and its boxed readout are 330 units together, less on a row too narrow for that and a caption.
+        float width = Theme.Large
+            ? MathF.Max(context.Px(90f), MathF.Min(context.Px(330f), contentRect.Width * 0.48f) - readout - context.Px(LargeReadoutGapUnits))
+            : context.Px(TrackUnits);
+        float right = contentRect.Right - context.Px(Theme.RowInset) - readout - context.Px(Theme.Large ? LargeReadoutGapUnits : ReadoutGapUnits);
+        float height = context.Px(Theme.Large ? LargeThumbHeightUnits : ThumbHeightUnits);
         _track = new UiRect(right - width, contentRect.Y + ((contentRect.Height - height) * 0.5f), width, height);
     }
 
@@ -166,7 +176,7 @@ public class Slider : Control
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
         UiRect track = _track;
-        float rail = context.Px(RailUnits);
+        float rail = context.Px(Theme.Large ? 4f : RailUnits);
         float railY = track.Y + ((track.Height - rail) * 0.5f);
         float t = Math.Clamp(_display.Value, 0f, 1f);
         Bgra32 fill = IsEnabled ? Theme.Accent : Theme.TextDisabled;
@@ -174,16 +184,31 @@ public class Slider : Control
         painter.FillRect(new UiRect(track.X, railY, track.Width, rail), UiPalette.Fade(Theme.Track, appear));
         painter.FillRect(new UiRect(track.X, railY, track.Width * t, rail), UiPalette.Fade(fill, appear));
 
-        float thumbW = context.Px(ThumbWidthUnits);
+        float thumbW = context.Px(Theme.Large ? LargeThumbWidthUnits : ThumbWidthUnits);
         float thumbX = track.X + (track.Width * t) - (thumbW * 0.5f);
         Bgra32 thumb = IsEnabled ? Interpolate.Lerp(Theme.TextBright, Theme.AccentHover, highlight * 0.35f) : Theme.TextDisabled;
-        painter.FillRect(new UiRect(thumbX, track.Y, thumbW, track.Height), UiPalette.Fade(thumb, appear));
+        var thumbBox = new UiRect(thumbX, track.Y, thumbW, track.Height);
+        if (Theme.Large)
+        {
+            // An ink edge, so the thumb stands off the amber it sits on.
+            painter.FillRect(thumbBox.Inflate(new Thickness(context.Px(2f), context.Px(2f))), UiPalette.Fade(Theme.OnAccent, appear));
+        }
 
-        float sizePx = context.Px(ReadoutSizeUnits);
+        painter.FillRect(thumbBox, UiPalette.Fade(thumb, appear));
+
+        float sizePx = context.Px(Theme.Large ? LargeReadoutSizeUnits : ReadoutSizeUnits);
         string readout = Readout();
         float readoutWidth = Theme.Mono.MeasureWidth(readout, sizePx);
-        float right = Bounds.Right - context.Px(UiRowStyle.Inset);
+        float right = Bounds.Right - context.Px(Theme.RowInset);
         var box = new UiRect(right - ReadoutWidth(context), Bounds.Y, ReadoutWidth(context), Bounds.Height);
+        if (Theme.Large)
+        {
+            float boxHeight = context.Px(34f);
+            var frame = new UiRect(box.X, Bounds.Center.Y - (boxHeight * 0.5f), box.Width, boxHeight);
+            painter.StrokeRect(frame, context.Px(1f), UiPalette.White(0.12f * appear));
+            right -= context.Px(10f);
+        }
+
         painter.DrawText(
             Theme.Mono,
             readout,
@@ -214,13 +239,13 @@ public class Slider : Control
             return _readoutWidth;
         }
 
-        float size = context.Px(ReadoutSizeUnits);
+        float size = context.Px(Theme.Large ? LargeReadoutSizeUnits : ReadoutSizeUnits);
         float widest = MathF.Max(Theme.Mono.MeasureWidth(Readout(), size), Theme.Mono.MeasureWidth(Format(Minimum), size));
         widest = MathF.Max(widest, Theme.Mono.MeasureWidth(Format(Maximum), size));
 
         _readoutWidthScale = context.Scale;
         _readoutWidthValue = _value;
-        _readoutWidth = MathF.Max(context.Px(ReadoutMinUnits), widest);
+        _readoutWidth = Theme.Large ? MathF.Max(context.Px(60f), widest + context.Px(20f)) : MathF.Max(context.Px(ReadoutMinUnits), widest);
         return _readoutWidth;
 
         string Format(float value) =>

@@ -50,11 +50,14 @@ public sealed class Shell
     /// </remarks>
     public bool OpenOn(string? tab)
     {
-        Screen? screen = tab?.ToLowerInvariant() switch
+        // "settings:controls" opens a category of the settings; "multiplayer:host" the HOST tab.
+        string[] parts = (tab ?? string.Empty).Split(':', 2);
+        string? part = parts.Length > 1 ? parts[1] : null;
+        Screen? screen = parts[0].ToLowerInvariant() switch
         {
             "campaign" => new CampaignScreen(_context),
-            "coop" or "co-op" or "multiplayer" or "mp" => new MultiplayerScreen(_context),
-            "settings" => new SettingsScreen(_context),
+            "coop" or "co-op" or "multiplayer" or "mp" => new MultiplayerScreen(_context) { StartOnHost = string.Equals(part, "host", StringComparison.OrdinalIgnoreCase) },
+            "settings" => new SettingsScreen(_context) { StartCategory = part },
             "profile" or "profiles" => new ProfilesScreen(_context),
             "extras" => new ExtrasScreen(_context),
             _ => null,

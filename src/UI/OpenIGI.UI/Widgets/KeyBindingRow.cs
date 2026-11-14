@@ -167,7 +167,7 @@ public class KeyBindingRow : Control
         // is rather than as a word.
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
-        float sizePx = context.Px(13f);
+        float sizePx = context.Px(Theme.Large ? 14f : 13f);
         if (!ReferenceEquals(_shownName, BoundKeyName))
         {
             _shownName = BoundKeyName;
@@ -176,9 +176,9 @@ public class KeyBindingRow : Control
 
         string value = IsListening ? "PRESS A KEY…" : _shownCap;
         float textWidth = UiPainter.MeasureLabel(Theme.Mono, value, sizePx, 0.08f);
-        float padX = context.Px(10f);
-        float height = context.Px(28f);
-        float right = Bounds.Right - context.Px(UiRowStyle.Inset);
+        float padX = context.Px(Theme.Large ? 12f : 10f);
+        float height = context.Px(Theme.Large ? 36f : 28f);
+        float right = Bounds.Right - context.Px(Theme.RowInset);
         var cap = new UiRect(right - textWidth - (padX * 2f), Bounds.Y + ((Bounds.Height - height) * 0.5f), textWidth + (padX * 2f), height);
         UiRowStyle.DrawFrame(painter, this, Action, highlight, cap.X);
 

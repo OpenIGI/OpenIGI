@@ -186,16 +186,16 @@ public sealed partial class MultiplayerScreen
         };
         foreach ((string label, string value) in rules)
         {
-            var line = new Grid { Margin = new Thickness(28f, 0f), Height = 66f };
+            var line = new Grid { Margin = new Thickness(ShellSizes.IsCompact(theme) ? 16f : 28f, 0f), Height = ShellSizes.IsCompact(theme) ? 48f : 64f };
             line.RowDefinitions.Add(GridLength.Star);
             line.ColumnDefinitions.Add(GridLength.Star);
             line.ColumnDefinitions.Add(GridLength.Auto);
-            line.Add(new Label(theme.Body, label, 17f, theme.TextLabel) { VerticalAlignment = VerticalAlignment.Center }, 0, 0);
-            line.Add(new Label(theme.Heading, value.ToUpperInvariant(), 20f, theme.Text) { VerticalAlignment = VerticalAlignment.Center }, 0, 1);
+            line.Add(new Label(theme.Body, label, theme.BodyTextSize, theme.TextLabel) { VerticalAlignment = VerticalAlignment.Center }, 0, 0);
+            line.Add(new Label(theme.Heading, value.ToUpperInvariant(), 18f, theme.Text) { VerticalAlignment = VerticalAlignment.Center }, 0, 1);
             column.AddChild(line);
         }
 
-        column.AddChild(new Label(theme.Body, "The mode's rules as it plays them; a dedicated server's own cfg can change them.", 14f, theme.TextMuted) { Wrap = true, Margin = new Thickness(28f, 8f, 28f, 0f) });
+        column.AddChild(new Label(theme.Body, "The mode's rules as it plays them; a dedicated server's own cfg can change them.", 15f, theme.TextSecondary) { Wrap = true, Margin = new Thickness(ShellSizes.IsCompact(theme) ? 16f : 28f, 8f, 28f, 0f) });
         return FormPanel(theme, column);
     }
 
@@ -213,7 +213,7 @@ public sealed partial class MultiplayerScreen
         MissionInfo? mission = missions.Count > 0 ? missions[Math.Clamp(_mission, 0, missions.Count - 1)] : null;
         string name = mission?.Name ?? "No missions";
         var top = new StackPanel { Orientation = Orientation.Vertical };
-        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, HostingCoop ? "Mission" : "Map", name, 220f)
+        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, HostingCoop ? "Mission" : "Map", name, Size == ShellSize.Compact ? 110f : 220f)
         {
             Mode = HostMode,
             Picture = mission is null ? null : Context.Host.MissionPicture(mission.Id),
@@ -259,7 +259,6 @@ public sealed partial class MultiplayerScreen
         bool dedicated = coop.CanHostServer && _runsOn == 1;
         var host = new PrimaryAction(theme, "Host")
         {
-            TitleSize = 46f,
             Subtitle = $"{(dedicated ? "DEDICATED" : "THIS GAME")} · {Listings[_listing].ToUpperInvariant()}",
             IsEnabled = mission is not null,
             Margin = new Thickness(20f, 0f, 20f, 20f),
@@ -322,8 +321,9 @@ public sealed partial class MultiplayerScreen
     // A form panel's column, its group's name at the top.
     private static StackPanel FormColumn(UiTheme theme, string title)
     {
-        var column = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0f, 28f, 0f, 20f) };
-        column.AddChild(GroupTitle(theme, title, new Thickness(28f, 0f, 28f, 12f)));
+        bool compact = ShellSizes.IsCompact(theme);
+        var column = new StackPanel { Orientation = Orientation.Vertical, Margin = compact ? new Thickness(0f, 0f, 0f, 4f) : new Thickness(8f, 0f, 8f, 16f) };
+        column.AddChild(GroupTitle(theme, title, compact ? new Thickness(16f, 12f, 16f, 4f) : new Thickness(20f, 28f, 20f, 14f)));
         return column;
     }
 
@@ -337,5 +337,5 @@ public sealed partial class MultiplayerScreen
 
     // A form's line: its label on the left, its value between arrows on the right.
     private static OptionCycler Row(UiTheme theme, string label, IEnumerable<string> options, int selected, string tooltip = "") =>
-        new(theme, label, options, selected) { Inline = true, ContentWidth = 260f, Tooltip = tooltip, Margin = new Thickness(28f, 4f) };
+        new(theme, label, options, selected) { Inline = true, ContentWidth = 260f, Tooltip = tooltip };
 }

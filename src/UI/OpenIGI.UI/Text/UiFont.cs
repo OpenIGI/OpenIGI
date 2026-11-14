@@ -147,7 +147,23 @@ public sealed class UiFont : IDisposable
     /// <summary>Gets the scale from atlas pixels to a requested pixel size.</summary>
     /// <param name="sizePx">The requested text size in pixels.</param>
     /// <returns>The factor every atlas-pixel metric is multiplied by.</returns>
-    public float ScaleFor(float sizePx) => sizePx / Atlas.BasePixelHeight;
+    /// <remarks>Never for less than <see cref="MinimumPixelHeight"/>, so measuring and drawing agree on the size used.</remarks>
+    public float ScaleFor(float sizePx) => MathF.Max(sizePx, MinimumPixelHeight) / Atlas.BasePixelHeight;
+
+    /// <summary>Gets or sets the smallest size any text is measured and drawn at, in pixels; zero for none.</summary>
+    /// <remarks>
+    /// <para>
+    /// The menus are laid out in design units and scaled to the screen, and on a small one a caption of eleven units comes
+    /// out six pixels tall: a row of marks, not words. Whoever lays an interface out for a small screen sets this to
+    /// the smallest text a person can read there, and a size asked for below it is drawn at it.
+    /// </para>
+    /// <para>
+    /// Every size passes through <see cref="ScaleFor"/>, measuring and drawing alike, so a label made larger is also
+    /// measured larger and the layout makes room for it. Set around the interface it is meant for and put back after:
+    /// it is the process's, not a font's.
+    /// </para>
+    /// </remarks>
+    public static float MinimumPixelHeight { get; set; }
 
     /// <summary>Gets the height of one line at a requested size, in pixels.</summary>
     /// <param name="sizePx">The requested text size in pixels.</param>

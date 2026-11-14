@@ -46,12 +46,12 @@ public sealed class MissionSavesScreen : ShellScreen
             Width = 880f,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(64f, 0f, 0f, 0f),
+            Margin = new Thickness(SideMargin, 0f, 0f, 0f),
         };
 
         column.AddChild(new SectionTitle(theme, "Operation", "Load game")
         {
-            TitleSize = 88f,
+            TitleSize = Size == ShellSize.Compact ? 32f : 88f,
             EyebrowColor = theme.Accent,
             Margin = new Thickness(0f, 0f, 0f, 20f),
         });
@@ -68,7 +68,7 @@ public sealed class MissionSavesScreen : ShellScreen
 
             int number = slot.Slot;
             string name = number >= QuickSaveSlot ? "Quick save" : string.Create(CultureInfo.InvariantCulture, $"Slot {number + 1:00}");
-            var tile = new SlotTile(theme, name) { Width = 200f, Height = 132f, Content = "Mission time", Detail = slot.Description };
+            var tile = new SlotTile(theme, name) { Width = Size == ShellSize.Compact ? 118f : 200f, Height = Size == ShellSize.Compact ? 96f : 132f, Content = "Mission time", Detail = slot.Description };
             tile.Activated += _ => Choose(number);
             row.AddChild(tile);
             saves++;

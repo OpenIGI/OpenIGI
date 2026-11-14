@@ -124,7 +124,7 @@ public static partial class KitIcons
                 break;
             case KitIcon.Person:
                 Arc(12f, 7f, 3.5f, 0f, MathF.Tau);
-                Arc(12f, 21f, 7.5f, -MathF.PI, 0f);
+                Arc(12f, 21f, 7.5f, -MathF.PI * 0.5f, MathF.PI * 0.5f);
                 break;
             case KitIcon.Light:
                 Arc(12f, 10f, 6f, MathF.PI * 0.75f, MathF.PI * 2.25f);
@@ -147,8 +147,8 @@ public static partial class KitIcons
             case KitIcon.Globe:
                 Arc(12f, 12f, 8.5f, 0f, MathF.Tau);
                 Line(3.5f, 12f, 20.5f, 12f);
-                Arc(5f, 12f, 9.5f, -MathF.PI * 0.27f, MathF.PI * 0.27f);
-                Arc(19f, 12f, 9.5f, MathF.PI * 0.73f, MathF.PI * 1.27f);
+                Arc(5f, 12f, 9.5f, MathF.PI * 0.23f, MathF.PI * 0.77f);
+                Arc(19f, 12f, 9.5f, MathF.PI * 1.23f, MathF.PI * 1.77f);
                 break;
             case KitIcon.Document:
                 Line(5f, 3f, 14f, 3f);
@@ -186,6 +186,73 @@ public static partial class KitIcons
                 Line(7.4f, 6.6f, 16.6f, 8.4f);
                 Line(17.6f, 11f, 11.5f, 17f);
                 Line(6f, 8.3f, 9f, 16.6f);
+                break;
+            case KitIcon.Target:
+                Arc(12f, 12f, 7f, 0f, MathF.Tau);
+                Line(12f, 2f, 12f, 7.5f);
+                Line(12f, 16.5f, 12f, 22f);
+                Line(2f, 12f, 7.5f, 12f);
+                Line(16.5f, 12f, 22f, 12f);
+                break;
+            case KitIcon.Sliders:
+                Line(3f, 8f, 21f, 8f);
+                Line(3f, 16f, 21f, 16f);
+                Fill(13.5f, 5f, 17.5f, 11f);
+                Fill(6.5f, 13f, 10.5f, 19f);
+                break;
+            case KitIcon.Archive:
+                Box(3f, 4f, 21f, 9f);
+                Line(5f, 9f, 5f, 20f);
+                Line(5f, 20f, 19f, 20f);
+                Line(19f, 20f, 19f, 9f);
+                Line(9.5f, 13f, 14.5f, 13f);
+                break;
+            case KitIcon.Power:
+                Arc(12f, 13f, 8f, MathF.PI * 0.2f, MathF.PI * 1.8f);
+                Line(12f, 3f, 12f, 11f);
+                break;
+            case KitIcon.Lock:
+                Box(5f, 11f, 19f, 21f);
+                Arc(12f, 11f, 4.5f, -MathF.PI * 0.5f, MathF.PI * 0.5f);
+                Line(7.5f, 8f, 7.5f, 11f);
+                Line(16.5f, 8f, 16.5f, 11f);
+                break;
+            case KitIcon.Refresh:
+                Arc(12f, 12f, 8f, MathF.PI * 0.3f, MathF.PI * 1.9f);
+                Line(9.5f, 4.4f, 14f, 3f);
+                Line(9.5f, 4.4f, 12.5f, 8f);
+                break;
+            case KitIcon.Pencil:
+                Line(5f, 19f, 6f, 15f);
+                Line(6f, 15f, 16f, 5f);
+                Line(16f, 5f, 19f, 8f);
+                Line(19f, 8f, 9f, 18f);
+                Line(9f, 18f, 5f, 19f);
+                break;
+            case KitIcon.Info:
+                Arc(12f, 12f, 9f, 0f, MathF.Tau);
+                Line(12f, 11f, 12f, 17f);
+                Fill(11f, 6.5f, 13f, 8.5f);
+                break;
+            case KitIcon.Warning:
+                Line(12f, 3f, 22f, 20f);
+                Line(22f, 20f, 2f, 20f);
+                Line(2f, 20f, 12f, 3f);
+                Line(12f, 9.5f, 12f, 14.5f);
+                Fill(11f, 16f, 13f, 18f);
+                break;
+            case KitIcon.People:
+                Arc(9f, 8f, 3.5f, 0f, MathF.Tau);
+                Arc(9f, 21f, 7f, -MathF.PI * 0.5f, MathF.PI * 0.5f);
+                Arc(17f, 9f, 2.8f, -MathF.PI * 0.1f, MathF.PI * 1.1f);
+                Arc(17f, 21f, 6f, 0f, MathF.PI * 0.5f);
+                break;
+            case KitIcon.Keyboard:
+                Box(2f, 6f, 22f, 18f);
+                Line(6f, 10f, 8f, 10f);
+                Line(11f, 10f, 13f, 10f);
+                Line(16f, 10f, 18f, 10f);
+                Line(7f, 14f, 17f, 14f);
                 break;
             default:
                 break;

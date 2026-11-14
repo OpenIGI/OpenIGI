@@ -60,20 +60,21 @@ public class SlotTile : Control
         Bgra32 border = Selected ? Theme.Accent : Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), hot);
         painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(border, appear));
 
-        UiRect inner = Bounds.Deflate(context.Px(new Thickness(20f, 18f)));
-        painter.DrawLabel(Theme.Mono, Caption, inner.TopLeft, context.Px(12f), UiPalette.Fade(Selected ? Theme.Accent : Theme.TextMuted, appear), 0.2f);
+        bool tight = Bounds.Height < context.Px(110f);
+        UiRect inner = Bounds.Deflate(context.Px(tight ? new Thickness(12f, 10f) : new Thickness(20f, 18f)));
+        painter.DrawLabel(Theme.Mono, Caption, inner.TopLeft, context.Px(Theme.Large ? 13f : 12f), UiPalette.Fade(Selected ? Theme.Accent : Theme.Large ? Theme.TextSecondary : Theme.TextMuted, appear), Theme.Large ? 0.08f : 0.2f);
 
-        float contentSize = context.Px(22f);
-        float detailSize = context.Px(11f);
+        float contentSize = context.Px(tight ? 17f : 22f);
+        float detailSize = context.Px(Theme.Large ? 13f : 11f);
         float bottom = inner.Bottom;
         if (Detail.Length > 0)
         {
-            painter.DrawLabel(Theme.Mono, Detail, new UiVec2(inner.X, bottom - Theme.Mono.LineHeight(detailSize)), detailSize, UiPalette.Fade(Theme.TextMuted, appear), 0.12f);
+            painter.DrawLabel(Theme.Mono, Detail, new UiVec2(inner.X, bottom - Theme.Mono.LineHeight(detailSize)), detailSize, UiPalette.Fade(Theme.Large ? Theme.TextSecondary : Theme.TextMuted, appear), Theme.Large ? 0.04f : 0.12f);
             bottom -= Theme.Mono.LineHeight(detailSize) + context.Px(4f);
         }
 
         var contentBox = new UiRect(inner.X, bottom - contentSize, inner.Width, contentSize);
-        Bgra32 content = IsEmpty ? Theme.TextDim : Theme.Text;
+        Bgra32 content = IsEmpty ? (Theme.Large ? Theme.TextMuted : Theme.TextDim) : Theme.Text;
         painter.PushClip(Bounds);
         painter.DrawLabel(Theme.Heading, _content, new UiVec2(inner.X, UiRowStyle.CapsCenterY(Theme.Heading, contentSize, contentBox)), contentSize, UiPalette.Fade(content, appear), 0.14f);
         painter.PopClip();

@@ -116,6 +116,11 @@ public class Toggle : Control
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
+        if (theme.Large)
+        {
+            DrawLargeSwitch(painter, track, theme, on, enabled, appear);
+            return;
+        }
 
         float cut = painter.Context.Px(CutUnits);
         const UiCorners Corners = UiCorners.TopLeft | UiCorners.BottomRight;
@@ -143,12 +148,37 @@ public class Toggle : Control
         }
     }
 
+    // The large look: the state spelled out, then a switch whose knob crosses a box that fills with the accent when on.
+    // The word carries the state for an eye that cannot tell amber from grey; the switch for one that does not read.
+    private static void DrawLargeSwitch(UiPainter painter, UiRect area, UiTheme theme, float on, bool enabled, float appear)
+    {
+        LayoutContext context = painter.Context;
+        float width = context.Px(52f);
+        float height = context.Px(28f);
+        var box = new UiRect(area.Right - width, area.Center.Y - (height * 0.5f), width, height);
+        Bgra32 accent = enabled ? theme.Accent : theme.TextDisabled;
+        painter.FillRect(box, UiPalette.Fade(Interpolate.Lerp(Bgra32.FromRgba(10, 12, 13, 140), accent, on), appear));
+        painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(Interpolate.Lerp(UiPalette.White(0.42f), accent, on), appear));
+        float knob = context.Px(20f);
+        float pad = (height - knob) * 0.5f;
+        float travel = width - knob - (pad * 2f);
+        Bgra32 knobInk = Interpolate.Lerp(enabled ? theme.TextSecondary : theme.TextDisabled, theme.OnAccent, on);
+        painter.FillRect(new UiRect(box.X + pad + (travel * on), box.Y + pad, knob, knob), UiPalette.Fade(knobInk, appear));
+
+        string word = on >= 0.5f ? On : Off;
+        float sizePx = context.Px(MathF.Min(18f, theme.BodyTextSize));
+        const float Tracking = 0.1f;
+        float wordWidth = UiPainter.MeasureLabel(theme.Heading, word, sizePx, Tracking);
+        Bgra32 ink = !enabled ? theme.TextDisabled : on >= 0.5f ? theme.Text : theme.TextSecondary;
+        painter.DrawLabel(theme.Heading, word, new UiVec2(box.X - context.Px(14f) - wordWidth, UiRowStyle.CapsCenterY(theme.Heading, sizePx, area)), sizePx, UiPalette.Fade(ink, appear), Tracking);
+    }
+
     private UiRect SwitchRect(LayoutContext context)
     {
         float width = context.Px(TrackWidthUnits);
-        float height = context.Px(TrackHeightUnits);
+        float height = context.Px(Theme.Large ? 44f : TrackHeightUnits);
         return new UiRect(
-            Bounds.Right - context.Px(UiRowStyle.Inset) - width,
+            Bounds.Right - context.Px(Theme.RowInset) - width,
             Bounds.Y + ((Bounds.Height - height) * 0.5f),
             width,
             height);

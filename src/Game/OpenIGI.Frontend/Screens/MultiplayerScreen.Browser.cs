@@ -136,9 +136,9 @@ public sealed partial class MultiplayerScreen
             Notes = [.. Enumerable.Range(0, Kinds.Length).Select(kind => passing.Count(r => KindShown(r, kind)).ToString(CultureInfo.InvariantCulture))],
             ShowTray = false,
             Spacing = 2f,
-            SegmentHeight = 34f,
-            TabPadding = 14f,
-            TextSize = 14f,
+            SegmentHeight = 36f,
+            TabPadding = Size == ShellSize.Wide ? 14f : 9f,
+            TextSize = 15f,
             VerticalAlignment = VerticalAlignment.Center,
         };
         kinds.SelectedIndex = _kind;
@@ -159,7 +159,7 @@ public sealed partial class MultiplayerScreen
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f, VerticalAlignment = VerticalAlignment.Center };
         tools.AddChild(new Rule { Orientation = Orientation.Vertical, Length = 24f, Color = UiPalette.White(0.1f), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0f, 0f, 10f, 0f) });
         string modeName = _modeFilter == 0 ? "ANY" : GameModes.Title(FilterModes[_modeFilter]).ToUpperInvariant();
-        var mode = new Button(theme, $"MODE  {modeName}  ›") { Accent = ButtonAccent.Ghost, TextSize = 14f, Tracking = 0.2f, Padding = new Thickness(12f, 8f), Tooltip = "Which mode the list shows: press for the next." };
+        var mode = new Button(theme, $"MODE  {modeName}  ›") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.12f, Padding = new Thickness(12f, 0f), Height = 36f, Tooltip = "Which mode the list shows: press for the next." };
         mode.Activated += _ =>
         {
             _modeFilter = (_modeFilter + 1) % FilterModes.Length;
@@ -176,8 +176,12 @@ public sealed partial class MultiplayerScreen
         bar.Add(tools, 0, 1);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14f, VerticalAlignment = VerticalAlignment.Center };
-        right.AddChild(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{shown} OF {heard}"), 12f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
-        var refresh = new Button(theme, "REFRESH") { Accent = ButtonAccent.Ghost, Key = "R", TextSize = 14f, Tracking = 0.2f, Padding = new Thickness(12f, 8f), Tooltip = "Ask for the list again. It is asked for by itself every few seconds." };
+        if (Size == ShellSize.Wide)
+        {
+            right.AddChild(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{shown} of {heard}"), 14f, theme.TextSecondary) { VerticalAlignment = VerticalAlignment.Center });
+        }
+
+        var refresh = new Button(theme, "REFRESH") { Accent = ButtonAccent.Ghost, Key = Context.Host.TouchScreen ? string.Empty : "R", TextSize = 15f, Tracking = 0.12f, Padding = new Thickness(12f, 0f), Height = 36f, Tooltip = "Ask for the list again. It is asked for by itself every few seconds." };
         refresh.Activated += _ => Refresh(coop);
         right.AddChild(refresh);
         bar.Add(right, 0, 3);
@@ -228,6 +232,7 @@ public sealed partial class MultiplayerScreen
             Saved = room.Favourite,
             Locked = room.Passworded,
             Unjoinable = !room.Compatible || !room.Reachable,
+            Reason = !room.Reachable ? "NOT RESPONDING" : !room.Compatible ? "OTHER VERSION OF THE GAME" : room.Players >= room.MaxPlayers ? "FULL" : string.Empty,
             Tooltip = !room.Reachable ? "This server is listed but isn't answering, so it can't be joined from here."
                 : !room.Compatible ? "This server runs another version of the game."
                 : room.Players >= room.MaxPlayers ? "This game is full."
@@ -236,6 +241,15 @@ public sealed partial class MultiplayerScreen
         _rows[row] = room;
         row.Activated += _ =>
         {
+            // On the compact page a press raises the line's sheet, which holds Join.
+            if (Size == ShellSize.Compact)
+            {
+                _selectedCode = code;
+                _sheet = true;
+                Invalidate();
+                return;
+            }
+
             bool again = code == _clickedCode && _clock - _clickedAt <= DoubleClickSeconds;
             _clickedCode = again ? null : code;
             _clickedAt = _clock;
@@ -279,9 +293,9 @@ public sealed partial class MultiplayerScreen
         card.ColumnDefinitions.Add(GridLength.Auto);
         var words = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6f, Margin = new Thickness(24f, 22f, 0f, 22f), VerticalAlignment = VerticalAlignment.Center };
         words.AddChild(new Label(theme.Heading, "NOTHING YOU LIKE?", 20f, theme.Text));
-        words.AddChild(new Label(theme.Body, "Host your own co-op or team game. Your party comes with you.", 15f, theme.TextSecondary));
+        words.AddChild(new Label(theme.Body, "Host your own co-op or team game. Your party comes with you.", 16f, theme.TextSecondary));
         card.Add(words, 0, 0);
-        var host = new Button(theme, "HOST A GAME  ›") { Accent = ButtonAccent.Outline, TextSize = 16f, Tracking = 0.3f, Padding = new Thickness(22f, 14f), Margin = new Thickness(0f, 0f, 24f, 0f), VerticalAlignment = VerticalAlignment.Center };
+        var host = new Button(theme, "HOST A GAME  ›") { Accent = ButtonAccent.Outline, TextSize = 16f, Tracking = 0.12f, Padding = new Thickness(22f, 0f), Height = 44f, Margin = new Thickness(0f, 0f, 24f, 0f), VerticalAlignment = VerticalAlignment.Center };
         host.Activated += _ => SwitchTab(1);
         card.Add(host, 0, 1);
         var panel = new GlassPanel(theme) { Tint = Bgra32.FromRgba(0, 0, 0, 0), Border = UiPalette.White(0.12f), Blur = 0f };

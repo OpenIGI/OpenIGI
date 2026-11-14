@@ -180,27 +180,51 @@ internal sealed class SettingsApplyFlow
         _prompt = null;
     }
 
-    /// <summary>The note and the two buttons beside the help line on a staged category.</summary>
-    /// <remarks>
-    /// Sized as the category tabs are, not as the page's call-to-action buttons: it is a quiet status that
-    /// appears with a change and goes with it, rather than two greyed boxes standing by on every page.
-    /// </remarks>
-    public FlexPanel BuildApplyBar(UiTheme theme)
+    /// <summary>Builds the bar across the foot of a staged category: what is waiting, and the two things to do about it.</summary>
+    /// <param name="theme">The theme.</param>
+    /// <param name="compact">Whether the page is the compact one, which has no room for the keys or the second line.</param>
+    /// <returns>The bar, shown only while there is something to apply.</returns>
+    public UiElement BuildApplyBar(UiTheme theme, bool compact)
     {
-        _applyNote = new Label(theme.Heading, "UNAPPLIED CHANGES", 14f, theme.Accent)
+        _applyNote = new Label(theme.Body, "Changes waiting", compact ? 15f : 18f, theme.Text)
         {
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0f, 0f, 8f, 0f),
         };
-        _discard = new Button(theme, "Discard") { Accent = ButtonAccent.Ghost, TextSize = 14f, Tracking = theme.LabelTracking, Padding = new Thickness(20f, 8f) };
+        _discard = new Button(theme, "Revert")
+        {
+            Accent = ButtonAccent.Ghost,
+            TextSize = compact ? 15f : 17f,
+            Tracking = 0.12f,
+            Padding = new Thickness(compact ? 16f : 20f, 0f),
+            Height = 44f,
+            Key = compact || _context.Host.TouchScreen ? string.Empty : "Backspace",
+        };
         _discard.Activated += _ => _draft?.Discard();
-        _apply = new Button(theme, "Apply") { Accent = ButtonAccent.Solid, CutCorner = 8f, TextSize = 14f, Tracking = theme.LabelTracking, Padding = new Thickness(22f, 8f) };
+        _apply = new Button(theme, "Apply")
+        {
+            Accent = ButtonAccent.Solid,
+            CutCorner = 10f,
+            TextSize = compact ? 15f : 17f,
+            Tracking = 0.12f,
+            Padding = new Thickness(compact ? 20f : 24f, 0f),
+            Height = 44f,
+            Key = compact || _context.Host.TouchScreen ? string.Empty : "F",
+        };
         _apply.Activated += _ => Apply();
 
-        var bar = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f, VerticalAlignment = VerticalAlignment.Center };
-        bar.Add(_applyNote);
-        bar.Add(_discard);
-        bar.Add(_apply);
+        var row = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f, Padding = new Thickness(compact ? 12f : 20f, compact ? 8f : 14f) };
+        row.Add(_applyNote);
+        row.Add(new Panel(), grow: 1f);
+        row.Add(_discard);
+        row.Add(_apply);
+
+        var bar = new OpenIGI.UI.Kit.Widgets.GlassPanel(theme)
+        {
+            Tint = OpenIGI.Core.Graphics.Bgra32.FromRgba(12, 14, 15, 235),
+            Border = UiPalette.AccentAt(0.45f),
+            Margin = new Thickness(0f, 0f, 0f, compact ? 8f : 16f),
+        };
+        bar.AddChild(row);
         _applyBar = bar;
         return bar;
     }
@@ -209,6 +233,12 @@ internal sealed class SettingsApplyFlow
     public void UpdateApplyBar()
     {
         bool shown = _isStagedTab() && _draft?.HasChanges == true;
+        if (_applyNote is not null && _draft is { } draft)
+        {
+            int waiting = draft.Pending.Count;
+            _applyNote.Text = waiting == 1 ? "1 change waiting. Nothing changes until you apply." : $"{waiting} changes waiting. Nothing changes until you apply.";
+        }
+
         if (_applyBar is not null)
         {
             _applyBar.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;

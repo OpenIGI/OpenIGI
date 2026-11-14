@@ -86,24 +86,35 @@ internal static class MissionActions
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(secondary);
 
+        // The theme carries the page's measures: a compact page's column is narrower, its buttons a thumb tall and
+        // no taller, and it scrolls if a short screen cannot hold them all.
+        bool compact = ShellSizes.IsCompact(theme);
         var column = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Spacing = 12f,
-            Width = 420f,
+            Spacing = compact ? 8f : 12f,
+            Width = compact ? 340f : 460f,
             HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(64f, 0f, 0f, 0f),
+            VerticalAlignment = compact ? VerticalAlignment.Top : VerticalAlignment.Center,
+            Margin = compact ? new Thickness(16f, 16f, 16f, 16f) : new Thickness(80f, 0f, 0f, 0f),
         };
 
         column.AddChild(new SectionTitle(theme, eyebrow, title)
         {
-            TitleSize = 112f,
+            TitleSize = compact ? 40f : 112f,
             EyebrowColor = eyebrowColor,
-            Margin = new Thickness(0f, 0f, 0f, 28f),
+            Margin = new Thickness(0f, 0f, 0f, compact ? 8f : 28f),
         });
 
-        var main = new PrimaryAction(theme, primary.Text) { Width = 420f, Height = 96f, Margin = new Thickness(0f, 0f, 0f, 8f) };
+        var main = new PrimaryAction(theme, primary.Text) { Margin = new Thickness(0f, 0f, 0f, compact ? 0f : 8f) };
+        if (compact)
+        {
+            main.Height = 48f;
+            main.TitleSize = 18f;
+            main.CutCorner = 10f;
+            main.SidePadding = 16f;
+        }
+
         main.Activated += _ => primary.Activated();
         column.AddChild(main);
 
@@ -112,15 +123,22 @@ internal static class MissionActions
             var button = new Button(theme, text)
             {
                 Accent = accent,
-                TextSize = 17f,
-                Tracking = 0.18f,
-                Padding = new Thickness(24f, 16f),
+                TextSize = compact ? 15f : 17f,
+                Tracking = 0.12f,
+                Height = compact ? 44f : 56f,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
             };
             button.Activated += _ => activated();
             column.AddChild(button);
         }
 
-        return column;
+        if (!compact)
+        {
+            return column;
+        }
+
+        var scroll = new ScrollView(theme);
+        scroll.SetContent(column);
+        return scroll;
     }
 }

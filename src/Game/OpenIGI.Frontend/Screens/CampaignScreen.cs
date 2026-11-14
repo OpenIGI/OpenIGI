@@ -105,9 +105,23 @@ public sealed class CampaignScreen : ShellScreen
             _shown = _selected;
         }
 
+        // The list in a panel down the left, the chosen mission and how it is played filling the rest. A compact page
+        // keeps the two side by side -- it is twice as wide as it is tall -- with everything in them smaller.
+        bool compact = Size == ShellSize.Compact;
+        float listWidth = Size switch { ShellSize.Wide => 600f, ShellSize.Medium => 520f, _ => 268f };
+        float gap = Size switch { ShellSize.Wide => 48f, ShellSize.Medium => 38f, _ => 16f };
+        float top = Size switch { ShellSize.Wide => 40f, ShellSize.Medium => 32f, _ => 10f };
         var page = new Canvas();
-        page.Add(BuildMissionList(theme), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(SideMargin, 56f, -(SideMargin + 560f), 48f)));
-        page.Add(BuildDetail(theme), new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(720f, 0f, SideMargin, 48f)));
+        page.Add(BuildMissionList(theme), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(SideMargin, top, -(SideMargin + listWidth), top)));
+        UiElement detail = BuildDetail(theme);
+        if (compact)
+        {
+            var scroll = new ScrollView(theme);
+            scroll.SetContent(detail);
+            detail = scroll;
+        }
+
+        page.Add(detail, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(SideMargin + listWidth + gap, top, SideMargin, top)));
 
         Refresh();
         _reveal.Enter();
@@ -156,8 +170,9 @@ public sealed class CampaignScreen : ShellScreen
         KitDraw.Sweep(painter, screen, _reveal.SweepProgress, _reveal.SweepOpacity);
     }
 
-    private Grid BuildMissionList(UiTheme theme)
+    private GlassPanel BuildMissionList(UiTheme theme)
     {
+        bool compact = Size == ShellSize.Compact;
         var layout = new Grid();
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto);
@@ -168,14 +183,7 @@ public sealed class CampaignScreen : ShellScreen
         List<string?> campaigns = Campaigns;
         if (campaigns.Count > 1)
         {
-            var cycler = new OptionCycler(theme, "Campaign", [.. campaigns.Select(CampaignName)], _campaign)
-            {
-                // A cycler fills the height it is given; the conditions' cells are this tall.
-                Height = 96f,
-                ContentWidth = 260f,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0f, 0f, 0f, 16f),
-            };
+            var cycler = new OptionCycler(theme, "Campaign", [.. campaigns.Select(CampaignName)], _campaign) { Inline = true };
             cycler.SelectionChanged += index =>
             {
                 _campaign = index;
@@ -186,7 +194,7 @@ public sealed class CampaignScreen : ShellScreen
         }
 
         string title = IsGameCampaign ? "CAMPAIGN" : CampaignName(campaigns[_campaign]).ToUpperInvariant();
-        _header = new CampaignHeader(theme, _missions.Count, title);
+        _header = new CampaignHeader(theme, _missions.Count, title, compact);
         layout.Add(_header, 1, 0);
 
         var rows = new StackPanel { Orientation = Orientation.Vertical };
@@ -197,6 +205,8 @@ public sealed class CampaignScreen : ShellScreen
             var card = new ListCard(theme, mission.Number.ToString("00", CultureInfo.InvariantCulture), mission.Name)
             {
                 Selected = i == _selected,
+                RowHeight = compact ? 52f : 72f,
+                TitleSize = compact ? 17f : 24f,
             };
             card.Activated += _ => Select(index);
             _cards.Add(card);
@@ -206,57 +216,76 @@ public sealed class CampaignScreen : ShellScreen
         var scroll = new ScrollView(theme);
         scroll.SetContent(rows);
         layout.Add(scroll, 2, 0);
-        return layout;
+
+        var panel = new GlassPanel(theme) { Tint = Bgra32.FromRgba(12, 14, 15, compact ? (byte)235 : (byte)199), Border = UiPalette.White(0.12f) };
+        panel.AddChild(layout);
+        return panel;
     }
 
     private StackPanel BuildDetail(UiTheme theme)
     {
+        bool compact = Size == ShellSize.Compact;
+        bool wide = Size == ShellSize.Wide;
         var column = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Spacing = 28f,
-            VerticalAlignment = VerticalAlignment.Bottom,
+            Spacing = compact ? 10f : 32f,
+            VerticalAlignment = compact ? VerticalAlignment.Top : VerticalAlignment.Bottom,
         };
 
-        _hero = new MissionHero(theme, _reveal);
+        _hero = new MissionHero(theme, _reveal, Size);
         column.AddChild(_hero);
 
-        // The conditions sit in one strip of glass beside PLAY: how the mission is played, chosen right
-        // where it is started. Seeded from the context rather than a fresh default, so a player three
-        // missions into a night run is shown the run they are on.
-        var strip = new GlassPanel(theme)
-        {
-            Tint = Bgra32.FromRgba(18, 20, 22, 184),
-            TintBottom = Bgra32.FromRgba(10, 12, 13, 184),
-            Blur = 20f,
-            BorderEdges = UiEdges.Top | UiEdges.Left | UiEdges.Bottom,
-        };
-        var cells = new FlexPanel { Orientation = Orientation.Horizontal };
+        // How the mission is played, chosen right where it is started. Seeded from the context rather than a fresh
+        // default, so a player three missions into a night run is shown the run they are on.
         _difficulty = new OptionCycler(theme, "Difficulty", Difficulties, DefaultDifficultyIndex());
-        var time = new OptionCycler(theme, "Time", TimesOfDay, (int)Context.Conditions.TimeOfDay);
+        _difficulty.SelectionChanged += _ => Refresh();
+        var time = new OptionCycler(theme, "Time of day", TimesOfDay, (int)Context.Conditions.TimeOfDay);
         time.SelectionChanged += index => ChooseConditions(Context.Conditions with { TimeOfDay = (MissionTimeOfDay)index });
         var weather = new OptionCycler(theme, "Weather", Weathers, (int)Context.Conditions.Weather);
         weather.SelectionChanged += index => ChooseConditions(Context.Conditions with { Weather = (MissionWeather)index });
-        cells.Add(_difficulty);
-        cells.Add(time);
-        cells.Add(weather);
-        strip.AddChild(cells);
+        OptionCycler[] conditions = [_difficulty, time, weather];
 
-        _play = new PrimaryAction(theme, "Play") { Width = 380f };
+        _play = new PrimaryAction(theme, "Play") { Key = Context.Host.TouchScreen || compact ? string.Empty : "Enter" };
         _play.Activated += _ =>
         {
             MissionInfo mission = _missions[SelectedMission];
             Context.Host.StartMission(mission.Id, _difficulty.SelectedIndex);
         };
 
-        var actions = new FlexPanel
+        if (compact)
         {
-            Orientation = Orientation.Horizontal,
-            Height = 96f,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0f, 28f, 0f, 0f),
-        };
-        actions.Add(strip);
+            // One under the other in a panel, a row each, and Play the width of the column under them.
+            var rows = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0f, 0f, 0f, 0f) };
+            foreach (OptionCycler cycler in conditions)
+            {
+                cycler.Inline = true;
+                cycler.Height = 48f;
+                rows.AddChild(cycler);
+            }
+
+            var panel = new GlassPanel(theme) { Tint = Bgra32.FromRgba(12, 14, 15, 235), Border = UiPalette.White(0.12f) };
+            panel.AddChild(rows);
+            column.AddChild(panel);
+
+            _play.Height = 52f;
+            _play.TitleSize = 20f;
+            _play.SubtitleSize = 13f;
+            _play.SidePadding = 20f;
+            _play.CutCorner = 10f;
+            column.AddChild(_play);
+            return column;
+        }
+
+        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f, Height = 88f };
+        foreach (OptionCycler cycler in conditions)
+        {
+            cycler.Width = wide ? 232f : 208f;
+            actions.Add(cycler);
+        }
+
+        actions.Add(new Panel(), grow: 1f);
+        _play.Width = wide ? 380f : 292f;
         actions.Add(_play);
         column.AddChild(actions);
         return column;
@@ -342,8 +371,9 @@ public sealed class CampaignScreen : ShellScreen
         for (int i = 0; i < _cards.Count && i < _missions.Count; i++)
         {
             _cards[i].Tag = StatusOf(i, frontier, playable);
-            _cards[i].TagColor = i < frontier ? Context.Theme.TextMuted
-                : i <= playable ? Context.Theme.Accent : Context.Theme.TextDisabled;
+            _cards[i].TagColor = i < frontier ? Context.Theme.TextSecondary
+                : i <= playable ? Context.Theme.Accent : Context.Theme.TextMuted;
+            _cards[i].Mark = i < frontier ? ListCardMark.Done : i <= playable ? ListCardMark.Open : ListCardMark.Locked;
             _cards[i].IsEnabled = i <= playable;
         }
 
@@ -352,7 +382,7 @@ public sealed class CampaignScreen : ShellScreen
         int shown = Math.Clamp(_shown, 0, _missions.Count - 1);
         MissionInfo mission = _missions[shown];
         _hero?.Show(
-            string.Create(CultureInfo.InvariantCulture, $"MISSION {mission.Number:00} / {_missions.Count:00}"),
+            string.Create(CultureInfo.InvariantCulture, $"MISSION {mission.Number} / {_missions.Count}"),
             StatusOf(shown, frontier, playable),
             mission.Name,
             mission.Description);
@@ -361,7 +391,10 @@ public sealed class CampaignScreen : ShellScreen
         {
             MissionInfo selected = _missions[SelectedMission];
             _play.IsEnabled = SelectedMission <= playable;
-            _play.Subtitle = string.Create(CultureInfo.InvariantCulture, $"MISSION {selected.Number:00} · DEPLOY");
+            string difficulty = _difficulty is { } chosen ? Difficulties[chosen.SelectedIndex].ToUpperInvariant() : string.Empty;
+            _play.Subtitle = SelectedMission <= playable
+                ? string.Create(CultureInfo.InvariantCulture, $"MISSION {selected.Number} · {difficulty}")
+                : "LOCKED · FINISH THE MISSION BEFORE IT";
         }
     }
 
@@ -383,7 +416,7 @@ public sealed class CampaignScreen : ShellScreen
     private int DefaultDifficultyIndex() => Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
 
     /// <summary>The list's heading: OPERATIONS over the campaign's name, with how much of it is done and a segment per mission.</summary>
-    private sealed class CampaignHeader(UiTheme theme, int total, string title) : UiElement
+    private sealed class CampaignHeader(UiTheme theme, int total, string title, bool compact) : UiElement
     {
         private string _count = string.Empty;
         private int _done;
@@ -391,39 +424,62 @@ public sealed class CampaignScreen : ShellScreen
         public void Update(int completed)
         {
             _done = Math.Clamp(completed, 0, total);
-            _count = string.Create(CultureInfo.InvariantCulture, $"{_done} / {total} COMPLETE");
+            _count = compact
+                ? string.Create(CultureInfo.InvariantCulture, $"{_done}/{total}")
+                : string.Create(CultureInfo.InvariantCulture, $"{_done} / {total} complete");
         }
 
         protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-            new(available.X, theme.Mono.LineHeight(context.Px(12f)) + context.Px(6f + 44f + 20f));
+            new(available.X, context.Px(compact ? 44f : 28f + 53f + 14f + 4f + 20f));
 
         protected override void OnDraw(UiPainter painter)
         {
             LayoutContext context = painter.Context;
-            KitDraw.Eyebrow(painter, theme, "OPERATIONS", Bounds.TopLeft);
-            float titleSize = context.Px(44f);
-            var titleBox = new UiRect(Bounds.X, Bounds.Bottom - context.Px(20f) - titleSize, Bounds.Width, titleSize);
-            painter.DrawLabel(theme.Display, title, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, titleSize, titleBox)), titleSize, theme.Text, 0.06f);
-
-            // Right-aligned: the count over the segments, the segments sitting on the title's baseline.
-            float segments = KitDraw.SegmentsWidth(context, total, total > 10 ? 14f : 24f, 4f);
-            float right = Bounds.Right;
-            float segmentsTop = titleBox.Bottom - context.Px(10f);
-            KitDraw.Segments(painter, new UiVec2(right - segments, segmentsTop), _done, total, total > 10 ? 14f : 24f, 4f, 4f, theme.Accent);
-            float countSize = context.Px(13f);
+            float pad = context.Px(compact ? 12f : 28f);
+            float left = Bounds.X + pad;
+            float right = Bounds.Right - pad;
+            float titleSize = context.Px(compact ? 20f : 56f);
+            float countSize = context.Px(compact ? 13f : 15f);
             float countWidth = theme.Mono.MeasureWidth(_count, countSize);
-            painter.DrawText(theme.Mono, _count, new UiVec2(right - countWidth, segmentsTop - context.Px(8f) - theme.Mono.LineHeight(countSize)), countSize, theme.TextSecondary);
+            painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.12f));
+            if (compact)
+            {
+                painter.DrawLabel(theme.Display, title, new UiVec2(left, UiRowStyle.CapsCenterY(theme.Display, titleSize, Bounds)), titleSize, theme.Text, 0.06f);
+                painter.DrawText(theme.Mono, _count, new UiVec2(right - countWidth, UiRowStyle.CenterY(theme.Mono, countSize, Bounds)), countSize, theme.TextSecondary);
+                return;
+            }
 
-            painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.1f));
+            // The name with the count on its baseline at the right, and under both a segment for every mission.
+            var titleBox = new UiRect(left, Bounds.Y + context.Px(28f), Bounds.Width, context.Px(53f));
+            string shown = OpenIGI.UI.Text.TextFit.ToWidth(theme.Display, title, titleSize, right - left - countWidth - context.Px(16f));
+            painter.DrawLabel(theme.Display, shown, new UiVec2(left, UiRowStyle.CapsCenterY(theme.Display, titleSize, titleBox)), titleSize, theme.Text, 0.03f);
+            painter.DrawText(theme.Mono, _count, new UiVec2(right - countWidth, titleBox.Bottom - context.Px(6f) - theme.Mono.LineHeight(countSize)), countSize, theme.TextSecondary);
+
+            float gap = context.Px(3f);
+            float segment = (right - left - ((total - 1) * gap)) / Math.Max(1, total);
+            float y = titleBox.Bottom + context.Px(14f);
+            for (int i = 0; i < total; i++)
+            {
+                Bgra32 ink = i < _done ? theme.Accent : i == _done ? theme.Text : UiPalette.White(0.22f);
+                painter.FillRect(new UiRect(left + (i * (segment + gap)), y, segment, context.Px(4f)), ink);
+            }
         }
     }
 
-    /// <summary>The selected mission set large: its number and status, its name, and its briefing, revealed together.</summary>
-    private sealed class MissionHero(UiTheme theme, TitleReveal reveal) : UiElement
+    private sealed class MissionHero(UiTheme theme, TitleReveal reveal, ShellSize shell) : UiElement
     {
-        private const float TitleUnits = 168f;
-        private const float DescriptionUnits = 22f;
-        private const float DescriptionWidthUnits = 640f;
+        private const float DescriptionWidthUnits = 720f;
+
+        private float TitleUnits => shell switch { ShellSize.Wide => 124f, ShellSize.Medium => 99f, _ => 34f };
+
+        private float DescriptionUnits => shell switch { ShellSize.Wide => 22f, ShellSize.Medium => 21f, _ => 15f };
+
+        private float MetaUnits => shell == ShellSize.Compact ? 13f : 14f;
+
+        private float Gap => shell == ShellSize.Compact ? 8f : 16f;
+
+        // The title's box: the height its capitals stand, so what is above and below sits where the eye puts it.
+        private float TitleBox => TitleUnits * 0.76f;
 
         private string _meta = string.Empty;
         private string _status = string.Empty;
@@ -443,11 +499,11 @@ public sealed class CampaignScreen : ShellScreen
 
         protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
         {
-            float height = theme.Mono.LineHeight(context.Px(13f)) + context.Px(28f) + (context.Px(TitleUnits) * 0.85f);
+            float height = context.Px(MetaUnits * 1.2f) + context.Px(Gap) + context.Px(TitleBox);
             string wrapped = Wrapped(context, available.X);
             if (wrapped.Length > 0)
             {
-                height += context.Px(28f) + theme.Body.Measure(wrapped, context.Px(DescriptionUnits)).Y;
+                height += context.Px(Gap) + theme.Body.Measure(wrapped, context.Px(DescriptionUnits)).Y;
             }
 
             return new UiVec2(available.X, height);
@@ -459,17 +515,20 @@ public sealed class CampaignScreen : ShellScreen
             float y = Bounds.Y;
 
             // The caption line: MISSION 01 / 14, a rule, the status.
-            float metaSize = context.Px(13f);
+            float metaSize = context.Px(MetaUnits);
+            var metaBox = new UiRect(Bounds.X, y, Bounds.Width, metaSize * 1.2f);
+            float metaY = UiRowStyle.CapsCenterY(theme.Heading, metaSize, metaBox);
             painter.PushOpacity(reveal.MetaOpacity);
             float metaX = Bounds.X + context.Px(reveal.MetaOffset);
-            UiVec2 pen = painter.DrawLabel(theme.Mono, _meta, new UiVec2(metaX, y), metaSize, theme.Accent, 0.28f);
-            float ruleX = pen.X + context.Px(16f);
-            painter.FillRect(new UiRect(ruleX, y + (theme.Mono.LineHeight(metaSize) * 0.5f), context.Px(48f), context.Px(1f)), UiPalette.AccentAt(0.6f));
-            painter.DrawLabel(theme.Mono, _status, new UiVec2(ruleX + context.Px(64f), y), metaSize, theme.TextSecondary, 0.28f);
+            UiVec2 pen = painter.DrawLabel(theme.Heading, _meta, new UiVec2(metaX, metaY), metaSize, theme.Accent, 0.14f);
+            float rule = context.Px(shell == ShellSize.Compact ? 20f : 48f);
+            float ruleX = pen.X + context.Px(shell == ShellSize.Compact ? 8f : 16f);
+            painter.FillRect(new UiRect(ruleX, metaBox.Center.Y, rule, context.Px(1f)), UiPalette.White(0.28f));
+            painter.DrawLabel(theme.Heading, _status, new UiVec2(ruleX + rule + context.Px(shell == ShellSize.Compact ? 8f : 16f), metaY), metaSize, theme.TextSecondary, 0.14f);
             painter.PopOpacity();
-            y += theme.Mono.LineHeight(metaSize) + context.Px(28f);
+            y = metaBox.Bottom + context.Px(Gap);
 
-            // The name, as large as will fit: 168 units, smaller for a name too long for the column.
+            // The name, as large as will fit: smaller for a name too long for the column.
             float size = context.Px(TitleUnits);
             float natural = UiPainter.MeasureLabel(theme.Display, _title, size, reveal.LetterSpacing);
             if (natural > Bounds.Width && natural > 0f)
@@ -477,7 +536,7 @@ public sealed class CampaignScreen : ShellScreen
                 size *= Bounds.Width / natural;
             }
 
-            var titleBox = new UiRect(Bounds.X, y, Bounds.Width, context.Px(TitleUnits) * 0.85f);
+            var titleBox = new UiRect(Bounds.X, y, Bounds.Width, context.Px(TitleBox));
             var at = new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, size, titleBox) + context.Px(reveal.TitleOffset));
             float clipLeft = Bounds.X + (Bounds.Width * reveal.ClipLeft);
             float clipRight = Bounds.Right - (Bounds.Width * reveal.ClipRight);
@@ -491,13 +550,13 @@ public sealed class CampaignScreen : ShellScreen
                 painter.PopClip();
             }
 
-            y = titleBox.Bottom + context.Px(28f);
+            y = titleBox.Bottom + context.Px(Gap);
 
             string wrapped = Wrapped(context, Bounds.Width);
             if (wrapped.Length > 0)
             {
                 painter.PushOpacity(reveal.DescriptionOpacity);
-                painter.DrawText(theme.Body, wrapped, new UiVec2(Bounds.X + context.Px(reveal.DescriptionOffset), y), context.Px(DescriptionUnits), UiPalette.TextBody);
+                painter.DrawText(theme.Body, wrapped, new UiVec2(Bounds.X + context.Px(reveal.DescriptionOffset), y), context.Px(DescriptionUnits), theme.TextSecondary);
                 painter.PopOpacity();
             }
         }

@@ -50,64 +50,97 @@ public sealed class ExtrasScreen : ShellScreen
         DisposeBindings();
         UiTheme theme = Context.Theme;
 
-        var credits = Group(theme, "Credits");
-        credits.Content.AddChild(new Label(theme.Body, CreditsText, 17f, UiPalette.TextBody)
-        {
-            Wrap = true,
-            Margin = new Thickness(0f, 4f, 0f, 10f),
-        });
+        bool compact = Size == ShellSize.Compact;
+        float text = compact ? 15f : 18f;
+        var inset = new Thickness(compact ? 16f : 20f, 6f);
 
-        var developer = Group(theme, "Developer");
+        var credits = Group(theme, "Credits", compact);
+        credits.Content.AddChild(new Label(theme.Body, CreditsText, text, theme.Text) { Wrap = true, Margin = inset });
+
+        var developer = Group(theme, "Developer", compact);
         if (Context.Cvars.TryGet("r_perflog", out ICVar? perflog) && perflog is not null
             && CVarBinding.CreateControl(theme, perflog, "Benchmark overlay", _bindings) is { } benchmark)
         {
-            developer.Content.AddChild(Row(benchmark));
+            benchmark.Hint = "Frame time and GPU timings in a corner of the screen.";
+            developer.Content.AddChild(benchmark);
         }
 
         if (CVarBinding.CreateControl(theme, PlayerCheatCVars.DeveloperMode, "Developer mode", _bindings) is { } developerMode)
         {
+            developerMode.Hint = "Debug views and the developer console, for this session.";
             developerMode.Tooltip = "Session-only developer controls. The cheats are in Settings, under Gameplay.";
-            developer.Content.AddChild(Row(developerMode));
+            developer.Content.AddChild(developerMode);
         }
 
-        developer.Content.AddChild(new GroupHeader(theme, "Shortcuts") { Margin = new Thickness(0f, 18f, 0f, 4f) });
-        developer.Content.AddChild(new Label(theme.Body, "Photo mode — press F1 in a mission for the free camera.", 17f, UiPalette.TextBody) { Wrap = true, Margin = new Thickness(0f, 6f) });
-        developer.Content.AddChild(new Label(theme.Body, "Developer console — press ` at any time.", 17f, UiPalette.TextBody) { Wrap = true, Margin = new Thickness(0f, 6f) });
+        // The keys are a keyboard's: a touch screen has neither, and is told nothing of them.
+        if (!Context.Host.TouchScreen)
+        {
+            var shortcuts = Group(theme, "Shortcuts", compact);
+            shortcuts.Content.AddChild(new Label(theme.Body, "Photo mode: press F1 in a mission for the free camera.", text, theme.Text) { Wrap = true, Margin = inset });
+            shortcuts.Content.AddChild(new Label(theme.Body, "Developer console: press ` at any time.", text, theme.Text) { Wrap = true, Margin = inset });
+            developer.Column.AddChild(shortcuts.Column);
+        }
 
-        var columns = new Grid { ColumnSpacing = 24f, VerticalAlignment = VerticalAlignment.Top };
-        columns.RowDefinitions.Add(GridLength.Auto);
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.Add(credits.Panel, 0, 0);
-        columns.Add(developer.Panel, 0, 1);
+        // Side by side where there is room for two columns of readable lines, one above the other where there is not.
+        UiElement columns;
+        if (compact)
+        {
+            var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(0f, 0f, 10f, 16f) };
+            stack.AddChild(credits.Column);
+            stack.AddChild(developer.Column);
+            columns = stack;
+        }
+        else
+        {
+            var grid = new Grid { ColumnSpacing = 20f, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0f, 0f, 18f, 16f) };
+            grid.RowDefinitions.Add(GridLength.Auto);
+            grid.ColumnDefinitions.Add(GridLength.Star);
+            grid.ColumnDefinitions.Add(GridLength.Star);
+            grid.Add(credits.Column, 0, 0);
+            grid.Add(developer.Column, 0, 1);
+            columns = grid;
+        }
 
         var scroll = new ScrollView(theme);
         scroll.SetContent(columns);
 
-        var page = new Grid { RowSpacing = 36f, Padding = new Thickness(SideMargin, 48f, SideMargin, 0f) };
+        var page = new Grid
+        {
+            RowSpacing = compact ? 8f : 24f,
+            Padding = compact ? new Thickness(SideMargin, 6f, SideMargin, 0f) : new Thickness(SideMargin, 32f, SideMargin, 0f),
+        };
         page.ColumnDefinitions.Add(GridLength.Star);
         page.RowDefinitions.Add(GridLength.Auto);
         page.RowDefinitions.Add(GridLength.Star);
-        page.Add(new SectionTitle(theme, "Archive", "Extras") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
+        page.Add(
+            compact
+                ? new SectionTitle(theme, string.Empty, "Extras") { TitleSize = 24f, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0f, 10f, 0f, 4f) }
+                : new SectionTitle(theme, "Archive", "Extras") { HorizontalAlignment = HorizontalAlignment.Left },
+            0,
+            0);
         page.Add(scroll, 1, 0);
         return page;
     }
 
-    /// <summary>A group of the page: a glass panel holding a heading and its rows.</summary>
-    private static (GlassPanel Panel, StackPanel Content) Group(UiTheme theme, string title)
+    // A group in its panel, and the column the panel stands in so another can be put under it.
+    private static (GlassPanel Panel, StackPanel Content, StackPanel Column) Group(UiTheme theme, string title, bool compact)
     {
         var content = new StackPanel { Orientation = Orientation.Vertical };
-        content.AddChild(new GroupHeader(theme, title));
-        var panel = new GlassPanel(theme) { Padding = new Thickness(28f, 28f, 28f, 20f), VerticalAlignment = VerticalAlignment.Top };
+        content.AddChild(new GroupHeader(theme, title)
+        {
+            Margin = compact ? new Thickness(16f, 12f, 16f, 4f) : new Thickness(20f, 28f, 20f, 14f),
+        });
+        var panel = new GlassPanel(theme)
+        {
+            Tint = OpenIGI.Core.Graphics.Bgra32.FromRgba(12, 14, 15, compact ? (byte)235 : (byte)199),
+            Border = UiPalette.White(0.12f),
+            Padding = compact ? new Thickness(0f, 0f, 0f, 10f) : new Thickness(8f, 0f, 8f, 20f),
+            VerticalAlignment = VerticalAlignment.Top,
+        };
         panel.AddChild(content);
-        return (panel, content);
-    }
-
-    /// <summary>A settings row widened into the panel's padding, so its hover wash reaches the panel's edge as the design's does.</summary>
-    private static UiElement Row(UiElement row)
-    {
-        row.Margin = new Thickness(-10f, 0f);
-        return row;
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 10f : 20f, VerticalAlignment = VerticalAlignment.Top };
+        column.AddChild(panel);
+        return (panel, content, column);
     }
 
     /// <inheritdoc/>

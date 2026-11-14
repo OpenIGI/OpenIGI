@@ -27,7 +27,7 @@ public sealed class ProfilesShellTests : ShellTestHarness
             Assert.Contains("UNLOCKED", joe.Progress);
             Assert.Contains("Mission Two", joe.Mission);
 
-            Find<Button>(screen, button => button.Text == "NEW PROFILE")!.Activate();
+            Find<Button>(screen, button => button.Text == "New profile")!.Activate();
             Pump(shell, 0.1f); // lays out and focuses the form field
             Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
             Assert.NotNull(Find<Label>(screen, label => label.Text == "Enter a profile name to continue."));
@@ -41,7 +41,7 @@ public sealed class ProfilesShellTests : ShellTestHarness
             Assert.Equal("Hard difficulty", alex.Difficulty);
             Assert.Equal(1, host.SaveProfilesCalls);
 
-            Find<Button>(screen, button => button.Text == "NEW PROFILE")!.Activate();
+            Find<Button>(screen, button => button.Text == "New profile")!.Activate();
             Pump(shell, 0.1f);
             Type(shell, "aLeX");
             Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
@@ -68,14 +68,14 @@ public sealed class ProfilesShellTests : ShellTestHarness
             Pump(shell, 0.1f);
             var screen = Assert.IsType<ProfilesScreen>(shell.Stack.Top);
 
-            Find<Button>(screen, button => button.Text == "NEW PROFILE")!.Activate();
+            Find<Button>(screen, button => button.Text == "New profile")!.Activate();
             Pump(shell, 0.1f);
             Type(shell, "Alex");
             Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
             Pump(shell, 0.1f);
-            Find<Button>(screen, button => button.Text == "SAVE")!.Activate();
+            Find<Button>(screen, button => button.Text == "Save here")!.Activate();
 
-            Find<Button>(screen, button => button.Text == "DELETE PROFILE")!.Activate();
+            Find<Button>(screen, button => button.Text == "Delete profile")!.Activate();
             Pump(shell, 0.1f);
             Find<Button>(screen, button => button.Text == "DELETE PERMANENTLY")!.Activate();
             Pump(shell, 0.1f);
@@ -85,7 +85,7 @@ public sealed class ProfilesShellTests : ShellTestHarness
             Assert.Equal("Joe", visible[0].Name);
             Assert.All(screen.Root.Descendants().OfType<SlotTile>(), slot => Assert.True(slot.IsEmpty));
             Assert.Equal(2, host.SaveProfilesCalls);
-            Assert.False(Find<Button>(screen, button => button.Text == "DELETE PROFILE")!.IsEnabled);
+            Assert.False(Find<Button>(screen, button => button.Text == "Delete profile")!.IsEnabled);
         }
         finally
         {

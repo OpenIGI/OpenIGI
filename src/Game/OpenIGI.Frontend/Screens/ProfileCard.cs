@@ -58,7 +58,7 @@ public sealed class ProfileCard : Control
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        new(available.X, context.Px(80f));
+        new(available.X, context.Px(ShellSizes.IsCompact(Theme) ? 64f : 80f));
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
@@ -67,10 +67,20 @@ public sealed class ProfileCard : Control
         float appear = Visual.Appear;
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
 
-        Bgra32 fill = Active ? UiPalette.AccentAt(0.1f) : UiPalette.Ink.WithAlpha(158);
-        Bgra32 border = Active ? Theme.Accent : Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), hot);
-        painter.DrawBackdrop(Bounds, context.Px(Theme.GlassBlur), UiPalette.Fade(fill, appear));
+        // The active one washed with the accent and barred down its leading edge; the one in focus ringed.
+        painter.FillRect(Bounds, UiPalette.Fade(Bgra32.FromRgba(12, 14, 15, 214), appear));
+        if (Active)
+        {
+            painter.FillRect(Bounds, UiPalette.AccentAt(0.13f * appear));
+            painter.FillRect(new UiRect(Bounds.X, Bounds.Y, context.Px(4f), Bounds.Height), UiPalette.Fade(Theme.Accent, appear));
+        }
+
+        Bgra32 border = Active ? UiPalette.AccentAt(0.45f) : Interpolate.Lerp(UiPalette.White(0.12f), UiPalette.White(0.42f), hot);
         painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(border, appear));
+        if (Visual.Focus > 0.001f)
+        {
+            painter.StrokeRect(Bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
+        }
 
         // The initial, in a square outlined like the card.
         float square = context.Px(48f);
@@ -91,9 +101,9 @@ public sealed class ProfileCard : Control
         }
 
         float nameSize = context.Px(24f);
-        float metaSize = context.Px(11f);
+        float metaSize = context.Px(15f);
         float textX = box.Right + context.Px(18f);
-        float block = (nameSize * 0.7f) + context.Px(8f) + Theme.Mono.LineHeight(metaSize);
+        float block = (nameSize * 0.7f) + context.Px(8f) + Theme.Body.LineHeight(metaSize);
         float top = Bounds.Center.Y - (block * 0.5f);
         painter.PushClip(UiRect.FromEdges(textX, Bounds.Y, right - column - context.Px(18f), Bounds.Bottom));
         var nameBox = new UiRect(textX, top, 0f, nameSize * 0.7f);
@@ -102,10 +112,10 @@ public sealed class ProfileCard : Control
         {
             _metaDifficulty = Difficulty;
             _metaMission = Mission;
-            _meta = $"{Difficulty} · {Mission}".ToUpperInvariant();
+            _meta = $"{Difficulty} · {Mission}";
         }
 
-        painter.DrawLabel(Theme.Mono, _meta, new UiVec2(textX, top + (nameSize * 0.7f) + context.Px(8f)), metaSize, UiPalette.Fade(Theme.TextMuted, appear), 0.12f);
+        painter.DrawText(Theme.Body, _meta, new UiVec2(textX, top + (nameSize * 0.7f) + context.Px(8f)), metaSize, UiPalette.Fade(Theme.TextSecondary, appear));
         painter.PopClip();
 
         float rightBlock = (Active ? Theme.Mono.LineHeight(context.Px(10f)) + context.Px(6f + 8f) : 0f) + context.Px(3f);

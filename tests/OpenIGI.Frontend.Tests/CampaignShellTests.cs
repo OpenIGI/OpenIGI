@@ -256,7 +256,7 @@ public sealed class CampaignShellTests : ShellTestHarness
             Pump(shell, 0.6f);
 
             var campaign = (CampaignScreen)shell.Stack.Top!;
-            OptionCycler time = Find<OptionCycler>(campaign, o => o.Label == "TIME")!;
+            OptionCycler time = Find<OptionCycler>(campaign, o => o.Label == "TIME OF DAY")!;
             OptionCycler weather = Find<OptionCycler>(campaign, o => o.Label == "WEATHER")!;
 
             Assert.Equal(MissionTimeOfDay.Default, (MissionTimeOfDay)time.SelectedIndex);
@@ -276,7 +276,7 @@ public sealed class CampaignShellTests : ShellTestHarness
             var reopened = (CampaignScreen)shell.Stack.Top!;
             Assert.Equal(
                 MissionTimeOfDay.Night,
-                (MissionTimeOfDay)Find<OptionCycler>(reopened, o => o.Label == "TIME")!.SelectedIndex);
+                (MissionTimeOfDay)Find<OptionCycler>(reopened, o => o.Label == "TIME OF DAY")!.SelectedIndex);
             Assert.Equal(
                 MissionWeather.Rain,
                 (MissionWeather)Find<OptionCycler>(reopened, o => o.Label == "WEATHER")!.SelectedIndex);
