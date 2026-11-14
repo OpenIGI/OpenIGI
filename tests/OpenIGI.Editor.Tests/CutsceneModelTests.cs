@@ -76,6 +76,25 @@ public sealed class CutsceneModelTests
         Assert.Equal(3, CutsceneModel.Shots(scene).Count);
     }
 
+    /// <summary>A shot is moved to a view, set to watch or ride a task and to cut, each as one undoable step.</summary>
+    [Fact]
+    public void Shots_are_aimed_and_linked()
+    {
+        MissionDocument document = Document();
+        MissionTask camera = CutsceneModel.Shots(CutsceneModel.Scenes(document)[0])[0].Camera;
+
+        Core.Commands.IEditorCommand view = CutsceneModel.SetView(document, camera, (10, 20, 30), (0.5, 0, 1.25));
+        view.Apply();
+        CutsceneModel.Watch(document, camera, 60).Apply();
+        CutsceneModel.Ride(document, camera, 61).Apply();
+        CutsceneModel.SetSmooth(document, camera, false).Apply();
+        string script = QscPrinter.Print(document.ToScript());
+        Assert.Contains("\"a\", 10.0, 20.0, 30.0, 0.5, 0, 1.25, 1, 1.5, FALSE, 61, 60,", script, StringComparison.Ordinal);
+
+        view.Undo();
+        Assert.Contains("\"a\", 0, 0, 0, 0, 0, 0, 1, 1.5, FALSE, 61, 60,", QscPrinter.Print(document.ToScript()), StringComparison.Ordinal);
+    }
+
     /// <summary>A new scene takes the mission's first scene's settings, is held until a rule plays it, and goes in a container of its own.</summary>
     [Fact]
     public void A_new_scene_is_like_the_missions_own()

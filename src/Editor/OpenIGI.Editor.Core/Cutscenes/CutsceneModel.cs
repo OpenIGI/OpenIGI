@@ -162,6 +162,45 @@ public static partial class CutsceneModel
         return (new InsertTaskCommand(document, holder, new TaskLocation(root, root?.Children.Count ?? 0)), scene);
     }
 
+    /// <summary>The step that moves a shot's camera: where it stands and how it is turned.</summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="camera">The shot's camera.</param>
+    /// <param name="positionUnits">Where it stands, in world units.</param>
+    /// <param name="angles">Its turn: alpha, beta, gamma, in radians.</param>
+    /// <returns>The step.</returns>
+    public static IEditorCommand SetView(MissionDocument document, MissionTask camera, (double X, double Y, double Z) positionUnits, (double Alpha, double Beta, double Gamma) angles) =>
+        new CompositeCommand("Set Shot to View",
+        [
+            SetParameterCommand.Numbers(document, camera, "Position", [positionUnits.X, positionUnits.Y, positionUnits.Z]),
+            SetParameterCommand.Numbers(document, camera, "Alpha", [angles.Alpha]),
+            SetParameterCommand.Numbers(document, camera, "Beta", [angles.Beta]),
+            SetParameterCommand.Numbers(document, camera, "Gamma", [angles.Gamma]),
+        ]);
+
+    /// <summary>The step that turns a shot to watch a task (<c>Target task ID</c>), or stops it watching with -1.</summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="camera">The shot's camera.</param>
+    /// <param name="id">The task's id, or -1.</param>
+    /// <returns>The step.</returns>
+    public static IEditorCommand Watch(MissionDocument document, MissionTask camera, int id) => SetParameterCommand.Numbers(document, camera, "Target task ID", [id]);
+
+    /// <summary>
+    /// The step that has a shot ride a task (<c>Link task ID</c>), or stops it riding with -1: the camera keeps where it stands
+    /// from the task as the task starts the mission, and goes where the task goes.
+    /// </summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="camera">The shot's camera.</param>
+    /// <param name="id">The task's id, or -1.</param>
+    /// <returns>The step.</returns>
+    public static IEditorCommand Ride(MissionDocument document, MissionTask camera, int id) => SetParameterCommand.Numbers(document, camera, "Link task ID", [id]);
+
+    /// <summary>The step that has a shot glide into the next (<c>Smooth to next</c>) or cut to it.</summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="camera">The shot's camera.</param>
+    /// <param name="smooth">Whether it glides.</param>
+    /// <returns>The step.</returns>
+    public static IEditorCommand SetSmooth(MissionDocument document, MissionTask camera, bool smooth) => SetParameterCommand.Numbers(document, camera, "Smooth to next", [smooth ? 1 : 0]);
+
     /// <summary>The step that makes a shot last so long.</summary>
     /// <param name="document">The mission.</param>
     /// <param name="scene">The scene, whose time scale the duration is written under.</param>

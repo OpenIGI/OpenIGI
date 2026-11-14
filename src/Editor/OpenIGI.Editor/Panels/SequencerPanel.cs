@@ -404,6 +404,13 @@ internal sealed class SequencerPanel : EditorElement
             return false;
         }
 
+        // A right click on a shot is its menu; anywhere else, as the middle button, it drags the timeline.
+        if (e.Button == MouseButton.Right && ShotAt(e.Position) is { } clicked)
+        {
+            OpenShotMenu(clicked);
+            return true;
+        }
+
         if (e.Button is MouseButton.Middle or MouseButton.Right)
         {
             _panFrom = e.Position;
@@ -689,6 +696,83 @@ internal sealed class SequencerPanel : EditorElement
         }
 
         _workspace.Execute(new CompositeCommand(string.Create(CultureInfo.InvariantCulture, $"Add {move} Move"), steps));
+    }
+
+    // The shot under a point of the camera lane.
+    private CutsceneShot? ShotAt(UiVec2 point)
+    {
+        float laneY = Timeline.Y + Theme.Px(RulerHeight) + Theme.Px(4f);
+        if (_scene is not { } scene || point.Y < laneY || point.Y >= laneY + Theme.Px(LaneHeight))
+        {
+            return null;
+        }
+
+        return CutsceneModel.Shots(scene).FirstOrDefault(s => point.X >= X(s.Start) && point.X < X(s.Start + s.Length));
+    }
+
+    // What can be done to a shot: put it where the view is, cut or glide on, watch or ride something, take it out.
+    private void OpenShotMenu(CutsceneShot shot)
+    {
+        if (Root is not { } root || _workspace.Document is not { } document)
+        {
+            return;
+        }
+
+        MissionTask camera = shot.Camera;
+        _workspace.Selection.Set(camera);
+        int watching = (int)Number(camera, "Target task ID", -1), riding = (int)Number(camera, "Link task ID", -1);
+        bool smooth = Number(camera, "Smooth to next", 0) != 0;
+        List<PaletteEntry> entries =
+        [
+            new("Set to View", SetShotToView) { Detail = "stand where the viewport's camera is, looking the same way", Icon = KitIcon.Camera },
+            smooth
+                ? new("Cut to the Next Shot", () => _workspace.Execute(CutsceneModel.SetSmooth(document, camera, false))) { Detail = "jump to the next shot rather than glide into it" }
+                : new("Glide into the Next Shot", () => _workspace.Execute(CutsceneModel.SetSmooth(document, camera, true))) { Detail = "fly on into the next shot rather than cut" },
+            new("Watch an Object…", () => PickObject("What the shot watches", id => _workspace.Execute(CutsceneModel.Watch(document, camera, id)))) { Detail = "turn to follow it wherever it goes" },
+            new("Ride an Object…", () => PickObject("What the shot rides", id => _workspace.Execute(CutsceneModel.Ride(document, camera, id)))) { Detail = "go where it goes, as from a car or a helicopter" },
+        ];
+        if (watching >= 0)
+        {
+            entries.Add(new PaletteEntry(string.Create(CultureInfo.InvariantCulture, $"Stop Watching #{watching}"), () => _workspace.Execute(CutsceneModel.Watch(document, camera, -1))));
+        }
+
+        if (riding >= 0)
+        {
+            entries.Add(new PaletteEntry(string.Create(CultureInfo.InvariantCulture, $"Stop Riding #{riding}"), () => _workspace.Execute(CutsceneModel.Ride(document, camera, -1))));
+        }
+
+        entries.Add(new PaletteEntry("Delete Shot", DeleteShot) { Icon = KitIcon.Close });
+        CommandPalette.Open(root, entries, string.Create(CultureInfo.InvariantCulture, $"Shot at {shot.Start:0.##} s"));
+    }
+
+    // Every object with an id and a place, to choose one from by name.
+    private void PickObject(string title, Action<int> chosen)
+    {
+        if (Root is not { } root || _workspace.Document is not { } document)
+        {
+            return;
+        }
+
+        PaletteEntry[] objects =
+        [
+            .. document.EnumerateTasks()
+                .Where(static t => t.Id >= 0 && t.TypeName != CutsceneModel.CameraType && TaskPresentation.PositionMetres(t) is not null)
+                .Select(t => new PaletteEntry(TaskPresentation.Name(t), () => chosen(t.Id)) { Detail = string.Create(CultureInfo.InvariantCulture, $"#{t.Id}  {t.TypeName}") }),
+        ];
+        CommandPalette.Open(root, objects, title);
+    }
+
+    // The selected shot stands where the viewport's camera is and looks the same way.
+    private void SetShotToView()
+    {
+        if (SelectedShot() is not { } shot || _workspace.Document is not { } document || _host.Camera is not { } view)
+        {
+            return;
+        }
+
+        Vector3f angles = CutsceneCameraMath.FromCameraOrientation(view.Camera.Orientation).ToEngineEulerAngles();
+        Vector3d at = view.Position * WorldUnits.PerMetre;
+        _workspace.Execute(CutsceneModel.SetView(document, shot.Camera, (at.X, at.Y, at.Z), (angles.X, angles.Y, angles.Z)));
     }
 
     // The viewport's camera as a new shot, after the one at the playhead (or last), held three seconds.
