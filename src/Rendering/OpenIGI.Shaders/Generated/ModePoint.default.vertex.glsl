@@ -9,7 +9,7 @@ const bool _57 = (cClipYDown != 0);
 #define SPIRV_CROSS_CONSTANT_ID_65 0
 #endif
 const int cTargetEncodes = SPIRV_CROSS_CONSTANT_ID_65;
-const bool _542 = (cTargetEncodes != 0);
+const bool _539 = (cTargetEncodes != 0);
 
 layout(binding = 0, std140) uniform ModePointPush_std140
 {
@@ -29,26 +29,26 @@ mat4 spvWorkaroundRowMajor(mat4 wrap) { return wrap; }
 
 void main()
 {
-    vec2 _985 = input_diffuseUv;
-    float _986 = input_lightmapUv.x;
+    vec2 _972 = input_diffuseUv;
+    float _973 = input_lightmapUv.x;
     vec4 _42 = vec4(input_position, 1.0) * spvWorkaroundRowMajor(push.modelViewProjection);
     vec4 clip = _42;
     float _45 = _42.y;
-    float _590;
+    float _582;
     if (_57)
     {
-        _590 = -_45;
+        _582 = -_45;
     }
     else
     {
-        _590 = _45;
+        _582 = _45;
     }
-    vec4 _1039 = clip;
-    _1039.y = _590;
-    _1039.z = (_1039.w - _1039.z) * 0.5;
-    clip = _1039;
-    gl_Position = _1039;
-    entryPointParam_vertexMain_uv = _985;
-    entryPointParam_vertexMain_shape = _986;
+    vec4 _1026 = clip;
+    _1026.y = _582;
+    _1026.z = (_1026.w - _1026.z) * 0.5;
+    clip = _1026;
+    gl_Position = _1026;
+    entryPointParam_vertexMain_uv = _972;
+    entryPointParam_vertexMain_shape = _973;
 }
 
