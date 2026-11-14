@@ -1,4 +1,5 @@
 using OpenIGI.Editor.Core.Missions;
+using OpenIGI.Game.Ai;
 using OpenIGI.Scripting.Qsc;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.TestSupport;
@@ -9,13 +10,13 @@ namespace OpenIGI.Editor.Tests;
 /// <summary>Patrol routes and soldier scripts, against what the shipped levels hold.</summary>
 public sealed class PatrolRouteTests
 {
-    /// <summary>The guard and patroller scripts compile to level 1's own, byte for byte.</summary>
+    /// <summary>A new guard's script, standing or given a patrol, is level 1's own, byte for byte.</summary>
     [RequiresGameDataFact]
-    public void Soldier_scripts_are_level_ones_own()
+    public void New_guard_scripts_are_level_ones_own()
     {
         string ai = Path.Combine(GameData.RequireRoot(), "missions", "location0", "level1", "ai");
-        Assert.Equal(File.ReadAllBytes(Path.Combine(ai, "2226.qvm")), SoldierScripts.Compile(SoldierScripts.Guard));
-        Assert.Equal(File.ReadAllBytes(Path.Combine(ai, "2203.qvm")), SoldierScripts.Compile(SoldierScripts.Patroller(2403)));
+        Assert.Equal(File.ReadAllBytes(Path.Combine(ai, "2226.qvm")), AiGuardScript.NewGuard(AiGuardOrders.None, squads: false));
+        Assert.Equal(File.ReadAllBytes(Path.Combine(ai, "2203.qvm")), AiGuardScript.NewGuard(AiGuardOrders.None with { PatrolPathId = 2403 }, squads: false));
     }
 
     /// <summary>Every patrol of level 1 reads as a route and writes back as the same commands.</summary>

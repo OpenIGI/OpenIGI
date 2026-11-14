@@ -70,6 +70,37 @@ internal sealed class GuardOrders
         return orders;
     }
 
+    /// <summary>
+    /// Makes sure a guard's script gives these orders when the mission is next saved, as part of the save rather than a step
+    /// of its own: what a guard's patrol, laid with the patrol tool, needs its script to say.
+    /// </summary>
+    /// <param name="soldier">The soldier.</param>
+    /// <param name="orders">The orders its script must give.</param>
+    /// <returns>Why it cannot, or null.</returns>
+    public string? Require(MissionTask soldier, AiGuardOrders orders)
+    {
+        ArgumentNullException.ThrowIfNull(soldier);
+        ArgumentNullException.ThrowIfNull(orders);
+        if (PatrolPaths.Ai(soldier) is not { Id: >= 0 } ai || _pending.ContainsKey(ai.Id))
+        {
+            return null;
+        }
+
+        ReadOnlyMemory<byte>? existing = Script(ai.Id);
+        if (existing is not null && Of(soldier) == orders)
+        {
+            return null;
+        }
+
+        if (existing is { } bytes && Write(bytes, orders) is null)
+        {
+            return $"{TaskPresentation.Name(soldier)}'s own AI script is laid out in a way its patrol cannot be put in without losing what else it does; start the patrol from its script in the Script panel.";
+        }
+
+        _pending[ai.Id] = orders;
+        return null;
+    }
+
     /// <summary>The step that gives a guard new orders, written to its script when the mission is saved.</summary>
     /// <param name="soldier">The soldier.</param>
     /// <param name="orders">The orders.</param>
@@ -170,7 +201,7 @@ internal sealed class GuardOrders
         foreach ((int aiId, AiGuardOrders orders) in _pending)
         {
             // A script of its own changed where the orders are said; a guard with none given one in the games' shape.
-            byte[]? bytes = Script(aiId) is { } existing ? Write(existing, orders) : AiGuardScript.Build(orders, Squads);
+            byte[]? bytes = Script(aiId) is { } existing ? Write(existing, orders) : AiGuardScript.NewGuard(orders, Squads);
             if (bytes is null)
             {
                 _host.Logger.Warning("Editor", $"The script of mind {aiId} could not be changed to its new orders; it is left as it was.");

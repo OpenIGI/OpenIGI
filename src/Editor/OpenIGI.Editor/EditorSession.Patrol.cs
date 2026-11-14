@@ -147,49 +147,28 @@ internal sealed partial class EditorSession
     }
 
     // Before the mission is written: every soldier's AI script, which the original loads from MISSION:AI/<HumanAI id> and
-    // without which the soldier does nothing. Written where the soldier has none, or still has one this editor wrote (kept
-    // in step with its patrol); a script of the level's own is left alone, with a word when it never starts the patrol.
+    // without which the soldier does nothing. A soldier with none is given the levels' own guard script; one whose patrol
+    // was laid in the editor has it started on its idle event, and one whose patrol was taken away has it stopped -- in
+    // its own script, changed only there (GuardOrders, AiGuardScriptEdit).
     private void WriteSoldierScripts()
     {
-        if (_workspace.Document is not { } document || _workspace.Mission is not { } mission || _host.Title.Id != "igi1")
+        if (_workspace.Document is not { } document || _host.Title.Id != "igi1")
         {
             return;
         }
 
         foreach (MissionTask soldier in document.EnumerateTasks().Where(PatrolTool.IsSoldier))
         {
-            MissionTask ai = soldier.Children.First(static c => c.TypeName == "HumanAI");
-            if (ai.Id < 0 || _guards.HasPending(ai.Id))
+            Game.Ai.AiGuardOrders orders = _guards.Of(soldier);
+            MissionTask? path = PatrolPaths.Path(soldier);
+            bool patrols = path is { Id: >= 0 } && PatrolRoute.Read(path).Waypoints.Count > 0;
+            Game.Ai.AiGuardOrders wanted = patrols
+                ? orders with { PatrolPathId = path!.Id }
+                : path is not null && orders.PatrolPathId == path.Id ? orders with { PatrolPathId = null } : orders;
+            if (_guards.Require(soldier, wanted) is { } problem)
             {
-                // Orders changed in the editor write the script themselves when the mission is saved.
-                continue;
+                Notify(problem, isError: true);
             }
-
-            MissionTask? path = soldier.Children.FirstOrDefault(static c => c.TypeName == PatrolRoute.PathType);
-            bool patrols = path is not null && path.Id >= 0 && PatrolRoute.Read(path).Waypoints.Count > 0;
-            byte[] wanted = SoldierScripts.Compile(patrols ? SoldierScripts.Patroller(path!.Id) : SoldierScripts.Guard);
-            string gamePath = MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(ai.Id));
-            if (_host.TryReadFile("LOCAL:" + gamePath, out ReadOnlyMemory<byte> existing))
-            {
-                if (existing.Span.SequenceEqual(wanted))
-                {
-                    continue;
-                }
-
-                bool ours = existing.Span.SequenceEqual(SoldierScripts.Compile(SoldierScripts.Guard))
-                    || (path is not null && existing.Span.SequenceEqual(SoldierScripts.Compile(SoldierScripts.Patroller(path.Id))));
-                if (!ours)
-                {
-                    if (patrols && !QscPrinter.Print(QscDecompiler.Decompile(existing)).Contains("AIAction_Patrol", StringComparison.Ordinal))
-                    {
-                        Notify($"{TaskPresentation.Name(soldier)} runs the level's own AI script, which never starts a patrol: its patrol will not run.", isError: true);
-                    }
-
-                    continue;
-                }
-            }
-
-            _workspace.WriteToProject(gamePath, wanted);
         }
     }
 
