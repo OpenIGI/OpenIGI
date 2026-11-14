@@ -20,9 +20,20 @@ public sealed partial class SessionClient
     private double _syncSince;
     private bool _synced;
 
+    // A list that came for a map whose files are not yet where the game reads them, kept until they are.
+    private SessionFileList? _heldList;
+
     /// <summary>Gets or sets the client's side of the server's files, or <see langword="null"/> to take the game's own as they are.</summary>
     /// <remarks>Set by the host as the session begins, before anything is loaded: until the files are in, the join waits.</remarks>
     public SessionFileSync? Files { get; set; }
+
+    /// <summary>Gets or sets whether a map's own files are where the game reads them, or <see langword="null"/> when they always are.</summary>
+    /// <remarks>
+    /// A browser holds a level's large files only once that level has been asked for, and asking is what fetches them. A list
+    /// is checked against this game's files, so one that came for a map not yet fetched waits here rather than being refused
+    /// for a file the game is still to be given.
+    /// </remarks>
+    public Func<string, bool>? MapFilesInPlace { get; set; }
 
     /// <summary>Gets whether the server's files are in -- or none are compared -- so the level may be loaded and the join made.</summary>
     public bool FilesReady => Files is null || _synced || _ended is not null;
@@ -64,10 +75,7 @@ public sealed partial class SessionClient
 
         _syncSession.Poll(now);
         _syncSession.Receive(now);
-        if (_syncSession.TakeFileList() is { } list)
-        {
-            files.Accept(list, _syncSession.WantFiles);
-        }
+        CheckList(files, _syncSession.TakeFileList(), _syncSession.WantFiles);
 
         files.Take(_syncSession.TakeFilePieces());
         _syncSession.Flush(now);
@@ -97,6 +105,17 @@ public sealed partial class SessionClient
         }
     }
 
+    // A list checked once its map's files are in place: the newest that came, kept while they are still being fetched.
+    private void CheckList(SessionFileSync files, SessionFileList? came, Action<string, IReadOnlyCollection<int>> want)
+    {
+        _heldList = came ?? _heldList;
+        if (_heldList is { } list && MapFilesInPlace?.Invoke(list.Map) != false)
+        {
+            _heldList = null;
+            files.Accept(list, want);
+        }
+    }
+
     // The files' own connection let go; the line it ran on stays for the join.
     private void EndSync(double now)
     {
@@ -114,10 +133,7 @@ public sealed partial class SessionClient
             return;
         }
 
-        if (session.TakeFileList() is { } list)
-        {
-            files.Accept(list, session.WantFiles);
-        }
+        CheckList(files, session.TakeFileList(), session.WantFiles);
 
         files.Take(session.TakeFilePieces());
         if (files.Failure is { } failure && _ended is null)

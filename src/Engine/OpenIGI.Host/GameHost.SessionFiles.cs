@@ -66,10 +66,18 @@ public sealed partial class GameHost
         else if (session is SessionClient { Playback: null } client)
         {
             client.Files ??= new SessionFileSync(new HostSessionFiles(_fileSystem, title, withoutPins: true), SessionFileCache, _logger);
+            client.MapFilesInPlace ??= MapFilesInPlace;
             _sessionFiles = client.Files;
             _fileSystem.Pins = _sessionFiles.Pins;
         }
     }
+
+    // Whether a map's level is where the game reads it: the load gate's word, which on a browser is also what fetches it.
+    private bool MapFilesInPlace(string map) =>
+        !int.TryParse(map, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int id)
+        || !_missions.TryGet(id, out Game.World.MissionDescriptor? mission)
+        || mission is null
+        || _loadGate.IsReady(mission, out _);
 
     // The files no content layer stands in for while a session lasts.
     private bool WithheldInSession(string path) => GameplayFiles.IsGameplay(_titleRuntime.Title.Id, path);
