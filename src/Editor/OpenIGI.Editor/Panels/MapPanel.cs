@@ -83,7 +83,7 @@ internal sealed class MapPanel : EditorElement
         _workspace = workspace;
         _guards = guards;
         _paths = new PatrolPaths(workspace);
-        _guardsShown = new Button(theme, "Guards") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = false, Tooltip = "Draw every guard's sight and patrol, not only the selected ones'" };
+        _guardsShown = new Button(theme, "Guards") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = false, Tooltip = "Draw every guard's sight and patrol and every camera's sweep, not only the selected ones'" };
         _guardsShown.Clicked += () => _guardsShown.IsChecked = !_guardsShown.IsChecked;
         AddChild(_guardsShown);
         _images = new RhiImageFactory(host.Device);
@@ -202,6 +202,8 @@ internal sealed class MapPanel : EditorElement
         }
 
         DrawGuards(painter, selected, offset);
+        DrawCameras(painter, selected);
+        DrawLinks(painter, selected);
         foreach (Mark mark in Marks())
         {
             bool isSelected = selected.Contains(mark.Task);
@@ -287,6 +289,129 @@ internal sealed class MapPanel : EditorElement
             }
         }
     }
+
+    // Security cameras: the arc the head sweeps, from Rotate Gamma Right to Left either side of where its holder and head
+    // point (0x4420D0 builds the lens from yaw + yaw offset, the lens turning between -yaw_min and +yaw_max), each edge
+    // widened by half the view cone, out to its range; and the cone where the head rests.
+    private void DrawCameras(UiPainter painter, HashSet<MissionTask> selected)
+    {
+        Bgra32 colour = Bgra32.FromRgb(0xFF, 0x7A, 0x6E);
+        Span<UiVec2> fan = stackalloc UiVec2[26];
+        foreach (Mark mark in Marks().Where(static m => m.Task.TypeName == "SCamera"))
+        {
+            bool isSelected = selected.Contains(mark.Task);
+            if (!isSelected && !_guardsShown.IsChecked)
+            {
+                continue;
+            }
+
+            MissionTask camera = mark.Task;
+            double heading = Number(camera, "Holder Gamma") + Number(camera, "Camera Gamma");
+            double right = Number(camera, "Rotate Gamma Right (d)", 45) * Math.PI / 180;
+            double left = Number(camera, "Rotate Gamma Left (d)", 45) * Math.PI / 180;
+            double half = Number(camera, "Viewcone Gamma (d)", 90) * Math.PI / 360;
+            double range = Number(camera, "Viewcone length (m)", 10);
+            Fan(fan, mark.At, heading - right - half, heading + left + half, range);
+            painter.FillPolygon(fan, colour.WithAlpha((byte)(isSelected ? 40 : 22)));
+            painter.StrokePolygon(fan, 1f, colour.WithAlpha((byte)(isSelected ? 200 : 100)));
+            Fan(fan[..12], mark.At, heading - half, heading + half, range);
+            painter.FillPolygon(fan[..12], colour.WithAlpha((byte)(isSelected ? 70 : 35)));
+        }
+    }
+
+    // A fan from a point between two headings, out to a distance, into the points given.
+    private void Fan(Span<UiVec2> points, Vector3d at, double from, double to, double metres)
+    {
+        points[0] = ToScreen(at);
+        for (int i = 1; i < points.Length; i++)
+        {
+            double angle = from + ((to - from) * (i - 1) / (points.Length - 2));
+            points[i] = ToScreen(at + (new Vector3d(-Math.Sin(angle), Math.Cos(angle), 0) * metres));
+        }
+    }
+
+    private static double Number(MissionTask task, string parameter, double fallback = 0) =>
+        task.FindParameter(parameter) is { } found && found.TryGetNumbers(out double[] values) && values.Length > 0 ? values[0] : fallback;
+
+    // What the selected objects are wired to in the mission's logic: lines in from every object their conditions read,
+    // and out to every object whose conditions read them, as the mission graph wires them; and a guard's alarm.
+    private void DrawLinks(UiPainter painter, HashSet<MissionTask> selected)
+    {
+        if (selected.Count == 0 || selected.Count > 8 || _workspace.Logic.Graph is not { } graph)
+        {
+            return;
+        }
+
+        Bgra32 reads = Bgra32.FromRgb(0x5C, 0xD6, 0xE8);
+        Bgra32 readBy = Bgra32.FromRgb(0xF0, 0x9A, 0x3C);
+        foreach (MissionTask task in selected)
+        {
+            if (!graph.TryGetNode(task, out Core.Graphs.TaskGraphNode? node) || TaskPresentation.PositionMetres(task) is not { } here)
+            {
+                continue;
+            }
+
+            HashSet<MissionTask> sources = new(ReferenceEqualityComparer.Instance);
+            HashSet<MissionTask> readers = new(ReferenceEqualityComparer.Instance);
+            foreach (Core.Graphs.GraphLink link in graph.Links)
+            {
+                if (link.From.Node == node.Key && graph.Nodes.GetValueOrDefault(link.To.Node) is { } to && OwnerOf(graph, to) is { } reader && !ReferenceEquals(reader, task))
+                {
+                    readers.Add(reader);
+                }
+                else if (graph.Nodes.GetValueOrDefault(link.To.Node) is { } into && ReferenceEquals(OwnerOf(graph, into), task)
+                    && graph.Nodes.GetValueOrDefault(link.From.Node) is Core.Graphs.TaskGraphNode source && !ReferenceEquals(source.Task, task))
+                {
+                    sources.Add(source.Task);
+                }
+            }
+
+            // An alarm panel's guards: every soldier whose own script sends it to this alarm.
+            if (task.TypeName == "AlarmControl" && task.Id >= 0)
+            {
+                foreach (Mark guard in Marks().Where(m => PatrolPaths.IsSoldier(m.Task) && _guards.Of(m.Task).AlarmControlId == task.Id))
+                {
+                    readers.Add(guard.Task);
+                }
+            }
+
+            if (PatrolPaths.IsSoldier(task) && _guards.Of(task).AlarmControlId is { } alarm
+                && _workspace.Document?.EnumerateTasks().FirstOrDefault(t => t.Id == alarm && t.TypeName == "AlarmControl") is { } control)
+            {
+                readers.Add(control);
+            }
+
+            foreach ((HashSet<MissionTask> set, Bgra32 colour, bool inward) in ((HashSet<MissionTask>, Bgra32, bool)[])[(sources, reads, true), (readers, readBy, false)])
+            {
+                foreach (MissionTask other in set)
+                {
+                    if (TaskPresentation.PositionMetres(other) is not { } there)
+                    {
+                        continue;
+                    }
+
+                    UiVec2 from = ToScreen(inward ? there : here), to = ToScreen(inward ? here : there);
+                    painter.StrokeLine(from, to, Theme.Px(1.5f), colour.WithAlpha(210));
+                    UiVec2 along = to - from;
+                    float length = MathF.Max(1f, MathF.Sqrt((along.X * along.X) + (along.Y * along.Y)));
+                    UiVec2 unit = new(along.X / length, along.Y / length), side = new(-unit.Y, unit.X);
+                    UiVec2 tip = to - (unit * Theme.Px(8f));
+                    painter.FillTriangle(tip + (unit * Theme.Px(6f)), tip + (side * Theme.Px(4f)), tip - (side * Theme.Px(4f)), colour);
+                    string name = TaskPresentation.Name(other);
+                    UiVec2 label = ToScreen(there);
+                    EditorDraw.Label(painter, Theme, name, new UiRect(label.X + Theme.Px(8f), label.Y + Theme.Px(2f), Theme.Font.MeasureWidth(name, Theme.TextSize) + Theme.Px(4f), Theme.RowHeight), colour);
+                }
+            }
+        }
+    }
+
+    // The task an expression node belongs to, or the task a task node is.
+    private static MissionTask? OwnerOf(Core.Graphs.MissionGraph graph, Core.Graphs.GraphNode node) => node switch
+    {
+        Core.Graphs.TaskGraphNode task => task.Task,
+        Core.Graphs.ExpressionGraphNode expression when graph.Nodes.GetValueOrDefault(expression.Owner.Task) is Core.Graphs.TaskGraphNode owner => owner.Task,
+        _ => null,
+    };
 
     // Which way a person faces, in radians about the up axis: a soldier's Gamma (0x45F890 turns its body by it alone), or the
     // turn of a task's orientation; forward is the body's +Y.
