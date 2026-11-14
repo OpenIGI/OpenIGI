@@ -324,6 +324,8 @@ public sealed partial class GameHost
                     ComputerSubject() is { } computerSubject ? OpenIGI.Presentation.Cameras.CameraPose.FromCamera(computerSubject.Camera).Yaw : 0f)
                 {
                     CloseKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.MapComputer)) ?? string.Empty,
+                    PixelDensity = _window.PixelDensity,
+                    Touch = _window.Input.Touch.InUse,
                 });
         }
 

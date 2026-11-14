@@ -42,8 +42,28 @@ internal sealed class ComputerText
     /// <param name="requested">The interface scale the player asked for, or automatic.</param>
     /// <param name="height">The screen's height in pixels.</param>
     /// <returns>The scale: the player's own, or one for every 500 lines of the screen.</returns>
-    public static int ScaleFor(int requested, int height) =>
-        requested != UiScale.Automatic ? Math.Clamp(requested, 1, UiScale.Maximum) : Math.Clamp(height / 500, 1, UiScale.Maximum);
+    public static int ScaleFor(int requested, int height) => ScaleFor(requested, height, 1f);
+
+    /// <summary>Gets the whole-number scale the display's text is drawn at, on a screen of a given pixel density.</summary>
+    /// <param name="requested">The scale asked for, or <see cref="UiScale.Automatic"/>.</param>
+    /// <param name="height">The screen's height in its own pixels.</param>
+    /// <param name="pixelDensity">How many of those there are to a pixel as the person sees it: 3 on most phones.</param>
+    /// <returns>The scale.</returns>
+    /// <remarks>
+    /// A phone's 1170 rows are a hand's width of glass: counted as rows they ask for the scale of a small monitor, and
+    /// the display's labels came out five seen pixels tall. On a dense screen the text is at least a size that reads.
+    /// </remarks>
+    public static int ScaleFor(int requested, int height, float pixelDensity)
+    {
+        if (requested != UiScale.Automatic)
+        {
+            return Math.Clamp(requested, 1, UiScale.Maximum);
+        }
+
+        int byHeight = height / 500;
+        int byDensity = pixelDensity >= 1.5f ? (int)MathF.Round(1.6f * pixelDensity) : 1;
+        return Math.Clamp(Math.Max(byHeight, byDensity), 1, UiScale.Maximum);
+    }
 
     /// <summary>Sets the font and the size for what is measured next, before anything is drawn.</summary>
     /// <param name="font">The title's font, or <see langword="null"/>.</param>

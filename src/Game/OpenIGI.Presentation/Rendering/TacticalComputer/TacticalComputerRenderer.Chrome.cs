@@ -145,15 +145,23 @@ public sealed partial class TacticalComputerRenderer
     // The keys, centred in the room between the two ends of the line; the last are left out where they would not fit.
     private void DrawKeys(ComputerCanvas canvas, float left, float right, float line, string closeKey)
     {
-        Span<(string Key, string Action)> keys =
-        [
-            (closeKey.Length > 0 ? canvas.Text.Capitals(closeKey) : "ESC", "CLOSE"),
-            ("TAB", "PAGE"),
-            ("DRAG", "PAN"),
-            ("WHEEL", "ZOOM"),
-            ("SPACE", "CENTRE"),
-        ];
-        int count = MapAvailable ? keys.Length : 2;
+        // A touch screen is told what its fingers do; it has no keys to name.
+        Span<(string Key, string Action)> keys = _touch
+            ?
+            [
+                ("DRAG", "PAN"),
+                ("PINCH", "ZOOM"),
+                ("TAP TWICE", "CENTRE"),
+            ]
+            :
+            [
+                (closeKey.Length > 0 ? canvas.Text.Capitals(closeKey) : "ESC", "CLOSE"),
+                ("TAB", "PAGE"),
+                ("DRAG", "PAN"),
+                ("WHEEL", "ZOOM"),
+                ("SPACE", "CENTRE"),
+            ];
+        int count = MapAvailable ? keys.Length : _touch ? 0 : 2;
         float gap = canvas.Px(18f);
         float inner = canvas.Px(6f);
 

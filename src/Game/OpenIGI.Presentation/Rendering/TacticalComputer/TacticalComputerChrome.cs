@@ -62,6 +62,7 @@ internal readonly record struct TacticalComputerChrome(
     /// <param name="pageVisible">Whether a text page's panel is up over the map.</param>
     /// <param name="tabWidths">The width of each tab's name, in pixels.</param>
     /// <param name="tabs">Receives each tab's rectangle, one for each width.</param>
+    /// <param name="pixelDensity">How many of the target's pixels there are to a pixel as the person sees it.</param>
     /// <returns>Where every piece is this frame.</returns>
     public static TacticalComputerChrome Measure(
         float width,
@@ -69,9 +70,11 @@ internal readonly record struct TacticalComputerChrome(
         float line,
         bool pageVisible,
         ReadOnlySpan<float> tabWidths,
-        Span<UiRect> tabs)
+        Span<UiRect> tabs,
+        float pixelDensity = 1f)
     {
-        float unit = UnitFor(height);
+        // On a dense screen a design unit is at least most of a seen pixel: the marks and the tabs are a finger's, not a pointer's.
+        float unit = MathF.Max(UnitFor(height), pixelDensity >= 1.5f ? pixelDensity * 0.9f : 0f);
         float topHeight = MathF.Round(line + (16f * unit));
         float bottomHeight = MathF.Round(line + (12f * unit));
         var top = new UiRect(0f, 0f, width, topHeight);

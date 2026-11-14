@@ -194,6 +194,12 @@ public readonly record struct ComputerFrame(int Width, int Height, int Requested
 {
     /// <summary>Gets the name of the key that shuts the computer, for its hint; empty for none.</summary>
     public string CloseKey { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the display is being worked with fingers, which have no keys to be told of.</summary>
+    public bool Touch { get; init; }
+
+    /// <summary>Gets how many of the target's pixels there are to a pixel as the person sees it; 1 on a desktop window.</summary>
+    public float PixelDensity { get; init; } = 1f;
 }
 
 /// <summary>Where a title's own font comes from, for the remastered computer to set its text in.</summary>

@@ -114,6 +114,16 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
     // Whether the last frame was laid over the picture through the visor, which bends it: the pointer is then read where
     // the bend puts it.
     private bool _layered = true;
+
+    // The screen's pixel density and whether fingers are working it, as the last frame drawn said.
+    private float _density = 1f;
+    private bool _touch;
+
+    // Fingers on the map: how far apart two were last frame, and where and when the last tap landed.
+    private float _pinch;
+    private float _tapAt = -1f;
+    private float _tapX;
+    private float _tapY;
     private bool _bent;
     private bool _disposed;
 
@@ -352,6 +362,8 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
                 _centreUnits.Z);
         }
 
+        UpdateTouch(input, chrome, playerUnits, map, fieldOfView);
+
         if (_dragging && (input.Mouse.DeltaX != 0f || input.Mouse.DeltaY != 0f))
         {
             (double unitsPerPixelX, double unitsPerPixelY) = TacticalMapProjection.UnitsPerPixel(fieldOfView, map);
@@ -359,6 +371,107 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
                 _centreUnits.X - (input.Mouse.DeltaX * unitsPerPixelX),
                 _centreUnits.Y + (input.Mouse.DeltaY * unitsPerPixelY),
                 _centreUnits.Z);
+        }
+    }
+
+    // A touch screen's map: one finger drags it, two pinch it about the point between them, a tap on a tab opens its
+    // page, and two taps on the map bring it back over the player. The pointer the fingers are also given moves no
+    // distance a frame -- it is put where the finger is -- so a drag read from it never panned.
+    private void UpdateTouch(InputState input, TacticalComputerChrome chrome, Vector3d playerUnits, Viewport map, float fieldOfView)
+    {
+        IReadOnlyList<TouchPoint> points = input.Touch.Points;
+        int down = 0;
+        TouchPoint first = default, second = default;
+        foreach (TouchPoint point in points)
+        {
+            if (point.Ended)
+            {
+                continue;
+            }
+
+            if (down == 0)
+            {
+                first = point;
+            }
+            else if (down == 1)
+            {
+                second = point;
+            }
+
+            down++;
+        }
+
+        (double unitsPerPixelX, double unitsPerPixelY) = TacticalMapProjection.UnitsPerPixel(fieldOfView, map);
+        if (down >= 2 && _page == Page.Map)
+        {
+            float apart = MathF.Sqrt(((second.X - first.X) * (second.X - first.X)) + ((second.Y - first.Y) * (second.Y - first.Y)));
+            if (_pinch > 1f && apart > 1f)
+            {
+                // Twice as far apart is one step in; the zoom is anchored where the pointer is, so put it between them.
+                _zoomTarget = Math.Clamp(_zoomTarget + (MathF.Log2(apart / _pinch) * 0.3f), 0f, 1f);
+                _zoom = _zoomTarget;
+                (_mouseX, _mouseY) = ((first.X + second.X) * 0.5f, (first.Y + second.Y) * 0.5f);
+            }
+
+            _pinch = apart;
+
+            // And the pair dragged together moves the map with them.
+            float dx = (first.DeltaX + second.DeltaX) * 0.5f, dy = (first.DeltaY + second.DeltaY) * 0.5f;
+            _centreUnits = new Vector3d(_centreUnits.X - (dx * unitsPerPixelX), _centreUnits.Y + (dy * unitsPerPixelY), _centreUnits.Z);
+            _tapAt = -1f;
+            return;
+        }
+
+        _pinch = 0f;
+        if (down == 1 && _page == Page.Map && !chrome.OverInterface(first.StartX, first.StartY) && (first.DeltaX != 0f || first.DeltaY != 0f))
+        {
+            _centreUnits = new Vector3d(
+                _centreUnits.X - (first.DeltaX * unitsPerPixelX),
+                _centreUnits.Y + (first.DeltaY * unitsPerPixelY),
+                _centreUnits.Z);
+        }
+
+        // A finger lifted about where it landed is a tap.
+        float slop = chrome.Px(14f);
+        foreach (TouchPoint point in points)
+        {
+            if (!point.Ended || MathF.Abs(point.X - point.StartX) > slop || MathF.Abs(point.Y - point.StartY) > slop)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < PageNames.Length; i++)
+            {
+                // A tab is a line of text tall; a thumb is given the whole strip's height over it.
+                UiRect tab = _tabs[i];
+                var reach = new UiRect(tab.X - chrome.Px(4f), 0f, tab.Width + chrome.Px(8f), MathF.Max(chrome.Top.Bottom, chrome.Px(44f)));
+                if (IsSelectable((Page)i) && !SaveBusy && TacticalComputerChrome.Contains(reach, point.X, point.Y) && _page != (Page)i)
+                {
+                    _page = (Page)i;
+                    PlaySound?.Invoke(ClickSound);
+                    _burst = 1f;
+                    _tapAt = -1f;
+                    return;
+                }
+            }
+
+            if (_page != Page.Map || chrome.OverInterface(point.X, point.Y))
+            {
+                continue;
+            }
+
+            bool again = _tapAt >= 0f && _inputClock - _tapAt < 0.35f
+                && MathF.Abs(point.X - _tapX) < slop * 3f && MathF.Abs(point.Y - _tapY) < slop * 3f;
+            if (again)
+            {
+                _centreUnits = playerUnits;
+                PlaySound?.Invoke(ClickSound);
+                _tapAt = -1f;
+            }
+            else
+            {
+                (_tapAt, _tapX, _tapY) = (_inputClock, point.X, point.Y);
+            }
         }
     }
 
@@ -417,6 +530,8 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
         float elapsed = Math.Clamp(frame.Feed.Seconds - _clock, 0f, 0.1f);
         _clock = frame.Feed.Seconds;
         _requestedScale = frame.RequestedScale;
+        _density = frame.PixelDensity > 0f ? frame.PixelDensity : 1f;
+        _touch = frame.Touch;
         _burst = MathF.Max(0f, _burst - (elapsed / BurstSeconds));
         _pageDim += ((_page == Page.Map ? 0f : 1f) - _pageDim) * (1f - MathF.Exp(-12f * elapsed));
 
@@ -432,7 +547,10 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
             return;
         }
 
-        _layered = _device.BeginHudLayer();
+        // A phone draws the display straight onto the picture. The visor is a layer of its own, bent and composited
+        // over the frame: two more passes over every pixel of a screen with three times a monitor's rows to the inch,
+        // on a graphics chip a fraction of a desktop's, and the map dragged along behind the finger.
+        _layered = !frame.Touch && _device.BeginHudLayer();
         _bent = _layered && fed;
 
         batch.Begin();
@@ -565,13 +683,13 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
     private TacticalComputerChrome Layout(int width, int height)
     {
         ComputerText text = _text!;
-        text.Use(_fonts?.Font, ComputerText.ScaleFor(_requestedScale, height));
+        text.Use(_fonts?.Font, ComputerText.ScaleFor(_requestedScale, height, _density));
         for (int i = 0; i < PageNames.Length; i++)
         {
             _tabWidths[i] = text.Measure(PageNames[i]);
         }
 
-        return TacticalComputerChrome.Measure(width, height, text.LineHeight, _page != Page.Map, _tabWidths, _tabs);
+        return TacticalComputerChrome.Measure(width, height, text.LineHeight, _page != Page.Map, _tabWidths, _tabs, _density);
     }
 
     // Where the pointer is on the display as drawn: the visor draws a point of the display nearer the middle the further
