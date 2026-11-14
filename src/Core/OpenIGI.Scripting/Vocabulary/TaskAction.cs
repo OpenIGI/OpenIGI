@@ -9,4 +9,12 @@ namespace OpenIGI.Scripting.Vocabulary;
 /// <param name="TaskType">The task type.</param>
 /// <param name="Parameter">The condition parameter, as level data spells it.</param>
 /// <param name="Verb">What it does while it holds, as an instruction (<c>Show the message</c>).</param>
-public sealed record TaskAction(string TaskType, string Parameter, string Verb);
+public sealed record TaskAction(string TaskType, string Parameter, string Verb)
+{
+    /// <summary>
+    /// Gets the exported field that ends what the condition starts, when the levels write it to stop of itself: retail
+    /// scenes run on <c>(start) &amp;&amp; !CutScene_N.isFinished</c>, so a start that stays true plays the scene once rather
+    /// than holding it on its last frame. Null when the condition is meant to hold as long as its cause does.
+    /// </summary>
+    public string? Until { get; init; }
+}

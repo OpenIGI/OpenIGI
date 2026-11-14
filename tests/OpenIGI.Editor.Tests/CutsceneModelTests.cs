@@ -159,7 +159,10 @@ public sealed class CutsceneModelTests
         }
     }
 
-    /// <summary>Every retail scene reads, its shots the scene's own EditCameras, and level 1's intro has its subtitles cued off it.</summary>
+    /// <summary>
+    /// Every retail scene reads, its shots the scene's own EditCameras, and level 1's intro has its subtitles cued off it; every
+    /// scene that waits on something runs only until it is finished.
+    /// </summary>
     [RequiresTitleDataFact("igi1")]
     public void Retail_scenes_read()
     {
@@ -170,6 +173,13 @@ public sealed class CutsceneModelTests
             foreach (MissionTask scene in CutsceneModel.Scenes(document))
             {
                 scenes++;
+                string runText = scene.FindParameter("Run")?.Arguments is [QscStringLiteral { Value: { } run }] ? run : "";
+                // A scene that waits on something runs only until it is finished (Igi1TaskActions: "Play the cutscene").
+                if (runText.Trim() is not ("" or "1"))
+                {
+                    Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"!CutScene_{scene.Id}.isFinished"), runText, StringComparison.Ordinal);
+                }
+
                 Assert.Equal(scene.SelfAndSubtree().Count(static t => t.TypeName == CutsceneModel.CameraType), CutsceneModel.Shots(scene).Count);
                 cues += CutsceneModel.Cues(document, scene).Count;
             }

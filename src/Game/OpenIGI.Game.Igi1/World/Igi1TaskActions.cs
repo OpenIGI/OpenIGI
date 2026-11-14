@@ -28,7 +28,9 @@ public static class Igi1TaskActions
         new("Door", "Open door expression", "Open the door"),
         new("Door", "Close door expression", "Close the door"),
         new("Door", "Locked expression", "Lock the door"),
-        new("CutScene", "Run", "Play the cutscene"),
+        // Every retail scene that waits on something (38 of 45; the rest run on 1 or nothing) runs on
+        // "(its start) && !CutScene_N.isFinished", so it plays once.
+        new("CutScene", "Run", "Play the cutscene") { Until = "isFinished" },
         new("CutScene", "Reset", "Reset the cutscene"),
         new("AnimTask", "Run", "Play the animation"),
         new("LevelTimer", "On", "Run the timer"),

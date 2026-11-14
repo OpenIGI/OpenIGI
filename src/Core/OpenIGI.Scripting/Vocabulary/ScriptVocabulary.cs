@@ -83,6 +83,12 @@ public sealed class ScriptVocabulary
     public string? ActionOf(string taskType, string parameter) =>
         _actions.TryGetValue((taskType, parameter), out TaskAction? action) ? action.Verb : null;
 
+    /// <summary>What making a task's condition hold does, with how it ends.</summary>
+    /// <param name="taskType">The task type.</param>
+    /// <param name="parameter">The condition parameter.</param>
+    /// <returns>The action, or <see langword="null"/> when the title has none for it.</returns>
+    public TaskAction? Action(string taskType, string parameter) => _actions.GetValueOrDefault((taskType, parameter));
+
     /// <summary>Adds what exported fields say about their task, in plain words, by field name.</summary>
     /// <param name="states">Each field's name and its words (<c>isHacked</c>, <c>is hacked</c>).</param>
     /// <returns>This vocabulary.</returns>

@@ -256,7 +256,7 @@ internal sealed partial class GraphPanel
         try
         {
             ExecLayer flat = ExecMacroExpander.Expand(Actions, Macros.Load());
-            LoweredLayer lowered = ExecLayerCompiler.Lower(flat, document, graph);
+            LoweredLayer lowered = ExecLayerCompiler.Lower(flat, document, graph, _host.Vocabulary);
             _workspace.Execute(ExecLayerCompiler.ToCommand(document, Actions, lowered));
         }
         catch (ExecLayerException error)

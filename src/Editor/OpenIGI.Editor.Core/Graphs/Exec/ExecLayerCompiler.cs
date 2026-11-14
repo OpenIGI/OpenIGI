@@ -2,6 +2,7 @@ using System.Globalization;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Scripting.Qsc;
+using OpenIGI.Scripting.Vocabulary;
 
 namespace OpenIGI.Editor.Core.Graphs.Exec;
 
@@ -47,14 +48,18 @@ public static class ExecLayerCompiler
     /// <param name="layer">The action nodes.</param>
     /// <param name="document">The mission, whose declarations the generated tasks use and whose ids they avoid.</param>
     /// <param name="graph">The mission's graph, to find driven tasks.</param>
+    /// <param name="vocabulary">
+    /// The title's words, whose actions say which driven conditions end of themselves (<see cref="TaskAction.Until"/>); a drive
+    /// of one is written as the levels write it, ending when the task says it is done.
+    /// </param>
     /// <returns>The tasks and drives.</returns>
     /// <exception cref="ExecLayerException">The level does not declare a type lowering needs, or the id table is full.</exception>
-    public static LoweredLayer Lower(ExecLayer layer, MissionDocument document, MissionGraph graph)
+    public static LoweredLayer Lower(ExecLayer layer, MissionDocument document, MissionGraph graph, ScriptVocabulary? vocabulary = null)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(graph);
-        Lowering lowering = new(layer, document, graph);
+        Lowering lowering = new(layer, document, graph, vocabulary);
         foreach (ExecNode root in layer.Nodes.Where(static n => n is { Kind: ExecNodeKind.OnBecomesTrue, IsDisabled: false }))
         {
             MissionTask latch = lowering.Latch(root, id => $"EditVariable_{id}.nValue == 0 && ({root.FullCondition()})");
@@ -115,7 +120,7 @@ public static class ExecLayerCompiler
         }
     }
 
-    private sealed class Lowering(ExecLayer layer, MissionDocument document, MissionGraph graph)
+    private sealed class Lowering(ExecLayer layer, MissionDocument document, MissionGraph graph, ScriptVocabulary? vocabulary)
     {
         private const int MaxId = 4095;
 
@@ -180,10 +185,16 @@ public static class ExecLayerCompiler
             return latch;
         }
 
-        public LoweredLayer Result() => new(
-            _tasks,
-            _drives.ToDictionary(static d => d.Key, static d => string.Join(" || ", d.Value.Select(static s => $"({s})"))),
-            _generated);
+        public LoweredLayer Result() => new(_tasks, _drives.ToDictionary(static d => d.Key, d => DriveText(d.Key.Item1, d.Key.Item2, d.Value)), _generated);
+
+        // The stages joined; for a condition that ends of itself, held only until the task says it is done.
+        private string DriveText(MissionTask task, string pin, List<string> stages)
+        {
+            string text = string.Join(" || ", stages.Select(static s => $"({s})"));
+            return vocabulary?.Action(task.TypeName, pin)?.Until is { } until && task.Id >= 0
+                ? string.Create(CultureInfo.InvariantCulture, $"({text}) && !{task.TypeName}_{task.Id}.{until}")
+                : text;
+        }
 
         private void Drive(MissionTask task, string pin, string stage)
         {
