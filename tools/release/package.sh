@@ -164,6 +164,9 @@ else
   [[ "$RID" == win-* ]] && EXT=".exe"
   FILE="$STAGE/publish/$EXECUTABLE$EXT"
   [ -f "$FILE" ] || { echo "error: the single-file publish left no $EXECUTABLE$EXT" >&2; exit 1; }
+  # A native library's package may carry its debug symbols (SkiaSharp's libSkiaSharp.pdb on Windows), which
+  # the bundle does not take in and no release ships.
+  find "$STAGE/publish" -type f -name '*.pdb' -delete
   if [ "$(find "$STAGE/publish" -type f | wc -l)" -ne 1 ]; then
     echo "error: the single-file publish left more than one file:" >&2
     find "$STAGE/publish" -type f >&2
