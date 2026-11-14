@@ -44,6 +44,8 @@ public sealed class Igi1Runtime : IGameTitleRuntime
         .Add(World.Igi1TaskFields.Fields)
         .Add(World.Igi1TaskLists.All)
         .Add(World.Igi1TaskActions.All)
+        .AddHelp(OpenIGI.Game.GeneratedTaskDocs.All)
+        .AddHelp(GeneratedTaskDocs.All)
         .AddStates(MissionWording.States)
         .AddGlobals(MissionScriptVocabulary.Globals);
 }

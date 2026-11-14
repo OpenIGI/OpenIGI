@@ -58,6 +58,7 @@ public sealed class ScriptVocabulary
 
     private readonly Dictionary<(string TaskType, string Pin), TaskAction> _actions = [];
     private readonly Dictionary<string, string> _states = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Type, string Parameter), string> _help = [];
 
     /// <summary>Gets what making a task's condition hold does, in plain words, for every condition the title has words for.</summary>
     public IReadOnlyCollection<TaskAction> Actions => _actions.Values;
@@ -82,6 +83,27 @@ public sealed class ScriptVocabulary
     /// <returns>The words (<c>Show the message</c>), or <see langword="null"/> when the title has none for it.</returns>
     public string? ActionOf(string taskType, string parameter) =>
         _actions.TryGetValue((taskType, parameter), out TaskAction? action) ? action.Verb : null;
+
+    /// <summary>Adds what task types and their parameters are, in a line each, from the game's own task classes.</summary>
+    /// <param name="rows">The type, the parameter as the levels declare it (empty for the type itself), and the text; a later
+    /// row for the same type and parameter replaces an earlier, so a title's own class speaks over a shared one.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary AddHelp(IEnumerable<(string Type, string Parameter, string Text)> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        foreach ((string type, string parameter, string text) in rows)
+        {
+            _help[(type, parameter)] = text;
+        }
+
+        return this;
+    }
+
+    /// <summary>What a task type, or one of its parameters, is.</summary>
+    /// <param name="taskType">The task type.</param>
+    /// <param name="parameter">The parameter as the levels declare it, or empty for the type itself.</param>
+    /// <returns>The line, or <see langword="null"/> when the game's code says nothing about it.</returns>
+    public string? HelpOf(string taskType, string parameter = "") => _help.GetValueOrDefault((taskType, parameter));
 
     /// <summary>What making a task's condition hold does, with how it ends.</summary>
     /// <param name="taskType">The task type.</param>
