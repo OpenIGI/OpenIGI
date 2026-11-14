@@ -84,6 +84,26 @@ internal sealed partial class EditorSession
             return $"Showing {panel} once the mission is open.";
         }
 
+        // editor scene <#id|name> [seconds]: the sequencer on a cutscene, its playhead at a moment.
+        if (arguments is [string sceneVerb, string scene, ..] && sceneVerb.Equals("scene", StringComparison.OrdinalIgnoreCase))
+        {
+            double at = arguments.Count > 2 && double.TryParse(arguments[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double s) ? s : 0;
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("sequencer");
+                _dock.Show("viewport");
+                _host.Logger.Information("Editor", _sequencer.Open(scene) ? $"Opened the scene {scene}." : $"No scene {scene}.");
+                _sequencer.Seek(at);
+                return true;
+            });
+            return "Opening the scene once the mission is open.";
+        }
+
         // editor link #<id> #<id>: the ways the first object can be wired to the second, as a Ctrl-drag on the map offers them.
         if (arguments is [string linkVerb, string fromId, string toId] && linkVerb.Equals("link", StringComparison.OrdinalIgnoreCase))
         {

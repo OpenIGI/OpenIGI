@@ -42,7 +42,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed partial class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|map|rules|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|map|rules|script),0.3:T(content*|sequencer|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -64,6 +64,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly RulesPanel _rules;
     private readonly LogicWatch _logicWatch;
     private readonly MapPanel _map;
+    private readonly SequencerPanel _sequencer;
     private readonly GuardOrders _guards;
     private bool _disposed;
 
@@ -159,6 +160,8 @@ internal sealed partial class EditorSession : IEditorSession
             _viewport.Frame(task);
         };
         _dock.Register(new DockPanel("map", "Map", _map) { Icon = KitIcon.Search });
+        _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play };
+        _dock.Register(new DockPanel("sequencer", "Sequencer", _sequencer) { Icon = KitIcon.Play });
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
         _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
@@ -175,12 +178,12 @@ internal sealed partial class EditorSession : IEditorSession
         }
 
         // A layout saved before the map and the rules had panels: they join the viewport's tabs, the viewport still in front.
-        foreach (string added in (string[])["map", "rules"])
+        foreach ((string added, string beside) in ((string, string)[])[("map", "viewport"), ("rules", "viewport"), ("sequencer", "content")])
         {
-            if (saved is not null && !saved.Contains(added, StringComparison.Ordinal) && _dock.GroupOf("viewport") is not null)
+            if (saved is not null && !saved.Contains(added, StringComparison.Ordinal) && _dock.GroupOf(beside) is not null)
             {
-                _dock.Show(added, beside: "viewport");
-                _dock.Show("viewport");
+                _dock.Show(added, beside: beside);
+                _dock.Show(beside);
             }
         }
 
@@ -533,7 +536,7 @@ internal sealed partial class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "map", "rules", "logic", "terrain" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "map", "rules", "sequencer", "logic", "terrain" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -631,6 +634,7 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["window.problems"]),
                 MenuItem.For(actions["window.map"]),
                 MenuItem.For(actions["window.rules"]),
+                MenuItem.For(actions["window.sequencer"]),
                 MenuItem.For(actions["window.logic"]),
             ]);
     }
