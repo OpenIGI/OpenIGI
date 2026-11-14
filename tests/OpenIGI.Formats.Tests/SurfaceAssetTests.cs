@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Textures;
 using Xunit;
 
@@ -58,7 +57,7 @@ public sealed class SurfaceAssetTests
         SurfaceAsset asset = SurfaceAssetReader.Read(Container(2, 1, layers: 2));
 
         Assert.NotNull(asset.Detail);
-        Assert.Equal(2, asset.Detail!.Width);
+        Assert.Equal(2, asset.Detail.Width);
 
         // The fixture paints layer 0 red and layer 1 green, so which is which is unambiguous.
         Assert.Equal(255, asset.Diffuse.GetLevel(0)[0].R);

@@ -1,4 +1,3 @@
-using OpenIGI.Desktop;
 using OpenIGI.Rendering;
 using Xunit;
 
@@ -61,8 +60,33 @@ public sealed class RendererSwitchOrderTests
     [Fact]
     public void A_name_for_no_renderer_is_not_known_and_draws_over_the_default()
     {
-        Assert.False(RendererSwitchOrder.IsKnown("opengl"));
-        Assert.Equal(RendererSwitchOrder.Default, RendererSwitchOrder.Parse("opengl"));
+        Assert.False(RendererSwitchOrder.IsKnown("metal"));
+        Assert.Equal(RendererSwitchOrder.Default, RendererSwitchOrder.Parse("metal"));
+    }
+
+    [Theory]
+    [InlineData("opengl")]
+    [InlineData("OpenGL")]
+    [InlineData("gl")]
+    public void Opengl_names_are_known_and_ask_for_it(string value)
+    {
+        Assert.True(RendererSwitchOrder.IsKnown(value));
+        Assert.Equal(RendererBackend.OpenGL, RendererSwitchOrder.Parse(value));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_switch_never_steps_into_opengl_and_leaves_it_for_the_first_of_the_others(bool hasD3D12)
+    {
+        foreach (RendererBackend backend in new[] { RendererBackend.D3D12, RendererBackend.Vulkan, RendererBackend.WebGpu })
+        {
+            Assert.NotEqual(RendererBackend.OpenGL, RendererSwitchOrder.Next(backend, hasD3D12));
+        }
+
+        Assert.Equal(
+            hasD3D12 ? RendererBackend.D3D12 : RendererBackend.Vulkan,
+            RendererSwitchOrder.Next(RendererBackend.OpenGL, hasD3D12));
     }
 
     [Theory]

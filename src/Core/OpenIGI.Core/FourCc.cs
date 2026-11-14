@@ -39,7 +39,7 @@ public readonly struct FourCc : IEquatable<FourCc>
     /// <exception cref="ArgumentOutOfRangeException">Any character is outside the single-byte range.</exception>
     public FourCc(char a, char b, char c, char d)
     {
-        _value = (uint)(ToByte(a, nameof(a))
+        _value = (ToByte(a, nameof(a))
             | (ToByte(b, nameof(b)) << 8)
             | (ToByte(c, nameof(c)) << 16)
             | (ToByte(d, nameof(d)) << 24));

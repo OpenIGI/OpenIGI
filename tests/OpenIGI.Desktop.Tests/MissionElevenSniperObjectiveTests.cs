@@ -28,7 +28,33 @@ public sealed class MissionElevenSniperObjectiveTests : IDisposable
     public void Dispose() => _support.Dispose();
 
     [RequiresGameDataFact]
-    public void Taking_the_dragunov_completes_the_first_objective()
+    public void Taking_the_dragunov_completes_the_first_objective() => WithSaveGames(false, () => TakeTheDragunov(deleted: true));
+
+    /// <summary>
+    /// The same in a level that keeps save games, as the game is played: the rifle's task is withdrawn rather than deleted, so
+    /// a save read later can put the rifle back, and the level's scripts read exactly what they read of a deleted one -- the
+    /// counter counts it once, and its <c>isPickedUp</c> is gone.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void Taking_the_dragunov_completes_the_first_objective_in_a_level_that_keeps_saves() =>
+        WithSaveGames(true, () => TakeTheDragunov(deleted: false));
+
+    // Runs a check with Project I.G.I.'s save games on or off, and puts the setting back.
+    private static void WithSaveGames(bool on, Action check)
+    {
+        bool saves = OpenIGI.Game.GameplayCVars.Igi1Saves.Value;
+        OpenIGI.Game.GameplayCVars.Igi1Saves.Value = on;
+        try
+        {
+            check();
+        }
+        finally
+        {
+            OpenIGI.Game.GameplayCVars.Igi1Saves.Value = saves;
+        }
+    }
+
+    private void TakeTheDragunov(bool deleted)
     {
         using RecordingGraphicsDevice device = new();
         GameHost host = _support.Host(device, new HeadlessGameWindow(), "-mission", "11", "-skipcutscene", "-lockstep", "-frames", "1000000");
@@ -59,7 +85,7 @@ public sealed class MissionElevenSniperObjectiveTests : IDisposable
         Assert.True(host.Step());
         host.Stop();
 
-        Assert.True(sniper.Task.IsDeleted);
+        Assert.Equal(deleted, sniper.Task.IsDeleted);
         Assert.Equal(1, Read(loop, "EditVariable_101.nValue"));
 
         // Its delete handler (0x46D760) removes the symbol, as the level's deactivate handler does (0x46D1D0).
@@ -104,8 +130,8 @@ public sealed class MissionElevenSniperObjectiveTests : IDisposable
 
         Assert.True(loop.Variables.TryWrite("EditVariable_102.nValue", QvmValue.FromInt32(1)));
         Assert.True(loop.Variables.TryWrite("EditVariable_103.nValue", QvmValue.FromInt32(1)));
-        OpenIGI.Engine.Tasks.DeclaredTask cableCar = Assert.IsType<OpenIGI.Engine.Tasks.DeclaredTask>(sniper.Task!.Tree.FromId(150));
-        Assert.True(cableCar.TryGet("Position", out OpenIGI.Core.Numerics.Vector3d inside));
+        OpenIGI.Game.Flow.AreaActivateTask cableCar = Assert.IsType<OpenIGI.Game.Flow.AreaActivateTask>(sniper.Task!.Tree.FromId(150));
+        OpenIGI.Core.Numerics.Vector3d inside = cableCar.Position;
 
         bool outro = false;
         for (int i = 0; i < 300 && !outro; i++)
@@ -130,8 +156,14 @@ public sealed class MissionElevenSniperObjectiveTests : IDisposable
     }
 
     /// <summary>An AmmoPickup is deleted by its own update once taken (<c>0x46D740</c>), not by the touch (<c>0x46D990</c>).</summary>
+    /// <remarks>
+    /// With the save games off, as the original had none: a level that keeps save games withdraws a taken pickup rather than
+    /// deleting it, so a save read later can put it back (see <c>TakenPickupTask</c>).
+    /// </remarks>
     [RequiresGameDataFact]
-    public void A_taken_ammo_box_deletes_itself_on_its_next_update()
+    public void A_taken_ammo_box_deletes_itself_on_its_next_update() => WithSaveGames(false, TakeTheAmmoBox);
+
+    private void TakeTheAmmoBox()
     {
         using RecordingGraphicsDevice device = new();
         GameHost host = _support.Host(device, new HeadlessGameWindow(), "-mission", "11", "-skipcutscene", "-lockstep", "-frames", "1000000");

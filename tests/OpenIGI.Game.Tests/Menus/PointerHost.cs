@@ -1,5 +1,4 @@
 using OpenIGI.Engine.Flow;
-using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Config;
 using OpenIGI.Game.Menus;
 

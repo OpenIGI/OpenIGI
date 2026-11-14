@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using OpenIGI.Shaders;
 using Xunit;
 
 namespace OpenIGI.Shaders.Tests;
@@ -235,7 +234,7 @@ public sealed partial class ShaderCatalogTests
             if (entryPoint.Stage == ShaderStage.Compute)
             {
                 Assert.NotNull(entryPoint.WorkgroupSize);
-                Assert.Equal(3, entryPoint.WorkgroupSize!.Count);
+                Assert.Equal(3, entryPoint.WorkgroupSize.Count);
             }
             else
             {

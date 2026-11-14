@@ -167,7 +167,7 @@ public sealed class EditorWidgetTests
 
         ui.Drag(tree.RowRect(3).Center, tree.RowRect(4).Center);
         Assert.NotNull(dropped);
-        Assert.Equal("crate", Assert.Single(dropped!.Value.Items).Name);
+        Assert.Equal("crate", Assert.Single(dropped.Value.Items).Name);
         Assert.Equal("tower", dropped.Value.Target.Name);
         Assert.Equal(TreeDropPosition.Inside, dropped.Value.Position);
 

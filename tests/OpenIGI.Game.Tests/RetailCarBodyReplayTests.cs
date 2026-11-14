@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using Xunit;
@@ -118,9 +119,7 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
     {
         lock (Captures)
         {
-            return Captures.TryGetValue(fixture, out RetailCarStepCapture? capture)
-                ? capture
-                : Captures[fixture] = RetailCarStepCapture.Load(fixture);
+            return Captures.GetOrAdd(fixture, RetailCarStepCapture.Load);
         }
     }
 

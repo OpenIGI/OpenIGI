@@ -104,8 +104,8 @@ public sealed class AiVehicleScenarios : IDisposable
         Assert.NotNull(vehicle);
 
         int tick = -1;
-        Action<VehicleCombatShot>? fired = runtime.VehicleCombatShotFired;
-        runtime.VehicleCombatShotFired = shot =>
+        Action<VehicleCombatShot>? fired = runtime.Vehicles.VehicleCombatShotFired;
+        runtime.Vehicles.VehicleCombatShotFired = shot =>
         {
             log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] ROUND tick={tick} owner={shot.Owner?.Id} weapon={shot.WeaponScriptId} origin=({shot.Origin.X:0},{shot.Origin.Y:0},{shot.Origin.Z:0})");
 
@@ -113,7 +113,7 @@ public sealed class AiVehicleScenarios : IDisposable
         };
 
         List<VehicleGunTurret> guns = [];
-        for (int index = 0; runtime.GunTurret(vehicle, index) is { } turret; index++)
+        for (int index = 0; runtime.Vehicles.GunTurret(vehicle, index) is { } turret; index++)
         {
             guns.Add(turret);
             log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] GUN index={index} weapon={turret.Mount.WeaponModel}");
@@ -122,7 +122,7 @@ public sealed class AiVehicleScenarios : IDisposable
         List<OpenIGI.Engine.Tasks.DeclaredTask> vehicles = [.. Walk(loop.Tasks.Root)
             .OfType<OpenIGI.Engine.Tasks.DeclaredTask>()
             .Where(static task => task.Type.Name is "Car" or "Heli" or "Plane")];
-        HumanHealth health = MissionOf(host).PlayerHealth;
+        HumanHealth health = MissionOf(host).PlayerLife.Health;
         bool[] triggers = new bool[guns.Count];
         bool god = false;
         int last = -1;
@@ -148,7 +148,7 @@ public sealed class AiVehicleScenarios : IDisposable
             {
                 File.AppendAllText(progress, string.Create(
                     CultureInfo.InvariantCulture,
-                    $"step={step} tick={tick} engine={soldiers!.Simulation.TickCount} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
+                    $"step={step} tick={tick} engine={soldiers.Simulation.TickCount} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
             }
 
             if (god)
@@ -166,7 +166,7 @@ public sealed class AiVehicleScenarios : IDisposable
                 break;
             }
 
-            int engine = soldiers!.Simulation.TickCount;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -240,7 +240,7 @@ public sealed class AiVehicleScenarios : IDisposable
                     OpenIGI.Engine.Tasks.GameTask heli = loop.Tasks.FromId(heliId)!;
                     Vector3d at = runtime.TryGetDrawTransform(heli, out Vector3d metres, out _) ? metres * Metre : default;
                     string extra = string.Empty;
-                    if (runtime.TransformsForTesting.TryGetValue(heliId, out CutsceneTransformState? state))
+                    if (runtime.TransformsForTesting.TryGetValue(heliId, out TaskTransformState? state))
                     {
                         Matrix3f m = state.Orientation;
                         Vector3d v = state.Velocity;
@@ -256,7 +256,7 @@ public sealed class AiVehicleScenarios : IDisposable
             // OPENIGI_VEH_SCENARIO_BODY=<id>: that car's retail rigid body every tick, bit-exact, for lining the
             // port's drive up against a probe carstep capture.
             if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
-                && runtime.TransformsForTesting.TryGetValue(bodyId, out CutsceneTransformState? bodyState))
+                && runtime.TransformsForTesting.TryGetValue(bodyId, out TaskTransformState? bodyState))
             {
                 if (bodyState.RetailBody is RetailCarBody body)
                 {
@@ -347,7 +347,7 @@ public sealed class AiVehicleScenarios : IDisposable
             }
 
             Vector3d origin = player.Body.Position + new Vector3d(0d, 0d, OriginAboveFeet);
-            if (runtime.TryRunOver(origin, out OpenIGI.Engine.Tasks.GameTask? runner) && runner is not null)
+            if (runtime.Vehicles.TryRunOver(origin, out OpenIGI.Engine.Tasks.GameTask? runner) && runner is not null)
             {
                 Vector3d at = runtime.TryGetDrawTransform(runner, out Vector3d where, out _) ? where * Metre : default;
                 log.AppendLine(CultureInfo.InvariantCulture, $"[runover] tick={tick} by={runner.Id} vehicle=({at.X:0},{at.Y:0}) player=({origin.X:0},{origin.Y:0}) d={Math.Sqrt(((at.X - origin.X) * (at.X - origin.X)) + ((at.Y - origin.Y) * (at.Y - origin.Y))) / Metre:0.00} m");
@@ -356,7 +356,7 @@ public sealed class AiVehicleScenarios : IDisposable
             if (tick % posEvery == 0)
             {
                 log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={MissionOf(host).IsPlayerDead} shove=({player.Body.HitShove.X:0.00},{player.Body.HitShove.Y:0.00})");
-                foreach (CarAiState state in runtime.CarAisForTesting)
+                foreach (CarAiState state in runtime.Vehicles.CarAisForTesting)
                 {
                     AiPatrolRoute? route = state.Route;
                     OpenIGI.Engine.Tasks.GameTask task = state.Task;
@@ -454,7 +454,7 @@ public sealed class AiVehicleScenarios : IDisposable
                 player.Body.Pitch = (float)Math.Atan2(dz, Math.Sqrt((dx * dx) + (dy * dy)));
             }
 
-            InputState vehicleInput = host.ScriptedViewInput!;
+            InputState vehicleInput = host.ScriptedViewInput;
             if (vehicleWeaponKey > 0)
             {
                 vehicleInput.Keyboard.SetKey(KeyCode.D1 + (byte)(vehicleWeaponKey - 1), down: tick == vehicleWeaponTick);

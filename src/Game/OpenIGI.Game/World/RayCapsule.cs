@@ -131,10 +131,9 @@ public static class RayCapsule
         }
 
         // Bottom cap: sphere centred at axisA (local 0,0,0), taken where pz <= 0.
-        if (!SolveSphere(ox, oy, oz, dx, dy, dz, radius, out double bt, out double bp))
+        if (!SolveSphere(ox, oy, oz, dx, dy, dz, radius, out double bt, out _))
         {
             bt = double.MaxValue;
-            bp = 0.0;
         }
 
         if (bt < best && (oz + (dz * bt)) <= 0.0)
@@ -143,10 +142,9 @@ public static class RayCapsule
         }
 
         // Top cap: sphere centred at axisB (local 0,0,length), taken where pz >= length.
-        if (!SolveSphere(ox, oy, oz - length, dx, dy, dz, radius, out double tt, out double tp))
+        if (!SolveSphere(ox, oy, oz - length, dx, dy, dz, radius, out double tt, out _))
         {
             tt = double.MaxValue;
-            tp = 0.0;
         }
 
         if (tt < best && (oz + (dz * tt)) >= length)

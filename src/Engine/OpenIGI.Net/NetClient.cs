@@ -130,7 +130,7 @@ public sealed class NetClient : IDisposable
             case NetClientState.Requesting or NetClientState.Responding when now - _lastHandshakeSend >= HandshakeResendInterval:
                 SendHandshake(now);
                 break;
-            case NetClientState.Connected when now - Connection!.LastReceiveTime > Timeout:
+            case NetClientState.Connected when Connection is { } live && now - live.LastReceiveTime > Timeout:
                 EndConnection(TimedOutReason);
                 break;
         }
@@ -158,9 +158,7 @@ public sealed class NetClient : IDisposable
         _ = now;
         if (State == NetClientState.Connected)
         {
-            int prefix = NetConstants.PacketPrefixSize;
-            BinaryPrimitives.WriteUInt32LittleEndian(_sendBuffer.AsSpan(prefix), Connection!.Salt);
-            int length = prefix + 4 + PacketCodec.WriteString(_sendBuffer.AsSpan(prefix + 4), reason);
+            int length = Connection!.WriteDisconnect(_sendBuffer, reason);
             for (int i = 0; i < 3; i++)
             {
                 SendOutOfBand(PacketKind.Disconnect, _sendBuffer.AsSpan(0, length));
@@ -229,27 +227,26 @@ public sealed class NetClient : IDisposable
                 _events.Enqueue(new NetEvent(NetEventKind.Rejected, -1, default, PacketCodec.ReadString(packet[(prefix + 8)..]), null));
                 return;
 
-            case PacketKind.Payload when State == NetClientState.Connected
+            case PacketKind.Payload when State == NetClientState.Connected && Connection is { } live
                                          && packet.Length >= prefix + NetConstants.PayloadHeaderSize
-                                         && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == Connection!.Salt:
+                                         && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == live.Salt:
                 _messages.Clear();
-                Connection.ReceivePayload(packet, now, _messages);
+                live.ReceivePayload(packet, now, _messages);
                 foreach (NetMessage message in _messages)
                 {
                     _events.Enqueue(new NetEvent(NetEventKind.Message, Slot, message, string.Empty, null));
                 }
 
-                if (Connection.IsFaulted)
+                if (live.IsFaulted)
                 {
                     Disconnect("protocol error", now);
                 }
 
                 return;
 
-            case PacketKind.Disconnect when State == NetClientState.Connected
-                                            && packet.Length >= prefix + 4
-                                            && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == Connection!.Salt:
-                EndConnection(PacketCodec.ReadString(packet[(prefix + 4)..]));
+            case PacketKind.Disconnect when State == NetClientState.Connected && Connection is { } leaving
+                                            && leaving.TryReadDisconnect(packet, out string left):
+                EndConnection(left);
                 return;
         }
     }

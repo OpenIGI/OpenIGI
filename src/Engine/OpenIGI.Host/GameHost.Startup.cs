@@ -71,9 +71,12 @@ public sealed partial class GameHost
         RegisterDemoCommands(state.Console.System);
         RegisterInviteCommand(state.Console.System);
         RegisterPartyCommands(state.Console.System);
+        _missionConsole = state.Console.System;
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterBlastCommands(state.Console.System);
+        RegisterSaveCommands(state.Console.System);
+        RegisterTouchLayoutEditor(state);
         RegisterEditorCommands(state.Console.System);
         RegisterRendererSwitchCommand(state.Console.System);
         _contentLayers.Register(state.Console.System);
@@ -94,13 +97,7 @@ public sealed partial class GameHost
         // The keys the game binds for itself, each only where the player has not bound it to something
         // else, so a binding they saved is never stolen. What they are and the rule about what may be in
         // the table is in DefaultBinds.
-        foreach ((string key, string statement) in Configuration.DefaultBinds.All)
-        {
-            if (!state.Console.System.Binds.ContainsKey(key))
-            {
-                state.Console.System.SetBind(key, statement);
-            }
-        }
+        Configuration.DefaultBinds.Apply(state.Console.System);
 
         // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
         // the console and the flag can never report different things.
@@ -111,7 +108,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Puts the device's settings in force and keeps them so as they change.</summary>
-    private void BindDeviceVariables(FrameLoopState state)
+    private void BindDeviceVariables()
     {
         // Set before anything uploads a texture: the sampler a texture is created with is the one it
         // keeps, so a level loaded before this would keep the filtering it started with.
@@ -284,7 +281,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Loads what every level draws with: the fog presets, the materials, the lamp manifest and the detail maps.</summary>
-    private void LoadSharedRenderData(FrameLoopState state)
+    private void LoadSharedRenderData()
     {
         _materials = MaterialLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
@@ -338,7 +335,7 @@ public sealed partial class GameHost
         // Started rather than done: at start-up the thing between the player and the first frame is this
         // thread, and the read needs nothing from it. The first mission waits for the result, by when it
         // has been sitting finished for several seconds.
-        BeginReadingSharedAnimations();
+        _hosted.Prefetch();
 
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
@@ -361,16 +358,14 @@ public sealed partial class GameHost
         _heldWeapon = null;
         _hud = null;
         _debugOverlay = null;
-        _marks = null;
         _effects.Forget();
-        _cameraStatusLights = null;
-        _grenadeRenderer = null;
-        _missileRenderer = null;
+        WorldView?.ReleaseLevel();
+        _modelGlows = null;
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
         _mission.AdoptSoldiers(null);
-        _mission.SoldiersInWalk = false;
+        _mission.ObjectsInWalk = false;
         _mission.PlayerInWalk = false;
         _mission.Terrain = null;
         _mission.Ground = null;
@@ -383,8 +378,7 @@ public sealed partial class GameHost
         _mission.Materials = null;
         _mission.AmmoTypes = null;
         _mission.WeaponTypes = null;
-        _mission.AlarmSpeakers = null;
-        _mission.Destructibles = null;
+        _mission.ReleaseAlarmsAndDestructibles();
         _hosted.Audio.ForgetSirens();
         _playerMode = false;
 
@@ -508,7 +502,6 @@ public sealed partial class GameHost
             UiTheme shellTheme = state.ShellTypography.CreateTheme();
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
-            _shellBodyFont = state.ShellTypography.Body;
             _shellType = state.ShellTypography;
 
             // The real DefineMission data, resolved to display strings through the language table, in the
@@ -519,6 +512,28 @@ public sealed partial class GameHost
             state.Saves = new SaveSlotStore(SavesDirectory());
 
             _coop ??= CreateCoop();
+            _resumeMission = () =>
+            {
+                // Nothing is reloaded and nobody is placed again: the level was never torn down, only
+                // left un-ticked, so resuming is this loop putting the menu away.
+                state.Shell?.ClosePauseMenu();
+                _menuFlow.MenuMode = false;
+                _menuFlow.PauseMenu = false;
+                _window.CursorVisible = false;
+
+                // Back from the failed page too, when a co-op squad stood again at its checkpoint.
+                _session.FailedMenu = false;
+                _session.ClearFailure();
+            };
+
+            _restartMission = () =>
+            {
+                if (_session.Mission is { } mission)
+                {
+                    GoIntoMission(state, mission.Id);
+                }
+            };
+
             state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
@@ -633,26 +648,8 @@ public sealed partial class GameHost
                         _timeOfDay.DayNight.ResetForLevel(_timeOfDay.Sun, ExposureCVars.TimeOfDay.Value);
                     }
                 },
-                resumeMission: () =>
-                {
-                    // Nothing is reloaded and nobody is placed again: the level was never torn down, only
-                    // left un-ticked, so resuming is this loop putting the menu away.
-                    state.Shell?.ClosePauseMenu();
-                    _menuFlow.MenuMode = false;
-                    _menuFlow.PauseMenu = false;
-                    _window.CursorVisible = false;
-
-                    // Back from the failed page too, when a co-op squad stood again at its checkpoint.
-                    _session.FailedMenu = false;
-                    _session.ClearFailure();
-                },
-                restartMission: () =>
-                {
-                    if (_session.Mission is { } mission)
-                    {
-                        GoIntoMission(state, mission.Id);
-                    }
-                },
+                resumeMission: _resumeMission,
+                restartMission: _restartMission,
                 abandonMission: () =>
                 {
                     // Out of the mission is out of its room -- or out of the server the command line joined or hosted, whose
@@ -744,17 +741,52 @@ public sealed partial class GameHost
                     return pixels;
                 },
                 settingUnavailable: SettingUnavailable,
-                missionSaves: () => TitlePlayer?.SaveGames,
-                inputBindingLabel: action => TitleInputBindings.Label(action, _gameplay?.InputBindings ?? []),
+                missionSaves: () => MissionSaveGames,
+                inputBindingLabel: action => TitleInputBindings.Label(action, ExtraBindings),
                 resetInputBindings: profile =>
                 {
-                    TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
+                    TitleInputBindings.Reset(profile, ExtraBindings);
+
+                    // And the keys that run a command, back on the keys the game gives them.
+                    foreach ((string key, string statement) in Configuration.DefaultBinds.All)
+                    {
+                        if (Configuration.DefaultBinds.Listed.Any(listed => listed.Statement == statement))
+                        {
+                            Configuration.DefaultBinds.Rebind(state.Console.System, statement, key);
+                        }
+                    }
+                },
+                commandKeys: () =>
+                [
+                    .. Configuration.DefaultBinds.Listed.Select(listed => new CommandKey(
+                        listed.Label,
+                        listed.Statement,
+                        DevTools.BindKeyNames.TryParse(Configuration.DefaultBinds.KeyOf(state.Console.System.Binds, listed.Statement), out Input.KeyCode bound)
+                            ? bound
+                            : Input.KeyCode.None)),
+                ],
+                bindCommandKey: (statement, key) =>
+                {
+                    if (DevTools.BindKeyNames.NameOf(key) is { Length: > 0 } name)
+                    {
+                        Configuration.DefaultBinds.Rebind(state.Console.System, statement, name);
+                    }
                 },
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,
                 coop: _coop,
                 party: _coop is null ? null : new PartyPanel(this),
+                missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(_device)).Get(_titleRuntime.Title.Id, mission),
                 touchScreen: () => _window.Input.Touch.InUse,
+                editTouchLayout: () =>
+                {
+                    // Out of the pause menu and straight into the editor, over the mission the menu was up over.
+                    if (_menuFlow.PauseMenu && !_session.FailedMenu && _session.Mission is not null)
+                    {
+                        _resumeMission?.Invoke();
+                        OpenTouchLayoutEditor();
+                    }
+                },
                 openEditor: EditorFactory is null ? null : RequestEditor);
 
             state.ShellHostForEntryCam = state.ShellHost;
@@ -827,7 +859,7 @@ public sealed partial class GameHost
 
         _logger.Information(
             "Render",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"Camera effects: r_motion_blur {PostCVars.MotionBlur.Value:0.###}, r_hdr {FrameCVars.OffscreenScene.Value}, r_deferred {LightingCVars.Deferred.Value}, r_taa {ReconstructionCVars.TemporalFeedback.Value:0.###}, r_smooth {FrameCVars.SmoothPresentation.Value}, r_scale {ReconstructionCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => state.Running = false;

@@ -142,7 +142,7 @@ public sealed class RetailIgi2ScriptVocabularyTests
     private static int ConstantOf(NativeRegistry natives, string name)
     {
         Assert.True(natives.TryResolve(name, out QvmSymbol? symbol), $"'{name}' is undeclared.");
-        Assert.Equal(QvmSymbolKind.Constant, symbol!.Kind);
+        Assert.Equal(QvmSymbolKind.Constant, symbol.Kind);
         return symbol.Read().Integer;
     }
 

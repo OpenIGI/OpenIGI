@@ -53,7 +53,7 @@ public sealed class IrradianceProbeBake
     // frame should skip straight to it rather than upload every pass it missed.
     private sealed class Stream
     {
-        private readonly object _gate = new();
+        private readonly Lock _gate = new();
         private IrradianceVolume? _latest;
         private int _version;
         private int _taken;
@@ -154,7 +154,7 @@ public sealed class IrradianceProbeBake
             double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
             log.Information(
                 LogCategory,
-                FormattableString.Invariant(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"Probe bake took {seconds:0.00} s; the field lights the level from the next frame."));
         }
 

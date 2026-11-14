@@ -132,6 +132,12 @@ public interface ITitlePlayer
     /// <summary>Gets how wide the eyes see, as the tangent of half the view's horizontal angle: one, ninety degrees, unless a zoom narrows it.</summary>
     float FieldOfViewScale => 1f;
 
+    /// <summary>
+    /// Gets where the player faces, as the remaster's compass reads it: forward is the sine and cosine of it across and along the
+    /// world; <see langword="null"/> where the title does not say.
+    /// </summary>
+    float? Heading => null;
+
     /// <summary>Gets a value indicating whether the title's level played a cutscene on the last tick, which Escape breaks rather than pausing.</summary>
     bool IsCutscenePlaying => false;
 
@@ -146,6 +152,9 @@ public interface ITitlePlayer
 
     /// <summary>Gets which of the title's own placements are destroyed, or <see langword="null"/> when nothing it placed can be.</summary>
     IPlacementDestruction? Destruction => null;
+
+    /// <summary>Gets which of the title's own placements are in the world, or <see langword="null"/> when all of them always are.</summary>
+    IPlacementPresence? Presence => null;
 
     /// <summary>
     /// Gets the title's own view culling -- what the eye's place in the level leaves out of the frame -- or <see langword="null"/>

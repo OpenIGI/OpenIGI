@@ -123,6 +123,70 @@ public sealed class NetConnection : IDisposable
 
     internal uint Salt { get; }
 
+    /// <summary>Gets what ties this connection to the two keys its ends agreed, or nothing on a line that is not sealed.</summary>
+    /// <remarks>
+    /// Both ends hold the same bytes, and a go-between that made its own agreement with each end holds others: what a player
+    /// signs with it proves itself to this server alone, never to one a go-between passes the proof on to.
+    /// </remarks>
+    public byte[] ChannelBinding => _cipher?.Binding ?? [];
+
+    // The counter a goodbye is sealed under: one no packet's sequence ever reaches.
+    private const ulong DisconnectCounter = ulong.MaxValue;
+
+    /// <summary>Writes a goodbye: the salt and the reason, sealed where the connection is, so no one else can end it.</summary>
+    /// <param name="packet">Where to, from its first byte; the caller seals the prefix.</param>
+    /// <param name="reason">Why, shown to the player.</param>
+    /// <returns>The packet's length.</returns>
+    internal int WriteDisconnect(Span<byte> packet, string reason)
+    {
+        int prefix = NetConstants.PacketPrefixSize;
+        BinaryPrimitives.WriteUInt32LittleEndian(packet[prefix..], Salt);
+        if (_cipher is null)
+        {
+            return prefix + 4 + PacketCodec.WriteString(packet[(prefix + 4)..], reason);
+        }
+
+        Span<byte> plain = stackalloc byte[256];
+        int length = PacketCodec.WriteString(plain, reason);
+        _cipher.Seal(DisconnectCounter, packet.Slice(prefix, 4), plain[..length], packet.Slice(prefix + 4, length + PacketCipher.Overhead));
+        return prefix + 4 + length + PacketCipher.Overhead;
+    }
+
+    /// <summary>Reads a goodbye whose prefix the owner has checked: one with another salt, or not sealed by the other end, is none.</summary>
+    /// <param name="packet">The whole packet.</param>
+    /// <param name="reason">Why the other end left.</param>
+    /// <returns><see langword="true"/> when the other end really sent it.</returns>
+    internal bool TryReadDisconnect(ReadOnlySpan<byte> packet, out string reason)
+    {
+        reason = string.Empty;
+        int prefix = NetConstants.PacketPrefixSize;
+        if (packet.Length < prefix + 4 || BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) != Salt)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<byte> body = packet[(prefix + 4)..];
+        if (_cipher is null)
+        {
+            reason = PacketCodec.ReadString(body);
+            return true;
+        }
+
+        if (body.Length < PacketCipher.Overhead || body.Length > 256 + PacketCipher.Overhead)
+        {
+            return false;
+        }
+
+        Span<byte> plain = stackalloc byte[body.Length - PacketCipher.Overhead];
+        if (!_cipher.TryOpen(DisconnectCounter, packet.Slice(prefix, 4), body, plain))
+        {
+            return false;
+        }
+
+        reason = PacketCodec.ReadString(plain);
+        return true;
+    }
+
     /// <summary>Queues a message for the next <see cref="Flush"/>.</summary>
     /// <param name="channel">How to deliver it.</param>
     /// <param name="data">The bytes; copied.</param>
@@ -179,6 +243,10 @@ public sealed class NetConnection : IDisposable
             {
                 if (packets == 0 && (_ackOwed || keepAliveDue))
                 {
+                    // A bare packet carries no reliable message: the list still holds the last packet's, and left there
+                    // this one's acknowledgement would stand for messages it never carried -- lost with that packet, they
+                    // were never sent again, and the reliable line stopped for good.
+                    _packetReliableIds.Clear();
                     SendPacket(WritePayloadHeader(now), now);
                 }
 

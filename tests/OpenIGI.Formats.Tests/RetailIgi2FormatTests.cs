@@ -129,7 +129,7 @@ public sealed class RetailIgi2FormatTests
             .FirstOrDefault();
 
         Assert.True(archive is not null, $"No models/*.res found below '{root}'.");
-        return archive!;
+        return archive;
     }
 
     private static byte[] ReadPrefix(string path, int count)

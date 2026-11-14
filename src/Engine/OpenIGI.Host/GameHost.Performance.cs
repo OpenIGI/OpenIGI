@@ -30,7 +30,7 @@ public sealed partial class GameHost
                 // camera log had the same hole for the same reason.
                 _logger.Warning(
                     "Benchmark",
-                    FormattableString.Invariant(
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"Managed alloc over {measured} measured frames: {allocated / (1024.0 * 1024.0):0.0} MB, {allocated / (double)measured / 1024.0:0.0} KB/frame; gc {GC.CollectionCount(0) - _benchmarkGcStart.Item1}/{GC.CollectionCount(1) - _benchmarkGcStart.Item2}/{GC.CollectionCount(2) - _benchmarkGcStart.Item3}."));
             }
             RenderPerformanceSnapshot snapshot = new(
@@ -92,12 +92,12 @@ public sealed partial class GameHost
                     over += exceeded ? 1 : 0;
 
                     string against = budget is { } allowance
-                        ? FormattableString.Invariant($"  budget {allowance:0.0} ms{(exceeded ? "  OVER" : string.Empty)}")
+                        ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  budget {allowance:0.0} ms{(exceeded ? "  OVER" : string.Empty)}")
                         : "  (unbudgeted)";
 
                     _logger.Information(
                         "Perf",
-                        FormattableString.Invariant(
+                        string.Create(System.Globalization.CultureInfo.InvariantCulture,
                             $"{timing.Stage,-28} avg {timing.Milliseconds,6:0.000} ms  p95 {timing.P95Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
                 }
 
@@ -105,7 +105,7 @@ public sealed partial class GameHost
                 {
                     _logger.Information(
                         "Perf",
-                        FormattableString.Invariant(
+                        string.Create(System.Globalization.CultureInfo.InvariantCulture,
                             $"  pass {pass.Label,-32} avg {pass.Milliseconds,6:0.000} ms  peak {pass.PeakMilliseconds,7:0.000} ms  ran {pass.FramesRun} frame(s)  [{pass.Stage}]"));
                 }
 
@@ -121,14 +121,14 @@ public sealed partial class GameHost
 
                     _logger.Information(
                         "Perf",
-                        FormattableString.Invariant($"Slowest 1% ({worstFrames} frame(s)): summed GPU avg {worstAverage:0.000} ms."));
+                        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Slowest 1% ({worstFrames} frame(s)): summed GPU avg {worstAverage:0.000} ms."));
 
                     foreach (RenderPassTiming pass in worst)
                     {
                         double usual = overall.GetValueOrDefault(pass.Label);
                         _logger.Information(
                             "Perf",
-                            FormattableString.Invariant(
+                            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                                 $"  worst {pass.Label,-32} {pass.Milliseconds,7:0.000} ms  (usually {usual,6:0.000}, {pass.Milliseconds - usual,+7:0.000})  ran in {pass.FramesRun}/{worstFrames}"));
                     }
                 }
@@ -136,7 +136,7 @@ public sealed partial class GameHost
                 GpuFrameTiming gpu = _device.GpuTiming();
                 _logger.Information(
                     "Perf",
-                    FormattableString.Invariant(
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 60 Hz frame has; {over} stage(s) over budget."));
             }
         }

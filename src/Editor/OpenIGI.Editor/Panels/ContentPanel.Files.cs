@@ -170,7 +170,7 @@ internal sealed partial class ContentPanel
             Replace(node, IlsfWriter.WritePcm(pcm, format.SampleRate, format.Channels, format.BitsPerSample, streamed), write);
             double seconds = pcm.Length / (double)(format.SampleRate * format.Channels * format.BitsPerSample / 8);
             Reported?.Invoke(
-                FormattableString.Invariant($"Imported {node.Name} ({seconds:0.0} s, {format.SampleRate} Hz, {format.Channels} channel(s)) into the project. Reload the mission to hear it."),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Imported {node.Name} ({seconds:0.0} s, {format.SampleRate} Hz, {format.Channels} channel(s)) into the project. Reload the mission to hear it."),
                 false);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or IlsfFormatException or IlffFormatException or InvalidDataException or ArgumentException)

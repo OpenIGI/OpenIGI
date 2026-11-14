@@ -14,6 +14,9 @@ public enum KeyCapStyle
 
     /// <summary>A footer hint: primary text, a slightly stronger border.</summary>
     Footer,
+
+    /// <summary>On a button filled with the accent: ink on amber.</summary>
+    OnAccent,
 }
 
 /// <summary>
@@ -48,15 +51,21 @@ public static class KitDraw
     /// <param name="key">The key's name.</param>
     /// <param name="size">The text size, in design units.</param>
     /// <returns>The cap's size, in pixels.</returns>
-    public static UiVec2 MeasureKeyCap(LayoutContext context, UiTheme theme, string key, float size = 11f)
+    public static UiVec2 MeasureKeyCap(LayoutContext context, UiTheme theme, string key, float size = 0f)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(theme);
+        size = KeyCapSize(theme, size);
         float px = context.Px(size);
         float text = IsArrows(key) ? key.Length * ArrowWidth(px) : theme.Mono.MeasureWidth(key, px);
+        if (!theme.Large)
+        {
+            return new UiVec2(text + context.Px(14f), theme.Mono.LineHeight(px) + context.Px(6f));
+        }
+
         return new UiVec2(
-            text + context.Px(14f),
-            theme.Mono.LineHeight(px) + context.Px(6f));
+            MathF.Max(context.Px(size * 2.2f), text + context.Px(14f)),
+            MathF.Max(context.Px(size * 2f), theme.Mono.LineHeight(px) + context.Px(6f)));
     }
 
     /// <summary>Draws a key cap: a key's name in a hairline box.</summary>
@@ -67,21 +76,53 @@ public static class KitDraw
     /// <param name="style">Header or footer styling.</param>
     /// <param name="size">The text size, in design units.</param>
     /// <returns>The cap's box.</returns>
-    public static UiRect KeyCap(UiPainter painter, UiTheme theme, string key, UiVec2 topLeft, KeyCapStyle style = KeyCapStyle.Footer, float size = 11f)
+    public static UiRect KeyCap(UiPainter painter, UiTheme theme, string key, UiVec2 topLeft, KeyCapStyle style = KeyCapStyle.Footer, float size = 0f)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
         LayoutContext context = painter.Context;
+        size = KeyCapSize(theme, size);
         UiVec2 extent = MeasureKeyCap(context, theme, key, size);
         var box = new UiRect(topLeft.X, topLeft.Y, extent.X, extent.Y);
-        painter.StrokeRect(box, context.Px(1f), UiPalette.White(style == KeyCapStyle.Footer ? 0.22f : 0.18f));
+        if (!theme.Large)
+        {
+            // The small look: an outlined cap, its text set from the left.
+            painter.StrokeRect(box, context.Px(1f), UiPalette.White(style == KeyCapStyle.Footer ? 0.22f : 0.18f));
+            float small = context.Px(size);
+            Bgra32 smallInk = style == KeyCapStyle.Footer ? theme.Text : theme.TextMuted;
+            if (IsArrows(key))
+            {
+                float step = ArrowWidth(small);
+                float at = box.X + context.Px(7f);
+                foreach (char arrow in key)
+                {
+                    DrawArrow(painter, new UiRect(at, box.Y, step, box.Height), arrow, small, smallInk);
+                    at += step;
+                }
+
+                return box;
+            }
+
+            painter.DrawText(theme.Mono, key, new UiVec2(box.X + context.Px(7f), UiRowStyle.CenterY(theme.Mono, small, box)), small, smallInk);
+            return box;
+        }
+
+        // A key: a faint fill, a border that can be seen over any picture, and a heavier foot. On the accent -- a
+        // primary button's own key -- the same in ink.
+        bool onAccent = style == KeyCapStyle.OnAccent;
+        Bgra32 edge = onAccent ? UiPalette.InkAt(0.55f) : UiPalette.White(0.38f);
+        painter.FillRect(box, onAccent ? UiPalette.InkAt(0.08f) : UiPalette.White(0.07f));
+        painter.StrokeRect(box, context.Px(1f), edge);
+        painter.FillRect(new UiRect(box.X, box.Bottom - context.Px(2f), box.Width, context.Px(2f)), edge);
         float px = context.Px(size);
-        Bgra32 ink = style == KeyCapStyle.Footer ? theme.Text : theme.TextMuted;
+        Bgra32 ink = onAccent ? theme.OnAccent : theme.Text;
+        float textWidth = IsArrows(key) ? key.Length * ArrowWidth(px) : theme.Mono.MeasureWidth(key, px);
+        float left = box.X + ((box.Width - textWidth) * 0.5f);
         if (IsArrows(key))
         {
             // The game's fonts have no arrows, so an arrow key's cap draws them: a shaft with its head, one a key.
             float step = ArrowWidth(px);
-            float x = box.X + context.Px(7f);
+            float x = left;
             foreach (char arrow in key)
             {
                 DrawArrow(painter, new UiRect(x, box.Y, step, box.Height), arrow, px, ink);
@@ -94,11 +135,14 @@ public static class KitDraw
         painter.DrawText(
             theme.Mono,
             key,
-            new UiVec2(box.X + context.Px(7f), UiRowStyle.CenterY(theme.Mono, px, box)),
+            new UiVec2(left, UiRowStyle.CenterY(theme.Mono, px, box) - context.Px(0.5f)),
             px,
             ink);
         return box;
     }
+
+    // A cap's text size where the caller names none: 12 units on the large look, 11 on the small.
+    private static float KeyCapSize(UiTheme theme, float size) => size > 0f ? size : theme.Large ? 12f : 11f;
 
     // Whether a key's name is only arrows, which the fonts lack; and the room one arrow takes, at a text size in pixels.
     private static bool IsArrows(string key) => key.Length > 0 && key.All(static c => c is '↑' or '↓' or '←' or '→');

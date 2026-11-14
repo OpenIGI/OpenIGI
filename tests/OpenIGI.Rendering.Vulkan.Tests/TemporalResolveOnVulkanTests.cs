@@ -38,7 +38,7 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
 
         using (vulkan)
         {
-            VulkanRhiDevice device = vulkan!.Rhi;
+            VulkanRhiDevice device = vulkan.Rhi;
 
             using SceneTargetSet targets = new(device, Size, Size);
             using ScreenSpacePasses screen = new(device, framesInFlight: 2);
@@ -90,7 +90,7 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
 
         using (vulkan)
         {
-            VulkanRhiDevice device = vulkan!.Rhi;
+            VulkanRhiDevice device = vulkan.Rhi;
 
             using SceneTargetSet targets = new(device, Size, Size);
             using TemporalResolve resolve = new(device, framesInFlight: 2);

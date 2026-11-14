@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1.Cameras;
+using OpenIGI.Game.Igi1.Player;
 using Xunit;
 
 namespace OpenIGI.Presentation.Tests;

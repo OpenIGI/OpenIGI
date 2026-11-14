@@ -75,5 +75,19 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uReflection",
+      "unit": 0
+    },
+    {
+      "texture": "uDepth",
+      "unit": 1
+    },
+    {
+      "texture": "uNormal",
+      "unit": 2
+    }
+  ]
 }

@@ -70,7 +70,7 @@ internal sealed class SoundPreview : EditorElement
         _pcm = sound.DecodePcm().ToArray();
         _format = new AudioFormat(sound.SampleRate, sound.Channels, 16);
         _duration = sound.Duration.TotalSeconds;
-        Facts = FormattableString.Invariant(
+        Facts = string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"{sound.Duration.TotalSeconds:0.00} s  •  {sound.SampleRate} Hz  •  {(sound.Channels == 1 ? "mono" : $"{sound.Channels} channels")}  •  {(sound.IsAdpcm ? "ADPCM" : "PCM")}");
         BuildPeaks(512);
         return true;

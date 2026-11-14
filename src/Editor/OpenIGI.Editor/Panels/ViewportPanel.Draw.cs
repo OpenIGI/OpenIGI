@@ -1,17 +1,10 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
-using OpenIGI.Editor.Terrain;
 using OpenIGI.Editor.Viewport;
-using OpenIGI.Formats.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Editor;
-using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI;
-using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
@@ -107,7 +100,7 @@ internal sealed partial class ViewportPanel
 
         if (_host.Camera is { } camera)
         {
-            string speed = FormattableString.Invariant($"Camera {camera.Speed:0.#} m/s");
+            string speed = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Camera {camera.Speed:0.#} m/s");
             float width = Theme.SmallFont.MeasureWidth(speed, Theme.SmallTextSize) + Theme.Px(16f);
             UiRect right = new(WorldRect.Right - width - Theme.Px(10f), WorldRect.Y + Theme.Px(10f), width, Theme.ControlHeight);
             EditorDraw.Fill(painter, Theme, right, Theme.Background.WithAlpha(170));
@@ -159,7 +152,7 @@ internal sealed partial class ViewportPanel
             UiRect row = new(list.X, list.Y + (i * rowHeight), list.Width, rowHeight - Theme.Px(4f));
             EditorDraw.Fill(painter, Theme, row, i == _hoveredMission ? Theme.Selection : Theme.Panel);
             EditorDraw.Icon(painter, Theme, KitIcon.Terrain, new UiRect(row.X + Theme.Px(8f), row.Y, Theme.IconSize, row.Height));
-            EditorDraw.Label(painter, Theme, FormattableString.Invariant($"{mission.Id}.  {_host.MissionName(mission)}"), new UiRect(row.X + Theme.Px(32f), row.Y, row.Width - Theme.Px(40f), row.Height), Theme.Text);
+            EditorDraw.Label(painter, Theme, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{mission.Id}.  {_host.MissionName(mission)}"), new UiRect(row.X + Theme.Px(32f), row.Y, row.Width - Theme.Px(40f), row.Height), Theme.Text);
         }
 
         painter.PopClip();

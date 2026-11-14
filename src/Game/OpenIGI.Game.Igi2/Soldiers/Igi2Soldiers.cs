@@ -2,13 +2,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Ai;
-using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.ViewModel;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Soldiers;
@@ -98,6 +95,12 @@ public sealed class Igi2Soldiers
         Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in levelRoot.Descendants().OfType<Igi2HumanSoldierTask>())
         {
+            // Claimed by another game, whose body stands for it: it is given none.
+            if (task.Driver is not null)
+            {
+                continue;
+            }
+
             string wornModel = worn is not null && worn.TryGetValue(task, out string? face) ? face : task.Model;
             Formats.World.MefModel? model = models(wornModel);
             Igi2BoneHierarchy? rig = model?.BoneHierarchy;

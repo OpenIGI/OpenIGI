@@ -1,6 +1,5 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.TestSupport;

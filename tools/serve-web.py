@@ -101,14 +101,26 @@ def main():
     parser.add_argument("game")
     parser.add_argument("--port", type=int, default=8780)
     parser.add_argument("--app", default=DEFAULT_APP)
+    parser.add_argument("--host", default="127.0.0.1", help="the address to listen on; 0.0.0.0 for a phone on the same network")
+    parser.add_argument("--cert", help="a certificate (PEM) to serve over HTTPS with; a phone has WebGPU only over HTTPS")
+    parser.add_argument("--key", help="the certificate's private key (PEM)")
     options = parser.parse_args()
 
     handler = functools.partial(Handler, app=options.app, game=options.game)
     # The page reads an installation's files many at a time, and the listen backlog's default of five
     # refused the overflow on Windows: a load that failed partway with the connection refused.
     http.server.ThreadingHTTPServer.request_queue_size = 256
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", options.port), handler)
-    print(f"http://127.0.0.1:{options.port}/?data=/data/")
+    server = http.server.ThreadingHTTPServer((options.host, options.port), handler)
+    scheme = "http"
+    if options.cert:
+        import ssl
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(options.cert, options.key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+
+    print(f"{scheme}://{options.host}:{options.port}/?data=/data/")
     server.serve_forever()
 
 

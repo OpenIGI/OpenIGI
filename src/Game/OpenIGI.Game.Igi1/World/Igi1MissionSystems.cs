@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Tasks;
@@ -38,7 +39,7 @@ public static class Igi1MissionSystems
             {
                 game.World.LevelRoot = b.LevelRoot;
                 game.World.MissionId = b.Id;
-                b.MissionText = game.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
+                b.MissionText = game.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Kept<OpenIGI.Game.World.MissionObjectiveRuntime>());
             }))
             .InsertBefore(MissionSystemNames.TestCaptures, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Objectives, b =>
                 game.Setup.BuildObjectives(
@@ -48,7 +49,7 @@ public static class Igi1MissionSystems
                     made =>
                     {
                         made.PartnerPlayers = game.Tick.PartnerAreaPlayers;
-                        b.Objectives = made;
+                        b.Keep(made);
                         BringComputerUp(game, b, made, host);
                     })))
             .InsertBefore(MissionSystemNames.SceneView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Vehicles, b =>
@@ -114,6 +115,23 @@ public static class Igi1MissionSystems
                 {
                     game.World.EventWatch = new Igi1EventWatch(game.World, events);
                     events.Raise(new LevelLoaded(GameTitle.Igi1, b.Id));
+                }
+            }))
+            .Add(new LevelSystem<MissionLevelBuild>(MissionSystemNames.Saves, _ =>
+            {
+                // A level starts with its saves unused; a save read onto it brings its own counts.
+                game.World.SavesUsed = 0;
+                game.World.GameLoads = 0;
+                game.Saves = new Saves.Igi1MissionSaves(game.World, game.SaveSession, host, game.MakeReadyForSave);
+
+                // A save game read onto this level may put back a gun or a box of rounds taken since: its task stays to come
+                // back to. Not in a session with other players, whose level keeps no saves of its own.
+                bool kept = game.SaveGames is not null;
+                game.World.GunPickups?.WithdrawsTakenTasks = kept;
+                game.World.GenericPickups?.WithdrawsTakenTasks = kept;
+                if (game.Saves.ApplyPending())
+                {
+                    host.Logger.Information("Saves", "The level was put back as a save game kept it.");
                 }
             }));
     }

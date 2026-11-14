@@ -123,4 +123,10 @@ public interface IDisplayDevice
     void DrawScopeGlints(ReadOnlySpan<ScopeGlint> glints, float seconds)
     {
     }
+
+    /// <summary>Turns the picture as it stands into the remastered computer's satellite feed (<c>Ui/MapFeed.slang</c>).</summary>
+    /// <param name="feed">The feed's look and how far it has come up.</param>
+    /// <returns>Whether the feed was drawn; a device that cannot read its own frame draws none.</returns>
+    /// <remarks><b>Not retail</b>. The frame is copied for it, so glass drawn afterwards should ask for the frame again.</remarks>
+    bool DrawMapFeed(in MapFeedSettings feed) => false;
 }

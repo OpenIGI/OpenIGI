@@ -1,5 +1,3 @@
-using OpenIGI.Game.Config;
-
 namespace OpenIGI.Game.Igi1.Config;
 
 /// <summary>

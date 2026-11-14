@@ -25,13 +25,14 @@ public sealed class MapComputerGate
     /// <summary>Initializes a new instance of the <see cref="MapComputerGate"/> class.</summary>
     /// <param name="levelRoot">The level whose HumanPlayerInput carries the expression.</param>
     /// <param name="variables">The level's exported variables, which the expression reads.</param>
-    public MapComputerGate(GameTask levelRoot, ScriptVarRegistry variables)
+    /// <param name="expressions">The level's expressions, or <see langword="null"/> to compile with ones of its own.</param>
+    public MapComputerGate(GameTask levelRoot, ScriptVarRegistry variables, LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         LevelRoot = levelRoot;
         _input = FindPlayerInput(levelRoot);
-        _expressions = new LevelExpressionRuntime(variables);
+        _expressions = expressions ?? new LevelExpressionRuntime(variables);
     }
 
     /// <summary>Gets the level this gate reads.</summary>

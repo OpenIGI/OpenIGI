@@ -66,8 +66,8 @@ public sealed class Igi1CoopPairTests
 
         // A level area that counts the player's team, empty, and far from where the host stands.
         Vector3d hostAt = pair.Host!.World.Player!.Body.Position;
-        DeclaredTask[] areas = [.. pair.Host.World.LevelRoot!.Descendants().OfType<DeclaredTask>().Where(static t => t.Type.Name == "AreaActivate")];
-        DeclaredTask? area = areas
+        GameTask[] areas = [.. pair.Host.World.LevelRoot!.Descendants().Where(static t => t.Type.Name == "AreaActivate")];
+        GameTask? area = areas
             .Where(t => Text(t, "Criteria") is "CRITERIA_HUMAN0" && At(t) is not null && Count(pair.Host, $"AreaActivate_{t.Id}.nActive") == 0)
             .OrderByDescending(t => Vector3d.Distance(hostAt, At(t)!.Value))
             .FirstOrDefault();
@@ -110,7 +110,7 @@ public sealed class Igi1CoopPairTests
         Assert.False(pair.Joiner.World.Cutscenes!.CanBreak);
 
         // The joiner can't break it: the scene is the host's to skip.
-        pair.Joiner.World.Cutscenes!.RequestBreak();
+        pair.Joiner.World.Cutscenes.RequestBreak();
         pair.RunUntil(() => false, 5);
         Assert.Equal(1204, pair.Joiner.World.Cutscenes.ActiveScene?.Id);
 
@@ -159,8 +159,8 @@ public sealed class Igi1CoopPairTests
         Assert.True(pair.RunUntil(() => pair.Joiner.World.LevelRoot is { } now && !ReferenceEquals(now, firstJoiner), 1500) >= 0, "the joiner never followed");
 
         // Both in the new level, the joiner's player the host's partner there, and walking it moves it on the host.
-        Assert.True(pair.RunUntil(() => pair.Host!.World.NetworkPlayers.Count == 1 && pair.Client.Session?.Latest is not null, 1500) >= 0, "the joiner never came into the host's new level");
-        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Assert.True(pair.RunUntil(() => pair.Host.World.NetworkPlayers.Count == 1 && pair.Client.Session?.Latest is not null, 1500) >= 0, "the joiner never came into the host's new level");
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
         Vector3d from = partner.Player.Body.Position;
         Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
         pair.RunUntil(() => false, 300);
@@ -218,9 +218,9 @@ public sealed class Igi1CoopPairTests
                         heard = frame;
                     }
 
-                    Watch(pair.Host!, hostLevel, ref host);
-                    Watch(pair.Joiner!, joinerLevel, ref joiner);
-                    return host.Began >= 0 && joiner.Began >= 0 && pair.Host!.World.NetworkPlayers.Count == 1;
+                    Watch(pair.Host, hostLevel, ref host);
+                    Watch(pair.Joiner, joinerLevel, ref joiner);
+                    return host.Began >= 0 && joiner.Began >= 0 && pair.Host.World.NetworkPlayers.Count == 1;
                 },
                 3000) >= 0,
             $"the two never both began mission 2 (host {host}, joiner {joiner}, joiner in {pair.Joiner.World.MissionId})");
@@ -255,7 +255,7 @@ public sealed class Igi1CoopPairTests
 
         // The joiner walks over it: on the host its player has the gun and the host's doesn't; on the joiner, likewise.
         Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
-        bool hostHad = pair.Host.World.Player!.Weapons!.HasWeapon(dropped.Weapon.WeaponId);
+        bool hostHad = pair.Host.World.Player.Weapons!.HasWeapon(dropped.Weapon.WeaponId);
         partner.Player.Body.Position = dropped.Position;
         pair.Joiner.World.Player!.Body.Position = dropped.Position;
         Assert.True(pair.RunUntil(() => dropped.IsCollected, 30) >= 0, "the partner never took the gun on the host");
@@ -405,15 +405,13 @@ public sealed class Igi1CoopPairTests
 
             // And for one whose health is made afterwards -- a generator's replacement, a soldier a script brings in.
             Game.Igi1.Player.SoldierView later = soldiers.SoldierViews.First(static s => !s.IsDead);
-            object context = typeof(Game.Igi1.Ai.SoldierSimulation)
-                .GetField("_context", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(soldiers)!;
-            var healths = (System.Collections.IDictionary)context.GetType().GetProperty("Health")!.GetValue(context)!;
-            healths.Remove(later);
+            // A body carries its own health: taken away, the next asked for is made afresh.
+            typeof(Game.Igi1.Player.SoldierView).GetProperty("Health")!.SetValue(later, null);
             Game.Player.HumanHealth fresh = soldiers.HealthOf(later);
             Assert.Equal(fresh.BaseMaximumHealth * 2.5f, fresh.MaximumHealth, 3);
 
             // The players keep their own.
-            Assert.Equal(pair.Host.World.PlayerHealth.BaseMaximumHealth, pair.Host.World.PlayerHealth.MaximumHealth);
+            Assert.Equal(pair.Host.World.PlayerLife.Health.BaseMaximumHealth, pair.Host.World.PlayerLife.Health.MaximumHealth);
             Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
             Assert.Equal(partner.Health.BaseMaximumHealth, partner.Health.MaximumHealth);
         }
@@ -748,7 +746,7 @@ public sealed class Igi1CoopPairTests
         }
 
         Assert.True(clear is not null, "no way from the spawn carries a knock clear");
-        Stand(clear!.Value);
+        Stand(clear.Value);
         pair.RunUntil(() => false, 60);
 
         // Rounds a few ticks apart, each knocking the partner along the floor on the host: the host's own, with friendly fire
@@ -800,7 +798,7 @@ public sealed class Igi1CoopPairTests
         // match stood still for every player, and a joined game fell behind its server.
         using Igi1CoopPair pair = Joined();
         Game.Igi1.Player.PlayerCamera host = pair.Host!.World.Player!;
-        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
         pair.RunUntil(() => false, 30);
 
         // The host's menu up (as Escape brings it up), the host still holding forward.
@@ -1128,10 +1126,10 @@ public sealed class Igi1CoopPairTests
     private static int Count(Igi1Gameplay game, string variable) =>
         game.World.Soldiers!.ScriptVariables!.TryRead(variable, out QvmValue value) ? value.ToInt32() : -1;
 
-    private static Vector3d? At(DeclaredTask task) => task.TryGetValue("Position", out object? p) && p is Vector3d v ? v : null;
+    private static Vector3d? At(GameTask task) => task.TryGetScriptValue("Position", out object? p) && p is Vector3d v ? v : null;
 
-    private static string Text(DeclaredTask task, string name) => task.TryGetValue(name, out object? v) ? v?.ToString() ?? string.Empty : string.Empty;
+    private static string Text(GameTask task, string name) => task.TryGetScriptValue(name, out object? v) ? v?.ToString() ?? string.Empty : string.Empty;
 
-    private static string Describe(DeclaredTask task) =>
-        $"{task.Id}: Position={(task.TryGetValue("Position", out object? p) ? $"{p?.GetType().Name}:{p}" : "missing")} Criteria={(task.TryGetValue("Criteria", out object? c) ? $"{c?.GetType().Name}:{c}" : "missing")}";
+    private static string Describe(GameTask task) =>
+        $"{task.Id}: Position={(task.TryGetScriptValue("Position", out object? p) ? $"{p?.GetType().Name}:{p}" : "missing")} Criteria={(task.TryGetScriptValue("Criteria", out object? c) ? $"{c?.GetType().Name}:{c}" : "missing")}";
 }

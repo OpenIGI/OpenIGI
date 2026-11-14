@@ -1,4 +1,3 @@
-using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;

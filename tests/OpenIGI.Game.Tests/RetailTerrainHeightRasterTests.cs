@@ -7,7 +7,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -71,6 +70,7 @@ public sealed class RetailTerrainHeightRasterTests(ITestOutputHelper output)
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Scan(fileSystem, resources, loop.Natives);

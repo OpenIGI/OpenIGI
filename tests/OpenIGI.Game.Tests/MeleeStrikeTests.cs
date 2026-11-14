@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;

@@ -122,4 +122,88 @@ public static class UiScale
         float grown = 1f + (MathF.Max(0f, screenHeight - 1440f) / 1440f);
         return Math.Clamp(MathF.Round(grown * 4f) / 4f, 1f, 2f);
     }
+
+    /// <summary>The smallest the menus are drawn, as a share of their authored 1080-line size, where the screen has room.</summary>
+    public const float MenuReadableScale = 0.85f;
+
+    /// <summary>The narrowest the menus' canvas is made to keep them readable, in authored units: a 4:3 screen's.</summary>
+    public const float MenuNarrowestWidth = 1440f;
+
+    /// <summary>Gets how much larger than in proportion to the screen the menus are drawn, so they can be read on a small one.</summary>
+    /// <param name="screenWidth">The screen's width in pixels.</param>
+    /// <param name="screenHeight">The screen's height in pixels.</param>
+    /// <returns>
+    /// One on a screen of 918 lines or more, and on one with no size. Below that, the factor that brings the menus
+    /// up to <see cref="MenuReadableScale"/> of their authored size -- or as near it as leaves their canvas
+    /// <see cref="MenuNarrowestWidth"/> units wide, and never less than one.
+    /// </returns>
+    /// <remarks>
+    /// The menus are authored on a 1080-line canvas and scaled with the screen's height, which on a 720-line
+    /// laptop makes 17-unit body text 11 pixels tall and an 11-unit caption 7. Drawing them larger costs canvas:
+    /// at the floor a 1280 by 720 screen is 1506 by 847 units, which the pages reflow and scroll within. The
+    /// width is held to what a 4:3 screen already gives them, the narrowest they are laid out for, so a
+    /// 1024 by 768 screen is left as it was.
+    /// </remarks>
+    public static float MenuBoost(float screenWidth, float screenHeight) => MenuBoost(screenWidth, screenHeight, 1f);
+
+    /// <summary>Gets how much larger than in proportion to the screen the menus are drawn, on a display of a given pixel density.</summary>
+    /// <param name="screenWidth">The screen's width in its own pixels.</param>
+    /// <param name="screenHeight">The screen's height in its own pixels.</param>
+    /// <param name="pixelDensity">How many of the screen's pixels there are to a pixel as the person sees it: 3 on most phones.</param>
+    /// <returns>The factor; never less than one but on a compact screen taller than it is wide.</returns>
+    /// <remarks>
+    /// A phone's screen is 2532 by 1170 of its own pixels and the size of a hand. Counted in those, it is a display
+    /// larger than a desktop monitor and wants no enlargement, and its menus came out a third the size they could
+    /// be read at. Counted in the pixels a person sees -- 844 by 390 -- it is the small screen it is, and the menus are
+    /// brought up to <see cref="MenuReadableScale"/> of their authored size in those, or as near as their narrowest canvas
+    /// allows.
+    /// </remarks>
+    public static float MenuBoost(float screenWidth, float screenHeight, float pixelDensity)
+    {
+        if (screenWidth <= 0f || screenHeight <= 0f)
+        {
+            return 1f;
+        }
+
+        float density = pixelDensity > 0f ? pixelDensity : 1f;
+        float natural = screenHeight / 1080f;
+        if (MenuIsCompact(screenWidth, screenHeight, density))
+        {
+            // The compact pages are laid out in the pixels the person sees: a unit is one of them.
+            return density / natural;
+        }
+
+        float wanted = MathF.Min(MenuReadableScale * density, screenWidth / MenuNarrowestWidth);
+        return wanted > natural ? wanted / natural : 1f;
+    }
+
+    /// <summary>The width, in pixels as the person sees them, under which the menus take their compact layout.</summary>
+    public const float MenuCompactWidth = 1000f;
+
+    /// <summary>The height, in pixels as the person sees them, under which the menus take their compact layout.</summary>
+    public const float MenuCompactHeight = 560f;
+
+    /// <summary>Gets a value indicating whether a screen is one the menus lay out compactly: a phone, or a small window.</summary>
+    /// <param name="screenWidth">The screen's width in its own pixels.</param>
+    /// <param name="screenHeight">The screen's height in its own pixels.</param>
+    /// <param name="pixelDensity">How many of the screen's pixels there are to a pixel as the person sees it.</param>
+    /// <returns><see langword="true"/> for a screen narrower than <see cref="MenuCompactWidth"/> or shorter than <see cref="MenuCompactHeight"/> as seen.</returns>
+    /// <remarks>
+    /// A phone on its side is 844 by 390 as its owner sees it. The desktop pages drawn there at any size that fits are
+    /// too small to read or to touch, so such a screen has pages of its own: a rail of sections down the left, one
+    /// column, everything a finger wide. They are authored in seen pixels, which is what <see cref="MenuBoost(float, float, float)"/>
+    /// makes a unit there.
+    /// </remarks>
+    public static bool MenuIsCompact(float screenWidth, float screenHeight, float pixelDensity)
+    {
+        float density = pixelDensity > 0f ? pixelDensity : 1f;
+        return screenWidth / density < MenuCompactWidth || screenHeight / density < MenuCompactHeight;
+    }
+
+    /// <summary>The smallest the menus' text is drawn, in pixels as the person sees them.</summary>
+    /// <remarks>
+    /// Body text is left the size the scale gives it; this is for the captions, which on a laptop drawn at
+    /// <see cref="MenuReadableScale"/> would come out a pixel or two under what reads comfortably.
+    /// </remarks>
+    public const float MenuSmallestTextPixels = 11f;
 }

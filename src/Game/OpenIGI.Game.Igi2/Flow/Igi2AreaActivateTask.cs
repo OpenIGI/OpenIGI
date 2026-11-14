@@ -1,9 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -108,74 +106,41 @@ public static class Igi2AreaCriteria
 /// <c>CRITERIA_HUMANAI_SIDEKICK</c> each human whose mind is a side-kick's, dead or alive (<c>HumanAI_AreaActivateSideKickCB</c>).
 /// </para>
 /// </remarks>
-public sealed partial class Igi2AreaActivateTask : Igi2Task
+public sealed partial class Igi2AreaActivateTask : OpenIGI.Game.Flow.AreaActivateTask
 {
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "AreaActivate";
-
     private Igi2OrientedBox _box;
-    private int? _mask;
-    private int _active;
     private int _clientId;
 
-    /// <summary>Gets or sets the box's centre.</summary>
-    [ScriptParam(ScriptParamType.ObjectPos, "Position")]
-    public Vector3d Position { get; set; }
-
-    /// <summary>Gets or sets the box's orientation.</summary>
-    [ScriptParam(ScriptParamType.Real32x9, "Orientation")]
-    public Vector3f Orientation { get; set; }
-
-    /// <summary>Gets or sets the box's size along its three axes.</summary>
-    [ScriptParam(ScriptParamType.Real32x3, "Dimensions")]
-    public Vector3f Dimensions { get; set; }
-
-    /// <summary>Gets or sets the script naming what it counts.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Criteria")]
-    public string Criteria { get; set; } = string.Empty;
-
-    /// <summary>Gets the number counted inside, <c>nActive</c>.</summary>
-    public int Active => _active;
-
-    /// <summary>Gets its criteria's mask, read from <see cref="Criteria"/> on its first tick, or nought before.</summary>
-    public int Mask => _mask ?? 0;
-
-    /// <summary>Gets or sets a value indicating whether it no longer counts, <c>+0xBF</c> (<c>AreaActivateQTask_DisableDetection</c>).</summary>
+    /// <summary>Gets or sets a value indicating whether the count is held as it is, which a network client's is.</summary>
     public bool IsDetectionDisabled { get; set; }
 
-    /// <summary>Gets or sets the humans of the level, <c>Human_ptQTaskList</c>, in its order.</summary>
+    /// <summary>Gets or sets the level's humans, in <c>Human_ptQTaskList</c>'s order.</summary>
     public IReadOnlyList<IIgi2AreaOccupant> Humans { get; set; } = [];
 
-    /// <summary>Gets the level's players: the original's task 0 when it is the player, a roster of one.</summary>
+    /// <summary>Gets the players the player's criterion counts.</summary>
     public PlayerRoster<IIgi2AreaOccupant> Players { get; } = new();
 
-    /// <summary>Gets or sets where the game screen's camera stands, or <see langword="null"/> while there is none.</summary>
+    /// <summary>Gets or sets what reads the game screen's camera.</summary>
     public Func<Vector3d?> CameraPosition { get; set; } = static () => null;
 
-    /// <summary>Gets or sets the level's vehicles, <c>GameFunctions_ptVehicleQTaskList</c>, each by where it is.</summary>
+    /// <summary>Gets or sets what reads where the level's cars are.</summary>
     public Func<IEnumerable<Vector3d>> VehiclePositions { get; set; } = static () => [];
 
-    /// <summary>
-    /// Readies the box, <c>AreaActivateQTask_UpdateInternalDataHandler</c> (<c>igi2 0x592CA0</c>): its frame from its angles and its
-    /// half dimensions. Its bounds for the world's object tree are not needed here.
-    /// </summary>
-    public void Prepare() => _box = Igi2OrientedBox.From(Position, Orientation, Dimensions);
-
-    /// <summary>Whether a point is inside the box, <c>AreaActivateQTask_IsInsideArea</c> (<c>igi2 0x593190</c>).</summary>
-    /// <param name="point">The point.</param>
-    /// <returns><see langword="true"/> within half the dimensions along each of the box's axes, edges included.</returns>
-    public bool IsInside(Vector3d point) => _box.IsInside(point, Position);
+    /// <inheritdoc/>
+    /// <remarks>The sequel's arithmetic: its rotation and its products cut to 24 bits.</remarks>
+    public override void Prepare() => _box = Igi2OrientedBox.From(Position, Orientation, Dimensions);
 
     /// <inheritdoc/>
-    public override void Run(Igi2LevelRun level)
-    {
-        ArgumentNullException.ThrowIfNull(level);
+    public override bool IsInside(Vector3d point) => _box.IsInside(point, Position);
 
-        // Script_ParseLineInt32 reads the criteria once its parameters are; here once the level's constants are at hand.
-        _mask ??= Criteria.Length == 0
-            ? 0
-            : (int)LevelExpression.Truncate(level.Evaluate(Igi2LevelExpressions.Create(Criteria, Name, level.Natives)));
-        int mask = _mask.Value;
+    /// <inheritdoc/>
+    /// <remarks>The area carries its own occupants, so any run of the title's counts.</remarks>
+    protected override bool CountsUnder(OpenIGI.Game.Level.LevelRun level) => true;
+
+    /// <inheritdoc/>
+    /// <remarks>Each criterion of the mask counted over the area's own occupants; a client's count is left as its server sent it.</remarks>
+    protected override void Count(OpenIGI.Game.Level.LevelRun level, int mask)
+    {
         int sum = 0;
         for (int criterion = 0; criterion < Igi2AreaCriteria.Count; criterion++)
         {
@@ -188,22 +153,17 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
 
         if (!IsDetectionDisabled)
         {
-            _active = sum;
+            Active = sum;
         }
-
-        level.RunChildren(this);
     }
 
     /// <inheritdoc/>
+    /// <remarks>Beside the count, I.G.I. 2 exports <c>nClientID</c>.</remarks>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
-        ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "nActive", () => _active, value => _active = value);
+        base.OnExportVars(variables);
         variables.BindInt(this, "nClientID", () => _clientId, value => _clientId = value);
     }
-
-    /// <inheritdoc/>
-    protected override void OnParsed() => Prepare();
 
     private int Count(int criterion, int mask)
     {

@@ -1,5 +1,4 @@
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -22,11 +21,11 @@ public sealed class RetailIgi2LevelTimerTests
     public void A_timer_counts_while_its_script_runs_it()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
-        Igi2LevelTimerTask hack = m.Tree.OfType<Igi2LevelTimerTask>().Single(static t => t.Id == Hack);
-        Igi2LevelTimerTask guards = m.Tree.OfType<Igi2LevelTimerTask>().Single(static t => t.Id == Guards);
+        OpenIGI.Game.Flow.LevelTimerTask hack = m.Tree.OfType<OpenIGI.Game.Flow.LevelTimerTask>().Single(static t => t.Id == Hack);
+        OpenIGI.Game.Flow.LevelTimerTask guards = m.Tree.OfType<OpenIGI.Game.Flow.LevelTimerTask>().Single(static t => t.Id == Guards);
         Assert.Equal(("EditVariable_271.nValue == 1", false), (hack.OnScript, hack.InitialRun));
         Assert.Equal("EditVariable_271.nValue > 1 || this.isRun", guards.OnScript);
-        Igi2EditVariableTask variable = m.Tree.OfType<Igi2EditVariableTask>().Single(static v => v.Id == 271);
+        OpenIGI.Game.Flow.EditVariableTask variable = m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 271);
 
         Tick(m, hack, guards, 3);
         Assert.Equal((false, 0, false, 0), (hack.IsRun, hack.Tick, guards.IsRun, guards.Tick));
@@ -46,7 +45,7 @@ public sealed class RetailIgi2LevelTimerTests
     }
 
     // Each timer is run on its own, without the rest of the level, so nothing else moves the variable it reads.
-    private static void Tick(RetailIgi2Mission1 m, Igi2LevelTimerTask hack, Igi2LevelTimerTask guards, int ticks)
+    private static void Tick(RetailIgi2Mission1 m, OpenIGI.Game.Flow.LevelTimerTask hack, OpenIGI.Game.Flow.LevelTimerTask guards, int ticks)
     {
         for (int tick = 0; tick < ticks; tick++)
         {

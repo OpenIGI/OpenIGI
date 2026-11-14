@@ -51,6 +51,12 @@ public sealed class TaskType
     /// </remarks>
     public bool IsDeclarationOnly { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether the class that makes this type takes whatever parameters level data declares for it,
+    /// rather than a list of its own.
+    /// </summary>
+    public bool TakesDeclaredParameters { get; internal set; }
+
     /// <summary>Gets the script parameters in wire order.</summary>
     public IReadOnlyList<TaskParameter> Parameters { get; internal set; }
 

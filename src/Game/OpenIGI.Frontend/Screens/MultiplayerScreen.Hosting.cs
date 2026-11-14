@@ -2,7 +2,6 @@ using System.Globalization;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
-using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -65,7 +64,7 @@ public sealed partial class MultiplayerScreen
         if (missions.Count > 0)
         {
             _mission = Math.Clamp(_mission, 0, missions.Count - 1);
-            OptionCycler mission = Row(theme, HostingCoop ? "Mission" : "Map", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission);
+            OptionCycler mission = Row(theme, HostingCoop ? "Mission" : "Map", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number:00} {m.Name}"))], _mission);
             mission.SelectionChanged += index =>
             {
                 _mission = index;
@@ -187,16 +186,16 @@ public sealed partial class MultiplayerScreen
         };
         foreach ((string label, string value) in rules)
         {
-            var line = new Grid { Margin = new Thickness(28f, 0f), Height = 66f };
+            var line = new Grid { Margin = new Thickness(ShellSizes.IsCompact(theme) ? 16f : 28f, 0f), Height = ShellSizes.IsCompact(theme) ? 48f : 64f };
             line.RowDefinitions.Add(GridLength.Star);
             line.ColumnDefinitions.Add(GridLength.Star);
             line.ColumnDefinitions.Add(GridLength.Auto);
-            line.Add(new Label(theme.Body, label, 17f, theme.TextLabel) { VerticalAlignment = VerticalAlignment.Center }, 0, 0);
-            line.Add(new Label(theme.Heading, value.ToUpperInvariant(), 20f, theme.Text) { VerticalAlignment = VerticalAlignment.Center }, 0, 1);
+            line.Add(new Label(theme.Body, label, theme.BodyTextSize, theme.TextLabel) { VerticalAlignment = VerticalAlignment.Center }, 0, 0);
+            line.Add(new Label(theme.Heading, value.ToUpperInvariant(), 18f, theme.Text) { VerticalAlignment = VerticalAlignment.Center }, 0, 1);
             column.AddChild(line);
         }
 
-        column.AddChild(new Label(theme.Body, "The mode's rules as it plays them; a dedicated server's own cfg can change them.", 14f, theme.TextMuted) { Wrap = true, Margin = new Thickness(28f, 8f, 28f, 0f) });
+        column.AddChild(new Label(theme.Body, "The mode's rules as it plays them; a dedicated server's own cfg can change them.", 15f, theme.TextSecondary) { Wrap = true, Margin = new Thickness(ShellSizes.IsCompact(theme) ? 16f : 28f, 8f, 28f, 0f) });
         return FormPanel(theme, column);
     }
 
@@ -214,7 +213,12 @@ public sealed partial class MultiplayerScreen
         MissionInfo? mission = missions.Count > 0 ? missions[Math.Clamp(_mission, 0, missions.Count - 1)] : null;
         string name = mission?.Name ?? "No missions";
         var top = new StackPanel { Orientation = Orientation.Vertical };
-        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, $"Mission · {name}", 220f) { Margin = new Thickness(20f, 20f, 20f, 0f) });
+        top.AddChild(new ColourEdge { Colour = ModeLook.Colour(HostMode) });
+        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, HostingCoop && mission is not null ? string.Create(CultureInfo.InvariantCulture, $"Mission {mission.Number:00}") : HostingCoop ? "Mission" : "Map", name, Size == ShellSize.Compact ? 110f : 260f)
+        {
+            Mode = HostMode,
+            Picture = mission is null ? null : Context.Host.MissionPicture(mission.Id),
+        });
 
         if (coop.ServerStatus is { } running)
         {
@@ -232,22 +236,21 @@ public sealed partial class MultiplayerScreen
             return Panel(theme, body, side: true);
         }
 
-        var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(24f, 22f, 24f, 0f) };
-        about.AddChild(new Eyebrow(theme, "Your game"));
-        about.AddChild(new Label(theme.Heading, name.ToUpperInvariant(), 38f, theme.TextBright) { Wrap = true });
-        about.AddChild(Body(theme, HostSummary(), theme.TextLabel, 16f));
+        var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(20f, 20f, 20f, 0f) };
+        about.AddChild(new Eyebrow(theme, "Your game") { TextSize = 14f, Color = theme.TextMuted });
+        about.AddChild(Body(theme, HostSummary(), theme.Text, 17f));
         top.AddChild(about);
 
         {
             int going = Parties?.Party is { Code: not null } party ? party.Members.Count : 1;
             int most = HostingCoop ? 4 : Coop?.CanHostServer == true && _runsOn == 1 ? 32 : 16;
-            var coming = new Grid { Margin = new Thickness(24f, 16f, 24f, 0f) };
+            var coming = new Grid { Margin = new Thickness(20f, 14f, 20f, 0f) };
             coming.RowDefinitions.Add(GridLength.Auto);
             coming.ColumnDefinitions.Add(GridLength.Star);
             coming.ColumnDefinitions.Add(GridLength.Auto);
-            coming.Add(new Label(theme.Body, "Party joins automatically", 15f, theme.TextSecondary), 0, 0);
-            coming.Add(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{going}/{most}"), 15f, theme.Text), 0, 1);
-            top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.07f), Margin = new Thickness(24f, 16f, 24f, 0f) });
+            coming.Add(new Label(theme.Body, "Your party joins automatically", 15f, theme.TextSecondary), 0, 0);
+            coming.Add(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{going} / {most}"), 15f, theme.Text), 0, 1);
+            top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.12f), Margin = new Thickness(20f, 16f, 20f, 0f) });
             top.AddChild(coming);
         }
 
@@ -255,7 +258,6 @@ public sealed partial class MultiplayerScreen
         bool dedicated = coop.CanHostServer && _runsOn == 1;
         var host = new PrimaryAction(theme, "Host")
         {
-            TitleSize = 46f,
             Subtitle = $"{(dedicated ? "DEDICATED" : "THIS GAME")} · {Listings[_listing].ToUpperInvariant()}",
             IsEnabled = mission is not null,
             Margin = new Thickness(20f, 0f, 20f, 20f),
@@ -318,8 +320,9 @@ public sealed partial class MultiplayerScreen
     // A form panel's column, its group's name at the top.
     private static StackPanel FormColumn(UiTheme theme, string title)
     {
-        var column = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0f, 28f, 0f, 20f) };
-        column.AddChild(GroupTitle(theme, title, new Thickness(28f, 0f, 28f, 12f)));
+        bool compact = ShellSizes.IsCompact(theme);
+        var column = new StackPanel { Orientation = Orientation.Vertical, Margin = compact ? new Thickness(0f, 0f, 0f, 4f) : new Thickness(8f, 0f, 8f, 16f) };
+        column.AddChild(GroupTitle(theme, title, compact ? new Thickness(16f, 12f, 16f, 4f) : new Thickness(20f, 28f, 20f, 14f)));
         return column;
     }
 
@@ -333,5 +336,5 @@ public sealed partial class MultiplayerScreen
 
     // A form's line: its label on the left, its value between arrows on the right.
     private static OptionCycler Row(UiTheme theme, string label, IEnumerable<string> options, int selected, string tooltip = "") =>
-        new(theme, label, options, selected) { Inline = true, ContentWidth = 260f, Tooltip = tooltip, Margin = new Thickness(28f, 4f) };
+        new(theme, label, options, selected) { Inline = true, ContentWidth = 260f, Tooltip = tooltip };
 }

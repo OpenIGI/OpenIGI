@@ -213,7 +213,7 @@ public sealed class RetailIgi2ModelTableTests
 
         Assert.True(table.TryResolveMesh(OpenIGI.Game.World.ExplosionFireBall.Model, out _));
         Assert.True(table.TryResolveTexture(OpenIGI.Game.World.ExplosionFireBall.Model, 0, out string? first), "The FireBall names no texture.");
-        Assert.Matches("[0-9]{3}$", first!);
+        Assert.Matches("[0-9]{3}$", first);
     }
 
     /// <summary>

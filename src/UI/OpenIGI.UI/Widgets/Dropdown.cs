@@ -3,6 +3,7 @@ using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 
 namespace OpenIGI.UI.Widgets;
 
@@ -177,6 +178,20 @@ public class Dropdown : Control
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
+        if (LargeRow)
+        {
+            // A row of the large look: an arrow a thumb can take at either end of a control of one width, so the
+            // values of a column of rows stand under one another.
+            float box = context.Px(44f);
+            float control = MathF.Min(context.Px(Theme.BodyTextSize < 18f ? 196f : 248f), contentRect.Width * 0.55f);
+            float edge = contentRect.Right - context.Px(Theme.RowInset) + context.Px(8f);
+            float top = contentRect.Center.Y - (box * 0.5f);
+            _previousRect = new UiRect(edge - control, top, box, box);
+            _nextRect = new UiRect(edge - box, top, box, box);
+            _valueRect = new UiRect(_previousRect.Right, contentRect.Y, MathF.Max(0f, _nextRect.X - _previousRect.Right), contentRect.Height);
+            return;
+        }
+
         float chevron = context.Px(ChevronBoxUnits);
         float valueWidth = ValueWidth(context);
         float right = Style == DropdownStyle.Compact ? contentRect.Right - context.Px(8f) : contentRect.Right - context.Px(UiRowStyle.Inset);
@@ -207,15 +222,22 @@ public class Dropdown : Control
             UiRowStyle.DrawFrame(painter, this, Label, highlight, _previousRect.X);
         }
 
-        DrawChevron(painter, _previousRect, UiDirection.Left, appear);
-        DrawChevron(painter, _nextRect, UiDirection.Right, appear);
-
-        float sizePx = context.Px(ValueSizeUnits);
         if (_shownIndex != _selected || _shown is null)
         {
             _shownIndex = _selected;
             _shown = SelectedOption.ToUpperInvariant();
         }
+
+        if (LargeRow)
+        {
+            DrawLargeRow(painter, _shown, appear);
+            return;
+        }
+
+        DrawChevron(painter, _previousRect, UiDirection.Left, appear);
+        DrawChevron(painter, _nextRect, UiDirection.Right, appear);
+
+        float sizePx = context.Px(ValueSizeUnits);
 
         string value = _shown;
         float width = UiPainter.MeasureLabel(Theme.Heading, value, sizePx, ValueTracking);
@@ -227,6 +249,52 @@ public class Dropdown : Control
             sizePx,
             UiPalette.Fade(color, appear),
             ValueTracking);
+    }
+
+    // Whether the control is a settings row of the large look, drawn as the design's stepper.
+    private bool LargeRow => Theme.Large && Style != DropdownStyle.Compact;
+
+    // The large look's row: the value centred between the arrows, and under it a pip for each choice, the one held lit.
+    private void DrawLargeRow(UiPainter painter, string shown, float appear)
+    {
+        LayoutContext context = painter.Context;
+        float centre = _valueRect.Center.X;
+        float valueSize = context.Px(Theme.BodyTextSize < 18f ? 16f : 18f);
+        float caps = valueSize * 0.72f;
+        bool pips = _options.Count is > 1 and <= 8;
+        float pipHeight = context.Px(3f);
+        float block = caps + (pips ? context.Px(6f) + pipHeight : 0f);
+        float top = _valueRect.Center.Y - (block * 0.5f);
+        string value = TextFit.ToWidth(Theme.Heading, shown, valueSize, _valueRect.Width, 0.1f);
+        float width = UiPainter.MeasureLabel(Theme.Heading, value, valueSize, 0.1f);
+        var valueBox = new UiRect(centre - (width * 0.5f), top, width, caps);
+        painter.DrawLabel(Theme.Heading, value, new UiVec2(valueBox.X, UiRowStyle.CapsCenterY(Theme.Heading, valueSize, valueBox)), valueSize, UiPalette.Fade(IsEnabled ? Theme.Text : Theme.TextDisabled, appear), 0.1f);
+        if (pips)
+        {
+            float pip = context.Px(10f);
+            float gap = context.Px(3f);
+            float x = centre - (((_options.Count * pip) + ((_options.Count - 1) * gap)) * 0.5f);
+            for (int i = 0; i < _options.Count; i++)
+            {
+                Bgra32 ink = i != _selected ? UiPalette.White(0.22f) : IsEnabled ? Theme.Accent : Theme.TextDisabled;
+                painter.FillRect(new UiRect(x + (i * (pip + gap)), top + caps + context.Px(6f), pip, pipHeight), UiPalette.Fade(ink, appear));
+            }
+        }
+
+        DrawLargeArrow(painter, _previousRect, -1f, appear);
+        DrawLargeArrow(painter, _nextRect, 1f, appear);
+    }
+
+    private void DrawLargeArrow(UiPainter painter, UiRect box, float sign, float appear)
+    {
+        bool hot = IsEnabled && IsPointerOver && box.Contains(_pointer);
+        float reach = painter.Context.Px(6f);
+        float thick = painter.Context.Px(2f);
+        UiVec2 c = box.Center;
+        Bgra32 ink = UiPalette.Fade(!IsEnabled ? Theme.TextDisabled : hot ? Theme.Accent : Theme.TextSecondary, appear);
+        var tip = new UiVec2(c.X + (sign * reach * 0.5f), c.Y);
+        painter.StrokeLine(new UiVec2(tip.X - (sign * reach), c.Y - reach), tip, thick, ink);
+        painter.StrokeLine(new UiVec2(tip.X - (sign * reach), c.Y + reach), tip, thick, ink);
     }
 
     private void DrawChevron(UiPainter painter, UiRect box, UiDirection direction, float appear)

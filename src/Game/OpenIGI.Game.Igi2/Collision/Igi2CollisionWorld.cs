@@ -55,7 +55,7 @@ public sealed record Igi2MagicPlacement(World.Igi2MagicObjType Type, Igi2Pose Po
 /// exactly the same distance a line keeps: a handler replaces a hit only when it is strictly nearer.
 /// </para>
 /// </remarks>
-public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, ICollisionWorld
+public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, IHostCollisionWorld
 {
     /// <summary>The query-group bit that asks for the ground, <c>0x80000000</c>.</summary>
     public const uint TerrainGroup = 0x80000000;
@@ -171,6 +171,10 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         ArgumentNullException.ThrowIfNull(collider);
         _others.Add(collider);
     }
+
+    /// <summary>Takes out something put in the world with <see cref="AddCollider"/>.</summary>
+    /// <param name="collider">It.</param>
+    public void RemoveCollider(IWorldLineCollider collider) => _others.Remove(collider);
 
     /// <summary>Gets what answers lines and sight beside the world's own kinds.</summary>
     public IReadOnlyList<IWorldLineCollider> OtherColliders => _others;
@@ -631,7 +635,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         {
             foreach (Igi2RigidObject solid in _objects)
             {
-                if ((objectGroups & (solid.Group | EveryTypeGroup)) != 0 && !PassesSight(solid.Owner))
+                if (solid.IsInWorld && (objectGroups & (solid.Group | EveryTypeGroup)) != 0 && !PassesSight(solid.Owner))
                 {
                     Igi2RigidLineOfSight.Meet(solid, sight);
                 }
@@ -712,7 +716,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         max = new Vector3d(max.X + BoxWidth, max.Y + BoxWidth, max.Z + BoxDepth);
         foreach (Igi2RigidObject solid in _objects)
         {
-            if ((groups & (solid.Group | EveryTypeGroup)) == 0)
+            if (!solid.IsInWorld || (groups & (solid.Group | EveryTypeGroup)) == 0)
             {
                 continue;
             }

@@ -1,6 +1,8 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Frontend.Settings;
+using OpenIGI.UI;
+using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend.Screens;
@@ -18,7 +20,7 @@ internal static class GraphicsSettingsTab
     /// <param name="draft">The draft the preset row stages whole presets in.</param>
     public static List<SettingsGroup> Build(SettingsRowBuilder rowBuilder, UiTheme theme, SettingsDraft draft)
     {
-        List<SettingsGroup> groups = [SettingsGroup.Of("General", [BuildPresetControl(rowBuilder, theme, draft)])];
+        List<SettingsGroup> groups = [BuildPresetBand(rowBuilder, theme, draft)];
 
         foreach (GraphicsSection section in GraphicsMenu.Sections)
         {
@@ -49,20 +51,48 @@ internal static class GraphicsSettingsTab
         return groups;
     }
 
-    /// <summary>The preset row: stages a whole preset in the draft, and reads which one the draft amounts to.</summary>
-    private static Dropdown BuildPresetControl(SettingsRowBuilder rowBuilder, UiTheme theme, SettingsDraft draft)
+    /// <summary>
+    /// The preset, across the top of the page: stages a whole preset in the draft, and reads which one the draft amounts to.
+    /// </summary>
+    /// <remarks>The one control that answers the whole question at once, so it leads, as segments to press rather than a row to step.</remarks>
+    private static SettingsGroup BuildPresetBand(SettingsRowBuilder rowBuilder, UiTheme theme, SettingsDraft draft)
     {
         GraphicsPresetRegistry registry = rowBuilder.Context.Presets;
         string[] presetNames = Enum.GetNames<GraphicsPreset>();
         int Shown() => Math.Max(0, Array.IndexOf(presetNames, registry.Recognise(draft.Holds).ToString()));
 
-        var presets = new Dropdown(theme, "Preset", presetNames, Shown())
-        {
-            Tooltip = "Sets every graphics variable at once, when you apply. Custom is what the settings become "
-                + "as soon as you change any of them yourself — it is a reading, not a choice.",
-        };
+        bool compact = ShellSizes.IsCompact(theme);
+        const string Help = "Sets every graphics variable at once, when you apply. Custom is what the settings become "
+            + "as soon as you change any of them yourself — it is a reading, not a choice.";
 
-        // Choosing a preset stages its values, each of which the draft reports; the row reads the preset back
+        // Segments to press where there is room for five across; a row that steps where there is not.
+        Control control;
+        Action<int> show;
+        Action<Action<int>> onPicked;
+        if (compact)
+        {
+            var row = new Dropdown(theme, "Preset", presetNames, Shown()) { Tooltip = Help };
+            control = row;
+            show = index => row.SelectedIndex = index;
+            onPicked = handler => row.SelectionChanged += handler;
+        }
+        else
+        {
+            var strip = new TabStrip(theme, presetNames)
+            {
+                SegmentHeight = 36f,
+                TabPadding = 18f,
+                TextSize = 17f,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tooltip = Help,
+            };
+            strip.SelectedIndex = Shown();
+            control = strip;
+            show = index => strip.SelectedIndex = index;
+            onPicked = handler => strip.SelectionChanged += handler;
+        }
+
+        // Choosing a preset stages its values, each of which the draft reports; the band reads the preset back
         // once, at the end, rather than at every one of them.
         bool updating = false;
         void ShowPreset()
@@ -70,7 +100,7 @@ internal static class GraphicsSettingsTab
             updating = true;
             try
             {
-                presets.SelectedIndex = Shown();
+                show(Shown());
             }
             finally
             {
@@ -78,7 +108,7 @@ internal static class GraphicsSettingsTab
             }
         }
 
-        presets.SelectionChanged += i =>
+        onPicked(i =>
         {
             if (updating || !Enum.TryParse(presetNames[i], out GraphicsPreset preset))
             {
@@ -99,7 +129,7 @@ internal static class GraphicsSettingsTab
             }
 
             ShowPreset();
-        };
+        });
 
         EventHandler changed = (_, _) =>
         {
@@ -111,6 +141,30 @@ internal static class GraphicsSettingsTab
 
         draft.Changed += changed;
         rowBuilder.Bindings.Add(new Unsubscribe(() => draft.Changed -= changed));
-        return presets;
+
+        if (compact)
+        {
+            return SettingsGroup.Of("General", [control]);
+        }
+
+        var words = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f, VerticalAlignment = VerticalAlignment.Center };
+        words.AddChild(new Label(theme.BodyStrong, "Quality preset", theme.BodyTextSize, theme.Text));
+        words.AddChild(new Label(theme.Body, "Start here. Changing any setting below switches the preset to Custom.", 15f, theme.TextSecondary) { Wrap = true });
+
+        var inner = new Grid { ColumnSpacing = 24f };
+        inner.RowDefinitions.Add(GridLength.Auto);
+        inner.ColumnDefinitions.Add(GridLength.Star);
+        inner.ColumnDefinitions.Add(GridLength.Auto);
+        inner.Add(words, 0, 0);
+        inner.Add(control, 0, 1);
+
+        var band = new OpenIGI.UI.Kit.Widgets.GlassPanel(theme)
+        {
+            Tint = OpenIGI.Core.Graphics.Bgra32.FromRgba(12, 14, 15, 199),
+            Border = UiPalette.White(0.12f),
+            Padding = new Thickness(20f, 14f),
+        };
+        band.AddChild(inner);
+        return new SettingsGroup("Quality preset", [control]) { Banner = band };
     }
 }

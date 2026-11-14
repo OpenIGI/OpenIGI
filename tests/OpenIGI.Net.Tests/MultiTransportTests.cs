@@ -1,4 +1,3 @@
-using OpenIGI.Net;
 using Xunit;
 
 namespace OpenIGI.Net.Tests;

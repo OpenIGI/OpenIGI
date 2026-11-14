@@ -212,7 +212,7 @@ public sealed class PlayerCameraHealthTests
         }
 
         Assert.NotNull(camera.Weapons.InHand);
-        camera.Weapons.InHand!.Value.Gun.State.RoundsInClip = 0;
+        camera.Weapons.InHand.Value.Gun.State.RoundsInClip = 0;
 
         input.BeginFrame();
         camera.Tick(input, terrain: null);
@@ -321,7 +321,7 @@ public sealed class PlayerCameraHealthTests
 
         camera.UseViewRig(viewSet);
 
-        Assert.Equal(HumanView.DefaultTanX, camera.View!.TanX);
+        Assert.Equal(HumanView.DefaultTanX, camera.View.TanX);
         Assert.Equal(HumanView.DefaultViewModelTanX, camera.View.ViewModelTanX);
     }
 
@@ -374,6 +374,8 @@ public sealed class PlayerCameraHealthTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

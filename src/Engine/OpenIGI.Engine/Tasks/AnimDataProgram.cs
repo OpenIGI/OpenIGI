@@ -50,8 +50,8 @@ public sealed class AnimDataProgram
         _entries = [.. entries];
         foreach (AnimDataEntry entry in _entries)
         {
-            ArgumentOutOfRangeException.ThrowIfNegative(entry.Code, nameof(entries));
-            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(entry.Code, ChannelCount, nameof(entries));
+            ArgumentOutOfRangeException.ThrowIfNegative(entry.Code);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(entry.Code, ChannelCount);
         }
     }
 
@@ -140,6 +140,10 @@ public sealed class AnimDataProgram
         Array.Clear(_channels);
         Tick = 0;
     }
+
+    /// <summary>Puts the tick counter back as a save game kept it; the channels, which hold the program counter and the delay, are written back beside it.</summary>
+    /// <param name="tick">The tick the programme had been advanced to, <c>-1</c> for one that had not run.</param>
+    public void RestoreTick(int tick) => Tick = tick;
 
     /// <summary>Moves the tick counter on once a step's packet has gone out.</summary>
     /// <remarks>

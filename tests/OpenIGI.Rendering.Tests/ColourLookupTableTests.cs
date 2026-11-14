@@ -1,4 +1,3 @@
-using OpenIGI.Rendering;
 using Xunit;
 
 namespace OpenIGI.Rendering.Tests;
@@ -117,7 +116,7 @@ public sealed class ColourLookupTableTests
         {
             ColourLookupTable? table = ColourLookupTable.Load(file);
             Assert.True(table is not null, $"{Path.GetFileName(file)} did not load");
-            Assert.Equal(table!.Size * table.Size * table.Size * 3, table.Entries.Length);
+            Assert.Equal(table.Size * table.Size * table.Size * 3, table.Entries.Length);
         }
     }
 

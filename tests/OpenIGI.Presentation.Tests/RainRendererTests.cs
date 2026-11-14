@@ -2,7 +2,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -88,7 +87,7 @@ public sealed class RainRendererTests
 
         GameTask? found = RainRenderer.FindRainEffect(tree.Root);
         Assert.NotNull(found);
-        Assert.Equal("RainEffect", found!.Type.Name);
+        Assert.Equal("RainEffect", found.Type.Name);
     }
 
     [Fact]

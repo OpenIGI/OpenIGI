@@ -58,7 +58,7 @@ public sealed class ProfileCard : Control
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        new(available.X, context.Px(80f));
+        new(available.X, context.Px(ShellSizes.IsCompact(Theme) ? 76f : 96f));
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
@@ -67,10 +67,20 @@ public sealed class ProfileCard : Control
         float appear = Visual.Appear;
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
 
-        Bgra32 fill = Active ? UiPalette.AccentAt(0.1f) : UiPalette.Ink.WithAlpha(158);
-        Bgra32 border = Active ? Theme.Accent : Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), hot);
-        painter.DrawBackdrop(Bounds, context.Px(Theme.GlassBlur), UiPalette.Fade(fill, appear));
+        // The active one washed with the accent and barred down its leading edge; the one in focus ringed.
+        painter.FillRect(Bounds, UiPalette.Fade(Bgra32.FromRgba(12, 14, 15, 214), appear));
+        if (Active)
+        {
+            painter.FillRect(Bounds, UiPalette.AccentAt(0.13f * appear));
+            painter.FillRect(new UiRect(Bounds.X, Bounds.Y, context.Px(4f), Bounds.Height), UiPalette.Fade(Theme.Accent, appear));
+        }
+
+        Bgra32 border = Active ? UiPalette.AccentAt(0.45f) : Interpolate.Lerp(UiPalette.White(0.12f), UiPalette.White(0.42f), hot);
         painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(border, appear));
+        if (Visual.Focus > 0.001f)
+        {
+            painter.StrokeRect(Bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
+        }
 
         // The initial, in a square outlined like the card.
         float square = context.Px(48f);
@@ -80,42 +90,34 @@ public sealed class ProfileCard : Control
         float initialWidth = Theme.Display.MeasureWidth(_initial, initialSize);
         painter.DrawText(Theme.Display, _initial, new UiVec2(box.Center.X - (initialWidth * 0.5f), UiRowStyle.CapsCenterY(Theme.Display, initialSize, box)), initialSize, UiPalette.Fade(Active ? Theme.Accent : Theme.TextMuted, appear));
 
-        // The right-hand column first, so the name knows how much room it has.
+        // The name, ACTIVE beside it on the one that is; under it the difficulty and the mission reached; under that the
+        // campaign as a bar, a segment a mission.
         float right = Bounds.Right - context.Px(20f);
-        float segmentsWidth = KitDraw.SegmentsWidth(context, Total, 14f, 3f);
-        float column = segmentsWidth;
+        float nameSize = context.Px(24f);
+        float metaSize = context.Px(15f);
+        float bar = context.Px(3f);
+        float textX = box.Right + context.Px(18f);
+        float block = (nameSize * 0.7f) + context.Px(8f) + Theme.Body.LineHeight(metaSize) + context.Px(6f) + bar;
+        float top = Bounds.Center.Y - (block * 0.5f);
+        painter.PushClip(UiRect.FromEdges(textX, Bounds.Y, right, Bounds.Bottom));
+        var nameBox = new UiRect(textX, top, 0f, nameSize * 0.7f);
+        UiVec2 nameEnd = painter.DrawLabel(Theme.Heading, _upperName, new UiVec2(textX, UiRowStyle.CapsCenterY(Theme.Heading, nameSize, nameBox)), nameSize, UiPalette.Fade(Interpolate.Lerp(Theme.Text, Theme.TextBright, hot), appear), 0.06f);
         if (Active)
         {
             float pillWidth = UiPainter.MeasureLabel(Theme.Mono, "ACTIVE", context.Px(10f), 0.22f) + context.Px(16f);
-            column = MathF.Max(column, pillWidth);
+            KitDraw.Pill(painter, Theme, "ACTIVE", new UiVec2(nameEnd.X + context.Px(12f) + pillWidth, top - context.Px(2f)), Theme.Accent, Theme.OnAccent);
         }
 
-        float nameSize = context.Px(24f);
-        float metaSize = context.Px(11f);
-        float textX = box.Right + context.Px(18f);
-        float block = (nameSize * 0.7f) + context.Px(8f) + Theme.Mono.LineHeight(metaSize);
-        float top = Bounds.Center.Y - (block * 0.5f);
-        painter.PushClip(UiRect.FromEdges(textX, Bounds.Y, right - column - context.Px(18f), Bounds.Bottom));
-        var nameBox = new UiRect(textX, top, 0f, nameSize * 0.7f);
-        painter.DrawLabel(Theme.Heading, _upperName, new UiVec2(textX, UiRowStyle.CapsCenterY(Theme.Heading, nameSize, nameBox)), nameSize, UiPalette.Fade(Interpolate.Lerp(Theme.Text, Theme.TextBright, hot), appear), 0.06f);
         if (!ReferenceEquals(_metaDifficulty, Difficulty) || !ReferenceEquals(_metaMission, Mission))
         {
             _metaDifficulty = Difficulty;
             _metaMission = Mission;
-            _meta = $"{Difficulty} · {Mission}".ToUpperInvariant();
+            _meta = $"{Difficulty} · {Mission}";
         }
 
-        painter.DrawLabel(Theme.Mono, _meta, new UiVec2(textX, top + (nameSize * 0.7f) + context.Px(8f)), metaSize, UiPalette.Fade(Theme.TextMuted, appear), 0.12f);
+        float metaY = top + (nameSize * 0.7f) + context.Px(8f);
+        painter.DrawText(Theme.Body, OpenIGI.UI.Text.TextFit.ToWidth(Theme.Body, _meta, metaSize, right - textX), new UiVec2(textX, metaY), metaSize, UiPalette.Fade(Theme.TextSecondary, appear));
+        KitDraw.Segments(painter, new UiVec2(textX, metaY + Theme.Body.LineHeight(metaSize) + context.Px(6f)), Unlocked, Total, 14f, 3f, 3f, UiPalette.Fade(Theme.Accent, appear));
         painter.PopClip();
-
-        float rightBlock = (Active ? Theme.Mono.LineHeight(context.Px(10f)) + context.Px(6f + 8f) : 0f) + context.Px(3f);
-        float rightTop = Bounds.Center.Y - (rightBlock * 0.5f);
-        if (Active)
-        {
-            UiRect pill = KitDraw.Pill(painter, Theme, "ACTIVE", new UiVec2(right, rightTop), Theme.Accent, Theme.OnAccent);
-            rightTop = pill.Bottom + context.Px(8f);
-        }
-
-        KitDraw.Segments(painter, new UiVec2(right - segmentsWidth, rightTop), Unlocked, Total, 14f, 3f, 3f, UiPalette.Fade(Theme.Accent, appear));
     }
 }

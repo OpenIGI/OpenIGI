@@ -1,5 +1,4 @@
 ﻿using System.Buffers.Binary;
-using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.TestSupport;

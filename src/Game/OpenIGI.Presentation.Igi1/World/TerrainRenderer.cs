@@ -326,7 +326,7 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
     public (int Pages, long Vertices, long Capacity) PageOccupancy => _batcher.PageOccupancy;
 
     /// <inheritdoc/>
-    public string Summary => FormattableString.Invariant($"{LastChunkCount} chunk(s) drawn");
+    public string Summary => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{LastChunkCount} chunk(s) drawn");
 
     /// <inheritdoc/>
     /// <remarks>
@@ -338,19 +338,19 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
     {
         ArgumentNullException.ThrowIfNull(into);
 
-        into.Add(FormattableString.Invariant($"tiles {TileCount}   chunks drawn {LastChunkCount}"));
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"tiles {TileCount}   chunks drawn {LastChunkCount}"));
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"triangles {LastTriangleCount}   passes {LastPassCount}   batches {LastBatchCount}"));
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"occlusion queries {LastOcclusionQueryCount}   occluded {LastOccludedChunkCount}"));
-        into.Add(FormattableString.Invariant($"cached {CachedCount}   built this frame {LastBuildCount}"));
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cached {CachedCount}   built this frame {LastBuildCount}"));
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"page meshes created {PageMeshesCreated}   destroyed {PageMeshesDestroyed}   spare {SparePageCount}"));
 
         (int pages, long pageVertices, long pageCapacity) = PageOccupancy;
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"pages {pages}   vertices {pageVertices} of {pageCapacity} ({pageCapacity * 48 / (1024 * 1024)} MB)"));
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"trims {TrimCount}   evicted {EvictedChunkCount}   compacted pages {CompactedPageCount}"));
     }
 

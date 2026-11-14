@@ -26,7 +26,6 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
     /// <summary>How many frames may be in flight, which is how many sets of per-frame resources the renderer keeps.</summary>
     public const int FramesInFlight = 2;
 
-    private readonly IOpenIgiLogger _logger;
     private readonly List<(ulong Ticket, Action Release)> _retired = [];
     private readonly Dictionary<string, D3D12RootSignature> _rootSignatures = new(StringComparer.Ordinal);
     private readonly Dictionary<string, D3D12SamplerTable> _samplerTables = new(StringComparer.Ordinal);
@@ -49,7 +48,6 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
         ArgumentNullException.ThrowIfNull(logger);
 
         Context = context;
-        _logger = logger;
         Api = Silk.NET.Direct3D12.D3D12.GetApi();
 
         _defaultPool = new Memory.D3D12BufferPool(Native, HeapType.Default, "device buffers");
@@ -231,16 +229,17 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
         }
 
         ulong completed = Context.Completed;
-        for (int i = 0; i < _retired.Count; i++)
+        int i = 0;
+        while (i < _retired.Count)
         {
             if (_retired[i].Ticket > completed)
             {
+                i++;
                 continue;
             }
 
             _retired[i].Release();
             _retired.RemoveAt(i);
-            i--;
         }
     }
 
@@ -335,10 +334,10 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
         return string.Join(
             '\n',
             "Direct3D 12:",
-            FormattableString.Invariant($"  local memory: {usage / (1024 * 1024)} MiB of a {budget / (1024 * 1024)} MiB budget"),
-            FormattableString.Invariant($"  shader heap: {ShaderHeap.InUse}/{ShaderHeap.Capacity}, samplers {SamplerHeap.InUse}/{SamplerHeap.Capacity}"),
-            FormattableString.Invariant($"  render targets: {RtvHeap.InUse}, depth targets: {DsvHeap.InUse}"),
-            FormattableString.Invariant($"  upload staging: {_freeStaging.Count} spare chunk(s), {_usedStaging.Count} in flight; {_retired.Count} release(s) waiting"));
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  local memory: {usage / (1024 * 1024)} MiB of a {budget / (1024 * 1024)} MiB budget"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  shader heap: {ShaderHeap.InUse}/{ShaderHeap.Capacity}, samplers {SamplerHeap.InUse}/{SamplerHeap.Capacity}"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  render targets: {RtvHeap.InUse}, depth targets: {DsvHeap.InUse}"),
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  upload staging: {_freeStaging.Count} spare chunk(s), {_usedStaging.Count} in flight; {_retired.Count} release(s) waiting"));
     }
 
     /// <inheritdoc/>

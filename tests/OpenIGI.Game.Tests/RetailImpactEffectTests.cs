@@ -1,4 +1,3 @@
-using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using Xunit;

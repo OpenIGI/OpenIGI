@@ -61,8 +61,11 @@ public sealed class GameConfig
     public int ControlsVersion { get; set; }
 
     /// <summary>The revision <see cref="MigrateControls"/> brings a configuration to.</summary>
-    /// <remarks>One: the modern WASD layout with the mouse not inverted, for profiles never rebound.</remarks>
-    public const int CurrentControlsVersion = 1;
+    /// <remarks>
+    /// One: the modern WASD layout with the mouse not inverted, for profiles never rebound. Two: the sight on the right mouse
+    /// button, the weapons on the wheel, and leaning out and the zoom on keys a laptop has, for profiles that never moved them.
+    /// </remarks>
+    public const int CurrentControlsVersion = 2;
 
     /// <summary>Moves every profile still on the original's controls onto the modern ones, once.</summary>
     /// <returns><see langword="true"/> when anything was migrated, so the caller knows to save.</returns>
@@ -89,11 +92,13 @@ public sealed class GameConfig
 
         foreach (PlayerProfile profile in _profiles)
         {
-            if (profile.HasRetailDefaultControls())
+            if (ControlsVersion < 1 && profile.HasRetailDefaultControls())
             {
                 profile.AdoptModernControls();
                 changed = true;
             }
+
+            changed |= profile.AdoptReachableControls();
         }
 
         ControlsVersion = CurrentControlsVersion;
@@ -149,6 +154,39 @@ public sealed class GameConfig
 
         _profiles.Add(created);
         _activeIndex = _profiles.Count - 1;
+        return true;
+    }
+
+    /// <summary>Gives a profile another name.</summary>
+    /// <param name="index">The profile to rename.</param>
+    /// <param name="name">Its new name. Trailing blanks are dropped and it is cut to the original's buffer.</param>
+    /// <returns><see langword="false"/> when there is no such profile, the name is empty, or another profile has it.</returns>
+    /// <remarks>
+    /// Names are told apart without regard to case, as when a profile is made, so a profile may change the case of its
+    /// own name but not take another's. What is kept under the old name elsewhere -- its save slots -- is the caller's to move.
+    /// </remarks>
+    public bool RenameProfile(int index, string? name)
+    {
+        if (index < 0 || index >= _profiles.Count)
+        {
+            return false;
+        }
+
+        string trimmed = (name ?? string.Empty).TrimEnd(' ', '\t');
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < _profiles.Count; i++)
+        {
+            if (i != index && string.Equals(_profiles[i].Name, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        _profiles[index].Name = Truncate(trimmed);
         return true;
     }
 

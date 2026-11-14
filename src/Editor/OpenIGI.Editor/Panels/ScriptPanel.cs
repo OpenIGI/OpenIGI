@@ -111,7 +111,7 @@ internal sealed class ScriptPanel : EditorElement
     {
         UiRect strip = new(Bounds.X, Bounds.Bottom - Theme.StatusBarHeight, Bounds.Width, Theme.StatusBarHeight);
         painter.FillRect(strip, Theme.Chrome);
-        string where = _openPath is null ? string.Empty : FormattableString.Invariant($"Ln {_code.CaretLine + 1}, Col {_code.CaretColumn + 1}");
+        string where = _openPath is null ? string.Empty : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Ln {_code.CaretLine + 1}, Col {_code.CaretColumn + 1}");
         float width = Theme.SmallFont.MeasureWidth(where, Theme.SmallTextSize);
         painter.DrawText(Theme.SmallFont, where, new UiVec2(strip.Right - width - Theme.Padding, MathF.Round(strip.Y + ((strip.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f))), Theme.SmallTextSize, Theme.TextMuted);
         EditorDraw.Label(painter, Theme, _message, new UiRect(strip.X + Theme.Padding, strip.Y, strip.Width - width - (Theme.Padding * 3f), strip.Height), _messageIsError ? Theme.Error : Theme.TextMuted);
@@ -139,9 +139,11 @@ internal sealed class ScriptPanel : EditorElement
             }
             catch (IOException)
             {
+                // Nothing to do: the failure is expected here and leaves nothing to undo.
             }
             catch (UnauthorizedAccessException)
             {
+                // Nothing to do: the failure is expected here and leaves nothing to undo.
             }
         }
 

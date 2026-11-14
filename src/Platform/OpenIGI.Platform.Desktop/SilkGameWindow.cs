@@ -99,7 +99,10 @@ public sealed class SilkGameWindow : IGameWindow
         };
 
         Display = display;
-        _window = CreateWindow(options, display);
+        Graphics = settings.Graphics;
+        _window = settings.Graphics == WindowGraphics.Native
+            ? CreateWindow(options, display)
+            : CreateOpenGLWindow(options, debug: settings.Graphics == WindowGraphics.OpenGLDebug);
         _input = _window.CreateInput();
         _cursorVisible = settings.CursorVisible;
 
@@ -185,6 +188,37 @@ public sealed class SilkGameWindow : IGameWindow
         return window;
     }
 
+    /// <summary>Creates the window with an OpenGL 4.3 core context, current on this thread, for the OpenGL renderer.</summary>
+    /// <param name="options">The window's options.</param>
+    /// <param name="debug">Whether to ask for a debug context.</param>
+    /// <returns>The window.</returns>
+    /// <exception cref="PlatformException">The driver will not make a 4.3 core context.</exception>
+    private static IWindow CreateOpenGLWindow(WindowOptions options, bool debug)
+    {
+        ContextFlags flags = ContextFlags.ForwardCompatible | (debug ? ContextFlags.Debug : ContextFlags.Default);
+        IWindow window = Window.Create(options with
+        {
+            API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, flags, new APIVersion(4, 3)),
+        });
+
+        try
+        {
+            window.Initialize();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // GLFW refuses the context outright on a driver short of 4.3, with its own words for why.
+            window.Dispose();
+            throw new PlatformException(
+                $"Could not create an OpenGL 4.3 window ({ex.Message}). The game needs a graphics driver offering "
+                + "Vulkan 1.2, Direct3D 12 or OpenGL 4.3; updating the driver may add one.",
+                ex);
+        }
+
+        WindowIcon.Apply(window);
+        return window;
+    }
+
     private static IWindow CreateWithoutVulkan(WindowOptions options)
     {
         IWindow window = Window.Create(options with { API = GraphicsAPI.None });
@@ -218,6 +252,15 @@ public sealed class SilkGameWindow : IGameWindow
 
     /// <summary>Gets the Vulkan surface source this window exposes.</summary>
     public IVkSurface? VkSurface => _window.VkSurface;
+
+    /// <summary>Gets what the window was made ready for: no context, or an OpenGL one.</summary>
+    public WindowGraphics Graphics { get; }
+
+    /// <summary>Gets the window's OpenGL context, where it was made with one.</summary>
+    public IGLContext? GLContext => _window.GLContext;
+
+    /// <summary>Gets the size of the window's framebuffer in pixels, which its size in points may not be.</summary>
+    public (int Width, int Height) FramebufferSize => (_window.FramebufferSize.X, _window.FramebufferSize.Y);
 
     /// <summary>Gets the window's native handles, or null on a window system that has none to give.</summary>
     /// <remarks>

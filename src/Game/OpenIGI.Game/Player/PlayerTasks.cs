@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// </remarks>
 public abstract class HumanTask
-    : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable
+    : ContainerTask, Level.ILevelTicked, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable, IHostedHuman
 {
     /// <summary>
     /// Gets or sets the live body the human's game keeps for it: where it stands, its eyes and its stance; <see langword="null"/>
@@ -40,6 +40,28 @@ public abstract class HumanTask
     public bool IsOutOfWorld { get; set; }
 
     /// <summary>
+    /// Gets or sets what carries out the human's run handler: the game's soldiers or its player, or another title's standing
+    /// in for it; <see langword="null"/> while nothing does.
+    /// </summary>
+    public Level.ITaskRun<HumanTask>? Runner { get; set; }
+
+    /// <summary>Runs the human for one tick, where the level's walk reaches it.</summary>
+    /// <param name="level">The level's run.</param>
+    /// <remarks>A human nothing runs is run as a type with no handler is, by the title's rule.</remarks>
+    public void Run(Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
+
+    /// <summary>
     /// Gets or sets the game whose body stands for the human when it is not the game whose level it is in, or
     /// <see langword="null"/> when the level's own game drives it.
     /// </summary>
@@ -49,6 +71,13 @@ public abstract class HumanTask
     /// game's body keeps current.
     /// </remarks>
     public GameTitle? Driver { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A human whose body another game keeps in the level's own world answers through <see cref="Body"/> and <see cref="Events"/>
+    /// instead; this is the other game's own human, where the level's game finds one in its stead.
+    /// </remarks>
+    public IAiHuman? StandIn { get; set; }
 
     /// <inheritdoc/>
     Vector3d IAiHuman.Position => Body?.Feet ?? Position;
@@ -349,8 +378,30 @@ public sealed class HumanSoldierPistolTask : HumanSoldierTask
 /// the demo, and the expression is the script-bound condition at <c>+404</c>.
 /// </para>
 /// </remarks>
-public partial class HumanPlayerInputTask : GameTask
+public partial class HumanPlayerInputTask : GameTask, OpenIGI.Game.Level.ILevelTicked
 {
+    /// <summary>
+    /// Gets or sets what carries out this task's run handler: the game whose player it drives; <see langword="null"/> while
+    /// nothing does.
+    /// </summary>
+    public OpenIGI.Game.Level.ITaskRun<HumanPlayerInputTask>? Runner { get; set; }
+
+    /// <summary>Runs the task for one tick, where the level's walk reaches it.</summary>
+    /// <param name="level">The level's run.</param>
+    /// <remarks>The original moves the player from here: <c>HumanPlayerInput</c>'s run handler (<c>0x45DB70</c>'s type) reads the controls and sends them to the <c>HumanPlayer</c> above it, whose control handler runs its update. The player's own run handler (<c>0x45EEA0</c>) only runs its children.</remarks>
+    public void Run(OpenIGI.Game.Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
+
     /// <summary>Gets or sets whether sampled frames are recorded to <see cref="File"/>.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Record")]
     public bool Record { get; set; }

@@ -7,10 +7,8 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -46,6 +44,7 @@ public sealed class CutsceneFidelityLevels13to14Tests
         fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fs);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         RegisterCutsceneTypes(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
@@ -65,7 +64,7 @@ public sealed class CutsceneFidelityLevels13to14Tests
         foreach (CutSceneTask scene in Walk(root).OfType<CutSceneTask>())
         {
             List<DeclaredTask> authored = Walk(scene)
-                .Where(static t => t is DeclaredTask d && string.Equals(t.Type.Name, "EditCamera", StringComparison.Ordinal))
+                .Where(static t => t is DeclaredTask && string.Equals(t.Type.Name, "EditCamera", StringComparison.Ordinal))
                 .Cast<DeclaredTask>()
                 .ToList();
             Assert.NotEmpty(authored);
@@ -182,11 +181,11 @@ public sealed class CutsceneFidelityLevels13to14Tests
                     if (interpolatedShake != 0f)
                     {
                         uint seed = unchecked((uint)((scene.Id * 397) ^ scene.Ticks));
-                        Vector3d jitter = new(
-                            ReplicaNoise(ref seed),
-                            ReplicaNoise(ref seed),
-                            ReplicaNoise(ref seed));
-                        expectedPosition += jitter * interpolatedShake;
+                        // The first three draws jitter the position, which is compared above; they are taken so the
+                        // orientation's three come from the same place in the sequence.
+                        _ = ReplicaNoise(ref seed);
+                        _ = ReplicaNoise(ref seed);
+                        _ = ReplicaNoise(ref seed);
                         // Verified against the runtime byte-for-byte: BuildFrame's
                         // `shakeAxes * orientation` resolves, under this engine's row-vector matrix
                         // convention, to applying the shake AFTER the spline pose with negated Euler
@@ -400,6 +399,6 @@ public sealed class CutsceneFidelityLevels13to14Tests
     {
         PlayerTaskTypes.RegisterAll(types);
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(types);
     }
 }

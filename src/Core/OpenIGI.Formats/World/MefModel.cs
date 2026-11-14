@@ -432,6 +432,44 @@ public sealed class MefModel
     public MefMorph? Morph =>
         TryGetRawChunk(MefTags.Morphs, out ReadOnlyMemory<byte> payload) ? MefMorph.Read(payload.Span) : null;
 
+    /// <summary>Gets the lights the artists placed on the model; empty for a model with none, as every Project I.G.I. model is.</summary>
+    /// <remarks>
+    /// Read from the chunk each time rather than held, as the morph targets are: few models carry any and
+    /// the callers ask once a level. A trailing part-record is ignored rather than refused, because a
+    /// glow is decoration and a model that draws is worth more than one that does not load.
+    /// </remarks>
+    public IReadOnlyList<MefGlow> Glows
+    {
+        get
+        {
+            if (!TryGetRawChunk(MefTags.Glows, out ReadOnlyMemory<byte> payload) || payload.Length < MefGlow.Stride)
+            {
+                return [];
+            }
+
+            ReadOnlySpan<byte> span = payload.Span;
+            MefGlow[] glows = new MefGlow[span.Length / MefGlow.Stride];
+
+            for (int i = 0; i < glows.Length; i++)
+            {
+                ReadOnlySpan<byte> record = span.Slice(i * MefGlow.Stride, MefGlow.Stride);
+
+                glows[i] = new MefGlow(
+                    new Vector3f(
+                        BinaryPrimitives.ReadSingleLittleEndian(record),
+                        BinaryPrimitives.ReadSingleLittleEndian(record[4..]),
+                        BinaryPrimitives.ReadSingleLittleEndian(record[8..])),
+                    BinaryPrimitives.ReadSingleLittleEndian(record[12..]),
+                    new Vector3f(
+                        BinaryPrimitives.ReadSingleLittleEndian(record[16..]),
+                        BinaryPrimitives.ReadSingleLittleEndian(record[20..]),
+                        BinaryPrimitives.ReadSingleLittleEndian(record[24..])));
+            }
+
+            return glows;
+        }
+    }
+
     /// <summary>Gets how many magic vertices the model carries in its <c>XTVM</c>/<c>MVTX</c> chunk.</summary>
     /// <remarks>Empty in most models (377 of 415 level-1 ones); non-zero on ladders, doors and mounts.</remarks>
     public int MagicVertexCount =>

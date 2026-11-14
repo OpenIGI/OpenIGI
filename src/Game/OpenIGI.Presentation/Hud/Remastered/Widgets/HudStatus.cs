@@ -42,6 +42,7 @@ public static class HudStatus
         float width = pad + gaugeWidth + (model.Visibility is null ? 0f : context.Px(8f) + meterWidth) + (stance ? context.Px(8f) + stanceWidth : 0f) + pad;
         float height = pad + labelHeight + gaugeHeight + context.Px(24f) + pad;
         UiRect panel = new(anchor.X, anchor.Y - height, width, height);
+        context.Report(HudElement.Vitals, panel);
         HudPanel.Draw(context, panel, context.Reactive.Appear);
 
         float x = panel.X + pad;

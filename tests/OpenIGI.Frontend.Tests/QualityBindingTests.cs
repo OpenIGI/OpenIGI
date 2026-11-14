@@ -62,8 +62,8 @@ public sealed class QualityBindingTests
 
         Assert.True(registry.TryGet("r_shadows", out ICVar? shadows));
         Assert.True(registry.TryGet("r_shadow_cascades", out ICVar? cascades));
-        Assert.Equal("2048", shadows!.ValueText);
-        Assert.Equal("3", cascades!.ValueText);
+        Assert.Equal("2048", shadows.ValueText);
+        Assert.Equal("3", cascades.ValueText);
 
         // And it stays on the step it wrote rather than being knocked to Custom by its own writes echoing
         // back through the variables' change events.
@@ -79,13 +79,13 @@ public sealed class QualityBindingTests
 
         // What the Advanced tab does: one row, on its own. The set is now between the group's steps.
         Assert.True(registry.TryGet("r_shadow_cascades", out ICVar? cascades));
-        cascades!.TrySetText("4", out _);
+        cascades.TrySetText("4", out _);
 
         Assert.Equal(QualityBinding.CustomOption, control.SelectedOption);
 
         // Custom is shown so the row can say so, and disabled because there is nothing for it to write.
         Assert.NotNull(control.OptionEnabled);
-        Assert.False(control.OptionEnabled!(control.Options.Count - 1));
+        Assert.False(control.OptionEnabled(control.Options.Count - 1));
         Assert.True(control.OptionEnabled(0));
     }
 
@@ -97,10 +97,10 @@ public sealed class QualityBindingTests
 
         Assert.True(registry.TryGet("r_shadows", out ICVar? shadows));
         Assert.True(registry.TryGet("r_shadow_cascades", out ICVar? cascades));
-        shadows!.TrySetText("1024", out _);
+        shadows.TrySetText("1024", out _);
         Assert.Equal(QualityBinding.CustomOption, control.SelectedOption); // half way there
 
-        cascades!.TrySetText("2", out _);
+        cascades.TrySetText("2", out _);
         Assert.Equal("Low", control.SelectedOption);
     }
 
@@ -340,7 +340,7 @@ public sealed class QualityBindingTests
                 {
                     Assert.True(registry.TryGet(variable, out ICVar? cvar) && cvar is not null);
                     Assert.True(
-                        cvar!.TrySetText(value, out string? error),
+                        cvar.TrySetText(value, out string? error),
                         $"{group.Caption} / {group.Levels[index].Name} sets {variable}={value}: {error}");
                 }
 

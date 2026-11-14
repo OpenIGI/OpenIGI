@@ -1,5 +1,4 @@
 using OpenIGI.Core.Configuration;
-using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -31,13 +30,11 @@ public sealed partial class GameHost
 {
     private const double TitleUnitsPerMetre = WorldUnits.PerMetre;
 
-    private ITitleGameplay? _gameplay;
-
     // What stood the player now standing: the title's own gameplay, or one the session's content provides in its stead.
     private ITitleGameplay? _standingGameplay;
 
     // The gameplay whose input the player reads: the one that stood it, else the title's.
-    private ITitleGameplay? Gameplay => _standingGameplay ?? _gameplay;
+    private ITitleGameplay? Gameplay => _standingGameplay ?? _hosted;
     // The title's own player, with what it can do; null when the host's rig is the player.
     private TitlePlayerFeatures? _titleFeatures;
 
@@ -96,11 +93,14 @@ public sealed partial class GameHost
             _standingGameplay = provided;
             RestoreTitleInputBindings();
         }
-        else if (_gameplay is not null)
+        else if (_hosted is { } titleGameplay)
         {
-            player = _gameplay.CreatePlayer(request);
-            _standingGameplay = _gameplay;
-            if (player is null)
+            // The mission being played makes its player: a game's own gameplay behind it, or the mission's own rig.
+            player = titleGameplay.CreatePlayer(request);
+            _standingGameplay = titleGameplay;
+
+            // A hosted mission that keeps its player on its own path declines, and that is no fault of the level's.
+            if (player is null && !_hosted.OwnsLevel)
             {
                 _logger.Warning("Player", "The level places no player for the title to stand.");
             }
@@ -113,7 +113,11 @@ public sealed partial class GameHost
         }
 
         _titleFeatures = new TitlePlayerFeatures(player);
-        _titleHud = _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
+
+        // The hosted mission's own player is still the mission's: the mission keeps it, and while its HUD and arms are the
+        // mission's presenters the title's are not made beside them.
+        bool missionsOwn = _hosted.OwnsLevel && ReferenceEquals(_standingGameplay, _hosted);
+        _titleHud = missionsOwn ? null : _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
         _titleHud?.Load(_resources.FileSystem);
         _titleTickMilliseconds = 0;
         _titleTickMaximumMilliseconds = 0;
@@ -121,9 +125,16 @@ public sealed partial class GameHost
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
         _titlePresentation.Reset(_titleFeatures);
-        _mission.ForgetPlayer();
-        _world?.Motions = player.Motions;
-        _world?.Destruction = player.Destruction;
+        if (!missionsOwn)
+        {
+            _mission.ForgetPlayer();
+
+            // What moves and breaks in the level is the title's player's world's, as it brings its own.
+            _world?.Motions = player.Motions;
+            _world?.Presence = player.Presence;
+            _world?.Destruction = player.Destruction;
+        }
+
         if (player.Visibility is { } visibility)
         {
             _world?.Visibility = visibility;
@@ -134,7 +145,7 @@ public sealed partial class GameHost
         }
 
         // What the title's player holds in front of its eyes, drawn from the title's own packs.
-        if (_titleFeatures.FirstPerson is not null)
+        if (_titleFeatures.FirstPerson is not null && !missionsOwn)
         {
             _titleArms = _presentation.Presenters.Create<ViewModelPresentationRequest, ITitleViewModelPresenter>(ViewModelRequest());
             if (_titleArms is not null && !_titleArms.Load(loaded))
@@ -146,46 +157,62 @@ public sealed partial class GameHost
             // Lit as the world's unbaked objects are: the arms and the weapon carry no lightmap.
             _titleArms?.Shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
         }
+        ForgetTitleInput();
+        _playerMode = !_options.StartFlying;
+
+        // The eye, spelled the way the capture flags take it. Walking and flying are supposed to draw the same picture from the
+        // same place, and the only way to check that is to put the free camera exactly where the walking eye is.
+        Vector3d eye = player.EyePosition;
+        _logger.Information(
+            "Player",
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The title's player stands at {player.Position}; F1 for the free camera; eye at -campos ")
+                + string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}")
+                + (player.Heading is { } heading ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $" -yaw {heading:F4}") : string.Empty)
+                + ".");
+    }
+
+    /// <summary>Forgets what the mouse and the keys did since the title's player last ticked.</summary>
+    private void ForgetTitleInput()
+    {
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
         _titleExtraPressed = 0;
-        _playerMode = !_options.StartFlying;
-
-        Vector3d eye = player.EyePosition;
-        _logger.Information(
-            "Player",
-            FormattableString.Invariant($"The title's player stands at {player.Position}; eye at -campos ")
-                + FormattableString.Invariant(
-                    $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}."));
     }
+
+    /// <summary>Gets the input a title's player is steered by: a script's where one drives the view, still under a pause menu that does not pause, else the window's.</summary>
+    /// <remarks>As <see cref="ViewInput"/> is for the free camera; the weapon wheel and the computer hold a title's player still in its own tick.</remarks>
+    private OpenIGI.Input.InputState TitleInput => (_menuFlow.PauseMenu && !MenuPausesGame) || _touchEditor.IsOpen
+        ? _stillInput
+        : ScriptedViewInput ?? _window.Input;
 
     /// <summary>Gathers a frame's input for the title's player: the mouse adds up and presses are kept until a tick.</summary>
     private void GatherTitleInput()
     {
-        _titleMouseX += _window.Input.Mouse.DeltaX;
-        _titleMouseY += _window.Input.Mouse.DeltaY;
-        _titleWheel += _window.Input.Mouse.WheelDelta;
+        _titleMouseX += TitleInput.Mouse.DeltaX;
+        _titleMouseY += TitleInput.Mouse.DeltaY;
+        _titleWheel += TitleInput.Mouse.WheelDelta;
         if (_titleFeatures?.Look is { } look)
         {
             if (FrameCVars.SmoothPresentation.Value && !_options.Lockstep)
             {
                 PlayerProfile? profile = _configuration.Active;
-                look.GatherLook(_window.Input.Mouse.DeltaX, _window.Input.Mouse.DeltaY,
+                look.GatherLook(TitleInput.Mouse.DeltaX, TitleInput.Mouse.DeltaY,
                     profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity, profile?.InvertMouse ?? false);
             }
             else { look.ResetLook(); }
         }
         foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
         {
-            if (PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            if (PlayerProfileInputBindings.WasPressed(_configuration.Active, TitleInput, PlayerInputBindings.ConfigName(action)))
             {
                 _titlePressed |= action;
             }
         }
         if (Gameplay is { } gameplay)
         {
-            _titleExtraPressed |= TitleInputBindings.Sample(_configuration.Active, _window.Input, gameplay.InputBindings, pressed: true);
+            _titleExtraPressed |= TitleInputBindings.Sample(_configuration.Active, TitleInput, gameplay.InputBindings, pressed: true);
         }
     }
 
@@ -198,7 +225,7 @@ public sealed partial class GameHost
             return false;
         }
 
-        if (_mission.PlayerTicked || !_playerMode || _mission.Cutscenes?.IsPlaying == true)
+        if (_mission.PlayerTicked || !_playerMode || _mission.Scenes?.IsPlaying == true)
         {
             return true;
         }
@@ -207,7 +234,7 @@ public sealed partial class GameHost
         PlayerAction held = default;
         foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
         {
-            if (PlayerProfileInputBindings.IsDown(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            if (PlayerProfileInputBindings.IsDown(_configuration.Active, TitleInput, PlayerInputBindings.ConfigName(action)))
             {
                 held |= action;
             }
@@ -221,10 +248,7 @@ public sealed partial class GameHost
         if (still)
         {
             held = default;
-            _titlePressed = default;
-            _titleExtraPressed = 0;
-            _titleMouseX = 0f;
-            _titleMouseY = 0f;
+            ForgetTitleInput();
         }
 
         PlayerProfile? profile = _configuration.Active;
@@ -236,7 +260,10 @@ public sealed partial class GameHost
             replaced |= PlayerAction.MapComputer;
         }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
-        TickObserver?.BeforeTitleTick(player);
+        // A mission that serves a session itself is observed around its own tick (GameHost.Mission), which this one is
+        // inside: a session seen here as well would read and send twice a tick.
+        IHostTickObserver? observer = _hosted is Game.Multiplayer.IReplicatedTitle ? null : TickObserver;
+        observer?.BeforeTitleTick(player);
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
@@ -246,28 +273,25 @@ public sealed partial class GameHost
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
-            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
+            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, TitleInput, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
-        TickObserver?.AfterTitleTick(player);
+        observer?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;
         _titleTickMaximumMilliseconds = Math.Max(_titleTickMaximumMilliseconds, milliseconds);
         _titleMeasuredTicks++;
-        _titleMouseX = 0f;
-        _titleMouseY = 0f;
+        ForgetTitleInput();
         _titleWheel = 0f;
-        _titlePressed = default;
-        _titleExtraPressed = 0;
         return true;
     }
 
     /// <summary>The fixed keys and buttons a title's own screens read, held now, and the wheel turned since the last tick.</summary>
     private TitleRawKeys SampleRawKeys()
     {
-        OpenIGI.Input.KeyboardState keys = _window.Input.Keyboard;
-        OpenIGI.Input.MouseState mouse = _window.Input.Mouse;
+        OpenIGI.Input.KeyboardState keys = TitleInput.Keyboard;
+        OpenIGI.Input.MouseState mouse = TitleInput.Mouse;
         TitleRawKeys raw = _titleScriptRaw;
         if (mouse.IsDown(OpenIGI.Input.MouseButton.Left)) { raw |= TitleRawKeys.MouseLeft; }
         if (mouse.IsDown(OpenIGI.Input.MouseButton.Right)) { raw |= TitleRawKeys.MouseRight; }
@@ -285,8 +309,8 @@ public sealed partial class GameHost
 
     private void RestoreTitleInputBindings()
     {
-        if (Gameplay is not { } gameplay) { return; }
-        foreach (PlayerProfile profile in _configuration.Profiles) { TitleInputBindings.RestoreMissing(profile, gameplay.InputBindings); }
+        IReadOnlyList<TitleInputBinding> extra = ExtraBindings;
+        foreach (PlayerProfile profile in _configuration.Profiles) { TitleInputBindings.RestoreMissing(profile, extra); }
     }
 
     /// <summary>Applies pending mouse motion to this rendered frame while gameplay remains on its tick.</summary>
@@ -366,11 +390,11 @@ public sealed partial class GameHost
 
                 string gates = $"r_smooth={FrameCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
                     + $"walking={_playerMode}, computer={_computerOpen}, entry={_entry.IsCameraActive}, "
-                    + $"hostCutscene={_mission.Cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
+                    + $"hostCutscene={_mission.Scenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
                     + $"canPreview={_titleFeatures?.Look is { CanPreviewLook: true }}, "
                     + $"lastGameplayLiveLook={_titleLastLiveLook}, lastGameplayCameraMatches={_titleLastCameraMatches}";
                 context.Print(gates);
-                context.Print(FormattableString.Invariant(
+                context.Print(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"blend={_titlePresentationBlend:F4}, pendingMouse=({_titleMouseX:F3},{_titleMouseY:F3}), ticks={_loop.Clock.TickCount}, renders={_loop.Clock.FrameCount}, titleTickMs mean={_titleTickMilliseconds / Math.Max(1, _titleMeasuredTicks):F3} max={_titleTickMaximumMilliseconds:F3} samples={_titleMeasuredTicks}"));
                 _pacing.Report("title_presentation");
             });
@@ -420,8 +444,8 @@ public sealed partial class GameHost
     /// </remarks>
     private void DrawTitleFirstPerson(in Camera3D eye)
     {
-        if (_titleFeatures?.FirstPerson is not { } hands || _titleArms is not { } arms
-            || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Cutscenes?.IsPlaying == true
+        if (_titleFeatures?.FirstPerson is null || _titleArms is not { } arms
+            || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true
             || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {
             return;
@@ -529,10 +553,7 @@ public sealed partial class GameHost
             }
         }
 
-        _titleMouseX = 0f;
-        _titleMouseY = 0f;
-        _titlePressed = default;
-        _titleExtraPressed = 0;
+        ForgetTitleInput();
         _titleFeatures?.Look?.ResetLook();
 
         _logger.Information("Player", _playerMode ? "Walking." : "Flying.");

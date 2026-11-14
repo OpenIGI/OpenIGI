@@ -62,7 +62,7 @@ public sealed class RetailIgi2TerrainBufferReuseTests(ITestOutputHelper output)
         start = GC.GetAllocatedBytesForCurrentThread();
         for (int frame = 0; frame < 10; frame++) { lod.Tessellate(view, settings); }
         long owned = GC.GetAllocatedBytesForCurrentThread() - start;
-        output.WriteLine(FormattableString.Invariant($"Ten terrain frames: reused {reused} bytes; owned {owned} bytes."));
+        output.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Ten terrain frames: reused {reused} bytes; owned {owned} bytes."));
         Assert.True(reused * 100 < owned, $"Reused {reused} bytes; owned {owned} bytes for ten frames.");
     }
 }

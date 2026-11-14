@@ -51,7 +51,7 @@ public static class ClientReplication
         // client learns of only now, a knock among them -- so the server's word on the player below is weighed against a
         // prediction that has taken them. The snapshot's world stands after the server ran this client's command for
         // LastRunCommandTick; this client's own has run every command since, this tick's too, which goes out below.
-        if (session.Latest is { } snapshot)
+        if (session.TakeLatest() is { } snapshot)
         {
             long seen = session.LastRunCommandTick != long.MinValue ? session.LastRunCommandTick : snapshot.Tick;
             int ahead = session.SentCommands.Count > 0 ? (int)Math.Clamp(session.SentCommands[^1].Tick + 1 - seen, 0, 600) : 0;

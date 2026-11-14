@@ -50,7 +50,7 @@ public sealed class DefaultBindTests
                 CVarRegistry.Default.TryGet(name, out ICVar? variable) && variable is not null,
                 $"The default bind on {key} toggles {name}, which is not a variable that exists.");
 
-            if (variable!.Flags.HasFlag(CVarOptions.Archive))
+            if (variable.Flags.HasFlag(CVarOptions.Archive))
             {
                 archived.Add($"{key} -> {name}");
             }
@@ -70,6 +70,33 @@ public sealed class DefaultBindTests
         foreach ((string key, _) in DefaultBinds.All)
         {
             Assert.True(keys.Add(key), $"Two default binds claim {key}; only the first would ever apply.");
+        }
+    }
+
+    /// <summary>A statement the player moved to another key is not given its old key back at the next start.</summary>
+    [Fact]
+    public void AStatementMovedToAnotherKeyKeepsOnlyThatKey()
+    {
+        ConsoleSystem console = new(new CVarRegistry());
+        DefaultBinds.Apply(console);
+        Assert.Equal("v", DefaultBinds.KeyOf(console.Binds, "toggle g_thirdperson"));
+
+        DefaultBinds.Rebind(console, "toggle g_thirdperson", "p");
+        Assert.False(console.Binds.ContainsKey("v"));
+
+        // The next start: the saved binds are there, then the defaults are offered.
+        DefaultBinds.Apply(console);
+        Assert.Equal("p", DefaultBinds.KeyOf(console.Binds, "toggle g_thirdperson"));
+        Assert.False(console.Binds.ContainsKey("v"));
+    }
+
+    /// <summary>Every row the Controls page lists is a statement a default key runs.</summary>
+    [Fact]
+    public void EveryListedStatementHasADefaultKey()
+    {
+        foreach ((string statement, _) in DefaultBinds.Listed)
+        {
+            Assert.Contains(DefaultBinds.All, bind => bind.Statement == statement);
         }
     }
 }

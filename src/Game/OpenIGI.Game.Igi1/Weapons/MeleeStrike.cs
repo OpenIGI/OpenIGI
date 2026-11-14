@@ -1,6 +1,3 @@
-using OpenIGI.Game.Weapons;
-using OpenIGI.Game.Igi1.Ai;
-
 namespace OpenIGI.Game.Igi1.Weapons;
 
 /// <summary>How a close-combat strike books its damage.</summary>

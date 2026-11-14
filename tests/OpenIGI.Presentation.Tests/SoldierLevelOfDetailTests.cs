@@ -12,7 +12,6 @@ using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 

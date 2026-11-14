@@ -11,7 +11,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -77,7 +76,7 @@ public sealed class RetailPatrolPathTests
                 Assert.True(
                     type.HasValue,
                     $"level {id} has a HumanAI naming the unregistered type '{ai.AiTypeName}'");
-                seen.Add(type!.Value);
+                seen.Add(type.Value);
                 Assert.NotNull(ai.Archetype);
             }
         }
@@ -251,6 +250,7 @@ public sealed class RetailPatrolPathTests
             ResourceRegistry resources = new(fileSystem);
 
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
             AiTaskTypes.RegisterAll(loop.Types);
 

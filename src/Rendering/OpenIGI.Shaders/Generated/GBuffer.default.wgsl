@@ -314,16 +314,16 @@ fn fragmentMain( _S13 : pixelInput_0, @builtin(position) position_3 : vec4<f32>)
     var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S13.diffuseUv_2)));
     var alpha_0 : f32 = diffuse_0.w * _S13.color_1.w;
     var alphaGradient_0 : f32 = (fwidth((alpha_0)));
-    var _S14 : bool;
+    var matte_0 : bool;
     if((push_0.normal2_0.w) > 0.0f)
     {
-        _S14 = alphaGradient_0 > 0.0020000000949949f;
+        matte_0 = alphaGradient_0 > 0.0020000000949949f;
     }
     else
     {
-        _S14 = false;
+        matte_0 = false;
     }
-    if(_S14)
+    if(matte_0)
     {
         if((fract(sin(dot(position_3.xy, vec2<f32>(12.98980045318603516f, 78.233001708984375f)) + push_0.normal2_0.w) * 43758.546875f)) > (clamp((alpha_0 - cAlphaReference_0) / alphaGradient_0 + 0.5f, 0.0f, 1.0f)))
         {
@@ -337,76 +337,127 @@ fn fragmentMain( _S13 : pixelInput_0, @builtin(position) position_3 : vec4<f32>)
             discard;
         }
     }
-    var _S15 : vec3<f32> = SampledLinear_0(diffuse_0.xyz) * DecodeSrgb_0(_S13.color_1.xyz);
-    var albedo_0 : vec3<f32> = _S15 * vec3<f32>(_S13.fade_1);
-    var _S16 : vec3<f32> = SampledLinear_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S13.lightmapUv_2))).xyz);
-    var _S17 : vec3<f32> = _S16 * vec3<f32>(push_0.material_0.w);
+    var _S14 : vec3<f32> = SampledLinear_0(diffuse_0.xyz) * DecodeSrgb_0(_S13.color_1.xyz);
+    var albedo_0 : vec3<f32> = _S14 * vec3<f32>(_S13.fade_1);
+    var _S15 : vec3<f32> = SampledLinear_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S13.lightmapUv_2))).xyz);
+    var _S16 : vec3<f32> = _S15 * vec3<f32>(push_0.material_0.w);
     if((push_0.normal0_0.w) > 3.5f)
     {
-        const _S18 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f);
-        output_1.baseColour_0 = _S18;
-        output_1.normal_2 = _S18;
-        output_1.material_2 = _S18;
-        output_1.baked_0 = vec4<f32>(_S15, 1.0f);
+        const _S17 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f);
+        output_1.baseColour_0 = _S17;
+        output_1.normal_2 = _S17;
+        output_1.material_2 = _S17;
+        output_1.baked_0 = vec4<f32>(_S14, 1.0f);
         return output_1;
     }
     var baked_1 : vec3<f32>;
     var albedo_1 : vec3<f32>;
     if((push_0.normal0_0.w) > 2.5f)
     {
-        var albedo_2 : vec3<f32> = albedo_0 * _S16;
+        var albedo_2 : vec3<f32> = albedo_0 * _S15;
         baked_1 = vec3<f32>(push_0.material_0.w, push_0.material_0.w, push_0.material_0.w);
         albedo_1 = albedo_2;
     }
     else
     {
-        baked_1 = _S17;
+        baked_1 = _S16;
         albedo_1 = albedo_0;
     }
     var normal_3 : vec3<f32> = normalize(_S13.worldNormal_2);
-    var matte_0 : bool = (push_0.normal0_0.w) < -0.5f;
+    var authored_0 : bool = (push_0.normal0_0.w) < -1.5f;
+    if((push_0.normal0_0.w) < -0.5f)
+    {
+        matte_0 = !authored_0;
+    }
+    else
+    {
+        matte_0 = false;
+    }
     var roughness_1 : f32 = push_0.material_0.x;
-    var _S19 : f32 = push_0.material_0.y;
+    var _S18 : f32 = push_0.material_0.y;
+    var detailStrength_0 : f32;
+    if(authored_0)
+    {
+        detailStrength_0 = 1.0f;
+    }
+    else
+    {
+        detailStrength_0 = frame_0.surface_0.x;
+    }
     var normal_4 : vec3<f32>;
     var roughness_2 : f32;
     var occlusion_0 : f32;
-    if((frame_0.surface_0.x) > 0.0f)
+    var metallic_1 : f32;
+    if(detailStrength_0 > 0.0f)
     {
         var detail_0 : vec4<f32> = (textureSample((uDetail_0), (uDetailSampler_0), (_S13.diffuseUv_2)));
-        var _S20 : vec3<f32> = vec3<f32>(detail_0.xy * vec2<f32>(2.0f) - vec2<f32>(1.0f), 0.0f);
-        var tangentNormal_0 : vec3<f32> = _S20;
-        var _S21 : vec2<f32> = _S20.xy;
-        tangentNormal_0[i32(2)] = sqrt(max(1.0f - dot(_S21, _S21), 0.0f));
+        var _S19 : vec3<f32> = vec3<f32>(detail_0.xy * vec2<f32>(2.0f) - vec2<f32>(1.0f), 0.0f);
+        var tangentNormal_0 : vec3<f32> = _S19;
+        var _S20 : vec2<f32> = _S19.xy;
+        tangentNormal_0[i32(2)] = sqrt(max(1.0f - dot(_S20, _S20), 0.0f));
         var tangentAxis_1 : vec3<f32>;
         var bitangentAxis_1 : vec3<f32>;
         CotangentFrame_0(normal_3, _S13.surfacePosition_1, _S13.diffuseUv_2, &(tangentAxis_1), &(bitangentAxis_1));
-        var _S22 : f32 = clamp(roughness_1 * mix(1.0f, detail_0.z * 2.0f, saturate(frame_0.surface_0.x)), 0.01999999955296516f, 1.0f);
-        var _S23 : f32 = detail_0.w;
-        normal_4 = normalize(mix(normal_3, tangentAxis_1 * vec3<f32>(tangentNormal_0.x) + bitangentAxis_1 * vec3<f32>(tangentNormal_0.y) + normal_3 * vec3<f32>(tangentNormal_0.z), vec3<f32>(frame_0.surface_0.x)));
-        roughness_2 = _S22;
-        occlusion_0 = _S23;
+        var _S21 : vec3<f32> = normalize(mix(normal_3, tangentAxis_1 * vec3<f32>(tangentNormal_0.x) + bitangentAxis_1 * vec3<f32>(tangentNormal_0.y) + normal_3 * vec3<f32>(tangentNormal_0.z), vec3<f32>(detailStrength_0)));
+        var _S22 : f32 = detail_0.z;
+        var roughnessScale_0 : f32 = mix(1.0f, _S22 * 2.0f, saturate(frame_0.surface_0.x));
+        if(authored_0)
+        {
+            detailStrength_0 = clamp(_S22, 0.01999999955296516f, 1.0f);
+        }
+        else
+        {
+            detailStrength_0 = clamp(roughness_1 * roughnessScale_0, 0.01999999955296516f, 1.0f);
+        }
+        if(authored_0)
+        {
+            var _S23 : f32 = detail_0.w;
+            roughness_2 = 1.0f;
+            occlusion_0 = _S23;
+        }
+        else
+        {
+            roughness_2 = detail_0.w;
+            occlusion_0 = _S18;
+        }
+        var _S24 : f32 = roughness_2;
+        var _S25 : f32 = occlusion_0;
+        normal_4 = _S21;
+        roughness_2 = detailStrength_0;
+        occlusion_0 = _S24;
+        metallic_1 = _S25;
     }
     else
     {
         normal_4 = normal_3;
         roughness_2 = roughness_1;
         occlusion_0 = 1.0f;
+        metallic_1 = _S18;
     }
+    var _S26 : bool;
     if((frame_0.surface_0.y) != 1.0f)
     {
-        _S14 = !matte_0;
+        _S26 = !matte_0;
     }
     else
     {
-        _S14 = false;
+        _S26 = false;
     }
-    if(_S14)
+    if(_S26)
+    {
+        _S26 = !authored_0;
+    }
+    else
+    {
+        _S26 = false;
+    }
+    if(_S26)
     {
         roughness_2 = min(roughness_2 * mix(1.0f, frame_0.surface_0.y, smoothstep(0.55000001192092896f, 0.85000002384185791f, clamp(normal_4.z, 0.0f, 1.0f))), 1.0f);
     }
     var dNormalX_0 : vec3<f32> = dpdx(normal_4);
     var dNormalY_0 : vec3<f32> = dpdy(normal_4);
-    var _S24 : f32 = sqrt(min(1.0f, roughness_2 * roughness_2 + min(2.0f * (0.25f * (dot(dNormalX_0, dNormalX_0) + dot(dNormalY_0, dNormalY_0))), 0.18000000715255737f)));
+    var _S27 : f32 = sqrt(min(1.0f, roughness_2 * roughness_2 + min(2.0f * (0.25f * (dot(dNormalX_0, dNormalX_0) + dot(dNormalY_0, dNormalY_0))), 0.18000000715255737f)));
     output_1.baseColour_0 = vec4<f32>(albedo_1, occlusion_0);
     output_1.normal_2 = EncodeGBufferNormal_0(normal_4, 0.0f);
     var shadingModel_1 : i32;
@@ -420,11 +471,11 @@ fn fragmentMain( _S13 : pixelInput_0, @builtin(position) position_3 : vec4<f32>)
     }
     if(shadingModel_1 == i32(0))
     {
-        roughness_2 = EncodeEmissiveStrength_0(push_0.material_0.z);
+        detailStrength_0 = EncodeEmissiveStrength_0(push_0.material_0.z);
     }
     else
     {
-        roughness_2 = 0.5f;
+        detailStrength_0 = 0.5f;
     }
     var specular_1 : f32;
     if((push_0.normal0_0.w) > 0.5f)
@@ -434,29 +485,24 @@ fn fragmentMain( _S13 : pixelInput_0, @builtin(position) position_3 : vec4<f32>)
     }
     else
     {
-        specular_1 = roughness_2;
-        roughness_2 = _S24;
+        specular_1 = detailStrength_0;
+        roughness_2 = _S27;
     }
     if(matte_0)
     {
-        _S14 = shadingModel_1 == i32(1);
+        matte_0 = shadingModel_1 == i32(1);
     }
     else
     {
-        _S14 = false;
+        matte_0 = false;
     }
-    var metallic_1 : f32;
-    if(_S14)
+    if(matte_0)
     {
         var shadingModel_2 : i32 = (shadingModel_1 | (i32(16)));
         metallic_1 = 0.0f;
         specular_1 = 0.0f;
         roughness_2 = 1.0f;
         shadingModel_1 = shadingModel_2;
-    }
-    else
-    {
-        metallic_1 = _S19;
     }
     output_1.material_2 = EncodeGBufferMaterial_0(metallic_1, specular_1, roughness_2, shadingModel_1);
     output_1.baked_0 = vec4<f32>(baked_1, 1.0f);

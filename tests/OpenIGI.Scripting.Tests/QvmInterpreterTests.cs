@@ -1,7 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Scripting.Tests;

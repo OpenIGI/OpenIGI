@@ -31,7 +31,7 @@ public sealed partial class GameHost
         // script listens for the key in can be skipped at all -- an I.G.I. intro -- so no other is offered the hold; one
         // whose hold has completed stays offered until it ends.
         bool hostCutscene = free
-            && _mission.Cutscenes is { IsPlaying: true } scenes
+            && _mission.Scenes is { IsPlaying: true } scenes
             && (scenes.CanBreak || _cutsceneSkip.Breaking)
             && TickObserver is not Multiplayer.ISessionFollower;
         bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true };
@@ -39,11 +39,11 @@ public sealed partial class GameHost
         bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown;
 
         // A scene the host ended -- skipped, often -- is cut here as the host's skip cut it there.
-        bool followed = TickObserver is Multiplayer.ISessionFollower && _mission.Cutscenes?.IsPlaying == true;
+        bool followed = TickObserver is Multiplayer.ISessionFollower && _mission.Scenes?.IsPlaying == true;
         if (_followedScene && !followed)
         {
             _cutsceneSounds.StopAll();
-            _mission.Objectives?.ClearCutsceneMessages();
+            _mission.Progress?.ClearCutsceneMessages();
         }
 
         _followedScene = followed;
@@ -58,13 +58,13 @@ public sealed partial class GameHost
         // run on the very tick after, and a single tick's press it missed left the ring full and the scene playing.
         if (_cutsceneSkip.Breaking)
         {
-            _mission.Cutscenes!.RequestBreak();
+            _mission.Scenes!.RequestBreak();
         }
 
         if (completed)
         {
             _cutsceneSounds.StopAll();
-            _mission.Objectives?.ClearCutsceneMessages();
+            _mission.Progress?.ClearCutsceneMessages();
         }
     }
 

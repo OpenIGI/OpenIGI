@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -180,7 +179,7 @@ public static class AiFreePosition
 
         if (towardTarget && Tested is { } told && graph.RouteTable is { } table)
         {
-            told(claimant, candidateId, towardTarget, FormattableString.Invariant(
+            told(claimant, candidateId, towardTarget, string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"costs me={myNodeId} target={targetNodeId} c2t={table[candidateId, targetNodeId].Cost:0.000} c2me={table[candidateId, myNodeId].Cost:0.000} me2t={table[myNodeId, targetNodeId].Cost:0.000}"));
         }
 

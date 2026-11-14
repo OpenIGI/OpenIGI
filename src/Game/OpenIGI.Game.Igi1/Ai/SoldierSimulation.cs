@@ -32,7 +32,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// them share one <see cref="SoldierContext"/>, so every part reads the same roster, brains and random stream.
 /// </para>
 /// </remarks>
-public sealed partial class SoldierSimulation : IHumanEvents
+public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level.ITaskRun<GuardGeneratorTask>
 {
     /// <summary>The damage factor a knife stab carries into a soldier with no fight on (<c>0x46DFB0</c>: <c>0x447A0000</c>).</summary>
     public const float KnifeUnawareDamageFactor = 1000f;
@@ -111,7 +111,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _footsteps.LandSound = (sound, at) => scriptSound(sound, at, null);
         _rounds = new SoldierGunShotRounds(_context, _sight, _noise);
         _fire = new SoldierWeaponFire(_context, _rounds, _noise);
-        _generators = new GuardGeneratorSpawner(_context, _sight, Enlist);
+        _generators = new GuardGeneratorSpawner(_context, _sight, Enlist, _rounds.MadeNow);
+        _rounds.PickupsMade = () => DroppedWeaponPickups?.MadeCount ?? 0;
+        _runPickupsMadeBefore = RunPickupsMadeBefore;
         _brains = new SoldierBrainBinder(_context, _sight, Enlist);
         _ragdolls = new SoldierRagdolls(_context);
         _diagnostics = new SoldierDiagnostics(_context);
@@ -191,7 +193,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         int animationBefore = view.CurrentAnimation;
         if (!view.IsDead && view.Bones.SourceOf(0) is { } bone0)
         {
-            PlayClipEvents(view, brain, bone0);
+            PlayClipEvents(view, bone0);
         }
 
         // Child Train collision starts at its authored placeholder and receives its derived consist
@@ -229,13 +231,10 @@ public sealed partial class SoldierSimulation : IHumanEvents
         // the state, since the ids arrive only once the CREATE dispatch has run the script.
         bool alarmOn = false;
         bool alarmWasOn = false;
-        if (brain.AlarmControlId != -1)
+        if (brain.AlarmControlId != -1 && AlarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
         {
-            if (AlarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
-            {
-                alarmOn = watched!.IsOn;
-                alarmWasOn = watched.WasOn;
-            }
+            alarmOn = watched!.IsOn;
+            alarmWasOn = watched.WasOn;
         }
 
         // The detection scan is offered every human -- the player and every soldier -- and the brain
@@ -339,6 +338,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
     /// </param>
     /// <param name="difficulty">Which of the table's three columns to read.</param>
     /// <param name="variables">The live level variables used by AlarmControl expressions.</param>
+    /// <param name="expressions">The level's expressions, or <see langword="null"/> to compile with ones of its own.</param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
@@ -352,7 +352,8 @@ public sealed partial class SoldierSimulation : IHumanEvents
         GameTask? levelRoot = null,
         HumanAiConfigRegistry? config = null,
         AiDifficulty difficulty = AiDifficulty.Normal,
-        ScriptVarRegistry? variables = null)
+        ScriptVarRegistry? variables = null,
+        LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -362,13 +363,13 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _sight.SightTraceForTesting = sight;
         _context.ClearBrains();
         _rounds.Clear();
-        _damage.ClearPendingDeaths();
+        _damage.ClearForLevel();
         _generators.GuardGenerators.Clear();
-        _generators.GuardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
+        _generators.GuardExpressions = variables is null ? null : expressions ?? new LevelExpressionRuntime(variables);
         ScriptVariables = variables;
         LastDetectionShoutTick = -1;
-        _context.Combat.Clear();
-        Health.Clear();
+        _context.ForgetCombat();
+        _context.ForgetHealth();
         _brains.ClearActivations();
         _context.PlayerTarget = new AiCombatTarget("HumanPlayer");
         _levelRoot = levelRoot;
@@ -390,7 +391,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
             Humans.AddRange(levelRoot.DescendantsAndSelf().OfType<IHumanAiEventTarget>());
         }
         AlarmControls = levelRoot is not null && variables is not null
-            ? AiAlarmControlRegistry.Build(levelRoot, variables)
+            ? AiAlarmControlRegistry.Build(levelRoot, variables, expressions)
             : null;
 
         (int Patrolling, int PerTask, int Unroutable, Dictionary<int, int> GraphUse) census = _brains.BindBrains(
@@ -424,6 +425,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
         TickCount++;
         Enemy = enemy;
         Ticked.Clear();
+        _rounds.LevelRunning = true;
+        _rounds.BeginTick();
+        _dynamicTailRan = false;
         CollectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         bool collectDiagnostics = CollectDiagnostics;
         if (collectDiagnostics)
@@ -467,27 +471,150 @@ public sealed partial class SoldierSimulation : IHumanEvents
         HashSet<GameTask> soldiers = new(ReferenceEqualityComparer.Instance);
         foreach (SoldierView view in Brains.Keys)
         {
-            if (soldiers.Add(view.Soldier))
+            if (soldiers.Add(view.Soldier) && OpenIGI.Game.Level.LevelTaskClass.TryAs(view.Soldier, walker, out HumanTask? human))
             {
-                walker.Bind(view.Soldier, task =>
+                // A soldier's run handler only runs its children (0x45CF90, 0x45EEA0); its HumanAI child moves it.
+                if (SoldierContext.FindMind(view) is { } mind)
                 {
-                    TickSoldierTask(task);
-                    walker.RunChildren(task);
-                });
+                    human.Runner = _humanChildren;
+                    mind.Runner = new SoldierMindRun(this, human);
+
+                    // Its Gun is a task of its own, ahead of its HumanAI: the weapon's clock runs there.
+                    if (human.Children.OfType<Igi1GunTask>().FirstOrDefault() is { } gun)
+                    {
+                        SoldierBodies carried = new(this, human);
+                        gun.Clock = carried.CountCooldown;
+                    }
+                }
+                else
+                {
+                    human.Runner = new SoldierTaskRun(this, human);
+                }
             }
         }
 
         foreach (GuardGeneratorTask generator in _generators.AllGenerators)
         {
-            walker.Bind(generator, task =>
-            {
-                _generators.TickGuardGenerator((GuardGeneratorTask)task);
-                walker.RunChildren(task);
-            });
+            generator.Runner = this;
         }
 
         Doors?.AttachTo(walker, DoorTicked);
         AlarmControls?.AttachTo(walker, () => TickCount, _ => AlarmControlTicked());
+    }
+
+    /// <summary>
+    /// One soldier task's part of the level's walk: the update of every body the task owns, then its children, as a
+    /// <c>HumanSoldier</c>'s run handler updates itself and then its view, its gun and its <c>HumanAI</c>.
+    /// </summary>
+    /// <remarks>
+    /// The task holds its own bodies -- one, or a generator's dead guard and its replacement, which share a task -- in the
+    /// order the soldiers are kept in, and asks for them again only when a soldier has joined or left.
+    /// </remarks>
+    private sealed class SoldierTaskRun(SoldierSimulation soldiers, HumanTask owner) : OpenIGI.Game.Level.ITaskRun<HumanTask>
+    {
+        private readonly SoldierBodies _bodies = new(soldiers, owner);
+
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+        {
+            _bodies.Tick();
+            level.RunChildren(task);
+        }
+    }
+
+    /// <summary>
+    /// A soldier's <c>HumanAI</c> child's part of the level's walk: the soldier's update -- its mind, then the body its
+    /// controls move -- and the task's own children.
+    /// </summary>
+    /// <remarks>
+    /// <c>HumanAI</c>'s update (<c>0x44F410</c>) sends its controls to the <c>HumanSoldier</c> above it, whose input
+    /// handler (<c>0x45D040</c>) runs the body's update: the soldier moves where the walk reaches its mind.
+    /// </remarks>
+    private sealed class SoldierMindRun(SoldierSimulation soldiers, HumanTask owner) : OpenIGI.Game.Level.ITaskRun<HumanAiTask>
+    {
+        private readonly SoldierBodies _bodies = new(soldiers, owner);
+
+        public void Run(HumanAiTask task, OpenIGI.Game.Level.LevelRun level)
+        {
+            _bodies.Tick();
+            level.RunChildren(task);
+        }
+    }
+
+    /// <summary>A human's run handler (<c>0x45EEA0</c>): its children, and nothing of its own.</summary>
+    private sealed class HumanChildren : OpenIGI.Game.Level.ITaskRun<HumanTask>
+    {
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level) => level.RunChildren(task);
+    }
+
+    // What runs every soldier's own task: it has no state of its own.
+    private readonly HumanChildren _humanChildren = new();
+
+    // The bodies one soldier task owns, in the soldiers' order, asked for again only when a soldier joins or leaves.
+    private sealed class SoldierBodies(SoldierSimulation soldiers, HumanTask owner)
+    {
+        private readonly List<(SoldierView View, Igi1HumanAi Brain)> _bodies = [];
+        private int _version = -1;
+
+        public void Tick()
+        {
+            Refresh();
+
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                soldiers.TickSoldier(_bodies[i].View, _bodies[i].Brain);
+            }
+        }
+
+        private void Refresh()
+        {
+            SoldierContext context = soldiers._context;
+            if (_version == context.BrainsVersion)
+            {
+                return;
+            }
+
+            _version = context.BrainsVersion;
+            _bodies.Clear();
+            foreach ((SoldierView view, Igi1HumanAi brain) in context.Brains)
+            {
+                if (ReferenceEquals(view.Soldier, owner))
+                {
+                    _bodies.Add((view, brain));
+                }
+            }
+        }
+
+        // The Gun's run handler (0x478640), for the weapon each of the task's bodies carries in its hands.
+        public void CountCooldown()
+        {
+            Refresh();
+            SoldierContext context = soldiers._context;
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                (SoldierView view, Igi1HumanAi brain) = _bodies[i];
+                if (brain.MountedGun is not null
+                    || !ConditionalContainerGate.IsTaskActive(view.Soldier)
+                    || context.FindAgent(view) is not { } agent)
+                {
+                    continue;
+                }
+
+                if (agent.FireCooldown > 0)
+                {
+                    agent.FireCooldown--;
+                }
+
+                agent.CooldownCountedTick = context.TickCount;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A guard generator's update (<c>0x487EE0</c>), then its children.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<GuardGeneratorTask>.Run(GuardGeneratorTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        _generators.TickGuardGenerator(task);
+        level.RunChildren(task);
     }
 
     /// <summary>Runs one tick outside a level walk: the same per-task updates, in one pass.</summary>
@@ -523,6 +650,28 @@ public sealed partial class SoldierSimulation : IHumanEvents
 
     }
 
+    /// <summary>
+    /// Raised as the tick's corpses move: after the simulation has closed the tick (<see cref="FinishTick"/>), before the guns
+    /// the dead dropped fall, which share the probes that stop a falling body.
+    /// </summary>
+    public event Action? CorpsesMove;
+
+    /// <summary>Raised once the tick is closed: the bodies stand where they will be drawn until the next.</summary>
+    public event Action? TickClosed;
+
+    /// <summary>
+    /// Closes a tick the level's walk ran (<see cref="BeginTick"/>, <see cref="AttachTo"/>): the bodies the walk missed and the
+    /// collision, the corpses (<see cref="CorpsesMove"/>), then the guns the dead dropped (<see cref="TickClosed"/> after).
+    /// </summary>
+    public void EndTick()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        FinishTick();
+        CorpsesMove?.Invoke();
+        TickAfterCorpses();
+        TickClosed?.Invoke();
+    }
+
     /// <summary>Closes the tick's simulation before the corpses move: the bodies the walk missed, the staged actors, the collision.</summary>
     internal void FinishTick()
     {
@@ -549,9 +698,22 @@ public sealed partial class SoldierSimulation : IHumanEvents
             }
         }
 
-        // The level's dynamic container ticks after its static objects: every gun's GunShot task, then the chips.
+        // Every gun's GunShot task is a child of the level's Dynamic task. The walk has marched those the level was built
+        // with as it left the child each stands after (MarchRoundsMadeUnder); what is left is Dynamic's tail. A level
+        // stepped without its walk marches them all here.
         TickingSoldierId = -1;
-        _rounds.MarchRounds();
+        if (_dynamicTailRan)
+        {
+            // The walk ran Dynamic's tail as it left that task (RunDynamicTail).
+        }
+        else if (_rounds.MarchedInWalk || _walker?.AfterDynamicChild is not null)
+        {
+            _rounds.MarchTail();
+        }
+        else
+        {
+            _rounds.MarchRounds();
+        }
 
         // Un-brained cutscene actors ride their vehicles the same way; the brained ones did as they updated.
         _staging.AttachStagedActorsToVehicles();
@@ -574,7 +736,12 @@ public sealed partial class SoldierSimulation : IHumanEvents
     /// <summary>After the corpses moved: the dropped weapons, and the poses of the bodies no brain drives.</summary>
     internal void TickAfterCorpses()
     {
-        DroppedWeaponPickups?.Tick(RagdollWorldForCorpses());
+        // The dropped guns ran at Dynamic's tail when the walk ran it; here for a level stepped without its walk.
+        if (!_dynamicTailRan)
+        {
+            DroppedWeaponPickups?.Tick(RagdollWorldForCorpses());
+        }
+
         foreach (SoldierModelGroup group in Roster)
         {
             if (group.Body.Model is null)
@@ -647,34 +814,34 @@ public sealed partial class SoldierSimulation : IHumanEvents
     /// <c>Human</c>'s evaluate (<c>0x45E3E0</c>), for a soldier: never the shooter or what the shot ignores, and a round from
     /// someone on the soldier's side passes through it. The probability roll is the player's alone.
     /// </remarks>
-    bool IHumanEvents.EvaluateWeaponCollision(HumanTask soldier, in WeaponCollisionQuery query)
+    bool IHumanEvents.EvaluateWeaponCollision(HumanTask human, in WeaponCollisionQuery query)
     {
-        if (ReferenceEquals(soldier, query.Shooter) || ReferenceEquals(soldier, query.Ignore))
+        if (ReferenceEquals(human, query.Shooter) || ReferenceEquals(human, query.Ignore))
         {
             return false;
         }
 
-        return query.Shooter is not HumanTask shooter || shooter.Team != soldier.Team;
+        return query.Shooter is not HumanTask shooter || shooter.Team != human.Team;
     }
 
     /// <inheritdoc/>
-    void IHumanEvents.WeaponHit(HumanTask soldier, in WeaponHit hit)
+    void IHumanEvents.WeaponHit(HumanTask human, in WeaponHit hit)
     {
-        if (!_context.ViewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (!_context.ViewsByTask.TryGetValue(human, out SoldierView? view))
         {
             return;
         }
 
-        // Another game's round: where it meets the soldier's body is this game's to find.
+        // Another game's round: where it meets the human's body is this game's to find.
         Matrix3f m = view.Orientation;
         _damage.TakeRound(view, hit.Context as Igi1WeaponHit
             ?? Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, view.Position, new Vector3f(m.M12, m.M22, m.M32))));
     }
 
     /// <inheritdoc/>
-    void IHumanEvents.ExplosionHit(HumanTask soldier, in ExplosionHit hit)
+    void IHumanEvents.ExplosionHit(HumanTask human, in ExplosionHit hit)
     {
-        if (!_context.ViewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (!_context.ViewsByTask.TryGetValue(human, out SoldierView? view))
         {
             return;
         }
@@ -688,6 +855,46 @@ public sealed partial class SoldierSimulation : IHumanEvents
     /// <param name="task">The soldier's task.</param>
     /// <returns>The soldier, or <see langword="null"/> when the task is not one of these soldiers.</returns>
     public SoldierView? ViewOf(HumanTask task) => _context.ViewsByTask.TryGetValue(task, out SoldierView? view) ? view : null;
+
+    /// <summary>
+    /// Marches the rounds of the soldiers' guns made under one child of the level's <c>Dynamic</c> task, as the walk leaves
+    /// that child: a gun's <c>GunShot</c> task is made with the gun, at <c>Dynamic</c>'s tail as it then stood.
+    /// </summary>
+    /// <param name="anchor">The child of <c>Dynamic</c> the walk has just run.</param>
+    /// <param name="from">The first place under the child whose gun is marched (<see cref="OrderUnder"/>).</param>
+    /// <param name="before">The place the march stops short of.</param>
+    public void MarchRoundsMadeUnder(GameTask anchor, int from = int.MinValue, int before = int.MaxValue)
+    {
+        ArgumentNullException.ThrowIfNull(anchor);
+        TickingSoldierId = -1;
+        _rounds.MarchUnder(anchor, from, before);
+    }
+
+    /// <summary>Gets a task's place among the tasks under a child of <c>Dynamic</c>, in the order the level made them.</summary>
+    /// <param name="anchor">The child of <c>Dynamic</c>.</param>
+    /// <param name="task">The task.</param>
+    /// <returns>The place, or -1 for a task not under it.</returns>
+    public static int OrderUnder(GameTask anchor, GameTask task) => SoldierGunShotRounds.OrderUnder(anchor, task);
+
+    // Whether the walk ran Dynamic's tail this tick, and what runs the pickups made before a gun there.
+    private bool _dynamicTailRan;
+    private readonly Action<long> _runPickupsMadeBefore;
+
+    /// <summary>
+    /// The tail of the level's <c>Dynamic</c> task, as the walk leaves it: the tasks made while the level runs, in the order
+    /// they were made -- the <c>GunShot</c> task of each gun made since (a generator's guards', <c>0x478540</c>) and each
+    /// gun the dead dropped (<c>GunPickup</c>, made on <c>Level_GetDynamic</c> by <c>0x479C20</c>, run by <c>0x46CEA0</c>).
+    /// </summary>
+    public void RunDynamicTail()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TickingSoldierId = -1;
+        DroppedWeaponPickups?.BeginRun();
+        _rounds.MarchTail(_runPickupsMadeBefore);
+        _dynamicTailRan = true;
+    }
+
+    private void RunPickupsMadeBefore(long made) => DroppedWeaponPickups?.RunMadeBefore(RagdollWorldForCorpses(), made);
 
     // A new soldier's gun's GunShot task, after every gun made before it, and this simulation's handlers for its hit events.
     private void Enlist(SoldierView view)
@@ -704,23 +911,16 @@ public sealed partial class SoldierSimulation : IHumanEvents
         view.Soldier.Body = new Player.Igi1SoldierBody(view, () => Brains.TryGetValue(view, out Igi1HumanAi? brain) && brain.IsCrouching);
     }
 
-    /// <summary>Updates every body a soldier task owns -- a generator's dead guard and its replacement share one.</summary>
-    private void TickSoldierTask(GameTask task)
-    {
-        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
-        {
-            if (ReferenceEquals(view.Soldier, task))
-            {
-                TickSoldier(view, brain);
-            }
-        }
-    }
-
     // The authored animation triggers the clip crossed this tick, and the melee strike its impact frame delivers.
-    private void PlayClipEvents(SoldierView view, Igi1HumanAi brain, BoneClip bone0)
+    private void PlayClipEvents(SoldierView view, BoneClip bone0)
     {
         // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
-        // event 1040 plays "bodyfall_9", etc.
+        // event 1040 plays "bodyfall_9", etc. None for a soldier a mod has silenced (SilentDeaths).
+        if (SilentDeaths.Count > 0 && SilentDeaths.Contains(view))
+        {
+            return;
+        }
+
         if (AnimationTriggers is not null)
         {
             foreach (AnimTriggerDefinition trigger in AnimationTriggers.Definitions.Values)
@@ -1027,7 +1227,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
             brain.RideMountedGun();
         }
 
-        bool fired = _fire.FireIfAsked(view, brain, aimFeet, aimCrouching);
+        // A soldier who let go of his gun (DropGun) has none of his own to fire.
+        bool fired = (brain.MountedGun is not null || !_damage.LetGoOfGun.Contains(view))
+            && _fire.FireIfAsked(view, brain, aimFeet, aimCrouching);
         if (fired)
         {
             brain.TakeWeaponKick(_fire.KickThisTick.Pitch, _fire.KickThisTick.Yaw);

@@ -8,10 +8,8 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
-using OpenIGI.Scripting.Runtime;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -37,7 +35,7 @@ public sealed class DiagLevel4Gates
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -153,7 +151,7 @@ public sealed class DiagLevel4Gates
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

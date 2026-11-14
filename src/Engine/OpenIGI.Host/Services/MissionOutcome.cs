@@ -4,6 +4,7 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Rendering;
@@ -14,11 +15,11 @@ namespace OpenIGI.Host.Services;
 /// <summary>What deciding a mission reads of the host, and what it asks the host to do.</summary>
 internal interface IMissionOutcomeHost
 {
-    /// <summary>Gets the mission's objectives and messages, or null before they are built.</summary>
-    MissionObjectiveRuntime? Objectives { get; }
+    /// <summary>Gets how the mission stands by its level, or null before its objectives are built.</summary>
+    IMissionProgress? Objectives { get; }
 
-    /// <summary>Gets the mission's cut-scenes, or null before they are built.</summary>
-    CutsceneRuntime? Cutscenes { get; }
+    /// <summary>Gets a value indicating whether one of the mission's cut-scenes is playing.</summary>
+    bool CutscenePlaying { get; }
 
     /// <summary>Gets the title's own player, which can decide a mission itself; null for a title without one.</summary>
     ITitlePlayer? TitlePlayer { get; }
@@ -87,7 +88,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
                 RemasteredHudPresentation.UsesTacticalMessages(
                     HudCVars.RemasteredHud.Value,
                     HudCVars.TacticalMessages.Value)
-                && host.Cutscenes?.IsPlaying != true
+                && !host.CutscenePlaying
                     ? RemasteredMessageHoldSeconds
                     : 0f;
         }

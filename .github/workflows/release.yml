@@ -107,7 +107,7 @@ jobs:
         run: |
           dotnet restore OpenIGI.slnx
           dotnet build OpenIGI.slnx --configuration Release --no-restore -p:Version=${{ steps.tag.outputs.version }}
-          dotnet test OpenIGI.slnx --configuration Release --no-build
+          $(command -v xvfb-run > /dev/null && echo "xvfb-run -a") dotnet test OpenIGI.slnx --configuration Release --no-build
 
       - name: Package
         env:

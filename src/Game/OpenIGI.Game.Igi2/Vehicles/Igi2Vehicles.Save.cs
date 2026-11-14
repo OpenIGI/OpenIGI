@@ -5,10 +5,10 @@ using OpenIGI.Game.Igi2.World;
 namespace OpenIGI.Game.Igi2.Vehicles;
 
 /// <content>Its save state, <c>Train_ptSerializeParameterList</c>: a model object's, then its thrusts, its speed and its place on its rails.</content>
-public sealed partial class Igi2TrainTask : IIgi2Serialized
+public sealed partial class Igi2TrainTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, _at, _orientation);
@@ -20,7 +20,7 @@ public sealed partial class Igi2TrainTask : IIgi2Serialized
 
     /// <inheritdoc/>
     /// <remarks>A locomotive is put back on its rails where it was, its carriages with it.</remarks>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);
@@ -39,10 +39,10 @@ public sealed partial class Igi2TrainTask : IIgi2Serialized
 /// Its save state, <c>Car_ptSerializeParameterList</c>: a model object's, then its velocity and its direction, whether it has blown up,
 /// and its thrusts.
 /// </content>
-public sealed partial class Igi2CarTask : IIgi2Serialized
+public sealed partial class Igi2CarTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, CurrentPosition, CurrentOrientation, _isExploded == 0);
@@ -55,7 +55,7 @@ public sealed partial class Igi2CarTask : IIgi2Serialized
 
     /// <inheritdoc/>
     /// <remarks><c>Car_DeSerializeHandler</c>: its speed approximated from its velocity again; a car that had blown up is out of the world.</remarks>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         (Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
@@ -91,10 +91,10 @@ public sealed partial class Igi2CarTask : IIgi2Serialized
 /// Its save state, <c>CarAI_ptSerializeParameterList</c>: its route's command and its last end, by level id, whether its driver is dead
 /// and its damage, its tick, its way over its graph, and the speed its route last set.
 /// </content>
-public sealed partial class Igi2CarAiTask : IIgi2Serialized
+public sealed partial class Igi2CarAiTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Int(_patrol.Current?.Id ?? -1);
@@ -112,7 +112,7 @@ public sealed partial class Igi2CarAiTask : IIgi2Serialized
 
     /// <inheritdoc/>
     /// <remarks>Its route is started where it was; its search is made again as it next drives.</remarks>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         int current = reader.Int();

@@ -25,5 +25,5 @@ public sealed record VehicleBlast(
     public const string Sound = "explo_03_l";
 
     /// <summary>Gets how many more ticks the blast waits before it goes off.</summary>
-    internal int DelayTicks { get; set; }
+    public int DelayTicks { get; set; }
 }

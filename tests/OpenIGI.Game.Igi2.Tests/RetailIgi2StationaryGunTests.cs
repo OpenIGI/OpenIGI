@@ -23,9 +23,9 @@ public sealed class RetailIgi2StationaryGunTests
     [RequiresTitleDataFact("igi2")]
     public void An_unworked_gun_droops()
     {
-        (Igi2Level level, Igi2Session session, Igi2StationaryGunTask gun) = Gun();
+        (_, Igi2Session session, Igi2StationaryGunTask gun) = Gun();
         Assert.NotNull(gun.Firing);
-        Assert.Equal(gun.WeaponId, gun.Firing!.Inventory.Current?.WeaponType.WeaponId);
+        Assert.Equal(gun.WeaponId, gun.Firing.Inventory.Current?.WeaponType.WeaponId);
         Assert.NotNull(gun.BarrelModel);
         Assert.NotEqual(gun.Position, gun.Mount);
 
@@ -123,7 +123,7 @@ public sealed class RetailIgi2StationaryGunTests
         turret.Prepare(session.Require<Igi2HumanWeapons>(), level.ModelFor, session.Require<World.Igi2MagicObjTypes>(), detection);
         Assert.Equal("720_06_1", turret.Gun!.HeadModel);
 
-        Vector3d target = turret.Gun!.BarrelPosition + new Vector3d(30.0 * 4096.0, 10.0 * 4096.0, -2.0 * 4096.0);
+        Vector3d target = turret.Gun.BarrelPosition + new Vector3d(30.0 * 4096.0, 10.0 * 4096.0, -2.0 * 4096.0);
         Target enemy = new(target);
         turret.Detection!.Track(enemy).FullVisible[0] = true;
         turret.OnExpression = string.Empty;
@@ -133,15 +133,15 @@ public sealed class RetailIgi2StationaryGunTests
             turret.Run(run);
         }
 
-        Assert.True(turret.Gun!.HasTarget);
-        Vector3d to = target - turret.Gun!.BarrelPosition;
+        Assert.True(turret.Gun.HasTarget);
+        Vector3d to = target - turret.Gun.BarrelPosition;
         double length = to.Length;
-        IReadOnlyList<float> f = turret.Gun!.BarrelFrame;
+        IReadOnlyList<float> f = turret.Gun.BarrelFrame;
         double cosine = ((f[1] * to.X) + (f[4] * to.Y) + (f[7] * to.Z)) / length;
         Assert.True(cosine > Math.Cos(10.0 * Math.PI / 180.0), $"barrel off by {Math.Acos(cosine) * 180.0 / Math.PI} degrees");
-        Assert.True(turret.Gun!.IsOnTarget);
-        Assert.True(turret.Gun!.Firing.Inventory.TotalBulletsFired > 0);
-        Assert.True(turret.Gun!.Spin > 0f);
+        Assert.True(turret.Gun.IsOnTarget);
+        Assert.True(turret.Gun.Firing.Inventory.TotalBulletsFired > 0);
+        Assert.True(turret.Gun.Spin > 0f);
         GC.KeepAlive(session);
     }
 
@@ -164,7 +164,7 @@ public sealed class RetailIgi2StationaryGunTests
         int barrel = own.FindIndex(static p => p.Instance.Name == "720_07_1");
         Assert.True(head >= 0 && barrel > head, $"head {head}, barrel {barrel}");
         Vector3d at = WorldScene.ToUnits(own[barrel].Position);
-        Assert.True((at - turret.Gun!.BarrelPosition).Length < 1.0, $"barrel at {at}, gun puts it at {turret.Gun!.BarrelPosition}");
+        Assert.True((at - turret.Gun!.BarrelPosition).Length < 1.0, $"barrel at {at}, gun puts it at {turret.Gun.BarrelPosition}");
         GC.KeepAlive(session);
     }
 

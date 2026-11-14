@@ -53,7 +53,7 @@ static int Run(ToolContext ctx)
 
         try
         {
-            foreach (DeclaredType type in DeclaredTypesOf(root, levelDirectory))
+            foreach (DeclaredType type in DeclaredTypesOf(levelDirectory))
             {
                 string signature = Signature(type);
 
@@ -63,7 +63,7 @@ static int Run(ToolContext ctx)
                     continue;
                 }
 
-                existing!.Levels.Add(label);
+                existing.Levels.Add(label);
                 if (!string.Equals(existing.Signature, signature, StringComparison.Ordinal))
                 {
                     existing.Disagreements.Add($"{label}: {signature}");
@@ -139,7 +139,7 @@ static int Run(ToolContext ctx)
     return ToolExitCode.Ok;
 }
 
-static IReadOnlyList<DeclaredType> DeclaredTypesOf(string gameRoot, string levelDirectory)
+static IReadOnlyList<DeclaredType> DeclaredTypesOf(string levelDirectory)
 {
     // The census reads the declarations rather than applying them: it binds its own
     // Task_DeclareParameters and lets Task_New do nothing. That keeps it independent of which task

@@ -68,7 +68,7 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -94,9 +94,9 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
         {
             CollisionIndex = solids,
         };
-        runtime.BindVehicleWheels(world);
+        runtime.Vehicles.BindVehicleWheels(world);
         Func<string, MefModel?> models = name => mission.TryGetModel(name, out MefModel? model) ? model : null;
-        runtime.ConfigureRetailCars(
+        runtime.Vehicles.ConfigureRetailCars(
             new RetailCarWorld(
                 new RetailTerrainRay(
                     terrain.Octree,
@@ -104,11 +104,12 @@ public sealed class MissionEightIntroTruckTests(ITestOutputHelper output)
                     TerrainDiscardBinding.For(terrain).Regions,
                     TerrainHeightBindings.Bind(terrain, root)),
                 RetailWorldObjects.Build(root, models, name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null),
-                runtime.RetailVehicleModels,
+                runtime.Vehicles.RetailVehicleModels,
                 static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
             models,
             name => magic.TryGet(name, out MagicObjectDefinition attached) ? attached : null);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         GameTask truck1501 = root.Tree.FromId(1501)!;
         GameTask truck1507 = root.Tree.FromId(1507)!;

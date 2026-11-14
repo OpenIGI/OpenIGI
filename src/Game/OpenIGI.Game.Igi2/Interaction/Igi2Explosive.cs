@@ -4,9 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Expressions;
-using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -327,7 +325,7 @@ public sealed class Igi2Explosive
     /// exploding, its damage and its delay.
     /// </summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Saves.Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Saves.Igi2ModelObjState.Write(writer, _parameters.Position, _frame);
@@ -339,14 +337,26 @@ public sealed class Igi2Explosive
 
     /// <summary>Reads its save state back; one that had exploded wears its destroyed model again (<c>ExplodeObject_DeSerializeHandler</c>).</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Saves.Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Saves.Igi2ModelObjState.Read(reader);
         bool exploded = reader.Bool();
-        _isExplode = reader.Bool() ? (byte)1 : (byte)0;
-        _damage = reader.Real();
-        _delay = reader.Int();
+        bool explode = reader.Bool();
+        float damage = reader.Real();
+        Restore(exploded, explode, damage, reader.Int());
+    }
+
+    /// <summary>Puts back what a save game kept of it: whether it has exploded or is to, its damage and its delay.</summary>
+    /// <param name="exploded">Whether it has exploded.</param>
+    /// <param name="explode">Whether it is to explode.</param>
+    /// <param name="damage">The damage it has taken.</param>
+    /// <param name="delay">Its explosion's delay, in ticks.</param>
+    public void Restore(bool exploded, bool explode, float damage, int delay)
+    {
+        _isExplode = explode ? (byte)1 : (byte)0;
+        _damage = damage;
+        _delay = delay;
         if (exploded)
         {
             SetExploded();

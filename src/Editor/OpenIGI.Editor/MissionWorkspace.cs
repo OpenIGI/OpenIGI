@@ -108,7 +108,7 @@ internal sealed class MissionWorkspace
         }
 
         // The same mission loaded again (a reload, or a title that loads its first mission twice) keeps what was selected.
-        string? previous = _loadedFor is { } was && Document is { } old ? ObjectsGamePath(was) : null;
+        string? previous = _loadedFor is { } was && Document is not null ? ObjectsGamePath(was) : null;
         List<int[]> kept = previous is not null && mission is not null && previous == ObjectsGamePath(mission)
             ? [.. Selection.Items.Select(task => PathOf(Document!, task))]
             : [];

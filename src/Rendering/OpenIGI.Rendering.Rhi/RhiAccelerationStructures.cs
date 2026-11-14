@@ -185,7 +185,9 @@ public interface IRhiAccelerationStructures
 [System.Runtime.CompilerServices.InlineArray(12)]
 public struct RhiTransform3x4
 {
+#pragma warning disable S1144 // An inline array is declared by its one field, which nothing names.
     private float _element;
+#pragma warning restore S1144
 }
 
 /// <summary>One placement in a top-level structure: 64 bytes, laid out as both Vulkan and Direct3D 12 read it.</summary>

@@ -174,10 +174,10 @@ public sealed class HumanAiConfigRegistry
         int typeIndex = (int)type;
         int difficultyIndex = (int)difficulty;
 
-        ArgumentOutOfRangeException.ThrowIfNegative(typeIndex, nameof(type));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(typeIndex, AiTypeCount, nameof(type));
-        ArgumentOutOfRangeException.ThrowIfNegative(difficultyIndex, nameof(difficulty));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(difficultyIndex, DifficultyCount, nameof(difficulty));
+        ArgumentOutOfRangeException.ThrowIfNegative(typeIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(typeIndex, AiTypeCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(difficultyIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(difficultyIndex, DifficultyCount);
 
         // difficulty + 3 * aiType, which is the original's own layout: sequential over the difficulties
         // of one type, then on to the next type.

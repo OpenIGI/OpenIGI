@@ -79,6 +79,13 @@ public sealed partial class ServerSession
             return false;
         }
 
+        // No more of them at once than a quarter of the server's places: each holds one a player could have.
+        if (_syncing.Count >= Math.Max(1, _net.MaxClients / 4))
+        {
+            _net.Disconnect(slot, "the server is busy sending files; try again in a moment");
+            return true;
+        }
+
         _syncing[slot] = _now;
         SendFileList(slot, Map);
         return true;

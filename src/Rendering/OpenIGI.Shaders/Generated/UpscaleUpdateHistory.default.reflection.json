@@ -146,7 +146,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uHistoryMetadata",
@@ -161,7 +162,8 @@
         "class": "UnorderedAccess",
         "register": 1,
         "space": 0
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uHistoryRejection",
@@ -327,10 +329,61 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uCurrent",
+      "unit": 0
+    },
+    {
+      "texture": "uCurrent",
+      "sampler": "uCurrentSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uVelocity",
+      "sampler": "uVelocitySampler",
+      "unit": 2
+    },
+    {
+      "texture": "uPrevHistoryColour",
+      "sampler": "uPrevHistoryColourSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uPrevHistoryMetadata",
+      "sampler": "uPrevHistoryMetadataSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uHistoryRejection",
+      "sampler": "uHistoryRejectionSampler",
+      "unit": 5
+    },
+    {
+      "texture": "uSpatialAa",
+      "unit": 6
+    },
+    {
+      "texture": "uShadingRejection",
+      "sampler": "uShadingRejectionSampler",
+      "unit": 7
+    },
+    {
+      "texture": "uRejectionBlend",
+      "sampler": "uRejectionBlendSampler",
+      "unit": 8
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 9
+    }
+  ]
 }

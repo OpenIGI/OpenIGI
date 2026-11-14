@@ -1,4 +1,3 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Hud.Remastered.Widgets;

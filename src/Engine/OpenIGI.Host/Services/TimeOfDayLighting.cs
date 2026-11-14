@@ -115,36 +115,13 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
         return chroma * (luma / MathF.Max(chromaLuma, 1e-4f));
     }
 
-    /// <summary>Warms a level's cool zenith ambient towards the horizon as the sun sinks.</summary>
-    /// <remarks>
-    /// The sky an interior sees at a low sun is the warm horizon, not the cool zenith: the atmosphere
-    /// reddens as the sun sinks and a real skylight carries that warmth into the room. The level ships a
-    /// single cool ambient triple with no notion of the sun's height, so read literally it leaves a dusk-lit
-    /// room as flatly blue as a noon one. This blends it towards a golden horizon tint by how low the sun
-    /// sits -- keeping its own brightness so only the hue shifts -- and fades the warmth out above a moderate
-    /// elevation, where the ambient is left alone. Applied at the source so both the deferred ambient and the
-    /// GI sky fill inherit it.
-    /// </remarks>
-    private static Vector3f WarmedAmbient(Vector3f ambient, float sinElevation)
-    {
-        // Left as the level authored it. An earlier version blended the ambient hard towards a golden
-        // horizon by how low the sun sat, on the theory that a low sun is a warm sun -- but mission 1 is a
-        // COLD clear morning, its sun as low as a dusk one and its skylight cool blue off the snow, and the
-        // warming dumped orange over a room that should read a clean neutral. A low sun is not a warm
-        // one; only a SETTING sun is, and that is a per-mission call rather than a function of height. The
-        // authored cool ambient is what balances the slightly warm sun into neutral daylight, so it stands.
-        _ = sinElevation;
-        return ambient;
-    }
-
     /// <summary>A per-channel tint for the sky dome that reddens towards the horizon as the sun sinks.</summary>
     /// <param name="sinElevation">The sine of the sun's elevation; 1 is overhead, negative is below the horizon.</param>
     /// <remarks>
     /// The authored sky is a fixed blue with no sense of the sun's height. A low sun scatters the blue out of
     /// the light that reaches the ground and leaves the horizon warm, so this multiplies the dome towards a
     /// warm tint by how low the sun sits -- one at a high sun, so a noon sky is the authored blue untouched.
-    /// It is the sky counterpart to <see cref="WarmedAmbient"/>: together they warm both what a window shows
-    /// and what the fill carries in.
+    /// The ambient fill is left as the level authored it: a low sun is not a warm one, only a setting one.
     /// </remarks>
     public static Vector3f SkyWarmthTint(float sinElevation)
     {

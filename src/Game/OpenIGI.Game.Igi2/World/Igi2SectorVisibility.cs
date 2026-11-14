@@ -20,8 +20,8 @@ namespace OpenIGI.Game.Igi2.World;
 /// the shell's -- the outside is then seen, through the rectangles that reached the shell
 /// (<c>SectorObject_DrawSector</c> sets <c>QCube_isDrawOutside</c> and <c>Clipping_tClipData.tClipWindows</c>).</item>
 /// <item>Until then nothing outside is drawn: the terrain and the forests test <c>QCube_isDrawOutside</c>, every other building
-/// returns without a request, and every rigid mesh standing in no room returns from <c>Direct3DRender_DrawRigidMesh</c> -- a
-/// door and a conveyor belt excepted. Once it is, another building is walked from its shell through each of those rectangles,
+/// returns without a request, and every interior object standing in no room returns from <c>RigidDynCubeObj_EnterHandler</c>;
+/// what is not an interior object -- a door, a lift -- is left to the view. Once it is, another building is walked from its shell through each of those rectangles,
 /// a mesh outside is drawn if its sphere falls in one of them, and the terrain and the forests are clipped to the rectangle
 /// enclosing them all (<c>Clipping_SetupClippingPlanes</c>'s enclosing frustum, which only they read).</item>
 /// <item>With the camera in no room, every building is walked from its shell through the whole screen; its rooms are drawn
@@ -112,9 +112,9 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
     /// <inheritdoc/>
     public string DescribeView() =>
         EyeRoom is { } room
-            ? FormattableString.Invariant(
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"sector: {room.Model} (room {room.Room} of {_graph.Objects[room.ObjectIndex].Shell.Model}), {(_outsideWindows is null ? "sees no way out" : "sees out")}, {ReachedCount} sectors reached")
-            : FormattableString.Invariant($"sector: none, {ReachedCount} sectors reached");
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sector: none, {ReachedCount} sectors reached");
 
     /// <summary>Gets how many sectors the last frame reached.</summary>
     public int ReachedCount { get; private set; }
@@ -309,6 +309,13 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
                 return key.Kind == Igi2VisibilityKind.Shell && (_outsideUnbounded || resolved.Sector == _eyeShell);
 
             default:
+                // RigidDynCubeObj_EnterHandler: only an interior object is tested against the rooms. A lift, a door, a conveyor
+                // belt is left to the view, wherever it has moved to and whatever the camera stands in.
+                if (key.SkipsRoomTest)
+                {
+                    return true;
+                }
+
                 if (resolved.Sector >= 0)
                 {
                     return _reached[resolved.Sector] is { } windows && InAnyWindow(key.Centre, key.Radius, windows);
@@ -319,9 +326,8 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
                     return InAnyWindow(key.Centre, key.Radius, outside);
                 }
 
-                // Direct3DRender_DrawRigidMesh: inside a building that does not see out, a mesh in no room is not drawn -- unless
-                // it is a door or a conveyor belt.
-                return _outsideUnbounded || key.IsShownUnseen;
+                // Inside a building that does not see out, an interior object standing in no room is not drawn.
+                return _outsideUnbounded;
         }
     }
 

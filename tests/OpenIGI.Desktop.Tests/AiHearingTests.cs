@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -9,13 +8,11 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
-using System.Reflection;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
@@ -70,7 +67,7 @@ public sealed class AiHearingTests
 
         Assert.Equal(0, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
         Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.GunshotMiss));
-        Assert.All(fixture.Health.Values, health => Assert.Equal(0f, health.Damage));
+        Assert.All(fixture.Healths, health => Assert.Equal(0f, health.Damage));
     }
 
     /// <summary>The control for the wall: one beyond the body leaves the hit exactly as it was.</summary>
@@ -89,7 +86,7 @@ public sealed class AiHearingTests
             out _));
 
         Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
-        Assert.Contains(fixture.Health.Values, health => health.Damage > 0f);
+        Assert.Contains(fixture.Healths, health => health.Damage > 0f);
     }
 
     /// <summary>
@@ -109,7 +106,7 @@ public sealed class AiHearingTests
             WeaponCategory.Knife,
             out _));
 
-        Assert.Single(fixture.Health.Values, health => health.IsDead);
+        Assert.Single(fixture.Healths, health => health.IsDead);
     }
 
     /// <summary>
@@ -196,7 +193,7 @@ public sealed class AiHearingTests
 
         public Vector3d BulletEnd { get; }
 
-        public IReadOnlyDictionary<SoldierView, HumanHealth> Health => Renderer.Simulation.Health;
+        public IEnumerable<HumanHealth> Healths => Renderer.Simulation.Healths;
 
         public static PublisherFixture Create(bool playerOnTheSoldiersSide = false, int? team = null)
         {
@@ -204,6 +201,8 @@ public sealed class AiHearingTests
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
             ResourceRegistry resources = new(fileSystem);
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+            OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
 
             MissionRegistry registry = new();

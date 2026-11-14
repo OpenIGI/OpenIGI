@@ -1,18 +1,12 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.UI;
 
 namespace OpenIGI.Presentation;
 

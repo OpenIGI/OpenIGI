@@ -116,7 +116,7 @@ public sealed class ConfigTests
         input.Active.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT");
         input.Active.MouseSensitivity = 0.25f;
         Assert.True(input.CreateProfile("Second", 2));
-        input.Active!.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A");
+        input.Active.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A");
         input.Active.MouseSensitivity = 0.75f;
         input.Active.DeviceGuid = "custom-device";
 
@@ -205,6 +205,10 @@ public sealed class ConfigTests
             binding => string.Equals(binding.Action, "PrevWeapon", StringComparison.OrdinalIgnoreCase));
         Assert.InRange(nextIndex, 0, profile.Bindings.Count - 1);
         Assert.InRange(prevIndex, 0, profile.Bindings.Count - 1);
+
+        // Off the wheel first, where a fresh profile now has them: the test is of moving an action onto it.
+        profile.Bindings[nextIndex] = new("NextWeapon", InputBindingKeyNames.MouseDevice, "MOUSE_BUTTON_4");
+        profile.Bindings[prevIndex] = new("PrevWeapon", InputBindingKeyNames.KeyboardDevice, "KEY_O");
 
         Assert.Equal(-1, profile.RebindMouseWheel(nextIndex, 1));
         Assert.Equal("MOUSE_WHEEL_UP", profile.Bindings[nextIndex].Key);
@@ -359,7 +363,7 @@ public sealed class ConfigTests
 
         Assert.Equal(2, config.Profiles.Count);
         Assert.Equal(1, config.ActiveIndex);
-        Assert.Equal("Alex", config.Active!.Name);
+        Assert.Equal("Alex", config.Active.Name);
         Assert.Equal(3, config.Active.Difficulty);
         Assert.Equal(0.25f, config.Active.MusicVolume);
         Assert.Equal(PlayerProfile.BindingCount + 1, config.Active.Bindings.Count);

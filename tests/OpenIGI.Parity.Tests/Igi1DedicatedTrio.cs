@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using OpenIGI.Audio;
 using OpenIGI.Composition;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Configuration;

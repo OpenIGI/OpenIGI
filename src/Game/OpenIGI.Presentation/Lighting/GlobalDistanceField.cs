@@ -58,7 +58,6 @@ public sealed class GlobalDistanceField : IDisposable
     private const int FloatsPerInstance = 28;
 
     private readonly IGraphicsDevice _device;
-    private readonly IOpenIgiLogger _logger;
     private readonly GlobalDistanceFieldSettings _settings;
     private readonly SceneDistanceField _scene;
     private readonly Vector3d _levelOrigin;
@@ -88,7 +87,6 @@ public sealed class GlobalDistanceField : IDisposable
         StorageBufferHandle cellIndices)
     {
         _device = device;
-        _logger = logger;
         _settings = settings;
         _scene = scene;
         _levelOrigin = levelOrigin;
@@ -167,7 +165,6 @@ public sealed class GlobalDistanceField : IDisposable
             TextureHandle atlasTexture = device.CreateVolumeTexture(
                 atlas.Width, atlas.Height, atlas.Depth, VolumeFormat.R8, "sdf.atlas", shaderWritten: false);
             device.UpdateVolumeTexture<byte>(atlasTexture, atlas.Volume);
-
 
             TextureHandle clipmaps = device.CreateVolumeTexture(
                 settings.Resolution,
@@ -539,7 +536,6 @@ public sealed class GlobalDistanceField : IDisposable
         int groups = (_settings.Resolution + group - 1) / group;
 
         _device.Dispatch(_build, groups, groups, groups);
-
     }
 
     /// <summary>The furthest distance one clipmap level's bytes encode.</summary>
@@ -571,5 +567,4 @@ public sealed class GlobalDistanceField : IDisposable
         int index = (int)Math.Floor(offset / cellSize) + bias;
         return Math.Clamp(index, 0, cells - 1);
     }
-
 }

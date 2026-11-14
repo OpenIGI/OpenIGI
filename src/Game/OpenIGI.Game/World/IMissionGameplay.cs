@@ -1,5 +1,3 @@
-using OpenIGI.Game.Player;
-
 namespace OpenIGI.Game.World;
 
 /// <summary>A title's own mission, as the host holds it: the thing its presenters are built over.</summary>
@@ -9,6 +7,4 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public interface IMissionGameplay
 {
-    /// <summary>Gets the player the host steers, or <see langword="null"/> while none stands in the level.</summary>
-    IHostedPlayer? Player { get; }
 }

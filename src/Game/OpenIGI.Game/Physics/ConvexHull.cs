@@ -285,7 +285,7 @@ public sealed class ConvexHull
         out Vector3d centre,
         out Matrix3d inertia)
     {
-        const double mult0 = 1.0 / 6.0, mult1 = 1.0 / 24.0, mult2 = 1.0 / 60.0, mult3 = 1.0 / 120.0;
+        const double Mult0 = 1.0 / 6.0, Mult1 = 1.0 / 24.0, Mult2 = 1.0 / 60.0, Mult3 = 1.0 / 120.0;
         double[] integral = new double[10];
 
         // Integrate relative to a point inside the hull to keep the sums well conditioned far from
@@ -306,8 +306,8 @@ public sealed class ConvexHull
             Vector3d d = Vector3d.Cross(v1 - v0, v2 - v0);
 
             Subexpressions(v0.X, v1.X, v2.X, out double f1x, out double f2x, out double f3x, out double g0x, out double g1x, out double g2x);
-            Subexpressions(v0.Y, v1.Y, v2.Y, out double f1y, out double f2y, out double f3y, out double g0y, out double g1y, out double g2y);
-            Subexpressions(v0.Z, v1.Z, v2.Z, out double f1z, out double f2z, out double f3z, out double g0z, out double g1z, out double g2z);
+            Subexpressions(v0.Y, v1.Y, v2.Y, out _, out double f2y, out double f3y, out double g0y, out double g1y, out double g2y);
+            Subexpressions(v0.Z, v1.Z, v2.Z, out _, out double f2z, out double f3z, out double g0z, out double g1z, out double g2z);
 
             integral[0] += d.X * f1x;
             integral[1] += d.X * f2x;
@@ -321,16 +321,16 @@ public sealed class ConvexHull
             integral[9] += d.Z * ((v0.X * g0z) + (v1.X * g1z) + (v2.X * g2z));
         }
 
-        integral[0] *= mult0;
-        integral[1] *= mult1;
-        integral[2] *= mult1;
-        integral[3] *= mult1;
-        integral[4] *= mult2;
-        integral[5] *= mult2;
-        integral[6] *= mult2;
-        integral[7] *= mult3;
-        integral[8] *= mult3;
-        integral[9] *= mult3;
+        integral[0] *= Mult0;
+        integral[1] *= Mult1;
+        integral[2] *= Mult1;
+        integral[3] *= Mult1;
+        integral[4] *= Mult2;
+        integral[5] *= Mult2;
+        integral[6] *= Mult2;
+        integral[7] *= Mult3;
+        integral[8] *= Mult3;
+        integral[9] *= Mult3;
 
         volume = integral[0];
         if (!(volume > 0.0))

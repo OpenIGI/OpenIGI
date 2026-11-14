@@ -1,5 +1,4 @@
-﻿using OpenIGI.Formats.Ilff;
-using OpenIGI.Game.Igi2.World;
+﻿using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
 

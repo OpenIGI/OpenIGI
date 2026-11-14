@@ -3,7 +3,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -34,7 +33,7 @@ public sealed class ConditionalContainerGateTests
         natives.RegisterConstant("FALSE", 0);
 
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(types);
         PlayerTaskTypes.RegisterAll(types);
 
         QvmProgram program = QvmProgram.Read(QvmExpression.BuildProgram(statements));

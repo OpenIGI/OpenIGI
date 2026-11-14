@@ -1,11 +1,9 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Frontend;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
@@ -540,7 +538,7 @@ public sealed partial class GameHost
         if (!_loadSequence.LiveScene)
         {
             string kicker = _loadingInfo is { } info
-                ? FormattableString.Invariant($"MISSION {info.Number:00}")
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MISSION {info.Number:00}")
                 : "MISSION";
             float kickerTop = titleTop - (28f * scale) - type.Mono.LineHeight(kickerSize);
             UiVec2 pen = painter.DrawLabel(type.Mono, kicker, new UiVec2(left, kickerTop), kickerSize, CardAccent, 0.28f);
@@ -600,7 +598,7 @@ public sealed partial class GameHost
         float stageSize = 11f * scale;
         painter.DrawLabel(type.Mono, stage.ToUpperInvariant(), new UiVec2(barLeft, footer - (8f * scale)), stageSize, CardDim, 0.22f);
 
-        string percent = FormattableString.Invariant($"{(int)(progress * 100f)}%");
+        string percent = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)(progress * 100f)}%");
         float percentSize = 14f * scale;
         float percentWidth = type.Mono.MeasureWidth(percent, percentSize);
         painter.DrawText(type.Mono, percent, new UiVec2(barRight - percentWidth, footer - (10f * scale)), percentSize, CardWhite);

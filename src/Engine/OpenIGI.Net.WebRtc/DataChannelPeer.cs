@@ -164,7 +164,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     {
         get
         {
-            if (_relayed is { } known || _state != RtcPeerState.Open)
+            if (_relayed is not null || _state != RtcPeerState.Open)
             {
                 return _relayed ?? false;
             }
@@ -222,7 +222,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     {
         get
         {
-            if (_route is { } known || _state != RtcPeerState.Open)
+            if (_route is not null || _state != RtcPeerState.Open)
             {
                 return _route ?? "not open";
             }
@@ -376,7 +376,9 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnState(int pc, int state, nint pointer)
     {
-        if (state is Native.StateFailed or Native.StateClosed or Native.StateDisconnected)
+        // Disconnected is not the end: the path between the two went quiet and may come back, and the library says Failed
+        // itself if it does not. Taken for the end, a line that blinked for a second cost its player the session.
+        if (state is Native.StateFailed or Native.StateClosed)
         {
             Guard(pointer, peer => peer.Fail(state == Native.StateFailed ? "no way through to the other player" : "the connection dropped"));
         }

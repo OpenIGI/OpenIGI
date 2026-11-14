@@ -23,7 +23,7 @@ public sealed class BlockCompressedPackPictureTests
         PackPicture.Frame frame = PackPicture.ReadFirstFrame((ReadOnlyMemory<byte>)file);
 
         Assert.NotNull(frame.Compressed);
-        Assert.Equal(BlockFormat.Bc1, frame.Compressed!.Format);
+        Assert.Equal(BlockFormat.Bc1, frame.Compressed.Format);
         Assert.Equal(16, frame.Compressed.Width);
         Assert.Equal(8, frame.Compressed.Height);
         Assert.Equal(stored.MipLevels, frame.Compressed.MipLevels);
@@ -61,7 +61,7 @@ public sealed class BlockCompressedPackPictureTests
 
         Assert.NotNull(asset.CompressedDiffuse);
         Assert.NotNull(asset.CompressedDetail);
-        Assert.Equal(BlockFormat.Bc7, asset.CompressedDetail!.Format);
+        Assert.Equal(BlockFormat.Bc7, asset.CompressedDetail.Format);
         Assert.Equal(map.Levels.ToArray(), asset.CompressedDetail.Levels.ToArray());
     }
 

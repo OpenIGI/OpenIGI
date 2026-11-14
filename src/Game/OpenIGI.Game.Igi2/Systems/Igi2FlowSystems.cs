@@ -1,7 +1,5 @@
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 
@@ -25,7 +23,7 @@ internal static class Igi2FlowSystems
         if (b.Services.TryGet(out Menus.Igi2InGameMenu? menu) && menu.Load(b.Root, b.Request.World.Resources, b.Natives))
         {
             menu.LevelFailed = () => level.LevelFlow?.IsFailed == true;
-            menu.PlayerDead = () => player.Human.IsDead;
+            menu.PlayerDead = () => player.StandIn?.IsDead ?? player.Human.IsDead;
             player.Menu = menu;
         }
 
@@ -34,7 +32,12 @@ internal static class Igi2FlowSystems
             level.CutsceneShake = shake;
         }
 
-        level.Bind(b.PlayerTask, player.RunPlayer);
+        if (b.PlayerTask is not OpenIGI.Game.Player.HumanTask human)
+        {
+            throw new InvalidOperationException($"{b.PlayerTask.Name} is not a human's task, and cannot be run as the player.");
+        }
+
+        human.Runner = new PlayerRun(player);
         if (b.PlayerTask is Igi2HumanPlayerTask playerTask)
         {
             playerTask.Human = player.Human;
@@ -101,14 +104,21 @@ internal static class Igi2FlowSystems
     public static void Areas(Igi2LevelBuild b)
     {
         Igi2TitlePlayer player = b.Player;
-        IIgi2AreaOccupant[] humans = [.. b.LevelHumans()];
+        // Another game's player standing for the level's own, and the humans it joins to the level, count where they stand.
+        IIgi2AreaOccupant? standIn = player.StandIn is { } standing ? new Igi2StandInOccupant(standing, isAi: false) : null;
+        IIgi2AreaOccupant[] humans =
+        [
+            .. b.LevelHumans(),
+            .. standIn is null ? [] : (IIgi2AreaOccupant[])[standIn],
+            .. b.Level.Joined.Humans.OfType<Game.Ai.IAiHuman>().Select(static joined => new Igi2StandInOccupant(joined, isAi: true)),
+        ];
         Vehicles.Igi2CarTask[] levelCars = [.. b.Root.Descendants().OfType<Vehicles.Igi2CarTask>()];
         player.MapVehicles = levelCars;
         player.MapGunHolders = [.. b.Root.Descendants().OfType<Weapons.Igi2AiStationaryGunHolderTask>()];
         foreach (Igi2AreaActivateTask area in b.Root.Descendants().OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
-            area.Players.Set(player.Human);
+            area.Players.Set(standIn ?? player.Human);
             player.AreaRosters.Add(area.Players);
             area.CameraPosition = () => player.EyePosition;
             area.VehiclePositions = () => levelCars.Select(static car => car.Position);
@@ -140,5 +150,11 @@ internal static class Igi2FlowSystems
         {
             launched.LevelTick = () => level.LevelFlow?.Tick ?? 0;
         }
+    }
+
+    // The player's run handler (HumanPlayer_RunHandler), carried out by the title's player at the task's place in the tree.
+    private sealed class PlayerRun(Igi2TitlePlayer player) : OpenIGI.Game.Level.ITaskRun<OpenIGI.Game.Player.HumanTask>
+    {
+        public void Run(OpenIGI.Game.Player.HumanTask task, OpenIGI.Game.Level.LevelRun level) => player.RunPlayer();
     }
 }

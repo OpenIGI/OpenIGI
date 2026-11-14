@@ -73,7 +73,8 @@ public sealed record SessionArguments(
         string skin = string.Empty;
         string? demo = null;
         List<string> left = [];
-        for (int i = 0; i < args.Length; i++)
+        int i = 0;
+        while (i < args.Length)
         {
             string arg = args[i];
             string Value() => i + 1 < args.Length ? args[++i] : throw new ArgumentException($"{arg} needs a value.");
@@ -122,6 +123,8 @@ public sealed record SessionArguments(
                     left.Add(arg);
                     break;
             }
+
+            i++;
         }
 
         if (port is < 1 or > 65535)

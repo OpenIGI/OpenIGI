@@ -306,7 +306,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             _offLadderThere = 0;
         }
 
-        HumanHealth health = _game.World.PlayerHealth;
+        HumanHealth health = _game.World.PlayerLife.Health;
         float server = self.Health / 255f;
         float local = health.RemainingFraction;
         if (server >= 0.999f && local < 0.999f)
@@ -317,7 +317,21 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         {
             health.ApplyDirect(0, (local - server) * health.MaximumHealth);
         }
+
+        // The server's health above this game's and short of whole, for longer than this game's own healing takes to reach
+        // the server and come back: the server's stands. Left, a hurt only this game counted -- a fall it took harder --
+        // showed its player weaker than it was until something healed it whole.
+        _healthBehind = server > local + 0.01f ? _healthBehind + 1 : 0;
+        if (_healthBehind > HealthPatience)
+        {
+            health.HealFraction(server - local);
+            _healthBehind = 0;
+        }
     }
+
+    // The applies in a row the server's health has stood above this game's, and how many before it is taken: two seconds.
+    private int _healthBehind;
+    private const int HealthPatience = 60;
 
     /// <inheritdoc/>
     public bool? HoldsBomb => _game.World.Player is { } own && Igi1BombWeapon.Holds(own);

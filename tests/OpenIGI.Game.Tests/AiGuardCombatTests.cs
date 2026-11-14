@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
@@ -144,7 +143,7 @@ public sealed class AiGuardCombatTests
         Assert.Equal(AiCombatPhase.Fire, combat.Phase);
 
         // 0.8 minimum clip percentage of a 30-round clip is 24, under the row's cap of 30.
-        Assert.Equal(24, command.StartedBurst!.Value.Rounds);
+        Assert.Equal(24, command.StartedBurst.Value.Rounds);
         Assert.Equal(24, combat.RoundsLeftInBurst);
     }
 
@@ -332,7 +331,7 @@ public sealed class AiGuardCombatTests
             Sense() with { Category = WeaponCategory.Knife }, standing: true, ViewLength);
 
         Assert.NotNull(command.StartedBurst);
-        Assert.Equal(0, command.StartedBurst!.Value.Rounds);
+        Assert.Equal(0, command.StartedBurst.Value.Rounds);
         Assert.Equal(AiCombatPhase.Fire, combat.Phase);
 
         combat.ReportAimed(true);
@@ -374,7 +373,7 @@ public sealed class AiGuardCombatTests
         Assert.False(combat.FirstFirePending);
 
         // The row's minimum-range probability is 1.0, so a halved first burst reads 0.5.
-        Assert.Equal(0.5f, first.StartedBurst!.Value.HitProbability, 5);
+        Assert.Equal(0.5f, first.StartedBurst.Value.HitProbability, 5);
     }
 
     [Fact]

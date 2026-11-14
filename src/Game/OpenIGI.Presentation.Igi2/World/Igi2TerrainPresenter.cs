@@ -3,9 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
 using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Presentation.Igi2.World;

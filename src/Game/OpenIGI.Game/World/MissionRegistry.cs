@@ -3,7 +3,6 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;

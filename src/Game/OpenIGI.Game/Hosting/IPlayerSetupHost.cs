@@ -1,13 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.World;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Hosting;
@@ -33,9 +27,6 @@ public interface IPlayerSetupHost
     /// <summary>Gets the level's built scene, whose ladders the player climbs and whose vehicles' guns turn.</summary>
     WorldScene? Scene { get; }
 
-    /// <summary>Reads, once a session, the animation sets the player's body and its first-person rig use.</summary>
-    /// <returns>The body's set, or <see langword="null"/> when there is none.</returns>
-    BoneAnimationSet? ReadSharedAnimations();
 
     /// <summary>Records that a stage of the load has finished, for the load's timings.</summary>
     /// <param name="what">What finished.</param>

@@ -90,6 +90,9 @@ public static class Igi2LevelSystems
     /// <summary>The props moved along guides.</summary>
     public const string Props = "Props";
 
+    /// <summary>The objects that turn where they stand.</summary>
+    public const string RotatingObjects = "RotatingObjects";
+
     /// <summary>The trains.</summary>
     public const string Trains = "Trains";
 
@@ -169,6 +172,7 @@ public static class Igi2LevelSystems
         .Add(System(SectorVisibility, Igi2InteractionSystems.SectorVisibility))
         .Add(System(SplineGuides, Igi2WorldSystems.SplineGuides))
         .Add(System(Props, Igi2InteractionSystems.Props))
+        .Add(System(RotatingObjects, Igi2InteractionSystems.RotatingObjects))
         .Add(System(Trains, Igi2VehicleSystems.Trains))
         .Add(System(Animations, Igi2WorldSystems.Animations))
         .Add(System(StationaryGuns, Igi2VehicleSystems.StationaryGuns))

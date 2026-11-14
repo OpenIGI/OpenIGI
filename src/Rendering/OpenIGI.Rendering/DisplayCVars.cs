@@ -40,8 +40,8 @@ public static class DisplayCVars
         "r_renderer",
         RendererBackend.Auto,
         CVarOptions.Archive,
-        "Graphics API: auto (Direct3D 12 on Windows, Vulkan elsewhere), d3d12, vulkan, or webgpu. "
-            + "Changing it rebuilds the renderer in place.");
+        "Graphics API: auto (Direct3D 12 on Windows, Vulkan elsewhere), d3d12, vulkan, webgpu, or opengl (for older "
+            + "graphics cards). Changing it rebuilds the renderer in place.");
 
     /// <summary>How the window sits on the screen.</summary>
     public static readonly EnumCVar<DisplayWindowMode> Window = CVar.Choice(

@@ -3,7 +3,6 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
@@ -108,12 +107,6 @@ public sealed class VehiclePhysicsRegistry
     /// <summary>Looks up the Rotor record bound to a rotor model.</summary>
     public bool TryGetRotor(string model, out RotorPhysicsDefinition definition) =>
         _rotors.TryGetValue(model, out definition);
-
-    private static float Single(QvmValue[] arguments, int index, float fallback) =>
-        (uint)index < (uint)arguments.Length ? arguments[index].ToSingle() : fallback;
-
-    private static int Integer(QvmValue[] arguments, int index, int fallback) =>
-        (uint)index < (uint)arguments.Length ? arguments[index].ToInt32() : fallback;
 
     /// <summary>Every loaded car model name, for diagnostics.</summary>
     public IReadOnlyCollection<string> CarModels => _cars.Keys;

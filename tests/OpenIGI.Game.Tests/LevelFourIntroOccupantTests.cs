@@ -1,4 +1,3 @@
-using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -12,7 +11,6 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -31,7 +29,7 @@ public sealed class LevelFourIntroOccupantTests
     [RequiresGameDataFact]
     public void IntroCameraMustNotTripTheOutroGate()
     {
-        (GameLoop loop, LevelTask root, MissionObjectiveRuntime objectives, CutsceneRuntime runtime) = LoadLevel();
+        (GameLoop loop, _, MissionObjectiveRuntime objectives, CutsceneRuntime runtime) = LoadLevel();
 
         List<string> transitions = [];
         bool c3902 = false;
@@ -134,7 +132,7 @@ public sealed class LevelFourIntroOccupantTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -144,6 +142,7 @@ public sealed class LevelFourIntroOccupantTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         return (loop, root, objectives, runtime);
     }
 }

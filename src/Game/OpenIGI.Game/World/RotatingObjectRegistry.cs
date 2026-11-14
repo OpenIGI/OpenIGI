@@ -1,13 +1,11 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
 /// <summary>One rotating world placement (radar dish or generic rotating object).</summary>
-public sealed class PlacedRotatingObject
+public sealed class PlacedRotatingObject : Saves.IExchangedState
 {
-    private const float DegreesToRadians = MathF.PI / 180f;
     private const float DeltaTime = 1.0f / 30.0f;
 
     /// <summary>The world placement associated with this rotating object.</summary>
@@ -147,9 +145,12 @@ public sealed class PlacedRotatingObject
     {
         get
         {
-            float level = IsRotatingObjectTask
-                ? (CurrentSpeedZ / MaxSpeedZ) + (CurrentSpeedX / MaxSpeedX) + (CurrentSpeedY / MaxSpeedY)
-                : CurrentSpeedZ / MaxSpeedZ;
+            if (IsRotatingObjectTask)
+            {
+                return Objects.RotationRule.SoundLevel(CurrentSpeedX, CurrentSpeedY, CurrentSpeedZ, MaxSpeedX, MaxSpeedY, MaxSpeedZ);
+            }
+
+            float level = CurrentSpeedZ / MaxSpeedZ;
             return level < 0f || float.IsNaN(level) ? 0f : Math.Min(level, 1f);
         }
     }
@@ -166,10 +167,12 @@ public sealed class PlacedRotatingObject
     // As the match began: its speeds, its angles, whether it ran and whether it was shot to a stop.
     private (float Tx, float Ty, float Tz, float Cx, float Cy, float Cz, float Ax, float Ay, float Az, bool Active, bool Broken) _start;
 
-    internal void MarkLevelStart() =>
+    /// <summary>Marks the state the level starts in, to be put back by <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart() =>
         _start = (TargetSpeedX, TargetSpeedY, TargetSpeedZ, CurrentSpeedX, CurrentSpeedY, CurrentSpeedZ, AngleX, AngleY, AngleZ, IsActive, IsBroken);
 
-    internal void ResetToLevelStart()
+    /// <summary>Puts back the state the level started in.</summary>
+    public void ResetToLevelStart()
     {
         (TargetSpeedX, TargetSpeedY, TargetSpeedZ, CurrentSpeedX, CurrentSpeedY, CurrentSpeedZ) =
             (_start.Tx, _start.Ty, _start.Tz, _start.Cx, _start.Cy, _start.Cz);
@@ -178,6 +181,25 @@ public sealed class PlacedRotatingObject
         IsActive = _start.Active;
         IsBroken = _start.Broken;
         CurrentOrientation = ComputeOrientation(AngleX, AngleY, AngleZ);
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        var levelStart = _start;
+        MarkLevelStart();
+        _start = (
+            exchange.Real(_start.Tx), exchange.Real(_start.Ty), exchange.Real(_start.Tz),
+            exchange.Real(_start.Cx), exchange.Real(_start.Cy), exchange.Real(_start.Cz),
+            exchange.Real(_start.Ax), exchange.Real(_start.Ay), exchange.Real(_start.Az),
+            exchange.Bool(_start.Active), exchange.Bool(_start.Broken));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     /// <summary>A round strikes it: its <c>WeaponHit</c> handler.</summary>
@@ -275,50 +297,13 @@ public sealed class PlacedRotatingObject
         return ComputeOrientation(x, y, z);
     }
 
-    private Matrix3f ComputeOrientation(float x, float y, float z)
-    {
-        Matrix3f rot = (x == 0f && y == 0f)
-            ? Matrix3f.RotationZ(z * DegreesToRadians)
-            : Matrix3f.FromEngineEulerAngles(x * DegreesToRadians, y * DegreesToRadians, z * DegreesToRadians);
+    private Matrix3f ComputeOrientation(float x, float y, float z) => Objects.RotationRule.Orientation(BaseOrientation, x, y, z);
 
-        return BaseOrientation * rot;
-    }
+    // The step both games run (Objects.RotationRule).
+    private static float StepSpeed(float current, float target, float acceleration) =>
+        Objects.RotationRule.StepSpeed(current, target, acceleration);
 
-    // One axis's speed toward its target (0x4390DF and its two siblings).
-    private static float StepSpeed(float current, float target, float acceleration)
-    {
-        if (current == target)
-        {
-            return current;
-        }
-
-        if (current < target)
-        {
-            X87 next = ((X87)acceleration * DeltaTime) + current;
-            return next.Value > target ? target : next.F;
-        }
-
-        X87 down = (X87)current - ((X87)acceleration * DeltaTime);
-        return down.Value < target ? target : down.F;
-    }
-
-    // One axis's angle (0x4392D4): the sum is stored, then brought under 360 by whole turns.
-    private static float StepAngle(float angle, float speed)
-    {
-        float next = (((X87)speed * DeltaTime) + angle).F;
-        if (next >= 360f)
-        {
-            X87 wrapped;
-            do
-            {
-                wrapped = (X87)next - 360f;
-                next = wrapped.F;
-            }
-            while (wrapped.Value >= 360.0);
-        }
-
-        return next;
-    }
+    private static float StepAngle(float angle, float speed) => Objects.RotationRule.StepAngle(angle, speed);
 
     private static float MoveTowards(float current, float target, float maxDelta)
     {
@@ -355,386 +340,5 @@ public sealed class PlacedRotatingObject
             diff += 360f;
         }
         return WrapDegrees(from + (diff * t));
-    }
-}
-
-/// <summary>
-/// Collects and advances continuously rotating world objects (radar dishes and RotatingObject tasks).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Retail Project IGI implements continuous object rotation in two engine classes:
-/// <list type="bullet">
-/// <item><description><c>TASKTYPE_RADARDISH</c> (<c>0x448d30</c>): class for radar towers and radar dish attachments
-/// (e.g. model <c>436_02_1</c> on radar tower <c>436_01_1</c> in Level 5). Rotates around the vertical Z axis
-/// at authored speed and acceleration defined in <c>magicobj.qvm</c>.</description></item>
-/// <item><description><c>RotatingObject</c> (<c>0x438df0</c>): declared level task class supporting 3-axis rotation,
-/// acceleration, and on-expression activation (e.g. Level 3, Level 5, Level 8).</description></item>
-/// </list>
-/// Both integrate rotation at the 30 Hz simulation tick and compose their live orientation with their base transform.
-/// </para>
-/// </remarks>
-public sealed class RotatingObjectRegistry : ILevelReset
-{
-    private const string RadarDishTaskType = "TASKTYPE_RADARDISH";
-    private const string RotatingObjectTaskType = "RotatingObject";
-
-    private static readonly Dictionary<string, (float Speed, float Accel)> KnownRadarDishes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["436_02_1"] = (90f, 15f),
-        ["241_02_1"] = (35f, 15f),
-        ["433_03_1"] = (320f, 15f),
-        ["451_03_1"] = (520f, 12f),
-        ["243_02_1"] = (999f, 900f),
-    };
-
-    private readonly List<PlacedRotatingObject> _objects = [];
-    private readonly HashSet<PlacedRotatingObject> _walked = [];
-    private readonly Dictionary<WorldPlacement, PlacedRotatingObject> _byPlacement = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<(GameTask Owner, string Model), PlacedRotatingObject> _byOwnerAndModel = [];
-    private readonly Dictionary<GameTask, PlacedRotatingObject> _byTask = [];
-    private readonly LevelExpressionRuntime? _expressions;
-
-    /// <summary>Initializes a new instance of the <see cref="RotatingObjectRegistry"/> class.</summary>
-    /// <param name="expressions">Optional expression runtime for evaluating on-expressions.</param>
-    public RotatingObjectRegistry(LevelExpressionRuntime? expressions = null)
-    {
-        _expressions = expressions;
-    }
-
-    /// <summary>Gets the number of registered rotating objects.</summary>
-    public int Count => _objects.Count;
-
-    /// <summary>Gets all registered rotating objects.</summary>
-    public IReadOnlyList<PlacedRotatingObject> Objects => _objects;
-
-    /// <summary>Every turning object's loop, as it is made (<c>0x448B70</c>, <c>0x439620</c>), with its speed as its parameter.</summary>
-    /// <returns>One per object that names a sound and stands in the world.</returns>
-    public IEnumerable<VehicleSoundSource> SoundSources()
-    {
-        foreach (PlacedRotatingObject turning in _objects)
-        {
-            if (turning.Sound.Length == 0 || !ConditionalContainerGate.IsTaskActive(turning.Placement.Owner))
-            {
-                continue;
-            }
-
-            yield return new VehicleSoundSource(
-                turning.Placement.Owner,
-                turning.Sound,
-                turning.Placement.Position * WorldScene.UnitsPerMetre,
-                turning.SoundLevel,
-                0f,
-                0f,
-                SoundOn: true,
-                Key: turning);
-        }
-    }
-
-    /// <summary>Checks whether a model instance name is a known retail radar dish model.</summary>
-    public static bool IsKnownRadarDishModel(string modelName) =>
-        !string.IsNullOrEmpty(modelName) && KnownRadarDishes.ContainsKey(modelName);
-
-    /// <summary>Builds the rotating object registry from a loaded level and placements.</summary>
-    public static RotatingObjectRegistry Build(
-        GameTask root,
-        IEnumerable<WorldPlacement> placements,
-        ScriptVarRegistry? variables = null,
-        MagicObjectRegistry? magic = null)
-    {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(placements);
-
-        LevelExpressionRuntime? expressions = variables is not null ? new LevelExpressionRuntime(variables) : null;
-        RotatingObjectRegistry registry = new(expressions);
-
-        foreach (WorldPlacement placement in placements)
-        {
-            // A task-authored RotatingObject owns its behavior even when its model also has a
-            // magic-object definition (Level 5's standalone 436_02_1 is exactly that case).
-            if (!placement.IsAttached
-                && string.Equals(placement.Owner.Type.Name, RotatingObjectTaskType, StringComparison.Ordinal)
-                && placement.Owner is DeclaredTask declared)
-            {
-                float speedX = RealFromNumberOrShort(declared, "Degrees per second X-axis");
-                float speedY = RealFromNumberOrShort(declared, "Degrees per second Y-axis");
-                float speedZ = RealFromNumberOrShort(declared, "Degrees per second Z-axis");
-
-                float accelX = RealFromNumberOrShort(declared, "Acceleration, degrees per second X-axis");
-                float accelY = RealFromNumberOrShort(declared, "Acceleration, degrees per second Y-axis");
-                float accelZ = RealFromNumberOrShort(declared, "Acceleration, degrees per second Z-axis");
-
-                string onExpr = TextTrimmed(declared, "On expression");
-                string sound = TextTrimmed(declared, "Rotate sound");
-
-                registry.Add(new PlacedRotatingObject(
-                    placement,
-                    speedX,
-                    speedY,
-                    speedZ,
-                    accelX,
-                    accelY,
-                    accelZ,
-                    onExpr,
-                    isActive: true,
-                    sound: sound)
-                {
-                    IsRotatingObjectTask = true,
-                    IsDestructable = declared.TryGetValue("Destructable", out object? destructable) && destructable is true,
-                });
-                continue;
-            }
-
-            // TASKTYPE_RADARDISH (or known radar dish model attachment)
-            bool isRadarDish = string.Equals(placement.MagicTaskTypeName, RadarDishTaskType, StringComparison.Ordinal);
-            if (!isRadarDish && magic is not null && magic.TryGet(placement.Instance.Name, out MagicObjectDefinition childDef))
-            {
-                isRadarDish = string.Equals(magic.TaskTypeName(childDef.TaskType), RadarDishTaskType, StringComparison.Ordinal);
-            }
-            if (!isRadarDish && IsKnownRadarDishModel(placement.Instance.Name))
-            {
-                isRadarDish = true;
-            }
-
-            if (isRadarDish)
-            {
-                float speed = 90f;
-                float accel = 15f;
-                string sound = "radardishsounds";
-
-                if (magic is not null && magic.TryGet(placement.Instance.Name, out MagicObjectDefinition def))
-                {
-                    if (def.Speed > 0f)
-                    {
-                        speed = def.Speed;
-                    }
-                    if (def.Acceleration > 0f)
-                    {
-                        accel = def.Acceleration;
-                    }
-                    if (!string.IsNullOrEmpty(def.Sound))
-                    {
-                        sound = def.Sound;
-                    }
-                }
-                else if (KnownRadarDishes.TryGetValue(placement.Instance.Name, out (float Speed, float Accel) fallback))
-                {
-                    speed = fallback.Speed;
-                    accel = fallback.Accel;
-                }
-
-                PlacedRotatingObject obj = new(
-                    placement,
-                    speedX: 0f,
-                    speedY: 0f,
-                    speedZ: speed,
-                    accelX: 0f,
-                    accelY: 0f,
-                    accelZ: accel,
-                    onExpression: string.Empty,
-                    isActive: true,
-                    sound: sound);
-
-                registry.Add(obj);
-            }
-        }
-
-        return registry;
-    }
-
-    /// <summary>Adds a rotating object to the registry.</summary>
-    public void Add(PlacedRotatingObject obj)
-    {
-        ArgumentNullException.ThrowIfNull(obj);
-        _objects.Add(obj);
-        _byPlacement[obj.Placement] = obj;
-        _byOwnerAndModel[(obj.Owner, obj.Placement.Instance.Name)] = obj;
-        _byTask.TryAdd(obj.Owner, obj);
-        PlacementClaims.Changed();
-    }
-
-    /// <summary>Whether a placement, or its owner, turns (see <see cref="PlacementClaims"/>).</summary>
-    public bool Claims(WorldPlacement placement) =>
-        _byPlacement.ContainsKey(placement) || _byTask.ContainsKey(placement.Owner);
-
-    /// <summary>Hands a round's <c>WeaponHit</c> to the rotating object it struck, if it struck one.</summary>
-    /// <param name="owner">The task the round struck.</param>
-    /// <param name="placement">The placement it struck: a radar dish is an attachment of its tower's task.</param>
-    public void WeaponHit(GameTask? owner, WorldPlacement? placement)
-    {
-        if (placement is not null && _byPlacement.TryGetValue(placement, out PlacedRotatingObject? struck))
-        {
-            struck.WeaponHit();
-        }
-        else if (owner is not null && _byTask.TryGetValue(owner, out PlacedRotatingObject? task) && task.IsRotatingObjectTask)
-        {
-            task.WeaponHit();
-        }
-    }
-
-    /// <summary>Puts every level <c>RotatingObject</c> into the level walk, updating where the walk reaches it.</summary>
-    /// <param name="walker">The level walk.</param>
-    /// <param name="ticked">Called after each object's update, to carry its new orientation.</param>
-    /// <remarks>
-    /// Its update (<c>0x439090</c>) reads its On expression as the walk finds it and runs no children. Radar dishes are not
-    /// level tasks of their own, and keep updating after the walk.
-    /// </remarks>
-    public void AttachTo(LevelUpdateWalker walker, Action<PlacedRotatingObject>? ticked = null)
-    {
-        ArgumentNullException.ThrowIfNull(walker);
-        foreach (PlacedRotatingObject obj in _objects)
-        {
-            if (!obj.IsRotatingObjectTask)
-            {
-                continue;
-            }
-
-            _walked.Add(obj);
-            walker.Bind(obj.Owner, _ =>
-            {
-                StepRotatingObject(obj);
-                ticked?.Invoke(obj);
-            });
-        }
-    }
-
-    /// <summary>Advances every rotating object the level walk does not reach, for one 30 Hz simulation tick.</summary>
-    public void Tick()
-    {
-        foreach (PlacedRotatingObject obj in _objects)
-        {
-            if (_walked.Contains(obj))
-            {
-                continue;
-            }
-
-            if (obj.IsRotatingObjectTask)
-            {
-                StepRotatingObject(obj);
-                continue;
-            }
-
-            bool powered = true;
-            if (!string.IsNullOrEmpty(obj.OnExpression) && _expressions is not null)
-            {
-                powered = _expressions.EvaluateCondition(obj.OnExpression, emptyValue: true, obj.Owner);
-            }
-            else
-            {
-                powered = obj.IsActive;
-            }
-
-            obj.Tick(powered);
-        }
-    }
-
-    /// <summary>Resolves the current draw transform for a rendered placement.</summary>
-    public bool TryGetDrawTransform(
-        WorldPlacement placement,
-        float tickFraction,
-        bool smooth,
-        out Vector3d position,
-        out Matrix3f orientation)
-    {
-        ArgumentNullException.ThrowIfNull(placement);
-
-        // Every placement in the level asks this every frame and nearly all of them own nothing that
-        // turns, so the owner is tested first: the owner-and-model key hashes a string, and on the web
-        // its tuple lookup ran in the interpreter. Every owner registered is in _byTask.
-        if (_byPlacement.TryGetValue(placement, out PlacedRotatingObject? obj)
-            || (_byTask.ContainsKey(placement.Owner)
-                && _byOwnerAndModel.TryGetValue((placement.Owner, placement.Instance.Name), out obj)))
-        {
-            position = obj.Position;
-            orientation = obj.PresentedOrientation(tickFraction, smooth);
-            return true;
-        }
-
-        position = default;
-        orientation = default;
-        return false;
-    }
-
-    /// <summary>Resolves the current draw transform for a task that owns a rotating object.</summary>
-    public bool TryGetDrawTransform(
-        GameTask task,
-        float tickFraction,
-        bool smooth,
-        out Vector3d position,
-        out Matrix3f orientation)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-
-        if (_byTask.TryGetValue(task, out PlacedRotatingObject? obj))
-        {
-            position = obj.Position;
-            orientation = obj.PresentedOrientation(tickFraction, smooth);
-            return true;
-        }
-
-        position = default;
-        orientation = default;
-        return false;
-    }
-
-    // 0x439090: switched off when it has an On expression (sub_4F16C0) and that is false.
-    private void StepRotatingObject(PlacedRotatingObject obj)
-    {
-        bool switchedOff = _expressions is not null
-            && !string.IsNullOrWhiteSpace(obj.OnExpression)
-            && !_expressions.EvaluateCondition(obj.OnExpression, emptyValue: true, obj.Owner);
-        obj.TickRotatingObject(switchedOff);
-    }
-
-    /// <inheritdoc/>
-    public void MarkLevelStart()
-    {
-        foreach (PlacedRotatingObject obj in _objects)
-        {
-            obj.MarkLevelStart();
-        }
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>Each fan and dish turning, or stopped, as the match began; its solid turned back with it.</remarks>
-    public void ResetToLevelStart(ObjectCollisionIndex? solids)
-    {
-        foreach (PlacedRotatingObject obj in _objects)
-        {
-            obj.ResetToLevelStart();
-        }
-
-        if (solids is not null)
-        {
-            ApplyCollision(solids);
-        }
-    }
-
-    /// <summary>Updates one rotating object's collision solid, if its orientation changed.</summary>
-    /// <param name="solids">The level's collision index.</param>
-    /// <param name="obj">The object.</param>
-    /// <returns>Whether its solid moved.</returns>
-    public static bool ApplyCollision(ObjectCollisionIndex solids, PlacedRotatingObject obj)
-    {
-        ArgumentNullException.ThrowIfNull(solids);
-        ArgumentNullException.ThrowIfNull(obj);
-        return solids.UpdateTransform(obj.Placement, obj.Position, obj.CurrentOrientation);
-    }
-
-    /// <summary>Updates collision solids for all rotating objects whose orientation changed.</summary>
-    public int ApplyCollision(ObjectCollisionIndex solids)
-    {
-        ArgumentNullException.ThrowIfNull(solids);
-        int updated = 0;
-
-        foreach (PlacedRotatingObject obj in _objects)
-        {
-            if (solids.UpdateTransform(obj.Placement, obj.Position, obj.CurrentOrientation))
-            {
-                updated++;
-            }
-        }
-
-        return updated;
     }
 }

@@ -1,7 +1,7 @@
 namespace OpenIGI.Engine.Tasks;
 
 /// <summary>
-/// Broadcasts a message depth-first through a task tree, keeping an explicit cursor stack so that a task
+/// Broadcasts a message or an event depth-first through a task tree, keeping an explicit cursor stack so that a task
 /// may delete itself, a sibling or a whole subtree from inside its own handler.
 /// </summary>
 /// <remarks>
@@ -9,7 +9,8 @@ namespace OpenIGI.Engine.Tasks;
 /// This is the mechanism that makes the original's object model work at all: update handlers routinely
 /// delete things, and a naive <c>foreach</c> over a child collection either throws or walks freed memory.
 /// The original keeps one global stack (<c>0xAFA6E0</c>, 64 slots) alongside a depth counter
-/// (<c>0xAFA7E0</c>) and has <c>Task_Delete</c> reach into it; the walk is <c>0x401D80</c>.
+/// (<c>0xAFA7E0</c>) and has <c>Task_Delete</c> reach into it; the walk is <c>0x401D80</c>, and I.G.I. 2's
+/// <c>QTask_TriggerQTaskEventRecursively</c> is the same function.
 /// </para>
 /// <para>
 /// Each stack slot serves two purposes in turn. On entry at depth <em>d</em> the walker writes the task
@@ -60,8 +61,8 @@ public sealed class TaskTreeWalker
     /// </remarks>
     public void Send(GameTask task, TaskMessage message)
     {
-        ArgumentNullException.ThrowIfNull(task);
-        Dispatch(task, message);
+        MessageVisitor visitor = new(message);
+        Visit(task, ref visitor);
     }
 
     /// <summary>Sends a message to a task's immediate children, without descending further.</summary>
@@ -84,6 +85,58 @@ public sealed class TaskTreeWalker
     /// </remarks>
     public void SendToChildren(GameTask parent, TaskMessage message)
     {
+        MessageVisitor visitor = new(message);
+        VisitChildren(parent, ref visitor);
+    }
+
+    /// <summary>Visits a task and, depth-first, every task beneath it: a parent before its children, children in order.</summary>
+    /// <typeparam name="TVisitor">What is done at each task.</typeparam>
+    /// <param name="task">The subtree's root.</param>
+    /// <param name="visitor">The visitor.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <remarks>The walk beneath a task stops if its own visit deleted it, as the original's does.</remarks>
+    public void Visit<TVisitor>(GameTask task, ref TVisitor visitor)
+        where TVisitor : ITaskVisitor, allows ref struct
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        int entry = Depth;
+        SetCursor(entry, task);
+        Depth = entry + 1;
+
+        visitor.Visit(task);
+
+        // Re-read rather than reuse: a handler may have run nested walks of its own.
+        int childSlot = Depth;
+
+        if (ReferenceEquals(task, _cursors[childSlot - 1]))
+        {
+            GameTask? child = task.FirstChild;
+            while (child is not null)
+            {
+                // Publish the successor before recursing, so a handler deleting it can patch this slot.
+                SetCursor(childSlot, child.NextSibling);
+                Depth = childSlot + 1;
+
+                Visit(child, ref visitor);
+
+                childSlot = Depth - 1;
+                Depth = childSlot;
+                child = _cursors[childSlot];
+            }
+        }
+
+        Depth = childSlot - 1;
+    }
+
+    /// <summary>Visits a task's immediate children in order, without descending further.</summary>
+    /// <typeparam name="TVisitor">What is done at each child.</typeparam>
+    /// <param name="parent">The task whose children are visited.</param>
+    /// <param name="visitor">The visitor.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="parent"/> is <see langword="null"/>.</exception>
+    public void VisitChildren<TVisitor>(GameTask parent, ref TVisitor visitor)
+        where TVisitor : ITaskVisitor, allows ref struct
+    {
         ArgumentNullException.ThrowIfNull(parent);
 
         int slot = Depth;
@@ -95,9 +148,40 @@ public sealed class TaskTreeWalker
             SetCursor(slot, child.NextSibling);
             Depth = slot + 1;
 
-            child.Receive(message);
+            visitor.Visit(child);
 
             // Re-read rather than reuse: the handler may have run nested walks of its own.
+            slot = Depth - 1;
+            Depth = slot;
+            child = _cursors[slot];
+        }
+    }
+
+    /// <summary>Visits each of a task's children and, depth-first, every task beneath them, but not the task itself.</summary>
+    /// <typeparam name="TVisitor">What is done at each task.</typeparam>
+    /// <param name="parent">The task whose subtrees are visited.</param>
+    /// <param name="visitor">The visitor.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="parent"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The original's <c>Task_BroadcastChildren</c> (<c>0x401E30</c>; I.G.I. 2 <c>QTask_TriggerQTaskEventChildrenRecursively</c>).
+    /// It steps from a child to that child's successor after the child's subtree has been walked; the successor is held on the
+    /// cursor stack here, which gives the same step when the child deleted itself or the task after it.
+    /// </remarks>
+    public void VisitDescendants<TVisitor>(GameTask parent, ref TVisitor visitor)
+        where TVisitor : ITaskVisitor, allows ref struct
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+
+        int slot = Depth;
+        GameTask? child = parent.FirstChild;
+
+        while (child is not null)
+        {
+            SetCursor(slot, child.NextSibling);
+            Depth = slot + 1;
+
+            Visit(child, ref visitor);
+
             slot = Depth - 1;
             Depth = slot;
             child = _cursors[slot];
@@ -125,37 +209,6 @@ public sealed class TaskTreeWalker
         }
     }
 
-    private void Dispatch(GameTask task, TaskMessage message)
-    {
-        int entry = Depth;
-        SetCursor(entry, task);
-        Depth = entry + 1;
-
-        task.Receive(message);
-
-        // Re-read rather than reuse: a handler may have run nested walks of its own.
-        int childSlot = Depth;
-
-        if (ReferenceEquals(task, _cursors[childSlot - 1]))
-        {
-            GameTask? child = task.FirstChild;
-            while (child is not null)
-            {
-                // Publish the successor before recursing, so a handler deleting it can patch this slot.
-                SetCursor(childSlot, child.NextSibling);
-                Depth = childSlot + 1;
-
-                Dispatch(child, message);
-
-                childSlot = Depth - 1;
-                Depth = childSlot;
-                child = _cursors[childSlot];
-            }
-        }
-
-        Depth = childSlot - 1;
-    }
-
     private void SetCursor(int slot, GameTask? task)
     {
         while (_cursors.Count <= slot)
@@ -164,5 +217,11 @@ public sealed class TaskTreeWalker
         }
 
         _cursors[slot] = task;
+    }
+
+    // Delivers one of the fixed messages at each task.
+    private readonly struct MessageVisitor(TaskMessage message) : ITaskVisitor
+    {
+        public void Visit(GameTask task) => task.Receive(message);
     }
 }

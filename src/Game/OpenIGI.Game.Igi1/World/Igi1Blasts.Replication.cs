@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -34,7 +33,7 @@ public sealed partial class Igi1Blasts
         (float visible, float close) = Flashbang.Effect((float)(watcher.EyeUnits - at).Length, radiusUnits);
         if (visible > 0f || close > 0f)
         {
-            mission.FlashbangFlash.Apply(visible, close);
+            mission.PlayerLife.FlashbangFlash.Apply(visible, close);
         }
     }
 

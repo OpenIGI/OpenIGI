@@ -79,20 +79,4 @@ internal static class ModLoadOrder
 
         return new ModProfile(ModProfile.CurrentSchema, titles);
     }
-
-    /// <summary>Gets the other games whose data the mods a game is started with read.</summary>
-    /// <param name="profile">The profile being handed over.</param>
-    /// <param name="titleId">The game being started.</param>
-    /// <param name="requires">The games a mod id reads besides its own.</param>
-    /// <returns>Their ids, each once.</returns>
-    public static IReadOnlyList<string> GamesRead(ModProfile profile, string titleId, Func<string, IReadOnlyList<string>> requires)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-        ArgumentNullException.ThrowIfNull(requires);
-        return [.. profile.For(titleId)
-            .Where(static entry => entry.Enabled)
-            .SelectMany(entry => requires(entry.Id))
-            .Where(id => !string.Equals(id, titleId, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)];
-    }
 }

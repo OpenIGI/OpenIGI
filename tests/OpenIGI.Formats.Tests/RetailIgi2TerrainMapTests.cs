@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
@@ -47,11 +48,11 @@ public sealed class RetailIgi2TerrainMapTests
                 Assert.Equal(map.SampleCount * map.SampleSize, map.Samples.Length);
 
                 string tile = Path.GetFileNameWithoutExtension(entry.Name);
-                (byTile.TryGetValue(tile, out List<string>? seen) ? seen : byTile[tile] = [])
+                byTile.GetOrAdd(tile)
                     .Add(Path.GetExtension(entry.Name).ToLowerInvariant());
             }
 
-            foreach ((string tile, List<string> extensions) in byTile)
+            foreach ((_, List<string> extensions) in byTile)
             {
                 Assert.Equal<string[]>([".thm", ".tlm", ".tmm"], [.. extensions.Order(StringComparer.Ordinal)]);
             }

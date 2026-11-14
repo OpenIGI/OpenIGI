@@ -1,4 +1,3 @@
-using OpenIGI.Core.Graphics;
 using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.Rhi;

@@ -164,7 +164,7 @@ public sealed class PlayerIdentityTests
     {
         using Room room = new();
         using EcdsaPlayerIdentity troll = EcdsaPlayerIdentity.CreateEphemeral();
-        Room.Player first = room.Join("Joe", troll);
+        room.Join("Joe", troll);
         room.Run(2);
 
         room.Server.Kick(room.Server.Clients.Single());

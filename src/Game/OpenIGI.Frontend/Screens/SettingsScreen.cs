@@ -34,10 +34,10 @@ namespace OpenIGI.Frontend.Screens;
 public sealed class SettingsScreen : ShellScreen
 {
     /// <summary>The most columns the panels are ever dealt into, however wide the display is.</summary>
-    private const int MaxColumns = 3;
+    private const int MaxColumns = 2;
 
     /// <summary>The design-unit width a column wants before another one is worth having.</summary>
-    private const float ColumnWidth = 520f;
+    private const float ColumnWidth = 480f;
 
     /// <summary>The most rows one panel holds before a long group continues in another.</summary>
     private const int MaxRowsPerPanel = 12;
@@ -66,9 +66,20 @@ public sealed class SettingsScreen : ShellScreen
     // visit, each resize -- used to stay subscribed for good. Disposed on every rebuild and on leaving.
     private readonly List<IDisposable> _bindings = [];
 
-    private Label? _help;
+    private SettingsAbout? _about;
+
+    // The row a compact page has lent its explanation to as a line under the caption, to take it back from.
+    private Control? _hinted;
+    // The gap between the groups and the panel that explains the row in focus, in design units.
+    private const float AsideGap = 28f;
+
+    private TabStrip? _tabs;
     private int _columns = MaxColumns;
+    private int _controlsColumns = MaxColumns;
     private int _activeTab;
+
+    /// <summary>Gets the category the page opens on, by its title, for a capture; the first when there is none of that name.</summary>
+    public string? StartCategory { get; init; }
     private int _controlsTab = -1;
 
     // Which categories write to the draft rather than straight to their variables.
@@ -100,9 +111,9 @@ public sealed class SettingsScreen : ShellScreen
 
     /// <inheritdoc/>
     protected override IReadOnlyList<KeyHint> Hints =>
-        _flow.Prompt is { } prompt ? [new("ENTER", "Choose"), new("ESC", prompt.BackCaption)]
-        : IsStagedTab && _flow.HasChanges ? [new("CLICK", "Adjust"), new("F", "Apply"), new("BACKSPACE", "Discard"), new("R", "Reset defaults"), new("ESC", "Back")]
-        : [new("CLICK", "Adjust"), new("R", "Reset defaults"), new("ESC", "Back")];
+        _flow.Prompt is { } prompt ? [new("Enter", "Choose"), new("Esc", prompt.BackCaption)]
+        : _activeTab == _controlsTab && _controlsTab >= 0 ? [new("↑ ↓", "Select"), new("Enter", "Rebind"), new("R", "Reset bindings"), new("Esc", "Back")]
+        : [new("↑ ↓", "Select"), new("← →", "Adjust"), new("R", "Reset defaults"), new("Esc", "Back")];
 
     /// <summary>Gets a value indicating whether the category on screen holds its changes until Apply.</summary>
     private bool IsStagedTab => _stagedTabs.Contains(_activeTab);
@@ -125,14 +136,23 @@ public sealed class SettingsScreen : ShellScreen
 
         // How many columns the page will hold, in DESIGN units so it follows the display's shape rather
         // than its resolution: 16:9 takes the design's three, 4:3 two.
-        float usable = (context.SafeRect.Width / context.Scale) - (SideMargin * 2f);
-        _columns = Math.Clamp((int)(usable / ColumnWidth), 1, MaxColumns);
+        // The explanation of the row in focus has a panel of its own beside the groups; a compact page has no room for
+        // one, and the row in focus carries its explanation under its caption there.
+        bool compact = Size == ShellSize.Compact;
+        // The wide page alone has room for that panel: on a laptop the groups take the width, two columns of them.
+        float aside = Size == ShellSize.Wide ? 440f : 0f;
+        float across = ShellSizes.Canvas(context).X - (SideMargin * 2f) - (compact ? RailWidth : 0f);
+        float usable = across - (aside > 0f ? aside + AsideGap : 0f);
+        _columns = compact ? 1 : Math.Clamp((int)(usable / ColumnWidth), 1, MaxColumns);
+
+        // The controls have no panel beside them -- a binding needs no explaining -- and so a third column.
+        _controlsColumns = compact ? 1 : Math.Clamp((int)(across / ColumnWidth), 1, MaxColumns + 1);
 
         // Five categories, and a sixth only for the mods' own: the console reaches every variable by name, which is
         // what an advanced interface should be. A build locked to one preset has no Graphics category at all.
         List<(string Title, Func<List<SettingsGroup>> Build)> categories =
         [
-            ("Display", () => [SettingsGroup.Of("Display", DisplaySettingsTab.Build(_rows, theme))]),
+            ("Display", () => DisplaySettingsTab.Build(_rows, theme)),
             ("Audio", () => CvarGroupBuilder.CvarGroups(_rows, theme, CvarGroupBuilder.NamesWithPrefix(Context.Cvars, "snd_"), "Audio")),
             ("Controls", () => ControlsSettingsTab.Build(Context, _rows, theme, out _resetBindings)),
             ("Gameplay", () => GameplaySettingsTab.Build(_rows, theme)),
@@ -156,15 +176,66 @@ public sealed class SettingsScreen : ShellScreen
             tabTitles[i] = categories[i].Title;
         }
 
-        var tabs = new TabStrip(theme, tabTitles) { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
+        var tabs = new TabStrip(theme, tabTitles)
+        {
+            HorizontalAlignment = compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            TabPadding = compact ? 6f : 18f,
+            SegmentHeight = compact ? 36f : 42f,
+            TextSize = compact ? 14f : 17f,
+            Stretch = compact,
+        };
         tabs.SelectionChanged += ShowTab;
+        _tabs = tabs;
+        int opened = StartCategory is { Length: > 0 } wanted
+            ? Array.FindIndex(tabTitles, title => title.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+            : -1;
 
-        var header = new Grid { ColumnSpacing = 24f };
-        header.ColumnDefinitions.Add(GridLength.Star);
-        header.ColumnDefinitions.Add(GridLength.Auto);
-        header.RowDefinitions.Add(GridLength.Auto);
-        header.Add(new SectionTitle(theme, "Configuration", "Settings") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
-        header.Add(tabs, 0, 1);
+        UiElement header;
+        if (compact)
+        {
+            // The page's name and Reset on one line -- there is no R to press on a phone -- and the categories under it.
+            var reset = new Button(theme, "Reset")
+            {
+                Accent = ButtonAccent.Text,
+                LeadingGlyph = static (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.History, centre, size, ink),
+                GlyphSize = 16f,
+                TextSize = 16f,
+                Tracking = 0.12f,
+                Padding = new Thickness(12f, 10f),
+            };
+            reset.Activated += _ => ResetCurrentTab();
+            var top = new FlexPanel { Orientation = Orientation.Horizontal };
+            top.Add(new SectionTitle(theme, string.Empty, "Settings") { TitleSize = 24f, VerticalAlignment = VerticalAlignment.Center });
+            top.Add(new Panel(), grow: 1f);
+            top.Add(reset);
+            var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f };
+            stack.AddChild(top);
+            stack.AddChild(tabs);
+            header = stack;
+        }
+        else
+        {
+            var strip = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f, VerticalAlignment = VerticalAlignment.Bottom };
+            if (!Context.Host.TouchScreen)
+            {
+                strip.Add(new KeyCapLabel(theme, "[") { VerticalAlignment = VerticalAlignment.Center });
+            }
+
+            strip.Add(tabs);
+            if (!Context.Host.TouchScreen)
+            {
+                strip.Add(new KeyCapLabel(theme, "]") { VerticalAlignment = VerticalAlignment.Center });
+            }
+
+            var row = new Grid { ColumnSpacing = 24f };
+            row.ColumnDefinitions.Add(GridLength.Star);
+            row.ColumnDefinitions.Add(GridLength.Auto);
+            row.RowDefinitions.Add(GridLength.Auto);
+            row.Add(new SectionTitle(theme, "Configuration", "Settings") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
+            row.Add(strip, 0, 1);
+            header = row;
+        }
 
         var content = new Panel();
         for (int i = 0; i < categories.Count; i++)
@@ -192,32 +263,45 @@ public sealed class SettingsScreen : ShellScreen
             content.AddChild(panel);
         }
 
-        // Two lines, wrapped, and always two: it shares its row with the Apply bar now, and a row whose
-        // height followed the focused setting's help would nudge the whole page up and down.
-        _help = new Label(theme.Body, string.Empty, 16f, theme.TextMuted)
+        if (opened > 0)
         {
-            Margin = new Thickness(0f, 12f, 0f, 0f),
-            Wrap = true,
-            Height = 44f,
-            VerticalAlignment = VerticalAlignment.Center,
+            tabs.SelectedIndex = opened;
+        }
+
+        // The groups, and beside them what the row in focus does.
+        UiElement body = content;
+        _about = null;
+        _hinted = null;
+        if (aside > 0f)
+        {
+            _about = new SettingsAbout(theme)
+            {
+                Width = aside,
+                Margin = new Thickness(AsideGap, 0f, 0f, 0f),
+                Visibility = _activeTab == _controlsTab ? Visibility.Collapsed : Visibility.Visible,
+            };
+            var split = new Grid();
+            split.ColumnDefinitions.Add(GridLength.Star);
+            split.ColumnDefinitions.Add(GridLength.Auto);
+            split.RowDefinitions.Add(GridLength.Star);
+            split.Add(content, 0, 0);
+            split.Add(_about, 0, 1);
+            body = split;
+        }
+
+        var layout = new Grid
+        {
+            RowSpacing = compact ? 8f : 24f,
+            Padding = compact ? new Thickness(SideMargin, 6f, SideMargin, 0f) : new Thickness(SideMargin, 32f, SideMargin, 0f),
         };
-
-        // Clear of the footer's rule, which the Apply bar's buttons otherwise sit on.
-        var footer = new Grid { ColumnSpacing = 24f, Margin = new Thickness(0f, 0f, 0f, 20f) };
-        footer.ColumnDefinitions.Add(GridLength.Star);
-        footer.ColumnDefinitions.Add(GridLength.Auto);
-        footer.RowDefinitions.Add(GridLength.Auto);
-        footer.Add(_help, 0, 0);
-        footer.Add(_flow.BuildApplyBar(theme), 0, 1);
-
-        var layout = new Grid { RowSpacing = 36f, Padding = new Thickness(SideMargin, 48f, SideMargin, 0f) };
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto); // the title and the categories
         layout.RowDefinitions.Add(GridLength.Star); // the current category, filling the rest
-        layout.RowDefinitions.Add(GridLength.Auto); // the per-row help line, and Apply on a staged category
+        layout.RowDefinitions.Add(GridLength.Auto); // what is waiting to be applied, on a staged category
         layout.Add(header, 0, 0);
-        layout.Add(content, 1, 0);
-        layout.Add(footer, 2, 0);
+        layout.Add(body, 1, 0);
+        layout.Add(_flow.BuildApplyBar(theme, compact), 2, 0);
+
         // Transparent to the pointer where no question is shown: the empty layer spans the page and would otherwise
         // answer every hit test, so the wheel never found the category's viewport under it.
         var promptLayer = new Panel { IsHitTestTransparent = true };
@@ -227,6 +311,11 @@ public sealed class SettingsScreen : ShellScreen
         _flow.Attach(layout, promptLayer);
         return root;
     }
+
+    /// <inheritdoc/>
+    /// <remarks>The keys start on the category's first row, not on the strip of categories: the rows are what the page is for.</remarks>
+    protected override Control? InitialFocus =>
+        _activeTab >= 0 && _activeTab < _tabRows.Count && _tabRows[_activeTab].Find(static row => row is not (TextBox or Button)) is { } first ? first : base.InitialFocus;
 
     /// <inheritdoc/>
     protected override void OnBuilt() => _flow.FocusPrompt();
@@ -264,6 +353,7 @@ public sealed class SettingsScreen : ShellScreen
             {
                 while (input.Keyboard.TryDequeuePress(out _))
                 {
+                    // The loop's condition does the work.
                 }
 
                 _armingBindingRow = row;
@@ -322,6 +412,17 @@ public sealed class SettingsScreen : ShellScreen
         if (input.Keyboard.WasPressed(KeyCode.R))
         {
             ResetCurrentTab();
+        }
+
+        // The keys either side of the categories step through them.
+        if (_tabs is { } tabs && Focus?.Focused is not TextBox)
+        {
+            int step = input.Keyboard.WasPressed(KeyCode.RightBracket) ? 1 : input.Keyboard.WasPressed(KeyCode.LeftBracket) ? -1 : 0;
+            if (step != 0)
+            {
+                tabs.SelectedIndex = (tabs.SelectedIndex + step + tabs.Tabs.Count) % tabs.Tabs.Count;
+                return false;
+            }
         }
 
         if (IsStagedTab && input.Keyboard.WasPressed(KeyCode.F))
@@ -397,26 +498,109 @@ public sealed class SettingsScreen : ShellScreen
     {
         _flow.Update(elapsedSeconds);
 
-        if (_help is null)
+        Control? focused = Focus?.Focused as Control;
+        (string title, string text, ICVar? variable) = focused is null ? (string.Empty, string.Empty, null) : Describe(focused);
+
+        if (_about is not null)
         {
+            (IReadOnlyList<string> options, int current) = Choices(focused);
+            _about.Show(title, text, Tags(focused, variable), options, current);
             return;
         }
 
-        if (Focus?.Focused is Control control && _boundCvars.TryGetValue(control, out ICVar? cvar))
+        // No panel: the row in focus says what it does under its own caption, and the one before gives the line back.
+        if (!ReferenceEquals(_hinted, focused))
         {
-            string restart = cvar.Flags.HasFlag(CVarOptions.RequiresRestart) ? "   [restart required]" : string.Empty;
-            _help.Text = cvar.Help + restart;
+            if (_hinted is not null)
+            {
+                _hinted.Hint = string.Empty;
+                _hinted = null;
+            }
+
+            if (focused is { Hint.Length: 0 } && text.Length > 0 && focused is Toggle or Slider or OptionCycler or Dropdown)
+            {
+                focused.Hint = FirstLine(text);
+                _hinted = focused;
+            }
         }
-        else if (Focus?.Focused is Control { Tooltip.Length: > 0 } explained)
+    }
+
+    // What a row is called and what it does: its variable's help where it is one variable, and otherwise what the
+    // pointer would be told, less the variable's name at the foot of that.
+    private (string Title, string Text, ICVar? Variable) Describe(Control control)
+    {
+        string title = control switch
         {
-            // A row that is not one variable — a quality group, the preset — says the same thing the
-            // pointer would be told, cut to the line's length. The rest is in the tooltip.
-            _help.Text = FirstLine(explained.Tooltip);
+            Toggle toggle => toggle.Label,
+            Slider slider => slider.Label,
+            OptionCycler cycler => cycler.Caption,
+            Dropdown dropdown => dropdown.Label,
+            TabStrip strip when !ReferenceEquals(strip, _tabs) => "Quality preset",
+            KeyBindingRow binding => binding.Action,
+            ActionRow action => action.Caption,
+            Button button => button.Text,
+            _ => string.Empty,
+        };
+
+        _boundCvars.TryGetValue(control, out ICVar? cvar);
+        string text = control.Tooltip.Length > 0 ? control.Tooltip : cvar?.Help ?? string.Empty;
+        int foot = text.LastIndexOf("\n\n", StringComparison.Ordinal);
+        if (foot >= 0 && text.IndexOf(' ', foot + 2) < 0)
+        {
+            text = text[..foot];
+        }
+
+        if (control is KeyBindingRow && text.Length == 0)
+        {
+            text = "Select the row, then press the new key, mouse button or wheel direction. Escape cancels.";
+        }
+
+        return (title, text.Trim(), cvar);
+    }
+
+    // What a row chooses between, and which it holds: for the panel beside the rows to list. Nothing for a row that
+    // chooses between nothing, or between more than a panel should list.
+    private static (IReadOnlyList<string> Options, int Current) Choices(Control? control) => control switch
+    {
+        OptionCycler { Options.Count: > 1 and <= 8 } cycler => (cycler.Options, cycler.SelectedIndex),
+        Dropdown { Options.Count: > 1 and <= 8 } dropdown => (dropdown.Options, dropdown.SelectedIndex),
+        TabStrip { Tabs.Count: > 1 and <= 8 } strip when !ReferenceEquals(strip, null) => (strip.Tabs, strip.SelectedIndex),
+        _ => ([], -1),
+    };
+
+    // When a change to the row takes hold, and what the setting started as.
+    private List<(string Text, OpenIGI.Core.Graphics.Bgra32 Ink)> Tags(Control? control, ICVar? variable)
+    {
+        List<(string, OpenIGI.Core.Graphics.Bgra32)> tags = [];
+        if (control is null || control is Button)
+        {
+            return tags;
+        }
+
+        UiTheme theme = Context.Theme;
+        if (!control.IsEnabled)
+        {
+            tags.Add(("UNAVAILABLE", theme.Warning));
+        }
+        else if (variable is not null && variable.Flags.HasFlag(CVarOptions.RequiresRestart))
+        {
+            tags.Add(("FROM THE NEXT LEVEL", theme.Warning));
+        }
+        else if (IsStagedTab)
+        {
+            tags.Add(("NEEDS APPLY", theme.Accent));
         }
         else
         {
-            _help.Text = string.Empty;
+            tags.Add(("APPLIES INSTANTLY", theme.Success));
         }
+
+        if (variable is { DefaultText.Length: > 0 and < 24 })
+        {
+            tags.Add(($"DEFAULT: {variable.DefaultText.ToUpperInvariant()}", theme.TextSecondary));
+        }
+
+        return tags;
     }
 
     private void ShowTab(int index)
@@ -425,6 +609,12 @@ public sealed class SettingsScreen : ShellScreen
         for (int i = 0; i < _tabPanels.Count; i++)
         {
             _tabPanels[i].Visibility = i == index ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        // The panel that explains a row stands down for the controls, whose rows take its room.
+        if (_about is not null)
+        {
+            _about.Visibility = index == _controlsTab ? Visibility.Collapsed : Visibility.Visible;
         }
 
         // The focused row belongs to the category that has just been collapsed, so it can no longer hold
@@ -467,24 +657,33 @@ public sealed class SettingsScreen : ShellScreen
     private ScrollView BuildColumns(UiTheme theme, List<SettingsGroup> groups, int tab)
     {
         var panels = new List<SettingsGroup>();
+        var bands = new List<SettingsGroup>();
         foreach (SettingsGroup group in groups)
         {
+            if (group.Banner is not null)
+            {
+                bands.Add(group);
+                continue;
+            }
+
             for (int start = 0; start < group.Rows.Count; start += MaxRowsPerPanel)
             {
                 panels.Add(new SettingsGroup(group.Title, group.Rows.GetRange(start, Math.Min(MaxRowsPerPanel, group.Rows.Count - start))));
             }
         }
 
-        int columns = Math.Clamp(Math.Min(_columns, panels.Count), 1, MaxColumns);
+        int most = tab == _controlsTab ? _controlsColumns : _columns;
+        int columns = Math.Clamp(Math.Min(most, Math.Max(1, panels.Count)), 1, MaxColumns + 1);
         var stacks = new StackPanel[columns];
         var heights = new int[columns];
         var columnRows = new List<Control>[columns];
-        var grid = new Grid { ColumnSpacing = 24f, Margin = new Thickness(0f, 0f, 22f, 0f), VerticalAlignment = VerticalAlignment.Top };
+        bool compact = Size == ShellSize.Compact;
+        var grid = new Grid { ColumnSpacing = 20f, Margin = new Thickness(0f, 0f, compact ? 10f : 18f, 16f), VerticalAlignment = VerticalAlignment.Top };
         grid.RowDefinitions.Add(GridLength.Auto);
         for (int c = 0; c < columns; c++)
         {
             grid.ColumnDefinitions.Add(GridLength.Star);
-            stacks[c] = new StackPanel { Orientation = Orientation.Vertical, Spacing = 24f, VerticalAlignment = VerticalAlignment.Top };
+            stacks[c] = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 10f : 20f, VerticalAlignment = VerticalAlignment.Top };
             columnRows[c] = [];
             grid.Add(stacks[c], 0, c);
         }
@@ -500,12 +699,17 @@ public sealed class SettingsScreen : ShellScreen
                 }
             }
 
-            stacks[shortest].AddChild(Panel(theme, panel));
+            stacks[shortest].AddChild(Panel(theme, panel, compact));
             heights[shortest] += panel.Rows.Count + 2;
             columnRows[shortest].AddRange(panel.Rows);
         }
 
         var focusable = new List<Control>();
+        foreach (SettingsGroup band in bands)
+        {
+            focusable.AddRange(band.Rows);
+        }
+
         foreach (List<Control> rows in columnRows)
         {
             focusable.AddRange(rows);
@@ -519,28 +723,51 @@ public sealed class SettingsScreen : ShellScreen
         _tabRows[tab] = focusable;
 
         var scroll = new ScrollView(theme);
-        if (panels.Count == 0)
+        if (panels.Count == 0 && bands.Count == 0)
         {
             scroll.SetContent(new Label(theme.Body, "No active profile.", 17f, theme.TextMuted));
             return scroll;
         }
 
-        scroll.SetContent(grid);
+        if (bands.Count == 0)
+        {
+            scroll.SetContent(grid);
+            return scroll;
+        }
+
+        // The bands across the top, the columns under them.
+        var page = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 10f : 20f, VerticalAlignment = VerticalAlignment.Top };
+        foreach (SettingsGroup band in bands)
+        {
+            band.Banner!.Margin = new Thickness(0f, 0f, compact ? 10f : 18f, 0f);
+            page.AddChild(band.Banner);
+        }
+
+        page.AddChild(grid);
+        scroll.SetContent(page);
         return scroll;
     }
 
-    private static GlassPanel Panel(UiTheme theme, SettingsGroup group)
+    private static GlassPanel Panel(UiTheme theme, SettingsGroup group, bool compact)
     {
+        // The group's name over its rows; the rows run to the panel's edges but for a margin the focus ring stands in.
         var stack = new StackPanel { Orientation = Orientation.Vertical };
-        stack.AddChild(new GroupHeader(theme, group.Title));
+        stack.AddChild(new GroupHeader(theme, group.Title)
+        {
+            Margin = compact ? new Thickness(16f, 12f, 16f, 4f) : new Thickness(20f, 28f, 20f, 14f),
+        });
         foreach (Control row in group.Rows)
         {
-            // Widened into the panel's padding, so the hover wash reaches the panel's edges as the design's does.
-            row.Margin = new Thickness(-10f, 0f);
             stack.AddChild(row);
         }
 
-        var panel = new GlassPanel(theme) { Padding = new Thickness(28f, 28f, 28f, 20f), VerticalAlignment = VerticalAlignment.Top };
+        var panel = new GlassPanel(theme)
+        {
+            Tint = OpenIGI.Core.Graphics.Bgra32.FromRgba(12, 14, 15, compact ? (byte)235 : (byte)199),
+            Border = UiPalette.White(0.12f),
+            Padding = compact ? new Thickness(0f, 0f, 0f, 4f) : new Thickness(8f, 0f, 8f, 16f),
+            VerticalAlignment = VerticalAlignment.Top,
+        };
         panel.AddChild(stack);
         return panel;
     }

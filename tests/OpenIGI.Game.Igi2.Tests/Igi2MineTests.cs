@@ -75,6 +75,29 @@ public sealed class Igi2MineTests
         }
     }
 
+    /// <summary>
+    /// A mine's save state is its list's twenty-five values (<c>Mine_ptSerializeParameterList</c>): a model object's thirteen, an
+    /// exploding object's four, then its flags, its two counts, its time, its radius and its three booleans, the last whether it
+    /// is a remote one; it is kept with its parent, and one a load has deleted is neither saved nor run.
+    /// </summary>
+    [Fact]
+    public void A_mine_is_saved_as_its_list_has_it()
+    {
+        FakeMineWorld world = new();
+        Igi2Mine mine = new(world, new Vector3d(1, 2, 3), Igi2Pose.FromDirection(new Vector3f(0f, 0f, 1f)), string.Empty, 60, 0.5f, 1.5f, 3f, isRemote: true);
+        OpenIGI.Game.Saves.StateWriter writer = new();
+        mine.WriteState(writer);
+        string[] values = writer.Arguments.Split(", ", StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(25, values.Length);
+        Assert.Equal(["60", "15", "0.5", "1.5", "FALSE", "FALSE", "TRUE"], values[18..]);
+        Assert.True(((OpenIGI.Game.Saves.ISavedState)mine).IsSavedWithParent);
+        Assert.True(mine.IsSaved);
+
+        mine.Delete();
+        Assert.False(mine.IsSaved);
+        Assert.False(mine.Run());
+    }
+
     private sealed class FakeMineWorld : IIgi2MineWorld
     {
         public Igi2CollisionWorld Collision { get; } = new([], null);

@@ -2,7 +2,6 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Time;
-using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
@@ -49,6 +48,7 @@ public sealed class GuardGeneratorTests
     public void NativeCounterNamesAreLiveScriptBindings()
     {
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         GuardGeneratorTask generator = Assert.IsType<GuardGeneratorTask>(
             loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(GuardGeneratorTask.TypeName)));

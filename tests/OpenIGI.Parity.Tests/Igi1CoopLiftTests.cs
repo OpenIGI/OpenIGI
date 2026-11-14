@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.World;
@@ -44,7 +43,7 @@ public sealed class Igi1CoopLiftTests
         using Igi1CoopPair pair = Joined(mission: 3);
         pair.Ping(ping);
         PlacedElevator lift = Assert.IsType<PlacedElevator>(pair.Host!.World.Elevators?.Elevators.FirstOrDefault(static l => l.State.FloorCount > 1));
-        int liftIndex = pair.Host.World.Elevators!.Elevators.ToList().IndexOf(lift);
+        int liftIndex = pair.Host.World.Elevators.Elevators.ToList().IndexOf(lift);
         PlacedElevator joinerLift = pair.Joiner!.World.Elevators!.Elevators[liftIndex];
         Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
         Igi1ClientWorld joinerWorld = Assert.IsType<Igi1ClientWorld>(pair.Client.World);

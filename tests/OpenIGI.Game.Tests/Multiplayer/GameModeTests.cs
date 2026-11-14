@@ -119,7 +119,7 @@ public sealed class GameModeTests
     [Fact]
     public void Co_op_keeps_the_dead_down_until_the_world_says_they_were_revived()
     {
-        Host host = new(teams: [0, 0]) { HoldsTheDead = true };
+        Host host = new(teams: [0, 0], holdsTheDead: true);
         IGameMode mode = GameModes.For(GameModes.FreeForAll, host.World, TickRate);
         Assert.IsType<CoopMode>(mode);
         mode.Start(host, 0);
@@ -367,7 +367,7 @@ public sealed class GameModeTests
         Assert.Equal(-1, mode.Carrier);
         Assert.Null(mode.DroppedAt);
         host.Match.Players[0].Team = SearchAndDestroyMode.Attackers;
-        tick = Run(mode, host, tick, 1);
+        _ = Run(mode, host, tick, 1);
         Assert.Equal(0, mode.Carrier);
     }
 
@@ -390,7 +390,7 @@ public sealed class GameModeTests
         tick = Run(mode, host, tick, (TickRate * 5) + 1);
         Assert.False(host.Held);
         Assert.Equal(0, mode.Report(tick).FreezeLeft);
-        tick = Run(mode, host, tick, TickRate + 1);
+        _ = Run(mode, host, tick, TickRate + 1);
         Assert.Equal("A", mode.PlantedSite);
     }
 
@@ -415,6 +415,9 @@ public sealed class GameModeTests
         Assert.Equal([0], host.Killed);
         Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
         Assert.Equal(SearchAndDestroyMode.Attackers, mode.Flow.Winner);
+
+        // The blast's round is held the bomb's own pause (mp_bombendtime, 10 s by default), not the 1 s of any other end.
+        Assert.InRange(mode.Flow.SecondsLeft(tick)!.Value, 9.5, 10);
     }
 
     [Fact]
@@ -596,8 +599,9 @@ public sealed class GameModeTests
     {
         private readonly FakeWorld _world = new();
 
-        public Host(int[] teams)
+        public Host(int[] teams, bool holdsTheDead = false)
         {
+            _world.Holds = holdsTheDead;
             Match = new Match(new MultiplayerRules());
             for (int slot = 0; slot < teams.Length; slot++)
             {
@@ -606,8 +610,6 @@ public sealed class GameModeTests
 
             PlayerSlots = [.. Enumerable.Range(0, teams.Length)];
         }
-
-        public bool HoldsTheDead { get => _world.Holds; init => _world.Holds = value; }
 
         public MpLayout? Layout { get; init; }
 

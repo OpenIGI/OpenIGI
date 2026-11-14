@@ -1,5 +1,4 @@
 ﻿using OpenIGI.Formats;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;

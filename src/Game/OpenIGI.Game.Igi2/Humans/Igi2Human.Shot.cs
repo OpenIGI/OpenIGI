@@ -1,4 +1,3 @@
-using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Humans;

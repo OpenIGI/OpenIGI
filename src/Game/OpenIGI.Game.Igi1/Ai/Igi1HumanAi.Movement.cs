@@ -97,23 +97,8 @@ public sealed partial class Igi1HumanAi
     // 0x452580's clamp on both angles, in radians -- 0x3CD4629B.
     private const float LookAtTurnClamp = 0.025925925f;
 
-    private bool IsFacing(Vector3d target, float tolerance)
-    {
-        double dx = target.X - Position.X;
-        double dy = target.Y - Position.Y;
-        if ((dx * dx) + (dy * dy) < 1.0)
-        {
-            return true;
-        }
-
-        return Math.Abs(Igi1AiGeometry.Wrap((float)Math.Atan2(-dx, dy) - Facing)) <= tolerance;
-    }
-
     /// <summary>How far above the soldier's feet the ground probe starts — 0.5 m.</summary>
     private const double GroundProbeAboveUnits = 2048.0;
-
-    /// <summary>How far below the soldier's feet the ground probe reaches — 2 m (the sliding step-down budget).</summary>
-    private const double GroundProbeBelowUnits = 8192.0;
 
     /// <summary>
     /// The part of the body's update the AI's frame drives — <c>0x45D080</c>: turn (<c>0x4610C0</c>), then
@@ -168,13 +153,26 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        Facing = Igi1AiGeometry.Wrap((float)(Facing + _bodyTurn.Step(turn)));
-        ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+        // The turn and the clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked for:
+        // the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back. A mod's behaviour may
+        // shape both (IGuardMovement.ShapeStep), handed the step the game would take.
+        double turned = _bodyTurn.Step(turn);
+        GuardStep step = new()
+        {
+            Turn = turned,
+            Move = SoldierDeathFall.RotateAboutZ(
+                new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Igi1AiGeometry.Wrap((float)(Facing + turned)) + RecoilYaw),
+            RootMotion = _rootMotionThisTick,
+            RootLateral = _rootLateralThisTick,
+        };
+        if (Behaviours is { HasMovement: true } behaviours)
+        {
+            behaviours.ShapeStep(ref step);
+        }
 
-        // The clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked
-        // for: the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back.
-        Vector3d world = SoldierDeathFall.RotateAboutZ(
-            new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing + RecoilYaw);
+        Facing = Igi1AiGeometry.Wrap((float)(Facing + step.Turn));
+        ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+        Vector3d world = step.Move;
         double x = Position.X + world.X;
         double y = Position.Y + world.Y;
         if (world.X != 0.0 || world.Y != 0.0)
@@ -232,7 +230,7 @@ public sealed partial class Igi1HumanAi
     /// by the door wait and by the walker, which levels the view as it goes.
     /// </param>
     /// <returns>Whether the view was already within the tolerance, in yaw and pitch, before this tick's turn.</returns>
-    private bool TurnTowards(Vector3d target, float tolerance, bool level = false)
+    internal bool TurnTowards(Vector3d target, float tolerance, bool level = false)
     {
         _steering.YawClamp = MathF.PI;
         _steering.PitchClamp = MathF.PI;

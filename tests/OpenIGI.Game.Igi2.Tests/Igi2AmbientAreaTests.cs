@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;

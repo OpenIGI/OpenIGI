@@ -85,7 +85,7 @@ public sealed class RetailWorldGoldenTests
         Dictionary<MefMeshFormat, int> formats = [];
         List<string> failures = [];
 
-        foreach ((string packPath, string archivePath) in PacksWithModels())
+        foreach ((_, string archivePath) in PacksWithModels())
         {
             IresArchive archive = IresArchive.Read(File.ReadAllBytes(archivePath));
             foreach (IresEntry entry in archive.Entries)

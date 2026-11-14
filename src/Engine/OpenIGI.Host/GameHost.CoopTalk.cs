@@ -4,7 +4,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Multiplayer;
-using OpenIGI.Input;
 using OpenIGI.Presentation;
 
 namespace OpenIGI.Host;

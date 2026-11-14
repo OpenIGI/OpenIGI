@@ -32,12 +32,28 @@ public class GroupHeader : UiElement
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        new(available.X, Theme.Mono.LineHeight(context.Px(11f)) + context.Px(10f));
+        Theme.Large
+            ? new(available.X, context.Px(24f))
+            : new(available.X, Theme.Mono.LineHeight(context.Px(11f)) + context.Px(10f));
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
         LayoutContext context = painter.Context;
+        if (Theme.Large)
+        {
+            // The group's name in the label face, readable grey, and a rule from it to the panel's edge.
+            float px = context.Px(Theme.BodyTextSize < 18f ? 14f : 16f);
+            UiVec2 end = painter.DrawLabel(Theme.Heading, _upper, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(Theme.Heading, px, Bounds)), px, Theme.TextSecondary, 0.14f);
+            float from = end.X + context.Px(14f);
+            if (from < Bounds.Right)
+            {
+                painter.FillRect(new UiRect(from, Bounds.Center.Y, Bounds.Right - from, context.Px(1f)), UiPalette.White(0.12f));
+            }
+
+            return;
+        }
+
         float size = context.Px(11f);
         float line = Theme.Mono.LineHeight(size);
         UiVec2 pen = painter.DrawLabel(Theme.Mono, _upper, Bounds.TopLeft, size, Theme.Accent, 0.28f);

@@ -119,6 +119,9 @@ public sealed class AmbientAreaRegistry
     // as soon as they do -- the area was then stepped twice a tick, once in the walk and once more here.
     private readonly HashSet<PlacedAmbientArea> _walked = new(ReferenceEqualityComparer.Instance);
     private readonly IgiRandom _random;
+    private Func<Vector3d?>? _listener;
+    private Func<string, bool>? _canStart;
+    private Func<string, double>? _voiceSeconds;
 
     /// <summary>Initializes a new instance of the <see cref="AmbientAreaRegistry"/> class.</summary>
     /// <param name="random">The generator the retrigger gap and the sound choice are drawn from.</param>
@@ -173,14 +176,27 @@ public sealed class AmbientAreaRegistry
         ArgumentNullException.ThrowIfNull(walker);
         ArgumentNullException.ThrowIfNull(listener);
         ArgumentNullException.ThrowIfNull(canStart);
+        _listener = listener;
+        _canStart = canStart;
+        _voiceSeconds = voiceSeconds;
         foreach (PlacedAmbientArea area in _areas)
         {
-            _walked.Add(area);
-            walker.Bind(area.Task, task =>
+            // An area the level declares runs from its own task; one a fence made for its hum is stepped with the rest.
+            if (area.Task is Igi1AmbientAreaTask)
             {
-                Step(area, listener(), canStart, voiceSeconds);
-                walker.RunChildren(task);
-            });
+                _walked.Add(area);
+            }
+        }
+    }
+
+    /// <summary>An area's own update, where the level's walk reaches its task (<c>0x44C370</c>).</summary>
+    /// <param name="area">The area.</param>
+    /// <remarks>Until the walk is attached the areas are stepped by <see cref="Tick"/>.</remarks>
+    internal void RunFromWalk(PlacedAmbientArea area)
+    {
+        if (_listener is not null && _canStart is not null && _walked.Contains(area))
+        {
+            Step(area, _listener(), _canStart, _voiceSeconds);
         }
     }
 
@@ -311,22 +327,19 @@ public sealed class AmbientAreaRegistry
 
     private static void Collect(GameTask task, AmbientAreaRegistry registry)
     {
-        if (task is DeclaredTask declared
-            && string.Equals(task.Type.Name, TaskTypeName, StringComparison.Ordinal))
+        if (task is Igi1AmbientAreaTask ambient)
         {
-            string sound = declared.TryGetValue("SoundDef", out object? raw) && raw is string name
-                ? name
-                : string.Empty;
-
             PlacedAmbientArea area = new(
-                declared,
-                ReadPosition(declared),
-                ReadOrientation(declared),
-                ReadSize(declared),
-                ReadReal(declared, "Min Delay"),
-                ReadReal(declared, "Random wait"),
-                sound.Split([' ', ';', ','], StringSplitOptions.RemoveEmptyEntries));
+                ambient,
+                ambient.Position,
+                WorldScene.ToOrientation(ambient.Orientation),
+                ambient.Size,
+                ambient.MinDelay,
+                ambient.RandomWait,
+                ambient.SoundDef.Split([' ', ';', ','], StringSplitOptions.RemoveEmptyEntries));
             registry._areas.Add(area);
+            ambient.Area = area;
+            ambient.Ambience = registry;
 
             // 0x44C740, the area's init at load, in tree order: the first gap is drawn now.
             area.Countdown = registry.DrawGap(area);
@@ -337,30 +350,4 @@ public sealed class AmbientAreaRegistry
             Collect(child, registry);
         }
     }
-
-    private static Vector3d ReadPosition(DeclaredTask declared) =>
-        declared.TryGetValue("Position", out object? value) && value is Vector3d position ? position : default;
-
-    private static Matrix3f ReadOrientation(DeclaredTask declared) =>
-        declared.TryGetValue("Orientation", out object? value)
-            ? value switch
-            {
-                Vector3f angles => WorldScene.ToOrientation(angles),
-                float gamma => Matrix3f.RotationZ(gamma),
-                _ => Matrix3f.Identity,
-            }
-            : Matrix3f.Identity;
-
-    private static Vector3d ReadSize(DeclaredTask declared) =>
-        declared.TryGetValue("Size", out object? value) && value is Vector3d size ? size : default;
-
-    private static double ReadReal(DeclaredTask declared, string parameter) =>
-        declared.TryGetValue(parameter, out object? value)
-            ? value switch
-            {
-                double real => real,
-                float single => single,
-                _ => 0.0,
-            }
-            : 0.0;
 }

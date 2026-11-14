@@ -7,15 +7,16 @@ namespace OpenIGI.Game.Igi1.Ai;
 public sealed partial class Igi1HumanAi
 {
     /// <summary>
-    /// The fraction of the eye-to-mark segment beyond which an object contact no longer hides the target —
-    /// <c>0x489B20</c>'s <c>fraction &gt;= 0.79000002</c>.
+    /// How much of a sight line has to be left for the target to be seen — <c>0x489B20</c>'s
+    /// <c>visibility &gt;= 0.79000002</c>.
     /// </summary>
     /// <remarks>
-    /// Terrain always blocks (<c>0x4CE410</c> forces its fraction to zero). An object — a crate, a wall, a
-    /// building, most of what the levels are made of — hides the target only when it is nearer than this,
-    /// so cover pressed up against the target leaves it visible.
+    /// The float the cast <c>0x4CE410</c> hands back is what the surfaces along the line let through, each taking its
+    /// material's share (<see cref="OpenIGI.Game.World.GameMaterial.SightVisibility"/>), and not a place along the
+    /// line: terrain and anything solid — a crate, a wall, a door leaf — leave nothing wherever they stand, cover
+    /// pressed up against the target included. One run of chain-link leaves 0.8 and is seen through; two leave 0.64.
     /// </remarks>
-    public const double SightObstructionTolerance = 0.79000002;
+    public const double MinimumSightVisibility = 0.79000002;
 
     /// <summary>
     /// How far above its feet a standing human reports itself to detection — the Z offset the descriptor
@@ -50,6 +51,11 @@ public sealed partial class Igi1HumanAi
 
     /// <summary>How far above its feet a crouched human's origin is — 0.46 m, measured on the retail player.</summary>
     public const double HumanOriginCrouchedInUnits = 0.46 * 4096.0;
+
+    /// <summary>How far above its feet a human's origin (<c>Human+32</c>) is, standing or crouched.</summary>
+    /// <param name="crouching">Whether the human is crouched.</param>
+    /// <returns>The height in units.</returns>
+    public static double HumanOriginAboveFeet(bool crouching) => crouching ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits;
 
     /// <summary>How far above its feet a human's detection mark is: its origin plus <c>sub_465820</c>'s raise.</summary>
     /// <param name="crouching">Whether the human is crouched.</param>
@@ -174,7 +180,7 @@ public sealed partial class Igi1HumanAi
     /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
     public bool HearGunshot(Vector3d shotPosition, double range, bool fromSameSide, int shooter)
     {
-        if (Activity == AiSoldierActivity.Dead || fromSameSide)
+        if (Activity == AiSoldierActivity.Dead)
         {
             return false;
         }
@@ -184,6 +190,17 @@ public sealed partial class Igi1HumanAi
         if (distance > range)
         {
             return false;
+        }
+
+        // His own side's fire within reach the game leaves unheard; a mod's behaviour may hear it (IGuardSenses.Stimulus).
+        if (fromSameSide)
+        {
+            return Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot, sameSide: true) ?? false;
+        }
+
+        if (Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot) is { } answered)
+        {
+            return answered;
         }
 
         bool posted = Events.Post(
@@ -333,6 +350,11 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (Sensed(GuardStimulusKind.RoundMissed, ref closest, source, GunshotMissRadiusInUnits, AiEvent.GunshotMiss, from: shooterPosition) is { } answered)
+        {
+            return answered;
+        }
+
         // -1 is the renderer's player-originator sentinel. The event position is the actual nearest point
         // on the round, while BeginFallFlat resolves the source separately to the player's live position.
         if (!Events.Post(
@@ -369,6 +391,11 @@ public sealed partial class Igi1HumanAi
         if (distance > GunshotMissRadiusInUnits)
         {
             return false;
+        }
+
+        if (Sensed(GuardStimulusKind.RoundPassed, ref point, source, GunshotMissRadiusInUnits, AiEvent.GunshotMiss, from: shooterPosition) is { } answered)
+        {
+            return answered;
         }
 
         if (!Events.Post(
@@ -462,6 +489,11 @@ public sealed partial class Igi1HumanAi
         if (distance > radiusInUnits)
         {
             return false;
+        }
+
+        if (Sensed(GuardStimulusKind.Noise, ref position, AiDetectionCandidate.PlayerId, radiusInUnits, type) is { } answered)
+        {
+            return answered;
         }
 
         if (!Events.Post(
@@ -614,6 +646,11 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (Sensed(GuardStimulusKind.Damage, ref attackerPosition, attacker) is { } answered)
+        {
+            return answered;
+        }
+
         bool posted = Events.Post(
             new AiEventRecord(
                 AiEvent.TakingDamage,
@@ -656,7 +693,16 @@ public sealed partial class Igi1HumanAi
     /// The alerting soldier's own target — the record's subject (<c>0x48AB10</c> sends
     /// <c>{self, target}</c>).
     /// </param>
-    public bool ReceiveAlert(Vector3d alerterPosition, int source = 0, int target = AiDetectionCandidate.PlayerId)
+    public bool ReceiveAlert(Vector3d alerterPosition, int source = 0, int target = AiDetectionCandidate.PlayerId) =>
+        ReceiveAlert(alerterPosition, source, target, AlertPingRadiusInUnits);
+
+    /// <summary>An alert from another soldier that carries further than a ping: a mod's shout or radio. <b>Not retail</b> as a public call.</summary>
+    /// <param name="alerterPosition">Where the alerting soldier is, in world units.</param>
+    /// <param name="source">The alerting soldier's runtime id.</param>
+    /// <param name="target">The alerting soldier's target.</param>
+    /// <param name="radiusInUnits">How far it carries, in world units.</param>
+    /// <returns>Whether he took it.</returns>
+    public bool ReceiveAlert(Vector3d alerterPosition, int source, int target, double radiusInUnits)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -664,14 +710,19 @@ public sealed partial class Igi1HumanAi
         }
 
         double distance = Vector3d.Distance(Position, alerterPosition);
-        if (distance > AlertPingRadiusInUnits)
+        if (distance > radiusInUnits)
         {
             return false;
         }
 
+        if (Sensed(GuardStimulusKind.Alert, ref alerterPosition, source, radiusInUnits, AiEvent.Alert) is { } answered)
+        {
+            return answered;
+        }
+
         bool posted = Events.Post(
             new AiEventRecord(
-                AiEvent.Alert, -1, AiEventFilter.None, (float)AlertPingRadiusInUnits,
+                AiEvent.Alert, -1, AiEventFilter.None, (float)radiusInUnits,
                 alerterPosition, source, target),
             owner: 0,
             worldTests: null);
@@ -836,7 +887,16 @@ public sealed partial class Igi1HumanAi
         {
             Vector3d mark = human.Candidate.Mark;
             int looked = human.Candidate.Id;
-            _schedule.Sweep(
+
+            // A mod's behaviour judges what counts as seen (IGuardSenses.Sighting). The sweep's cooldowns keep the visible
+            // flag between its tests, so it is handed back the sweep's own last verdict, not the judgement.
+            GuardBehaviourSet? judge = Behaviours is { HasSenses: true } senses ? senses : null;
+            if (judge is not null)
+            {
+                human.Slot.IsVisible = human.SweepVisible;
+            }
+
+            bool rayRan = _schedule.Sweep(
                 human.Slot,
                 () => snapshot.IsVisible(mark),
                 () =>
@@ -845,6 +905,12 @@ public sealed partial class Igi1HumanAi
                     return _sight is null || _sight(eye, mark, looked);
                 },
                 Vector3d.Distance(eye, mark));
+
+            if (judge is not null)
+            {
+                human.SweepVisible = human.Slot.IsVisible;
+                human.Slot.IsVisible = judge.Sighting(new GuardSighting(human.Candidate, human.SweepVisible, human.Slot.IsInCone, rayRan, snapshot, tick));
+            }
         }
     }
 
@@ -894,10 +960,17 @@ public sealed partial class Igi1HumanAi
     /// IGI1 snapshots palette offsets 684/688/692, which resolve to bone 5's position. Headless tests and
     /// callers without a rig fall back to the separation cylinder's read half-height.
     /// </remarks>
-    public Vector3d EyePosition() => _eyePosition?.Invoke()
-        ?? new Vector3d(Position.X, Position.Y, Position.Z + HumanSeparationEyeHeight);
+    public Vector3d EyePosition()
+    {
+        Vector3d eye = _eyePosition?.Invoke() ?? new Vector3d(Position.X, Position.Y, Position.Z + HumanSeparationEyeHeight);
+        return Behaviours is { HasSenses: true } behaviours ? eye + behaviours.EyeOffset : eye;
+    }
 
-    private Matrix3f EyeOrientation() => _eyeOrientation?.Invoke() ?? Orientation;
+    private Matrix3f EyeOrientation() =>
+        TurnedBy(Behaviours is { HasSenses: true } behaviours ? behaviours.EyeTurn : 0f, _eyeOrientation?.Invoke() ?? Orientation);
+
+    // The eye turned about its own up by a mod's glance (IGuardSenses.EyeTurn): right and forward swung together.
+    internal static Matrix3f TurnedBy(float turn, Matrix3f eye) => turn == 0f ? eye : eye * Matrix3f.RotationZ(-turn);
 
     /// <summary>Diagnostics: the eye matrix a sweep run now would test against -- the bound eye, or the body's.</summary>
     public Matrix3f CurrentEyeOrientation => EyeOrientation();

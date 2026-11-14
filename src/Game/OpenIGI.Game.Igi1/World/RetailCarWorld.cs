@@ -22,6 +22,9 @@ public sealed class RetailCarWorld(
     Func<object, bool>? present = null,
     Func<RetailGlassPane, Vector3d, bool>? touchGlass = null) : IRetailCarWorld, ILevelReset
 {
+    /// <summary>Gets the placed objects the cars meet, whose panes of glass a save game keeps.</summary>
+    public RetailWorldObjects? Objects => objects;
+
     /// <inheritdoc/>
     public void MarkLevelStart() => objects?.MarkLevelStart();
 

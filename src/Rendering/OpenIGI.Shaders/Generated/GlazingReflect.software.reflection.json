@@ -86,7 +86,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uPages",
@@ -102,7 +103,8 @@
         "register": 2,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uCells",
@@ -118,7 +120,8 @@
         "register": 3,
         "space": 0,
         "stride": 8
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uCellPages",
@@ -134,7 +137,8 @@
         "register": 4,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uAlbedo",
@@ -299,10 +303,54 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uGlass",
+      "unit": 0
+    },
+    {
+      "texture": "uSkyView",
+      "unit": 1
+    },
+    {
+      "texture": "uSkyView",
+      "sampler": "uSkyViewSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uAlbedo",
+      "unit": 3
+    },
+    {
+      "texture": "uAlbedo",
+      "sampler": "uAlbedoSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 5
+    },
+    {
+      "texture": "uFinal",
+      "sampler": "uFinalSampler",
+      "unit": 6
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 7
+    },
+    {
+      "texture": "uShelterMap",
+      "unit": 8
+    }
+  ]
 }

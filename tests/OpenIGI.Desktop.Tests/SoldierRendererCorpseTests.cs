@@ -116,9 +116,6 @@ public sealed class SoldierRendererCorpseTests
         Assert.True(targetMember.HasHandState);
         Assert.True(targetMember.HasWeaponFrameState);
 
-        MeshHitRay ray = FindAnyMeshHitRay(
-            scenario.Renderer,
-            view => ReferenceEquals(view, target));
         MeshHandle bodyMesh = targetMember.Mesh;
         Vector3d spawnMetres = target.Position / WorldScene.UnitsPerMetre;
 
@@ -127,7 +124,7 @@ public sealed class SoldierRendererCorpseTests
             HumanHitZoneTable.Soldier.Min(zone => zone.Multiplier));
         for (int shot = 0; shot < maxHitsToKill && !target.IsDead; shot++)
         {
-            ray = FindAnyMeshHitRay(
+            MeshHitRay ray = FindAnyMeshHitRay(
                 scenario.Renderer,
                 view => ReferenceEquals(view, target));
             Assert.True(scenario.Renderer.TryShoot(
@@ -327,7 +324,6 @@ public sealed class SoldierRendererCorpseTests
                 out _));
         }
         Assert.True(firstLife.IsDead);
-        MeshHandle corpseMesh = firstMember.Mesh;
         return (firstLife, firstMember, ray, maxHitsToKill);
     }
 

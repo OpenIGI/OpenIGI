@@ -35,7 +35,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -130,7 +130,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -241,7 +241,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -303,7 +303,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -360,7 +360,7 @@ public sealed class RetailMissionFourHelicopterTests
         ResourceRegistry resources = new(fs);
         GameLoop loop = new(new ManualTimeSource());
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -412,7 +412,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -507,7 +507,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -649,7 +649,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -676,7 +676,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameTask heli356 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(356));
         Assert.True(runtime.TryGetDrawTransform(heli356, out Vector3d start, out _));
 
-        CutSceneTask intro = WalkTree(root).OfType<CutSceneTask>().First(cut => cut.Id == 1000);
+        _ = WalkTree(root).OfType<CutSceneTask>().First(cut => cut.Id == 1000);
 
         // The authored intro intentionally changes coordinate scale: the opening exterior is a
         // world-space view, while the HQ cabin shots are authored near the origin. The native
@@ -723,7 +723,7 @@ public sealed class RetailMissionFourHelicopterTests
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);
@@ -854,7 +854,7 @@ public sealed class RetailMissionFourHelicopterTests
     public void ParkedHeliRestDoesNotHardCodeTaskEightHundred()
     {
         // The runtime and the collaborators it is built from: every Cutscene*.cs and the retail helicopter physics.
-        string world = Path.Combine(RepoSrc(), "Game", "OpenIGI.Game", "World");
+        string world = Path.Combine(RepoSrc(), "Game", "OpenIGI.Game.Igi1", "World");
         string source = string.Concat(
             Directory.GetFiles(world, "Cutscene*.cs")
                 .Append(Path.Combine(world, "RetailHelicopterPhysics.cs"))

@@ -9,7 +9,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -48,6 +47,7 @@ public sealed class CutsceneFidelityLevels1to3Tests
         fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fs);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         RegisterCutsceneTypes(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
@@ -67,7 +67,7 @@ public sealed class CutsceneFidelityLevels1to3Tests
         foreach (CutSceneTask scene in Walk(root).OfType<CutSceneTask>())
         {
             List<DeclaredTask> shotTasks = Walk(scene)
-                .Where(static t => t is DeclaredTask d && string.Equals(t.Type.Name, "EditCamera", StringComparison.Ordinal))
+                .Where(static t => t is DeclaredTask && string.Equals(t.Type.Name, "EditCamera", StringComparison.Ordinal))
                 .Cast<DeclaredTask>()
                 .ToList();
             Assert.NotEmpty(shotTasks);
@@ -241,6 +241,6 @@ public sealed class CutsceneFidelityLevels1to3Tests
     {
         PlayerTaskTypes.RegisterAll(types);
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(types);
     }
 }

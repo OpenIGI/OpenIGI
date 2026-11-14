@@ -196,16 +196,14 @@ internal sealed class HomePage
     /// <summary>The eyebrow line and the game's name, large.</summary>
     private sealed class HeroHeading(UiTheme theme) : UiElement
     {
-        private string _title = string.Empty;
-
         /// <summary>Gets or sets the line over the name: the selected game's tagline.</summary>
         public string Eyebrow { get; set; } = string.Empty;
 
         public string Title
         {
-            get => _title;
-            set => _title = (value ?? string.Empty).ToUpperInvariant();
-        }
+            get;
+            set => field = (value ?? string.Empty).ToUpperInvariant();
+        } = string.Empty;
 
         public string State { get; set; } = string.Empty;
 
@@ -229,8 +227,8 @@ internal sealed class HomePage
             var at = new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, size, box));
 
             // text-shadow: 0 4px 40px rgba(0,0,0,.5) — a soft, low shadow that lifts the name off the picture.
-            KitDraw.BlurredText(painter, theme.Display, _title, at + new UiVec2(0f, context.Px(4f)), size, UiPalette.InkAt(0.35f), 0f, context.Px(14f));
-            painter.DrawLabel(theme.Display, _title, at, size, theme.Text, 0f);
+            KitDraw.BlurredText(painter, theme.Display, Title, at + new UiVec2(0f, context.Px(4f)), size, UiPalette.InkAt(0.35f), 0f, context.Px(14f));
+            painter.DrawLabel(theme.Display, Title, at, size, theme.Text, 0f);
         }
     }
 

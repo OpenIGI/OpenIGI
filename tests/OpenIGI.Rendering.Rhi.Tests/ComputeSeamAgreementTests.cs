@@ -1,10 +1,7 @@
-using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Pipeline;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.World;
 
 namespace OpenIGI.Rendering.Rhi.Tests;
 

@@ -20,7 +20,7 @@ namespace OpenIGI.Core.Diagnostics;
 /// </remarks>
 public sealed class LogRouter : IOpenIgiLogger, IDisposable
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly LogRecord[] _replay;
     private volatile ILogSink[] _sinks = [];
     private volatile LogLevel _floor = LogLevel.Trace;
@@ -136,6 +136,7 @@ public sealed class LogRouter : IOpenIgiLogger, IDisposable
             catch (Exception)
 #pragma warning restore CA1031
             {
+                // Nothing to do: the failure is expected here and leaves nothing to undo.
             }
         }
     }
@@ -177,6 +178,7 @@ public sealed class LogRouter : IOpenIgiLogger, IDisposable
         catch (Exception)
 #pragma warning restore CA1031
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 

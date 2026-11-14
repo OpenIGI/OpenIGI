@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The OpenGL backend: the RHI over OpenGL 4.3 core, for machines with neither a Vulkan driver nor Direct3D 12's
+       baseline: GeForce 400 to 600, Radeon HD 5000 to 6000, Intel Haswell. A translation of the interface and
+       nothing more: the frame and the passes are above the RHI, written once for every backend.
+
+       Shaders are the library's GLSL forms (OpenIGI.Shaders.Glsl), translated from SPIR-V by the shader build tool,
+       with every resource at a unit the reflection names. No ray tracing and no Streamline: the passes that want
+       either already stand down where a device does not offer them. -->
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+    <ProjectReference Include="..\OpenIGI.Shaders.Glsl\OpenIGI.Shaders.Glsl.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Rendering.OpenGL.Tests" />
+    <InternalsVisibleTo Include="OpenIGI.Rendering.Rhi.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.OpenGL" />
+  </ItemGroup>
+
+</Project>

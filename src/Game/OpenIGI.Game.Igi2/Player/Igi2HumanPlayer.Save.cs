@@ -1,6 +1,4 @@
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.Saves;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -16,7 +14,7 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Writes the player's save state, a human's first.</summary>
     /// <param name="writer">The writer.</param>
-    public void WritePlayerState(Igi2StateWriter writer)
+    public void WritePlayerState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         WriteHumanState(writer, new Igi2HumanSaveExtras
@@ -113,7 +111,7 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Reads the player's save state back; its action state is entered afresh.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadPlayerState(Igi2StateReader reader)
+    public void ReadPlayerState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = ReadHumanState(reader);
@@ -129,13 +127,14 @@ public sealed partial class Igi2HumanPlayer
 
         uint actionFlags = unchecked((uint)reader.Int());
         reader.Int();
-        reader.Int();
+        int previousAction = reader.Int();
         reader.Int();
         int action = reader.Int();
         reader.Array();
         if (action >= 0 && action < Action.StateCount)
         {
             Action.Enter(action, this);
+            Action.RestorePreviousState(previousAction);
         }
 
         Action.Flags = actionFlags;

@@ -143,6 +143,7 @@ public sealed class RetailSkinnedViewModelTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
 
         MissionRegistry registry = new();
@@ -154,6 +155,6 @@ public sealed class RetailSkinnedViewModelTests
         LoadedMission mission = loader.Load(1);
 
         Assert.True(mission.TryGetModel(HumanView.ModelName, out MefModel? model) && model is not null);
-        return model!;
+        return model;
     }
 }

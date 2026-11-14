@@ -39,10 +39,33 @@
 // block and the load is nothing.
 #ifdef OPENIGI_NO_PUSH_CONSTANTS
 #define OPENIGI_INSTANCED_PUSH 1
+#ifdef OPENIGI_TARGET_GLSL
+// OpenGL reads the blocks as words and builds each one in code. A structured buffer of the block becomes an array
+// of structs in GLSL, and a matrix in it is row-major only through a qualifier on that array -- which the GLSL spec
+// says reaches the matrices inside and NVIDIA's driver ignores, reading every one transposed. Loaded as words there
+// is no qualifier for a driver to get wrong. The stride is the block's size rounded to sixteen, as the backend packs.
+#define OPENIGI_INSTANCED_PUSH_CONSTANT(type, name) \
+    [[vk::binding(0, OPENIGI_PUSH_CONSTANT_GROUP)]] ByteAddressBuffer name##Blocks; \
+    typedef type name##Block; \
+    static type name
+#define OPENIGI_LOAD_INSTANCED_PUSH(name, index) \
+    name = name##Blocks.Load<name##Block>((index) * ((sizeof(name##Block) + 15) / 16 * 16))
+#else
 #define OPENIGI_INSTANCED_PUSH_CONSTANT(type, name) \
     [[vk::binding(0, OPENIGI_PUSH_CONSTANT_GROUP)]] StructuredBuffer<type> name##Blocks; \
     static type name
 #define OPENIGI_LOAD_INSTANCED_PUSH(name, index) name = name##Blocks[index]
+#endif
+
+// The semantic the instance index is read through, which must count from the draw's first instance: that is
+// where the backend put the block. WGSL's instance_index does. Slang's SV_InstanceID is Direct3D's, which does
+// not -- on the SPIR-V the OpenGL target is translated from, it is InstanceIndex less BaseInstance, which is
+// always nought for a draw of one instance -- so the OpenGL target reads Vulkan's own index instead.
+#ifdef OPENIGI_TARGET_GLSL
+#define OPENIGI_INSTANCE_INDEX SV_VulkanInstanceID
+#else
+#define OPENIGI_INSTANCE_INDEX SV_InstanceID
+#endif
 #else
 #define OPENIGI_INSTANCED_PUSH 0
 #define OPENIGI_INSTANCED_PUSH_CONSTANT(type, name) OPENIGI_PUSH_CONSTANT(type, name)

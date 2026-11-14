@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Configuration;
+using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Diagnostics;
@@ -33,13 +34,43 @@ public sealed partial class GameHost
                 float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
                 float yaw = MathF.Atan2(forward.X, forward.Y);
 
-                string pose = FormattableString.Invariant(
+                string pose = string.Create(CultureInfo.InvariantCulture,
                     $"-campos {eye.Position.X:0.##},{eye.Position.Y:0.##},{eye.Position.Z:0.##} -yaw {yaw:0.####} -pitch {pitch:0.####}");
 
                 // To the log as well as the scrollback, because the caller that most wants this is a
                 // headless -runat capture, which has no scrollback to read.
                 context.Print(pose);
                 _logger.Information("Camera", pose);
+
+                // And the sector the cull found that eye in, which says whether a view has left its rooms.
+                if (_world?.Visibility?.DescribeView() is { } sector)
+                {
+                    context.Print(sector);
+                    _logger.Information("Camera", sector);
+                }
+            });
+
+        // The other way round: stands the walking player at a place, in metres as campos prints them. For scripted runs that
+        // need the player somewhere it did not start -- a save game made away from the spawn, to see a load put it back.
+        console.Commands.Add(
+            "setpos",
+            "Stands the player at a place: setpos <x> <y> <z> [yaw], in the metres campos prints.",
+            context =>
+            {
+                if (TitlePlayer is not { } player || _titleFeatures?.Placement is not { } placement
+                    || !double.TryParse(context[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
+                    || !double.TryParse(context[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double y)
+                    || !double.TryParse(context[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double z))
+                {
+                    context.Print("setpos <x> <y> <z> [yaw] needs a walking player and three numbers.");
+                    return;
+                }
+
+                float yaw = float.TryParse(context[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float turned) ? turned : player.Heading ?? 0f;
+                bool stood = placement.TryPlace(new Vector3d(x, y, z) * Game.World.WorldScene.UnitsPerMetre, yaw);
+                string said = stood ? string.Create(CultureInfo.InvariantCulture, $"Standing at {x:0.##},{y:0.##},{z:0.##}.") : "Nothing to stand on there.";
+                context.Print(said);
+                _logger.Information("Camera", said);
             });
     }
 }

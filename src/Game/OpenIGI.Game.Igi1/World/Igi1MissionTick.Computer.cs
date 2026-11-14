@@ -37,6 +37,7 @@ public sealed partial class Igi1MissionTick
         }
 
         computer.MapEnabled = host.MapComputerEnabled;
+        computer.Saves = host.ComputerSaves;
         player.SetMapComputerOpen(true);
         (int width, int height) = host.ComputerDisplay;
         computer.Open(mission.PlayerTask, width, height);

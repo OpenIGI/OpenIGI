@@ -95,7 +95,7 @@ public sealed partial class GameHost
                 && !_menuFlow.PauseMenu
                 && _session.Mission is not null
                 && !PresentationHoldsLevel
-                && _mission.Cutscenes?.IsPlaying != true);
+                && _mission.Scenes?.IsPlaying != true);
         _device.BeginLatencyFrame();
 
         _window.PumpEvents();
@@ -213,8 +213,11 @@ public sealed partial class GameHost
             float shellElapsed = Math.Clamp((shellNow - state.LastShellMilliseconds) / 1000f, 0f, 0.1f);
             state.LastShellMilliseconds = shellNow;
 
-            var shellFrame = new LayoutContext(_window.Width, _window.Height);
+            // Measured with the same smallest text it is drawn with below, so a caption made readable has its room.
+            LayoutContext shellFrame = ShellLayout();
+            OpenIGI.UI.Text.UiFont.MinimumPixelHeight = ShellSmallestText;
             state.Shell.Update(shellFrame, _window.Input, shellElapsed);
+            OpenIGI.UI.Text.UiFont.MinimumPixelHeight = 0f;
             DrainPressQueue(state, executeBinds: false);
             if (!state.Console.IsOpen)
             {
@@ -273,7 +276,7 @@ public sealed partial class GameHost
             _entry.Update(
                 entryElapsed,
                 liveOrbit,
-                HostedPlayer is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
+                TitlePlayer is { } titleStanding ? CameraPose.FromCamera(TitleCamera(titleStanding)) : null);
 
             // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
             // where the one frame the promotion still costs is least visible. What it used to cost --
@@ -315,14 +318,14 @@ public sealed partial class GameHost
             // no pose until something puts one in it.
             if (_soldiers is { } bodies)
             {
-                if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
+                if (_entry.ShowPlayerBody && TitlePlayer is { Heading: { } heading } titleBody)
                 {
-                    // Minus the yaw, for the reason the third-person follow states at length: a
+                    // Minus the heading, for the reason the third-person follow states at length: a
                     // heading is a gamma and turns the other way. This shot has always faced the
                     // character the wrong way about; it went unnoticed because the dive ends inside
                     // their head and the level's own spawn heading is often near zero, where the
                     // mirror shows nothing.
-                    bodies.StandPlayerBodyAt(standingBody.Body.Position, -standingBody.Body.Yaw);
+                    bodies.StandPlayerBodyAt(titleBody.Position, -heading);
                 }
                 else
                 {
@@ -415,8 +418,9 @@ public sealed partial class GameHost
         if (!_menuFlow.MenuMode
             && !state.Console.IsOpen
             && !_computerOpen
+            && !_touchEditor.IsOpen
             && !_session.FailedMenu
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
             && _mission.MenusEnabled
             && state.Shell is not null
@@ -429,7 +433,7 @@ public sealed partial class GameHost
 
             // The pointer belongs to the menu now. The look is what holds the cursor captive, so the
             // player is told to let go of it rather than the lock being fought over each frame.
-            HostedPlayer?.HoldStill();
+            HoldPlayerStill();
             _window.CursorLocked = false;
 
             // The eye is drawn between its last two ticks and neither of them moves again until the
@@ -462,7 +466,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Advances the day and the lamps on real elapsed time.</summary>
-    private void AdvanceWorldClocks(FrameLoopState state)
+    private void AdvanceWorldClocks()
     {
         // The day/night cycle is advanced on every pass, on real elapsed time, so holding [ or ] sweeps
         // the sun smoothly whatever the frame rate -- the same reasoning the camera below is advanced by.
@@ -523,7 +527,7 @@ public sealed partial class GameHost
 
             _device.BeginStageTiming(RenderStage.UserInterface);
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            var shellPainter = UiPainter.Create(state.Batch, new LayoutContext(_window.Width, _window.Height));
+            var shellPainter = UiPainter.Create(state.Batch, ShellLayout());
             state.Batch.Begin();
 
             // The going-in sequence's picture: the level exactly as it is drawn, before any of the
@@ -581,7 +585,9 @@ public sealed partial class GameHost
 
                 shellPainter.PushOpacity(shellOpacity);
                 state.Shell.DrawBackdrop(shellPainter);
+                OpenIGI.UI.Text.UiFont.MinimumPixelHeight = ShellSmallestText;
                 state.Shell.Draw(shellPainter);
+                OpenIGI.UI.Text.UiFont.MinimumPixelHeight = 0f;
                 shellPainter.PopOpacity();
             }
 
@@ -645,7 +651,7 @@ public sealed partial class GameHost
                 string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
                 string stem = Path.GetFileNameWithoutExtension(flightPath);
                 string extension = Path.GetExtension(flightPath);
-                string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{state.FlightFrame:0000}{extension}"));
+                string numbered = Path.Combine(directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{stem}.{state.FlightFrame:0000}{extension}"));
                 BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
             }
 
@@ -656,7 +662,7 @@ public sealed partial class GameHost
         // (3 s) up to the still budget. Test-only; driven by environment variables.
         // A chained intro resets its scene-local clock. Do not carry the previous scene's next
         // capture threshold into the next scene and silently miss its early/short shots.
-        if (state.CaptureCutscene && _mission.Cutscenes?.ActiveScene is { } observedScene
+        if (state.CaptureCutscene && _mission.Scenes?.ActiveScene is { } observedScene
             && !ReferenceEquals(state.PreviousCapturedScene, observedScene))
         {
             state.PreviousCapturedScene = observedScene;
@@ -664,9 +670,9 @@ public sealed partial class GameHost
         }
         if (state.CaptureCutscene
             && state.CutsceneCaptureCount < state.CutsceneCaptureLimit
-            && _mission.Cutscenes?.ActiveScene is { } activeCutscene
+            && _mission.Scenes?.ActiveScene is { } activeCutscene
             && (state.CutsceneCaptureScene <= 0 || activeCutscene.Id == state.CutsceneCaptureScene)
-            && activeCutscene.Ticks >= state.CutsceneCaptureTick)
+            && _mission.Scenes.ActiveSceneTicks >= state.CutsceneCaptureTick)
         {
             Directory.CreateDirectory(state.CutsceneCaptureDirectory!);
             Bgra32[] capture = new Bgra32[_window.Width * _window.Height];
@@ -675,8 +681,8 @@ public sealed partial class GameHost
             string path = Path.Combine(
                 state.CutsceneCaptureDirectory!,
                 state.CutsceneCaptureEvery > 0
-                    ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp")
-                    : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
+                    ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}.bmp")
+                    : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{_mission.Scenes.ActiveSceneTicks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
             BitmapWriter.Write(path, _window.Width, _window.Height, capture);
             _logger.Information("CutsceneCapture", $"Wrote {path}.");
             state.CutsceneCaptureTick += state.CutsceneCaptureEvery;

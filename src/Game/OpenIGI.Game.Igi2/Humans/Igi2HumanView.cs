@@ -20,10 +20,10 @@ public sealed class Igi2HumanView
     private const double FineAimSlope = 16.666666666666668;
 
     /// <summary>Gets the default field of view's scale, <c>tan(45°)</c> at single precision: one.</summary>
-    public static float DefaultFieldOfView { get; } = (float)X87.ToFloat(Math.Tan(0.7853981852531433));
+    public static float DefaultFieldOfView { get; } = X87.ToFloat(Math.Tan(0.7853981852531433));
 
     /// <summary>Gets the default object field of view's scale, <c>tan(30°)</c>.</summary>
-    public static float DefaultObjectFieldOfView { get; } = (float)X87.ToFloat(Math.Tan(0.5235987901687622));
+    public static float DefaultObjectFieldOfView { get; } = X87.ToFloat(Math.Tan(0.5235987901687622));
 
     /// <summary>Gets or sets the rig of the first-person model the view carries, or <see langword="null"/> for none.</summary>
     /// <remarks>
@@ -381,7 +381,7 @@ public sealed class Igi2HumanView
     /// shake, its impact, its first-person model's angles and steps, its fields of view, its zoom, its translations, and its retraction.
     /// </summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Saves.Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Matrix3f o = Orientation;
@@ -424,7 +424,7 @@ public sealed class Igi2HumanView
 
     /// <summary>Reads its save state back; an override is put back only as the stationary gun that set it sets it again.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Saves.Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         reader.Bool();

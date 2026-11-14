@@ -93,7 +93,7 @@ public sealed class RetailIgi2GunPickupTests
     [RequiresTitleDataFact("igi2")]
     public void The_player_takes_a_grenade_it_stands_on()
     {
-        Mission1Setup m = Mission1.Value;
+        _ = Mission1.Value;
         Igi2PickupList pickups = Pickups();
         Igi2GunPickup pickup = pickups.Items[0];
         (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, Igi2PlayerFakes.FakeSurroundings surroundings) = StandingBy(pickup, pickups);
@@ -127,7 +127,7 @@ public sealed class RetailIgi2GunPickupTests
     [RequiresTitleDataFact("igi2")]
     public void The_activate_key_only_offers_a_grenade()
     {
-        Mission1Setup m = Mission1.Value;
+        _ = Mission1.Value;
         Igi2PickupList pickups = Pickups();
         Igi2GunPickup pickup = pickups.Items[0];
         (Igi2HumanPlayer player, _, _) = StandingBy(pickup, pickups);
@@ -145,7 +145,7 @@ public sealed class RetailIgi2GunPickupTests
     [RequiresTitleDataFact("igi2")]
     public void The_action_menu_swaps_a_carried_weapon_for_one_lying()
     {
-        Mission1Setup m = Mission1.Value;
+        _ = Mission1.Value;
         Igi2PickupList pickups = Pickups();
         Igi2GunPickup grenade = pickups.Items[0];
         (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, Igi2PlayerFakes.FakeSurroundings surroundings) = StandingBy(grenade, pickups);

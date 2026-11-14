@@ -1,5 +1,4 @@
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Humans;
 

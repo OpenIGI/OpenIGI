@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
-using OpenIGI.Core;
 using OpenIGI.Core.Graphics;
 
 namespace OpenIGI.Formats.Textures;

@@ -762,7 +762,7 @@ public sealed class QvmInterpreter
             return false;
         }
 
-        QvmValue read = symbol!.Read();
+        QvmValue read = symbol.Read();
         if (!read.IsNumber)
         {
             return false;

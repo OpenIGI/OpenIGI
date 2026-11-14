@@ -80,6 +80,9 @@ internal sealed class SoldierFootsteps(SoldierContext context)
         return false;
     }
 
+    /// <summary>Forgets every soldier's place, as a save game's load makes them afresh.</summary>
+    public void Clear() => _footCursors.Clear();
+
     /// <summary>Forgets a soldier's place in its material's sounds, as it dies.</summary>
     /// <param name="view">The soldier.</param>
     public void Forget(SoldierView view) => _footCursors.Remove(view);

@@ -170,7 +170,6 @@ public sealed class StormRenderer : IDisposable
     private bool _disposed;
 
     private PrecipitationSettings _settings = PrecipitationSettings.Default;
-    private bool _indoors;
 
     /// <summary>Initializes a new instance of the <see cref="StormRenderer"/> class.</summary>
     /// <param name="device">The graphics device to draw with.</param>
@@ -213,11 +212,7 @@ public sealed class StormRenderer : IDisposable
     /// and is answered per drop by the shelter test. This is kept because it says something true that a
     /// caller may want; nothing here reads it.
     /// </remarks>
-    public bool Indoors
-    {
-        get => _indoors;
-        set => _indoors = value;
-    }
+    public bool Indoors { get; set; }
 
     /// <summary>Gets the number of drops currently alive.</summary>
     public int LiveDrops => _simulation.LiveDrops;
@@ -325,7 +320,7 @@ public sealed class StormRenderer : IDisposable
                 _reportedSpriteFailure = true;
                 _logger.Warning(
                     LogCategory,
-                    FormattableString.Invariant($"The storm's sprite sheets would not load ({ex.Message}); nothing is drawn."));
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The storm's sprite sheets would not load ({ex.Message}); nothing is drawn."));
             }
 
             _lastQuads = 0;
@@ -486,7 +481,7 @@ public sealed class StormRenderer : IDisposable
 
         _logger.Information(
             LogCategory,
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"Storm sized for {_simulation.DropCapacity} drop(s), {MaximumSplashes} splash(es), {MaximumCurtains} sheet(s)."));
     }
 

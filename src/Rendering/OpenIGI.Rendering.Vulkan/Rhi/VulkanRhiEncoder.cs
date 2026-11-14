@@ -137,6 +137,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
 
         // Where a lost device says it was: the last pass it began, by name.
         _device.Device.Checkpoint(_command, VulkanCheckpointMarkers.Label(descriptor.Label));
+        VulkanPassLabels.Begin(_device.PassLabels, _command, descriptor.Label);
 
         // The timestamps a pass would write have no dynamic-rendering equivalent: Vulkan writes them
         // with commands around the pass rather than as part of it -- the beginning here, the end when
@@ -186,6 +187,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         // what the interface's promise costs, and it is where WebGPU pays nothing.
         Barrier();
         _device.Device.Checkpoint(_command, VulkanCheckpointMarkers.Label(descriptor.Label));
+        VulkanPassLabels.Begin(_device.PassLabels, _command, descriptor.Label);
         VulkanRhiTimestamps.Begin(_vk, _command, descriptor.Timestamps);
 
         return new VulkanRhiComputePassEncoder(_device, _vk, _command, descriptor.Timestamps);
@@ -580,14 +582,10 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
     }
 
     /// <inheritdoc/>
-    public void PushDebugGroup(string label)
-    {
-    }
+    public void PushDebugGroup(string label) => VulkanPassLabels.Begin(_device.PassLabels, _command, label);
 
     /// <inheritdoc/>
-    public void PopDebugGroup()
-    {
-    }
+    public void PopDebugGroup() => VulkanPassLabels.End(_device.PassLabels, _command);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -599,6 +597,7 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
         ThrowIfEnded();
         _ended = true;
         VulkanRhiTimestamps.End(_vk, _command, _timestamps);
+        VulkanPassLabels.End(_device.PassLabels, _command);
     }
 
     /// <inheritdoc/>

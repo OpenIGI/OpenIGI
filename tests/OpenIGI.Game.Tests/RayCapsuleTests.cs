@@ -35,7 +35,6 @@ public sealed class RayCapsuleTests
     {
         // Ray passes straight through the middle: entry at x=-0.55 is nearer than exit at x=+0.55.
         Vector3d origin = new(-3.0, 0.0, 0.9);
-        Vector3d end = new(3.0, 0.0, 0.9);
         Vector3d direction = new(6.0, 0.0, 0.0);
 
         bool hit = RayCapsule.Intersect(origin, direction, Foot, Head, Radius, out double t, out _);
@@ -60,7 +59,6 @@ public sealed class RayCapsuleTests
     public void VerticalRayUpThroughAxisHitsBottomCap()
     {
         Vector3d origin = new(0.0, 0.0, -1.0);
-        Vector3d end = new(0.0, 0.0, 0.1);
         Vector3d direction = new(0.0, 0.0, 1.1);
 
         bool hit = RayCapsule.Intersect(origin, direction, Foot, Head, Radius, out double t, out Vector3d normal);
@@ -77,7 +75,6 @@ public sealed class RayCapsuleTests
     public void VerticalRayDownThroughAxisHitsTopCap()
     {
         Vector3d origin = new(0.0, 0.0, 3.0);
-        Vector3d end = new(0.0, 0.0, 2.0);
         Vector3d direction = new(0.0, 0.0, -1.0);
 
         bool hit = RayCapsule.Intersect(origin, direction, Foot, Head, Radius, out double t, out Vector3d normal);
@@ -94,7 +91,6 @@ public sealed class RayCapsuleTests
     public void VerticalRayBesideAxisMisses()
     {
         Vector3d origin = new(1.0, 0.0, 0.9); // 1 unit lateral, > radius.
-        Vector3d end = new(1.0, 0.0, 2.5);
         Vector3d direction = new(0.0, 0.0, 1.6);
 
         bool hit = RayCapsule.Intersect(origin, direction, Foot, Head, Radius, out _, out _);

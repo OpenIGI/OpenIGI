@@ -1,5 +1,4 @@
 using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -88,6 +87,7 @@ public sealed class MenuClickLatchTests
         ManualTimeSource time = new();
         RecordingHost host = new();
         GameLoop loop = new(time: time, host: host);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         MenuSystem? menu = null;
         host.OnShowMainMenu = () =>

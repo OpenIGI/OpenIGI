@@ -55,6 +55,20 @@ public interface IGameWindow : IDisposable
     /// </remarks>
     int RefreshRate { get; }
 
+    /// <summary>Gets how many of the window's pixels there are to a pixel as the person sees it.</summary>
+    /// <remarks>
+    /// One on a desktop window, whose size is the display's own. A browser's page on a phone draws three pixels to
+    /// each one the page is laid out in, and an interface sized by the pixel count alone comes out a third the size.
+    /// </remarks>
+    float PixelDensity => 1f;
+
+    /// <summary>Gets how far in from each edge the window is clear of what the device puts over it, in the window's pixels.</summary>
+    /// <remarks>
+    /// A phone's screen runs under its notch, its rounded corners and its home bar, and a page that fills the screen
+    /// is drawn under them too. What must be read or pressed is kept inside these; a picture may run to the edge.
+    /// </remarks>
+    (float Left, float Top, float Right, float Bottom) SafeInsets => default;
+
     /// <summary>Gets or sets a value indicating whether the system cursor is shown over the window.</summary>
     bool CursorVisible { get; set; }
 

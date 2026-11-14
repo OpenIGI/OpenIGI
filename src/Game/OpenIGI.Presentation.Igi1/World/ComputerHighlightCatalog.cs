@@ -1,8 +1,6 @@
-using OpenIGI.Presentation;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -12,11 +10,11 @@ internal sealed class ComputerHighlightCatalog : IComputerHighlightCatalogue
     private readonly LevelExpressionRuntime _expressions;
     private readonly List<Entry> _entries = [];
 
-    public ComputerHighlightCatalog(GameTask root, ScriptVarRegistry variables)
+    public ComputerHighlightCatalog(GameTask root, ScriptVarRegistry variables, LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
-        _expressions = new LevelExpressionRuntime(variables);
+        _expressions = expressions ?? new LevelExpressionRuntime(variables);
 
         foreach (GameTask task in root.Descendants())
         {

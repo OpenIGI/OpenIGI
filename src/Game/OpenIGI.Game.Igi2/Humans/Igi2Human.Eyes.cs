@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Animation;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;

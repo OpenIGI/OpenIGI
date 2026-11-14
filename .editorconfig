@@ -79,3 +79,13 @@ dotnet_diagnostic.CS1591.severity = error
 # parameter-type vocabulary (Int32, Real32, Real64x3, String256, ...). Renaming those would make the
 # reverse-engineering notes harder to follow than the rule is worth.
 dotnet_diagnostic.CA1720.severity = none
+
+# SonarQube's rules (S####), for an IDE or a build that loads its analyzer; the repository does not reference it.
+# Cognitive complexity is reported, as the IDE plugin reports it.
+dotnet_diagnostic.S3776.severity = warning
+# The renderer and the format readers talk to native APIs and raw buffers: unsafe code is the job there.
+dotnet_diagnostic.S6640.severity = none
+# The port compares floats exactly where the retail code does: a sentinel, a value read back unchanged, a table entry.
+dotnet_diagnostic.S1244.severity = none
+# A LINQ filter in a loop allocates an iterator and a closure each pass; the frame's loops keep their plain "if".
+dotnet_diagnostic.S3267.severity = none

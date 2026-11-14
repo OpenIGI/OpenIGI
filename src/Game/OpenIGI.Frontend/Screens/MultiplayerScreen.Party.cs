@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -8,13 +7,13 @@ namespace OpenIGI.Frontend.Screens;
 
 /// <content>
 /// The party, in the page's header: friends who play together. A square for each member -- its initial, the leader's
-/// underlined -- and open places, which invite a friend; the party's code with COPY; JOIN A PARTY to join a friend's by its
-/// code. A member's square picks it, and its line opens under the header: where it plays, and for the leader LEAD and KICK.
+/// underlined -- and open places, which invite a friend, as INVITE does; the party's code under its count; ENTER CODE, which
+/// opens a box a code is typed in to join a friend's room (ENTER, or ROOM) or their party (PARTY), and which ESC shuts. A
+/// member's square picks it, and its line opens under the header: where it plays, and for the leader LEAD and KICK.
 /// </content>
 public sealed partial class MultiplayerScreen
 {
-    // How many places the header shows at least, and how many a party takes.
-    private const int ShownPlaces = 4;
+    // How many places a party takes: the wide page shows them all, a narrower one the members and one open place.
     private const int PartyPlaces = 8;
 
     private string _partyCode = string.Empty;
@@ -35,24 +34,26 @@ public sealed partial class MultiplayerScreen
     {
         _shownParty = PartyKey;
         PartyView? party = parties.Party;
-        var cluster = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 24f };
+        var cluster = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16f };
 
-        var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, VerticalAlignment = VerticalAlignment.Center };
-        string count = party is { Code: not null }
-            ? string.Create(CultureInfo.InvariantCulture, $"PARTY · {party.Members.Count}/{PartyPlaces}")
-            : "PARTY";
-        about.AddChild(new Eyebrow(theme, count) { HorizontalAlignment = HorizontalAlignment.Right });
-        about.AddChild(new Label(theme.Body, "Wherever the leader plays, everyone follows.", 14f, theme.TextSecondary) { HorizontalAlignment = HorizontalAlignment.Right });
+        List<PartyMemberView> members = party?.Members is { Count: > 0 } known ? [.. known] : [new PartyMemberView(-1, ProfileName(), true, true, string.Empty)];
+        var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f, VerticalAlignment = VerticalAlignment.Center };
+        about.AddChild(new Eyebrow(theme, string.Create(CultureInfo.InvariantCulture, $"Party · {members.Count} / {PartyPlaces}")) { TextSize = 14f, HorizontalAlignment = HorizontalAlignment.Right });
+        if (party is not null)
+        {
+            // The party's code, for reading out to a friend; INVITE copies the link that carries it.
+            about.AddChild(new Label(theme.Mono, party.Code ?? "…", 13f, theme.Text) { HorizontalAlignment = HorizontalAlignment.Right });
+        }
+
         cluster.AddChild(about);
 
         var places = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6f, VerticalAlignment = VerticalAlignment.Center };
-        List<PartyMemberView> members = party?.Members is { Count: > 0 } known ? [.. known] : [new PartyMemberView(-1, ProfileName(), true, true, string.Empty)];
         foreach (PartyMemberView member in members)
         {
             int id = member.Id;
             var slot = new PartySlot(theme, Initial(member.Name))
             {
-                Leads = member.Leads,
+                Leads = member.Leads && members.Count > 1,
                 IsYou = member.IsYou,
                 Selected = _picked == id,
                 Tooltip = member.Leads ? $"{member.Name} · leader" : member.Name,
@@ -65,7 +66,8 @@ public sealed partial class MultiplayerScreen
             places.AddChild(slot);
         }
 
-        for (int i = members.Count; i < Math.Max(ShownPlaces, Math.Min(members.Count + 1, PartyPlaces)); i++)
+        int shown = Size == ShellSize.Wide ? PartyPlaces : Math.Min(members.Count + 1, PartyPlaces);
+        for (int i = members.Count; i < shown; i++)
         {
             var open = new PartySlot(theme, null) { Tooltip = party is null ? "Invite a friend: makes a party and copies its link." : "Invite a friend: copies the party's link." };
             open.Activated += _ => Invite(parties);
@@ -74,28 +76,52 @@ public sealed partial class MultiplayerScreen
 
         cluster.AddChild(places);
 
-        var code = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6f, VerticalAlignment = VerticalAlignment.Center };
-        code.AddChild(new Label(theme.Mono, "INVITE CODE", 10f, theme.TextMuted));
-        var codeLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12f };
-        codeLine.AddChild(new Label(theme.Mono, party?.Code ?? (party is null ? "------" : "…"), 18f, theme.Text) { VerticalAlignment = VerticalAlignment.Center });
-        var copy = new Button(theme, _copied is null ? (party is null ? "CREATE" : "COPY") : "COPIED")
+        var invite = new Button(theme, _copied is null ? "INVITE" : "COPIED")
         {
             Accent = ButtonAccent.Ghost,
-            TextSize = 13f,
-            Tracking = 0.25f,
-            Padding = new Thickness(10f, 4f),
+            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.People),
+            GlyphSize = 18f,
+            TextSize = ButtonText,
+            Tracking = ButtonTracking,
+            Padding = new Thickness(20f, 0f),
+            Height = 44f,
             VerticalAlignment = VerticalAlignment.Center,
             Tooltip = party is null ? "Make a party you lead, and copy its invite link for friends." : "Copy a link friends open to join the party, in the browser or the game.",
         };
-        copy.Activated += _ => Invite(parties);
-        codeLine.AddChild(copy);
-        code.AddChild(codeLine);
-        cluster.AddChild(new Rule { Orientation = Orientation.Vertical, Length = 48f, Color = UiPalette.White(0.1f), VerticalAlignment = VerticalAlignment.Center });
-        cluster.AddChild(code);
+        invite.Activated += _ => Invite(parties);
+        cluster.AddChild(invite);
+
+        if (_joiningParty)
+        {
+            cluster.AddChild(BuildCodeEntry(theme, parties, inParty: party is not null));
+        }
+        else
+        {
+            var enter = new Button(theme, "ENTER CODE")
+            {
+                Accent = ButtonAccent.Ghost,
+                LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Keyboard),
+                GlyphSize = 18f,
+                TextSize = ButtonText,
+                Tracking = ButtonTracking,
+                Padding = new Thickness(20f, 0f),
+                Height = 44f,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tooltip = "Join a friend's room or party by its code.",
+            };
+            enter.Activated += _ =>
+            {
+                // The box opens with the keys already in it, so the code is typed straight away.
+                _joiningParty = true;
+                _focusNext = PartyCodeId;
+                Invalidate();
+            };
+            cluster.AddChild(enter);
+        }
 
         if (party is not null)
         {
-            var leave = new Button(theme, "LEAVE PARTY") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(18f, 14f), VerticalAlignment = VerticalAlignment.Center };
+            var leave = new Button(theme, "LEAVE") { Accent = ButtonAccent.Ghost, TextSize = ButtonText, Tracking = ButtonTracking, Padding = new Thickness(16f, 0f), Height = 44f, VerticalAlignment = VerticalAlignment.Center, Tooltip = "Leave the party." };
             leave.Activated += _ =>
             {
                 parties.Leave();
@@ -105,35 +131,47 @@ public sealed partial class MultiplayerScreen
             };
             cluster.AddChild(leave);
         }
-        else if (_joiningParty)
-        {
-            var join = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6f, VerticalAlignment = VerticalAlignment.Center };
-            var box = new TextBox(theme) { Id = "party-code", Placeholder = "PARTY CODE", MaxLength = 6, Width = 170f, VerticalAlignment = VerticalAlignment.Center };
-            box.Text = _partyCode;
-            box.TextChanged += text => _partyCode = text;
-            var go = new Button(theme, "JOIN") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(18f, 14f), Tooltip = "Join a friend's party by its code." };
-            go.Activated += _ =>
-            {
-                parties.Join(_partyCode);
-                _joiningParty = false;
-                Invalidate();
-            };
-            join.AddChild(box);
-            join.AddChild(go);
-            cluster.AddChild(join);
-        }
-        else
-        {
-            var open = new Button(theme, "JOIN A PARTY") { Accent = ButtonAccent.Ghost, TextSize = 15f, Tracking = 0.3f, Padding = new Thickness(18f, 14f), VerticalAlignment = VerticalAlignment.Center };
-            open.Activated += _ =>
-            {
-                _joiningParty = true;
-                Invalidate();
-            };
-            cluster.AddChild(open);
-        }
 
         return cluster;
+    }
+
+    // The box ENTER CODE opens: a code, and what to join by it -- a friend's room, or their party when this player is in none.
+    private StackPanel BuildCodeEntry(UiTheme theme, IPartyPanel parties, bool inParty)
+    {
+        var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6f, VerticalAlignment = VerticalAlignment.Center };
+        var box = new TextBox(theme) { Id = PartyCodeId, Placeholder = "CODE", MaxLength = 6, Width = 150f, VerticalAlignment = VerticalAlignment.Center, Tooltip = "A friend's room or party code: six letters and digits." };
+        box.Text = _partyCode;
+        var room = new Button(theme, "ROOM") { Accent = ButtonAccent.Ghost, TextSize = ButtonText, Tracking = ButtonTracking, Padding = new Thickness(14f, 0f), Height = 44f, IsEnabled = HasCode(_partyCode), Tooltip = "Join the room with this code." };
+        var joinParty = new Button(theme, "PARTY") { Accent = ButtonAccent.Ghost, TextSize = ButtonText, Tracking = ButtonTracking, Padding = new Thickness(14f, 0f), Height = 44f, IsEnabled = HasCode(_partyCode), Tooltip = "Join the party with this code." };
+        box.TextChanged += text =>
+        {
+            _partyCode = text;
+            room.IsEnabled = HasCode(text);
+            joinParty.IsEnabled = HasCode(text);
+        };
+        room.Activated += _ => JoinRoomByEnteredCode();
+        joinParty.Activated += _ => JoinParty(parties);
+        entry.AddChild(box);
+        entry.AddChild(room);
+        if (!inParty)
+        {
+            entry.AddChild(joinParty);
+        }
+
+        return entry;
+    }
+
+    // Joins the room whose code is in ENTER CODE's box, when one is, and shuts the box.
+    private void JoinRoomByEnteredCode()
+    {
+        if (!HasCode(_partyCode) || Coop is not { } coop)
+        {
+            return;
+        }
+
+        coop.Join(_partyCode.Trim());
+        _joiningParty = false;
+        Invalidate();
     }
 
     // Under the header: why a party was lost or an order refused, where the party plays, and the member picked with LEAD and KICK.
@@ -148,27 +186,32 @@ public sealed partial class MultiplayerScreen
                 return null;
             }
 
-            note.AddChild(Body(theme, $"The party was lost: {lost}.", theme.Danger, 15f));
+            note.AddChild(StatusText(theme, $"The party was lost: {lost}.", theme.Danger, 15f));
             return note;
         }
 
         if (parties.OrderError is { } refused)
         {
-            note.AddChild(Body(theme, $"Couldn't do that: {refused}.", theme.Danger, 15f));
+            note.AddChild(StatusText(theme, $"Couldn't do that: {refused}.", theme.Danger, 15f));
         }
 
         if (_copied is { } link)
         {
-            note.AddChild(Body(theme, $"Copied {link}", theme.Accent, 15f));
+            note.AddChild(StatusText(theme, $"Copied {link}", theme.Accent, 15f));
         }
 
         if (party.Members.FirstOrDefault(m => m.Id == _picked) is not { } member)
         {
-            string where = party.Code is null ? "Reaching the party…"
+            // A leader with nowhere to be yet has nothing to be told: the page is where the leader picks.
+            string? where = party.Code is null ? "Reaching the party…"
                 : party.Playing is { } playing ? party.Leading ? $"You lead it, in {playing}." : $"Following {party.Leader} to {playing}."
-                : party.Leading ? "You lead it: host or join a game and the party follows." : $"Waiting for {party.Leader} to play somewhere.";
-            note.AddChild(Body(theme, where, theme.TextMuted, 15f));
-            return note;
+                : party.Leading ? null : $"Waiting for {party.Leader} to play somewhere.";
+            if (where is not null)
+            {
+                note.AddChild(StatusText(theme, where, theme.TextMuted, 15f));
+            }
+
+            return note.Children.Count > 0 ? note : null;
         }
 
         note.AddChild(new Label(theme.Body, member.Name, 17f, theme.TextBright) { VerticalAlignment = VerticalAlignment.Center });
@@ -217,6 +260,19 @@ public sealed partial class MultiplayerScreen
             _copied = parties.CopyInvite();
         }
 
+        Invalidate();
+    }
+
+    // Joins the party whose code is in the box, when one is, and shuts the box.
+    private void JoinParty(IPartyPanel parties)
+    {
+        if (!HasCode(_partyCode))
+        {
+            return;
+        }
+
+        parties.Join(_partyCode.Trim());
+        _joiningParty = false;
         Invalidate();
     }
 

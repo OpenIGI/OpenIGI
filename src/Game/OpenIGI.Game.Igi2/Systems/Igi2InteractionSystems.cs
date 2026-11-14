@@ -172,19 +172,54 @@ internal static class Igi2InteractionSystems
             portals is null ? null : portals.IsOpen);
     }
 
-    /// <summary>Props moved along spline guides: they move, and carry what stands on them.</summary>
+    /// <summary>
+    /// Props moved along spline guides: they move, and carry what the level put beneath them -- a pilot, an exhaust's smoke, an
+    /// engine's sound, and the props on them, which move with them and carry their own.
+    /// </summary>
     public static void Props(Igi2LevelBuild b)
     {
         foreach (Igi2EditRigidObjTask prop in b.Root.Descendants().OfType<Igi2EditRigidObjTask>())
         {
             if (prop.Guide is not null)
             {
-                prop.Models = b.Models;
-                prop.Magic = b.Magic;
-                prop.Bind(b.Player.CollisionWorld.SolidsOf(Igi2EditRigidObjTask.TypeName, prop.Id));
-                b.Movers.Add(prop);
+                Move(prop, b);
+                Igi2Attachment.AttachChildren(prop, prop, carried =>
+                {
+                    if (carried is Igi2EditRigidObjTask nested)
+                    {
+                        Move(nested, b);
+                    }
+                });
             }
         }
+    }
+
+    /// <summary>The fans, dishes and beacons that turn where they stand: their solids turn with them, a round reaches them, and they are drawn as they face.</summary>
+    public static void RotatingObjects(Igi2LevelBuild b)
+    {
+        foreach (Igi2RotatingObjectTask turning in b.Root.Descendants().OfType<Igi2RotatingObjectTask>())
+        {
+            turning.Models = b.Models;
+            turning.Magic = b.Magic;
+            IReadOnlyList<Igi2RigidObject> solids = b.Player.CollisionWorld.SolidsOf(Igi2RotatingObjectTask.TypeName, turning.Id);
+            turning.Bind(solids);
+            if (solids.Count > 0 && solids[0].Owner is Igi2CollisionOwner { Depth: 0 })
+            {
+                solids[0].Handler = turning;
+            }
+
+            Igi2Attachment.AttachChildren(turning, turning);
+            b.Movers.Add(turning);
+        }
+    }
+
+    // A prop that moves: its solids go with it, and it is drawn where it stands.
+    private static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
+    {
+        prop.Models = b.Models;
+        prop.Magic = b.Magic;
+        prop.Bind(b.Player.CollisionWorld.SolidsOf(Igi2EditRigidObjTask.TypeName, prop.Id));
+        b.Movers.Add(prop);
     }
 
     /// <summary>
@@ -197,7 +232,13 @@ internal static class Igi2InteractionSystems
         List<IIgi2Destructible> destructibles = [];
         foreach (Igi2ExplodeObjectTask explosive in b.Root.Descendants().OfType<Igi2ExplodeObjectTask>())
         {
-            Arm(explosive, Igi2ExplodeObjectTask.TypeName);
+            Arm(explosive, explosive.Type.Name);
+
+            // A radio draws its sounds and its gaps from the run stream.
+            if (explosive is Igi2RadioTask radio)
+            {
+                radio.Random = player.Human.Random;
+            }
         }
 
         foreach (Igi2GenericTbaTask action in b.Root.Descendants().OfType<Igi2GenericTbaTask>())
@@ -291,5 +332,10 @@ internal static class Igi2InteractionSystems
         player.Cameras = [.. b.Root.Descendants().OfType<Igi2SecurityCameraTask>()];
         List<IIgi2PartMover> partMovers = [.. b.Root.Descendants().OfType<Igi2CabinetTask>(), .. b.Turrets, .. b.Cars, .. player.Cameras];
         player.Motions = b.Movers.Count > 0 || partMovers.Count > 0 ? new Igi2MoverMotions(b.Movers, partMovers) : null;
+
+        // What the level's conditional containers keep out of the world is neither drawn nor met.
+        Igi2WorldPresence? presence = Igi2WorldPresence.Build(b.Root, player.CollisionWorld);
+        player.Presence = presence;
+        b.Level.WorldPresence = presence;
     }
 }

@@ -2,11 +2,9 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation;
@@ -103,14 +101,14 @@ public interface ITitleWorldModelPresenter
     Rendering.ModelLodPolicy? Lod
     {
         get => null;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Gets or sets a value indicating whether a cutscene holds the model-detail bias off (<c>CutScene_isRunning</c>).</summary>
     bool LodBiasHeld
     {
         get => false;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>
@@ -297,7 +295,7 @@ public interface IGunPickupPresenter : IDisposable
     /// <summary>Loads the models for every pickup a level starts with.</summary>
     /// <param name="mission">The mission whose packs the models are read from.</param>
     /// <param name="pickups">The level's pickups.</param>
-    void Load(LoadedMission mission, GunPickupRegistry pickups);
+    void Load(LoadedMission mission, IReadOnlyList<GunPickup> pickups);
 
     /// <summary>Loads the model for one pickup that appeared after the level started.</summary>
     /// <param name="mission">The mission whose packs the model is read from.</param>

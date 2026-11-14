@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering.D3D12.Rhi;
+using OpenIGI.Rendering.OpenGL;
 using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
@@ -66,6 +67,7 @@ public static class RhiBackends
         ("Vulkan", OpenVulkan),
         ("WebGPU", OpenWebGpu),
         ("Direct3D 12", OpenD3D12),
+        ("OpenGL", OpenOpenGL),
     ];
 
     private static readonly Dictionary<string, Lazy<string?>> Probes = All.ToDictionary(
@@ -83,7 +85,11 @@ public static class RhiBackends
     /// deferred frame then differs by one or two levels over about five per cent of its channels, scattered
     /// evenly -- sky included -- with no edge or pattern, which is rounding and not a rule followed differently.
     /// </remarks>
-    public static int ColourTolerance(string name) => name == "Direct3D 12" ? 2 : 1;
+    /// <para>
+    /// OpenGL's GLSL is compiled by the driver's GLSL compiler, a different front end from its SPIR-V one, and is given
+    /// Direct3D 12's allowance until a run measures its own.
+    /// </para>
+    public static int ColourTolerance(string name) => name is "Direct3D 12" or "OpenGL" ? 2 : 1;
 
     /// <summary>Gets the backends compared with the reference on this machine, as theory data.</summary>
     /// <remarks>Only those that open here: a theory row cannot be skipped on its own.</remarks>
@@ -194,6 +200,25 @@ public static class RhiBackends
         return new RhiBackendHost("WebGPU", device, () => device.OffscreenTarget(0), device);
     }
 
+    private static RhiBackendHost OpenOpenGL(int width, int height, RhiTextureFormat format)
+    {
+        HiddenGlSurface surface = new();
+        GlRhiDevice? device = null;
+        try
+        {
+            device = GlRhiDevice.Create(surface, width, height, vsync: false, validate: GlRhiDevice.ValidationFromEnvironment);
+            device.AttachOffscreen(width, height, format);
+        }
+        catch
+        {
+            device?.Dispose();
+            surface.Dispose();
+            throw;
+        }
+
+        return new RhiBackendHost("OpenGL", device, () => device.OffscreenTarget(0), new OwnedTogether(device, surface));
+    }
+
     private static string? Probe(Func<int, int, RhiTextureFormat, RhiBackendHost> open, string name)
     {
         try
@@ -210,6 +235,7 @@ public static class RhiBackends
 
 /// <summary>A theory comparing each backend with the reference, run only where there is something to compare.</summary>
 /// <remarks>Pair it with <c>[MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]</c>.</remarks>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class AgreementTheoryAttribute : TheoryAttribute
 {
     /// <summary>Initialises a new instance of the <see cref="AgreementTheoryAttribute"/> class.</summary>
@@ -218,6 +244,7 @@ public sealed class AgreementTheoryAttribute : TheoryAttribute
 
 /// <summary>A fact about the reference backend alone, run only where it opens.</summary>
 /// <remarks>For what only the reference can do yet; a comparison wants <see cref="AgreementTheoryAttribute"/>.</remarks>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class ReferenceFactAttribute : FactAttribute
 {
     /// <summary>Initialises a new instance of the <see cref="ReferenceFactAttribute"/> class.</summary>
@@ -252,5 +279,15 @@ internal sealed class DebugLog(string path) : IOpenIgiLogger
         {
             File.AppendAllText(path, line.ToString());
         }
+    }
+}
+
+/// <summary>A device and the window its context lives on, disposed device first.</summary>
+internal sealed class OwnedTogether(IDisposable first, IDisposable second) : IDisposable
+{
+    public void Dispose()
+    {
+        first.Dispose();
+        second.Dispose();
     }
 }

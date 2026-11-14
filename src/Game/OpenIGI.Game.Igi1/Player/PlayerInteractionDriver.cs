@@ -367,12 +367,10 @@ internal sealed class PlayerInteractionDriver
                     _host.DropViewTickPair();
                     _host.SyncView();
                 }
-                if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
+                if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified
+                    && ElectricFenceContact.TryShock(ref _electricFenceCooldown, interaction) is { } touchedFence)
                 {
-                    if (ElectricFenceContact.TryShock(ref _electricFenceCooldown, interaction) is { } touchedFence)
-                    {
-                        _host.OnElectrifiedFenceTouched(touchedFence);
-                    }
+                    _host.OnElectrifiedFenceTouched(touchedFence);
                 }
                 break;
         }

@@ -202,7 +202,7 @@ public sealed class Igi2Water
             drop.Position = new Vector3f(
                 (float)position.X,
                 (float)position.Y,
-                ((((Fpu)surface + body.Position.Z) - 2048.0)).F);
+                (((Fpu)surface + body.Position.Z) - 2048.0).F);
             drop.Across = ((Fpu)(double)k * 819.2000122070312).F;
             drop.StartTick = body.Tick + (8 * k);
             drop.SpeedAcross = (((((Fpu)0.5 - ((double)(ushort)Random.NextRaw() * IgiRandom.Scale)) * 0.5) + 1.0) * 0.05000000074505806).F;
@@ -442,7 +442,7 @@ public sealed class Igi2WaterBody : IWorldCollider
             Fpu across = (Fpu)x * sin;
             Fpu along = (Fpu)y * cos;
             float phase = ((Fpu)time * speed).F;
-            here += (Fpu.Sin(((((along + across) + _offset) * frequency)) + phase) * amplitude) * attenuation;
+            here += (Fpu.Sin((((along + across) + _offset) * frequency) + phase) * amplitude) * attenuation;
             east += (Fpu.Sin((((along + (((Fpu)sample + x) * sin)) + _offset) * frequency) + phase) * amplitude) * attenuation;
             float northY = ((Fpu)sample + y).F;
             north += (Fpu.Sin((((across + ((Fpu)northY * cos)) + _offset) * frequency) + phase) * amplitude) * attenuation;
@@ -575,12 +575,14 @@ public sealed class Igi2WaterBody : IWorldCollider
             UpdateWave(_waves[i]);
         }
 
-        for (int j = 0; j < _splashes.Count; j++)
+        int j = 0;
+        while (j < _splashes.Count)
         {
             Igi2WaterSplashDrop drop = _splashes[j];
             float time = ((Fpu)(double)(Tick - drop.StartTick) * 0.06666666666666667).F;
             if (!(time > 0f))
             {
+                j++;
                 continue;
             }
 
@@ -601,7 +603,10 @@ public sealed class Igi2WaterBody : IWorldCollider
             if (up.Value < 0.0)
             {
                 _splashes.RemoveAt(j);
-                j--;
+            }
+            else
+            {
+                j++;
             }
         }
 

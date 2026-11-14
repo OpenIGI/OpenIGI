@@ -1,4 +1,3 @@
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -40,16 +39,25 @@ public sealed class MineFieldTests
     [RequiresGameDataFact]
     public void MissionSevensMineFieldBlastsAtThePlayerEveryFiveSeconds()
     {
-        Igi1MineField field = Assert.Single(Igi1MineFields.Build(RetailMissionData.Get(7).Root));
+        OpenIGI.Engine.Tasks.GameTask field = Assert.Single(RetailMissionData.Get(7).Root.Descendants(), static t => t.Type.Name == MineFieldTask.TypeName);
 
-        Assert.Equal(0, field.TargetId);
-        Assert.Equal(3f * 4096f, field.RadiusUnits);
-        Assert.Equal(1.5f * 4096f, field.FalloffUnits);
-        Assert.Equal(4.5f, field.Damage);
-        Assert.Equal(5f, field.WaitSeconds);
-        Assert.Equal(3, field.Fragments);
-        Assert.Equal(3, field.Fireballs);
-        Assert.True(field.SnapsToGround);
-        Assert.Contains("AreaActivate_151.nActive", field.Condition, StringComparison.Ordinal);
+        Assert.True(field.TryGetScriptValue("Explode close to task ID", out int target));
+        Assert.Equal(0, target);
+        Assert.True(field.TryGetScriptValue("Explosion radius (meter)", out float radius));
+        Assert.Equal(3f, radius);
+        Assert.True(field.TryGetScriptValue("Explosion falloff radius (meter)", out float falloff));
+        Assert.Equal(1.5f, falloff);
+        Assert.True(field.TryGetScriptValue("Explosion damage scale", out float damage));
+        Assert.Equal(4.5f, damage);
+        Assert.True(field.TryGetScriptValue("Explosion delay between explosions (seconds) -1: explode once", out float wait));
+        Assert.Equal(5f, wait);
+        Assert.True(field.TryGetScriptValue("Explosion fragments", out int fragments));
+        Assert.Equal(3, fragments);
+        Assert.True(field.TryGetScriptValue("Explosion fireballs", out int fireballs));
+        Assert.Equal(3, fireballs);
+        Assert.True(field.TryGetScriptValue("Snap explosion to ground", out bool snaps));
+        Assert.True(snaps);
+        Assert.True(field.TryGetScriptValue("Explode", out string? condition));
+        Assert.Contains("AreaActivate_151.nActive", condition, StringComparison.Ordinal);
     }
 }

@@ -3,7 +3,6 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Config;
 using OpenIGI.Game.Menus;
-using OpenIGI.Game.World;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -163,6 +162,7 @@ public sealed class ControlsMenuTests
         PointerHost host = new();
         host.MoveTo(-100, -100, down: false);
         GameLoop loop = new(time: time, host: host);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         GameConfig config = GameConfig.CreateDefault();
 
         MenuSystem? menu = null;

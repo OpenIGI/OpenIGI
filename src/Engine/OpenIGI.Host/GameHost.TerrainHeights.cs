@@ -85,7 +85,7 @@ public sealed partial class GameHost
                 _terrainHeightsGivenTo = null;
                 _logger.Information(
                     "Terrain",
-                    FormattableString.Invariant(
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"height raster {raster.Width}x{raster.Depth} at {raster.CellMetres:0.0} m, z {raster.LowestZ:0.0}..{raster.HighestZ:0.0}, built in {_loop.TimeSource.Milliseconds - _terrainRasterStarted} ms"));
             }
         }

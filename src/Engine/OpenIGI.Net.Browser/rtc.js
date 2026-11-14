@@ -34,7 +34,8 @@ function create(iceJson, offerer, relayOnly) {
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') findRelay(peer);
     if (pc.connectionState === 'failed') fail(peer, 'no way through to the other player');
-    else if (pc.connectionState === 'closed' || pc.connectionState === 'disconnected') fail(peer, 'the connection dropped');
+    // 'disconnected' is not the end: the path went quiet and may come back, and the browser says 'failed' if it does not.
+    else if (pc.connectionState === 'closed') fail(peer, 'the connection dropped');
   };
 
   if (offerer) {

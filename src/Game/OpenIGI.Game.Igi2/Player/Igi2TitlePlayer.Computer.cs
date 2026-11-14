@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
@@ -293,6 +294,7 @@ public sealed partial class Igi2TitlePlayer
     /// </summary>
     private void RunComputerSaves()
     {
+        // Neither in a multiplayer session, where what was asked for is only forgotten (SaveGameLock).
         if (Human.LoadSlot is var load and not 0)
         {
             Human.LoadSlot = 0;
@@ -308,22 +310,43 @@ public sealed partial class Igi2TitlePlayer
     }
 
     // The save screen's hold on the player and its saves.
-    private sealed class ComputerSaves(Igi2TitlePlayer player) : IIgi2ComputerSaves
+    private sealed class ComputerSaves(Igi2TitlePlayer player) : IComputerSaves
     {
         public float BatteryLevel => player.Saves?.BatteryLevel ?? 0f;
 
-        public bool IsSaveAllowed => player.Human.IsSaveAllowed;
+        public float BatteryAfterSave => ((OpenIGI.Game.Player.ITitleSaveGames?)player.Saves)?.BatteryAfterSave ?? 0f;
+
+        // HumanPlayer_IsSaveAllowed: not while the action is locked, and only in a single player's game.
+        public bool IsSaveAllowed => player.Human.IsSaveAllowed && !SaveGameLock.IsHeld;
 
         public int QuickLoadSlot => player.Human.QuickLoadSlot;
 
         public (bool IsUsed, string Info, string When) Slot(int slot) =>
             player.Saves?.SlotLabel(slot, key => player.Strings?.Get(key) ?? key) ?? (false, string.Empty, string.Empty);
 
-        public void BeginSave(int slot) => player.Human.BeginSaveToSlot(slot);
+        public void BeginSave(int slot)
+        {
+            if (!SaveGameLock.IsHeld)
+            {
+                player.Human.BeginSaveToSlot(slot);
+            }
+        }
 
-        public void FinishSave(int slot) => player.Human.FinishSaveToSlot(slot);
+        public void FinishSave(int slot)
+        {
+            if (!SaveGameLock.IsHeld)
+            {
+                player.Human.FinishSaveToSlot(slot);
+            }
+        }
 
-        public void Load(int slot) => player.Human.LoadFromSlot(slot);
+        public void Load(int slot)
+        {
+            if (!SaveGameLock.IsHeld)
+            {
+                player.Human.LoadFromSlot(slot);
+            }
+        }
 
         public void FreezeFire() => player.FreezeFire();
 
@@ -397,7 +420,7 @@ public sealed partial class Igi2TitlePlayer
         public IIgi2CameraTarget? Task(int id) => player.TaskById?.Invoke(id) switch
         {
             IIgi2CameraTarget target => target,
-            Igi2HumanPlayerTask => new Target(() => player.Human.Position),
+            Igi2HumanPlayerTask => new Target(() => player.StandIn?.Position ?? player.Human.Position),
             Ai.Igi2HumanSoldierTask { Body: { } soldier } => new Target(() => soldier.Position),
             GameTask task when task.TryGetScriptValue("Position", out object? value) && value is Vector3d position
                 => new Target(() => position),

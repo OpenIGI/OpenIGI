@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -7,13 +6,11 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
@@ -23,7 +20,7 @@ public sealed class SoldierRendererTests
     [RequiresGameDataFact]
     public void LivingSoldiersRemainQueryTargetsBeforeHealthIsCreated()
     {
-        (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission, LevelTask levelRoot) =
+        (_, ResourceRegistry resources, LoadedMission mission, LevelTask levelRoot) =
             LoadRetailMission();
         RecordingGraphicsDevice device = new();
         using SoldierRenderer renderer = new(device, resources);
@@ -61,7 +58,8 @@ public sealed class SoldierRendererTests
         GameLoop loop = new(new ManualTimeSource());
 
         PlayerTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
 
         LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
 

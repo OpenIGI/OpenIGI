@@ -1,4 +1,3 @@
-using OpenIGI.Rendering.Streamline;
 using Xunit;
 
 namespace OpenIGI.Rendering.Streamline.Tests;
@@ -69,6 +68,7 @@ public sealed class SignedModuleTests : IDisposable
         }
         catch (IOException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 }

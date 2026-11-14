@@ -138,7 +138,7 @@ public sealed class Igi2HumanWallTests
         }
 
         Assert.True(best is not null, "no wall within a hundred metres of the spawn.");
-        Vector3f n = best!.Normal;
+        Vector3f n = best.Normal;
         double length = Math.Sqrt((n.X * n.X) + (n.Y * n.Y));
         return (best.Position, new Vector3f((float)(n.X / length), (float)(n.Y / length), 0f));
     }

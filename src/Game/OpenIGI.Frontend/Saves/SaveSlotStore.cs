@@ -189,6 +189,70 @@ public sealed partial class SaveSlotStore
         return matches.Length;
     }
 
+    /// <summary>Moves every slot belonging to a player profile to the profile's new name, with their screenshots.</summary>
+    /// <param name="profileName">The name the slots are kept under.</param>
+    /// <param name="newName">The name they are to be kept under.</param>
+    /// <returns>The number of slots moved.</returns>
+    /// <remarks>
+    /// A screenshot's file is named for its profile, so it is renamed with it; one that cannot be -- the file is open, the
+    /// disk is read-only -- stays where it is and the slot goes on pointing at it, which loses nothing.
+    /// </remarks>
+    public int RenameProfile(string profileName, string newName)
+    {
+        ArgumentNullException.ThrowIfNull(profileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
+        if (string.Equals(profileName, newName, StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        int moved = 0;
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            SaveSlot slot = _slots[i];
+            if (!string.Equals(slot.ProfileName, profileName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _slots[i] = slot with { ProfileName = newName, ScreenshotFile = MoveScreenshot(slot, newName) };
+            moved++;
+        }
+
+        if (moved > 0)
+        {
+            Flush();
+        }
+
+        return moved;
+    }
+
+    // Renames a slot's screenshot for its profile's new name; the name the file ends up under, or null for a slot with none.
+    private string? MoveScreenshot(SaveSlot slot, string newName)
+    {
+        if (slot.ScreenshotFile is not { } file)
+        {
+            return null;
+        }
+
+        string renamed = ScreenshotFileName(slot.Slot, newName);
+        string from = Path.Combine(_directory, file);
+        if (string.Equals(file, renamed, StringComparison.OrdinalIgnoreCase) || !File.Exists(from))
+        {
+            return file;
+        }
+
+        try
+        {
+            File.Move(from, Path.Combine(_directory, renamed), overwrite: true);
+            return renamed;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return file;
+        }
+    }
+
     /// <summary>Gets the absolute path of a slot's screenshot, or null when it has none.</summary>
     /// <param name="slot">The slot.</param>
     /// <returns>The screenshot path, or <see langword="null"/>.</returns>

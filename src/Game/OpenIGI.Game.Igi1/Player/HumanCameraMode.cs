@@ -1,5 +1,3 @@
-using OpenIGI.Game.Player;
-
 namespace OpenIGI.Game.Igi1.Player;
 
 /// <summary>

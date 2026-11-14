@@ -15,7 +15,7 @@ public static class Igi2ModelObjState
     /// <param name="position">Where it is, <c>tPos</c>.</param>
     /// <param name="orientation">Its orientation, row by row.</param>
     /// <param name="isInWorld">Whether it is in the world, <c>isRegisteredInWorldHack</c>.</param>
-    public static void Write(Igi2StateWriter writer, Vector3d position, IReadOnlyList<float> orientation, bool isInWorld = true)
+    public static void Write(StateWriter writer, Vector3d position, IReadOnlyList<float> orientation, bool isInWorld = true)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Real64x3(position);
@@ -28,7 +28,7 @@ public static class Igi2ModelObjState
     /// <summary>Reads them back.</summary>
     /// <param name="reader">The reader.</param>
     /// <returns>Where it is, its orientation row by row, and whether it is in the world.</returns>
-    public static (Vector3d Position, float[] Orientation, bool IsInWorld) Read(Igi2StateReader reader)
+    public static (Vector3d Position, float[] Orientation, bool IsInWorld) Read(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Vector3d position = reader.Real64x3();

@@ -257,7 +257,7 @@ public sealed class ExecLayerTests
             for (int i = 0; i < count; i++)
             {
                 _tick++;
-                foreach ((string name, int value, int from) in _inputs.Where(input => input.From == _tick))
+                foreach ((string name, int value, _) in _inputs.Where(input => input.From == _tick))
                 {
                     _values[name] = value;
                 }

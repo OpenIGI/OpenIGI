@@ -18,6 +18,14 @@ public interface IBrowserPage
     /// <summary>Gets the size the canvas is shown at, in device pixels.</summary>
     (int Width, int Height) CanvasSize { get; }
 
+    /// <summary>Gets how many of the canvas's pixels there are to a pixel of the page: the device pixel ratio.</summary>
+    double PixelRatio => 1d;
+
+    /// <summary>Gets how far in from an edge the canvas is clear of a notch, rounded corners or the home bar, in its own pixels.</summary>
+    /// <param name="side">The edge: 0 left, 1 top, 2 right, 3 bottom.</param>
+    /// <returns>The inset; zero on a screen with nothing over it.</returns>
+    double SafeInset(int side) => 0d;
+
     /// <summary>Gets whether the page has the keyboard.</summary>
     bool HasFocus { get; }
 

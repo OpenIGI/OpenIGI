@@ -46,9 +46,9 @@ public struct Igi2OrientedBox
     {
         float[] m = _frame ?? Identity;
         Fpu dx = (Fpu)point.X - centre.X, dy = (Fpu)point.Y - centre.Y, dz = (Fpu)point.Z - centre.Z;
-        float x = ((((Fpu)dz * m[6]) + ((Fpu)dy * m[3])) + ((Fpu)dx * m[0])).F;
-        float y = ((((Fpu)dz * m[7]) + ((Fpu)dy * m[4])) + ((Fpu)dx * m[1])).F;
-        float z = ((((Fpu)dz * m[8]) + ((Fpu)dy * m[5])) + ((Fpu)dx * m[2])).F;
+        float x = (((dz * m[6]) + (dy * m[3])) + (dx * m[0])).F;
+        float y = (((dz * m[7]) + (dy * m[4])) + (dx * m[1])).F;
+        float z = (((dz * m[8]) + (dy * m[5])) + (dx * m[2])).F;
 
         // Each test passes when the point is not beyond the face, which a value that is not a number never is.
         return !(x > _half.X) && !(y > _half.Y) && !(z > _half.Z)

@@ -313,9 +313,9 @@ public sealed class NetServer : IDisposable
             {
                 if (_byAddress.TryGetValue(source, out int slot)
                     && _peers[slot] is { } peer
-                    && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == peer.Connection.Salt)
+                    && peer.Connection.TryReadDisconnect(packet, out string left))
                 {
-                    Drop(slot, PacketCodec.ReadString(packet[(prefix + 4)..]), notify: false);
+                    Drop(slot, left, notify: false);
                 }
 
                 return;
@@ -472,9 +472,7 @@ public sealed class NetServer : IDisposable
         Peer peer = _peers[slot]!;
         if (notify)
         {
-            int prefix = NetConstants.PacketPrefixSize;
-            BinaryPrimitives.WriteUInt32LittleEndian(_sendBuffer.AsSpan(prefix), peer.Connection.Salt);
-            int length = prefix + 4 + PacketCodec.WriteString(_sendBuffer.AsSpan(prefix + 4), reason);
+            int length = peer.Connection.WriteDisconnect(_sendBuffer, reason);
             for (int i = 0; i < 3; i++)
             {
                 SendOutOfBand(peer.Connection.RemoteAddress, PacketKind.Disconnect, _sendBuffer.AsSpan(0, length));

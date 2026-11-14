@@ -4,7 +4,6 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.Player;
@@ -197,6 +196,7 @@ public sealed class HumanHitZoneTableTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         HumanPlayerConfig config = new();
         config.Register(loop.Natives);
@@ -234,6 +234,7 @@ public sealed class HumanHitZoneTableTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         WeaponTypeRegistry weapons = new();
         weapons.Register(loop.Natives);

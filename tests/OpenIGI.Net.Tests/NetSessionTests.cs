@@ -138,11 +138,13 @@ public sealed class NetSessionTests
             session.Server.Update(now);
             while (session.Server.TryReceive(out _))
             {
+                // The loop's condition does the work.
             }
 
             client.Client.Update(now);
             while (client.Client.TryReceive(out _))
             {
+                // The loop's condition does the work.
             }
 
             client.Client.Flush(now);

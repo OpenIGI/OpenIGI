@@ -459,7 +459,7 @@ public sealed class ClientSession
 
         if (_signing is null && _identity.IsReady)
         {
-            _signing = _identity.SignAsync(PlayerIdentities.ProofOf(_protocolId, challenge));
+            _signing = _identity.SignAsync(PlayerIdentities.ProofOf(_protocolId, challenge, _net.Connection?.ChannelBinding ?? []));
         }
 
         if (_signing is { IsCompletedSuccessfully: true } signed)
@@ -538,7 +538,7 @@ public sealed class ClientSession
         _writer.WriteBits(Epoch, 8);
         _writer.WriteBits((uint)_newestReceived, 32);
         _writer.WriteBits((uint)(_newestReceived >> 32), 32);
-        _codec.Write(_writer, _sent.ToArray().AsSpan(first));
+        _codec.Write(_writer, _sent.ToArray().AsSpan(first), _newestReceived);
         _net.Send(NetChannel.Sequenced, _writer.AsSpan());
         _lastSentTick = tick;
         return tick;
@@ -559,11 +559,62 @@ public sealed class ClientSession
         Remote.Clear();
         Latest = null;
         Level = null;
+        ForgetEvents();
         _levelTaken = false;
         LastRunCommandTick = long.MinValue;
         CommandLead = 0;
         Reconciler = new PredictionReconciler();
         Clock = new TickClockSync(Math.Max(1, TickRate));
+    }
+
+    // The events the server sent that the world has not yet taken, and how many of each this client has been given in all:
+    // the server sends an event in every snapshot until one that carried it is acknowledged, and each is taken once.
+    private readonly List<ReplicatedImpact> _impacts = [];
+    private readonly List<ReplicatedSense> _senses = [];
+    private uint _impactsTaken;
+    private uint _sensesTaken;
+    private const int MostEventsWaiting = 512;
+
+    /// <summary>Takes the newest snapshot with the events that came since the last was taken; what <see cref="Latest"/> then holds has none.</summary>
+    /// <returns>The snapshot, or <see langword="null"/> before the first.</returns>
+    public Snapshot? TakeLatest()
+    {
+        Snapshot? latest = Latest;
+        if (latest is not null && (_impacts.Count > 0 || _senses.Count > 0))
+        {
+            _impacts.Clear();
+            _senses.Clear();
+            Latest = latest with { Impacts = null, Senses = null };
+        }
+
+        return latest;
+    }
+
+    private void ForgetEvents()
+    {
+        _impacts.Clear();
+        _senses.Clear();
+        _impactsTaken = 0;
+        _sensesTaken = 0;
+    }
+
+    // The events of a snapshot this client was not given before, by their numbers, kept for the world to take.
+    private static void Gather<T>(T[]? events, uint first, ref uint taken, List<T> waiting)
+    {
+        for (int i = 0; i < (events?.Length ?? 0); i++)
+        {
+            uint number = unchecked(first + (uint)i);
+            if (unchecked((int)(number - taken)) >= 0)
+            {
+                waiting.Add(events![i]);
+                taken = unchecked(number + 1);
+            }
+        }
+
+        if (waiting.Count > MostEventsWaiting)
+        {
+            waiting.RemoveRange(0, waiting.Count - MostEventsWaiting);
+        }
     }
 
     private void Keep(UserCommand command)
@@ -578,6 +629,8 @@ public sealed class ClientSession
     // The parts of a split snapshot, gathered by tick: the whole once the last arrives, nothing before. A tick that never
     // completes is dropped when a newer one does, as a lost unsplit snapshot is. The first part carries the doors and the
     // events; the rest only humans.
+    private const int MostTicksGathering = 8;
+
     private Snapshot? Assemble(Snapshot piece, int part, int parts)
     {
         if (parts == 1)
@@ -594,6 +647,12 @@ public sealed class ClientSession
         {
             gathered = new Snapshot?[parts];
             _parts[piece.Tick] = gathered;
+
+            // A line that loses a part of every tick completes none, and nothing else lets the gathered ones go.
+            while (_parts.Count > MostTicksGathering)
+            {
+                _parts.Remove(_parts.Keys.Min());
+            }
         }
 
         gathered[part] = piece;
@@ -609,7 +668,7 @@ public sealed class ClientSession
         }
 
         Snapshot first = gathered[0]!;
-        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses, first.Lifts, first.Cameras, first.Wrecks, first.Projectiles, first.Tasks);
+        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses, first.Lifts, first.Cameras, first.Wrecks, first.Projectiles, first.Tasks, first.ImpactSequence, first.SenseSequence);
     }
 
     private void Read(byte[] data, double now)
@@ -637,6 +696,7 @@ public sealed class ClientSession
                 Map = reader.ReadString(64);
                 Epoch = (byte)reader.ReadBits(8);
                 ServerMode = reader.ReadString(16);
+                ForgetEvents();
                 Clock = new TickClockSync(Math.Max(1, TickRate));
                 break;
             case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
@@ -765,7 +825,7 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Level:
                 uint length = reader.ReadVarUInt();
-                if (length <= 65536)
+                if (length <= NetConstants.MaxReliableMessageSize)
                 {
                     byte[] level = new byte[length];
                     for (int i = 0; i < level.Length; i++)
@@ -811,7 +871,13 @@ public sealed class ClientSession
                 if (snapshot.Tick > _newestReceived)
                 {
                     _newestReceived = snapshot.Tick;
-                    Latest = snapshot;
+                    Gather(snapshot.Impacts, snapshot.ImpactSequence, ref _impactsTaken, _impacts);
+                    Gather(snapshot.Senses, snapshot.SenseSequence, ref _sensesTaken, _senses);
+                    Latest = snapshot with
+                    {
+                        Impacts = _impacts.Count == 0 ? null : [.. _impacts],
+                        Senses = _senses.Count == 0 ? null : [.. _senses],
+                    };
                     LastRunCommandTick = reader.IsOverflowed ? long.MinValue : ran;
                     clock.AddSample(snapshot.Tick, now, _net.Connection?.Statistics.RoundTripTime ?? 0);
                     if (!reader.IsOverflowed && lead != short.MinValue)

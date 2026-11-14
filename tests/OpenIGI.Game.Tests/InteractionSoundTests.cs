@@ -78,9 +78,9 @@ public sealed class InteractionSoundTests
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, DoorRegistry.Build(root), variables);
         WorldScene scene = WorldScene.Build(mission, root);
         WorldPlacement placed = scene.Placements.First(placement => placement.Variants is not null
-            && interactions.TryGet(placement.Owner!, out WorldInteraction? item) && item!.IsOn);
+            && interactions.TryGet(placement.Owner, out WorldInteraction? item) && item!.IsOn);
         Assert.Equal(WorldScene.SwitchModelParameters.Length, placed.Variants!.Count);
-        Assert.True(interactions.TryGet(placed.Owner!, out WorldInteraction? button));
+        Assert.True(interactions.TryGet(placed.Owner, out WorldInteraction? button));
 
         interactions.Tick();
         Assert.Equal(0, interactions.VariantOf(placed));
@@ -136,6 +136,7 @@ public sealed class InteractionSoundTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

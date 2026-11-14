@@ -53,7 +53,7 @@ public sealed class RetailIgi2PlayerActionTests
 
         int ticks = RunUntilIdle(player);
         Assert.InRange(ticks, 2, TickLimit - 1);
-        Assert.Equal("WEAPON_ID_GLOCK", inventory.Current!.WeaponType.WeaponId);
+        Assert.Equal("WEAPON_ID_GLOCK", inventory.Current.WeaponType.WeaponId);
         Assert.Same(inventory.Current, inventory.StatusDisplay);
         Assert.Equal(-1, player.ChangeWeaponId);
         Assert.True(player.IsWeaponReady);

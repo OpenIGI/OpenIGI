@@ -26,7 +26,7 @@ public sealed class TerrainRegionBuildTests(ITestOutputHelper output)
         double centreX = minX + (side / 2.0), centreY = minY + (side / 2.0);
         Assert.True(level.TryDrop(centreX, centreY, 44000 * Metre, 4000 * Metre, upward: false, out TerrainGround middle));
 
-        double Ground(TerrainData terrain, double x, double y, double around) =>
+        static double Ground(TerrainData terrain, double x, double y, double around) =>
             terrain.TryDrop(x, y, around + (400 * Metre), 800 * Metre, upward: false, out TerrainGround g) ? g.Height : double.NaN;
         double Cone(double x, double y) =>
             Math.Max(0.0, 150.0 * (1.0 - (Math.Sqrt(((x - centreX) * (x - centreX)) + ((y - centreY) * (y - centreY))) / Metre / 250.0))) * Metre;

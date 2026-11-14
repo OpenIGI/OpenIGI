@@ -4,7 +4,6 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
-using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Pickups;
 
@@ -34,6 +33,12 @@ public sealed class Igi2PickupList
         Sight = sight;
         Materials = materials;
     }
+
+    /// <summary>Gets or sets the session's weapon tables, which a pickup made by a load is given its weapon from.</summary>
+    public Igi2WeaponTables? Tables { get; set; }
+
+    /// <summary>Gets or sets what resolves a model name to its mesh, which sizes a pickup's reach.</summary>
+    public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Raised when a pickup is deleted, once it was taken.</summary>
     public event Action<Igi2GunPickup>? Deleted;
@@ -141,7 +146,7 @@ public sealed class Igi2PickupList
             items.Add(pickup);
         }
 
-        Igi2PickupList list = new(items, sight, materials);
+        Igi2PickupList list = new(items, sight, materials) { Tables = tables, Models = models };
         foreach (Igi2GunPickup pickup in items)
         {
             if (pickup.Task is Igi2GunPickupTask placed)
@@ -163,19 +168,55 @@ public sealed class Igi2PickupList
     /// </remarks>
     public void Run()
     {
-        for (int i = 0; i < _items.Count; i++)
+        int i = 0;
+        while (i < _items.Count)
         {
             Igi2GunPickup pickup = _items[i];
-            if (pickup.IsDriven)
+            // A pickup that left the list as it stepped has the next one in its place.
+            if (pickup.IsDriven || Step(pickup))
             {
-                continue;
-            }
-
-            if (!Step(pickup))
-            {
-                i--;
+                i++;
             }
         }
+    }
+
+    /// <summary>
+    /// Deletes every pickup, as <c>Game_LoadFromSlot</c> does before a load (<c>QTask_Delete</c> down
+    /// <c>GameFunctions_ptPickupQTaskList</c>): each the save holds is made again by it.
+    /// </summary>
+    public void DeleteAll()
+    {
+        foreach (Igi2GunPickup pickup in _items.ToArray())
+        {
+            pickup.Delete();
+            if (_items.Remove(pickup))
+            {
+                Deleted?.Invoke(pickup);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Makes the pickup a save holds and the level does not, as <c>Serialize_GetChildTaskFromArgList</c> makes a pickup that is
+    /// not found (<c>QTask_NewFn</c>, then its internal data).
+    /// </summary>
+    /// <param name="holder">The task it is made beneath, or <see langword="null"/> for the level's <c>Dynamic</c> task.</param>
+    /// <param name="saved">Its state.</param>
+    /// <returns>The pickup, or <see langword="null"/> when the session has no such weapon.</returns>
+    public Igi2GunPickup? Recreate(GameTask? holder, in Igi2GunPickup.Saved saved)
+    {
+        string weaponId = saved.WeaponId;
+        if (Tables is not { } tables
+            || tables.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, weaponId, StringComparison.Ordinal)) is not { } weaponType)
+        {
+            return null;
+        }
+
+        float radius = weaponType.FixedModel.Length > 0 && Models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
+        Igi2GunPickup pickup = new(null, weaponType, tables, saved.Position, saved.Orientation, radius) { Holder = holder };
+        pickup.Apply(saved);
+        Add(pickup);
+        return pickup;
     }
 
     // A pickup made at run time, run in the level's dynamic tasks.

@@ -28,8 +28,8 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private readonly WebGpuSurface? _surface;
     private readonly WebGpuSurfaceSupport _support;
     private readonly IWorkScheduler _finishing;
-    private WebGpuPushRing? _pushes;
-    private readonly Dictionary<int, WebGpuInstancePushRing> _instancePushes = [];
+    private RhiPushRing? _pushes;
+    private readonly Dictionary<int, RhiInstancePushRing> _instancePushes = [];
 
     private bool _disposed;
 
@@ -159,19 +159,25 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// <summary>Gets the ring push data is written into, made on first use.</summary>
     /// <remarks>
     /// WebGPU has no push constants, so a push is a slice of a uniform buffer bound by dynamic offset.
-    /// See <see cref="WebGpuPushRing"/> for what that costs and when it has to be reset.
+    /// See <see cref="RhiPushRing"/> for what that costs and when it has to be reset.
     /// </remarks>
-    public WebGpuPushRing PushRing => _pushes ??= new WebGpuPushRing(this);
+    public RhiPushRing PushRing => _pushes ??= CreatePushRing();
+
+    /// <summary>Makes a push ring over this device, its chunks read through this backend's push group.</summary>
+    /// <param name="slices">How many pushes one chunk holds.</param>
+    /// <returns>The ring, which the caller owns.</returns>
+    public RhiPushRing CreatePushRing(int slices = 4096) =>
+        new(this, CreatePushGroup, WebGpuPushBlocks.LargestBlock, slices);
 
     /// <summary>Gets the ring per-instance push blocks of one size are packed into, made on first use.</summary>
     /// <param name="blockBytes">The block's size, which is also the array stride the shaders read it at.</param>
     /// <returns>The ring for blocks of that size.</returns>
-    /// <remarks>See <see cref="WebGpuInstancePushRing"/>. One ring a size, because a slot is an array index.</remarks>
-    public WebGpuInstancePushRing InstancePushRing(int blockBytes)
+    /// <remarks>See <see cref="RhiInstancePushRing"/>. One ring a size, because a slot is an array index.</remarks>
+    public RhiInstancePushRing InstancePushRing(int blockBytes)
     {
-        if (!_instancePushes.TryGetValue(blockBytes, out WebGpuInstancePushRing? ring))
+        if (!_instancePushes.TryGetValue(blockBytes, out RhiInstancePushRing? ring))
         {
-            ring = new WebGpuInstancePushRing(this, blockBytes);
+            ring = new RhiInstancePushRing(this, CreateInstancePushGroup, blockBytes);
             _instancePushes.Add(blockBytes, ring);
         }
 
@@ -189,7 +195,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private void ResetPushes()
     {
         _pushes?.Reset();
-        foreach (WebGpuInstancePushRing ring in _instancePushes.Values)
+        foreach (RhiInstancePushRing ring in _instancePushes.Values)
         {
             ring.Reset();
         }
@@ -207,7 +213,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         // The pushes this submission's draws read, uploaded ahead of it in one write a chunk.
         _pushes?.Flush();
-        foreach (WebGpuInstancePushRing ring in _instancePushes.Values)
+        foreach (RhiInstancePushRing ring in _instancePushes.Values)
         {
             ring.Flush();
         }
@@ -293,7 +299,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         ReleaseOffscreen();
         _pushes?.Dispose();
-        foreach (WebGpuInstancePushRing ring in _instancePushes.Values)
+        foreach (RhiInstancePushRing ring in _instancePushes.Values)
         {
             ring.Dispose();
         }

@@ -79,8 +79,8 @@ public sealed class UserCommandTests
         BitWriter two = new();
         codec.Write(two, [a, b]);
 
-        // The repeat costs a bit a channel, and a byte for the tick it was drawn at.
-        Assert.Equal(Channels + 8, two.BitCount - one.BitCount);
+        // The repeat costs a bit a channel, and one more to say it carries no tick it was drawn at.
+        Assert.Equal(Channels + 1, two.BitCount - one.BitCount);
     }
 
     [Fact]
@@ -206,6 +206,22 @@ public sealed class UserCommandTests
         Assert.Equal("b", roster.Nearest(p => p == "a" ? 5 : 2));
         Assert.True(roster.Remove("a"));
         Assert.Equal("b", roster.Primary);
+    }
+
+    [Fact]
+    public void Codec_CarriesViewTicksFromThePacketsBase_HoweverFarTheCommandNumbersHaveFallenBehind()
+    {
+        // Commands numbered 100 on, drawn at server ticks 5000 on: a client whose clock gave up on a hitch's ticks.
+        UserCommandCodec codec = new(Channels);
+        UserCommand[] sent = [Command(100) with { ViewTick = 5000, ViewFraction = 0.5f }, Command(101) with { ViewTick = 5001 }];
+        BitWriter writer = new();
+        codec.Write(writer, sent, viewBase: 5003);
+        BitReader reader = new(writer.AsSpan());
+        List<UserCommand> read = [];
+
+        Assert.True(codec.Read(ref reader, read, viewBase: 5003));
+        Assert.Equal([5000L, 5001L], read.Select(static c => c.ViewTick));
+        Assert.Equal([100L, 101L], read.Select(static c => c.Tick));
     }
 
     private static UserCommand Command(long tick, float look = 0f, float fire = 0f)

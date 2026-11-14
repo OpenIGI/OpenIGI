@@ -149,8 +149,8 @@ public sealed class SpriteAsset
     /// <exception cref="ArgumentOutOfRangeException">The frame's texture index is out of range.</exception>
     public TextureImage GetTexture(in SpriteFrame frame)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(frame.TextureIndex, nameof(frame));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(frame.TextureIndex, _textures.Length, nameof(frame));
+        ArgumentOutOfRangeException.ThrowIfNegative(frame.TextureIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(frame.TextureIndex, _textures.Length);
         return _textures[frame.TextureIndex];
     }
 

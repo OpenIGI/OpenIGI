@@ -27,7 +27,7 @@ public sealed class MissionFailedScreen : ShellScreen
     private bool FollowsHost => Context.Host.Coop?.Status is { Phase: CoopPhase.Playing, Hosting: false };
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => FollowsHost ? [new("ESC", "Leave room")] : [new("ENTER", "Restart"), new("ESC", "Abandon")];
+    protected override IReadOnlyList<KeyHint> Hints => FollowsHost ? [new("Esc", "Leave room")] : [new("Enter", "Restart"), new("Esc", "Abandon")];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context) =>
@@ -60,7 +60,25 @@ public sealed class MissionFailedScreen : ShellScreen
                     "Mission failed",
                     Context.Theme.Danger,
                     ("Restart", () => Context.Host.RestartMission()),
-                    [("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
+                    [.. LoadActions(), ("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
+
+    // The mission's newest save, when it has one, as I.G.I. 2's menu offers a failed mission its saves beside its restart
+    // (Game_GetNewestSaveGameSlot): it is read onto the level that is up, which then plays on.
+    private IEnumerable<(string Text, ButtonAccent Accent, Action Activated)> LoadActions()
+    {
+        if (Context.Host.MissionSaves is not { } saves || !saves.Slots.Any(static slot => slot.IsUsed))
+        {
+            yield break;
+        }
+
+        yield return ("LOAD LAST SAVE", ButtonAccent.Ghost, () =>
+        {
+            if (saves.QuickLoad() && !saves.LoadRestartsMission)
+            {
+                Context.Host.ResumeMission();
+            }
+        });
+    }
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)

@@ -8,8 +8,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 
@@ -25,7 +23,6 @@ public sealed class RetailElevatorTests
             root, mission, doors, variables, elevators);
         PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
         PlacedDoor departureDoor = Assert.Single(doors.Doors, item => item.Task.Id == 45);
-        elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
         // Door_45 is the floor-zero landing door. Its retail open expression is
         // "Elevator_51.vFloor == 0"; Switch_49 is the button inside the car.
@@ -176,7 +173,6 @@ public sealed class RetailElevatorTests
                 continue;
             }
 
-            DeclaredTask ownedChild = child!;
             Vector3d authoredAnchor = interaction.Anchor;
             int target = elevator.State.CurrentFloorIndex + 1 < elevator.State.FloorCount
                 ? elevator.State.CurrentFloorIndex + 1
@@ -232,9 +228,6 @@ public sealed class RetailElevatorTests
             {
                 continue;
             }
-
-            // The lift only moves with the player inside — stand the player in the cab.
-            elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
             IReadOnlyList<(DoorState State, bool WasOpen, bool WasClosed)> doorStates = Descendants(elevator.Task)
                 .OfType<DeclaredTask>()
@@ -303,7 +296,7 @@ public sealed class RetailElevatorTests
 
         Assert.NotEqual(2, elevator.State.CurrentFloorIndex);
         Assert.True(interactions.ActivateFromAi(callButton.Task.Id));
-        Assert.True(elevators.RequestFromSwitch((DeclaredTask)callButton.Task));
+        Assert.True(elevators.RequestFromSwitch(callButton.Task));
 
         bool travelled = false;
         for (int tick = 0; tick < 10000; tick++)
@@ -371,7 +364,6 @@ public sealed class RetailElevatorTests
         (LevelTask root, ScriptVarRegistry variables, _) = Load(12);
         ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
         PlacedElevator gondola = Assert.Single(elevators.Elevators, item => item.Task.Id == 1667);
-        elevators.SetPlayerPositionProvider(() => new Vector3d(0, 0, 0));
 
         Vector3d[] retail =
         [
@@ -441,6 +433,7 @@ public sealed class RetailElevatorTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

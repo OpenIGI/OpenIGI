@@ -728,7 +728,7 @@ public static class LightFixtureExtractor
     private static Vector3f NonNegative(Vector3f colour) =>
         new(MathF.Max(colour.X, 0f), MathF.Max(colour.Y, 0f), MathF.Max(colour.Z, 0f));
 
-    private static int Compare(LightFixture left, LightFixture right)
+    internal static int Compare(LightFixture left, LightFixture right)
     {
         int order = right.Intensity.CompareTo(left.Intensity);
 

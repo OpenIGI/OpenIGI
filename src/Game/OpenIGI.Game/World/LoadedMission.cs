@@ -63,16 +63,32 @@ public sealed record LoadedMission(
     /// <returns>The pack that owns the id.</returns>
     public LoadedPack PackFor(PackId model) => model.IsCommon ? CommonPack : LevelPack;
 
-    /// <summary>Resolves a model by name across both packs.</summary>
+    /// <summary>Resolves a model by name across the packs.</summary>
     /// <param name="name">The model name, for example <c>410_01_1</c>.</param>
-    /// <param name="model">Receives the model when either pack holds it.</param>
+    /// <param name="model">Receives the model when a pack holds it.</param>
     /// <returns><see langword="true"/> when the name resolves.</returns>
     /// <remarks>
     /// The level pack is asked first: it is opened second and its names shadow the common pack's, which is
-    /// the same precedence the drawable scene uses.
+    /// the same precedence the drawable scene uses. Any other pack the mission opened is asked after both, the latest opened first.
     /// </remarks>
-    public bool TryGetModel(string name, out MefModel? model) =>
-        LevelPack.TryGetModel(name, out model) || CommonPack.TryGetModel(name, out model);
+    public bool TryGetModel(string name, out MefModel? model)
+    {
+        if (LevelPack.TryGetModel(name, out model) || CommonPack.TryGetModel(name, out model))
+        {
+            return true;
+        }
+
+        foreach (LoadedPack pack in OtherPacks)
+        {
+            if (pack.TryGetModel(name, out model))
+            {
+                return true;
+            }
+        }
+
+        model = null;
+        return false;
+    }
 
     /// <summary>Binds a model by the name level data gives it, as Project I.G.I.'s walk does: the level pack first.</summary>
     /// <param name="name">The model's name.</param>
@@ -91,19 +107,74 @@ public sealed record LoadedMission(
         return null;
     }
 
-    /// <summary>Resolves the diffuse texture a model's material slot samples, across both packs.</summary>
+    /// <summary>Finds the instance a model is placed as, across the packs, with the pack that holds it.</summary>
+    /// <param name="name">The instance's name, for example <c>003_01_1</c>.</param>
+    /// <param name="pack">Receives the pack.</param>
+    /// <param name="instance">Receives the instance.</param>
+    /// <param name="modelled">Whether only an instance whose pack holds its model will do, as a weapon's part needs.</param>
+    /// <param name="commonFirst">Whether the common pack is asked before the level's, as the first-person arms are read.</param>
+    /// <returns><see langword="false"/> when no pack places it.</returns>
+    /// <remarks>
+    /// The same precedence <see cref="TryGetModel(string, out MefModel?)"/> uses -- the level's pack, the common one, then any other
+    /// the mission opened -- so a body found in another pack is drawn with that pack's textures.
+    /// </remarks>
+    public bool TryFindInstance(
+        string name,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out LoadedPack? pack,
+        out MtpInstance instance,
+        bool modelled = false,
+        bool commonFirst = false)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        LoadedPack first = commonFirst ? CommonPack : LevelPack;
+        LoadedPack second = commonFirst ? LevelPack : CommonPack;
+        foreach (LoadedPack candidate in OtherPacks.Prepend(second).Prepend(first))
+        {
+            foreach (MtpInstance placed in candidate.Instances)
+            {
+                if (string.Equals(placed.Name, name, StringComparison.OrdinalIgnoreCase) && (!modelled || candidate.TryGetModel(placed, out MefModel? _)))
+                {
+                    pack = candidate;
+                    instance = placed;
+                    return true;
+                }
+            }
+        }
+
+        pack = null;
+        instance = default;
+        return false;
+    }
+
+    /// <summary>Resolves the diffuse texture a model's material slot samples, across the packs.</summary>
     /// <param name="model">The model's name, as level data spells it.</param>
     /// <param name="materialSlot">The draw record's material slot.</param>
     /// <param name="textureName">Receives the texture's bare name.</param>
-    /// <returns><see langword="false"/> when neither pack answers.</returns>
-    /// <remarks>The level pack first, the same precedence <see cref="TryGetModel(string, out MefModel?)"/> uses.</remarks>
-    public bool TryGetTextureName(string model, int materialSlot, out string textureName) =>
-        LevelPack.TryGetTextureName(model, materialSlot, out textureName)
-        || CommonPack.TryGetTextureName(model, materialSlot, out textureName);
+    /// <returns><see langword="false"/> when no pack answers.</returns>
+    /// <remarks>The same precedence <see cref="TryGetModel(string, out MefModel?)"/> uses.</remarks>
+    public bool TryGetTextureName(string model, int materialSlot, out string textureName)
+    {
+        if (LevelPack.TryGetTextureName(model, materialSlot, out textureName)
+            || CommonPack.TryGetTextureName(model, materialSlot, out textureName))
+        {
+            return true;
+        }
+
+        foreach (LoadedPack pack in OtherPacks)
+        {
+            if (pack.TryGetTextureName(model, materialSlot, out textureName))
+            {
+                return true;
+            }
+        }
+
+        textureName = string.Empty;
+        return false;
+    }
 
     /// <summary>Resolves an animation set by the skeleton id its own <c>BOSH</c> chunk declares.</summary>
     /// <param name="skeletonId">The skeleton id — a soldier's <c>Bone Heirachy</c> parameter.</param>
-    /// <param name="set">Receives the set when either pack loaded it.</param>
+    /// <param name="set">Receives the set when a pack loaded it.</param>
     /// <returns><see langword="true"/> when a set with that skeleton id was loaded.</returns>
     /// <remarks>
     /// The original registers sets into global tables indexed by the id out of <c>BOSH</c>
@@ -112,7 +183,7 @@ public sealed record LoadedMission(
     /// </remarks>
     public bool TryGetAnimationSet(int skeletonId, out BoneAnimationSet? set)
     {
-        foreach (LoadedPack pack in new[] { LevelPack, CommonPack })
+        foreach (LoadedPack pack in OtherPacks.Prepend(CommonPack).Prepend(LevelPack))
         {
             foreach (BoneAnimationSet candidate in pack.AnimationSets)
             {
@@ -127,6 +198,14 @@ public sealed record LoadedMission(
         set = null;
         return false;
     }
+
+    // The packs a name is asked of after the level's and the common: any other the mission opened, the latest first. The first
+    // game opens only the two, so its own missions never ask these. They are for a mission that opens more -- a guest of one game
+    // in another's level, whose bodies come from several of its levels' packs -- and asking them only after both keeps every name
+    // the two packs answer resolving as it always has.
+    // Asked only once both have missed, so the first game's lookups cost what they always did.
+    private IEnumerable<LoadedPack> OtherPacks =>
+        PacksInLoadOrder.Reverse().Where(pack => !ReferenceEquals(pack, LevelPack) && !ReferenceEquals(pack, CommonPack));
 
     /// <summary>Reads the level's baked object lightmaps.</summary>
     /// <param name="resources">Where the archive is read from.</param>

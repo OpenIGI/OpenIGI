@@ -36,6 +36,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     private IDisposable? _session;
     private Task<RoomListing?>? _finding;
     private string? _findingCode;
+
+    // The server whose room is being looked up, when the player picked a server and not a code: for saying which it was.
+    private string? _findingServer;
     private ServerBrowser? _browser;
     private string? _browsing;
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
@@ -193,6 +196,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             }
 
             code = room;
+            _findingServer = line.Info.Name;
         }
 
         _findingCode = code.Trim().ToUpperInvariant();
@@ -248,6 +252,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         _waitingFor = null;
         _finding = null;
         _findingCode = null;
+        _findingServer = null;
         _failure = null;
         _startWhenReady = null;
         if (_session is not null)
@@ -420,9 +425,39 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             ? new BrowserInfo(said.TitleId, said.Name, said.Map, said.Mode, said.Players, said.MaxPlayers, said.HasPassword, said.Version, said.IsCompatibleWith(MultiplayerProtocol.Version))
             : null;
 
+    // How long a listed server has to answer this game's own question before its line says it does not.
+    private const double AnswerSeconds = 4;
+
+    // When each line was first listed, for telling one not heard from yet from one that does not answer.
+    private readonly Dictionary<string, double> _listedAt = [];
+
+    // Whether this game can get to a line: a room is reached through the master; a server by its address where this build
+    // has UDP and the server answers there, and otherwise only through a room of its own, if it has one open.
+    private bool Reachable(BrowserServer server, double now)
+    {
+        if (server.Address is null || server.Room is not null)
+        {
+            return true;
+        }
+
+        if (OpenUdp is null)
+        {
+            return false;
+        }
+
+        if (!_listedAt.TryGetValue(server.Key, out double since))
+        {
+            _listedAt[server.Key] = since = now;
+        }
+
+        return server.Answered || now - since < AnswerSeconds;
+    }
+
     // The browser's lines as the menu shows them.
-    private CoopRoomInfo[] Lines() =>
-        [.. new BrowserFilter().Apply(_browser?.Servers ?? []).Select(static s => new CoopRoomInfo(
+    private CoopRoomInfo[] Lines()
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        return [.. new BrowserFilter().Apply(_browser?.Servers ?? []).Select(s => new CoopRoomInfo(
             s.Key,
             s.Info.Name,
             int.TryParse(s.Info.Map, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) ? mission : 0,
@@ -438,7 +473,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             Favourite = s.Sources.HasFlag(BrowserSource.Favourite),
             Recent = s.Sources.HasFlag(BrowserSource.History),
             Compatible = s.Info.Compatible,
+            Reachable = Reachable(s, now),
         })];
+    }
 
     /// <summary>Acts on what the master server answered since the last frame.</summary>
     public void Update()
@@ -470,7 +507,12 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             }
         }
 
-        if (_browser is { } browser && browser.Update(_clock.Elapsed.TotalSeconds))
+        // The lines are made again when the list changes, and while a server listed is still within its time to answer:
+        // its line turns to not answering when the time runs out, which no change to the list announces.
+        bool listChanged = _browser is { } listing && listing.Update(_clock.Elapsed.TotalSeconds);
+        double clock = _clock.Elapsed.TotalSeconds;
+        bool awaitingAnswers = _listedAt.Values.Any(since => clock - since < AnswerSeconds + 1);
+        if (_browser is { } browser && (listChanged || awaitingAnswers))
         {
             CoopRoomInfo[] rooms = Lines();
             if (_rooms is null || !_rooms.SequenceEqual(rooms))
@@ -484,8 +526,10 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         if (_finding is { IsCompleted: true } finding)
         {
             string code = _findingCode!;
+            string? server = _findingServer;
             _finding = null;
             _findingCode = null;
+            _findingServer = null;
             RoomListing? room = finding.IsCompletedSuccessfully ? finding.Result : null;
             if (!finding.IsCompletedSuccessfully)
             {
@@ -493,7 +537,8 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             }
             else if (room is null)
             {
-                _failure = $"no room with the code {code}";
+                // A server listed with a room that is no longer: the player picked a server, and typed no code.
+                _failure = server is null ? $"no room with the code {code}" : $"{server} can't be joined from this build right now; its room has closed";
             }
             else if (room.Protocol != Protocol || room.Title != _titleId())
             {

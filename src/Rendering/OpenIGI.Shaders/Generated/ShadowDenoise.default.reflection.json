@@ -116,7 +116,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "p",
@@ -131,7 +132,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uNormal",
@@ -166,5 +168,38 @@
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uRaw",
+      "unit": 0
+    },
+    {
+      "texture": "uRaw",
+      "sampler": "uRawSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uDepth",
+      "unit": 2
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uHistory",
+      "unit": 4
+    },
+    {
+      "texture": "uNormal",
+      "unit": 5
+    },
+    {
+      "texture": "uNormal",
+      "sampler": "uNormalSampler",
+      "unit": 6
+    }
+  ]
 }

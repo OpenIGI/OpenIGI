@@ -128,7 +128,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
 
             // One shot at 70; should it miss (retail's first round did too), another every 12 ticks until the
             // guard has been hurt -- the point is to be its target, as a hit makes it.
-            bool hurt = soldiers.Simulation.DamageForTesting(target.Key) > 0f;
+            bool hurt = OpenIGI.Game.Igi1.Ai.SoldierSimulation.DamageForTesting(target.Key) > 0f;
             scripted.Keyboard.SetKey(KeyCode.D2, down: since == 10);
             scripted.Mouse.SetButton(MouseButton.Left, down: since >= 70 && !hurt && (since - 70) % 12 == 0);
             if (player.FiredThisTick)
@@ -142,7 +142,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                 lastRounds = rounds;
                 log.AppendLine(
                     CultureInfo.InvariantCulture,
-                    $"t{since} rounds={rounds} hits={host.GuardHitsOnPlayer()} target {targetId} dmg={soldiers.Simulation.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
+                    $"t{since} rounds={rounds} hits={host.GuardHitsOnPlayer()} target {targetId} dmg={OpenIGI.Game.Igi1.Ai.SoldierSimulation.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
             }
         }
 
@@ -247,7 +247,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                     + $"rootSampleZ={soldiers.PlayerBodyRootSampleZForTesting:0.0} walkOrigin=({feet.X:0},{feet.Y:0},{feet.Z + OriginAboveFeet:0}) "
                     + $"grounded={player.Body.IsGrounded}");
 
-            foreach ((int at, string op, double[] args) in script.Where(command => command.Tick == tick))
+            foreach ((_, string op, double[] args) in script.Where(command => command.Tick == tick))
             {
                 switch (op)
                 {
@@ -424,7 +424,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                 break;
             }
 
-            int engine = soldiers!.Simulation.TickCount;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -441,7 +441,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                 lastState = key;
             }
 
-            foreach ((int at, string op, double[] args) in script.Where(command => command.Tick == tick))
+            foreach ((_, string op, double[] args) in script.Where(command => command.Tick == tick))
             {
                 switch (op)
                 {

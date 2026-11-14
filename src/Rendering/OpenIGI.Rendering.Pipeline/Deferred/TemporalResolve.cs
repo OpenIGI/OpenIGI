@@ -111,15 +111,9 @@ public sealed class TemporalResolve : IDisposable
     /// the adapter allows is not a slow path but a pipeline that will not build, so the choice is made
     /// from what the device reports, before the module is handed over.
     /// </remarks>
-    private static ShaderVariant RejectShadingVariantFor(IRhiDevice device)
-    {
-        (ShaderVariant widest, _, _) = UpscaleRejectShadingVariants.Select(
-            (uint)Math.Max(0, device.Limits.MaxComputeWorkgroupStorageBytes));
-
-        return ShaderCatalog.Compiles(ShaderModuleId.UpscaleRejectShading, widest, device.ShaderTarget)
-            ? widest
-            : UpscaleRejectShadingVariants.Compact;
-    }
+    private static ShaderVariant RejectShadingVariantFor(IRhiDevice device) => UpscaleRejectShadingVariants.Select(
+        (uint)Math.Max(0, device.Limits.MaxComputeWorkgroupStorageBytes),
+        variant => ShaderCatalog.Compiles(ShaderModuleId.UpscaleRejectShading, variant, device.ShaderTarget)).Variant;
 
     /// <summary>Records the whole chain for one frame, in a compute pass of its own.</summary>
     /// <param name="encoder">The frame's encoder, outside any pass.</param>

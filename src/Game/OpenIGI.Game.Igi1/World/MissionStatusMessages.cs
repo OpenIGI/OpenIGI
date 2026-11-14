@@ -1,0 +1,436 @@
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Net;
+
+namespace OpenIGI.Game.World;
+
+/// <summary>
+/// The mission's status messages: the authored <c>StatusMessage</c> tasks, the transient ones game events post,
+/// the twenty-four on-screen slots they share and the map-computer log the authored ones feed.
+/// </summary>
+/// <remarks>
+/// Owned by <see cref="MissionObjectiveRuntime"/>, which keeps the level's tick and decides when each part runs;
+/// this class only sends, slots and advances the messages it is told to.
+/// </remarks>
+internal sealed class MissionStatusMessages
+{
+    private readonly LevelExpressionRuntime _expressions;
+    private readonly Func<string, string> _resolveText;
+    private readonly Func<int> _tick;
+    private readonly List<StatusMessage> _statusMessages = [];
+    private readonly List<StatusMessage> _transientMessages = [];
+    private readonly HashSet<StatusMessage> _walkedMessages = [];
+
+    /// <summary>The live message slots, exactly as many as <c>0x486650</c> searches.</summary>
+    /// <remarks>
+    /// Twenty-four, and a send that finds them all busy is dropped rather than queued — the original
+    /// walks the array looking for a free entry and simply returns when it does not find one. Modelled as
+    /// an array rather than a list because the slot index is the draw order.
+    /// </remarks>
+    private readonly StatusMessage?[] _messageSlots = new StatusMessage?[MissionObjectiveRuntime.MessageSlotCount];
+    private readonly List<MissionComputerLogEntry> _log = [];
+
+    /// <summary>Builds the message set over the mission's expressions.</summary>
+    /// <param name="expressions">Evaluates each message's <c>Send</c> expression.</param>
+    /// <param name="resolveText">Resolves a message resource to its text.</param>
+    /// <param name="tick">Reads the level's tick at the moment a message sends or finishes.</param>
+    public MissionStatusMessages(LevelExpressionRuntime expressions, Func<string, string> resolveText, Func<int> tick)
+    {
+        _expressions = expressions;
+        _resolveText = resolveText;
+        _tick = tick;
+    }
+
+    /// <summary>Plays a message's <c>Sound</c> as it goes up; see <see cref="MissionObjectiveRuntime.MessageSound"/>.</summary>
+    public Action<string>? MessageSound { get; set; }
+
+    // As the match began: the transient messages, the slots and the log.
+    private (StatusMessage[] Transient, StatusMessage?[] Slots, MissionComputerLogEntry[] Log, StatusMessage[] Walked) _start = ([], [], [], []);
+
+    /// <summary>Records every message as it stands, for <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart()
+    {
+        foreach (StatusMessage message in _statusMessages)
+        {
+            message.MarkLevelStart();
+        }
+
+        _start = ([.. _transientMessages], [.. _messageSlots], [.. _log], [.. _walkedMessages]);
+    }
+
+    /// <summary>Puts every message, slot and log line back as <see cref="MarkLevelStart"/> found them.</summary>
+    public void ResetToLevelStart()
+    {
+        foreach (StatusMessage message in _statusMessages)
+        {
+            message.ResetToLevelStart();
+        }
+
+        _transientMessages.Clear();
+        _transientMessages.AddRange(_start.Transient);
+        Array.Clear(_messageSlots);
+        _start.Slots.CopyTo(_messageSlots, 0);
+        _log.Clear();
+        _log.AddRange(_start.Log);
+        _walkedMessages.Clear();
+        _walkedMessages.UnionWith(_start.Walked);
+    }
+
+    /// <summary>Gets the state a save keeps of each message a task of the level sends.</summary>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates =>
+        _statusMessages.Where(static m => m.Task is not null)
+            .Select(static m => new KeyValuePair<GameTask, Saves.ISavedState>(m.Task!, m));
+
+    /// <summary>
+    /// Passes through a save what belongs to no one message: those no task sent, which message is in which slot, the computer's
+    /// log, and which the level's walk has reached. Not retail.
+    /// </summary>
+    /// <param name="exchange">The exchange.</param>
+    public void Exchange(Saves.StateExchange exchange)
+    {
+        StatusMessage[] transient = exchange.Run(_transientMessages, StatusMessage.ExchangeTransient);
+        if (exchange.IsReading)
+        {
+            // The slots and the walk name messages by their places, these among them.
+            _transientMessages.Clear();
+            _transientMessages.AddRange(transient);
+        }
+
+        int[] slots = exchange.Run([.. _messageSlots.Select(PlaceOf)], static (e, place) => e.Int(place));
+        MissionComputerLogEntry[] log = exchange.Run(_log, static (e, entry) =>
+        {
+            string resource = e.Text(entry?.TextResource ?? string.Empty);
+            return new MissionComputerLogEntry(resource) { Text = e.Text(entry?.Text ?? string.Empty) };
+        });
+        int[] walked = exchange.Run([.. _walkedMessages.Select(PlaceOf).Order()], static (e, place) => e.Int(place));
+        if (!exchange.IsReading)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            _messageSlots[i] = i < slots.Length ? AtPlace(slots[i]) : null;
+        }
+
+        _log.Clear();
+        _log.AddRange(log);
+        _walkedMessages.Clear();
+        _walkedMessages.UnionWith(walked.Select(AtPlace).OfType<StatusMessage>());
+    }
+
+    // A message's place for a save: among the level's own, or past them among those no task sent; -1 for none.
+    private const int TransientPlaces = 100000;
+
+    private int PlaceOf(StatusMessage? message)
+    {
+        if (message is null)
+        {
+            return -1;
+        }
+
+        int own = _statusMessages.IndexOf(message);
+        if (own >= 0)
+        {
+            return own;
+        }
+
+        int transient = _transientMessages.IndexOf(message);
+        return transient >= 0 ? TransientPlaces + transient : -1;
+    }
+
+    private StatusMessage? AtPlace(int place) =>
+        place >= TransientPlaces
+            ? place - TransientPlaces < _transientMessages.Count ? _transientMessages[place - TransientPlaces] : null
+            : place >= 0 && place < _statusMessages.Count ? _statusMessages[place] : null;
+
+    /// <summary>Gets the authored, non-cutscene messages recorded by the map-computer log.</summary>
+    public IReadOnlyList<MissionComputerLogEntry> Log => _log;
+
+    /// <summary>Gets how many authored status-message tasks the mission contains.</summary>
+    public int Count => _statusMessages.Count;
+
+    /// <summary>Gets or sets whether the messages are sent when a co-op server's were, rather than when their own expressions hold.</summary>
+    public bool Mirrored { get; set; }
+
+    /// <summary>Writes how many times each declared message has been sent.</summary>
+    /// <param name="writer">Where to.</param>
+    public void WriteSends(BitWriter writer)
+    {
+        writer.WriteVarUInt((uint)_statusMessages.Count);
+        foreach (StatusMessage message in _statusMessages)
+        {
+            writer.WriteVarUInt((uint)message.SendCount);
+        }
+    }
+
+    /// <summary>Sends each declared message as many more times as a co-op server has sent it beyond this level.</summary>
+    /// <param name="reader">The server's counts.</param>
+    /// <param name="catchingUp">Whether this is the client's first word from the server, whose sends are logged, not shown.</param>
+    public void ReadSends(ref BitReader reader, bool catchingUp)
+    {
+        int count = (int)reader.ReadVarUInt();
+        for (int i = 0; i < count && !reader.IsOverflowed; i++)
+        {
+            int sent = (int)reader.ReadVarUInt();
+            if (i < _statusMessages.Count)
+            {
+                while (_statusMessages[i].SendCount < sent)
+                {
+                    Send(_statusMessages[i], show: !catchingUp);
+                }
+            }
+        }
+    }
+
+    /// <summary>Lists one of the level's messages, in the tree's order, and becomes the screen it is sent to.</summary>
+    /// <param name="task">The message's task.</param>
+    public void Add(Igi1StatusMessageTask task)
+    {
+        _statusMessages.Add(task.Message);
+        task.Screen = this;
+    }
+
+    /// <summary>A message's own update, where the level's walk reaches its task (<c>0x4855F0</c>).</summary>
+    /// <param name="message">The message.</param>
+    /// <remarks>Until the walk is attached the messages update in <see cref="Tick"/>, in list order.</remarks>
+    public void RunFromWalk(StatusMessage message)
+    {
+        if (_walkedMessages.Contains(message))
+        {
+            UpdateMessage(message);
+        }
+    }
+
+    /// <summary>Shows a non-scripted message in the next free slot; see <see cref="MissionObjectiveRuntime.ShowTransientMessage"/>.</summary>
+    /// <param name="text">The already formatted text to draw.</param>
+    /// <param name="durationSeconds">How long the text holds after it has typed out.</param>
+    /// <param name="portrait">The sprite drawn beside it, by its name in the status archive, or empty.</param>
+    /// <returns><see langword="true"/> when a display slot was available.</returns>
+    public bool ShowTransient(string text, float durationSeconds, string portrait = "")
+    {
+        StatusMessage message = new(
+            owner: null,
+            string.Empty,
+            string.Empty,
+            sendOnce: true,
+            cutscene: false,
+            durationSeconds)
+        {
+            IsSent = true,
+            SentTick = _tick(),
+            Portrait = portrait ?? string.Empty,
+        };
+        if (!TryTakeMessageSlot(message))
+        {
+            return false;
+        }
+
+        message.BeginDisplay(text);
+        _transientMessages.Add(message);
+        return true;
+    }
+
+    /// <summary>Gets the messages on screen now, in slot order; see <see cref="MissionObjectiveRuntime.DisplayedMessages"/>.</summary>
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Displayed(eventsOnly: false);
+
+    /// <summary>Gets the messages on screen now that no mission task sent -- a weapon picked up, ammunition taken -- in slot order.</summary>
+    public IEnumerable<StatusMessageDisplay> EventMessages => Displayed(eventsOnly: true);
+
+    private IEnumerable<StatusMessageDisplay> Displayed(bool eventsOnly)
+    {
+        {
+            foreach (StatusMessage? slot in _messageSlots)
+            {
+                if (slot is { IsDisplaying: true } && (!eventsOnly || _transientMessages.Contains(slot)))
+                {
+                    yield return new StatusMessageDisplay(
+                        slot.DisplayText,
+                        slot.RevealedCharacters,
+                        slot.DisplayFrame,
+                        slot.Cutscene,
+                        slot.Portrait);
+                }
+            }
+        }
+    }
+
+    /// <summary>Empties every message slot; see <see cref="MissionObjectiveRuntime.ClearMessages"/>.</summary>
+    public void ClearMessages()
+    {
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            if (_messageSlots[i] is not { } message)
+            {
+                continue;
+            }
+
+            _messageSlots[i] = null;
+            message.StopDisplay();
+            if (_transientMessages.Remove(message))
+            {
+                continue;
+            }
+
+            message.IsFinishedDisplay = true;
+            message.FinishedDisplayTick = _tick();
+            message.TicksSinceFinishedDisplay = 0;
+        }
+    }
+
+    /// <summary>Removes subtitles that belong to a skipped cutscene; see <see cref="MissionObjectiveRuntime.ClearCutsceneMessages"/>.</summary>
+    public void ClearCutsceneMessages()
+    {
+        foreach (StatusMessage message in _statusMessages)
+        {
+            if (!message.Cutscene || !message.IsDisplaying)
+            {
+                continue;
+            }
+
+            message.StopDisplay();
+            ReleaseMessageSlot(message);
+        }
+    }
+
+    /// <summary>Hands each authored message's update to its own task, which the level's walk runs where the tree places it.</summary>
+    public void AttachToWalk()
+    {
+        // StatusMessage::Run (0x4855F0) is the task's update: it runs where the walk reaches it, so a task later in
+        // the tree sees this tick's send, and a message in a closed container does not update.
+        foreach (StatusMessage message in _statusMessages)
+        {
+            if (message.Task is not null)
+            {
+                _walkedMessages.Add(message);
+            }
+        }
+    }
+
+    /// <summary>Updates the messages the walk does not reach, then advances every displayed message one tick.</summary>
+    /// <param name="extraHoldSeconds">The extra hold; see <see cref="MissionObjectiveRuntime.ExtraMessageHoldSeconds"/>.</param>
+    public void Tick(float extraHoldSeconds)
+    {
+        // A message the level walk reaches sends from its own update (UpdateMessage); without a walk they update
+        // here, in list order.
+        foreach (StatusMessage message in _statusMessages)
+        {
+            if (!_walkedMessages.Contains(message))
+            {
+                UpdateMessage(message);
+            }
+
+            if (message.IsFinishedDisplay)
+            {
+                continue;
+            }
+
+            if (message.IsDisplaying && message.AdvanceDisplay(extraHoldSeconds))
+            {
+                message.IsFinishedDisplay = true;
+                message.FinishedDisplayTick = _tick();
+                message.TicksSinceFinishedDisplay = 0;
+                ReleaseMessageSlot(message);
+            }
+        }
+
+        for (int i = _transientMessages.Count - 1; i >= 0; i--)
+        {
+            StatusMessage message = _transientMessages[i];
+            if (message.IsDisplaying && message.AdvanceDisplay(extraHoldSeconds))
+            {
+                ReleaseMessageSlot(message);
+                _transientMessages.RemoveAt(i);
+            }
+        }
+    }
+
+    /// <summary>
+    /// StatusMessage::Run (<c>0x4855F0</c>): the ticks since its display finished count on, then it sends when its
+    /// expression holds -- a one-shot once, a repeating one no sooner than 210 ticks after its last send.
+    /// </summary>
+    private void UpdateMessage(StatusMessage message)
+    {
+        if (message.IsFinishedDisplay)
+        {
+            message.TicksSinceFinishedDisplay++;
+        }
+
+        if (!Mirrored
+            && (!message.SendOnce || !message.IsSent)
+            && _tick() > message.SentTick + 210
+            && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false, message.Task))
+        {
+            Send(message);
+        }
+    }
+
+    // The send itself: into the lowest free slot to be shown, its sound, and the computer's log. One sent before a co-op
+    // client joined goes only into the log: what was said is on the computer, not all said again at once.
+    private void Send(StatusMessage message, bool show = true)
+    {
+        message.IsSent = true;
+        message.SentTick = _tick();
+        message.SendCount++;
+
+        // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
+        // only begins if it got one: a message with nowhere to go is not shown, and the original does not
+        // queue it for later.
+        if (show && TryTakeMessageSlot(message))
+        {
+            message.BeginDisplay(_resolveText(message.TextResource));
+            if (message.Sound.Length > 0)
+            {
+                MessageSound?.Invoke(message.Sound);
+            }
+        }
+
+        if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
+        {
+            if (_log.Count == 50)
+            {
+                _log.RemoveAt(0);
+            }
+            _log.Add(new MissionComputerLogEntry(message.TextResource));
+        }
+    }
+
+    /// <summary>Puts a message in the lowest free slot, as <c>0x486650</c> does.</summary>
+    /// <param name="message">The message being sent.</param>
+    /// <returns><see langword="false"/> when all the slots are busy and the send is dropped.</returns>
+    private bool TryTakeMessageSlot(StatusMessage message)
+    {
+        // A repeating message that is sent again while its previous showing is still on screen keeps the
+        // slot it already has rather than taking a second one, which is what stops one noisy trigger from
+        // filling the column with copies of itself.
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            if (ReferenceEquals(_messageSlots[i], message))
+            {
+                return true;
+            }
+        }
+
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            if (_messageSlots[i] is null)
+            {
+                _messageSlots[i] = message;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void ReleaseMessageSlot(StatusMessage message)
+    {
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            if (ReferenceEquals(_messageSlots[i], message))
+            {
+                _messageSlots[i] = null;
+                return;
+            }
+        }
+    }
+}

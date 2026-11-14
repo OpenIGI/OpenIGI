@@ -36,7 +36,7 @@ public interface ISoldierBodies : IDisposable
     IPlacementVisibility? Visibility
     {
         get => null;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Draws a team-coloured through-wall glow over every soldier the last binocular scan marked.</summary>
@@ -292,7 +292,7 @@ public interface ISoldierBodies : IDisposable
     Func<int, OpenIGI.Game.World.LoadedMission?>? BorrowLevel
     {
         get => null;
-        set { }
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
     }
 
     /// <summary>Shows a look standing in the level, for a player choosing it; <see langword="null"/> takes it away.</summary>

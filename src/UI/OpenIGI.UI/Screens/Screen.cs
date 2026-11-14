@@ -1,5 +1,4 @@
 using OpenIGI.Input;
-using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
@@ -117,6 +116,7 @@ public abstract class Screen
     public void Prepare(LayoutContext context, IUiSoundSink? sounds = null)
     {
         ArgumentNullException.ThrowIfNull(context);
+        _layout = context;
 
         // Rebuild only when the viewport changes: the tree is retained across frames so animation, focus
         // and scroll survive, and a relayout each frame keeps it correct without discarding that state.
@@ -490,6 +490,12 @@ public abstract class Screen
             return false;
         }
 
+        // A finger: it presses where it lands only if it lifts there, and scrolls what is under it if it moves.
+        if (input.Touch.InUse && HandleTouch(mouse, pointer, focus))
+        {
+            return false;
+        }
+
         // Hover: the control under the pointer is told the pointer is on it (and where), so a tab strip or
         // a list can light the one target the click is about to land on rather than the whole widget.
         UpdateHover(pointer);
@@ -539,6 +545,76 @@ public abstract class Screen
         }
 
         return nav.Back;
+    }
+
+    // A finger down on the page: where it landed, where it was last, and whether it has moved far enough to be a scroll.
+    private LayoutContext? _layout;
+    private UiVec2? _touchDown;
+    private UiVec2 _touchLast;
+    private bool _touchScrolling;
+
+    /// <summary>Reads a finger as a tap or as a drag that scrolls what is under it.</summary>
+    /// <returns><see langword="true"/> when the finger was handled here and the pointer's own handling is to be skipped.</returns>
+    /// <remarks>
+    /// <para>
+    /// A mouse presses on the way down and scrolls with its wheel. A finger has no wheel, and pressed on the way down it
+    /// could not be put on a list without choosing the row under it: the only way to scroll was the viewport's bar, four
+    /// units wide. So a finger's press waits for the lift. Lifted where it landed, it is the press it always was; moved
+    /// further than a finger wobbles, it drags the innermost viewport under it that has somewhere to go, and the page
+    /// behind that one when it has not.
+    /// </para>
+    /// <para>
+    /// A control that holds the pointer itself -- a slider -- still takes it on the way down, as it does a mouse.
+    /// </para>
+    /// </remarks>
+    private bool HandleTouch(MouseState mouse, UiVec2 pointer, FocusManager focus)
+    {
+        if (mouse.WasPressed(MouseButton.Left))
+        {
+            UpdateHover(pointer);
+            if (focus.FocusAt(pointer) is Control landed && landed.IsEnabled && landed.CapturesPointer(pointer))
+            {
+                _captured = landed;
+                _touchDown = null;
+                return true;
+            }
+
+            _touchDown = pointer;
+            _touchLast = pointer;
+            _touchScrolling = false;
+            return true;
+        }
+
+        if (_touchDown is not { } down)
+        {
+            return false;
+        }
+
+        if (mouse.IsDown(MouseButton.Left))
+        {
+            float slop = MathF.Max(8f, (Root?.Bounds.Height ?? 0f) * 0.025f);
+            _touchScrolling |= MathF.Abs(pointer.Y - down.Y) > slop;
+            if (_touchScrolling)
+            {
+                float step = _layout?.Px(ScrollView.DefaultWheelStep) ?? ScrollView.DefaultWheelStep;
+                float moved = pointer.Y - _touchLast.Y;
+                if (moved != 0f && step > 0f)
+                {
+                    ScrollUnderPointer(down, moved / step);
+                }
+            }
+
+            _touchLast = pointer;
+            return true;
+        }
+
+        _touchDown = null;
+        if (!_touchScrolling && focus.FocusAt(down) is Control tapped)
+        {
+            tapped.ActivateAt(down);
+        }
+
+        return true;
     }
 
     /// <summary>Gets a value indicating whether a control is holding the pointer through a drag.</summary>

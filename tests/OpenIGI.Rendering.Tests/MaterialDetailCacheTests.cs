@@ -1,7 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Threading;
-using OpenIGI.Rendering;
-using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Rendering.Headless;
 

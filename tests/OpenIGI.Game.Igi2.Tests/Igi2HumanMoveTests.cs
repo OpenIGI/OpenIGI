@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 

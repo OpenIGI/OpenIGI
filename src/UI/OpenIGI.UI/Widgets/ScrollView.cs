@@ -30,6 +30,9 @@ public class ScrollView : UiElement, IWheelScrollable
     // How far below the thumb's top the pointer holds it during a scrollbar drag, in pixels.
     private float _grab;
 
+    // An offset to put the content at when it is next laid out, or null; see RestoreOffset.
+    private float? _restore;
+
     /// <summary>Initializes a new instance of the <see cref="ScrollView"/> class.</summary>
     /// <param name="theme">The theme, for the scrollbar colour.</param>
     /// <exception cref="ArgumentNullException"><paramref name="theme"/> is <see langword="null"/>.</exception>
@@ -50,7 +53,10 @@ public class ScrollView : UiElement, IWheelScrollable
     public float MaxScroll => MathF.Max(0f, _contentHeight - Bounds.Height);
 
     /// <summary>Gets or sets how far one wheel notch scrolls, in design units.</summary>
-    public float WheelStep { get; set; } = 110f;
+    public float WheelStep { get; set; } = DefaultWheelStep;
+
+    /// <summary>How far one wheel notch scrolls unless a viewport says otherwise, in design units.</summary>
+    public const float DefaultWheelStep = 110f;
 
     /// <summary>Gets or sets the gap kept between a revealed row and the viewport edge, in design units.</summary>
     public float RevealMargin { get; set; } = 14f;
@@ -71,6 +77,15 @@ public class ScrollView : UiElement, IWheelScrollable
     /// <summary>Puts the content at the target offset at once, without the glide.</summary>
     /// <remarks>A screen opening on a row far down its list is shown there, rather than scrolling to it from the top.</remarks>
     public void SnapToTarget() => _offset.SnapTo(_offset.Target);
+
+    /// <summary>Puts the content at an offset, at once, when the viewport is next laid out.</summary>
+    /// <param name="offset">The offset in pixels; clamped then to what the content allows.</param>
+    /// <remarks>
+    /// For a viewport built anew in place of one the player had scrolled -- a page rebuilt around a list -- so the list stays
+    /// where it was. Before its first layout a viewport does not know how far it scrolls, so <see cref="ScrollOffset"/> set
+    /// then is clamped to nothing; this waits for the layout.
+    /// </remarks>
+    public void RestoreOffset(float offset) => _restore = offset;
 
     /// <summary>Scrolls to the bottom of the content.</summary>
     public void ScrollToEnd() => ScrollOffset = MaxScroll;
@@ -177,6 +192,12 @@ public class ScrollView : UiElement, IWheelScrollable
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
+        if (_restore is { } restored)
+        {
+            _offset.SnapTo(Math.Clamp(restored, 0f, MaxScroll));
+            _restore = null;
+        }
+
         // Re-clamp: a relayout may have shrunk the content below the current offset.
         _offset.Target = Math.Clamp(_offset.Target, 0f, MaxScroll);
         float offset = Math.Clamp(_offset.Value, 0f, MaxScroll);
@@ -210,7 +231,7 @@ public class ScrollView : UiElement, IWheelScrollable
         (float thumbY, float thumbHeight) = Thumb(_offset.Value);
 
         painter.FillRect(new UiRect(x, Bounds.Y, trackW, Bounds.Height), _theme.Border.WithAlpha(40), UiBlend.AlphaBlend);
-        painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Accent.WithAlpha(160), UiBlend.AlphaBlend);
+        painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Large ? UiPalette.White(0.42f) : _theme.Accent.WithAlpha(160), UiBlend.AlphaBlend);
     }
 
     // The thumb's top and length in pixels at a scroll offset: its length the fraction of the content shown.

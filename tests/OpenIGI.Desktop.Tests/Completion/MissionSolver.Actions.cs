@@ -16,17 +16,17 @@ internal sealed partial class MissionSolver
         switch (goal.Kind)
         {
             case GoalKind.Stand or GoalKind.Ride:
-                StandIn((DeclaredTask)goal.Task!);
+                StandIn(goal.Task!);
                 break;
             case GoalKind.Take:
-                if (Find((DeclaredTask)goal.Task!) is { } at)
+                if (Find(goal.Task!) is { } at)
                 {
                     _player.Body.Position = at;
                 }
 
                 break;
             case GoalKind.Use:
-                Use((DeclaredTask)goal.Task!);
+                Use(goal.Task!);
                 break;
             case GoalKind.Kill:
                 Kill(goal.Task!);
@@ -38,23 +38,23 @@ internal sealed partial class MissionSolver
     }
 
     // Stands the player in the box, its feet at the centre and then its origin, whichever the area counts.
-    private void StandIn(DeclaredTask area)
+    private void StandIn(GameTask area)
     {
-        if (!area.TryGet("Position", out Vector3d centre))
+        if (!area.TryGetScriptValue("Position", out Vector3d centre))
         {
             return;
         }
 
         if (_goalTicks == 0)
         {
-            Note($"area {area.Name} at {Fmt(centre)}, dimensions {(area.TryGetValue("Dimensions", out object? d) ? d : "?")}, criteria '{Text(area, "Criteria")}'");
+            Note($"area {area.Name} at {Fmt(centre)}, dimensions {(area.TryGetScriptValue("Dimensions", out object? d) ? d : "?")}, criteria '{Text(area, "Criteria")}'");
         }
 
         bool byOrigin = (_goalTicks / 30) % 2 == 1;
         _player.Body.Position = byOrigin ? centre - new Vector3d(0, 0, OriginAboveFeet) : centre;
     }
 
-    private Vector3d? Find(DeclaredTask task)
+    private Vector3d? Find(GameTask task)
     {
         if (_mission.GunPickups?.Items.FirstOrDefault(p => ReferenceEquals(p.Task, task)) is { } gun)
         {
@@ -66,12 +66,12 @@ internal sealed partial class MissionSolver
             return item.Position;
         }
 
-        return task.TryGet("Position", out Vector3d position) ? position : null;
+        return task.TryGetScriptValue("Position", out Vector3d position) ? position : null;
     }
 
     // Stands beside the interaction where it can be offered, turns until the scan offers this one, presses the use key on its
     // edge, and stays while it runs.
-    private void Use(DeclaredTask task)
+    private void Use(GameTask task)
     {
         if (_mission.Interactions is not { } interactions || !interactions.TryGet(task, out WorldInteraction? interaction) || interaction is null)
         {
@@ -190,7 +190,7 @@ internal sealed partial class MissionSolver
         {
             Rocket(item.PositionUnits);
         }
-        else if (target is DeclaredTask declared && declared.TryGet("Position", out Vector3d at))
+        else if (target is GameTask declared && ReadByParameters(declared) && declared.TryGetScriptValue("Position", out Vector3d at))
         {
             Rocket(at);
         }

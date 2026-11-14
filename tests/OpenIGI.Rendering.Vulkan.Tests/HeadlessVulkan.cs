@@ -1,5 +1,4 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Rendering.Vulkan;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using Silk.NET.Vulkan;
@@ -112,6 +111,7 @@ internal sealed class HeadlessVulkan : IDisposable
 }
 
 /// <summary>A fact that runs only where a headless Vulkan device can be had.</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class VulkanFactAttribute : FactAttribute
 {
     private static readonly Lazy<string?> Probe = new(

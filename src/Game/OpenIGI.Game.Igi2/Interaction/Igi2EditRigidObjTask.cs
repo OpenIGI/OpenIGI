@@ -19,13 +19,14 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// children's. What else it does is drawing: its draw queue, shadow protection for one noted as a wall, and portal clipping.
 /// </para>
 /// <para>
-/// A guide turns and moves it; its solids go with it, and its children attached to it follow. A level's queue below the normal
+/// A guide turns and moves it; its solids go with it, and what the level put beneath it follows (<see cref="Igi2Attachment"/>):
+/// its figures, its smoke, its sounds, and the props on it, which carry their own in turn. A level's queue below the normal
 /// one is raised to it when read (<c>EditRigidObj_UpdateInternalDataHandler</c>, <c>0x5B4950</c>); the world scene draws the
 /// queue as authored.
 /// </para>
 /// </remarks>
 public sealed partial class Igi2EditRigidObjTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IAttachParent, IIgi2PathRider, IIgi2CameraTarget
+    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IAttachParent, IIgi2PathRider, IIgi2CameraTarget, IIgi2Carried
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditRigidObj";
@@ -35,7 +36,9 @@ public sealed partial class Igi2EditRigidObjTask
     private Vector3d _lastPosition;
     private float[] _lastOrientation = EngineEuler.Rotation(0f, 0f, 0f);
     private int _movedTick = int.MinValue;
+    private bool _isMoving;
     private Igi2Pose? _built;
+    private readonly Igi2Attachment _attachment = new();
     private IReadOnlyList<Igi2RigidObject> _solids = [];
 
     /// <summary>Gets or sets where it is placed.</summary>
@@ -110,6 +113,16 @@ public sealed partial class Igi2EditRigidObjTask
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
+
+        // A tick nothing moved it in starts where the last one left it: drawn between the two, one that has stopped stands still
+        // rather than being drawn over its last step again every tick.
+        if (_isMoving && level.Ticks != _movedTick)
+        {
+            _isMoving = false;
+            _lastPosition = _position;
+            _lastOrientation = [.. _orientation];
+        }
+
         level.RunChildren(this);
     }
 
@@ -118,6 +131,7 @@ public sealed partial class Igi2EditRigidObjTask
     public void Ride(Vector3d position, IReadOnlyList<float> orientation, int tick)
     {
         ArgumentNullException.ThrowIfNull(orientation);
+        _isMoving = true;
         if (tick != _movedTick)
         {
             _movedTick = tick;
@@ -133,9 +147,34 @@ public sealed partial class Igi2EditRigidObjTask
             Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])), Magic);
         }
 
-        foreach (GameTask child in Children)
+        // ModelObj_UpdateAttachments: what it carries follows it.
+        Igi2Attachment.UpdateChildren(this);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>One a guide of its own moves is not held: the guide puts it where it is.</remarks>
+    public bool AttachTo(IAttachParent parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        if (Guide is not null)
         {
-            (child as IIgi2Attached)?.UpdateAttachment();
+            return false;
+        }
+
+        _attachment.Attach(parent, _position, _orientation);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>EditRigidObj_UpdateAttachmentHandler</c> over <c>ModelObj_UpdateAttachment</c> (<c>igi2 0x56CB40</c>): it stands where its
+    /// parent now holds it, in the tick its parent moved, and what it carries follows in its turn.
+    /// </remarks>
+    public void UpdateAttachment()
+    {
+        if (_attachment.TryResolve(out Vector3d position, out float[] frame))
+        {
+            Ride(position, frame, (_attachment.Parent as Igi2EditRigidObjTask)?._movedTick ?? _movedTick);
         }
     }
 

@@ -1,6 +1,5 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Presentation;
@@ -34,9 +33,9 @@ public sealed partial class GameHost
     // Where everyone who casts in a lamp's map stands, in metres: the player and the living soldiers.
     private void LampMapPeople(List<Vector3d> people)
     {
-        if (HostedPlayer is { } player)
+        if (TitlePlayer is { } title)
         {
-            people.Add(WorldScene.ToMetres(player.Body.Position));
+            people.Add(WorldScene.ToMetres(title.Position));
         }
 
         if (_soldiers is { } soldiers)
@@ -90,8 +89,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Submits the level's lamps and the player's flashlight as point lights for the deferred pass.</summary>
-    private void SubmitLocalLights(
-        FrameLoopState state, bool captured, Camera3D eye, Matrix4f unjitteredProjection, bool flashlightShown, Camera3D flashlightBody,
+    private void SubmitLocalLights( bool captured, Camera3D eye, Matrix4f unjitteredProjection, bool flashlightShown, Camera3D flashlightBody,
         MapSceneView? mapScene, SceneTargetDescription sceneTarget)
     {
         // The level's lamp fixtures, submitted as real point lights for the deferred pass that

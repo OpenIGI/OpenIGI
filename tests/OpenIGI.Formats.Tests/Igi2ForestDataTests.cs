@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using Xunit;

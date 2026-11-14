@@ -64,6 +64,14 @@ public static class UiFontLibrary
     /// </remarks>
     public const float MonoPixelHeight = 32f;
 
+    /// <summary>The smallest pixel height a coverage face is rasterised again at, for its small text.</summary>
+    /// <remarks>
+    /// Each coverage face is also rasterised at half its height, and half again, down to this. On a 720-line
+    /// screen the menus' body text is 11 pixels and their captions 7; drawn from the 48 and 32 pixel atlases
+    /// alone that is a fourfold minification, which is where the stems go.
+    /// </remarks>
+    public const float SmallestReduction = 12f;
+
     /// <summary>Gets the directory the font files are read from.</summary>
     public static string FontsDirectory => Path.Combine(AppContext.BaseDirectory, "Assets", "fonts");
 
@@ -123,6 +131,18 @@ public static class UiFontLibrary
         byte[] data = File.ReadAllBytes(path);
         FontAtlasData atlas = FontAtlasCache.LoadOrBuild(
             CacheDirectory, data, pixelHeight, kind, codepoints ?? FontAtlasBuilder.Extended);
-        return UiFont.Upload(device, atlas);
+        UiFont font = UiFont.Upload(device, atlas);
+
+        // A distance field holds its edge at any size; a coverage atlas does not, so it gets smaller ones.
+        if (kind == FontAtlasKind.Coverage)
+        {
+            for (float height = pixelHeight * 0.5f; height >= SmallestReduction; height *= 0.5f)
+            {
+                font.AddReduction(UiFont.Upload(device, FontAtlasCache.LoadOrBuild(
+                    CacheDirectory, data, height, kind, codepoints ?? FontAtlasBuilder.Extended)));
+            }
+        }
+
+        return font;
     }
 }

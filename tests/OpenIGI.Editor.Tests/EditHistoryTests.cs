@@ -154,6 +154,7 @@ public sealed class EditHistoryTests
 
         while (history.Undo())
         {
+            // The loop's condition does the work.
         }
 
         Assert.Equal(original, document.ToImage());

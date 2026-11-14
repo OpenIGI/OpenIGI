@@ -207,8 +207,8 @@ public sealed record MatchHud
             int second = first == TeamRoster.Good ? TeamRoster.Bad : TeamRoster.Good;
             hud = hud with
             {
-                Left = Strip(first, board, lines, own, report),
-                Right = Strip(second, board, lines, own, report),
+                Left = Strip(first, board, lines, own),
+                Right = Strip(second, board, lines, own),
                 Role = report.Attackers >= 0 && ownTeam >= 0 ? (ownTeam == report.Attackers ? "ATTACK" : "DEFEND") : null,
                 Teams = TeamPick.Of(lines, ownTeam),
             };
@@ -278,7 +278,7 @@ public sealed record MatchHud
     }
 
 
-    private static TeamStrip Strip(int team, Scoreboard? board, ScoreboardLine[] lines, ScoreboardLine? own, ModeReport report)
+    private static TeamStrip Strip(int team, Scoreboard? board, ScoreboardLine[] lines, ScoreboardLine? own)
     {
         int score = board is null ? 0 : team == TeamRoster.Good ? board.GoodScore : board.BadScore;
         bool[] alive = [.. lines.Where(l => l.Team == team).OrderBy(l => own is { } me && l.Slot == me.Slot ? 0 : 1).ThenBy(l => l.Slot).Select(l => l.IsAlive)];

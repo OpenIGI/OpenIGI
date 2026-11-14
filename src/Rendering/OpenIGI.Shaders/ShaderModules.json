@@ -158,7 +158,8 @@
             "OPENIGI_UPSCALE_GROUP": "16"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Glsl"
           ]
         },
         {
@@ -593,6 +594,10 @@
     {
       "id": "ScopeGlint",
       "source": "Ui/ScopeGlint.slang"
+    },
+    {
+      "id": "MapFeed",
+      "source": "Ui/MapFeed.slang"
     },
     {
       "id": "Silhouette",

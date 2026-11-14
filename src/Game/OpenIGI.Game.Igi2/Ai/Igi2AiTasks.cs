@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
@@ -6,6 +7,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 
@@ -20,7 +22,7 @@ namespace OpenIGI.Game.Igi2.Ai;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget,
-    IHumanAiEventTarget
+    IHumanAiEventTarget, IHostedHuman
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
@@ -57,13 +59,20 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IW
     public Igi2HumanSoldier? Body { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>A claimed soldier is given no body (<see cref="Soldiers.Igi2Soldiers.Spawn"/>): the other game's stands for it.</remarks>
+    public GameTitle? Driver { get; set; }
+
+    /// <inheritdoc/>
+    public IAiHuman? StandIn { get; set; }
+
+    /// <inheritdoc/>
     public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Body?.EvaluateWeaponCollision(query) ?? false;
 
     /// <inheritdoc/>
-    public void WeaponHit(in WeaponHit hit) => ((IWeaponHitTarget?)Body)?.WeaponHit(hit);
+    public void WeaponHit(in WeaponHit hit) => ((IWeaponHitTarget?)Body ?? StandIn as IWeaponHitTarget)?.WeaponHit(hit);
 
     /// <inheritdoc/>
-    public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body)?.ExplosionHit(hit);
+    public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body ?? StandIn as IExplosionHitTarget)?.ExplosionHit(hit);
 
     /// <inheritdoc/>
     /// <remarks>Another game's broadcast, read as this game's own would be raised (<see cref="Igi2AiEvent.FromShared"/>) and given to the soldier's mind.</remarks>
@@ -310,8 +319,38 @@ public sealed partial class Igi2PatrolPathTask : Igi2Task
     [ScriptParam(ScriptParamType.Int32, "Graph ID")]
     public int GraphId { get; set; }
 
+    /// <summary>
+    /// The ticks a patrol's animation pauses its soldier for where the other game's animations name nothing of this one's: two
+    /// seconds, about what a retail one takes.
+    /// </summary>
+    public const int AnimationPauseTicks = 60;
+
     /// <summary>Gets the commands, in the order they run.</summary>
     public IReadOnlyList<Igi2PatrolPathCommandTask> Commands => [.. Children.OfType<Igi2PatrolPathCommandTask>()];
+
+    /// <summary>The commands in terms both games share, for another game's soldier to walk the path by.</summary>
+    /// <returns>Each command its kind and operand, in order.</returns>
+    /// <remarks>
+    /// The two games number the commands they share alike and read a command's node, delay or animation from its parameter; the
+    /// inverse of <see cref="Systems.Igi2GuestLevel.AddPatrolPath"/>. An animation is this game's own number, which names nothing
+    /// of the other game's: it is a pause of about its length instead (<see cref="AnimationPauseTicks"/>). The commands only this
+    /// game has -- waiting for a person or an expression, an upper body's animation -- are left out.
+    /// </remarks>
+    public IEnumerable<AiPatrolCommand> SharedCommands()
+    {
+        foreach (Igi2PatrolPathCommandTask step in Commands)
+        {
+            switch (step.Command)
+            {
+                case Igi2PatrolCommand.Animation:
+                    yield return new AiPatrolCommand(AiPatrolCommandKind.Delay, AnimationPauseTicks);
+                    break;
+                case > Igi2PatrolCommand.None and <= Igi2PatrolCommand.SetSpeed:
+                    yield return new AiPatrolCommand((AiPatrolCommandKind)step.CommandValue, step.Parameter);
+                    break;
+            }
+        }
+    }
 
     /// <summary>Finds a command's position without allocating a command snapshot and a second list.</summary>
     /// <param name="command">The command to find, or null for none.</param>

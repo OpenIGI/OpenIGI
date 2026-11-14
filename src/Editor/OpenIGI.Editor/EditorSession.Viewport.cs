@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Editor.Panels;
 using OpenIGI.Host.Editor;
 using OpenIGI.UI.Editor.Actions;
 using OpenIGI.UI.Editor.Widgets;

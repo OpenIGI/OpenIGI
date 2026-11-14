@@ -1,5 +1,3 @@
-using OpenIGI.Host.Configuration;
-using OpenIGI.Host;
 using System.Runtime.CompilerServices;
 
 // The host's types were the desktop executable's internals and stay internal: they were never public

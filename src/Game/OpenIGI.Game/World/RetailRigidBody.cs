@@ -753,6 +753,48 @@ public abstract class RetailRigidBody
         return ((X87)ModelRadius * mm).F;
     }
 
+    /// <summary>How a body is moving: where it is, how it is turned, and its linear and angular motion.</summary>
+    /// <param name="Position">Where it is, world units.</param>
+    /// <param name="Orientation">How it is turned, by rows.</param>
+    /// <param name="Velocity">Its velocity.</param>
+    /// <param name="Momentum">Its angular momentum.</param>
+    /// <param name="Spin">Its angular velocity.</param>
+    public readonly record struct Motion(Vector3d Position, Matrix3f Orientation, Vector3f Velocity, Vector3f Momentum, Vector3f Spin);
+
+    /// <summary>Gets how the body is moving now, for a save game to keep.</summary>
+    public Motion CurrentMotion => new(
+        new Vector3d(Position[0], Position[1], Position[2]),
+        new Matrix3f(M[0], M[1], M[2], M[3], M[4], M[5], M[6], M[7], M[8]),
+        new Vector3f(Velocity[0], Velocity[1], Velocity[2]),
+        new Vector3f(Momentum[0], Momentum[1], Momentum[2]),
+        new Vector3f(AngularVelocity[0], AngularVelocity[1], AngularVelocity[2]));
+
+    /// <summary>
+    /// Puts the body where a save game kept it, moving as it moved: its place and its turn, with the step before them the same
+    /// so nothing is swept between two poses that never followed each other, its velocity and its spin; the forces waiting on
+    /// it go, and it is awake. <b>Not retail</b>, where Project I.G.I. kept no save games.
+    /// </summary>
+    /// <param name="motion">How it was moving.</param>
+    public void RestoreMotion(in Motion motion)
+    {
+        Commit(motion.Position.X, motion.Position.Y, motion.Position.Z, Radius);
+        Matrix3f o = motion.Orientation;
+        float[] rows = [o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33];
+        Array.Copy(rows, M, 9);
+        Array.Copy(rows, PreviousM, 9);
+        MatrixCounter = 0;
+        PreviousMatrixCounter = 0;
+        Array.Copy(Position, PreviousPosition, 3);
+        (Velocity[0], Velocity[1], Velocity[2]) = (motion.Velocity.X, motion.Velocity.Y, motion.Velocity.Z);
+        (Momentum[0], Momentum[1], Momentum[2]) = (motion.Momentum.X, motion.Momentum.Y, motion.Momentum.Z);
+        (AngularVelocity[0], AngularVelocity[1], AngularVelocity[2]) = (motion.Spin.X, motion.Spin.Y, motion.Spin.Z);
+        Forces.Clear();
+        PushedForces.Clear();
+        Array.Clear(Displacement);
+        Wake = true;
+        UpdateSpeed();
+    }
+
     /// <summary>Moves the car -- <c>0x4C6940</c> (the broad-phase relink is the world's business).</summary>
     protected void Commit(double x, double y, double z, float radius)
     {

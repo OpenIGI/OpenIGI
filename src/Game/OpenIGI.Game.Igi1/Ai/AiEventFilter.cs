@@ -1,5 +1,3 @@
-using OpenIGI.Game.Ai;
-
 namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>

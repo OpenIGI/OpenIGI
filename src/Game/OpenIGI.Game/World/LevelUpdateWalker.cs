@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Level;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.World;
 
@@ -37,6 +38,38 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
 
     /// <summary>Gets or sets a container whose run state is held rather than re-evaluated this tick.</summary>
     public Func<ConditionalContainerTask, bool>? HoldContainer { get; set; }
+
+    /// <summary>Gets or sets the mission's variables and natives, which the level's expressions are evaluated against.</summary>
+    public LevelExpressionRuntime? Expressions { get; set; }
+
+    /// <inheritdoc/>
+    public override bool EvaluatesExpressions => Expressions is not null;
+
+    /// <inheritdoc/>
+    public override LevelExpression Compile(string? source, GameTask owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        return LevelExpressionRuntime.Create(source, owner);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The walk was given no <see cref="Expressions"/>.</exception>
+    public override double Evaluate(LevelExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        LevelExpressionRuntime runtime = Expressions
+            ?? throw new InvalidOperationException("The level's walk was given no variables to evaluate an expression against.");
+        return runtime.Evaluate(expression);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The walk was given no <see cref="Expressions"/>.</exception>
+    public override double EvaluateLine(string source)
+    {
+        LevelExpressionRuntime runtime = Expressions
+            ?? throw new InvalidOperationException("The level's walk was given no variables to evaluate a line of script against.");
+        return runtime.EvaluateLine(source);
+    }
 
     /// <summary>Registers what a task does when its conditional container takes it out of the world.</summary>
     /// <param name="task">The task.</param>
@@ -82,17 +115,51 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
     void IConditionalContainerRules.TakeChildrenOutOfWorld(ConditionalContainerTask container) => Deactivate(container);
 
     /// <inheritdoc/>
-    /// <remarks><c>Static</c> and <c>Idle</c> do nothing; anything else walks its children.</remarks>
+    /// <remarks>
+    /// <c>Static</c> and <c>Idle</c> do nothing; anything else walks its children. <c>Dynamic</c> (<c>0x4F0660</c>) walks its
+    /// children, and what the level made while it runs is among them, added at the end: <see cref="DynamicTail"/>.
+    /// </remarks>
     protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (task.Type.Name is "Static" or "Idle")
+        if (task is StaticTask or IdleTask)
         {
             return;
         }
 
-        RunChildren(task);
+        if (task is not DynamicTask)
+        {
+            RunChildren(task);
+            return;
+        }
+
+        // Dynamic's children are the level's objects and, among them, the tasks made under it while the level was built: a
+        // gun's GunShot task is made as the gun is (Gun's create handler, 0x478540 -> Task_New on Level_GetDynamic, which
+        // links at the tail), so it stands after the child of Dynamic its gun was made under, and before the next.
+        GameTask? child = task.FirstChild;
+        while (child is not null)
+        {
+            GameTask? next = child.NextSibling;
+            Run(child);
+            AfterDynamicChild?.Invoke(child);
+            child = next;
+        }
+
+        DynamicTail?.Invoke();
     }
+
+    /// <summary>
+    /// Gets or sets the run of the tasks made under <c>Dynamic</c> while one of its children was built -- the
+    /// <c>GunShot</c> tasks of the guns under that child -- which the walk reaches as it leaves the child.
+    /// </summary>
+    public Action<GameTask>? AfterDynamicChild { get; set; }
+
+    /// <summary>
+    /// Gets or sets the run of the tasks the level made while it runs -- what was thrown and fired, <c>Level_GetDynamic</c>'s
+    /// children (<c>0x4F0EE0</c>) -- which the walk reaches after the <c>Dynamic</c> task's own children, where the original
+    /// keeps them.
+    /// </summary>
+    public Action? DynamicTail { get; set; }
 
     /// <inheritdoc/>
     /// <remarks>I.G.I.'s walk reaches every linked child, deleted or not.</remarks>

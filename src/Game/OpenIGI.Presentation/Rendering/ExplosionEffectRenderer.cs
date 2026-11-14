@@ -31,8 +31,6 @@ public sealed class ExplosionEffectRenderer : IDisposable
 
     /// <summary>Over how many metres past the cut a card fades up to full, to avoid a hard pop.</summary>
     public const float NearFadeMetres = 2f;
-
-    private const float UnitsPerMetre = (float)WorldScene.UnitsPerMetre;
     private const int MaximumVertices = MaximumPuffs * 4;
 
     // Fully emissive so the forward shader treats the fireball as light, not a lit surface.

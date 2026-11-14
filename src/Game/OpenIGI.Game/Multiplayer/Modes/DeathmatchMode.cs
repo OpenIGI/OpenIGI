@@ -252,6 +252,12 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
         bool tied = true;
         foreach ((int slot, MatchPlayer player) in match.Players)
         {
+            // One whose line dropped is kept under a negative slot: not playing, it neither leads nor ties the lead.
+            if (slot < 0)
+            {
+                continue;
+            }
+
             if (player.Kills > best)
             {
                 (leader, best, tied) = (slot, player.Kills, false);

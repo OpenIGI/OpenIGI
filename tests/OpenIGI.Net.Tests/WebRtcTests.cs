@@ -7,6 +7,7 @@ using Xunit;
 namespace OpenIGI.Net.Tests;
 
 /// <summary>Skipped where libdatachannel isn't built (tools/native/build-datachannel.ps1).</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class DataChannelFactAttribute : FactAttribute
 {
     public DataChannelFactAttribute()
@@ -19,6 +20,7 @@ public sealed class DataChannelFactAttribute : FactAttribute
 }
 
 /// <summary>Through the live master server and relay: run only when OPENIGI_LIVE_ROOMS=1, never in the suite.</summary>
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class LiveRoomFactAttribute : FactAttribute
 {
     public LiveRoomFactAttribute()
@@ -123,11 +125,13 @@ public sealed class WebRtcTests
             server.Update(now);
             while (server.TryReceive(out _))
             {
+                // The loop's condition does the work.
             }
 
             client.Update(now);
             while (client.TryReceive(out _))
             {
+                // The loop's condition does the work.
             }
 
             client.Flush(now);

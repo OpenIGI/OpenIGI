@@ -12,7 +12,6 @@ using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -47,7 +46,7 @@ public sealed class LevelThreeOutroFidelityTests
         Assert.True(loop.Variables.TryWrite("EditVariable_3071.nValue", QvmValue.FromInt32(1)));
         Assert.True(loop.Variables.TryWrite("EditVariable_3069.nValue", QvmValue.FromInt32(1)));
 
-        Vector3d extractionCentre = Position(Assert.IsType<DeclaredTask>(root.Tree.FromId(739)));
+        Vector3d extractionCentre = Position(Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(739)));
         Step(objectives, runtime, extractionCentre);
         Assert.Equal(0, projectileCleanupCalls);
         // ConditionalContainer_3445 (CutScene_700.isRun, whose start runs Game_CutsceneDelete) precedes 3334, the
@@ -92,7 +91,7 @@ public sealed class LevelThreeOutroFidelityTests
         CutSceneTask scene = Assert.IsType<CutSceneTask>(root.Tree.FromId(700));
         ConditionalContainerTask hangar = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3445));
         ConditionalContainerTask staticPlane = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3446));
-        DeclaredTask takeoffPlane = Assert.IsType<DeclaredTask>(root.Tree.FromId(601));
+        DeclaredTask takeoffPlane = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(601));
         Assert.Equal(700, runtime.ActiveScene?.Id);
         Assert.True(scene.IsRun);
         Assert.False(scene.IsFinished);
@@ -166,7 +165,7 @@ public sealed class LevelThreeOutroFidelityTests
         // Leave the opening cinematic through the same native break edge used by the desktop host,
         // then satisfy Objective3's authored outro gate.
         runtime.RequestBreak();
-        objectives.TickLevelState();
+        objectives.StepLevelState();
         runtime.Tick();
         runtime.FinishExpressionTick();
         Assert.True(loop.Variables.TryWrite("EditVariable_3068.nValue", QvmValue.FromInt32(1)));
@@ -223,14 +222,14 @@ public sealed class LevelThreeOutroFidelityTests
         CutsceneRuntime runtime,
         Vector3d? playerPosition = null)
     {
-        objectives.TickLevelState(playerPosition);
+        objectives.StepLevelState(playerPosition);
         runtime.Tick();
-        objectives.TickAfterLevelState();
+        objectives.StepAfterLevelState();
         runtime.FinishExpressionTick();
     }
 
-    private static Vector3d Position(DeclaredTask task) =>
-        task.TryGetValue("Position", out object? value) && value is Vector3d position ? position : default;
+    private static Vector3d Position(GameTask task) =>
+        task.TryGetScriptValue("Position", out object? value) && value is Vector3d position ? position : default;
 
     private static (GameLoop Loop, LevelTask Root) LoadLevelThree()
     {
@@ -241,7 +240,7 @@ public sealed class LevelThreeOutroFidelityTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

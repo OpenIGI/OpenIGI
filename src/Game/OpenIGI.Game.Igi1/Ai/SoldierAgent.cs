@@ -76,6 +76,12 @@ public sealed class SoldierAgent(SoldierView view, Vector3d position)
     /// <summary>Ticks left before the weapon's cadence lets another round out.</summary>
     public int FireCooldown { get; set; }
 
+    /// <summary>
+    /// Gets or sets the tick the cooldown was last counted down on by the soldier's <c>Gun</c> task, so the soldier's update of
+    /// the same tick does not count it again; -1 before any.
+    /// </summary>
+    internal int CooldownCountedTick { get; set; } = -1;
+
     /// <summary>Rounds fired since the trigger went down — the gun's <c>+320</c> that picks the spread.</summary>
     public int RoundsThisPull { get; set; }
 

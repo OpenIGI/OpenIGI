@@ -1,7 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Engine.Audio;

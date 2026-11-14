@@ -188,19 +188,12 @@ internal sealed partial class LauncherModel
             : null;
     }
 
-    // The mod profile beside the mods, and where each game an enabled mod reads is installed: the game finds another
-    // game's data by its variable, and the launcher knows where the player keeps it.
+    // The mod profile beside the mods. Where another game a mod reads is installed is already in the environment: every
+    // game the launcher can find is (GameEnvironment).
     private void AddModEnvironment(Dictionary<string, string> environment, GameTitle title)
     {
         string path = Path.Combine(Settings.Library.Trim(), ModsFolder, ModProfileFile);
         ModProfile profile = BuildModProfile();
-        foreach (string id in ModLoadOrder.GamesRead(profile, title.Id, ModReads))
-        {
-            if (Title(id) is { } other && InstalledAt(other) is { } folder)
-            {
-                environment[other.GamePathVariable] = folder;
-            }
-        }
 
         try
         {
@@ -214,12 +207,6 @@ internal sealed partial class LauncherModel
             Changed();
         }
     }
-
-    // The other games a mod reads, as its listing or its local manifest says.
-    private IReadOnlyList<string> ModReads(string id) =>
-        _localMods.Find(mod => mod.Id == id)?.Manifest.RequiresTitleData
-        ?? Find(id)?.Pack.Mod?.RequiresTitleData
-        ?? [];
 
     private static GameTitle? Title(string id) =>
         GameTitle.All.FirstOrDefault(title => string.Equals(title.Id, id, StringComparison.OrdinalIgnoreCase));

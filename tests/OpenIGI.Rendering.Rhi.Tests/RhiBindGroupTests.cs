@@ -1,4 +1,3 @@
-using OpenIGI.Rendering.Rhi;
 using Xunit;
 
 namespace OpenIGI.Rendering.Rhi.Tests;

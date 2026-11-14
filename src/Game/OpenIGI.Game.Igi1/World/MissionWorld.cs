@@ -3,7 +3,6 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -14,10 +13,115 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s played mission: the shared mission state, and the player's rig, the soldiers' simulation, the guards'
 /// rounds, the ambience and the title's own tables.
 /// </summary>
-public sealed class MissionWorld : MissionState
+public sealed class MissionWorld : MissionState, IInspectableMission
 {
     /// <summary>Initializes a new instance of the <see cref="MissionWorld"/> class.</summary>
     public MissionWorld() => _mineWaits = new MineFieldWaits(this);
+
+    /// <inheritdoc/>
+    IReadOnlyList<PlacedDoor>? IInspectableMission.Doors => Doors?.Doors;
+
+    /// <inheritdoc/>
+    IReadOnlyList<PlacedElevator>? IInspectableMission.Elevators => Elevators?.Elevators;
+
+    /// <inheritdoc/>
+    IReadOnlyList<WorldInteraction>? IInspectableMission.Interactions => Interactions?.Items;
+
+    /// <inheritdoc/>
+    IReadOnlyList<GunPickup>? IInspectableMission.GunPickups => GunPickups?.Items;
+
+    /// <inheritdoc/>
+    IReadOnlyList<GenericPickup>? IInspectableMission.GenericPickups => GenericPickups?.Items;
+
+    /// <inheritdoc/>
+    IReadOnlyList<AlarmSpeaker>? IInspectableMission.AlarmSpeakers => AlarmSpeakers?.Speakers;
+
+    /// <inheritdoc/>
+    IReadOnlyList<SecurityCamera>? IInspectableMission.SecurityCameras => SecurityCameras?.Cameras;
+
+    /// <summary>Gets or sets the doors.</summary>
+    public DoorRegistry? Doors { get; set; }
+
+    /// <summary>Gets or sets the elevators.</summary>
+    public ElevatorRegistry? Elevators { get; set; }
+
+    /// <summary>Gets or sets what the player and the soldiers use: switches, terminals, ladders and the rest.</summary>
+    public WorldInteractionRegistry? Interactions { get; set; }
+
+    /// <summary>Gets or sets the weapons lying in the level.</summary>
+    public GunPickupRegistry? GunPickups { get; set; }
+
+    /// <summary>Gets or sets the level's other pickups.</summary>
+    public GenericPickupRegistry? GenericPickups { get; set; }
+
+    /// <summary>Gets or sets the alarm speakers.</summary>
+    public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
+
+    /// <summary>Gets or sets what can be destroyed.</summary>
+    public DestructibleObjectRegistry? Destructibles { get; set; }
+
+    /// <summary>Gets or sets the security cameras.</summary>
+    public SecurityCameraRegistry? SecurityCameras { get; set; }
+
+    /// <summary>Gets or sets the radar dishes and the authored rotating tasks.</summary>
+    public RotatingObjectRegistry? RotatingObjects { get; set; }
+
+    /// <summary>Gets or sets the cutscene runtime, which also walks the level each tick.</summary>
+    public CutsceneRuntime? Cutscenes { get; set; }
+
+    /// <summary>Gets the level's expressions, which everything built for the level evaluates through; none before the cut-scenes are built.</summary>
+    public LevelExpressionRuntime? LevelExpressions => Cutscenes?.Expressions;
+
+    /// <inheritdoc/>
+    public override LevelExpressionRuntime? Expressions => LevelExpressions;
+
+    /// <summary>Gets or sets the objective runtime.</summary>
+    public MissionObjectiveRuntime? Objectives { get; set; }
+
+    /// <inheritdoc/>
+    public override IPlacementObjects Placements => _placements ??= new Igi1PlacementObjects(this);
+
+    private Igi1PlacementObjects? _placements;
+
+    /// <inheritdoc/>
+    public override IPlacementVariant? PlacementVariants => Interactions;
+
+    /// <inheritdoc/>
+    public override OpenIGI.Game.Hosting.IMissionCutscenes? Scenes => Cutscenes;
+
+    /// <inheritdoc/>
+    public override OpenIGI.Game.Hosting.IMissionObjectives? Progress => Objectives;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<GunPickup>? LyingGuns => GunPickups?.Items;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<SecurityCamera>? StatusCameras => SecurityCameras?.Cameras;
+
+    /// <inheritdoc/>
+    /// <remarks>An alarm light's turning reflector throws its red flare at the eye (<c>0x439F10</c>).</remarks>
+    public override IReadOnlyList<WorldGlow> AlarmFlares(Vector3d eyeUnits, float tickFraction) =>
+        AlarmSpeakers is { Reflectors.Count: > 0 } lights ? lights.ReflectorFlares(eyeUnits, tickFraction) : [];
+
+    /// <inheritdoc/>
+    public override CutsceneFrame? CutsceneFrameShown => IntroSkipPending ? null : Cutscenes?.Frame;
+
+    /// <inheritdoc/>
+    public override void ReleaseAlarmsAndDestructibles()
+    {
+        AlarmSpeakers = null;
+        Destructibles = null;
+    }
+
+    /// <inheritdoc/>
+    public override void ReleaseRuntimes()
+    {
+        Objectives?.Release();
+        Objectives = null;
+        Cutscenes = null;
+        SecurityCameras = null;
+        base.ReleaseRuntimes();
+    }
 
     /// <summary>Gets or sets the level's authored ambience boxes.</summary>
     public AmbientAreaRegistry? Ambience { get; set; }
@@ -28,8 +132,11 @@ public sealed class MissionWorld : MissionState
     /// </summary>
     public Vector3d? AmbienceListener { get; set; }
 
-    /// <summary>Gets or sets the damage factor an electric fence deals the player each tick it is touched.</summary>
-    public float ElectricFenceDose { get; set; } = ElectricFenceContact.DefaultDamageFactor;
+    /// <summary>Gets the player's life: its health, its death, and what a hit leaves on the screen.</summary>
+    public Igi1PlayerLife PlayerLife { get; } = new();
+
+    /// <inheritdoc/>
+    public override bool IsPlayerDead { get => PlayerLife.IsDead; set => PlayerLife.IsDead = value; }
 
     /// <summary>Gets or sets what the soldiers read the player as, asked each tick.</summary>
     public Func<SoldierEnemy>? CurrentEnemy { get; set; }
@@ -44,11 +151,16 @@ public sealed class MissionWorld : MissionState
     public Igi1SmokePlumes? SmokePlumes { get; set; }
 
     /// <summary>Gets or sets the level's minefields.</summary>
-    public IReadOnlyList<Igi1MineField> MineFields { get; set; } = [];
+    public IReadOnlyList<Igi1MineFieldTask> MineFields { get; set; } = [];
 
     /// <inheritdoc/>
     /// <remarks>The shared parts, then the panes of glass the cars meet and the level's own minefields' waits.</remarks>
-    protected override IEnumerable<ILevelReset?> LevelParts => [.. base.LevelParts, RetailWorld as ILevelReset, _mineWaits];
+    /// <remarks>Lifts before doors, so a door riding a car is re-placed against the car where it stands again.</remarks>
+    protected override IEnumerable<ILevelReset?> LevelParts =>
+    [
+        Elevators, Doors, Interactions, GunPickups, GenericPickups, AlarmSpeakers, Destructibles, SecurityCameras, RotatingObjects,
+        Objectives, RetailWorld as ILevelReset, _mineWaits,
+    ];
 
     private readonly MineFieldWaits _mineWaits;
 
@@ -57,13 +169,13 @@ public sealed class MissionWorld : MissionState
     {
         private int[] _start = [];
 
-        public void MarkLevelStart() => _start = [.. world.MineFields.Select(static f => f.Pause.Ticks)];
+        public void MarkLevelStart() => _start = [.. world.MineFields.Select(static f => f.Pause)];
 
         public void ResetToLevelStart(ObjectCollisionIndex? solids)
         {
             for (int i = 0; i < world.MineFields.Count && i < _start.Length; i++)
             {
-                world.MineFields[i].Pause.Ticks = _start[i];
+                world.MineFields[i].Pause = _start[i];
             }
         }
     }
@@ -96,6 +208,12 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the id of the mission this level is.</summary>
     public int MissionId { get; set; }
 
+    /// <summary>Gets or sets the saves made this mission, each of which uses one of the charges its difficulty allows.</summary>
+    public int SavesUsed { get; set; }
+
+    /// <summary>Gets or sets the games loaded this mission.</summary>
+    public int GameLoads { get; set; }
+
     /// <summary>Gets the other players a co-op client's level shows, as the server's snapshots have them.</summary>
     public List<Multiplayer.Igi1NetworkPlayer> ShownPartners { get; } = [];
 
@@ -127,6 +245,38 @@ public sealed class MissionWorld : MissionState
 
     /// <summary>Gets or sets what a co-op server does once a partner has run its tick: shows where its rounds landed.</summary>
     public Action<Multiplayer.Igi1NetworkPlayer>? PartnerRan { get; set; }
+
+    /// <summary>
+    /// Gets what mods run on each tick the player updates, just before the update: the place for a move of a mod's own to
+    /// advance, with the player's controls still to be read. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    /// <remarks>Not run on a tick the player does not update: dead, in a cutscene, at the map computer.</remarks>
+    public List<Action> BeforePlayerUpdate { get; } = [];
+
+    /// <summary>
+    /// Gets what mods run at the end of every tick, once the level walk is done, whether the player updated or not. Empty
+    /// unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    /// <remarks>
+    /// Not the <c>LevelTicked</c> event: an event's subscribers only read, and the game plays the same without them, where
+    /// what runs here may change the level, such as giving the player his controls back.
+    /// </remarks>
+    public List<Action> TickEnded { get; } = [];
+
+    /// <summary>
+    /// Gets where mods offer the player a prompt: each is asked on every tick the player updates, and the first to offer one
+    /// is shown, when the game has none of its own there. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    public List<Func<PromptOffer?>> PromptOffers { get; } = [];
+
+    /// <summary>Gets or sets the prompt a mod offers this tick, the one drawn; <see langword="null"/> for none.</summary>
+    public PromptOffer? OfferedPrompt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the player's view as a mod has taken it, or <see langword="null"/> while the player's own eye has it.
+    /// <b>Not retail.</b>
+    /// </summary>
+    public ViewTakeover? ViewTakeover { get; set; }
 
     /// <summary>Gets or sets a value indicating whether a co-op session's partners have run this tick.</summary>
     public bool PartnersTicked { get; set; }
@@ -171,7 +321,7 @@ public sealed class MissionWorld : MissionState
         bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
         {
             hit = default;
-            if (PlayerHealth.IsDead)
+            if (PlayerLife.Health.IsDead)
             {
                 return false;
             }
@@ -210,9 +360,6 @@ public sealed class MissionWorld : MissionState
         VehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
 
-    /// <summary>Gets or sets the white-out a flashbang raises, which the screen draws.</summary>
-    public FlashbangScreenFlash FlashbangFlash { get; set; } = null!;
-
     /// <inheritdoc/>
     public override void AdoptTitleServices(IServiceCatalog services)
     {
@@ -225,16 +372,24 @@ public sealed class MissionWorld : MissionState
     public override void ResetPlayerLife(int difficulty)
     {
         base.ResetPlayerLife(difficulty);
-        ElectricFenceDose = ElectricFenceContact.DefaultDamageFactor;
-        FlashbangFlash = new();
+        PlayerLife.Reset(difficulty);
     }
 
     /// <inheritdoc/>
     public override void StartFreshLife()
     {
         base.StartFreshLife();
-        FlashbangFlash = new();
+        PlayerLife.StartFresh(PlayerDifficulty);
     }
+
+    /// <inheritdoc/>
+    public override bool HasOwnPlayer => Player is not null;
+
+    /// <inheritdoc/>
+    public override MissileSimulation? PlayerMissiles => Player?.Missiles;
+
+    /// <inheritdoc/>
+    public override void SetPlayerComputerOpen(bool open) => Player?.SetMapComputerOpen(open);
 
     /// <inheritdoc/>
     public override void ForgetPlayer() => Player = null;
@@ -271,6 +426,12 @@ public sealed class MissionWorld : MissionState
         SoldierPresenter = null;
         Player = null;
         PlayerTask = null;
+        Destructibles = null;
+        Doors = null;
+        Elevators = null;
+        Interactions = null;
+        GunPickups = null;
+        GenericPickups = null;
         base.ReleaseWorld();
     }
 }

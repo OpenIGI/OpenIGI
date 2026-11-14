@@ -72,6 +72,7 @@ public sealed class SimulationTraceTests : IDisposable
         }
         catch (IOException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 

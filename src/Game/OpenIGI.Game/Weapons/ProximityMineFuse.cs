@@ -79,6 +79,31 @@ public sealed class ProximityMineFuse<TFpu>
 
     private bool _armed;
 
+    /// <summary>Puts the fuse back as a save game kept it.</summary>
+    /// <param name="armTicks">The ticks before it arms.</param>
+    /// <param name="countdownTicks">The ticks before it explodes, once set off.</param>
+    /// <param name="armed">Whether it is armed.</param>
+    /// <param name="triggered">Whether it has been set off.</param>
+    public void Restore(int armTicks, int countdownTicks, bool armed, bool triggered)
+    {
+        ArmTicks = armTicks;
+        CountdownTicks = countdownTicks;
+        _armed = armed;
+        IsTriggered = triggered;
+    }
+
+    /// <summary>Passes through a save how far the fuse has run: its two counts, and whether it is armed, near someone and set off.</summary>
+    /// <param name="exchange">The exchange.</param>
+    public void Exchange(Saves.StateExchange exchange)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+        ArmTicks = exchange.Int(ArmTicks);
+        CountdownTicks = exchange.Int(CountdownTicks);
+        _armed = exchange.Bool(_armed);
+        _near = exchange.Bool(_near);
+        IsTriggered = exchange.Bool(IsTriggered);
+    }
+
     /// <summary>
     /// A human's place, told by its run (<c>Human_SendPosition</c>, 0x463080): within reach and in front of the mine's
     /// face (its frame's second column) it is near, and near an armed mine not yet set off sets it off.

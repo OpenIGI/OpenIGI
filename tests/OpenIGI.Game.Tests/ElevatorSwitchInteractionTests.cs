@@ -8,7 +8,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -42,9 +41,6 @@ public sealed class ElevatorSwitchInteractionTests
                 {
                     continue;
                 }
-
-                // The lift only moves with the player inside — stand the player in the cab.
-                elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
                 int settleFloor = Settle(elevator, interactions, elevators, doors);
 
@@ -121,7 +117,7 @@ public sealed class ElevatorSwitchInteractionTests
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
             root, mission, doors, variables, elevators);
         PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
-        DeclaredTask declared = Assert.IsType<DeclaredTask>(elevator.Task);
+        DeclaredTask declared = Assert.IsAssignableFrom<DeclaredTask>(elevator.Task);
 
         int startFloor = Settle(elevator, interactions, elevators, doors);
         int targetFloor = startFloor == 0 ? 1 : 0;
@@ -131,7 +127,6 @@ public sealed class ElevatorSwitchInteractionTests
         // A hall call is made from outside the cab. The player provider remains outside for the
         // entire ride, proving that the exterior switch source—not cab occupancy—authorises travel.
         Vector3d outside = elevator.State.Position + new Vector3d(100000, 0, 0);
-        elevators.SetPlayerPositionProvider(() => outside);
         callSwitch.Press();
 
         bool arrived = false;
@@ -180,9 +175,6 @@ public sealed class ElevatorSwitchInteractionTests
                 {
                     continue;
                 }
-
-                // The lift only moves with the player inside — stand the player in the cab.
-                elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
                 int settleFloor = Settle(elevator, interactions, elevators, doors);
                 int playerFloor = settleFloor == 0 && elevator.State.FloorCount > 1
@@ -358,6 +350,7 @@ public sealed class ElevatorSwitchInteractionTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

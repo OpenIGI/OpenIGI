@@ -38,7 +38,8 @@
 
   "missions": {
     "$comment": [
-      "A bare key is Project I.G.I.'s mission; the sequel's are keyed igi2:<n> and none is authored yet.",
+      "A bare key is Project I.G.I.'s mission; the sequel's are keyed igi2:<n>, where n is the mission's own id:",
+      "its location and its level read together, so location1/level1 is igi2:11 and location2/LEVEL6 is igi2:26.",
       "",
       "Density stays the remaster's own, derived from the FlatSky fade where a mission sets none. It is far",
       "thicker than the original's GlobalLight air on purpose: the second mission's valley mist is the look",
@@ -201,6 +202,99 @@
       "nightFog": 0.9,
       "nightExposureStops": -1.25,
       "nightGlow": 8
+    },
+
+    "igi2:$comment": [
+      "I.G.I. 2. Each entry was set against the same view on the original's own picture (gfx_preset vanilla), at the",
+      "mission's opening and its own hour, until the ground under the player read as bright as it does there.",
+      "",
+      "The sequel's night levels author their sun AS the moon, so the modern presets' fourfold moon and open eye,",
+      "which lift the first game's faint cycle moon into a readable night, land on a light that was already the",
+      "night its artists meant: the first mission came up four and a half times as bright as the original's. An",
+      "eighth of the moon, a third of the sky's fill and the original's own adaptation put it back.",
+      "",
+      "Its day levels author no night to scale, and most are a dusk, an overcast or a red evening that the eye's",
+      "adaptation opened into a plain bright day; exposureStops closes it again by as much as each one needed."
+    ],
+    "igi2:11": {
+      "$comment": "Night over the Carpathian oil depot. Read as a pale blue day: the moonlit ground and tanks stood white.",
+      "moonlight": 0.12,
+      "nightSky": 0.35,
+      "nightAdaptation": 0.4,
+      "nightFog": 0.5,
+      "nightExposureStops": -0.5
+    },
+    "igi2:13": {
+      "$comment": "Snow slopes in a blue dusk, not a clear noon.",
+      "exposureStops": -1.3
+    },
+    "igi2:14": {
+      "$comment": "Dark overcast valley under a storm deck.",
+      "exposureStops": -1.7
+    },
+    "igi2:15": {
+      "$comment": "The same valley and the same deck, at the bridge.",
+      "exposureStops": -1.7
+    },
+    "igi2:16": {
+      "$comment": "Overcast forest.",
+      "exposureStops": -1.4
+    },
+    "igi2:17": {
+      "$comment": "Amber evening over the plain.",
+      "exposureStops": -1.4
+    },
+    "igi2:21": {
+      "$comment": "Libyan harbour at dusk; close already.",
+      "exposureStops": -0.6
+    },
+    "igi2:22": {
+      "$comment": "The prison cell, which the dynamic lighting leaves darker than the original's bake does. More than this only burns out the lit doorway: the walls are short of light, not of exposure.",
+      "exposureStops": 1.2
+    },
+    "igi2:23": {
+      "$comment": "Desert under an evening haze.",
+      "exposureStops": -0.9
+    },
+    "igi2:24": {
+      "$comment": "Clear desert day; the sky wants it down a little and the sand does not.",
+      "exposureStops": -0.5
+    },
+    "igi2:25": {
+      "$comment": "Desert seen from the truck; close already.",
+      "exposureStops": -0.3
+    },
+    "igi2:26": {
+      "$comment": "The docks at night under floodlights. The moonlit concrete read as snow by day.",
+      "moonlight": 0.12,
+      "nightSky": 0.35,
+      "nightAdaptation": 0.4,
+      "nightFog": 0.5,
+      "nightExposureStops": -0.3
+    },
+    "igi2:31": {
+      "$comment": "Hazy river gorge.",
+      "exposureStops": -0.7
+    },
+    "igi2:32": {
+      "$comment": "Overcast green hills.",
+      "exposureStops": -1.4
+    },
+    "igi2:33": {
+      "$comment": "The temple under a red evening.",
+      "exposureStops": -1.0
+    },
+    "igi2:34": {
+      "$comment": "Inside the temple, lit by its own lamps; a stop brighter to the original's.",
+      "exposureStops": 1.0
+    },
+    "igi2:35": {
+      "$comment": "Red dusk over the dishes.",
+      "exposureStops": -1.8
+    },
+    "igi2:36": {
+      "$comment": "The same dusk at the launch site.",
+      "exposureStops": -1.8
     }
   },
 

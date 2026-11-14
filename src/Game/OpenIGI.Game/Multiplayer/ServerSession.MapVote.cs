@@ -61,7 +61,7 @@ public sealed partial class ServerSession
 
         _mapPicks[slot] = index;
         TellMapVote();
-        if (Match.Players.Keys.All(_mapPicks.ContainsKey))
+        if (Match.Players.Keys.Where(static voter => voter >= 0).All(_mapPicks.ContainsKey))
         {
             Mode.Flow.Hasten(_tick, AllPickedSeconds);
         }
@@ -84,7 +84,7 @@ public sealed partial class ServerSession
             }
         }
 
-        return new NextMapVote(_mapChoices, counts, Match.Players.Count, _mapPicks.TryGetValue(slot, out int own) ? own : -1);
+        return new NextMapVote(_mapChoices, counts, Match.Players.Keys.Count(static voter => voter >= 0), _mapPicks.TryGetValue(slot, out int own) ? own : -1);
     }
 
     // Every joined player told the vote as it sees it -- or that there is none.

@@ -3,7 +3,6 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Igi1;
 

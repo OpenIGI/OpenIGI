@@ -108,7 +108,8 @@ public sealed class WorldContentModule : IContentModule
         // A level parks its intro and outro actors inside ConditionalContainer tasks gated on state that
         // is false during play. Without the type each is built as a plain container and its children are
         // rendered, standing in the level at mission start where the original never registers them.
-        context.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(context.Types);
+        Igi1TaskTypes.Register(context.Types);
 
         // GetOrProvide rather than Provide: a session running beside another -- the mission preview --
         // must bind its own loop's natives to the tables the playing session already loaded, not to a

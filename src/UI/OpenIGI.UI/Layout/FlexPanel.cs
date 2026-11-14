@@ -103,7 +103,7 @@ public class FlexPanel : UiElement
         float extraGap = 0f;
         if (totalGrow <= 0f)
         {
-            (cursor, extraGap) = Distribute(cursor, MathF.Max(0f, free), visible.Count, gap, Justify);
+            (cursor, extraGap) = Distribute(cursor, MathF.Max(0f, free), visible.Count, Justify);
         }
 
         foreach (UiElement child in visible)
@@ -120,7 +120,7 @@ public class FlexPanel : UiElement
         }
     }
 
-    private static (float Start, float ExtraGap) Distribute(float start, float free, int count, float gap, FlexJustify justify)
+    private static (float Start, float ExtraGap) Distribute(float start, float free, int count, FlexJustify justify)
     {
         return justify switch
         {

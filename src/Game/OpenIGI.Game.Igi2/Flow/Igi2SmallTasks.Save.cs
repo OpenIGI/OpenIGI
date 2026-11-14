@@ -1,14 +1,10 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Flow;
 
 /// <content>Its save state, <c>SoundGenerator_ptSerializeParameterList</c>: its sound, and whether it plays.</content>
-public sealed partial class Igi2SoundGeneratorTask : IIgi2Serialized
+public sealed partial class Igi2SoundGeneratorTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Text(Sound);
@@ -16,7 +12,7 @@ public sealed partial class Igi2SoundGeneratorTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Sound = reader.Text();
@@ -25,10 +21,10 @@ public sealed partial class Igi2SoundGeneratorTask : IIgi2Serialized
 }
 
 /// <content>Its save state, <c>SequenceCommand_ptSerializeParameterList</c>: whether its sequence has stopped, and the step it is on.</content>
-public sealed partial class Igi2SequenceCommandTask : IIgi2Serialized
+public sealed partial class Igi2SequenceCommandTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Bool(IsStopped);
@@ -36,7 +32,7 @@ public sealed partial class Igi2SequenceCommandTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         IsStopped = reader.Bool();
@@ -45,10 +41,10 @@ public sealed partial class Igi2SequenceCommandTask : IIgi2Serialized
 }
 
 /// <content>Its save state, <c>AnimQTask_ptSerializeParameterList</c>: its tick, then its programme's channels as they lie in memory.</content>
-public sealed partial class Igi2AnimTask : IIgi2Serialized
+public sealed partial class Igi2AnimTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Int(_tick);
@@ -56,7 +52,7 @@ public sealed partial class Igi2AnimTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         _tick = reader.Int();

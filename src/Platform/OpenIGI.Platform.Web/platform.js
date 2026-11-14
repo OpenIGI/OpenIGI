@@ -36,13 +36,29 @@ let screenWanted = !appleTouch && matchMedia('(pointer: coarse)').matches;
 function retakeScreen() {
   if (!screenWanted || appleTouch || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
   document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-    .then(() => screen.orientation?.lock?.('landscape'))
+    .then(() => { if (touching) screen.orientation?.lock?.('landscape')?.catch?.(() => {}); })
     .catch(() => {});
 }
 
 // Every device pixel, a phone's three to the CSS pixel included: drawn at fewer, the browser scaled the picture up and
 // the menus' small type smeared past reading.
 const ratio = () => window.devicePixelRatio || 1;
+
+// How far in from each edge the screen is clear of a notch, rounded corners and the home bar, in CSS pixels. The page
+// covers the whole screen (viewport-fit=cover), so the browser says only through env() what of it is hidden: read
+// off an element padded by those.
+let safeProbe = null;
+const safeInset = (side) => {
+  if (!safeProbe) {
+    safeProbe = document.createElement('div');
+    safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+      + 'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+    document.body.appendChild(safeProbe);
+  }
+  const style = getComputedStyle(safeProbe);
+  const value = parseFloat([style.paddingLeft, style.paddingTop, style.paddingRight, style.paddingBottom][side]);
+  return Number.isFinite(value) ? value * ratio() : 0;
+};
 const drawable = () => {
   const box = canvas.getBoundingClientRect();
   return [Math.max(1, Math.round(box.width * ratio())), Math.max(1, Math.round(box.height * ratio()))];
@@ -61,20 +77,93 @@ function pointerPosition(e) {
 
 function applyPointer() {
   canvas.style.cursor = pointerVisible && !wantLock ? 'default' : 'none';
-  if (wantLock && document.pointerLockElement !== canvas) lock();
+  if (wantLock) relock();
+  else clearTimeout(lockRetry);
   if (!wantLock && document.pointerLockElement === canvas) document.exitPointerLock();
 }
 
 // Unadjusted movement is the sensor's own counts, without the desktop's pointer acceleration -- what a
 // look control wants, and what the desktop build asks for as raw motion. Not every browser offers it.
+//
+// A browser refuses the lock for a second or so after the player's Escape took it away, and refuses it outside a press
+// of a key or a button -- and Escape, the key that closes the pause menu, is the one key that does not count as a press.
+// A refusal left the game believing it had the mouse while the pointer ran free, stopping at the screen's edge, until
+// the player happened to click. So a refused lock is asked for again: shortly, a few times, and at every key and button.
+const LOCK_RETRY_MS = 350;
+const LOCK_RETRIES = 8;
+let lockRetry = 0;
+let lockRetries = 0;
+
 function lock() {
-  if (touching) return;
+  if (touching || !canvas) return;
+  clearTimeout(lockRetry);
+  const refused = () => {
+    if (!wantLock || document.pointerLockElement === canvas || lockRetries >= LOCK_RETRIES) return;
+    lockRetries++;
+    lockRetry = setTimeout(lock, LOCK_RETRY_MS);
+  };
   try {
     const request = canvas.requestPointerLock({ unadjustedMovement: true });
-    request?.catch?.(() => canvas.requestPointerLock()?.catch?.(() => {}));
+    request?.catch?.(error => {
+      // No raw motion here: the ordinary lock. Anything else is the browser saying not now.
+      if (error?.name !== 'NotSupportedError') return refused();
+      try {
+        canvas.requestPointerLock()?.catch?.(refused);
+      } catch {
+        refused();
+      }
+    });
   } catch {
-    // Refused outside a click; asked again on the next one.
+    refused();
   }
+}
+
+// The lock again, from inside the player's own press, when the game wants it and the browser has not given it.
+function relock() {
+  if (!wantLock || !canvas || document.pointerLockElement === canvas) return;
+  lockRetries = 0;
+  lock();
+}
+
+// Escape held on, for the game, after the browser took it. A browser frees the pointer at Escape and keeps the press to
+// itself: the page hears only that the lock has gone, which WebGameWindow hands the game as the key going down. How long
+// it stays down is said here, because only the page can tell: until the key comes up, or stops repeating. A cutscene is
+// skipped by holding Escape, and a key the game saw for a single frame never filled the hold -- the player had to let
+// go, and press and hold again, with the pointer already free.
+const ESCAPE_FIRST_REPEAT_MS = 650;
+const ESCAPE_NEXT_REPEAT_MS = 200;
+const ESCAPE_TAP_MS = 400;
+let escapeHeld = 0;
+let escapeUpAt = -Infinity;
+
+function holdEscapeFor(ms) {
+  clearTimeout(escapeHeld);
+  escapeHeld = setTimeout(releaseEscape, ms);
+}
+
+function releaseEscape() {
+  if (!escapeHeld) return;
+  clearTimeout(escapeHeld);
+  escapeHeld = 0;
+  queue.push('key Escape 0');
+}
+
+// The lock has gone while the game wanted it: the key is down for the game, and let go at once when it has come up already.
+function escapeTaken() {
+  if (performance.now() - escapeUpAt < ESCAPE_TAP_MS) queue.push('key Escape 0');
+  else holdEscapeFor(ESCAPE_FIRST_REPEAT_MS);
+}
+
+// Escape is the game's while the page is fullscreen, where the browser allows it (Chromium's Keyboard Lock): a press
+// opens the pause menu instead of dropping the page out of fullscreen and the mouse out of the game, and holding the
+// key is how the player leaves fullscreen. Elsewhere the browser keeps the key, and fullscreen is taken back at the
+// next press.
+const holdsEscape = Boolean(navigator.keyboard?.lock);
+
+function holdEscape(held) {
+  if (!holdsEscape) return;
+  if (held) navigator.keyboard.lock(['Escape']).catch(() => {});
+  else navigator.keyboard.unlock();
 }
 
 // The field a touch screen's keyboard types into, and whether the game wants typing now. In line mode (a line of chat) the
@@ -189,22 +278,43 @@ export function install(target) {
     if (e.target === textField && e.key.length === 1) return;
     if (e.target === textField && lineMode && e.key !== 'Escape') return;
     e.preventDefault();
-    if (!e.repeat) queue.push(`key ${e.code} 1`);
+    if (e.code === 'Escape' && escapeHeld) {
+      // Still held: the browser repeats it. A press of its own ends the hold made on the browser's behalf first.
+      if (e.repeat) return holdEscapeFor(ESCAPE_NEXT_REPEAT_MS);
+      releaseEscape();
+    }
+
+    if (!e.repeat) {
+      relock();
+      if (e.code !== 'Escape') retakeScreen();
+      queue.push(`key ${e.code} 1`);
+    }
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey) queue.push(`char ${e.key}`);
   }, { signal });
   window.addEventListener('keyup', e => {
     if (PAGE_KEYS.has(e.code) || e.metaKey) return;
     e.preventDefault();
+    if (e.code === 'Escape') {
+      escapeUpAt = performance.now();
+      if (escapeHeld) return releaseEscape();
+    }
+
     queue.push(`key ${e.code} 0`);
   }, { signal });
 
   canvas.addEventListener('pointerdown', e => { touching = e.pointerType === 'touch'; }, { signal });
   canvas.addEventListener('mousedown', e => {
-    if (wantLock && document.pointerLockElement !== canvas) lock();
+    relock();
+    if (!touching) retakeScreen();
     queue.push(`button ${e.button} 1`);
     e.preventDefault();
   }, { signal });
-  window.addEventListener('mouseup', e => queue.push(`button ${e.button} 0`), { signal });
+  window.addEventListener('mouseup', e => {
+    queue.push(`button ${e.button} 0`);
+    // The side buttons are the browser's back and forward: bound to an action in the game, they left the page instead.
+    if (e.button > 2) e.preventDefault();
+  }, { signal });
+  canvas.addEventListener('auxclick', e => e.preventDefault(), { signal });
   canvas.addEventListener('contextmenu', e => e.preventDefault(), { signal });
   window.addEventListener('mousemove', e => {
     const [x, y] = pointerPosition(e);
@@ -218,8 +328,23 @@ export function install(target) {
     e.preventDefault();
   }, { passive: false, signal });
 
-  document.addEventListener('pointerlockchange', () =>
-    queue.push(`lock ${document.pointerLockElement === canvas ? 1 : 0}`), { signal });
+  document.addEventListener('pointerlockchange', () => {
+    const locked = document.pointerLockElement === canvas;
+    if (locked) {
+      clearTimeout(lockRetry);
+      lockRetries = 0;
+    }
+
+    queue.push(`lock ${locked ? 1 : 0}`);
+    if (!locked && wantLock) escapeTaken();
+  }, { signal });
+  document.addEventListener('fullscreenchange', () => {
+    const fullscreen = document.fullscreenElement !== null;
+    holdEscape(fullscreen);
+    // Where Escape is the game's, fullscreen is left only by holding it: the player meant to, and it is not taken back.
+    if (!fullscreen && holdsEscape && !touching) screenWanted = false;
+  }, { signal });
+  holdEscape(document.fullscreenElement !== null);
   window.addEventListener('focus', () => queue.push('focus 1'), { signal });
   window.addEventListener('blur', () => queue.push('focus 0'), { signal });
   document.addEventListener('visibilitychange', () => queue.push(`focus ${document.hidden ? 0 : 1}`), { signal });
@@ -251,6 +376,10 @@ export function uninstall() {
   resizes = null;
   queue = [];
   wantLock = false;
+  clearTimeout(lockRetry);
+  clearTimeout(escapeHeld);
+  escapeHeld = 0;
+  holdEscape(false);
   if (document.pointerLockElement === canvas) document.exitPointerLock();
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   if (canvas) canvas.style.cursor = '';
@@ -260,6 +389,8 @@ export function uninstall() {
 export const imports = {
   canvasWidth: () => drawable()[0],
   canvasHeight: () => drawable()[1],
+  pixelRatio: () => ratio(),
+  safeInset: (side) => safeInset(side),
   hasFocus: () => document.hasFocus(),
   isFullscreen: () => document.fullscreenElement !== null,
   takeEvents: () => {

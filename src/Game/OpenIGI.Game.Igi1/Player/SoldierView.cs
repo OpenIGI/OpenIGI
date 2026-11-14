@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// the same convention as <see cref="HumanView"/>.
 /// </para>
 /// </remarks>
-public sealed class SoldierView
+public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
 {
     private BoneObject _bones;
     private BonePose? _pose;
@@ -72,6 +72,27 @@ public sealed class SoldierView
 
     /// <summary>Gets the placed task this view draws.</summary>
     public HumanSoldierTask Soldier { get; }
+
+    /// <summary>
+    /// Gets the body's damage state, made on its first hit (<c>0x489C30</c>); <see langword="null"/> until then. A human
+    /// carries its own health in the original, so this is the body's and no table's beside it.
+    /// </summary>
+    public HumanHealth? Health { get; internal set; }
+
+    /// <summary>Gets the settings row the body's mind was configured from (<c>0x406F70</c>), or <see langword="null"/> for none.</summary>
+    public OpenIGI.Game.Igi1.Ai.AiCombatParameters? Combat { get; internal set; }
+
+    /// <summary>
+    /// Gets the bound its model was authored with, metres (<c>Human+0xA0</c>): what its detector marker and the rays that
+    /// test it are sized by. Zero until its model is known.
+    /// </summary>
+    public float DetectorMarkerScaleMetres { get; internal set; }
+
+    /// <summary>
+    /// Gets what the body was drawn and stepped as before it left the world, or <see langword="null"/> while it is in it:
+    /// a guard generator makes the next guard from it.
+    /// </summary>
+    internal (Ai.SoldierAgent Agent, Ai.SoldierModelGroup Group)? GoneBody { get; set; }
 
     /// <summary>Gets the bone object the stand animation plays on.</summary>
     public BoneObject Bones => _bones;
@@ -542,6 +563,50 @@ public sealed class SoldierView
         CurrentAnimation = StandAnimation;
         Position = Soldier.Position;
         Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, Soldier.Gamma);
+        _pose = null;
+        _unrotatedPose = null;
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a save keeps of a body is where it stands and how it is turned,
+    // whether it is dead, and the clip its whole body plays and how far through. What its shoulders were doing is not kept:
+    // its mind starts afresh and takes its stance up again.
+    void OpenIGI.Game.Saves.IExchangedState.Exchange(OpenIGI.Game.Saves.StateExchange exchange)
+    {
+        Vector3d position = exchange.Position(Position);
+        Matrix3f orientation = exchange.Frame(Orientation);
+        bool dead = exchange.Bool(IsDead);
+        int animation = exchange.Int(CurrentAnimation);
+        BoneClip? playing = _bones.SourceOf(0);
+        bool loops = exchange.Bool(playing?.Loops ?? true);
+        float time = exchange.Real(playing?.Time ?? 0f);
+        if (!exchange.IsReading)
+        {
+            return;
+        }
+
+        PlaceAt(position, orientation);
+        if (dead && !loops)
+        {
+            Kill(animation);
+        }
+        else if (dead)
+        {
+            // One that died with no death clip to play lies as the clip it was in left it.
+            ReleaseUpperBody();
+            PlayStateAnimation(animation, loops: true);
+            Kill(-1);
+        }
+        else
+        {
+            ReleaseUpperBody();
+            PlayStateAnimation(animation, loops);
+        }
+
+        if (CurrentAnimation == animation)
+        {
+            _bones.SourceOf(0)?.SetTime(time);
+        }
+
         _pose = null;
         _unrotatedPose = null;
     }

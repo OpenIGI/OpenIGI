@@ -1,4 +1,3 @@
-using OpenIGI.Desktop;
 using OpenIGI.Host.Lighting;
 using Xunit;
 

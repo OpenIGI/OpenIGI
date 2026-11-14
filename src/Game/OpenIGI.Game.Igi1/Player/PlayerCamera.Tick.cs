@@ -1,13 +1,5 @@
-using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Config;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -34,10 +26,15 @@ public sealed partial class PlayerCamera
         TickFrame(PlayerInputSampler.SampleFrame(input, InputProfile), terrain);
     }
 
+    /// <summary>Advances the body by one simulation tick, with the actions held as a title path reads them.</summary>
+    /// <param name="held">The actions held this tick.</param>
+    /// <param name="terrain">The level's terrain.</param>
+    public void Tick(PlayerAction held, IGroundHeightField? terrain) => TickFrame(PlayerInputSampler.FromActions(held), terrain);
+
     /// <summary>Advances the body by one simulation tick on a frame of input already sampled.</summary>
     /// <param name="frame">The tick's input frame: the host's own controls, or a client's command on a server.</param>
     /// <param name="terrain">The level's terrain.</param>
-    /// <remarks>The rest of <see cref="Tick"/>: everything after the controls are read is the same for a player at the keyboard and one across the network.</remarks>
+    /// <remarks>The rest of <see cref="Tick(InputState, IGroundHeightField?)"/>: everything after the controls are read is the same for a player at the keyboard and one across the network.</remarks>
     public void TickFrame(in PlayerInputFrame frame, IGroundHeightField? terrain)
     {
         ApplyCheats(PlayerCheatOptions.Current);
@@ -53,6 +50,16 @@ public sealed partial class PlayerCamera
         }
 
         _input.Accept(taken);
+
+        // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them. The
+        // level's switches and fences still pulse, and what the player threw before still flies and goes off.
+        if (ControlTaken)
+        {
+            _interactions?.Tick();
+            TickProjectilesAlone();
+            return;
+        }
+
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
 

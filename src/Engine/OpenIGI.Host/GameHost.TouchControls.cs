@@ -25,7 +25,12 @@ public sealed partial class GameHost
     private readonly HashSet<KeyCode> _touchKeysWanted = [];
     private readonly HashSet<MouseButton> _touchButtons = [];
     private readonly HashSet<MouseButton> _touchButtonsWanted = [];
+    private readonly HashSet<int> _touchWheels = [];
+    private readonly HashSet<int> _touchWheelsWanted = [];
     private (bool Up, bool Down, bool Left, bool Right) _touchStickHeld;
+    private TouchIconAtlas? _touchIcons;
+    private bool _touchSaveHeld;
+    private bool _touchLoadHeld;
 
     /// <summary>The action each button holds, as the profile names it.</summary>
     private static string? TouchAction(TouchButton button) => button switch
@@ -46,6 +51,10 @@ public sealed partial class GameHost
         TouchButton.Scoreboard => PlayerProfile.ScoreboardAction,
         TouchButton.Buy => PlayerProfile.BuyMenuAction,
         TouchButton.Drop => nameof(PlayerAction.DropWeapon),
+        TouchButton.Flashlight => "Flashlight",
+        TouchButton.WalkRun => "ToggleWalkRun",
+        TouchButton.PreviousWeapon => "PrevWeapon",
+        TouchButton.WeaponWheel => "WeaponWheel",
         _ => null,
     };
 
@@ -89,7 +98,12 @@ public sealed partial class GameHost
     /// <summary>What the game is showing, for the controls: a cutscene, play with the pointer locked, or anything with a pointer.</summary>
     private TouchControlMode CurrentTouchMode()
     {
-        if (!_menuFlow.MenuMode && (_mission.Cutscenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true }))
+        if (_touchEditor.IsOpen)
+        {
+            return TouchControlMode.Edit;
+        }
+
+        if (!_menuFlow.MenuMode && (_mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true }))
         {
             return TouchControlMode.Cutscene;
         }
@@ -110,18 +124,44 @@ public sealed partial class GameHost
     private void ApplyTouchControls()
     {
         InputState input = _window.Input;
+        EmulateTouch(input);
         _window.SetMotionSensors(input.Touch.InUse && TouchCVars.Gyro.Value != GyroAim.Off);
-        if (!input.Touch.InUse || _window.Width <= 0 || _window.Height <= 0)
+
+        // The display's readouts stand by the player's layout only on a touch screen: at a desk, by the title's own.
+        bool touching = input.Touch.InUse || _touchEditor.IsOpen;
+        HudLayoutOverrides.Current = touching ? _touchHudLayout : null;
+        if (!touching || _window.Width <= 0 || _window.Height <= 0)
         {
             return;
         }
 
+        FollowTouchLayout();
+        LayoutContext layout = new(_window.Width, _window.Height);
+        if (_touchEditor.IsOpen)
+        {
+            UpdateTouchLayoutEditor(input, layout);
+        }
+
         TouchControlMode mode = CurrentTouchMode();
         _touchControls.MatchButtons = CurrentMatchButtons();
-        _touchControls.Update(input.Touch, mode, new LayoutContext(_window.Width, _window.Height));
+        _touchControls.SavesShown = MissionSaveGames is not null;
+        _touchControls.LookScale = TouchCVars.LookSensitivity.Value;
+        _touchControls.Update(input.Touch, mode, layout);
         _touchKeysWanted.Clear();
         _touchButtonsWanted.Clear();
+        _touchWheelsWanted.Clear();
         PlayerProfile? profile = _configuration.Active;
+
+        // A quick save or load is asked for once as its button comes down, as its key asks.
+        bool saveHeld = mode == TouchControlMode.Play && _touchControls.Held.Contains(TouchButton.QuickSave);
+        bool loadHeld = mode == TouchControlMode.Play && _touchControls.Held.Contains(TouchButton.QuickLoad);
+        if ((saveHeld && !_touchSaveHeld) || (loadHeld && !_touchLoadHeld))
+        {
+            QuickSaveOrLoad(save: saveHeld && !_touchSaveHeld);
+        }
+
+        _touchSaveHeld = saveHeld;
+        _touchLoadHeld = loadHeld;
 
         if (mode == TouchControlMode.Computer)
         {
@@ -251,6 +291,16 @@ public sealed partial class GameHost
             }
         }
 
+        foreach (int direction in _touchWheelsWanted)
+        {
+            if (!_touchWheels.Contains(direction))
+            {
+                input.Mouse.AddWheel(direction);
+            }
+        }
+
+        _touchWheels.Clear();
+        _touchWheels.UnionWith(_touchWheelsWanted);
         _touchKeys.Clear();
         _touchKeys.UnionWith(_touchKeysWanted);
         _touchButtons.Clear();
@@ -311,7 +361,12 @@ public sealed partial class GameHost
     {
         if (!PlayerProfileInputBindings.TryBoundControl(profile, action, out KeyCode key, out MouseButton? button))
         {
-            if (TouchFallbackKey(action) is { } fallback)
+            // On the wheel, which has nothing to hold down: the button turns it a notch as it is pressed.
+            if (PlayerProfileInputBindings.TryBoundWheel(profile, action, out int direction))
+            {
+                _touchWheelsWanted.Add(direction);
+            }
+            else if (TouchFallbackKey(action) is { } fallback)
             {
                 _touchKeysWanted.Add(fallback);
             }
@@ -333,12 +388,23 @@ public sealed partial class GameHost
     /// <param name="state">The frame loop's state, whose sprite batch they draw into.</param>
     private void DrawTouchControls(FrameLoopState state)
     {
+        ITouchHudSource? source = _hudOverlay as ITouchHudSource ?? _titleHud as ITouchHudSource;
+        if (_window.Input.Touch.InUse || _touchEditor.IsOpen)
+        {
+            TouchControlsRenderer.Icons = _touchIcons ??= new TouchIconAtlas(_device);
+        }
+
+        if (_touchEditor.IsOpen)
+        {
+            DrawTouchLayoutEditor(state, source);
+            return;
+        }
+
         if (!_window.Input.Touch.InUse || _touchControls.Mode is not (TouchControlMode.Play or TouchControlMode.Computer))
         {
             return;
         }
 
-        ITouchHudSource? source = _hudOverlay as ITouchHudSource ?? _titleHud as ITouchHudSource;
         _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
         state.Batch.Begin();
         TouchControlsRenderer.Draw(

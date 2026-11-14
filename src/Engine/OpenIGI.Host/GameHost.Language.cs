@@ -1,6 +1,5 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Frontend;
 using OpenIGI.Game;
 using OpenIGI.Game.World;
 

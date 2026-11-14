@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
-using OpenIGI.Game.Player;
 using OpenIGI.Net;
 using OpenIGI.Net.Rooms;
 using OpenIGI.Net.Browsing;

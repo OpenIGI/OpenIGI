@@ -3,7 +3,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
@@ -41,6 +40,39 @@ public readonly record struct Igi2TerrainExtent(double Left, double Top, double 
         && right <= Right + Tolerance
         && top >= Top - Tolerance
         && bottom <= Bottom + Tolerance;
+
+    /// <summary>Gets whether a cell lies over any of this span, by more than <see cref="Tolerance"/>.</summary>
+    /// <param name="left">The cell's west edge, in world units.</param>
+    /// <param name="top">Its north edge.</param>
+    /// <param name="right">Its east edge.</param>
+    /// <param name="bottom">Its south edge.</param>
+    /// <returns><see langword="true"/> when some of the cell is inside; one that only touches the span's edge is not.</returns>
+    public bool Overlaps(double left, double top, double right, double bottom) =>
+        left < Right - Tolerance
+        && right > Left + Tolerance
+        && top < Bottom - Tolerance
+        && bottom > Top + Tolerance;
+
+    /// <summary>Gets whether a cell meets this span at all, an edge or a corner counting, to within <see cref="Tolerance"/>.</summary>
+    /// <param name="left">The cell's west edge, in world units.</param>
+    /// <param name="top">Its north edge.</param>
+    /// <param name="right">Its east edge.</param>
+    /// <param name="bottom">Its south edge.</param>
+    /// <returns><see langword="true"/> when the cell and the span share a point.</returns>
+    public bool Touches(double left, double top, double right, double bottom) =>
+        left <= Right + Tolerance
+        && right >= Left - Tolerance
+        && top <= Bottom + Tolerance
+        && bottom >= Top - Tolerance;
+
+    /// <summary>Gets whether a point stands on this span's edge, to within <see cref="Tolerance"/>.</summary>
+    /// <param name="x">The point's X, in world units.</param>
+    /// <param name="y">Its Y.</param>
+    /// <returns><see langword="true"/> for a point on one of the four sides, a corner counting.</returns>
+    public bool IsOnEdge(double x, double y) =>
+        Touches(x, y, x, y)
+        && (Math.Abs(x - Left) <= Tolerance || Math.Abs(x - Right) <= Tolerance
+            || Math.Abs(y - Top) <= Tolerance || Math.Abs(y - Bottom) <= Tolerance);
 }
 
 /// <summary>One terrain tile of an I.G.I. 2 level, placed in the world.</summary>
@@ -250,7 +282,9 @@ public readonly record struct Igi2TerrainTile(
         //
         // So this tile keeps drawing one sample INTO the finer tile's ground, and the surfaces overlap
         // along the join instead of meeting along it. What that costs is the second ground the remark
-        // above warns of, in a ring one square wide at the edge of a submap and nowhere else.
+        // above warns of, in a ring one square wide at the edge of a submap and nowhere else -- one
+        // SAMPLE wide. This is the full-detail mesh's measure alone: the quadtree hands the ground over
+        // exactly (IsWithinSubmap) and holds the two surfaces to one line along the join instead.
         double left = SampleX(x - 1);
         double top = SampleY(y - 1);
         double right = SampleX(x + size + 1);
@@ -266,6 +300,268 @@ public readonly record struct Igi2TerrainTile(
         }
 
         return false;
+    }
+
+    /// <summary>Gets whether a finer tile draws the whole of a square, which the quadtree then leaves to it.</summary>
+    /// <param name="x">The square's first column.</param>
+    /// <param name="y">Its first row.</param>
+    /// <param name="size">How many samples across it is.</param>
+    /// <returns><see langword="true"/> when the square lies whole inside a finer tile.</returns>
+    /// <remarks>
+    /// <para>
+    /// The original's own measure, with nothing kept back: <c>Terrain_UpdateSubmaps</c> gives a cell to the last finer map
+    /// that contains it whole, and <c>TerrainRender_AddStackSquare</c> hands every square it pushes to the map its cell names.
+    /// The ground under a finer map is then drawn once, by that map.
+    /// </para>
+    /// <para>
+    /// <see cref="IsSuperseded"/> keeps a sample of overlap instead, which the full-detail mesh needs to close the join between
+    /// two height maps that do not agree. Under a quadtree that overlap is a second ground one coarse sample wide all round the
+    /// finer tile, and wherever it stands proud of the finer tile's surface it shows -- lit by the coarse tile's own bake, so a
+    /// pale square on a dark hillside, there from some places and gone from others as the finer surface morphs under it. The
+    /// quadtree closes the join by making the two surfaces the same line along it (<see cref="SeamHeight"/>), and needs no
+    /// overlap.
+    /// </para>
+    /// </remarks>
+    public bool IsWithinSubmap(int x, int y, int size)
+    {
+        if (Submaps is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        double left = SampleX(x);
+        double top = SampleY(y);
+        double right = SampleX(x + size);
+        double bottom = SampleY(y + size);
+        for (int i = 0; i < Submaps.Count; i++)
+        {
+            if (Submaps[i].Contains(left, top, right, bottom))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Gets whether a square that is this tile's to draw meets a finer tile's ground: along an edge, at a corner, or across it.</summary>
+    /// <param name="x">The square's first column.</param>
+    /// <param name="y">Its first row.</param>
+    /// <param name="size">How many samples across it is.</param>
+    /// <returns><see langword="true"/> when the square and a finer tile share a point.</returns>
+    /// <remarks>
+    /// Such a square divides down to the sample grid whatever its edges said, so that this tile's side of the join always has
+    /// a vertex at every one of its samples along it, each at its true height (<see cref="IsOnSubmapEdge"/>): the line the finer
+    /// tile's edge is then held to does not move with the camera.
+    /// </remarks>
+    public bool TouchesSubmap(int x, int y, int size)
+    {
+        if (Submaps is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        double left = SampleX(x);
+        double top = SampleY(y);
+        double right = SampleX(x + size);
+        double bottom = SampleY(y + size);
+        for (int i = 0; i < Submaps.Count; i++)
+        {
+            if (Submaps[i].Touches(left, top, right, bottom))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Gets whether a square lies over any of a finer tile's ground.</summary>
+    /// <param name="x">The square's first column.</param>
+    /// <param name="y">Its first row.</param>
+    /// <param name="size">How many samples across it is.</param>
+    /// <returns><see langword="true"/> when some of the square is inside a finer tile; one that only meets its edge is not.</returns>
+    public bool OverlapsSubmap(int x, int y, int size)
+    {
+        if (Submaps is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        double left = SampleX(x);
+        double top = SampleY(y);
+        double right = SampleX(x + size);
+        double bottom = SampleY(y + size);
+        for (int i = 0; i < Submaps.Count; i++)
+        {
+            if (Submaps[i].Overlaps(left, top, right, bottom))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Gets whether a point stands on the edge of a finer tile's ground.</summary>
+    /// <param name="x">The point's X, in world units.</param>
+    /// <param name="y">Its Y.</param>
+    /// <returns><see langword="true"/> for a point on the join between this tile and a finer one.</returns>
+    public bool IsOnSubmapEdge(double x, double y)
+    {
+        if (Submaps is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        for (int i = 0; i < Submaps.Count; i++)
+        {
+            if (Submaps[i].IsOnEdge(x, y))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Gets the coarser tiles this one lies in, in the order the level declares them; null or empty for one in none.</summary>
+    /// <remarks>The other side of <see cref="Submaps"/>: each of these leaves this tile's ground to it, and meets it along its edge.</remarks>
+    public IReadOnlyList<Igi2TerrainTile>? Hosts { get; init; }
+
+    /// <summary>
+    /// Gets how many of this tile's samples the widest square along its edge may span and still have a vertex at every sample of
+    /// the coarser tile it lies in: the two tiles' spacings over each other, or nought for a tile in none.
+    /// </summary>
+    public int SeamSize
+    {
+        get
+        {
+            if (Hosts is not { Count: > 0 })
+            {
+                return 0;
+            }
+
+            double ratio = double.MaxValue;
+            for (int i = 0; i < Hosts.Count; i++)
+            {
+                ratio = Math.Min(ratio, Hosts[i].TexelWidth / TexelWidth);
+            }
+
+            return Math.Max(1, (int)Math.Round(ratio));
+        }
+    }
+
+    /// <summary>Gets the height at a sample, the row and column one past the tile reflected through its last two.</summary>
+    /// <param name="x">The sample's column, which may be <see cref="Width"/>.</param>
+    /// <param name="y">The sample's row, which may be <see cref="Height"/>.</param>
+    /// <returns>The height, in world units.</returns>
+    /// <remarks>
+    /// The original's arithmetic at <c>igi2ed 0x668AFB</c>: the quadtree's root is one sample larger than the tile, and the
+    /// ground keeps its slope over the extra band instead of flattening into a lip. It compares the row against <c>nWidth</c>
+    /// as well as the column, which is only right for a square map; every shipped tile is square, and this uses each axis's own.
+    /// </remarks>
+    public double GridHeightAt(int x, int y)
+    {
+        if (x >= Width && y >= Height)
+        {
+            return (3.0 * HeightAt(Width - 1, Height - 1)) - HeightAt(Width - 2, Height - 1) - HeightAt(Width - 1, Height - 2);
+        }
+
+        if (x >= Width)
+        {
+            return (2.0 * HeightAt(Width - 1, y)) - HeightAt(Width - 2, y);
+        }
+
+        if (y >= Height)
+        {
+            return (2.0 * HeightAt(x, Height - 1)) - HeightAt(x, Height - 2);
+        }
+
+        return HeightAt(x, y);
+    }
+
+    /// <summary>
+    /// Gets the height the coarser tile this one lies in draws at a point of this tile's edge: the line the two tiles' grounds
+    /// meet along.
+    /// </summary>
+    /// <param name="x">The point's X, in world units.</param>
+    /// <param name="y">Its Y.</param>
+    /// <param name="alongX">Whether the side the point is on runs along X, its north or south edge, rather than along Y.</param>
+    /// <returns>The height, in world units, or <see langword="null"/> where no coarser tile lies under the point.</returns>
+    /// <remarks>
+    /// <para>
+    /// The original has one quadtree over every map, and a square handed to a finer map keeps the four corners the coarser one
+    /// gave it, so the two grounds share their vertices along the join and cannot part. With a quadtree a tile they share
+    /// nothing, and are held together by agreeing on the line instead: the coarser tile draws its own samples along the join
+    /// at their true heights (<see cref="TouchesSubmap"/>, <see cref="IsOnSubmapEdge"/>), straight between them, and every vertex
+    /// of this tile's edge stands on that line.
+    /// </para>
+    /// <para>
+    /// The level's finer tiles lie on the coarser tile's grid -- every shipped one does, a whole number of samples in from its
+    /// corner and a power of two finer -- so the point is on one of the coarser tile's grid lines and between two of its
+    /// samples. Where the coarser tile's own sample there is on ITS edge in a tile coarser still, that sample is held the same
+    /// way, and so is what this returns.
+    /// </para>
+    /// </remarks>
+    public double? SeamHeight(double x, double y, bool alongX)
+    {
+        if (Hosts is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        // The last declared first, as the original's own search for the map a point belongs to goes.
+        for (int i = Hosts.Count - 1; i >= 0; i--)
+        {
+            Igi2TerrainTile host = Hosts[i];
+            if (!host.Extent.Touches(x, y, x, y))
+            {
+                continue;
+            }
+
+            double column = (x - host.SampleX(0)) / host.TexelWidth;
+            double row = (y - host.SampleY(0)) / host.TexelHeight;
+            if (alongX)
+            {
+                int j = (int)Math.Round(row);
+                int from = (int)Math.Floor(column + SeamSlack);
+                double share = column - from;
+                double low = host.DrawnHeightAt(from, j);
+                return share <= SeamSlack ? low : low + ((host.DrawnHeightAt(from + 1, j) - low) * share);
+            }
+            else
+            {
+                int c = (int)Math.Round(column);
+                int from = (int)Math.Floor(row + SeamSlack);
+                double share = row - from;
+                double low = host.DrawnHeightAt(c, from);
+                return share <= SeamSlack ? low : low + ((host.DrawnHeightAt(c, from + 1) - low) * share);
+            }
+        }
+
+        return null;
+    }
+
+    // How far off a grid line, in samples, still counts as on it: the tiles are placed to the unit, not to the last bit.
+    private const double SeamSlack = 1e-3;
+
+    /// <summary>
+    /// Gets the height this tile's quadtree draws one of its own samples at where it stands on a join: its true height, or on
+    /// the tile's own edge the height the tile it lies in draws there.
+    /// </summary>
+    /// <param name="x">The sample's column, which may be <see cref="Width"/>.</param>
+    /// <param name="y">The sample's row, which may be <see cref="Height"/>.</param>
+    /// <returns>The height, in world units.</returns>
+    public double DrawnHeightAt(int x, int y)
+    {
+        bool northOrSouth = y <= 0 || y >= Height;
+        if ((northOrSouth || x <= 0 || x >= Width) && SeamHeight(SampleX(x), SampleY(y), northOrSouth) is { } held)
+        {
+            return held;
+        }
+
+        return GridHeightAt(x, y);
     }
 
     /// <summary>Gets the planar projection that lays this tile's lightmap over the ground.</summary>
@@ -590,6 +886,27 @@ public sealed class Igi2TerrainSurface
             }
 
             tiles[i] = tiles[i] with { Submaps = superseding };
+        }
+
+        // And the other way about, in the same order so that each tile's hosts already know their own: the tiles a tile is a
+        // submap of, which its edge meets.
+        for (int j = 0; j < tiles.Count; j++)
+        {
+            List<Igi2TerrainTile> hosts = [];
+            for (int i = 0; i < j; i++)
+            {
+                Igi2TerrainExtent inside = tiles[j].Extent;
+                if (tiles[j].TexelWidth <= tiles[i].TexelWidth
+                    && tiles[i].Extent.Touches(inside.Left, inside.Top, inside.Right, inside.Bottom))
+                {
+                    hosts.Add(tiles[i]);
+                }
+            }
+
+            if (hosts.Count > 0)
+            {
+                tiles[j] = tiles[j] with { Hosts = hosts };
+            }
         }
     }
 

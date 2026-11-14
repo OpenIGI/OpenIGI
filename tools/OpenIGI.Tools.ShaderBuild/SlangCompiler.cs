@@ -14,6 +14,12 @@ public enum SlangTarget
 
     /// <summary>DXIL at shader model 6.6, for Direct3D 12, through the pinned DXC.</summary>
     Dxil,
+
+    /// <summary>
+    /// SPIR-V for the GLSL translation: compiled without push constants, as the WGSL is, because OpenGL has
+    /// none either. Never committed; <see cref="GlslTranslator"/> turns it into the GLSL that is.
+    /// </summary>
+    SpirvForGlsl,
 }
 
 /// <summary>The files one compile produced.</summary>
@@ -117,7 +123,7 @@ public sealed class SlangCompiler
 
         string extension = target switch
         {
-            SlangTarget.Spirv => "spv",
+            SlangTarget.Spirv or SlangTarget.SpirvForGlsl => "spv",
             SlangTarget.Wgsl => "wgsl",
             _ => "dxil",
         };
@@ -129,7 +135,7 @@ public sealed class SlangCompiler
             sourcePath,
             "-target", target switch
             {
-                SlangTarget.Spirv => "spirv",
+                SlangTarget.Spirv or SlangTarget.SpirvForGlsl => "spirv",
                 SlangTarget.Wgsl => "wgsl",
                 _ => "dxil",
             },
@@ -168,6 +174,16 @@ public sealed class SlangCompiler
         {
             arguments.Add("-DOPENIGI_NO_PUSH_CONSTANTS=1");
             arguments.Add("-DOPENIGI_TARGET_WGSL=1");
+        }
+
+        // OpenGL has no push constants either, so its SPIR-V puts the block where the WGSL does: a uniform
+        // buffer in the reserved group, whose std140 layout is the one the WebGPU backend already fills. It
+        // keeps the SPIR-V forms of everything else -- GLSL 4.30 reads and writes an rgba16f image in one
+        // dispatch and filters depth, so none of WGSL's workarounds apply.
+        if (target == SlangTarget.SpirvForGlsl)
+        {
+            arguments.Add("-DOPENIGI_NO_PUSH_CONSTANTS=1");
+            arguments.Add("-DOPENIGI_TARGET_GLSL=1");
         }
 
         // Shader model 6.6 for the descriptor heap a traced hit reaches its mesh through and for derivatives

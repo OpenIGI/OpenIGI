@@ -129,7 +129,7 @@ internal sealed partial class MissionSolver
 
     // An area that counts vehicles is reached by a car the level drives (CarAI on its route): start the container of the first
     // car that is not driving yet, else wait for one to arrive.
-    private Goal NeedVehicle(DeclaredTask area, string word)
+    private Goal NeedVehicle(GameTask area, string word)
     {
         foreach (GameTask driver in Descendants(_tree.Root))
         {
@@ -138,8 +138,8 @@ internal sealed partial class MissionSolver
             {
                 start = NeedStart(stopped, area);
             }
-            else if (driver is DeclaredTask { Type.Name: "AnimTask" } anim
-                && anim.TryGetValue("TargetID", out object? target) && target is int id
+            else if (driver is GameTask { Type.Name: "AnimTask" } anim
+                && anim.TryGetScriptValue("TargetID", out object? target) && target is int id
                 && _tree.FromId(id) is { Type.Name: "Car" or "Heli" })
             {
                 start = InactiveContainer(anim) is { } closed ? NeedStart(closed, area) : NeedOn(anim);

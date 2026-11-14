@@ -31,6 +31,15 @@ const MAX_MESSAGE = 16 * 1024;
 // Joiners waiting or connected beyond the room's own player count: a few in the middle of connecting.
 const JOINER_SLACK = 4;
 
+// The joins one address may make to one room in a minute. Each is handed a login on the relay, good for hours: without a
+// bound, anyone holding a room's code -- and a public room's is listed -- could draw them without end.
+const JOINS_PER_MINUTE = 20;
+
+// The messages one socket may send in ten seconds. Setting up a connection takes an offer or an answer and some dozens of
+// candidates; a joiner sending on without end had every one passed to the room's host.
+const MESSAGES_PER_WINDOW = 200;
+const MESSAGE_WINDOW_MS = 10_000;
+
 const MAX_FIELD = 64;
 
 /**
@@ -84,6 +93,7 @@ export async function handleRooms(request, env, url, geo) {
     // Where the joiner is, said by the Worker alone: any such header the client sent is replaced.
     const headers = new Headers(request.headers);
     headers.set("x-openigi-geo", JSON.stringify(geo));
+    headers.set("x-openigi-ip", request.headers.get("CF-Connecting-IP") ?? "");
     return roomStub(env, code).fetch(new Request(`https://room/ws${url.search}`, { headers }));
   }
 
@@ -126,13 +136,13 @@ export class Room {
     }
 
     if (url.pathname === "/ws") {
-      return this.connect(url, room, readGeo(request.headers.get("x-openigi-geo")));
+      return this.connect(url, room, readGeo(request.headers.get("x-openigi-geo")), request.headers.get("x-openigi-ip") ?? "");
     }
 
     return json({ error: "not found" }, 404);
   }
 
-  async connect(url, room, geo) {
+  async connect(url, room, geo, ip) {
     const role = url.searchParams.get("role");
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -158,6 +168,9 @@ export class Room {
     }
 
     if (role === "join") {
+      if (!this.mayJoin(ip)) {
+        return json({ error: "too many joins from this address; wait a minute" }, 429);
+      }
       if (!room.hostConnected || this.ctx.getWebSockets("host").length === 0) {
         return json({ error: "the host isn't here yet" }, 409);
       }
@@ -183,7 +196,42 @@ export class Room {
     return json({ error: "role must be host or join" }, 400);
   }
 
+  /** Whether an address may join again: counted here, in the object's memory, which is all a minute's count needs. */
+  mayJoin(ip) {
+    if (!ip) {
+      return true;
+    }
+    const now = Date.now();
+    this.joins ??= new Map();
+    const recent = (this.joins.get(ip) ?? []).filter((at) => now - at < 60_000);
+    if (recent.length >= JOINS_PER_MINUTE) {
+      this.joins.set(ip, recent);
+      return false;
+    }
+    recent.push(now);
+    this.joins.set(ip, recent);
+    return true;
+  }
+
+  /** Whether a socket may send another message in this window. */
+  maySend(ws) {
+    const now = Date.now();
+    this.sent ??= new WeakMap();
+    let count = this.sent.get(ws);
+    if (!count || now - count.since >= MESSAGE_WINDOW_MS) {
+      count = { since: now, messages: 0 };
+      this.sent.set(ws, count);
+    }
+    return ++count.messages <= MESSAGES_PER_WINDOW;
+  }
+
   async webSocketMessage(ws, message) {
+    // A joiner's only: the host, which proved itself with its token, answers every joiner at once -- a full server coming
+    // back up sends hundreds of messages in a few seconds.
+    if (ws.deserializeAttachment()?.role === "join" && !this.maySend(ws)) {
+      ws.close(1008, "too many messages");
+      return;
+    }
     if (typeof message !== "string" || message.length > MAX_MESSAGE) {
       ws.close(1009, "message too large");
       return;

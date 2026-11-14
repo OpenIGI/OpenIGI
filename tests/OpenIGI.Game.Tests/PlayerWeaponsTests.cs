@@ -63,7 +63,7 @@ public sealed class PlayerWeaponsTests
             Assert.False(weapons.FiredThisTick);
         }
 
-        Assert.Equal(before, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(before, weapons.InHand.Value.Gun.RoundsInClip);
     }
 
     [Fact]
@@ -455,7 +455,7 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(5f, shot.ExplosionRadiusMetres);
         Assert.Equal(1f, shot.ActivateRadiusMetres);
         Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
-        Assert.Equal(rifleRounds, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(rifleRounds, weapons.InHand.Value.Gun.RoundsInClip);
         Assert.Empty(weapons.Shots);
     }
 
@@ -570,7 +570,7 @@ public sealed class PlayerWeaponsTests
         // The release clip ends: the stand clip, the rig snapped down and sent up, the next grenade into the hand.
         Tick(weapons, input, Frame(), clipEnded: true);
         Assert.Equal(WeaponAction.Stand, weapons.RequestedAction);
-        Assert.Equal(clipBefore, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(clipBefore, weapons.InHand.Value.Gun.RoundsInClip);
         Assert.Equal(HumanWeaponState.Throwing, weapons.State);
 
         // 0x40FA20 waits for the rig.

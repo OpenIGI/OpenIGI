@@ -27,7 +27,7 @@ public sealed class SteppedJobTests
     [Fact]
     public void Cancellation_finishes_the_job_with_no_answer()
     {
-        SteppedJob<string?> job = new(done => Cancelled(done));
+        SteppedJob<string?> job = new(_ => Cancelled());
 
         Assert.Null(job.RunToEnd());
         Assert.True(job.IsFinished);
@@ -68,7 +68,7 @@ public sealed class SteppedJobTests
     [MemberData(nameof(WorkSchedulerTests.Schedulers), MemberType = typeof(WorkSchedulerTests))]
     public void A_failure_finishes_the_job_with_no_answer_and_waiting_rethrows_it(IWorkScheduler work)
     {
-        ScheduledJob<int> scheduled = new(new SteppedJob<int>(done => Failing(done)), work);
+        ScheduledJob<int> scheduled = new(new SteppedJob<int>(_ => Failing()), work);
 
         Assert.Throws<InvalidDataException>(() => scheduled.Wait());
 
@@ -98,13 +98,13 @@ public sealed class SteppedJobTests
         done(slices);
     }
 
-    private static IEnumerable<bool> Cancelled(Action<string?> done)
+    private static IEnumerable<bool> Cancelled()
     {
         yield return true;
         throw new OperationCanceledException();
     }
 
-    private static IEnumerable<bool> Failing(Action<int> done)
+    private static IEnumerable<bool> Failing()
     {
         yield return true;
         throw new InvalidDataException("the bake met something");

@@ -13,6 +13,11 @@ public enum ShaderTarget
 
     /// <summary>DXIL, for Direct3D 12.</summary>
     Dxil,
+
+    /// <summary>
+    /// GLSL 4.30, for OpenGL: the SPIR-V compiled without push constants, translated by SPIRV-Cross.
+    /// </summary>
+    Glsl,
 }
 
 /// <summary>What each compiled form does differently, where a host has to know.</summary>
@@ -34,9 +39,9 @@ public static class ShaderTargetForms
 /// <param name="Name">The variant's name; part of its generated file names.</param>
 /// <param name="Defines">Preprocessor defines handed to <c>slangc</c> for this variant.</param>
 /// <param name="Targets">
-/// The forms to compile, or empty for all three. A variant that traces rays lists SPIR-V and DXIL:
-/// WGSL has no ray tracing, so there is nothing for that target to be compiled to, and the backend
-/// that reads it stands the feature down the way MoltenVK does.
+/// The forms to compile, or empty for all four. A variant that traces rays lists SPIR-V and DXIL:
+/// neither WGSL nor GLSL has ray tracing, so there is nothing for those targets to be compiled to, and
+/// the backends that read them stand the feature down the way MoltenVK does.
 /// </param>
 public sealed record ShaderVariantEntry(
     string Name,
@@ -47,9 +52,9 @@ public sealed record ShaderVariantEntry(
     public IReadOnlyDictionary<string, string> Defines { get; init; } =
         Defines ?? new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>Gets the targets to compile, substituting all three when none are declared.</summary>
+    /// <summary>Gets the targets to compile, substituting all four when none are declared.</summary>
     public IReadOnlyList<ShaderTarget> Targets { get; init; } =
-        Targets is { Count: > 0 } ? Targets : [ShaderTarget.Spirv, ShaderTarget.Wgsl, ShaderTarget.Dxil];
+        Targets is { Count: > 0 } ? Targets : [ShaderTarget.Spirv, ShaderTarget.Wgsl, ShaderTarget.Dxil, ShaderTarget.Glsl];
 
     /// <summary>Whether this variant is compiled for a target.</summary>
     /// <param name="target">The target asked about.</param>

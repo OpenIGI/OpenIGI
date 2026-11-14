@@ -152,8 +152,8 @@ public static class AiCombatChannels
     public static int SlotOf(AiType type, AiCombatChannel channel)
     {
         int index = (int)channel;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(channel));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, InputChannelCount, nameof(channel));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, InputChannelCount);
         return InputRows[RowOf(type)][index];
     }
 
@@ -177,8 +177,8 @@ public static class AiCombatChannels
     public static int StateOf(AiType type, AiStanceChannel channel)
     {
         int index = (int)channel;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(channel));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, StanceChannelCount, nameof(channel));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, StanceChannelCount);
         return StanceRows[RowOf(type)][index];
     }
 
@@ -197,8 +197,8 @@ public static class AiCombatChannels
     private static int RowOf(AiType type)
     {
         int index = (int)type;
-        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(type));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, RowOfType.Length, nameof(type));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, RowOfType.Length);
         return RowOfType[index];
     }
 }

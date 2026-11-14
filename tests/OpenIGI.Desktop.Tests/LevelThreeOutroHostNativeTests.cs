@@ -1,8 +1,6 @@
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Desktop;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
-using OpenIGI.Host;
 
 namespace OpenIGI.Desktop.Tests;
 

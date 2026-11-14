@@ -132,6 +132,9 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// <summary>Gets or sets what a co-op server does with each round's mark as it lands: sends it to every client.</summary>
     public Action<OpenIGI.Game.Multiplayer.ReplicatedImpact>? Recorded { get; set; }
 
+    /// <summary>Gets or sets what <c>death_test</c> runs: the mission's own player's death, from a killer at a place in units.</summary>
+    public Action<Vector3d>? KillOwnPlayer { get; set; }
+
     /// <summary>Shows a round another player's game resolved: the surface found by tracing through the point, or the wound.</summary>
     /// <param name="impact">Where it landed and which way it was going.</param>
     /// <param name="bloodOwner">What the blood is kept against, so a body's systems are reused across its wounds.</param>
@@ -342,7 +345,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             player.PlayModeClip(-1, 0f);
         }
 
-        string report = FormattableString.Invariant(
+        string report = string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"bomb_test {verb}: holds {Multiplayer.Igi1BombWeapon.Holds(player)}, mode clip {player.ModeAnimation}, arms {player.FirstPersonBombClip}.");
         context.Print(report);
         logger.Warning("Bomb", report);
@@ -365,11 +368,11 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                 Vector3d at = view.Position / WorldScene.UnitsPerMetre;
                 logger.Warning(
                     "Impact",
-                    FormattableString.Invariant($"ragdoll_test: soldier {view.Soldier.Id} at {at.X:0.00},{at.Y:0.00},{at.Z:0.00}"));
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ragdoll_test: soldier {view.Soldier.Id} at {at.X:0.00},{at.Y:0.00},{at.Z:0.00}"));
             }
 
             Vector3d eyeAt = _eye().Position;
-            logger.Warning("Impact", FormattableString.Invariant($"ragdoll_test: eye at {eyeAt.X:0.00},{eyeAt.Y:0.00},{eyeAt.Z:0.00}"));
+            logger.Warning("Impact", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ragdoll_test: eye at {eyeAt.X:0.00},{eyeAt.Y:0.00},{eyeAt.Z:0.00}"));
             return;
         }
 
@@ -459,6 +462,25 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             context => KillForRagdollTest(context, logger));
 
         console.Commands.Add(
+            "death_test",
+            "Kills the mission's own player with a round from in front of it, so a run can watch its death camera and body.",
+            context =>
+            {
+                if (KillOwnPlayer is not { } kill || mission.Player is not { } player || mission.IsPlayerDead)
+                {
+                    context.Warn("No living player to kill.");
+                    return;
+                }
+
+                Vector3d feet = player.Body.Position;
+                Vector3d from = new(feet.X + (Math.Sin(player.Body.Yaw) * 4096.0), feet.Y + (Math.Cos(player.Body.Yaw) * 4096.0), feet.Z);
+                kill(from);
+                string report = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"death_test: killed at feet ({feet.X:F0}, {feet.Y:F0}, {feet.Z:F0}).");
+                context.Print(report);
+                logger.Information("Impact", report);
+            });
+
+        console.Commands.Add(
             "bomb_test",
             "Puts the bomb modes' bomb in the player's hand: bomb_test hold; bomb_test plant <0-1> holds the plant at that point; bomb_test stop ends it.",
             context => BombTest(context, logger));
@@ -498,7 +520,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                     probe: mission.Player?.MarkProbe,
                     placement: struck);
                 Runtime.SpawnSurfaceImpact(hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
-                string where = FormattableString.Invariant($"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
+                string where = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
                 string report =
                     $"{material.Name} at {where}: {Runtime.PuffCount} dust quad(s), "
                         + $"{Runtime.FragmentCount} chip(s) of {material.Entry.Model}.";

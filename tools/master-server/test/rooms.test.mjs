@@ -1,7 +1,7 @@
 // Room signaling against a running Worker, then `node test/rooms.test.mjs [http://127.0.0.1:8787]`. The Worker runs as
 //   npx wrangler dev --port 8799 --env-file test.env
 // with test.env holding TURN_SECRET=localtest, TURN_HOST=127.0.0.1, TURN_PORT=34780, ADMIN_TOKEN=admintest,
-// RELAY_KEY=<64 hex> and ALLOW_TEST_GEO=1 (an env file: wrangler drops `--var`s it has no other mention of). The test
+// RELAY_KEY=<64 hex>, ALLOW_TEST_GEO=1 and NO_EDGE_CACHE=1 (an env file: wrangler drops `--var`s it has no other mention of). The test
 // plays the built-in EU relay on TURN_PORT itself. Port 8787 may be an old dev server's.
 // Walks a room's life: made, hosted, listed, joined, signaled both ways, left, closed with its host. Then the relays:
 // added by us alone, chosen by where the players are, each login from its own relay's secret, skipped when down.

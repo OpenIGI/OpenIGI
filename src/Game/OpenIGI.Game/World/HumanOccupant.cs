@@ -26,5 +26,5 @@ public readonly record struct VehicleOccupant(int TaskId, Vector3d Position);
 /// <param name="Position">The player's primary world projection, when one exists.</param>
 /// <param name="Team">The player's team.</param>
 /// <param name="ExtraPosition">An alternate projection of the same player, counted at most once with the first.</param>
-/// <param name="Alive">Whether the player can occupy areas.</param>
+/// <param name="Alive">Whether the player lives. A dead player still stands in its areas, as the original's human list keeps it.</param>
 public readonly record struct AreaPlayer(Vector3d? Position, int Team, Vector3d? ExtraPosition, bool Alive);

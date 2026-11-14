@@ -1,7 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
@@ -172,6 +171,14 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
         if (computer.Screen is ComputerPage page)
         {
             DrawPage(batch, page);
+        }
+
+        // The save page's upload, filling from its darker green to the full one as I.G.I. 2's bar does.
+        if (computer.Screen is ComputerSavePage { UploadBar: var (barX, barY, barWidth, barHeight) })
+        {
+            batch.FillRect(
+                new RectF(barX * _scale, barY * _scale, barWidth * _scale, barHeight * _scale),
+                ItemColour(ComputerColors.Items[1].R, ComputerColors.Items[1].G, ComputerColors.Items[1].B));
         }
 
         foreach (ComputerItem item in computer.Panel.Items)

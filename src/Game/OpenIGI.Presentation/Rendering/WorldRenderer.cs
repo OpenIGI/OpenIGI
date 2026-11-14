@@ -4,7 +4,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
@@ -126,20 +125,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <summary>Gets how many frustum-passing placements the occlusion queries rejected last draw.</summary>
     public int LastOccludedCount { get; private set; }
 
-    /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
-    public DoorRegistry? Doors { get => _transforms.Doors; set => _transforms.Doors = value; }
-
-    /// <summary>Gets or sets the live elevator transforms applied to lift placements.</summary>
-    public ElevatorRegistry? Elevators { get => _transforms.Elevators; set => _transforms.Elevators = value; }
-
-    /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
-    public AlarmSpeakerRegistry? AlarmSpeakers { get => _transforms.AlarmSpeakers; set => _transforms.AlarmSpeakers = value; }
-
-    /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
-    public DestructibleObjectRegistry? Destructibles { get => _transforms.Destructibles; set => _transforms.Destructibles = value; }
-
-    /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
-    public SecurityCameraRegistry? SecurityCameras { get => _transforms.SecurityCameras; set => _transforms.SecurityCameras = value; }
+    /// <summary>Gets or sets the title's own objects that move, turn, break and take away placements.</summary>
+    public IPlacementObjects? Objects { get => _transforms.Objects; set => _transforms.Objects = value; }
 
     /// <inheritdoc/>
     public IPlacementSpin? Spins { get => _transforms.Spins; set => _transforms.Spins = value; }
@@ -151,19 +138,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
     public IPlacementDestruction? Destruction { get => _transforms.Destruction; set => _transforms.Destruction = value; }
 
     /// <inheritdoc/>
+    public IPlacementPresence? Presence { get => _transforms.Presence; set => _transforms.Presence = value; }
+
+    /// <inheritdoc/>
     public IPlacementVariant? Variants { get => _transforms.Variants; set => _transforms.Variants = value; }
-
-    /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
-    public CutsceneRuntime? Cutscenes { get => _transforms.Cutscenes; set => _transforms.Cutscenes = value; }
-
-    /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
-    public GenericPickupRegistry? GenericPickups { get => _frameState.GenericPickups; set => _frameState.GenericPickups = value; }
-
-    /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
-    public WorldInteractionRegistry? Interactions { get => _transforms.Interactions; set => _transforms.Interactions = value; }
-
-    /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
-    public RotatingObjectRegistry? RotatingObjects { get => _transforms.RotatingObjects; set => _transforms.RotatingObjects = value; }
 
     /// <inheritdoc/>
     void IWorldPresenter.Draw(
@@ -211,9 +189,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
     {
         ArgumentNullException.ThrowIfNull(into);
 
-        into.Add(FormattableString.Invariant(
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"sub-meshes {LastDrawCount}   lightmapped {LastLightmappedCount}   triangles {LastTriangleCount}"));
-        into.Add(FormattableString.Invariant($"placements occlusion-culled {LastOccludedCount}"));
+        into.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"placements occlusion-culled {LastOccludedCount}"));
     }
 
     /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
@@ -411,6 +389,15 @@ public sealed partial class WorldRenderer : IWorldPresenter
         // The view's horizontal half-angle tangent, which a level of detail is picked against.
         // The lens as authored, not as widened for the screen: a wide screen sees more, not coarser. See WidescreenLens.
         float lodFieldOfView = WidescreenLens.AuthoredTangent(projection);
+
+        // The eye's own opaque pass is the one that decides which models are seen, so it is the one the
+        // glows are gathered from; the passes after it draw other halves of the same placements.
+        bool gatherGlows = CollectGlows && fromEye && !rotorsOnly && !glassOnly && !blendedOnly;
+        if (gatherGlows)
+        {
+            _drawnGlows.Clear();
+        }
+
         foreach (int index in order)
         {
             ref WorldFrameEntry entry = ref frame[index];
@@ -496,7 +483,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure
                 // built only from what the frustum passed can never hold it.
                 SubmitTracedOnly(
-                    scene, model, displayed, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
+                    scene, model, displayed, baseModelView,
                     tracedOnly);
                 continue;
             }
@@ -537,8 +524,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                         // Hidden from the camera is not hidden from a ray. A wall standing between the
                         // two is exactly what a window reflects around.
                         SubmitTracedOnly(
-                            scene, model, displayed, baseModelView,
-                            viewX, viewY, viewZ, bounds.Radius, tracedOnly);
+                            scene, model, displayed, baseModelView, tracedOnly);
                         continue;
                     }
                 }
@@ -547,6 +533,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
             if (!ApplyClip(entry, fromEye, ref appliedClip))
             {
                 continue;
+            }
+
+            if (gatherGlows)
+            {
+                GatherGlows(displayed, entry);
             }
 
             WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, displayed);
@@ -616,7 +607,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     }
                 }
 
-                _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material);
+                // A rotor is the smear of a blade whatever its texture is listed as: the original blends every copy of it
+                // (0x42C630), and a blade drawn as a pane is a fan of solid mirrored sheets.
+                SurfaceMaterial material = subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material;
+                _device.SetMaterialOverride(rotorsOnly && material.Glass ? material with { Glass = false } : material);
 
                 // A bake is multiplied by the title's gain on top of whatever headroom it was encoded
                 // with; a sub-mesh with none is drawn at the headroom alone and lit -- if the title
@@ -800,10 +794,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <param name="model">The model that was culled.</param>
     /// <param name="displayed">Its placement as displayed.</param>
     /// <param name="modelView">Where it stands, relative to the camera.</param>
-    /// <param name="viewX">Its bounding sphere's centre in view space.</param>
-    /// <param name="viewY">Its bounding sphere's centre in view space.</param>
-    /// <param name="viewZ">Its bounding sphere's centre in view space.</param>
-    /// <param name="radius">That sphere's radius, in metres.</param>
     /// <param name="wanted">Whether this pass is the one that feeds the traced world at all.</param>
     /// <remarks>
     /// <para>
@@ -831,10 +821,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
         ResolvedWorldModel model,
         WorldPlacement displayed,
         in Matrix4f modelView,
-        float viewX,
-        float viewY,
-        float viewZ,
-        float radius,
         bool wanted)
     {
         if (!wanted)

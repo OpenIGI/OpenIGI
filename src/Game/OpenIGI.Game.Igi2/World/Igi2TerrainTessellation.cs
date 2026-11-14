@@ -21,4 +21,11 @@ public readonly record struct Igi2TerrainTessellation(
     int SquaresCulled,
     int SquaresVisited,
     long CoveredArea,
-    long SupersededArea);
+    long SupersededArea)
+{
+    /// <summary>
+    /// Gets how many samples across the largest emitted leaf lying over a finer tile's ground is: nought, the quadtree leaving
+    /// that ground to the finer tile whole (<see cref="Igi2TerrainTile.IsWithinSubmap"/>).
+    /// </summary>
+    public int LargestLeafOverSubmap { get; init; }
+}

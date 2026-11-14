@@ -59,34 +59,9 @@ public sealed partial class GameHost
         // F1 swaps between flying and walking. The player takes the camera's position when it is
         // switched on, so the swap happens where you were looking. Not in a multiplayer session, host or joiner: flying is
         // a cheat there like any other (and the key says "Go, go, go!" to the others instead).
-        if (TickObserver is not null)
-        {
-        }
-        else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && TitlePlayer is not null)
+        if (TickObserver is null && _window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && TitlePlayer is not null)
         {
             ToggleTitlePlayer();
-        }
-        else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && HostedPlayer is not null && _camera is not null)
-        {
-            _playerMode = !_playerMode;
-            if (_playerMode)
-            {
-                if (!HostedPlayer.Place(_mission.Ground, _camera.Position, _camera.Yaw))
-                {
-                    _playerMode = false;
-                    _logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
-                }
-                else
-                {
-                    // Place() drops the player's presentation pair because this is a teleport.
-                }
-            }
-            else
-            {
-                _camera.MoveTo(HostedPlayer.Camera.Position, HostedPlayer.Body.Yaw, HostedPlayer.Body.Pitch);
-            }
-
-            _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
         }
     }
 }

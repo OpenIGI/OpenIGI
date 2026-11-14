@@ -1,5 +1,4 @@
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering.WebGpu.Native;
 using Xunit;
 

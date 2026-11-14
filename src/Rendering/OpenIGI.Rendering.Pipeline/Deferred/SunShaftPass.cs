@@ -130,10 +130,10 @@ public sealed class SunShaftPass : IDisposable
         Run(pass, _first, _firstBlock, frameInFlight, block, _a!.View, depth, bloom, _b!, width, height);
 
         Fill(block, width, height, sunUv, 2f, SecondStep, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight, occlusion, depthRange);
-        Run(pass, _second, _secondBlock, frameInFlight, block, _b!.View, depth, bloom, _a!, width, height);
+        Run(pass, _second, _secondBlock, frameInFlight, block, _b!.View, depth, bloom, _a, width, height);
 
         Fill(block, width, height, sunUv, 3f, 0f, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight, occlusion, depthRange);
-        _composite.Bind("uShafts", _a!.View, _sampler);
+        _composite.Bind("uShafts", _a.View, _sampler);
         Run(pass, _composite, _compositeBlock, frameInFlight, block, bloom, depth, null, _result!, width, height);
     }
 

@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Layout;

@@ -186,6 +186,34 @@ public sealed class Igi2PlacementBindingTests
         Assert.Equal(new Vector3f(0f, 0f, Assert.IsType<float>(rawGamma)), placement.Orientation);
     }
 
+    /// <summary>A fence panel turns about the up axis alone, by the one angle it carries.</summary>
+    /// <remarks>
+    /// <c>Fence_UpdateInternalDataHandler</c> builds the model's rotation from its <c>Gamma</c>'s sine and cosine; a
+    /// <c>Fence</c> declares no <c>Orientation</c>. Read the usual way, the panels of a run down the world's Y axis
+    /// each stood across it.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_fence_turns_by_its_lone_gamma()
+    {
+        Igi2Level level = Igi2Level.All().First(level =>
+            level.Directory.Replace(Path.DirectorySeparatorChar, '/')
+                .EndsWith("location1/level4", StringComparison.OrdinalIgnoreCase));
+        int turned = 0;
+        foreach (Interaction.Igi2FenceTask fence in Walk(level.Root).OfType<Interaction.Igi2FenceTask>())
+        {
+            Igi2Placement placement = level.Scene.Placements.Single(p => p.LevelId == fence.Id);
+            Assert.Equal(fence.Model, placement.Model);
+            Assert.Equal(fence.Position, placement.Position);
+            Assert.Equal(new Vector3f(0f, 0f, fence.Gamma), placement.Orientation);
+            if (fence.Gamma != 0f)
+            {
+                turned++;
+            }
+        }
+
+        Assert.True(turned > 0, "No fence in the level is turned, so its angle is untested.");
+    }
+
     private static Igi2Level LevelOne() =>
         Igi2Level.All().First(level =>
             level.Directory.Replace(Path.DirectorySeparatorChar, '/')

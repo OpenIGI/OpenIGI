@@ -119,7 +119,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
                         Matrix3f o = member.TickOrientation;
                         bool staged = member.Agent.IsCutsceneActor;
                         string attached = runtime.TryGetAttachedDrawTransform(view.Soldier, out Vector3d riding, out _)
-                            ? FormattableString.Invariant($" riding=({riding.X * Metre:0},{riding.Y * Metre:0},{riding.Z * Metre:0})")
+                            ? string.Create(CultureInfo.InvariantCulture, $" riding=({riding.X * Metre:0},{riding.Y * Metre:0},{riding.Z * Metre:0})")
                             : string.Empty;
                         log.AppendLine(CultureInfo.InvariantCulture,
                             $"[human] scene={sceneTick} id={view.Soldier.Id} staged={staged} drawn=({where.X:0.000},{where.Y:0.000},{where.Z:0.000}) anim={view.CurrentAnimation}{attached} m=[{o.M11:0.000000} {o.M12:0.000000} {o.M13:0.000000}; {o.M21:0.000000} {o.M22:0.000000} {o.M23:0.000000}; {o.M31:0.000000} {o.M32:0.000000} {o.M33:0.000000}] sample=({view.RootSample.X:0.0},{view.RootSample.Y:0.0},{view.RootSample.Z:0.0}) feet=({view.Position.X:0.0},{view.Position.Y:0.0},{view.Position.Z:0.0})");
@@ -215,28 +215,28 @@ public sealed class AiParityCaptureScenarios : IDisposable
                     }
                 }
 
-                log.AppendLine(FormattableString.Invariant($"[free] lt={counter} id={id} node={node} toward={(toward ? 1 : 0)} {verdict}"));
+                log.AppendLine(string.Create(CultureInfo.InvariantCulture, $"[free] lt={counter} id={id} node={node} toward={(toward ? 1 : 0)} {verdict}"));
             };
 
             // Which casts rebuilt whose palette, for the eye-matrix comparison.
             SoldierSimulation.PaletteRebuildTraced = (id, why, from, to) =>
             {
                 int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
-                log.AppendLine(FormattableString.Invariant($"[rebuild] lt={counter} id={id} by={why} who={SoldierSimulation.TickingSoldierId} from=({from.X:0},{from.Y:0},{from.Z:0}) to=({to.X:0},{to.Y:0},{to.Z:0})"));
+                log.AppendLine(string.Create(CultureInfo.InvariantCulture, $"[rebuild] lt={counter} id={id} by={why} who={SoldierSimulation.TickingSoldierId} from=({from.X:0},{from.Y:0},{from.Z:0}) to=({to.X:0},{to.Y:0},{to.Z:0})"));
             };
 
             // The probe's [drop]: where a dying soldier's gun starts falling.
             SoldierSimulation.WeaponDropTraced = (id, at, feet, root) =>
             {
                 int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
-                log.AppendLine(FormattableString.Invariant($"[drop] lt={counter} id={id} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}) feet=({feet.X:0.0},{feet.Y:0.0},{feet.Z:0.0}) root={root:0.0}"));
+                log.AppendLine(string.Create(CultureInfo.InvariantCulture, $"[drop] lt={counter} id={id} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}) feet=({feet.X:0.0},{feet.Y:0.0},{feet.Z:0.0}) root={root:0.0}"));
             };
 
             // The probe's [dmg]: every round a soldier takes.
             SoldierSimulation.DamageTraced = (id, zone, bone, factor, accum, max) =>
             {
                 int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
-                log.AppendLine(FormattableString.Invariant($"[dmg] lt={counter} id={id} zone={zone} bone={bone} factor={factor:0.000} accum={accum:0.000} max={max:0.000}"));
+                log.AppendLine(string.Create(CultureInfo.InvariantCulture, $"[dmg] lt={counter} id={id} zone={zone} bone={bone} factor={factor:0.000} accum={accum:0.000} max={max:0.000}"));
             };
 
             // The probe's [fire]: each round's base forward and the gun's rounds this pull.
@@ -257,7 +257,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
                     }
                 }
 
-                log.AppendLine(FormattableString.Invariant($"[fire] lt={counter} id={id} pull={pull} fwd=({forward.X:0.000000},{forward.Y:0.000000},{forward.Z:0.000000}) yaw={who.Facing:0.000000} ryaw={who.RecoilYaw:0.000000} pitch={who.ViewPitch:0.000000} rpitch={who.RecoilPitch:0.000000}"));
+                log.AppendLine(string.Create(CultureInfo.InvariantCulture, $"[fire] lt={counter} id={id} pull={pull} fwd=({forward.X:0.000000},{forward.Y:0.000000},{forward.Z:0.000000}) yaw={who.Facing:0.000000} ryaw={who.RecoilYaw:0.000000} pitch={who.ViewPitch:0.000000} rpitch={who.RecoilPitch:0.000000}"));
             };
 
             // The probe's [march]: every pass of a soldier's round, its segment and what the cast met.
@@ -267,10 +267,10 @@ public sealed class AiParityCaptureScenarios : IDisposable
                 int shooter = round.Shooter is SoldierView v ? v.Soldier.Id : -1;
                 string what = contact is not { } c
                     ? "hit=0"
-                    : FormattableString.Invariant(
+                    : string.Create(CultureInfo.InvariantCulture,
                         $"hit=1 obj={c.Payload?.GetType().Name ?? "-"} human={(c.StruckHuman ? 1 : 0)} hasobj={(c.HasObject ? 1 : 0)} entry='{c.Entry?.Name ?? "-"}' exit='{c.Exit?.Name ?? "-"}' pos=({c.Position.X:0.0},{c.Position.Y:0.0},{c.Position.Z:0.0}) n=({c.Normal.X:0.0000},{c.Normal.Y:0.0000},{c.Normal.Z:0.0000}) dist={c.Distance:0.00}");
                 log.AppendLine(
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"[march] lt={counter} shooter={shooter} rem={remaining:0.0} defl={(round.Deflected ? 1 : 0)} from=({from.X:0.0},{from.Y:0.0},{from.Z:0.0}) to=({to.X:0.0},{to.Y:0.0},{to.Z:0.0}) {what}"));
             };
         }
@@ -289,7 +289,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
                     owner = r.Simulation.GunShotsForTesting.FirstOrDefault(pair => ReferenceEquals(pair.Value, task)).Key?.Soldier.Id ?? -1;
                 }
 
-                log.AppendLine(FormattableString.Invariant(
+                log.AppendLine(string.Create(CultureInfo.InvariantCulture,
                     $"[tracer] add lt={counter} owner={owner} count={task.Tracers.Count} from=({tracer.Start.X:0.0},{tracer.Start.Y:0.0},{tracer.Start.Z:0.0}) to=({tracer.End.X:0.0},{tracer.End.Y:0.0},{tracer.End.Z:0.0}) head={tracer.StartDistance:0.0} tail={tracer.EndDistance:0.0} range={tracer.Range:0.0} life={tracer.Life}"));
             };
         }
@@ -345,8 +345,8 @@ public sealed class AiParityCaptureScenarios : IDisposable
                     for (OpenIGI.Engine.Tasks.GameTask? at = view.Soldier; at is not null; at = at.Parent)
                     {
                         chain.Add(at is OpenIGI.Game.World.ConditionalContainerTask container
-                            ? FormattableString.Invariant($"{at.Type.Name}#{at.Id} '{at.Label}' [{container.Condition}]")
-                            : FormattableString.Invariant($"{at.Type.Name}#{at.Id} '{at.Label}'"));
+                            ? string.Create(CultureInfo.InvariantCulture, $"{at.Type.Name}#{at.Id} '{at.Label}' [{container.Condition}]")
+                            : string.Create(CultureInfo.InvariantCulture, $"{at.Type.Name}#{at.Id} '{at.Label}'"));
                         if (at is OpenIGI.Game.World.ConditionalContainerTask watched)
                         {
                             containers.Add(watched);
@@ -448,7 +448,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
                 Vector3d p = brain.Position;
                 AiPatrolCommand? command = route?.Current;
                 log.AppendLine(CultureInfo.InvariantCulture,
-                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase} clip={view.CurrentAnimation} ct={view.Bones.SourceOf(0)?.Time ?? -1f:0.0000} dur={view.Bones.SourceOf(0)?.Animation.Duration ?? -1f:0.0000} root={RootText(view)} nvis={brain.PatrolNotVisibleTicks} aim={brain.AimText} claim={brain.ClaimedNodeId} cpos={brain.ClaimedPositionText} wp={(brain.DebugWaypoint is { } w ? FormattableString.Invariant($"({w.X:0.0},{w.Y:0.0})") : "-")} lfs={brain.LastFreeSearch}");
+                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase} clip={view.CurrentAnimation} ct={view.Bones.SourceOf(0)?.Time ?? -1f:0.0000} dur={view.Bones.SourceOf(0)?.Animation.Duration ?? -1f:0.0000} root={RootText(view)} nvis={brain.PatrolNotVisibleTicks} aim={brain.AimText} claim={brain.ClaimedNodeId} cpos={brain.ClaimedPositionText} wp={(brain.DebugWaypoint is { } w ? string.Create(CultureInfo.InvariantCulture, $"({w.X:0.0},{w.Y:0.0})") : "-")} lfs={brain.LastFreeSearch}");
             }
 
             if (lastTick >= ticks)
@@ -462,7 +462,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
 
     // The playing clip's sampled root and its last delta, against the probe's nref/nd.
     private static string RootText(SoldierView view) => view.Bones.SourceOf(0) is { } clip
-        ? FormattableString.Invariant(
+        ? string.Create(CultureInfo.InvariantCulture,
             $"({clip.SampleRoot().X:0.00},{clip.SampleRoot().Y:0.00},{clip.SampleRoot().Z:0.00}) d=({clip.RootDelta.X:0.00},{clip.RootDelta.Y:0.00},{clip.RootDelta.Z:0.00})")
         : "-";
 
@@ -478,7 +478,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
             }
 
             Vector3f hand = view.Orientation.Transposed().Transform(pose.Positions[HumanAttachPoints.ThirdPersonWeapon]);
-            return FormattableString.Invariant(
+            return string.Create(CultureInfo.InvariantCulture,
                 $"({view.Position.X + hand.X:0.0},{view.Position.Y + hand.Y:0.0},{view.Position.Z + view.RootSample.Z + hand.Z:0.0})");
         }
 
@@ -494,7 +494,7 @@ public sealed class AiParityCaptureScenarios : IDisposable
         }
 
         Matrix3f b = pose.Rotations[HumanAttachPoints.AiEye];
-        return FormattableString.Invariant(
+        return string.Create(CultureInfo.InvariantCulture,
             $"[{b.M11:0.0000} {b.M12:0.0000} {b.M13:0.0000} | {b.M21:0.0000} {b.M22:0.0000} {b.M23:0.0000} | {b.M31:0.0000} {b.M32:0.0000} {b.M33:0.0000}]");
     }
 

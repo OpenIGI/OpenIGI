@@ -2,7 +2,6 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.Player;
@@ -138,6 +137,7 @@ public sealed class RetailAnimTriggerTests
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         AnimTriggerRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Load(resources, loop.Natives);

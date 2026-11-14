@@ -5,7 +5,6 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Flow;
-using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;

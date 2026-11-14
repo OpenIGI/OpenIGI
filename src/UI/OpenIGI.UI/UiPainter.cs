@@ -127,8 +127,44 @@ public sealed partial class UiPainter
     /// <param name="rect">The rectangle in pixels.</param>
     /// <param name="color">The fill colour.</param>
     /// <param name="blend">How the fill combines with what is behind it.</param>
-    public void FillRect(UiRect rect, Bgra32 color, UiBlend blend = UiBlend.AlphaBlend) =>
-        DrawSprite(UiImage.None, rect, UiRect.Unit, color, blend);
+    public void FillRect(UiRect rect, Bgra32 color, UiBlend blend = UiBlend.AlphaBlend)
+    {
+        UiRect device = _transform.Apply(rect);
+        if (device.Width > 0f && device.Height > 0f && (device.Width < HairlinePixels || device.Height < HairlinePixels))
+        {
+            DrawDeviceSprite(UiImage.None, SnapHairline(device), UiRect.Unit, color, blend);
+            return;
+        }
+
+        DrawDeviceSprite(UiImage.None, device, UiRect.Unit, color, blend);
+    }
+
+    /// <summary>The thickness, in pixels, under which a fill is a line and is put on whole pixels.</summary>
+    private const float HairlinePixels = 2f;
+
+    /// <summary>Puts a line's thin side on whole pixels, at least one of them.</summary>
+    /// <remarks>
+    /// A rule or a border is a design unit thick, and on a small screen a design unit is less than a pixel. A quad
+    /// thinner than a pixel is drawn only where it happens to cover a pixel's centre: a key cap lost a side, a
+    /// separator came and went as the page scrolled. The long side is left where it is.
+    /// </remarks>
+    private static UiRect SnapHairline(UiRect device)
+    {
+        float x = device.X, y = device.Y, width = device.Width, height = device.Height;
+        if (width < HairlinePixels)
+        {
+            x = MathF.Round(x);
+            width = MathF.Max(1f, MathF.Round(width));
+        }
+
+        if (height < HairlinePixels)
+        {
+            y = MathF.Round(y);
+            height = MathF.Max(1f, MathF.Round(height));
+        }
+
+        return new UiRect(x, y, width, height);
+    }
 
     /// <summary>Strokes a rectangle's outline with four thin fills, inside its edges.</summary>
     /// <param name="rect">The rectangle in pixels.</param>
@@ -758,7 +794,12 @@ public sealed partial class UiPainter
         Bgra32 color,
         UiBlend blend = UiBlend.AlphaBlend)
     {
-        UiRect dest = _transform.Apply(destination);
+        DrawDeviceSprite(texture, _transform.Apply(destination), source, color, blend);
+    }
+
+    // A sprite whose destination is already in the back buffer's pixels, the transform applied.
+    private void DrawDeviceSprite(UiImage texture, UiRect dest, UiRect source, Bgra32 color, UiBlend blend)
+    {
         UiRect src = source;
         if (!UiGeometryEmitter.TryClip(Clip, ref dest, ref src))
         {
@@ -838,6 +879,11 @@ public sealed partial class UiPainter
         UiVec2 origin = _transform.Apply(topLeft);
         float deviceSize = sizePx * scale;
         Bgra32 faded = Fade(color);
+
+        // Small text is drawn from the face's smaller rasterisation when it has one. They measure alike, so
+        // the pen ends where the caller's measurement of the font it passed says it does.
+        float devicePixels = font.PixelHeightFor(deviceSize);
+        font = font.ForDrawSize(devicePixels);
         var run = new GlyphRun(font, text, deviceSize, origin);
         while (run.MoveNext())
         {
@@ -850,7 +896,7 @@ public sealed partial class UiPainter
             }
 
             bool trimmed = dest != placed.Destination;
-            var glyph = new UiGlyph(dest, source, placed.Character, placed.PenX, placed.BaselineY, deviceSize, clip, trimmed);
+            var glyph = new UiGlyph(dest, source, placed.Character, placed.PenX, placed.BaselineY, devicePixels, clip, trimmed);
             Renderer.DrawGlyph(font, glyph, faded, effects, blend);
         }
 

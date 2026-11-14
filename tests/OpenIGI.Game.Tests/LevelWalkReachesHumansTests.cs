@@ -9,7 +9,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -33,11 +32,7 @@ public sealed class LevelWalkReachesHumansTests
         Assert.NotEmpty(humans);
         foreach (HumanTask human in humans)
         {
-            runtime.Walker.Bind(human, task =>
-            {
-                reached.Add(task);
-                runtime.Walker.RunChildren(task);
-            });
+            human.Runner = new Reach(reached);
         }
 
         // The player's container 560 is not the same on every mission; the first ticks cover the intro's hand-off.
@@ -88,7 +83,7 @@ public sealed class LevelWalkReachesHumansTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -100,5 +95,15 @@ public sealed class LevelWalkReachesHumansTests
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(mission);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         return (loop, root);
+    }
+
+    // Notes each human the walk reaches, then walks beneath it as a soldier's own update does.
+    private sealed class Reach(HashSet<GameTask> reached) : OpenIGI.Game.Level.ITaskRun<HumanTask>
+    {
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+        {
+            reached.Add(task);
+            level.RunChildren(task);
+        }
     }
 }

@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Game.Ai;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
@@ -43,7 +42,7 @@ public sealed class AiNodeOccupancyTests
         // pushes the second claimant to a neighbour instead. Either way they do not stack.
         if (a == b)
         {
-            Assert.NotEqual(firstSlot!.Value, secondSlot!.Value);
+            Assert.NotEqual(firstSlot.Value, secondSlot.Value);
         }
         else
         {

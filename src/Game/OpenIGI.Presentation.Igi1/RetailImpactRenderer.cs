@@ -39,7 +39,6 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry? _resources;
-    private readonly VirtualFileSystem? _fileSystem;
     private readonly Particle2DRenderer _particles;
     private readonly Dictionary<string, FragmentModel> _fragmentModels = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
@@ -57,7 +56,6 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
         _resources = resources;
-        _fileSystem = fileSystem;
         _particles = new Particle2DRenderer(device, fileSystem, SpriteArchive);
     }
 
@@ -93,7 +91,7 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
                     continue;
                 }
 
-                MeshGeometry? geometry = MefMeshBuilder.Build(model!, 1f / UnitsPerMetre);
+                MeshGeometry? geometry = MefMeshBuilder.Build(model, 1f / UnitsPerMetre);
                 if (geometry is null || !pack.TryGetTextureName(instance, 0, out string textureName))
                 {
                     continue;
@@ -234,15 +232,6 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
 
         _fragmentModels.Clear();
     }
-
-    private static Bgra32 Tint(float r, float g, float b, float a) => new(
-        (byte)Math.Clamp(r * 255f, 0f, 255f),
-        (byte)Math.Clamp(g * 255f, 0f, 255f),
-        (byte)Math.Clamp(b * 255f, 0f, 255f),
-        (byte)Math.Clamp(a * 255f, 0f, 255f));
-
-    private static bool IsFinite(Vector3f v) =>
-        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
 
     private sealed class FragmentModel(MeshGeometry geometry, TextureHandle texture)
     {

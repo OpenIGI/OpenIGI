@@ -5,7 +5,6 @@ using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.Pipeline;
 

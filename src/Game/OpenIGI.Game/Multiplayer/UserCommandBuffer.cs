@@ -154,7 +154,7 @@ public sealed class UserCommandBuffer
         }
 
         _pending.TryAdd(command.Tick, (channels, command.ViewTick, float.IsFinite(command.ViewFraction) ? Math.Clamp(command.ViewFraction, 0f, 1f) : 0f));
-        NewestTick = command.Tick;
+        NewestTick = Math.Max(NewestTick, command.Tick);
     }
 
     /// <summary>Gets how many commands to run this tick, and counts a tick the queue is dry.</summary>

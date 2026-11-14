@@ -64,7 +64,7 @@ public sealed partial class GameHost
             : new SoldierBodies(shadowCasters, shadowTasks, tickBlend);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
-        _gunPickupRenderer?.BeginFrame(tickBlend, smoothPresentation);
+        WorldView?.BeginFrame(tickBlend, smoothPresentation);
 
         return casterBodies;
     }
@@ -280,9 +280,12 @@ public sealed partial class GameHost
         // by deleting the yard's fog too, so a compound seen from a doorway came up in clear air.
         // The room is now dry and the yard beyond the window is not, which is what is actually
         // out there.
+        //
+        // The remastered computer's map is read in clear air (ComputerMapClear).
         bool wantsFog = FogCVars.FogQuality.Value > 0
             && FrameCVars.OffscreenScene.Value
-            && LightingCVars.Deferred.Value;
+            && LightingCVars.Deferred.Value
+            && !ComputerMapClear;
 
         // The mission actually on screen, as the colour grade reads it. This read -mission's id, so a
         // mission entered from the campaign -- where that is nought -- was drawn in the generic

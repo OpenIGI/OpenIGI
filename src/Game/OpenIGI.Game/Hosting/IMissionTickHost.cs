@@ -1,10 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -28,9 +24,10 @@ public interface IMissionTickHost
     /// <summary>Steps the weather, which falls whatever the player is doing.</summary>
     void StepWeather();
 
-    /// <summary>Plays the vehicles' engines and guns as the cutscene runtime now has them.</summary>
-    /// <param name="cutscenes">The cutscene runtime.</param>
-    void SoundVehicles(CutsceneRuntime cutscenes);
+    /// <summary>Plays the level's engines and vehicle guns as they sound this tick.</summary>
+    /// <param name="engines">What hums, drives or turns: the vehicles and the rotating objects.</param>
+    /// <param name="guns">The vehicle guns that fired.</param>
+    void SoundVehicles(IEnumerable<VehicleSoundSource> engines, IEnumerable<VehicleGunSound> guns);
 
     /// <summary>Gets the log.</summary>
     IOpenIgiLogger Logger { get; }
@@ -60,6 +57,12 @@ public interface IMissionTickHost
     /// <summary>Tells the host the mission's computer has opened or closed.</summary>
     /// <param name="open">Whether it is now open.</param>
     void ComputerChanged(bool open);
+
+    /// <summary>
+    /// Gets what the mission's computer saves and loads with on its save screen, or <see langword="null"/> for a mission that
+    /// keeps no save games.
+    /// </summary>
+    OpenIGI.Game.Computer.IComputerSaves? ComputerSaves => null;
 
     /// <summary>Runs another title's own player in this one's place, if the title brought one.</summary>
     /// <returns>Whether it ran, in which case a title's player does not.</returns>

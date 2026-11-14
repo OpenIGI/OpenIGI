@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using OpenIGI.Core.Collections;
 
 namespace OpenIGI.Game.Tests;
 
@@ -45,7 +46,7 @@ internal sealed class RetailCarStepCapture
             }
 
             int sequence = words[2].StartsWith("seq=", StringComparison.Ordinal) ? Int(words[2][4..]) : 0;
-            Tick Get() => bySequence.TryGetValue(sequence, out Tick? tick) ? tick : bySequence[sequence] = new Tick(sequence);
+            Tick Get() => bySequence.GetOrAdd(sequence, static s => new Tick(s));
             switch (words[1])
             {
                 case "TYPEMEM":

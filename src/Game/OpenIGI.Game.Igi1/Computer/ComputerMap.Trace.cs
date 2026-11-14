@@ -43,24 +43,18 @@ public sealed partial class ComputerMap
                 }
             }
 
-            if (((buttons & Igi1Computer.WheelUp) != 0 && (_lastButtons & Igi1Computer.WheelUp) == 0) || doubled)
+            if ((((buttons & Igi1Computer.WheelUp) != 0 && (_lastButtons & Igi1Computer.WheelUp) == 0) || doubled) && _computer.Zoom < 3)
             {
-                if (_computer.Zoom < 3)
-                {
-                    _computer.Zoom++;
-                    SetFieldOfView(Tan(ZoomAngles[_computer.Zoom]));
-                    Startup.Start();
-                }
+                _computer.Zoom++;
+                SetFieldOfView(Tan(ZoomAngles[_computer.Zoom]));
+                Startup.Start();
             }
 
-            if (((buttons & Igi1Computer.WheelDown) != 0 && (_lastButtons & Igi1Computer.WheelDown) == 0) || rightDoubled)
+            if ((((buttons & Igi1Computer.WheelDown) != 0 && (_lastButtons & Igi1Computer.WheelDown) == 0) || rightDoubled) && _computer.Zoom != 0)
             {
-                if (_computer.Zoom != 0)
-                {
-                    _computer.Zoom--;
-                    SetFieldOfView(Tan(ZoomAngles[_computer.Zoom]));
-                    Startup.Start();
-                }
+                _computer.Zoom--;
+                SetFieldOfView(Tan(ZoomAngles[_computer.Zoom]));
+                Startup.Start();
             }
         }
 

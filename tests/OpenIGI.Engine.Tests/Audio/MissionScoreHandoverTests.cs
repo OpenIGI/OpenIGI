@@ -1,4 +1,3 @@
-using OpenIGI.Audio;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.TestSupport;

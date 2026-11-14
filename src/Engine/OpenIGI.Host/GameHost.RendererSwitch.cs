@@ -1,7 +1,6 @@
 ﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
 using OpenIGI.Host.Services;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
@@ -24,7 +23,7 @@ public sealed partial class GameHost
 
     /// <summary>Gets the input the player and the free camera are steered by this frame.</summary>
     /// <remarks>Still while the pause menu is up over a multiplayer game, which plays on under it (<see cref="MenuPausesGame"/>).</remarks>
-    private InputState ViewInput => _menuFlow.PauseMenu && !MenuPausesGame
+    private InputState ViewInput => (_menuFlow.PauseMenu && !MenuPausesGame) || _touchEditor.IsOpen
         ? _stillInput
         : ScriptedViewInput ?? (_switch.IsHolding || WheelHoldsInput ? _stillInput : _window.Input);
 
@@ -104,7 +103,11 @@ public sealed partial class GameHost
 
             // Chosen from the menu, where there is no mission to go back to: the player is put back on the
             // settings page they chose it on, not on the landing page.
-            ShellTab: target is not null && _session.Mission is null ? "settings" : null));
+            ShellTab: target is not null && _session.Mission is null ? "settings" : null,
+
+            // The game being played, which is not the one the process started on once the shell has changed games.
+            Title: ActiveTitle,
+            DataRoot: _gamePath));
         return true;
     }
 
@@ -144,10 +147,15 @@ public sealed partial class GameHost
             return null;
         }
 
-        if (_playerMode && HostedPlayer is { } player)
+        if (_playerMode && TitlePlayer is { } title)
         {
-            Vector3d feet = player.Body.Position / WorldScene.UnitsPerMetre;
-            return new RendererSwitchPose(feet, player.Body.Yaw, player.Body.Pitch, Flying: false);
+            // The title's player's feet, and the way its eyes look.
+            Vector3f forward = TitleCamera(title).Orientation.Row3;
+            return new RendererSwitchPose(
+                title.Position / TitleUnitsPerMetre,
+                title.Heading ?? MathF.Atan2(forward.X, forward.Y),
+                MathF.Asin(Math.Clamp(forward.Z, -1f, 1f)),
+                Flying: false);
         }
 
         return _camera is { } camera
@@ -197,9 +205,10 @@ public sealed partial class GameHost
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
         }
-        else if (HostedPlayer is { } player && player.Place(_mission.Ground, pose.Position, pose.Yaw))
+        else if (TitlePlayer is not null && _titleFeatures?.Placement is { } placement
+            && placement.TryPlace(pose.Position * TitleUnitsPerMetre, pose.Yaw))
         {
-            player.Body.Pitch = pose.Pitch;
+            // Back on its feet where it stood, the way it faced; its look's pitch is its own to set again.
             _playerMode = true;
         }
         else
@@ -208,6 +217,6 @@ public sealed partial class GameHost
             return;
         }
 
-        _logger.Information("Renderer", FormattableString.Invariant($"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_timeOfDay.DayNight.TimeHours:F2}."));
+        _logger.Information("Renderer", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_timeOfDay.DayNight.TimeHours:F2}."));
     }
 }

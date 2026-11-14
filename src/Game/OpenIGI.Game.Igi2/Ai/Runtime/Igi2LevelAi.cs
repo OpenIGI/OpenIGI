@@ -5,7 +5,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Scripting;
-using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Runtime;
 
@@ -196,6 +195,7 @@ public static class Igi2LevelAi
             object thing = task switch
             {
                 Igi2HumanSoldierTask { Body: { } body } => body,
+                Igi2HumanSoldierTask { StandIn: { } standIn } => standIn,
                 Player.Igi2HumanPlayerTask => player,
                 _ => task,
             };

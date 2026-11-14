@@ -1,6 +1,4 @@
 ﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Configuration.Presets;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -82,13 +80,7 @@ public sealed partial class GameHost
                 _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
             }
 
-            CutsceneRuntime outroCutscenes = _mission.Cutscenes!;
-            outroCutscenes.RequestBreak();
-            outroCutscenes.Tick();
-            MissionObjectiveRuntime outroObjectives = _mission.Objectives!;
-            outroObjectives.TickLevelState();
-            outroObjectives.TickAfterLevelState();
-            outroCutscenes.FinishExpressionTick();
+            _hosted.Tick.BreakIntoOutro();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
     }
@@ -116,7 +108,8 @@ public sealed partial class GameHost
     /// <summary>The scene walk, the world renderer and the collision index; the vehicles on it, what can be destroyed, and the weather.</summary>
     private void MissionScene(MissionBuild b)
     {
-        if (_mission.Cutscenes is null)
+        // The step in the cut-scenes' place leaves the mission's text, whether or not its game has cut-scenes of its own.
+        if (b.MissionText is null)
         {
             throw MissingSystem(MissionSystemNames.Cutscenes);
         }
@@ -200,8 +193,7 @@ public sealed partial class GameHost
         WorldScene scene = b.Scene ?? throw MissingSystem(MissionSystemNames.Scene);
         IWorldPresenter world = b.World ?? throw MissingSystem(MissionSystemNames.Scene);
 
-        world.Destructibles = _mission.Destructibles;
-        world.Cutscenes = _mission.Cutscenes;
+        world.Objects = _mission.Placements;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
         // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
@@ -349,11 +341,8 @@ public sealed partial class GameHost
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
-        world.GenericPickups = _mission.GenericPickups;
-        world.Interactions = _mission.Interactions;
-        world.Variants = _mission.Interactions;
-        world.Doors = _mission.Doors;
-        world.Elevators = _mission.Elevators;
+        world.Objects = _mission.Placements;
+        world.Variants = _mission.PlacementVariants;
 
         EndStage("the doors, elevators and world interactions");
     }
@@ -363,16 +352,12 @@ public sealed partial class GameHost
     {
         IWorldPresenter world = b.World!;
 
-        world.SecurityCameras = _mission.SecurityCameras;
-        _cameraStatusLights?.Dispose();
-        _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
-        if (_cameraStatusLights is not null && !_cameraStatusLights.Load(_fileSystem))
+        if (b.Loaded is { } loaded)
         {
-            _cameraStatusLights.Dispose();
-            _cameraStatusLights = null;
+            WorldView?.LoadLamps(WorldObjects(loaded), _fileSystem);
         }
 
-        world.RotatingObjects = _mission.RotatingObjects;
+        world.Objects = _mission.Placements;
     }
 
     /// <summary>The alarm speakers the game's brains left, handed to the world renderer.</summary>
@@ -380,7 +365,7 @@ public sealed partial class GameHost
     {
         if (_hosted.Setup.HasSoldiers)
         {
-            b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
+            b.World!.Objects = _mission.Placements;
         }
     }
 }

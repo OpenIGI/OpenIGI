@@ -1,4 +1,3 @@
-using OpenIGI.Game.Ai;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
 

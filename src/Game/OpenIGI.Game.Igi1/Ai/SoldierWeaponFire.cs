@@ -116,7 +116,9 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
         }
         else if (member is not null)
         {
-            if (member.FireCooldown > 0)
+            // The Gun's own run handler counts its cooldown down (0x478640), ahead of the soldier's update: here only for a
+            // soldier whose Gun task did not run this tick.
+            if (member.CooldownCountedTick != _context.TickCount && member.FireCooldown > 0)
             {
                 member.FireCooldown--;
             }
@@ -167,6 +169,12 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
             ? mounted.FireCooldownTicks > 0 || mounted.AmmunitionSample <= 0
             : member is null || member.FireCooldown > 0 || member.AmmoInClip <= 0 || member.ReloadTicks > 0;
         if (!command.PullTrigger || !bodyForwardsTrigger || blocked)
+        {
+            return false;
+        }
+
+        // A mod's behaviour may hold the round back this tick (IGuardCombat.MayFire). Not retail.
+        if (brain.Behaviours is { MayFire: false })
         {
             return false;
         }
@@ -276,21 +284,15 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
 
         // The emplacement's barrel is aimed by its own task; a carried gun points where the soldier looks.
         Vector3f forward;
-        Vector3f right;
-        Vector3f up;
         if (mounted is not null)
         {
             Vector3d line = target - origin;
             forward = new Vector3f((float)(line.X / reach), (float)(line.Y / reach), (float)(line.Z / reach)).Normalized();
-            right = Vector3f.Cross(forward, new Vector3f(0f, 0f, 1f)).Normalized();
-            up = Vector3f.Cross(right, forward).Normalized();
         }
         else
         {
             Matrix3f view = brain.ViewOrientation.Transposed();
             forward = ToFloat(view.Transform(new Vector3d(0.0, 1.0, 0.0)));
-            right = ToFloat(view.Transform(new Vector3d(1.0, 0.0, 0.0)));
-            up = ToFloat(view.Transform(new Vector3d(0.0, 0.0, 1.0)));
         }
 
         int roundsThisPull = member?.RoundsThisPull ?? 0;

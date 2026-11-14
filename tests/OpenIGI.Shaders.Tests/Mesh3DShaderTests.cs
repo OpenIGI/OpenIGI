@@ -1,5 +1,4 @@
-﻿using OpenIGI.Shaders;
-using Xunit;
+﻿using Xunit;
 
 namespace OpenIGI.Shaders.Tests;
 

@@ -30,7 +30,7 @@ public sealed class HumanBodyStateTable
     public HumanBodyStateTable(params (int Animation, int Mode)[] entries)
     {
         ArgumentNullException.ThrowIfNull(entries);
-        ArgumentOutOfRangeException.ThrowIfZero(entries.Length, nameof(entries));
+        ArgumentOutOfRangeException.ThrowIfZero(entries.Length);
         _entries = [.. entries];
     }
 

@@ -70,6 +70,9 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     // The soldiers' simulation: their brains, their bodies' state, their weapons and what they hear and see.
     private readonly SoldierSimulation _sim;
 
+    // Whether the renderer made the simulation, and so retires it and forgets its level with its own drawing.
+    private readonly bool _ownsSimulation;
+
     // What is drawn of the player's own body.
     private readonly PlayerBodyRenderer _playerBody;
 
@@ -150,13 +153,19 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     /// factory rather than a type because the renderer behind it is title content and lives in the
     /// title's own project.
     /// </param>
+    /// <param name="simulation">
+    /// The simulation whose soldiers are drawn, when another owns it -- a guest level of the game's soldiers in another game's
+    /// level, which stands and runs them itself (<see cref="Present"/>); or <see langword="null"/> for the renderer to make
+    /// and own its own, as the game's own missions have it (<see cref="Load"/>).
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public SoldierRenderer(
         IGraphicsDevice device,
         ResourceRegistry resources,
         IOpenIgiLogger? logger = null,
         MagicObjectRegistry? magic = null,
-        Func<IHeldWeaponPresenter>? heldWeapons = null)
+        Func<IHeldWeaponPresenter>? heldWeapons = null,
+        SoldierSimulation? simulation = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
@@ -164,14 +173,21 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _device = device;
         _resources = resources;
         _logger = logger ?? NullLogger.Instance;
-        _sim = new SoldierSimulation(_logger);
+        _ownsSimulation = simulation is null;
+        _sim = simulation ?? new SoldierSimulation(_logger);
+
+        // A GunPickup simulates independently after a dead human drops it, including when the optional visual corpse ragdoll
+        // is off. Stepping the corpses between, as the simulation closes its tick, keeps its walls and floor identical to the
+        // ones that stop the body.
+        _sim.CorpsesMove += StepCorpses;
+        _sim.TickClosed += FollowTick;
         _meshes = new SoldierMeshBuilder(_device, _logger, magic, heldWeapons);
         _frames = new SoldierFrameInterpolator(_groups, _sim, _logger);
         _hits = new SoldierHitTesting(_groups, _sim, _frames, _logger);
         _armoury = new SoldierArmoury(_groups, _sim, _meshes, _logger);
         _drawer = new SoldierWeaponDrawer(_groups, _device, _armoury, _frames, () => Textures, _logger);
         _playerBody = new PlayerBodyRenderer(this, _device, _sim, _logger);
-        _sim.SpawnedBody = (generator, roster, fresh, dead) =>
+        _sim.SpawnedBody = (asker, roster, fresh, dead) =>
         {
             SoldierGroup group = _groups.First(candidate => ReferenceEquals(candidate.Roster, roster));
             SoldierMember member;
@@ -181,7 +197,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
             {
-                _logger.Warning(LogCategory, $"{generator.Name} could not upload its cloned Human: {ex.Message}");
+                _logger.Warning(LogCategory, $"{asker} could not upload its cloned Human: {ex.Message}");
                 return false;
             }
 
@@ -207,6 +223,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 if (group.Soldiers.Find(candidate => ReferenceEquals(candidate.Agent, agent)) is { } corpse)
                 {
                     group.Soldiers.Remove(corpse);
+                    DropStyledBody(corpse);
                     if (corpse.Mesh.IsValid)
                     {
                         _device.DestroyMesh(corpse.Mesh);
@@ -240,6 +257,11 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             if (fall.DroppedWeapon)
             {
                 member.Weapon = null;
+            }
+
+            if (member.Styled is { } styled)
+            {
+                RunStyled(_logger, member, "A mod's soldier body's Fell", (styled, fall), static fell => fell.styled.Fell(fell.fall));
             }
         };
     }
@@ -412,81 +434,44 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         Release();
-        _sim.Terrain = terrain;
-        _sim.Cast = cast;
+        return Present(mission, _sim.Load(mission, levelRoot, terrain, cast));
+    }
 
-        Dictionary<(string Model, int Skeleton, int Stand), SoldierGroup> groups = [];
-        foreach (HumanSoldierTask soldier in levelRoot.Descendants().OfType<HumanSoldierTask>())
+    /// <summary>Draws soldiers the simulation has stood (<see cref="SoldierSimulation.Load"/>): a mesh for each group and each soldier.</summary>
+    /// <param name="mission">The packs the soldiers' models came from.</param>
+    /// <param name="loaded">The groups, as the simulation stood them.</param>
+    /// <returns>How many soldiers are drawn.</returns>
+    public int Present(LoadedMission mission, IReadOnlyList<SoldierLoadedGroup> loaded)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ArgumentNullException.ThrowIfNull(loaded);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        ReleaseDrawing();
+        foreach (SoldierLoadedGroup stood in loaded)
         {
-            // Another game drives it: its body, brain and drawing are that game's.
-            if (soldier.Driver is not null)
+            if (_meshes.BuildGroup(mission, stood) is not { } group)
             {
                 continue;
             }
 
-            if (!mission.TryGetAnimationSet(soldier.BoneHierarchy, out BoneAnimationSet? set) || set is null)
+            _groups.Add(group);
+            foreach (SoldierAgent agent in stood.Roster.Agents)
             {
-                _logger.Warning(
-                    LogCategory,
-                    $"'{soldier.Name}' declares skeleton {soldier.BoneHierarchy}, which no pack loaded a set for.");
-                continue;
-            }
-
-            SoldierView view = new(soldier, set);
-            if (soldier.StandAnimation >= 0 && !view.DeclaredStandAnimationFound)
-            {
-                // The original's own wording (0x456E50).
-                _logger.Warning(LogCategory, $"Animation #{soldier.StandAnimation} not found");
-            }
-
-            (string, int, int) key = (soldier.Model, soldier.BoneHierarchy, view.StandAnimation);
-            if (!groups.TryGetValue(key, out SoldierGroup? group))
-            {
-                group = _meshes.BuildGroup(mission, soldier.Model, view);
-                if (group is null)
+                SoldierMember member;
+                try
+                {
+                    member = _meshes.NewMember(group, agent);
+                }
+                catch (InvalidOperationException)
                 {
                     continue;
                 }
 
-                groups[key] = group;
-                _groups.Add(group);
-                _sim.Roster.Add(group.Roster);
+                group.AddDrawn(member);
+                Count++;
             }
-
-            // A human staged beside a CutScene keeps the authored object origin.  Gameplay humans are
-            // grounded by their mover on the first ticks, but cinematic performers deliberately sit,
-            // crouch or ride at offsets from nearby geometry.  Running the gameplay stand probe over
-            // Anya, for example, put the lowest vertex of her seated clip on the control-room floor and
-            // lifted the entire actor through the camera framing. Do not add the fallback standing
-            // clip's root height here either: the task authors the cinematic pelvis origin, and the real
-            // seated clip is selected only after the timeline starts.
-            bool cutsceneActor = CinematicActor.IsStaged(soldier);
-            Vector3d placement = cutsceneActor
-                ? soldier.Position / WorldScene.UnitsPerMetre
-                : SoldierSimulation.Stand(soldier, group.Roster, terrain, cast);
-            SoldierMember member;
-            try
-            {
-                member = _meshes.NewMember(group, new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor });
-            }
-            catch (InvalidOperationException)
-            {
-                continue;
-            }
-
-            group.Add(member);
-            if (group.Body.Model is { NativeMarkerBound: > 0f } model
-                && float.IsFinite(model.NativeMarkerBound))
-            {
-                _sim.DetectorMarkerScaleMetres[view] =
-                    model.NativeMarkerBound / (float)WorldScene.UnitsPerMetre;
-            }
-            Count++;
         }
-
-        _logger.Information(
-            LogCategory,
-            $"{Count} soldier(s) over {_groups.Count} distinct (model, skeleton, animation) triple(s).");
 
         // The first player round must not pay for parsing every candidate's collision mesh, and the
         // first lethal round must not pay for measuring the animation corpus and preparing a ragdoll
@@ -517,7 +502,12 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(roster);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _armoury.Arm(mission, roster, Count);
+        if (_ownsSimulation)
+        {
+            _sim.Arm(mission, roster);
+        }
+
+        return _armoury.Dress(mission, Count);
     }
 
     /// <inheritdoc/>
@@ -531,22 +521,6 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ArgumentNullException.ThrowIfNull(guns);
         ObjectDisposedException.ThrowIf(_disposed, this);
         _armoury.ArmVehicleGuns(mission, weaponModels, guns);
-    }
-
-    private SoldierGroup? FindGroup(SoldierView view)
-    {
-        foreach (SoldierGroup group in _groups)
-        {
-            foreach (SoldierMember member in group.Soldiers)
-            {
-                if (ReferenceEquals(member.Agent.View, view))
-                {
-                    return group;
-                }
-            }
-        }
-
-        return null;
     }
 
     private SoldierMember? FindMember(SoldierView view)
@@ -630,6 +604,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _frames.BeginFrame(tickFraction, smooth);
+        FrameStyledBodies(tickFraction, smooth);
 
         // The player's own body is not in _groups, so it resolves here rather than in the loop -- and it
         // has to resolve HERE rather than inside its draw, because its draw now runs once per shadow
@@ -790,7 +765,13 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         }
 
         _disposed = true;
-        _sim.Retire();
+        _sim.CorpsesMove -= StepCorpses;
+        _sim.TickClosed -= FollowTick;
+        if (_ownsSimulation)
+        {
+            _sim.Retire();
+        }
+
         Release();
         _gunShotTracers?.Dispose();
         _gunShotTracers = null;
@@ -799,7 +780,17 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ReleaseShadows();
     }
 
+    // What the renderer drew of the last level, and the simulation's hold on it when the simulation is the renderer's own.
     private void Release()
+    {
+        ReleaseDrawing();
+        if (_ownsSimulation)
+        {
+            _sim.Clear();
+        }
+    }
+
+    private void ReleaseDrawing()
     {
         foreach (SoldierGroup group in _groups)
         {
@@ -817,23 +808,13 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 }
 
                 SoldierLevelOfDetail.Drop(_device, member);
+                DropStyledBody(member);
             }
         }
 
         _meshes.ReleaseWeapons();
         _armoury.Release();
         _groups.Clear();
-        _sim.Roster.Clear();
-        _sim.Health.Clear();
-        _sim.DetectorMarkerScaleMetres.Clear();
-        _sim.BinocularDetected.Clear();
-        _sim.BinocularOverlay.Clear();
-        _sim.BinocularVisibility.Clear();
-        _sim.BinocularVisibilityTick = int.MinValue;
-        _sim.Cast = null;
-        _sim.Sight = null;
-        _sim.ForgetRagdollRigs();
-        _sim.RagdollWorld = null;
         _playerBody.Release();
         ReleasePartners();
         Count = 0;
@@ -900,18 +881,25 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The simulation closes the tick (<see cref="SoldierSimulation.EndTick"/>); the renderer steps the corpses and skins the
+    /// bodies as it does, whoever ends the tick -- a guest level runs a simulation the renderer does not own.
+    /// </remarks>
     public void EndTick()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _sim.FinishTick();
+        _sim.EndTick();
+    }
+
+    // The tick's bodies, once the simulation has closed it: each skinned in the pose it is drawn in, then recorded where it stands.
+    private void FollowTick()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
         _shadowTick++;
-
-        _frames.StepRagdolls();
-
-        // A GunPickup simulates independently after a dead human drops it, including when the optional
-        // visual corpse ragdoll is off. Sharing these probes keeps its walls and floor identical to the
-        // ones that stop the body.
-        _sim.TickAfterCorpses();
 
         foreach (SoldierGroup group in _groups)
         {
@@ -924,6 +912,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             {
                 BonePose drawn = SoldierFrameInterpolator.PoseToDraw(member);
                 member.DrawnPose = drawn;
+                TickStyledBody(group, member);
 
                 // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
                 // upload to settle both interpolation streams, then no more skinning or driver traffic.
@@ -962,6 +951,14 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         // draws between the last two of these records, so they are the whole interface between the
         // 30 Hz simulation and however fast the display runs.
         _frames.CaptureTickStates();
+    }
+
+    private void StepCorpses()
+    {
+        if (!_disposed)
+        {
+            _frames.StepRagdolls();
+        }
     }
 
     // Poses a soldier's lower level for the eye it was last drawn from, or frees it once the body is drawn whole again.

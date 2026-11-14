@@ -87,7 +87,7 @@ if (hostOptions.Title is { } requested && !TitleCatalog.TryResolve(requested, ou
     return 2;
 }
 
-GameTitle title = titleRuntime!.Title;
+GameTitle title = titleRuntime.Title;
 string? gamePath = hostOptions.GamePath ?? Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title)) ?? (GameInstalls.Find(title) is [var found, ..] ? found : null);
 if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
 {
@@ -135,7 +135,9 @@ if (config.Room && DataChannelPeerFactory.IsAvailable())
         config.MaxPlayers,
         config.Public,
         config.Password.Length > 0);
-    room = RoomTransport.Host(config.Master, request, new DataChannelPeerFactory(logger), logger);
+    // A server outlives any one room: when the master restarts, or is out of reach for longer than a room waits, it opens
+    // another, so browsers can still join it weeks on.
+    room = RoomTransport.Host(config.Master, request, new DataChannelPeerFactory(logger), logger, reopens: true);
     transport = new MultiTransport(transport, room);
 }
 else if (config.Room)
@@ -167,7 +169,8 @@ using DedicatedServer dedicated = new(
     host.GoToMission,
     logger,
     heartbeat,
-    () => MasterHeartbeat.BodyOf(server, config, title.Id, version, room?.Code),
+    // A closed room is never named: browsers sent to it would only be told there is no such room.
+    () => MasterHeartbeat.BodyOf(server, config, title.Id, version, room is { Status: not RoomStatus.Closed } open ? open.Code : null),
     () => host.MissionList)
 {
     Arenas = host.HasArena,
@@ -198,7 +201,7 @@ OperatorInput.Start(commands, always: ServerArguments.Given(args, "-console"));
 
 using TimerResolution timer = TimerResolution.Fine();
 Stopwatch clock = Stopwatch.StartNew();
-bool roomTold = false;
+string? roomTold = null;
 host.Start();
 while (!stopping && !dedicated.QuitAsked && host.Step())
 {
@@ -211,9 +214,9 @@ while (!stopping && !dedicated.QuitAsked && host.Step())
     }
 
     dedicated.Tick(clock.Elapsed.TotalSeconds);
-    if (!roomTold && room?.Code is { } code)
+    if (room?.Code is { } code && code != roomTold)
     {
-        roomTold = true;
+        roomTold = code;
         logger.Information(LogCategory, $"Room {code}: browsers join with it at {OpenIGI.Net.Rooms.RoomTransport.InviteLink(code)}.");
     }
 

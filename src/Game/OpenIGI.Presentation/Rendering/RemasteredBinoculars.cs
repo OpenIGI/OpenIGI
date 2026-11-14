@@ -4,7 +4,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
-using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -124,14 +123,14 @@ public sealed class RemasteredBinoculars
         // The range is the crosshair raycast the caller supplies -- the distance to whatever the centre rests on -- as the
         // vanilla readout shows, not the nearest detected contact. Capped at a thousand metres, as the retail widget is.
         string range = view.RangeMetres is { } metres && float.IsFinite(metres) && metres > 0f && metres < 1000f
-            ? FormattableString.Invariant($"RANGE  {metres:0}M")
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"RANGE  {metres:0}M")
             : "RANGE  1000+M";
         float magnification = float.IsFinite(view.Magnification) && view.Magnification > 0f ? view.Magnification : 1f;
         UiVectors.DrawTracked(
             painter, body, "OPTICS // BINOCULAR",
             new UiVec2(frame.X + context.Px(18f), frame.Bottom - context.Px(48f)), context.Px(15f), Signal, context.Px(2f));
         painter.DrawText(
-            body, FormattableString.Invariant($"x{magnification:0.0}    {range}"),
+            body, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"x{magnification:0.0}    {range}"),
             new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(15f), Text);
     }
 

@@ -1,5 +1,4 @@
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Computer;
 
@@ -37,12 +36,12 @@ public sealed class Igi2Computer
     /// <summary>Gets an objective of the set in force, <c>DefineComputerObjective_GetObjective</c>.</summary>
     /// <param name="index">The objective, nought to seven.</param>
     /// <returns>The objective, or <see langword="null"/> with no set.</returns>
-    public Igi2ComputerObjective? GetObjective(int index) => Objectives?.Objectives[index];
+    public OpenIGI.Game.Flow.ComputerObjective? GetObjective(int index) => Objectives?.Objectives[index];
 
     /// <summary>Gets an objective of the set aside, <c>DefineComputerObjective_GetInactiveObjective</c>.</summary>
     /// <param name="index">The objective, nought to seven.</param>
     /// <returns>The objective, or <see langword="null"/> with no set.</returns>
-    public Igi2ComputerObjective? GetInactiveObjective(int index) => InactiveObjectives?.Objectives[index];
+    public OpenIGI.Game.Flow.ComputerObjective? GetInactiveObjective(int index) => InactiveObjectives?.Objectives[index];
 
     /// <summary>The positions of the placed tasks the highlights of an objective point at, <c>ComputerHilight_GetEnumObjectivePos</c>.</summary>
     /// <param name="objective">The objective.</param>
@@ -184,32 +183,4 @@ public enum Igi2ComputerMenu
 
     /// <summary>The save screen.</summary>
     Save = 4,
-}
-
-/// <summary>One objective of a <c>DefineComputerObjective</c>, <c>Objective_t</c>.</summary>
-public sealed class Igi2ComputerObjective
-{
-    /// <summary>Gets or sets the text resource it shows.</summary>
-    public string TextResource { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the objective number whose highlights it points to on the map.</summary>
-    public int LinkToPosition { get; set; }
-
-    /// <summary>Gets or sets the expression that completes it.</summary>
-    public string CompleteExpression { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the expression that fails it.</summary>
-    public string FailedExpression { get; set; } = string.Empty;
-
-    /// <summary>Gets a value indicating whether it was complete at the last run.</summary>
-    public bool IsComplete { get; internal set; }
-
-    /// <summary>Gets a value indicating whether it had failed at the last run.</summary>
-    public bool IsFailed { get; internal set; }
-
-    /// <summary>Gets or sets the complete expression, compiled.</summary>
-    internal OpenIGI.Scripting.Expressions.LevelExpression? Complete { get; set; }
-
-    /// <summary>Gets or sets the failed expression, compiled.</summary>
-    internal OpenIGI.Scripting.Expressions.LevelExpression? Failed { get; set; }
 }

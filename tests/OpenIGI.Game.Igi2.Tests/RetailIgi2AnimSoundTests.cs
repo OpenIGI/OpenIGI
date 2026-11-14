@@ -4,7 +4,6 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -31,7 +30,7 @@ public sealed class RetailIgi2AnimSoundTests
             m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
             Game.Ai.AiDifficulty.Normal);
         Igi2HumanSoldier body = soldiers.Bodies[0];
-        Igi2AnimTriggers triggers = m.Services!.Require<Igi2AnimTriggers>();
+        Igi2AnimTriggers triggers = m.Services.Require<Igi2AnimTriggers>();
         Igi2AnimTriggerType spas = triggers.Types.First(type => type.Parameters.Count > 0 && type.Parameters[0].ToString().Trim('"') == "spas12_reload_1");
         Assert.True(triggers.IsAnsweredBy(spas, "AnimSound"));
 

@@ -1,6 +1,4 @@
-using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Animation;
-using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -42,8 +40,8 @@ public class GameSwitcher : DropdownButton
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         Thickness padding = context.Px(Padding);
-        float width = context.Px(12f + 14f) + TextBlockWidth(context) + context.Px(6f + 14f);
-        float height = context.Px(TitleSize) + context.Px(2f) + Theme.Mono.LineHeight(context.Px(11f));
+        float width = context.Px(14f + 12f) + TextBlockWidth(context) + context.Px(6f + 14f);
+        float height = context.Px(TitleSize) + (Subtitle.Length > 0 ? context.Px(2f) + Theme.Mono.LineHeight(context.Px(11f)) : 0f);
         return new UiVec2(width + padding.Horizontal, height + padding.Vertical);
     }
 
@@ -65,16 +63,20 @@ public class GameSwitcher : DropdownButton
         float x = inner.X;
         float midY = inner.Center.Y;
 
-        painter.FillDiamond(new UiVec2(x + context.Px(6f), midY), context.Px(12f), UiPalette.Fade(Theme.Accent, appear));
-        x += context.Px(12f + 14f);
+        painter.FillDiamond(new UiVec2(x + context.Px(7f), midY), context.Px(Theme.Large ? 14f : 12f), UiPalette.Fade(Theme.Accent, appear));
+        x += context.Px(14f + 12f);
 
         float titleSize = context.Px(TitleSize);
         float subSize = context.Px(11f);
-        float block = titleSize + context.Px(2f) + Theme.Mono.LineHeight(subSize);
+        bool tagline = Subtitle.Length > 0;
+        float block = titleSize + (tagline ? context.Px(2f) + Theme.Mono.LineHeight(subSize) : 0f);
         float top = midY - (block * 0.5f);
         var titleBox = new UiRect(x, top, inner.Width, titleSize);
-        painter.DrawLabel(Theme.Display, UpperTitle, new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Display, titleSize, titleBox)), titleSize, UiPalette.Fade(Theme.Text, appear), 0.18f);
-        painter.DrawLabel(Theme.Mono, Subtitle, new UiVec2(x, top + titleSize + context.Px(2f)), subSize, UiPalette.Fade(Theme.TextMuted, appear), 0.3f);
+        painter.DrawLabel(Theme.Display, UpperTitle, new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Display, titleSize, titleBox)), titleSize, UiPalette.Fade(Theme.Text, appear), TitleTracking);
+        if (tagline)
+        {
+            painter.DrawLabel(Theme.Mono, Subtitle, new UiVec2(x, top + titleSize + context.Px(2f)), subSize, UiPalette.Fade(Theme.TextSecondary, appear), 0.3f);
+        }
 
         // The caret: a small filled triangle that turns over as the list opens.
         float caretX = x + TextBlockWidth(context) + context.Px(6f + 7f);
@@ -95,6 +97,8 @@ public class GameSwitcher : DropdownButton
         painter.FillPolygon(caret, UiPalette.Fade(IsOpen ? Theme.Accent : Theme.TextMuted, appear));
     }
 
+    private float TitleTracking => Theme.Large ? 0.2f : 0.18f;
+
     private string UpperTitle
     {
         get
@@ -111,6 +115,6 @@ public class GameSwitcher : DropdownButton
 
     private float TextBlockWidth(LayoutContext context) =>
         MathF.Max(
-            UiPainter.MeasureLabel(Theme.Display, UpperTitle, context.Px(TitleSize), 0.18f),
+            UiPainter.MeasureLabel(Theme.Display, UpperTitle, context.Px(TitleSize), TitleTracking),
             UiPainter.MeasureLabel(Theme.Mono, Subtitle, context.Px(11f), 0.3f));
 }

@@ -1,23 +1,16 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
-using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -222,8 +215,8 @@ public sealed class ScratchProbeTests
     {
         (LoadedMission mission, LevelTask root, ResourceRegistry resources) = Load(level);
         DatIndex dat = ReadDat(resources, mission.LevelPack);
-        ReportArchiveCollisions(mission, resources, level);
-        ScanAllInstances(mission, resources, dat, level);
+        ReportArchiveCollisions(resources, level);
+        ScanAllInstances(mission, dat, level);
         int soldierCount = 0;
         foreach (HumanSoldierTask soldier in FindAll<HumanSoldierTask>(root))
         {
@@ -241,13 +234,13 @@ public sealed class ScratchProbeTests
                 continue;
             }
 
-            RequestTextureBindings(mission, resources, dat, soldier, modelName);
+            RequestTextureBindings(mission, resources, dat, modelName);
         }
 
         _output.WriteLine($"LEVEL {level}: {soldierCount} soldiers");
     }
 
-    private void ScanAllInstances(LoadedMission mission, ResourceRegistry resources, DatIndex dat, int level)
+    private void ScanAllInstances(LoadedMission mission, DatIndex dat, int level)
     {
         int checkedCount = 0;
         int mismatchCount = 0;
@@ -293,7 +286,7 @@ public sealed class ScratchProbeTests
         _output.WriteLine($"LEVEL {level}: scanned {checkedCount} instances, {mismatchCount} mismatches vs .dat");
     }
 
-    private void ReportArchiveCollisions(LoadedMission mission, ResourceRegistry resources, int level)
+    private void ReportArchiveCollisions(ResourceRegistry resources, int level)
     {
         Dictionary<string, ResourceEntry> common = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ResourceEntry> levelP = new(StringComparer.OrdinalIgnoreCase);
@@ -341,7 +334,6 @@ public sealed class ScratchProbeTests
         LoadedMission mission,
         ResourceRegistry resources,
         DatIndex dat,
-        HumanSoldierTask soldier,
         string modelName)
     {
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
@@ -493,7 +485,7 @@ public sealed class ScratchProbeTests
         magic.Load(resources, loop.Natives);
 
         PlayerTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);

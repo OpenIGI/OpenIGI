@@ -41,7 +41,7 @@ public sealed class SettingsScreenShellTests : ShellTestHarness
             // The preset leads: it is the one control that answers the whole question at once. It is also
             // the only row this harness can show, its registry being empty -- what the page makes of a
             // populated one is QualityBindingTests' business.
-            Assert.NotNull(screen.Root!.Descendants().OfType<Dropdown>().FirstOrDefault(d => d.Label == "Preset"));
+            Assert.NotNull(screen.Root.Descendants().OfType<TabStrip>().FirstOrDefault(strip => strip.Tabs.Contains("Custom")));
         }
         finally
         {

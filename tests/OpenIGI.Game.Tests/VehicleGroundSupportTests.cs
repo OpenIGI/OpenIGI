@@ -12,7 +12,6 @@ using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -37,7 +36,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -55,7 +54,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
             terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(1);
         WorldScene world = WorldScene.Build(mission, root, magic);
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1099));
 
         // The two surfaces under the truck's starting position.
         WorldPlacement body = world.Placements.Single(
@@ -109,7 +108,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
                 terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(1);
             WorldScene scene = WorldScene.Build(mission, levelRoot, magic);
             new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
-            DeclaredTask car = Assert.IsType<DeclaredTask>(levelRoot.Tree.FromId(1099));
+            DeclaredTask car = Assert.IsAssignableFrom<DeclaredTask>(levelRoot.Tree.FromId(1099));
             CutsceneRuntime runtime = new(
                 levelRoot,
                 loop.Variables,
@@ -120,12 +119,13 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
                 runtime.CollisionIndex = ObjectCollisionIndex.Build(scene.Placements);
             }
 
-            runtime.BindVehicleWheels(
+            runtime.Vehicles.BindVehicleWheels(
                 scene,
                 name => mission.TryGetModel(name, out MefModel? model) && model is not null
                     ? WorldScene.WheelRadius(model)
                     : 0f);
             MissionObjectiveRuntime objectives = new(levelRoot, loop.Variables, native: runtime.TryInvokeNative);
+            objectives.AttachTo(runtime.Walker);
 
             runtime.RequestBreak();
             Step();

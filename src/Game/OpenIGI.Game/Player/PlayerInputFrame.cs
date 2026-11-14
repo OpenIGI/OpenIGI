@@ -177,6 +177,8 @@ public struct PlayerInputFrame : IEquatable<PlayerInputFrame>
     [InlineArray(SlotCount)]
     private struct SlotArray
     {
+#pragma warning disable S1144 // An inline array is declared by its one field, which nothing names.
         private float _element0;
+#pragma warning restore S1144
     }
 }

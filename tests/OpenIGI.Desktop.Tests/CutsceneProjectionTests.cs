@@ -5,7 +5,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Host;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -96,12 +95,16 @@ public sealed class CutsceneProjectionTests
             cameraOutsideMetres,
             freeViewMetres: null,
             playerAlive: false);
-        Assert.Equal(0, ReadPlayerAreaActive(loop));
+
+        // A dead player still stands in its areas: the original's area scans have no death test (0x460A70, 0x460A10).
+        Assert.Equal(1, ReadPlayerAreaActive(loop));
     }
 
     private static (GameLoop Loop, MissionObjectiveRuntime Runtime) BuildPlayerAreaRuntime()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -118,7 +121,7 @@ public sealed class CutsceneProjectionTests
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(20f), QvmExpression.Real(20f), QvmExpression.Real(20f),
-                QvmExpression.Text("PLAYER"))));
+                QvmExpression.Text("CRITERIA_HUMAN0"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
         return (loop, new MissionObjectiveRuntime(loop.Tasks.Root, loop.Variables));

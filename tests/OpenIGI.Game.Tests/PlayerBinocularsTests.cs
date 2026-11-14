@@ -198,7 +198,6 @@ public sealed class PlayerBinocularsTests
     public void BinocularZoomInFractionIsZeroWithoutABoundBinocular()
     {
         BinocularsView view = new();
-        WeaponType binoculars = Binoculars;
         Assert.Equal(0f, view.ZoomInFraction(0.3f), 3);
     }
 

@@ -27,7 +27,6 @@ public sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
         int id = b.Id;
         bool promoted = b.Promoted;
-        ObjectCollisionIndex solids = b.Solids!;
 
         // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
         // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
@@ -200,11 +199,11 @@ public sealed partial class GameHost
                 }
                 _logger.Information(
                     "Light",
-                    FormattableString.Invariant(
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"Sun at {MathF.Asin(Math.Clamp(readSun.Direction.Z, -1f, 1f)) * 180f / MathF.PI:F1} degrees ")
-                    + FormattableString.Invariant(
+                    + string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"elevation, time {readSun.TimeOfDay:F0}, colour ({readSun.Colour.X:F2}, {readSun.Colour.Y:F2}, {readSun.Colour.Z:F2}), ")
-                    + FormattableString.Invariant(
+                    + string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"ambient ({readSun.Ambient.X:F2}, {readSun.Ambient.Y:F2}, {readSun.Ambient.Z:F2})."));
 
                 if (readSun.IsBelowHorizon)
@@ -279,7 +278,7 @@ public sealed partial class GameHost
             _gi.ApplyLamps(
                 LocalLightCVars.GlobalIlluminationLamps.Value != 0
                     ? EmissiveLightProposer.Propose(
-                        _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger)
+                        _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger, _titleRuntime.Formats)
                     : EmissiveLightProposer.Proposal.None,
                 id);
         }

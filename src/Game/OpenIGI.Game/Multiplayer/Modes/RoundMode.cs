@@ -12,6 +12,12 @@ public sealed record RoundSettings
     /// <summary>Gets the seconds a decided round's result is shown before the next begins.</summary>
     public double RoundOverSeconds { get; init; } = 5;
 
+    /// <summary>
+    /// Gets the seconds a round the bomb ended is shown before the next: a while to watch the blast and what it brought
+    /// down. Never shorter than <see cref="RoundOverSeconds"/>.
+    /// </summary>
+    public double DetonatedRoundOverSeconds { get; init; } = 10;
+
     /// <summary>Gets the seconds the scores are shown once the match is decided.</summary>
     public double IntermissionSeconds { get; init; } = 15;
 
@@ -288,7 +294,9 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     protected static int AliveOn(IModeHost host, int team)
     {
         ArgumentNullException.ThrowIfNull(host);
-        return host.Match.Players.Values.Count(p => p.Team == team && p.IsAlive);
+        // Those playing: one whose line dropped is kept for its return under a negative slot, out of the level, where no
+        // one can reach it -- counted living, its side could not be beaten until the clock ran out.
+        return host.Match.Players.Values.Count(p => p.Slot >= 0 && p.Team == team && p.IsAlive);
     }
 
     /// <summary>Gets how many players a team has.</summary>
@@ -298,7 +306,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     protected static int PlayersOn(IModeHost host, int team)
     {
         ArgumentNullException.ThrowIfNull(host);
-        return host.Match.Players.Values.Count(p => p.Team == team);
+        return host.Match.Players.Values.Count(p => p.Slot >= 0 && p.Team == team);
     }
 
     /// <summary>A tick of the freeze time: what a mode keeps going while the players are held at their starts; nothing by default.</summary>

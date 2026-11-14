@@ -95,6 +95,7 @@ public sealed class ServerConsole(IServerControl server)
         "sv_shotlog 0|1                 log every round a player fires at the others (on)",
         "mp_buytime <seconds>           how long a round's buy time lasts, from the next round (20; 0 for none)",
         "mp_timelimit <minutes>         how long a deathmatch lasts, from the next map (0 for the mode's ten)",
+        "mp_roundendtime <seconds>      a round's result shown before the next (5); mp_bombendtime after a blast (10)",
         "mp_moneystart|mp_moneycap <$>  start money (1000) and the most a player holds (15000)",
         "mp_moneykill|mp_moneyteamkill  pay for a kill (800) and the fine for a team kill (4000)",
         "mp_moneywin|mp_moneylose <$>   a round's pay to its winners (1250) and losers (750)",
@@ -261,6 +262,14 @@ public sealed class ServerConsole(IServerControl server)
         }
 
         Ban ban = server.Bans.Add(player.PlayerId, player.Name, minutes, reason);
+
+        // And the machine it plays from: a key costs nothing to make anew, and a ban by key alone lasted until its player
+        // made one.
+        if (player.AddressId.Length > 0)
+        {
+            server.Bans.Add(player.AddressId, player.Name, minutes, reason);
+        }
+
         server.Remove(player.Slot, server.Bans.Check(ban.PlayerId) ?? reason);
         return [minutes > 0 ? string.Create(CultureInfo.InvariantCulture, $"Banned {player.Name} for {minutes:0.#} minutes: {reason}.") : $"Banned {player.Name}: {reason}."];
     }

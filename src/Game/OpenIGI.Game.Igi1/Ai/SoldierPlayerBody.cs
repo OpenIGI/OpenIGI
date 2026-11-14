@@ -138,11 +138,11 @@ internal sealed class SoldierPlayerBody
             return false;
         }
 
-        view.PlaceAt(playerFeetUnits, BodyFacing(playerYaw));
+        view.PlaceAt(playerFeetUnits, CastFacing(view, playerYaw));
         Matrix3f m = view.Orientation;
         Vector3f facing = new(m.M12, m.M22, m.M32);
         return HumanHitTest.TryCastMesh(
-            origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z, out hit);
+            origin, end, playerFeetUnits, facing, mesh, view.Pose(), CastRootHeight(view), out hit);
     }
 
     // The body turned as it is drawn: a body's heading is a gamma and the look a yaw, and they run opposite ways
@@ -150,6 +150,14 @@ internal sealed class SoldierPlayerBody
     // drawn one mirrored: the trunk on the centre line still met, the head -- forward and to one side over the gun --
     // some 30 cm from where it was drawn, so a round through the drawn head met nothing.
     private static Matrix3f BodyFacing(float playerYaw) => Matrix3f.FromEngineEulerAngles(0f, 0f, -playerYaw);
+
+    // A body in a whole-body clip -- on a ladder, at a computer, a lock, a wire -- is met as it is drawn: turned as the clip
+    // has it, not as the player looks, and without the clip's root height where the drawing leaves it out. A ladder's feet
+    // are the climb's own root, so lifted by the clip's root height the body rounds were scored on hung a body's height
+    // over the one on the rungs, turned wherever the climber looked: a round through the drawn climber met nothing.
+    private Matrix3f CastFacing(SoldierView view, float playerYaw) => Climbing ? view.Orientation : BodyFacing(playerYaw);
+
+    private double CastRootHeight(SoldierView view) => Climbing && SuppressRootHeight ? 0.0 : view.RootSample.Z;
 
     /// <summary>Every face of the player's own body a round's line crosses, nearest first.</summary>
     /// <param name="origin">Where the round starts, in world units.</param>
@@ -175,11 +183,11 @@ internal sealed class SoldierPlayerBody
             return false;
         }
 
-        view.PlaceAt(playerFeetUnits, BodyFacing(playerYaw));
+        view.PlaceAt(playerFeetUnits, CastFacing(view, playerYaw));
         Matrix3f m = view.Orientation;
         Vector3f facing = new(m.M12, m.M22, m.M32);
         crossings = HumanHitTest.CastMeshCrossings(
-            origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z);
+            origin, end, playerFeetUnits, facing, mesh, view.Pose(), CastRootHeight(view));
         return true;
     }
 }

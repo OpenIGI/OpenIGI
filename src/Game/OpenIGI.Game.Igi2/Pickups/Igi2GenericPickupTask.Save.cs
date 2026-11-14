@@ -1,13 +1,19 @@
 using OpenIGI.Game.Igi2.Saves;
-using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Pickups;
 
 /// <content>Its save state, <c>GenericPickup_ptSerializeParameterList</c>: a model object's, then whether it is taken, and its model.</content>
-public sealed partial class Igi2GenericPickupTask : IIgi2Serialized
+public sealed partial class Igi2GenericPickupTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    /// <remarks>
+    /// <c>GenericPickup_GetSerializeInfoHandler</c>: written against the nearest task above it with a level id, as retail's saves
+    /// have it (<c>Container/GenericPickup</c>, <c>Building/GenericPickup</c>).
+    /// </remarks>
+    public bool IsSavedWithParent => true;
+
+    /// <inheritdoc/>
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, Position, EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z), _isPickedUp == 0);
@@ -16,7 +22,7 @@ public sealed partial class Igi2GenericPickupTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);

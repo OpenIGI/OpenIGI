@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
@@ -24,11 +25,9 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>The soldier model's <c>MESH+0x78</c> bound, <c>Human+160</c>, when the model's own is not to hand.</summary>
     public const float DefaultHumanBoundMetres = 0.94f;
 
-    /// <summary>How far past a see-through hit the next probe starts, so it clears that thin surface.</summary>
-    private const double SightSkipEpsilonUnits = 64d;
+    private const double SightSkipEpsilonUnits = LineCoverQuery.SightSkipEpsilonUnits;
 
-    /// <summary>The most see-through layers a single sight probe steps through before giving up.</summary>
-    private const int SightSkipLimit = 8;
+    private const int SightSkipLimit = LineCoverQuery.SightSkipLimit;
 
     /// <summary>
     /// Bone 5's offset from the origin (Human+32) in the palette a soldier is created with, in its body's frame: the eye
@@ -63,6 +62,9 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     // nearer than any hostile player, so Harrison's team at the gate trades fire with the guards.
     private readonly Dictionary<SoldierView, AiCombatTarget> _npcTargets = [];
 
+    // The record a soldier is known to the others by, made the first time one of them looks at it.
+    private static AiCombatTarget NewTarget(SoldierView view) => new($"Soldier{view.Soldier.Id}");
+
     // What CandidatesFor hands back, refilled on every call; see there.
     private readonly List<AiDetectionCandidate> _candidates = [];
 
@@ -92,28 +94,32 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             },
             from,
             to,
-            objectTolerance: 1.0);
+            minimumVisibility: double.Epsilon);
     }
 
     /// <summary>Whether the eye can see a point, treating glass and fences as non-occluding.</summary>
     /// <param name="trace">The world trace.</param>
     /// <param name="from">The eye.</param>
     /// <param name="to">The point looked at.</param>
-    /// <param name="objectTolerance">
-    /// How far along the eye-to-point segment, as a fraction, an object contact has to be before it stops
-    /// counting as cover. <c>1</c> makes every contact block.
+    /// <param name="minimumVisibility">
+    /// How much of the line has to be left once every surface it crosses has taken its share, for the point to count as
+    /// seen: 0.79 for a soldier's sight (<c>0x489B20</c>), anything above nothing for the binoculars and the map
+    /// (<c>0x471B60</c>, <c>0x460280</c>).
     /// </param>
     /// <remarks>
     /// <para>
     /// A cast returns only its NEAREST contact, so a single probe would stop at a chain-link fence and
-    /// never notice a solid wall right behind it. This steps the ray past each transparent surface
+    /// never notice a solid wall right behind it. This steps the ray past each see-through surface
     /// (glass, wire) and keeps looking, so a guard behind a fence is seen but one behind the wall the
-    /// fence stands in front of is not. See <see cref="GameMaterial.IsSightTransparent"/>.
+    /// fence stands in front of is not.
     /// </para>
     /// <para>
-    /// Terrain always blocks. An object contact blocks only nearer than the tolerance: the AI's sight ray
-    /// (<c>0x489B20</c>) is visible when <c>0x4CE410</c> reports no contact <em>or</em> the contact's segment
-    /// fraction is at least 0.79, and <c>0x4CE410</c> forces the fraction to zero for a terrain hit.
+    /// The float <c>0x4CE410</c> hands back is a visibility, not a place along the line. It starts at one, and every
+    /// triangle the segment crosses -- anywhere along it, on an object that stands still or one that moves (the rigid
+    /// handler <c>0x4C35F0</c>'s loop, and the boned one's, <c>0x4D88D0</c>) -- takes its material's share
+    /// (<see cref="GameMaterial.SightVisibility"/>): a share of nothing ends the cast hidden, and any other is
+    /// multiplied in where the line meets the triangle's front. Terrain leaves nothing. So a door leaf hides whoever
+    /// stands behind it however close to it they stand; the line only survives glass, a ladder, and one run of fence.
     /// </para>
     /// </remarks>
     /// <param name="ignoredOwner">The viewer itself, when it has a body the ray would otherwise meet -- a vehicle.</param>
@@ -126,7 +132,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
-        double objectTolerance,
+        double minimumVisibility,
         GameTask? ignoredOwner = null,
         Func<GameTask, bool>? standsAside = null)
     {
@@ -136,6 +142,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         double segmentLength = Math.Sqrt((segment.X * segment.X) + (segment.Y * segment.Y) + (segment.Z * segment.Z));
         Vector3d origin = from;
         double travelled = 0d;
+        double visibility = 1d;
         for (int step = 0; step <= SightSkipLimit; step++)
         {
             // Portal faces are not traced. They describe the doorway and window openings for the renderer's
@@ -143,33 +150,36 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             // door leaf is its own collision geometry and still blocks.
             if (!trace(new WorldTraceRequest(origin, to, WorldTraceMask.World, IgnoredOwner: ignoredOwner), out WorldTraceHit hit))
             {
-                return true;
+                return Seen(visibility, minimumVisibility);
             }
 
-            bool transparent = GameMaterial.IsSightTransparent(hit.Material)
-                || (standsAside is not null && hit.Owner is { } owner && standsAside(owner));
-            if (!transparent || step == SightSkipLimit)
+            // An object that answers the detection ray that it is not in the way is left before any of its
+            // triangles is asked (the filter call at the head of 0x4C35F0).
+            bool aside = standsAside is not null && hit.Owner is { } owner && standsAside(owner);
+            if (!aside)
             {
                 // The traversal budget is a safety bound, not evidence that the remainder is clear: past
                 // it, whatever the cast reports is cover.
-                // A static object blocks wherever it is met. 0x489B20 does accept a returned fraction of 0.79 or
-                // more, but the handlers never return one for placed geometry: 359 retail sight casts logged by
-                // the probe came back either clear at 1.0 or blocked at exactly 0.0 -- including a mission-1
-                // tower guard's ray that met the small barracks' roof 82% of the way along, which the old
-                // "past 0.79 is clear" rule let through. Only a moving object keeps the tolerance, unmeasured.
-                if (hit.Kind is WorldTraceHitKind.Terrain or WorldTraceHitKind.StaticObject || segmentLength <= 0d)
+                double share = hit.Kind is WorldTraceHitKind.Terrain || step == SightSkipLimit
+                    ? 0d
+                    : GameMaterial.SightVisibility(hit.Material);
+                if (share <= 0d || segmentLength <= 0d)
                 {
                     return false;
                 }
 
-                return (travelled + hit.Distance) / segmentLength >= objectTolerance;
+                // Only a triangle met from its front takes its share; one met from behind is passed.
+                if ((hit.Normal.X * segment.X) + (hit.Normal.Y * segment.Y) + (hit.Normal.Z * segment.Z) < 0d)
+                {
+                    visibility *= share;
+                }
             }
 
             double remaining = segmentLength - travelled;
             double advance = hit.Distance + SightSkipEpsilonUnits;
             if (advance >= remaining)
             {
-                return true;
+                return Seen(visibility, minimumVisibility);
             }
 
             travelled += advance;
@@ -177,8 +187,12 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             origin = new(from.X + (segment.X * fraction), from.Y + (segment.Y * fraction), from.Z + (segment.Z * fraction));
         }
 
-        return true;
+        return Seen(visibility, minimumVisibility);
     }
+
+    // What is left of the line is something, and enough for whoever is looking.
+    private static bool Seen(double visibility, double minimumVisibility) =>
+        visibility > 0d && visibility >= minimumVisibility;
 
     /// <summary>Nearest positive entry of a ray (unit direction) into a sphere, within reach. Distance is along the ray.</summary>
     public static bool RaySphere(Vector3d origin, Vector3d dir, Vector3d centre, double radius, double reach, out double t)
@@ -232,8 +246,8 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>The radius of a soldier's sphere (<c>Human+160</c>) in world units: its model's bound, or the default.</summary>
     /// <param name="view">The soldier.</param>
     /// <returns>The radius the ray and segment visits test against.</returns>
-    public double BoundUnitsOf(SoldierView view) =>
-        (_context.DetectorMarkerScaleMetres.TryGetValue(view, out float bound) && bound > 0f
+    public static double BoundUnitsOf(SoldierView view) =>
+        (view.DetectorMarkerScaleMetres is > 0f and var bound
             ? bound
             : DefaultHumanBoundMetres) * WorldScene.UnitsPerMetre;
 
@@ -395,8 +409,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             // The mark a sight ray aims at is the human's view position (0x465820): its origin raised 0.7 m, or 0.35 m
             // with the crouch byte -- so it kneels with a kneeling soldier and lies with a corpse.
             Vector3d soldierMark = SoldierContext.ViewPosition(view, other);
-            AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
-                ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
+            AiCombatTarget record = _npcTargets.GetOrAdd(view, NewTarget);
             humans.Add(new AiDetectionCandidate(
                 view.Soldier.Id,
                 view.Soldier.Team != self.Soldier.Team,
@@ -477,8 +490,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             view.Position.Y,
             _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
         Vector3d soldierMark = SoldierContext.ViewPosition(view, other);
-        AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
-            ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
+        AiCombatTarget record = _npcTargets.GetOrAdd(view, NewTarget);
         return new AiDetectionCandidate(
             view.Soldier.Id,
             otherSide,
@@ -518,7 +530,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>Whether an AI sight ray from one point to another is clear, for scenario runs.</summary>
     public bool ClearSightForTesting(Vector3d from, Vector3d to) =>
         SightTraceForTesting is { } trace
-        && HasLineOfSight(trace, from, to, Igi1HumanAi.SightObstructionTolerance);
+        && HasLineOfSight(trace, from, to, Igi1HumanAi.MinimumSightVisibility);
 
     /// <summary>What an AI sight ray from one point to another meets first, for scenario traces.</summary>
     public string DescribeSightForTesting(Vector3d from, Vector3d to)
@@ -528,7 +540,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             return "no trace";
         }
 
-        bool clear = HasLineOfSight(trace, from, to, Igi1HumanAi.SightObstructionTolerance);
+        bool clear = HasLineOfSight(trace, from, to, Igi1HumanAi.MinimumSightVisibility);
         WorldTraceRequest request = new(from, to, WorldTraceMask.World) { TracePortals = false };
         Vector3d along = to - from;
         return trace(in request, out WorldTraceHit hit)

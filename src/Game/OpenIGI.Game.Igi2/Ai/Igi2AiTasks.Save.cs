@@ -1,19 +1,17 @@
-using OpenIGI.Game.Igi2.Saves;
-
 namespace OpenIGI.Game.Igi2.Ai;
 
 /// <content>
 /// Its save state, <c>HumanSoldier_ptSerializeParameterList</c>: a human's, then the state that last set its main animation, which
 /// squads have seen it dead and whether a camera has. Those three are not kept here, so they are written as a new soldier has them.
 /// </content>
-public sealed partial class Igi2HumanSoldierTask : IIgi2Serialized
+/// <remarks>
+/// Its weapon and its view are not written: only the player's serialize handler writes those two children
+/// (<c>HumanPlayer_SerializeHandler</c>), and retail's saves hold neither for a soldier. Its mind is a level child of its own.
+/// </remarks>
+public sealed partial class Igi2HumanSoldierTask : ISavedState
 {
     /// <inheritdoc/>
-    /// <remarks>Its mind is a level child of its own, written before these.</remarks>
-    public IReadOnlyList<Igi2SerializedPart> SerializedParts => Body is { } body ? body.SavedParts(body.Weapon.Inventory) : [];
-
-    /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Body?.WriteSoldierState(writer);
@@ -24,7 +22,7 @@ public sealed partial class Igi2HumanSoldierTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Body?.ReadSoldierState(reader);
@@ -36,21 +34,21 @@ public sealed partial class Igi2HumanSoldierTask : IIgi2Serialized
 }
 
 /// <content>Its save state: its mind's (<see cref="Runtime.Igi2HumanAi.WriteState"/>).</content>
-public sealed partial class Igi2HumanAiTask : IIgi2Serialized
+public sealed partial class Igi2HumanAiTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer) => Mind?.WriteState(writer);
+    public void WriteState(StateWriter writer) => Mind?.WriteState(writer);
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader) => Mind?.ReadState(reader);
+    public void ReadState(StateReader reader) => Mind?.ReadState(reader);
 }
 
 /// <content>Its save state: its squad's (<see cref="Runtime.Igi2AiSquad.WriteState"/>).</content>
-public sealed partial class Igi2AiSquadTask : IIgi2Serialized
+public sealed partial class Igi2AiSquadTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer) => Squad?.WriteState(writer);
+    public void WriteState(StateWriter writer) => Squad?.WriteState(writer);
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader) => Squad?.ReadState(reader);
+    public void ReadState(StateReader reader) => Squad?.ReadState(reader);
 }

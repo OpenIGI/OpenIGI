@@ -2,6 +2,7 @@
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Services;
@@ -19,7 +20,7 @@ public sealed partial class GameHost
     {
         _computerOpen = false;
         _computerFlight.Reset();
-        HostedPlayer?.SetMapComputerOpen(false);
+        _mission.SetPlayerComputerOpen(false);
 
         // The result is a shell page, not a drawn card, so its choices can be clicked and navigated like every other page
         // and the shell's own cursor is the one on screen. Menu mode hands it the frame's input and draw; the pause flag
@@ -31,7 +32,7 @@ public sealed partial class GameHost
         // The platform cursor stays hidden: the shell draws its own, so revealing this one would put a second, unrelated
         // pointer beside it.
         _window.CursorVisible = false;
-        HostedPlayer?.HoldStill();
+        (TitlePlayer as ITitleMatchPlayer)?.HoldStill();
         _window.CursorLocked = false;
     }
 
@@ -39,9 +40,9 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class MissionOutcomeHost(GameHost host) : IMissionOutcomeHost
     {
-        public MissionObjectiveRuntime? Objectives => host._mission.Objectives;
+        public IMissionProgress? Objectives => host._mission.Progress;
 
-        public CutsceneRuntime? Cutscenes => host._mission.Cutscenes;
+        public bool CutscenePlaying => host._mission.Scenes?.IsPlaying == true;
 
         public ITitlePlayer? TitlePlayer => host.TitlePlayer;
 

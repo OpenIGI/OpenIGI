@@ -4,7 +4,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
-using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;

@@ -347,7 +347,10 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        AiPatrolRoute? route = AiPatrolRoute.Start(path);
+        // A patrol a save game had it on is taken up at the command it had reached.
+        int start = _resumePatrol is { } resumed && resumed.Path == pathId ? resumed.Index : 0;
+        _resumePatrol = null;
+        AiPatrolRoute? route = AiPatrolRoute.Start(path, start) ?? AiPatrolRoute.Start(path);
         if (route is null)
         {
             return false;
@@ -470,7 +473,6 @@ public sealed partial class Igi1HumanAi
     // instant combat turn to 2 degrees and HOLD until `duration` seconds after the behaviour's first
     // tick; complete only when both aimed and expired. Owns the tick while it runs, as a pending
     // action does.
-    private Vector3d? _lookAtPoint;
     private int _lookAtDurationTicks;
     private int _lookAtDeadline;
 
@@ -536,7 +538,6 @@ public sealed partial class Igi1HumanAi
     // action ends or the soldier dies.
     private AiActivationClaims? _claims;
     private ActivateTask? _activate;
-    private int _activateTaskId = -1;
     private int _activateClaimA = -1;
     private int _activateClaimB = -1;
 
@@ -663,7 +664,7 @@ public sealed partial class Igi1HumanAi
     // plus one tick, and the count stands still on a tick the AI does not run.
     private void TickIdleAnimation()
     {
-        if (_animationCountdown < 0 || _animationEntries.Count == 0)
+        if (_animationCountdown < 0 || _animationEntries.Count == 0 || Behaviours is { AllowsIdleAnimation: false })
         {
             return;
         }
@@ -736,7 +737,7 @@ public sealed partial class Igi1HumanAi
     public static Vector3d AimPointOf(Vector3d target, bool crouching = false) =>
         Igi1AiGeometry.AimPointOf(target, crouching);
 
-    private int NextBounded(int exclusiveBound) => exclusiveBound <= 0
+    internal int NextBounded(int exclusiveBound) => exclusiveBound <= 0
         ? 0
         : checked((int)_random.NextBounded(checked((uint)exclusiveBound)));
 }

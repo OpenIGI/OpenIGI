@@ -112,6 +112,17 @@ internal sealed class FakeHost : IShellHost
 
     public PlayerProfile? Profile { get; set; }
 
+    /// <summary>The rooms the multiplayer page shows, or null for a build without them.</summary>
+    public ICoopRooms? Coop { get; set; }
+
+    /// <summary>The party the multiplayer page shows, or null for none.</summary>
+    public IPartyPanel? Party { get; set; }
+
+    /// <summary>The missions' pictures, by mission, or null for none.</summary>
+    public Func<int, MissionPicture?>? Pictures { get; set; }
+
+    public MissionPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
+
     public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
 
     public void ResetInputBindings(PlayerProfile profile) => TitleInputBindings.Reset(profile, Controls);

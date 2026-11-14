@@ -251,7 +251,7 @@ public static class LampDetector
     }
 
     /// <summary>The multiple of its own albedo that brings a texture to a wanted radiance.</summary>
-    private static float Strength(float brightness, float radiance) =>
+    internal static float Strength(float brightness, float radiance) =>
         Math.Clamp(radiance / MathF.Max(brightness, 0.01f), 0.0625f, MaximumStrength);
 
     /// <summary>Walks the level for sub-meshes shaped like a ceiling lamp, and records them.</summary>

@@ -16,7 +16,6 @@ using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -201,7 +200,7 @@ public sealed class LevelFourRescueTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -211,6 +210,7 @@ public sealed class LevelFourRescueTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         return (loop, root, objectives, runtime);
     }
 

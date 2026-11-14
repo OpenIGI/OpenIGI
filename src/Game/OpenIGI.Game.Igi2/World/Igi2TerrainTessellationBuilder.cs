@@ -55,6 +55,7 @@ internal sealed class Igi2TerrainTessellationBuilder
     private int _uncovered;
     private long _covered;
     private long _superseded;
+    private int _largestOverSubmap;
 
     public Igi2TerrainTessellationBuilder(Igi2TerrainLod owner, bool reuseBuffers)
     {
@@ -91,6 +92,7 @@ internal sealed class Igi2TerrainTessellationBuilder
         _stack.Clear();
         _culled = _visited = _drawn = _uncovered = 0;
         _covered = _superseded = 0;
+        _largestOverSubmap = 0;
         for (int i = 0; i < _indices.Count; i++)
         {
             _indices[i].Clear();
@@ -128,7 +130,10 @@ internal sealed class Igi2TerrainTessellationBuilder
                 splits += decision.Split ? 1 : 0;
             }
 
-            if (splits == 0)
+            // A square on a join divides whatever its edges said. One that meets a finer tile's ground goes down to the
+            // sample grid, so this tile has a vertex at every sample along the join; one on this tile's own edge in a coarser
+            // tile goes down to that tile's spacing, so it has one wherever the coarser tile does. See SeamHeight.
+            if (splits == 0 && !IsOnJoin(square))
             {
                 EmitLeaf(square);
                 continue;
@@ -149,7 +154,10 @@ internal sealed class Igi2TerrainTessellationBuilder
             Push(stack, new Square(square.X, square.Y + half, half, midpoint[3], midpoint[4], midpoint[2], square.V3));
         }
 
-        return new Igi2TerrainTessellation(BuildMesh(), _drawn, _culled, _visited, _covered, _superseded);
+        return new Igi2TerrainTessellation(BuildMesh(), _drawn, _culled, _visited, _covered, _superseded)
+        {
+            LargestLeafOverSubmap = _largestOverSubmap,
+        };
     }
 
     private static long EdgeKey(int a, int b) => a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
@@ -158,7 +166,7 @@ internal sealed class Igi2TerrainTessellationBuilder
     {
         // Ahead of the clipping planes, because it is cheaper and because it is not a decision about
         // this frame: a square a finer tile covers is never this tile's to draw, from any camera.
-        if (_owner.Tile.IsSuperseded(square.X, square.Y, square.Size))
+        if (_owner.Tile.IsWithinSubmap(square.X, square.Y, square.Size))
         {
             _superseded += (long)square.Size * square.Size;
             return;
@@ -171,6 +179,37 @@ internal sealed class Igi2TerrainTessellationBuilder
         }
 
         stack.Push(square);
+    }
+
+    // Whether a square lies along a join between this tile and another: against a finer tile's ground, or along this tile's
+    // own edge where it is wider than a sample of the coarser tile it lies in.
+    private bool IsOnJoin(Square square)
+    {
+        if (_owner.Tile.TouchesSubmap(square.X, square.Y, square.Size))
+        {
+            return true;
+        }
+
+        int seam = _owner.SeamSize;
+        int n = _owner.RootSize;
+        return seam > 0 && square.Size > seam
+            && (square.X == 0 || square.Y == 0 || square.X + square.Size == n || square.Y + square.Size == n);
+    }
+
+    // The height a vertex on a join is held at, whatever its morph: on this tile's own edge, the line the coarser tile it
+    // lies in draws there; on the edge of a finer tile's ground, its own true height, which is that line for the finer tile.
+    private double? HeldHeight(int x, int y)
+    {
+        Igi2TerrainTile tile = _owner.Tile;
+        int n = _owner.RootSize;
+        bool northOrSouth = y == 0 || y == n;
+        if (_owner.SeamSize > 0 && (northOrSouth || x == 0 || x == n)
+            && tile.SeamHeight(_owner.EdgeX(x), _owner.EdgeY(y), northOrSouth) is { } held)
+        {
+            return held;
+        }
+
+        return tile.IsOnSubmapEdge(_owner.EdgeX(x), _owner.EdgeY(y)) ? _owner.HeightAt(x, y) : null;
     }
 
     private static (int X, int Y) Midpoint(Square square, int edge)
@@ -194,9 +233,15 @@ internal sealed class Igi2TerrainTessellationBuilder
         _vertices[key] = index;
 
         Vector3d position = _owner.PositionOf(x, y);
+        double trueZ = position.Z;
+        if (HeldHeight(x, y) is { } held)
+        {
+            position = new Vector3d(position.X, position.Y, held);
+        }
+
         _positions.Add(position);
         _normals.Add(_owner.NormalAt(x, y));
-        _trueZ.Add(position.Z);
+        _trueZ.Add(trueZ);
         _lights.Add(_owner.LightAt(x, y));
         _discarded.Add(_owner.IsDiscarded(position.X, position.Y));
 
@@ -229,7 +274,7 @@ internal sealed class Igi2TerrainTessellationBuilder
         // applied to Z alone. At morph zero it lands exactly on that line, which is what lets an
         // unsplit edge carry a vertex without showing one.
         double parentMean = (_positions[a].Z + _positions[b].Z) * 0.5;
-        double z = parentMean + (Igi2TerrainLodSettings.MorphFraction(morph) * (trueZ - parentMean));
+        double z = HeldHeight(x, y) ?? parentMean + (Igi2TerrainLodSettings.MorphFraction(morph) * (trueZ - parentMean));
 
         _positions.Add(new Vector3d(_owner.EdgeX(x), _owner.EdgeY(y), z));
         _normals.Add(_owner.NormalAt(x, y));
@@ -396,6 +441,10 @@ internal sealed class Igi2TerrainTessellationBuilder
     {
         _drawn++;
         _covered += (long)square.Size * square.Size;
+        if (square.Size > _largestOverSubmap && _owner.Tile.OverlapsSubmap(square.X, square.Y, square.Size))
+        {
+            _largestOverSubmap = square.Size;
+        }
 
         // Two triangles across the square's own diagonal, the one its five edges already name. The
         // winding is Igi2TerrainMesh's, so the full-detail and tessellated paths agree; the

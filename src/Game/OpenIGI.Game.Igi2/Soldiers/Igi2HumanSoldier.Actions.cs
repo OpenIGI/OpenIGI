@@ -3,7 +3,6 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Animation;
-using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
 
 namespace OpenIGI.Game.Igi2.Soldiers;

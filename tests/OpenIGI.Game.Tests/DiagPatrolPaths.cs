@@ -1,6 +1,6 @@
 // Dump the authored PatrolPath task ids in a level, to confirm the friendlies' paths exist.
-using System;
-using System.Linq;
+
+
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -11,9 +11,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
-using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -37,7 +35,7 @@ public sealed class DiagPatrolPaths
             missions, fs, resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
             terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
-        WorldScene scene = WorldScene.Build(mission, root, magic);
+        _ = WorldScene.Build(mission, root, magic);
 
         AiPatrolPathRegistry registry = AiPatrolPathRegistry.Build(root);
         _output.WriteLine($"total paths: {registry.Count}");
@@ -71,10 +69,12 @@ public sealed class DiagPatrolPaths
         // EditVariable tasks: what does 751/752 start at, and what changes them?
         foreach (GameTask task in WalkAll(root))
         {
-            if (task is not DeclaredTask declared || !string.Equals(task.Type?.Name, "EditVariable", StringComparison.Ordinal))
+            if (!string.Equals(task.Type?.Name, "EditVariable", StringComparison.Ordinal))
             {
                 continue;
             }
+
+            GameTask declared = task;
 
             if (declared.Id is 751 or 752 || declared.Id >= 740)
             {
@@ -84,11 +84,11 @@ public sealed class DiagPatrolPaths
         }
     }
 
-    private static string Text(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
+    private static string Text(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
 
-    private static int Int(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? value) && value is int number ? number : fallback;
+    private static int Int(GameTask task, string name, int fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is int number ? number : fallback;
 
     private static IEnumerable<GameTask> WalkAll(GameTask task)
     {

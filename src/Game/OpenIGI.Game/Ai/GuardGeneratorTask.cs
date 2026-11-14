@@ -10,10 +10,28 @@ namespace OpenIGI.Game.Ai;
 /// (<c>0x488000</c>/<c>0x488040</c>) recursively rebuilds the authored subtree; the managed runtime keeps
 /// the typed authored task as the template while creating a fresh live brain/view for every instance.
 /// </remarks>
-public partial class GuardGeneratorTask : ContainerTask
+public partial class GuardGeneratorTask : ContainerTask, Level.ILevelTicked, Saves.IExchangedState
 {
     /// <summary>The level-script type name.</summary>
     public const string TypeName = "GuardGenerator";
+
+    /// <summary>Gets or sets what carries out the generator's run handler (<c>0x487EE0</c>), the game's soldiers; <see langword="null"/> while nothing does.</summary>
+    public Level.ITaskRun<GuardGeneratorTask>? Runner { get; set; }
+
+    /// <summary>Runs the generator for one tick, where the level's walk reaches it.</summary>
+    /// <param name="level">The level's run.</param>
+    public void Run(Level.LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Runner is { } runner)
+        {
+            runner.Run(this, level);
+        }
+        else
+        {
+            level.RunWithoutHandler(this);
+        }
+    }
 
     /// <summary>The expression that enables spawning.</summary>
     [ScriptParam(ScriptParamType.VarString, "Generate guards")]
@@ -31,6 +49,14 @@ public partial class GuardGeneratorTask : ContainerTask
 
     /// <summary>How many instances have been spawned so far.</summary>
     public int SpawnCount { get; private set; }
+
+    // Not retail: what a save keeps of a generator is whether it is on, whether its first guard stands, and how many it has made.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        IsOn = exchange.Bool(IsOn);
+        IsSpawned = exchange.Bool(IsSpawned);
+        SpawnCount = exchange.Int(SpawnCount);
+    }
 
     /// <summary>
     /// Gets or sets the lives of a template another game drives, which the generator's update spawns in place of cloning its own

@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using OpenIGI.Rendering.WebGpu.Native;
 using Xunit;
 
 namespace OpenIGI.Rendering.WebGpu.Native.Tests;

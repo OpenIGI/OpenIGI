@@ -61,7 +61,7 @@ public sealed class VulkanRhiTimestampTests(ITestOutputHelper output)
     {
         HeadlessVulkan? vulkan = HeadlessVulkan.TryCreate(out string? reason);
         Assert.True(vulkan is not null, reason);
-        output.WriteLine($"adapter {vulkan!.AdapterName}");
+        output.WriteLine($"adapter {vulkan.AdapterName}");
         return vulkan;
     }
 
@@ -95,6 +95,7 @@ public sealed class VulkanRhiTimestampTests(ITestOutputHelper output)
                 // Left to the using block, as the renderer leaves its compute passes.
                 using (encoder.BeginComputePass(new RhiComputePassDescriptor(new RhiTimestampWrites(_queries, 2, 3), "timed.compute")))
                 {
+                    // The pass is begun and ended with nothing run in it: its timestamps are the test.
                 }
 
                 encoder.ResolveQuerySet(_queries, 0, resolveCount, _resolved, 0);

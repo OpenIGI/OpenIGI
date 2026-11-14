@@ -146,7 +146,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "p",
@@ -161,10 +162,33 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uColour",
+      "sampler": "uColourSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uHalf",
+      "sampler": "uHalfSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uFlat",
+      "sampler": "uFlatSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uDilated",
+      "sampler": "uDilatedSampler",
+      "unit": 3
+    }
+  ]
 }

@@ -2,7 +2,6 @@ using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Viewport;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Editor;
@@ -140,12 +139,12 @@ internal sealed class ModelPreview : EditorElement
     }
 
     /// <inheritdoc/>
-    protected override void OnUpdate(float seconds)
+    protected override void OnUpdate(float elapsedSeconds)
     {
         if (_animator is not null && _clip.SelectedIndex >= 0 && _playing && !_scrubbing)
         {
             float length = MathF.Max(1e-3f, _animator.Seconds(_clip.SelectedIndex));
-            _time = (_time + seconds) % length;
+            _time = (_time + elapsedSeconds) % length;
             _dirty = true;
         }
     }

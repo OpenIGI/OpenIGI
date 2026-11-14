@@ -1,11 +1,9 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.TestSupport;
 using Xunit;
 using static OpenIGI.Scripting.Qvm.QvmExpression;
 
@@ -19,6 +17,7 @@ public sealed class CarAiNavigationTests
     public void ADisconnectedDestinationNeverBecomesADirectDrivingTarget(bool connected)
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram script = QvmProgram.Read(BuildProgram(
             Call("Task_DeclareParameters", Text("Car"), Text("Position"), Text("ObjectPos")),
             Call("Task_DeclareParameters", Text("CarAI"),
@@ -33,9 +32,9 @@ public sealed class CarAiNavigationTests
                 Call("Task_New", Int(-1), Text("PatrolPathCommand"), Text("destination"), Int(2), Int(2)),
                 Call("Task_New", Int(-1), Text("PatrolPathCommand"), Text("quit"), Int(7), Int(-1)))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
-        GameTask car = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(10));
+        GameTask car = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(10));
         CutsceneRuntime runtime = new(loop.Tasks.Root, loop.Variables);
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [20] = TwoNodeGraph(connected) });
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [20] = TwoNodeGraph(connected) });
         for (int tick = 0; tick < 5; tick++)
         {
             runtime.Tick();
@@ -44,7 +43,7 @@ public sealed class CarAiNavigationTests
         // IGI1 0x425C10 steps from the nearest node through the route table. The car stands on node 1:
         // with a link it heads for node 2; without one retail logs "CarAI: Error in graph" and keeps
         // node 1 -- it never substitutes the disconnected destination as a direct driving target.
-        Assert.Equal(connected ? 2 : 1, runtime.CarAiTargetNode(car));
+        Assert.Equal(connected ? 2 : 1, runtime.Vehicles.CarAiTargetNode(car));
     }
 
     private static GraphFile TwoNodeGraph(bool connected)

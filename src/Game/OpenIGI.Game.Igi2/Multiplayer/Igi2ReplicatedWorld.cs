@@ -219,6 +219,8 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             _scratch.Add(Replicate(slot + 1, human.Human));
         }
 
+        // By id, as the codec writes them and a snapshot is searched: the players stand in the order they last spawned.
+        _scratch.Sort(static (a, b) => a.Id.CompareTo(b.Id));
         return new Snapshot(tick, [.. _scratch]);
     }
 
@@ -241,7 +243,9 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         List<(Igi2HumanPlayer Human, Vector3d Was, Matrix3f Turned)> moved = [];
         void MoveBack(int id, Igi2HumanPlayer human)
         {
-            if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(CurrentTick, shooter.Commands.LastViewTick, id, out ReplicatedHuman then))
+            // The living, where the shooter's client drew them, to the fraction of a tick it drew them at.
+            double moment = lag.AimedAt(CurrentTick, shooter.Commands.LastViewTick, shooter.Commands.LastViewFraction);
+            if (!ReferenceEquals(human, shooter.Human) && !human.IsDead && lag.History.Sample(moment, id, out ReplicatedHuman then))
             {
                 moved.Add((human, human.Position, human.Orientation));
                 human.Position = then.Position.ToVector();

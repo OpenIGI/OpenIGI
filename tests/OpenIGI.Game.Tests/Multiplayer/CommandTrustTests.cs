@@ -80,6 +80,7 @@ public sealed class CommandTrustTests
 
             for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
             {
+                // The loop's condition does the work.
             }
         }
 

@@ -14,7 +14,6 @@ using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
@@ -102,6 +101,8 @@ public sealed class LevelFourWindowDetectionTests
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
             ResourceRegistry resources = new(fileSystem);
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+            OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
             AiTaskTypes.RegisterAll(loop.Types);
 

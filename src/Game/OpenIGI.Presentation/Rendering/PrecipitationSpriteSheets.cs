@@ -102,7 +102,7 @@ internal static class PrecipitationSpriteSheets
         {
             logger?.Warning(
                 LogCategory,
-                FormattableString.Invariant($"Storm sheet '{asset}' could not be read ({ex.Message}); drawing generated streaks."));
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Storm sheet '{asset}' could not be read ({ex.Message}); drawing generated streaks."));
             return false;
         }
     }
@@ -424,7 +424,7 @@ internal static class PrecipitationSpriteSheets
         {
             logger?.Warning(
                 LogCategory,
-                FormattableString.Invariant($"Storm sheet '{asset}' could not be read ({error.Message}); drawing generated splashes."));
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Storm sheet '{asset}' could not be read ({error.Message}); drawing generated splashes."));
             return false;
         }
     }

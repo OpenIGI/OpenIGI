@@ -1,6 +1,5 @@
 ﻿using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
@@ -126,8 +125,8 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     /// <inheritdoc/>
     public bool TryTeleportPlayerTo(int id) =>
-        game.Player is not null && TryResolvePosition(id, out Vector3d position) &&
-        game.Player.Place(game.Ground, position, game.Player.Body.Yaw);
+        game.Player is ITitlePlayerPlacement placement && TryResolvePosition(id, out Vector3d position) &&
+        placement.TryPlace(position * WorldScene.UnitsPerMetre, game.Player.Heading ?? 0f);
 
     /// <inheritdoc/>
     public bool TryMoveCameraTo(int id)
@@ -252,12 +251,14 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     /// <summary>Gets where the reader is looking from, which distances are measured against.</summary>
     /// <remarks>
-    /// <c>game.Player.Position</c>, not <c>game.Player.Body.Position</c>: the body keeps its position in the
-    /// level's own units and the camera converts, so reading the body here put every distance out by
+    /// In metres: the player keeps its position in the level's own units, so reading it unconverted put every distance out by
     /// a factor of four thousand — reported as soldiers a hundred million metres away.
     /// </remarks>
     private Vector3d ViewpointPosition() =>
-        game.PlayerMode && game.Player is not null ? game.Player.Position : game.Camera?.Position ?? default;
+        game.PlayerMode && game.Player is not null ? PlayerMetres(game.Player) : game.Camera?.Position ?? default;
+
+    // Where a player stands, in metres.
+    private static Vector3d PlayerMetres(ITitlePlayer player) => player.Position / WorldScene.UnitsPerMetre;
 
     // ---- Listing ----
 
@@ -268,7 +269,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
             return;
         }
 
-        Vector3d at = game.Player.Position;
+        Vector3d at = PlayerMetres(game.Player);
         into.Add(new InspectableEntity(
             KindPlayer * KindStride,
             "player",
@@ -344,7 +345,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void AddDoors(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<PlacedDoor>? doors = game.Mission.Doors?.Doors;
+        IReadOnlyList<PlacedDoor>? doors = game.Mission?.Doors;
         for (int i = 0; doors is not null && i < doors.Count; i++)
         {
             PlacedDoor door = doors[i];
@@ -367,7 +368,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void AddElevators(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<PlacedElevator>? elevators = game.Mission.Elevators?.Elevators;
+        IReadOnlyList<PlacedElevator>? elevators = game.Mission?.Elevators;
         for (int i = 0; elevators is not null && i < elevators.Count; i++)
         {
             PlacedElevator elevator = elevators[i];
@@ -390,7 +391,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void AddInteractions(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<WorldInteraction>? items = game.Mission.Interactions?.Items;
+        IReadOnlyList<WorldInteraction>? items = game.Mission?.Interactions;
         for (int i = 0; items is not null && i < items.Count; i++)
         {
             WorldInteraction interaction = items[i];
@@ -414,7 +415,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void AddPickups(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<GunPickup>? guns = game.Mission.GunPickups?.Items;
+        IReadOnlyList<GunPickup>? guns = game.Mission?.GunPickups;
         for (int i = 0; guns is not null && i < guns.Count; i++)
         {
             GunPickup pickup = guns[i];
@@ -435,7 +436,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
                 Vector3d.Distance(eye, gunAt)));
         }
 
-        IReadOnlyList<GenericPickup>? items = game.Mission.GenericPickups?.Items;
+        IReadOnlyList<GenericPickup>? items = game.Mission?.GenericPickups;
         for (int i = 0; items is not null && i < items.Count; i++)
         {
             GenericPickup pickup = items[i];
@@ -459,7 +460,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void AddCameras(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<SecurityCamera>? cameras = game.Mission.SecurityCameras?.Cameras;
+        IReadOnlyList<SecurityCamera>? cameras = game.Mission?.SecurityCameras;
         for (int i = 0; cameras is not null && i < cameras.Count; i++)
         {
             SecurityCamera camera = cameras[i];
@@ -483,7 +484,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void AddSpeakers(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<AlarmSpeaker>? speakers = game.Mission.AlarmSpeakers?.Speakers;
+        IReadOnlyList<AlarmSpeaker>? speakers = game.Mission?.AlarmSpeakers;
         for (int i = 0; speakers is not null && i < speakers.Count; i++)
         {
             AlarmSpeaker speaker = speakers[i];
@@ -561,10 +562,11 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
             return;
         }
 
-        into.Add(Position(game.Player.Position));
-        into.Add(Line($"yaw {game.Player.Body.Yaw:0.00}   pitch {game.Player.Body.Pitch:0.00}"));
-        into.Add(Line($"eye {game.Player.Camera.Position.Z:0.0} m   mode {(game.PlayerMode ? "walking" : "free camera")}"));
-        into.Add(Line($"dead {(game.PlayerDead ? "yes" : "no")}   ladder {(game.Player.IsOnLadder ? "yes" : "no")}"));
+        into.Add(Position(PlayerMetres(game.Player)));
+        float pitch = MathF.Asin(Math.Clamp(game.Player.ViewOrientation.Row3.Z, -1f, 1f));
+        into.Add(Line($"yaw {game.Player.Heading ?? 0f:0.00}   pitch {pitch:0.00}"));
+        into.Add(Line($"eye {game.Player.EyePosition.Z / WorldScene.UnitsPerMetre:0.0} m   mode {(game.PlayerMode ? "walking" : "free camera")}"));
+        into.Add(Line($"dead {(game.PlayerDead ? "yes" : "no")}   orbit {(game.PlayerViewOrbits ? "yes" : "no")}"));
     }
 
     private void DetailSoldier(List<string> into, int index)
@@ -598,7 +600,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void DetailDoor(List<string> into, int index)
     {
-        IReadOnlyList<PlacedDoor>? doors = game.Mission.Doors?.Doors;
+        IReadOnlyList<PlacedDoor>? doors = game.Mission?.Doors;
         if (doors is null || index < 0 || index >= doors.Count)
         {
             return;
@@ -613,7 +615,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void DetailElevator(List<string> into, int index)
     {
-        IReadOnlyList<PlacedElevator>? elevators = game.Mission.Elevators?.Elevators;
+        IReadOnlyList<PlacedElevator>? elevators = game.Mission?.Elevators;
         if (elevators is null || index < 0 || index >= elevators.Count)
         {
             return;
@@ -627,7 +629,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void DetailInteraction(List<string> into, int index)
     {
-        IReadOnlyList<WorldInteraction>? items = game.Mission.Interactions?.Items;
+        IReadOnlyList<WorldInteraction>? items = game.Mission?.Interactions;
         if (items is null || index < 0 || index >= items.Count)
         {
             return;
@@ -643,7 +645,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
     {
         if (kind == KindWeaponPickup)
         {
-            IReadOnlyList<GunPickup>? guns = game.Mission.GunPickups?.Items;
+            IReadOnlyList<GunPickup>? guns = game.Mission?.GunPickups;
             if (guns is null || index < 0 || index >= guns.Count)
             {
                 return;
@@ -655,7 +657,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
             return;
         }
 
-        IReadOnlyList<GenericPickup>? items = game.Mission.GenericPickups?.Items;
+        IReadOnlyList<GenericPickup>? items = game.Mission?.GenericPickups;
         if (items is null || index < 0 || index >= items.Count)
         {
             return;
@@ -668,7 +670,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void DetailCamera(List<string> into, int index)
     {
-        IReadOnlyList<SecurityCamera>? cameras = game.Mission.SecurityCameras?.Cameras;
+        IReadOnlyList<SecurityCamera>? cameras = game.Mission?.SecurityCameras;
         if (cameras is null || index < 0 || index >= cameras.Count)
         {
             return;
@@ -683,7 +685,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     private void DetailSpeaker(List<string> into, int index)
     {
-        IReadOnlyList<AlarmSpeaker>? speakers = game.Mission.AlarmSpeakers?.Speakers;
+        IReadOnlyList<AlarmSpeaker>? speakers = game.Mission?.AlarmSpeakers;
         if (speakers is null || index < 0 || index >= speakers.Count)
         {
             return;
@@ -739,14 +741,14 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
             case KindObject when game.Scene is { } scene && index >= 0 && index < scene.Placements.Count:
                 position = scene.Placements[index].Position;
                 return true;
-            case KindDoor when game.Mission.Doors is { } doors && index >= 0 && index < doors.Doors.Count:
-                position = doors.Doors[index].DrawPosition;
+            case KindDoor when game.Mission?.Doors is { } doors && index >= 0 && index < doors.Count:
+                position = doors[index].DrawPosition;
                 return true;
-            case KindElevator when game.Mission.Elevators is { } lifts && index >= 0 && index < lifts.Elevators.Count:
-                position = lifts.Elevators[index].DrawPosition;
+            case KindElevator when game.Mission?.Elevators is { } lifts && index >= 0 && index < lifts.Count:
+                position = lifts[index].DrawPosition;
                 return true;
-            case KindInteraction when game.Mission.Interactions is { } actions && index >= 0 && index < actions.Items.Count:
-                position = Metres(actions.Items[index].Anchor);
+            case KindInteraction when game.Mission?.Interactions is { } actions && index >= 0 && index < actions.Count:
+                position = Metres(actions[index].Anchor);
                 return true;
             case KindLadder when game.Scene is { } world && index >= 0 && index < world.Ladders.Count:
                 position = Metres(world.Ladders[index].Origin);
@@ -818,8 +820,11 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 /// <summary>What the <see cref="WorldInspector"/> reads of the running game.</summary>
 internal interface IInspectedWorld
 {
-    /// <summary>Gets the player's rig, when one stands in the level.</summary>
-    IHostedPlayer? Player { get; }
+    /// <summary>Gets the player, when one stands in the level.</summary>
+    ITitlePlayer? Player { get; }
+
+    /// <summary>Gets a value indicating whether the view orbits the player's body: on a ladder, or in a world interaction.</summary>
+    bool PlayerViewOrbits { get; }
 
     /// <summary>Gets whether the view is the player's rather than the free camera's.</summary>
     bool PlayerMode { get; }
@@ -846,7 +851,7 @@ internal interface IInspectedWorld
     ISoldierBodies? Soldiers { get; }
 
     /// <summary>Gets the mission's registries.</summary>
-    IInspectableMission Mission { get; }
+    IInspectableMission? Mission { get; }
 
     /// <summary>Gets the eye the last frame was drawn from.</summary>
     Camera3D InspectorEye { get; }

@@ -109,13 +109,6 @@ public sealed class PresentationPacingProbe
             _lastTickCount = tickCount;
         }
 
-        // How many renders each tick actually gets. Below one, ticks are outrunning the display and
-        // some ticks are never seen at all.
-        if (tickCount == _lastTickCount)
-        {
-            _rendersThisTick++;
-        }
-
         _lastWallMilliseconds = wallMilliseconds;
         _lastSimMilliseconds = simMilliseconds;
         _hasPrevious = true;
@@ -293,7 +286,6 @@ public sealed class PresentationPacingProbe
     private int _tickIntervalCount;
     private int _lastTickCount = -1;
     private double _lastTickWall;
-    private int _rendersThisTick;
 
     /// <summary>Records how long the present-and-acquire blocked the CPU.</summary>
     /// <remarks>

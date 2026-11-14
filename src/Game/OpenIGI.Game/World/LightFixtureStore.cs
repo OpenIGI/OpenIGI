@@ -46,10 +46,12 @@ public static partial class LightFixtureStore
     /// another. 3 moved emission from the texture to the sub-mesh, 2 added the direction a fixture
     /// faces, and version 1 was a bare array — which is what an absent version reads as. 7 added the
     /// emitting rectangle (long axis and half-extents) the lamp's shadow rays are aimed at. 8 faces a
-    /// fitting with no facing of its own away from the wall or ceiling it is mounted on.
+    /// fitting with no facing of its own away from the wall or ceiling it is mounted on. 9 adds the
+    /// lamps a level's models declare with their own glows, beside the ones inferred — which is every
+    /// level of the sequel and none of Project I.G.I.'s.
     /// </para>
     /// </remarks>
-    public const int Version = 8;
+    public const int Version = 9;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>

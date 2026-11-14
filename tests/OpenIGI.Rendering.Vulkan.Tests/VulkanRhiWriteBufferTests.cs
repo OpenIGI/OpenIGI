@@ -82,7 +82,7 @@ public sealed class VulkanRhiWriteBufferTests(ITestOutputHelper output)
     {
         HeadlessVulkan? vulkan = HeadlessVulkan.TryCreate(out string? reason);
         Assert.True(vulkan is not null, reason);
-        output.WriteLine($"adapter {vulkan!.AdapterName}");
+        output.WriteLine($"adapter {vulkan.AdapterName}");
         return vulkan;
     }
 }

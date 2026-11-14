@@ -19,6 +19,12 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="host">Where they play.</param>
 public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
+    /// <summary>The cue a gun the player picks up plays, at the listener, wherever the player stands.</summary>
+    public const string GunPickupSound = "weaponpickup_1";
+
+    /// <summary>The priority <see cref="GunPickupSound"/> plays at.</summary>
+    public const int GunPickupSoundPriority = 180;
+
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
 
@@ -362,7 +368,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public void PlayGunPickupSound(GunPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
-        host.SoundOutput?.PlayDefinition("weaponpickup_1", priority: 180);
+        host.SoundOutput?.PlayDefinition(GunPickupSound, priority: GunPickupSoundPriority);
     }
 
     /// <summary>Plays an authored item reaching the player.</summary>
@@ -460,37 +466,10 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// Pitched between 0.8 and 1.3, which is the whole of why two steps on the same surface are never
     /// quite the same sound. Low priority: a firefight is more worth a voice than a footfall.
     /// </remarks>
-    public void PlayFootstep(in Footstep step)
-    {
-        if (host.SoundOutput is null || step.Sound.Length == 0)
-        {
-            return;
-        }
+    public void PlayFootstep(in Footstep step) => Igi1HumanSounds.PlayFootstep(_stage ??= new Igi1MissionSoundStage(mission, host), step, host.IsRaining);
 
-        // One pitch for the whole step: 0x463920 computes it once and hands the same value to the
-        // material voice and to the rain voice, so the two halves of a wet step stay together.
-        float pitch = FootstepSounds.Pitch(mission.SoundRandom);
-
-        host.SoundOutput.PlayDefinition(
-            step.Sound,
-            step.PositionInUnits,
-            gain: step.VolumeScale,
-            pitch: pitch,
-            priority: 40);
-
-        // The wet layer is played AS WELL AS the material's own sound, never instead of it. Its gate
-        // is 0x416FB0, a single global byte -- the level's weather flag rather than a shelter test --
-        // which is what the rain ambience already reads through the RainEffect task. Only the material's
-        // voice is quietened for a crouch (0x463920, 0x45A7F0): the wet one keeps its full volume.
-        if (host.IsRaining)
-        {
-            host.SoundOutput.PlayDefinition(
-                FootstepSounds.RainSoundName(step.CycleSlot),
-                step.PositionInUnits,
-                pitch: pitch,
-                priority: 40);
-        }
-    }
+    // Where the steps play: the mission's own stage, made once it is first asked for.
+    private Igi1MissionSoundStage? _stage;
 
     /// <summary>Plays the sound the ground itself makes when the player lands on it.</summary>
     /// <param name="landing">The definition name and where the feet touched down.</param>
@@ -529,7 +508,36 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
 
         foreach (AlarmSpeaker speaker in mission.AlarmSpeakers.Speakers)
         {
-            string sound = mission.AlarmSpeakers.SoundNow(speaker);
+            // One whose own task sounded it from the level's walk has been sounded already, where the tree places it.
+            if (!_speakersSounded.Contains(speaker))
+            {
+                SoundSpeaker(speaker, mission.AlarmSpeakers.SoundNow(speaker));
+            }
+        }
+
+        _speakersSounded.Clear();
+    }
+
+    // The speakers their own tasks sounded this tick.
+    private readonly HashSet<AlarmSpeaker> _speakersSounded = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Starts, swaps or stops one speaker's loop for the sound it should be making now: called from a siren's and an alarm
+    /// light's own run handlers (<c>0x4494D0</c>, <c>0x43A270</c>), and for the rest after the walk.
+    /// </summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <param name="sound">The definition it should be sounding, or empty for none.</param>
+    public void SoundSpeaker(AlarmSpeaker speaker, string sound)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        ArgumentNullException.ThrowIfNull(sound);
+        _speakersSounded.Add(speaker);
+        if (host.SoundOutput is null)
+        {
+            return;
+        }
+
+        {
             bool on = sound.Length > 0;
             bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
 
@@ -598,6 +606,34 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         }
 
         foreach (SecurityCamera camera in cameras.Cameras)
+        {
+            // One whose own task sounded it from the level's walk has been sounded already.
+            if (!_camerasSounded.Contains(camera))
+            {
+                SoundCamera(camera);
+            }
+        }
+
+        _camerasSounded.Clear();
+    }
+
+    // The cameras their own tasks sounded this tick.
+    private readonly HashSet<SecurityCamera> _camerasSounded = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Keeps one camera's beep and motor loops as its lens now stands: called as the camera's own task has run (the
+    /// <c>SCamera</c>'s update, <c>0x442610</c>, whose lens makes them), and for the rest after the walk.
+    /// </summary>
+    /// <param name="camera">The camera.</param>
+    public void SoundCamera(SecurityCamera camera)
+    {
+        ArgumentNullException.ThrowIfNull(camera);
+        _camerasSounded.Add(camera);
+        if (host.SoundOutput is null)
+        {
+            return;
+        }
+
         {
             string beep = camera.Beep switch
             {
@@ -938,7 +974,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     {
         // The radios after the destructibles: a Radio's update (0x43AF90) runs the ExplodeObject update first, so one
         // that blew up this tick is already off.
-        mission.Interactions?.TickRadios(_radioSounds ??= new RadioSoundPlayer(host));
+        mission.Interactions?.TickRadios(RadioSounds);
         TickAlarmSpeakers();
         TickSecurityCameraSounds();
     }
@@ -948,6 +984,9 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public void PlayTransmissionSound(string sound) => host.SoundOutput?.PlayDefinition(sound, priority: 180);
 
     private RadioSoundPlayer? _radioSounds;
+
+    /// <summary>Gets where the level's radios play, made on first use.</summary>
+    public IRadioSoundPlayer RadioSounds => _radioSounds ??= new RadioSoundPlayer(host);
 
     // A radio's voices: 0x43AF90 resolves the authored name (sub_4E6B00) and plays it at the task (sub_4E6C30). A name with
     // no definition starts nothing, and the radio carries on regardless.

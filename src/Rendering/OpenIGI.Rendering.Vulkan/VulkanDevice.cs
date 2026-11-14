@@ -1,5 +1,4 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Capabilities;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Queues;
@@ -203,7 +202,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
             double used = budget.HeapUsage[(int)i] / (1024.0 * 1024.0);
             double allowed = budget.HeapBudget[(int)i] / (1024.0 * 1024.0);
             double size = properties.MemoryProperties.MemoryHeaps[(int)i].Size / (1024.0 * 1024.0);
-            heaps.Add(FormattableString.Invariant(
+            heaps.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"heap {i}: {used:F0} MiB used of {allowed:F0} MiB available ({size:F0} MiB total)"));
         }
 
@@ -246,7 +245,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
             double used = budget.HeapUsage[(int)i] / (1024.0 * 1024.0);
             double allowed = budget.HeapBudget[(int)i] / (1024.0 * 1024.0);
             double size = properties.MemoryProperties.MemoryHeaps[(int)i].Size / (1024.0 * 1024.0);
-            text.Append(FormattableString.Invariant(
+            text.Append(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"  heap {i} ({(deviceLocal ? "device" : "host")}): {used:F0} MiB used of {allowed:F0} MiB budget ({size:F0} MiB total)\n"));
         }
 

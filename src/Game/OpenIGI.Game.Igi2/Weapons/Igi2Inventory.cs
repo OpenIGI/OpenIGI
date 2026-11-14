@@ -114,7 +114,7 @@ public sealed class Igi2AmmoItem
 /// Multiplayer's branches are not here: the single-player campaign never takes them.
 /// </para>
 /// </remarks>
-public sealed class Igi2Inventory
+public sealed class Igi2Inventory : ISavedState
 {
     private readonly Igi2WeaponTables _tables;
     private readonly Igi2WeaponItem[] _weapons;
@@ -526,7 +526,7 @@ public sealed class Igi2Inventory
     /// the weapon in hand.
     /// </summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Saves.Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.List(_ammo, static (w, a) =>
@@ -549,7 +549,7 @@ public sealed class Igi2Inventory
 
     /// <summary>Reads its save state back; the weapon in hand is put in hand again.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Saves.Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         foreach ((int count, int limit, int number) in reader.List(static r => (r.Int(), r.Int(), r.Int())))

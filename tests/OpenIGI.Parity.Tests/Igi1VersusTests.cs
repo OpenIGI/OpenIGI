@@ -22,10 +22,11 @@ public sealed class Igi1VersusTests
         Assert.Empty(pair.Host!.World.Soldiers?.SoldierViews ?? []);
         Assert.Empty(pair.Joiner!.World.Soldiers?.SoldierViews ?? []);
 
-        // Laid out from where they stood: spawns for both teams, and the host's own start inside play.
+        // Laid out for the mode: somewhere for each team to start -- a deathmatch's spawns are anyone's, apart from the team
+        // starts the round modes keep -- and the host's own start inside play.
         MpLayout layout = Assert.IsType<MpLayout>(pair.Session.Session.Layout);
-        Assert.Contains(layout.Spawns, s => s.Team == TeamRoster.Good);
-        Assert.Contains(layout.Spawns, s => s.Team == TeamRoster.Bad);
+        Assert.NotEmpty(layout.SpawnsFor(TeamRoster.Good));
+        Assert.NotEmpty(layout.SpawnsFor(TeamRoster.Bad));
         Assert.True(layout.InBounds(pair.Host.World.Player!.Body.Position));
 
         // One a side.
@@ -34,7 +35,7 @@ public sealed class Igi1VersusTests
         Assert.Equal([TeamRoster.Good, TeamRoster.Bad], teams);
 
         // Both in the same arena: not one in the base and the other at the level's far-off start.
-        double apart = Core.Numerics.Vector3d.Distance(pair.Host.World.Player!.Body.Position, Assert.Single(pair.Host.World.NetworkPlayers).Player.Body.Position);
+        double apart = Core.Numerics.Vector3d.Distance(pair.Host.World.Player.Body.Position, Assert.Single(pair.Host.World.NetworkPlayers).Player.Body.Position);
         Assert.True(apart < 300 * 4096, $"the players start {apart / 4096:0} m apart");
         Assert.True(layout.InBounds(pair.Host.World.Player.Body.Position));
 
@@ -153,22 +154,22 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game carries {string.Join(", ", Kit(pair.Joiner!.World.Player!))}");
 
         // Both wounded and living; the next round (the match begun again in place) puts them back whole, on both games.
-        pair.Host.World.PlayerHealth.Apply(13, 0.5f);
+        pair.Host.World.PlayerLife.Health.Apply(13, 0.5f);
         pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player)).Health.Apply(13, 0.5f);
-        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction < 0.9f, 30 * 3) >= 0, "the joiner never saw its wound");
+        Assert.True(pair.RunUntil(() => pair.Joiner.World.PlayerLife.Health.RemainingFraction < 0.9f, 30 * 3) >= 0, "the joiner never saw its wound");
 
         // Each carries a rifle with rounds spent into the restart; the match played again arms both from nothing.
         IModeHost modes = pair.Session.Session;
         int joinerSlot = pair.Session.Session.Match.Players.Single(p => p.Value.Name == "Anya").Key;
         Assert.True(modes.Give(ServerSession.HostSlot, "WEAPON_ID_AK47", 43));
         Assert.True(modes.Give(joinerSlot, "WEAPON_ID_AK47", 43));
-        Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Contains("WEAPON_ID_AK47"), 30 * 3) >= 0, "the joiner's own game never carried its rifle");
+        Assert.True(pair.RunUntil(() => Kit(pair.Joiner.World.Player!).Contains("WEAPON_ID_AK47"), 30 * 3) >= 0, "the joiner's own game never carried its rifle");
         pair.Session.PlayAgain();
         Assert.True(pair.RunUntil(() => Kit(pair.Host.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(hostKit), 30 * 3) >= 0, $"the host restarted with {string.Join(", ", Kit(pair.Host.World.Player!))}");
         Assert.True(Kit(partner.Player).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), $"the joiner restarted with {string.Join(", ", Kit(partner.Player))}");
-        Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game restarted with {string.Join(", ", Kit(pair.Joiner!.World.Player!))}");
-        Assert.True(pair.RunUntil(() => pair.Host.World.PlayerHealth.RemainingFraction >= 1f && partner.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the server kept the wounds");
-        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction >= 1f, 30 * 3) >= 0, "the joiner's own game kept its wound");
+        Assert.True(pair.RunUntil(() => Kit(pair.Joiner.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game restarted with {string.Join(", ", Kit(pair.Joiner.World.Player!))}");
+        Assert.True(pair.RunUntil(() => pair.Host.World.PlayerLife.Health.RemainingFraction >= 1f && partner.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the server kept the wounds");
+        Assert.True(pair.RunUntil(() => pair.Joiner.World.PlayerLife.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the joiner's own game kept its wound");
 
         // The sides are I.G.I. 2's.
         Assert.Equal(("IGI", "Conspiracy"), (MatchState.TeamName(TeamRoster.Good), MatchState.TeamName(TeamRoster.Bad)));
@@ -227,7 +228,7 @@ public sealed class Igi1VersusTests
         Assert.False(Carries(partner.Player, "WEAPON_ID_GLOCK") || Carries(partner.Player, "WEAPON_ID_COLT"), "the joiner kept its pistol beside the Uzi");
         Assert.DoesNotContain(pair.Host.World.GunPickups.Items, g => !g.IsCollected && g.Weapon.ScriptId is "WEAPON_ID_GLOCK" or "WEAPON_ID_COLT");
         Assert.True(
-            pair.RunUntil(() => Carries(pair.Joiner!.World.Player!, "WEAPON_ID_UZI") && !Carries(pair.Joiner!.World.Player!, "WEAPON_ID_GLOCK") && !Carries(pair.Joiner!.World.Player!, "WEAPON_ID_COLT"), 30 * 3) >= 0,
+            pair.RunUntil(() => Carries(pair.Joiner!.World.Player!, "WEAPON_ID_UZI") && !Carries(pair.Joiner.World.Player!, "WEAPON_ID_GLOCK") && !Carries(pair.Joiner.World.Player!, "WEAPON_ID_COLT"), 30 * 3) >= 0,
             $"the joiner's own game carries {string.Join(", ", pair.Joiner!.World.Player!.Weapons!.Carried.Select(c => c.Weapon.ScriptId))}");
     }
 
@@ -257,7 +258,7 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => partner.IsDead, 300) >= 0, "the partner never fell");
         Assert.True(pair.RunUntil(() => !partner.IsDead, 30 * 6) >= 0, "the partner was never put back");
         double fromFar = Math.Abs(partner.Player.Body.Position.X - far[0]) + Math.Abs(partner.Player.Body.Position.Y - far[1]);
-        Assert.True(fromFar < 4096, $"put back {fromFar} units from the far spawn, at {partner.Player.Body.Position}, host {pair.Host.World.Player!.Body.Position} was {host}, deaths {pair.Session.Session!.Match.Players.Values.Sum(p => p.Deaths)}");
+        Assert.True(fromFar < 4096, $"put back {fromFar} units from the far spawn, at {partner.Player.Body.Position}, host {pair.Host.World.Player!.Body.Position} was {host}, deaths {pair.Session.Session.Match.Players.Values.Sum(p => p.Deaths)}");
     }
 
     [RequiresGameDataFact]
@@ -397,8 +398,8 @@ public sealed class Igi1VersusTests
         bool hostAttacks = session.Match.Players[ServerSession.HostSlot].Team == SearchAndDestroyMode.Attackers;
         Core.Numerics.Vector3d feet = hostAttacks ? pair.Host!.World.Player!.Body.Position : Assert.Single(pair.Host!.World.NetworkPlayers).Player.Body.Position;
         session.Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [feet.X, feet.Y, feet.Z], 5 * 4096)] };
-        OpenIGI.Game.Igi1.Player.PlayerCamera planter = hostAttacks ? pair.Host!.World.Player! : Assert.Single(pair.Host!.World.NetworkPlayers).Player;
-        OpenIGI.Game.Igi1.Player.PlayerCamera own = hostAttacks ? pair.Host!.World.Player! : pair.Joiner!.World.Player!;
+        OpenIGI.Game.Igi1.Player.PlayerCamera planter = hostAttacks ? pair.Host.World.Player! : Assert.Single(pair.Host.World.NetworkPlayers).Player;
+        OpenIGI.Game.Igi1.Player.PlayerCamera own = hostAttacks ? pair.Host.World.Player! : pair.Joiner!.World.Player!;
         int bomb = OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Id;
 
         // The bomb is a weapon the carrier carries, on its own game and the server's alike -- but not yet in hand, and with
@@ -524,7 +525,7 @@ public sealed class Igi1VersusTests
         Igi1CoopPair.Hold(pair.JoinerInput, OpenIGI.Input.KeyCode.W, false);
 
         double hostWalked = Core.Numerics.Vector3d.Distance(hostFrom, pair.Host.World.Player.Body.Position);
-        double joinerWalked = Core.Numerics.Vector3d.Distance(joinerFrom, pair.Joiner.World.Player!.Body.Position);
+        double joinerWalked = Core.Numerics.Vector3d.Distance(joinerFrom, pair.Joiner.World.Player.Body.Position);
         Assert.True(hostWalked > 4096, $"the host walked {hostWalked / 4096:0.00} m");
         Assert.True(joinerWalked > 4096, $"the joiner walked {joinerWalked / 4096:0.00} m");
     }
@@ -554,7 +555,7 @@ public sealed class Igi1VersusTests
         GunPickup thrown = served.Items[^1];
         Assert.Equal(gun, thrown.Weapon.WeaponId);
         Assert.NotNull(thrown.Launch);
-        Vector3d speed = thrown.Launch!.Value.Velocity;
+        Vector3d speed = thrown.Launch.Value.Velocity;
         Assert.Equal(614.4, Math.Sqrt((speed.X * speed.X) + (speed.Y * speed.Y)), 1);
         Assert.True(speed.Z > 270, $"it was thrown {speed.Z:0} up a tick, not I.G.I. 2's 273");
         Assert.True(pair.RunUntil(() => !joiner.Player.Weapons!.HasWeapon(gun) && !own.Weapons.HasWeapon(gun), 30) >= 0,
@@ -591,7 +592,7 @@ public sealed class Igi1VersusTests
         Assert.True(mode.Carrier >= 0, "nobody was handed the bomb");
         bool hostCarries = mode.Carrier == ServerSession.HostSlot;
         OpenIGI.Game.Igi1.Player.PlayerCamera carrier = hostCarries ? pair.Host!.World.Player! : Assert.Single(pair.Host!.World.NetworkPlayers).Player;
-        OpenIGI.Game.Igi1.Player.PlayerCamera own = hostCarries ? pair.Host!.World.Player! : pair.Joiner!.World.Player!;
+        OpenIGI.Game.Igi1.Player.PlayerCamera own = hostCarries ? pair.Host.World.Player! : pair.Joiner!.World.Player!;
         Input.InputState keys = hostCarries ? pair.HostInput : pair.JoinerInput;
         int bomb = Igi1BombWeapon.Id;
 
@@ -610,15 +611,15 @@ public sealed class Igi1VersusTests
 
         // Thrown as a dropped gun is: both games fly it, and it comes to rest well ahead of the carrier.
         GunPickup Bomb(Igi1Gameplay game) => Assert.Single(game.World.GunPickups!.Items, p => p.Weapon.WeaponId == bomb && !p.IsCollected);
-        Igi1Gameplay other = hostCarries ? pair.Joiner! : pair.Host!;
+        Igi1Gameplay other = hostCarries ? pair.Joiner! : pair.Host;
         Assert.True(pair.RunUntil(() => other.World.GunPickups!.Items.Any(p => p.Weapon.WeaponId == bomb && !p.IsCollected), 30) >= 0,
             "the other game never saw the bomb thrown");
-        Assert.True(Bomb(pair.Host!).IsMoving || Bomb(pair.Joiner!).IsMoving, "the bomb never flew");
-        Assert.True(pair.RunUntil(() => !Bomb(pair.Host!).IsMoving && !Bomb(pair.Joiner!).IsMoving, 30 * 6) >= 0, "the bomb never came to rest");
+        Assert.True(Bomb(pair.Host).IsMoving || Bomb(pair.Joiner!).IsMoving, "the bomb never flew");
+        Assert.True(pair.RunUntil(() => !Bomb(pair.Host).IsMoving && !Bomb(pair.Joiner!).IsMoving, 30 * 6) >= 0, "the bomb never came to rest");
         pair.RunUntil(() => false, 30);
-        Assert.True(Vector3d.Distance(Bomb(pair.Host!).Position, Bomb(pair.Joiner!).Position) < 64, "the games laid the bomb apart");
-        Assert.True(Vector3d.Distance(mode.DroppedAt!.Value, Bomb(pair.Host!).Position) < 1, "the mode lost track of the thrown bomb");
-        Assert.True(Vector3d.Distance(mode.DroppedAt!.Value, stood) > 0.5 * 4096, "the bomb landed at the carrier's feet");
+        Assert.True(Vector3d.Distance(Bomb(pair.Host).Position, Bomb(pair.Joiner!).Position) < 64, "the games laid the bomb apart");
+        Assert.True(Vector3d.Distance(mode.DroppedAt!.Value, Bomb(pair.Host).Position) < 1, "the mode lost track of the thrown bomb");
+        Assert.True(Vector3d.Distance(mode.DroppedAt.Value, stood) > 0.5 * 4096, "the bomb landed at the carrier's feet");
         Assert.True(pair.RunUntil(() => !own.Weapons!.HasWeapon(bomb) && !carrier.Weapons!.HasWeapon(bomb), 30 * 2) >= 0,
             "the bomb stayed in the carrier's weapons");
 
@@ -670,7 +671,7 @@ public sealed class Igi1VersusTests
             (game.World.GenericPickups?.Items.Count(p => !p.IsCollected) ?? 0) + (game.World.GunPickups?.Items.Count(p => !p.IsCollected) ?? 0);
         pair.RunUntil(() => false, 30);
         Assert.True((pair.Host!.World.GenericPickups?.Items.Count ?? 0) + (pair.Host.World.GunPickups?.Items.Count ?? 0) > 0, "the level has no pickups to clear");
-        Assert.Equal(0, Lying(pair.Host!));
+        Assert.Equal(0, Lying(pair.Host));
         Assert.Equal(0, Lying(pair.Joiner!));
 
         // The joiner falls, which ends the round; the next one puts the level back -- without them.
@@ -679,7 +680,7 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => match.Players[0] is { IsAlive: false }, 120) >= 0, "the joiner never fell");
         Assert.True(pair.RunUntil(() => match.Players[0].IsAlive && !pair.Joiner!.World.IsPlayerDead, 3000) >= 0, "the next round never stood the joiner up");
         pair.RunUntil(() => false, 30);
-        Assert.Equal(0, Lying(pair.Host!));
+        Assert.Equal(0, Lying(pair.Host));
         Assert.Equal(0, Lying(pair.Joiner!));
     }
 
@@ -778,8 +779,8 @@ public sealed class Igi1VersusTests
         Assert.True(joiner.Player.Weapons?.InHand?.Weapon.Category is Game.Weapons.WeaponCategory.Pistol or Game.Weapons.WeaponCategory.Gun, "the joiner holds no gun");
 
         // Aimed at the chest where the joiner's own game draws the host, clicked; until the host falls or ten rounds are out.
-        int before = joiner.Player.Weapons!.ShotSequence;
-        float damage = pair.Host.World.PlayerHealth.Damage;
+        int before = joiner.Player.Weapons.ShotSequence;
+        float damage = pair.Host.World.PlayerLife.Health.Damage;
         int landed = 0;
         int frame = 0;
         pair.RunUntil(
@@ -794,10 +795,10 @@ public sealed class Igi1VersusTests
                 }
 
                 pair.JoinerInput.Mouse.SetButton(OpenIGI.Input.MouseButton.Left, frame++ % 6 < 2);
-                if (pair.Host.World.PlayerHealth.Damage != damage)
+                if (pair.Host.World.PlayerLife.Health.Damage != damage)
                 {
                     landed++;
-                    damage = pair.Host.World.PlayerHealth.Damage;
+                    damage = pair.Host.World.PlayerLife.Health.Damage;
                 }
 
                 return pair.Host.World.IsPlayerDead || joiner.Player.Weapons.ShotSequence - before >= 10;

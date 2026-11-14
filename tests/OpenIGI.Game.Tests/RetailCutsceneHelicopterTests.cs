@@ -124,7 +124,7 @@ public sealed class RetailCutsceneHelicopterTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         HumanSoldierTask passenger = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1505));
-        GameTask helicopter = Assert.IsType<DeclaredTask>(root.Tree.FromId(1502));
+        GameTask helicopter = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1502));
 
         runtime.Tick();
         Assert.True(ConditionalContainerGate.IsTaskActive(helicopter));

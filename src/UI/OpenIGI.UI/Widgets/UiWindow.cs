@@ -32,7 +32,6 @@ public class UiWindow : UiElement
     private readonly Spring _focus = new(0f, smoothTime: 0.10f);
     private readonly Spring _hoverEdge = new(0f, smoothTime: 0.12f);
     private UiElement? _content;
-    private UiVec2 _pointer;
 
     /// <summary>Initializes a new instance of the <see cref="UiWindow"/> class.</summary>
     /// <param name="theme">The theme the chrome draws from.</param>
@@ -98,11 +97,7 @@ public class UiWindow : UiElement
 
     /// <summary>Gets or sets where the pointer is, so title-bar buttons can light under it.</summary>
     /// <remarks>Set by <see cref="WindowLayer"/> each frame; a window never reads a device itself.</remarks>
-    public UiVec2 PointerPosition
-    {
-        get => _pointer;
-        set => _pointer = value;
-    }
+    public UiVec2 PointerPosition { get; set; }
 
     /// <summary>Gets or sets the single element filling the window below its title bar.</summary>
     public UiElement? Content
@@ -482,7 +477,7 @@ public class UiWindow : UiElement
     /// </remarks>
     private void DrawCloseButton(UiPainter painter, UiRect rect)
     {
-        bool hovered = (HoveredRegion & WindowRegion.Title) != 0 && rect.Contains(_pointer);
+        bool hovered = (HoveredRegion & WindowRegion.Title) != 0 && rect.Contains(PointerPosition);
 
         if (hovered)
         {

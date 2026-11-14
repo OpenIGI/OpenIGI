@@ -33,9 +33,10 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
         get
         {
             int dead = 0;
-            foreach (HumanHealth health in _context.Health.Values)
+            IReadOnlyList<SoldierView> bodies = _context.Bodies;
+            for (int i = 0; i < bodies.Count; i++)
             {
-                if (health.IsDead)
+                if (bodies[i].Health is { IsDead: true })
                 {
                     dead++;
                 }
@@ -72,14 +73,14 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
             foreach (SoldierAgent member in group.Agents)
             {
                 SoldierView view = member.View;
-                bool dead = view.IsDead || (_context.Health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
+                bool dead = view.IsDead || (view.Health is { } health && health.IsDead);
 
                 into.Add(new SoldierSnapshot(
                     view.Soldier.Name ?? string.Empty,
                     view.Position / WorldScene.UnitsPerMetre,
                     dead,
                     view.CurrentAnimation,
-                    _context.Health.TryGetValue(view, out HumanHealth? hp) ? hp.RemainingFraction : -1f,
+                    view.Health is { } hp ? hp.RemainingFraction : -1f,
                     member.IsCutsceneActor));
             }
         }
@@ -94,7 +95,7 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
         {
             bool live = ConditionalContainerGate.IsTaskActive(view.Soldier)
                 && !view.IsDead
-                && (!_context.Health.TryGetValue(view, out HumanHealth? health) || health is not { IsDead: true });
+                && (view.Health is not { } health || health is not { IsDead: true });
             humans.Add((view.Soldier, view.Soldier.Team, brain.Position, brain.Facing, live));
         }
 
@@ -109,7 +110,7 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
         {
             if (ConditionalContainerGate.IsTaskActive(view.Soldier)
                 && !view.IsDead
-                && (!_context.Health.TryGetValue(view, out HumanHealth? health) || health is not { IsDead: true }))
+                && (view.Health is not { } health || health is not { IsDead: true }))
             {
                 contacts.Add(brain.Position);
             }
@@ -145,7 +146,7 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
 
             bool dead = view.IsDead
                 || brain.Activity == AiSoldierActivity.Dead
-                || (_context.Health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
+                || (view.Health is { } health && health.IsDead);
             subjects.Add(new SecurityCameraSubject(
                 view,
                 default,
@@ -380,7 +381,7 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
                 SoldierView soldier = member.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
                     || soldier.IsDead
-                    || (_context.Health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
+                    || (soldier.Health is { } health && health is { IsDead: true }))
                 {
                     continue;
                 }
@@ -450,7 +451,7 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
                 SoldierView view = member.View;
                 if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
                     || view.IsDead
-                    || (_context.Health.TryGetValue(view, out HumanHealth? health) && health is { IsDead: true }))
+                    || (view.Health is { } health && health is { IsDead: true }))
                 {
                     continue;
                 }

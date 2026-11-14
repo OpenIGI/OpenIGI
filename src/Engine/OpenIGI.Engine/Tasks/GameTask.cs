@@ -34,6 +34,9 @@ public abstract class GameTask
         _type ?? throw new InvalidOperationException(
             $"The task of CLR type '{GetType().Name}' was not created through a {nameof(TaskTree)} and has no task type.");
 
+    /// <summary>Gets a value indicating whether the task was made from a registered type, and so has a <see cref="Type"/>.</summary>
+    public bool HasType => _type is not null;
+
     /// <summary>Gets the tree this task belongs to.</summary>
     /// <exception cref="InvalidOperationException">The task has not been created through a <see cref="TaskTree"/>.</exception>
     /// <remarks>
@@ -47,6 +50,12 @@ public abstract class GameTask
 
     /// <summary>Gets a value indicating whether the task was created through a <see cref="TaskTree"/>, and so has a <see cref="Tree"/>.</summary>
     public bool HasTree => _tree is not null;
+
+    /// <summary>Says that what may claim a drawn placement in this task's tree has changed (<see cref="TaskTree.PlacementsChanged"/>).</summary>
+    public void PlacementsChanged() => _tree?.PlacementsChanged();
+
+    /// <summary>Gets the count of such changes in this task's tree (<see cref="TaskTree.PlacementEpoch"/>), or zero for a task outside one.</summary>
+    public int PlacementEpoch => _tree?.PlacementEpoch ?? 0;
 
     /// <summary>Gets the parent task, or <see langword="null"/> for a tree root.</summary>
     public GameTask? Parent { get; private set; }
@@ -339,6 +348,23 @@ public abstract class GameTask
         return false;
     }
 
+    /// <summary>Gets the value a parameter was given, by the name level data declares it under, when it is of the type asked for.</summary>
+    /// <typeparam name="T">The type the value is wanted as.</typeparam>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">Receives the value, or the type's default.</param>
+    /// <returns><see langword="true"/> when the type declares the parameter and its value is a <typeparamref name="T"/>.</returns>
+    public bool TryGetScriptValue<T>(string name, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out T value)
+    {
+        if (TryGetScriptValue(name, out object? raw) && raw is T typed)
+        {
+            value = typed;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
     /// <summary>Sets a parameter by the name level data declares it under, when the value is of the parameter's type.</summary>
     /// <param name="name">The parameter's declared name.</param>
     /// <param name="value">The value.</param>
@@ -387,7 +413,7 @@ public abstract class GameTask
     internal void AppendChild(GameTask child)
     {
         child.Parent = this;
-        PlacementClaims.Changed();
+        _tree?.PlacementsChanged();
         child.PreviousSibling = LastChild;
         child.NextSibling = null;
 
@@ -407,7 +433,7 @@ public abstract class GameTask
     internal void PrependChild(GameTask child)
     {
         child.Parent = this;
-        PlacementClaims.Changed();
+        _tree?.PlacementsChanged();
         child.NextSibling = FirstChild;
         child.PreviousSibling = null;
 
@@ -452,6 +478,6 @@ public abstract class GameTask
         NextSibling = null;
         PreviousSibling = null;
         Parent = null;
-        PlacementClaims.Changed();
+        _tree?.PlacementsChanged();
     }
 }

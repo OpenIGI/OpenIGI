@@ -126,7 +126,7 @@ internal sealed partial class RemasteredHudRenderer
             painter.FillRect(new UiRect(x - w, y + d, w * 2f, 1f), Accent.WithAlpha(alpha));
         }
 
-        string label = FormattableString.Invariant($"{mark.Name}  {canvas.DistanceMetres:0} m");
+        string label = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{mark.Name}  {canvas.DistanceMetres:0} m");
         float size = context.Px(MarkLabelSize);
         float height = size * 1.6f;
         float width = font.MeasureWidth(label, size) + (size * 1.2f);

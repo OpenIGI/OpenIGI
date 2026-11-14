@@ -1,11 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.World;
-using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Game.Igi2.ViewModel;
-using OpenIGI.Presentation.Igi2.World;
 using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Presentation.Igi2.ViewModel;

@@ -1,14 +1,11 @@
 using System.Globalization;
 using System.Text;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Host;
 using OpenIGI.Input;
@@ -45,7 +42,7 @@ internal sealed partial class MissionSolver
     private readonly PlayerCamera _player;
     private readonly InputState _input;
     private readonly TaskTree _tree;
-    private readonly DeclaredTask _levelFlow;
+    private readonly GameTask _levelFlow;
     private readonly Context _context;
     private readonly Dictionary<(string Source, GameTask Owner), ScriptExpression?> _parsed = [];
     private readonly StringBuilder _log = new();
@@ -147,12 +144,9 @@ internal sealed partial class MissionSolver
                 break;
             }
 
-            if (tick % 1000 == 0)
+            if (tick % 1000 == 0 && LogFile is not null)
             {
-                if (LogFile is not null)
-                {
-                    File.WriteAllText(LogFile, _log.ToString());
-                }
+                File.WriteAllText(LogFile, _log.ToString());
             }
 
             Goal goal = Need(target, _levelFlow) ?? Goal.Wait("nothing to work on");
@@ -321,14 +315,14 @@ internal sealed partial class MissionSolver
                     return new Goal(GoalKind.Kill, target, word);
                 // An object whose script sets it off (its Explosion expression) goes when that comes true; else it is blown up.
                 case ("Car" or "ExplodeObject", _):
-                    return target is DeclaredTask scripted
+                    return target is GameTask scripted && ReadByParameters(scripted)
                         && Text(scripted, "Explosion expression") is { Length: > 0 } fuse
                         && Need(Parse(fuse, scripted), scripted) is { } lit
                         ? lit
                         : new Goal(GoalKind.Blow, target, word);
             }
 
-            if (target is not DeclaredTask task)
+            if (!ReadByParameters(target) || target is not GameTask task)
             {
                 return Goal.Wait($"{word} ({target.GetType().Name})");
             }
@@ -342,7 +336,7 @@ internal sealed partial class MissionSolver
                     NeedVehicle(task, word),
                 ("AreaActivate", "nActive") => new Goal(GoalKind.Stand, task, word),
                 ("GunPickup" or "GenericPickup" or "AmmoPickup", "isPickedUp") => new Goal(GoalKind.Take, task, word),
-                ("Switch" or "Terminal" or "Cabinet" or "GenericTBA" or "Door", _) => NeedUsable(task, owner) ?? new Goal(GoalKind.Use, task, word),
+                ("Switch" or "Terminal" or "Cabinet" or "GenericTBA" or "Door", _) => NeedUsable(task) ?? new Goal(GoalKind.Use, task, word),
                 _ => NeedOn(task) ?? Goal.Wait($"{word} under {Chain(task)}"),
             };
         }
@@ -359,7 +353,7 @@ internal sealed partial class MissionSolver
             : Need(Parse(container.Condition, container), container);
 
     // A terminal or TBA is offered only while its On Expression holds (0x443C80 asks that it is on).
-    private Goal? NeedUsable(DeclaredTask task, GameTask owner)
+    private Goal? NeedUsable(GameTask task)
     {
         if (_mission.Interactions is { } interactions
             && interactions.TryGet(task, out WorldInteraction? interaction)
@@ -385,7 +379,7 @@ internal sealed partial class MissionSolver
     }
 
     // A timer or anything else that runs itself while its On expression holds (LevelTimer's "On").
-    private Goal? NeedOn(DeclaredTask task)
+    private Goal? NeedOn(GameTask task)
     {
         foreach (string parameter in new[] { "On", "On Expression", "On expression", "Run" })
         {
@@ -468,8 +462,15 @@ internal sealed partial class MissionSolver
         return parsed;
     }
 
-    private static string Text(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? raw) && raw is string text ? text : string.Empty;
+    // Whether a task is read here by its level parameters: a type with no class of its own, or one of the flow types
+    // that have one.
+    private static bool ReadByParameters(GameTask task) =>
+        task is OpenIGI.Engine.Tasks.DeclaredTask or OpenIGI.Game.Flow.EditVariableTask or OpenIGI.Game.Flow.LevelTimerTask
+            or OpenIGI.Game.Flow.AreaActivateTask or OpenIGI.Game.Flow.LevelFlowTask
+            or OpenIGI.Game.Flow.DefineComputerObjectiveTask or OpenIGI.Game.World.Igi1StatusMessageTask;
+
+    private static string Text(GameTask task, string parameter) =>
+        task.TryGetScriptValue(parameter, out object? raw) && raw is string text ? text : string.Empty;
 
     private static bool TrySplit(string word, out string type, out int id, out string field)
     {
@@ -488,14 +489,14 @@ internal sealed partial class MissionSolver
         return true;
     }
 
-    private static DeclaredTask FindLevelFlow(GameTask root) =>
+    private static GameTask FindLevelFlow(GameTask root) =>
         FindLevelFlowOrNull(root) ?? throw new InvalidOperationException("The level has no LevelFlow.");
 
-    private static DeclaredTask? FindLevelFlowOrNull(GameTask root)
+    private static GameTask? FindLevelFlowOrNull(GameTask root)
     {
         foreach (GameTask child in root.Children)
         {
-            if (child is DeclaredTask { Type.Name: "LevelFlow" } flow)
+            if (child is GameTask { HasType: true, Type.Name: "LevelFlow" } flow)
             {
                 return flow;
             }

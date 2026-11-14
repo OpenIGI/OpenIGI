@@ -74,7 +74,7 @@ public sealed partial class GameHost
             // transition is silent for exactly that.
             _logger.Information(
                 "Storm",
-                FormattableString.Invariant(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={WeatherCVars.Storm.Value} r_weather_enabled={WeatherCVars.WeatherEnabled.Value} kind={weatherKind} force={forceWeather} campaign={_conditions.Weather}/{_conditions.TimeOfDay} intensity={WeatherCVars.StormIntensity.Value}"));
         }
     }
@@ -161,7 +161,7 @@ public sealed partial class GameHost
 
         _logger.Information(
             "Shelter",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"{_shelterField.Width}x{_shelterField.Depth} at {_shelterField.CellMetres:0.00} m, z {_shelterField.LowestZ:0.0}..{_shelterField.HighestZ:0.0}, built in {_loop.TimeSource.Milliseconds - started} ms"));
     }
 

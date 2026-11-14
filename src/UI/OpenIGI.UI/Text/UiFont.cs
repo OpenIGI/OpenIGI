@@ -30,6 +30,7 @@ public sealed class UiFont : IDisposable
     private readonly Dictionary<int, GlyphInfo> _glyphs;
     private readonly IUiImageFactory? _owner;
     private readonly int _fallbackCodepoint;
+    private UiFont[] _reductions = [];
     private bool _disposed;
 
     private UiFont(FontAtlasData atlas, IUiImageFactory? owner, UiImage texture, byte[]? fontData)
@@ -101,10 +102,91 @@ public sealed class UiFont : IDisposable
         return new UiFont(atlas, images, texture, fontData);
     }
 
+    /// <summary>Gives the font a smaller rasterisation of the same face, to draw small text from.</summary>
+    /// <param name="smaller">The same face rasterised at a lower pixel height. The font owns it from here and disposes it.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="smaller"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="smaller"/> is another kind of atlas, or is not smaller.</exception>
+    /// <remarks>
+    /// A coverage atlas is sharp only near the size it was rasterised at: sampled with one bilinear tap, a glyph
+    /// drawn at less than half its atlas size skips texels, so thin stems fade and the text greys out. A second,
+    /// smaller rasterisation gives small text a source of its own size. Glyph metrics are the outline's, scaled,
+    /// so every rasterisation of a face measures the same and <see cref="ForDrawSize"/> can swap one for another
+    /// without moving the pen.
+    /// </remarks>
+    public void AddReduction(UiFont smaller)
+    {
+        ArgumentNullException.ThrowIfNull(smaller);
+        if (smaller.Kind != Kind || smaller.BasePixelHeight >= BasePixelHeight)
+        {
+            throw new ArgumentException("A reduction is the same kind of atlas at a lower pixel height.", nameof(smaller));
+        }
+
+        _reductions = [.. _reductions, smaller];
+        Array.Sort(_reductions, static (a, b) => a.BasePixelHeight.CompareTo(b.BasePixelHeight));
+    }
+
+    /// <summary>Gets the rasterisation of this face to draw from at a size on the screen.</summary>
+    /// <param name="devicePx">The text size in back-buffer pixels.</param>
+    /// <returns>
+    /// The smallest rasterisation that is at least as large as the text, so the atlas is never magnified and is
+    /// minified as little as the rasterisations at hand allow; this font when it has no reductions.
+    /// </returns>
+    public UiFont ForDrawSize(float devicePx)
+    {
+        foreach (UiFont reduction in _reductions)
+        {
+            if (reduction.BasePixelHeight >= devicePx)
+            {
+                return reduction;
+            }
+        }
+
+        return this;
+    }
+
     /// <summary>Gets the scale from atlas pixels to a requested pixel size.</summary>
     /// <param name="sizePx">The requested text size in pixels.</param>
     /// <returns>The factor every atlas-pixel metric is multiplied by.</returns>
-    public float ScaleFor(float sizePx) => sizePx / Atlas.BasePixelHeight;
+    /// <remarks>Never for less than <see cref="MinimumPixelHeight"/>, so measuring and drawing agree on the size used.</remarks>
+    public float ScaleFor(float sizePx) => PixelHeightFor(sizePx) / Atlas.BasePixelHeight;
+
+    /// <summary>Gets the pixel height a requested size is measured and drawn at.</summary>
+    /// <param name="sizePx">The requested text size.</param>
+    /// <returns>
+    /// The size itself, or the pixel height of a face whose em is that size while <see cref="SizesInEm"/> is set; never
+    /// less than <see cref="MinimumPixelHeight"/>.
+    /// </returns>
+    public float PixelHeightFor(float sizePx) =>
+        MathF.Max(SizesInEm ? sizePx * Atlas.BasePixelHeight / Atlas.EmHeight : sizePx, MinimumPixelHeight);
+
+    /// <summary>Gets or sets a value indicating whether a text size names the face's em rather than its pixel height.</summary>
+    /// <remarks>
+    /// <para>
+    /// A size here has always been the distance from a face's ascender to its descender. A page designed in a browser
+    /// gives its sizes as CSS pixels, which name the em: for Barlow a fifth less, for JetBrains Mono a quarter. An
+    /// interface built from such a design sets this, and every size it asks for is the design's own number.
+    /// </para>
+    /// <para>
+    /// Like <see cref="MinimumPixelHeight"/> it is set around the interface it is meant for and put back after, and it
+    /// passes through <see cref="ScaleFor"/>, so measuring and drawing agree.
+    /// </para>
+    /// </remarks>
+    public static bool SizesInEm { get; set; }
+
+    /// <summary>Gets or sets the smallest size any text is measured and drawn at, in pixels; zero for none.</summary>
+    /// <remarks>
+    /// <para>
+    /// The menus are laid out in design units and scaled to the screen, and on a small one a caption of eleven units comes
+    /// out six pixels tall: a row of marks, not words. Whoever lays an interface out for a small screen sets this to
+    /// the smallest text a person can read there, and a size asked for below it is drawn at it.
+    /// </para>
+    /// <para>
+    /// Every size passes through <see cref="ScaleFor"/>, measuring and drawing alike, so a label made larger is also
+    /// measured larger and the layout makes room for it. Set around the interface it is meant for and put back after:
+    /// it is the process's, not a font's.
+    /// </para>
+    /// </remarks>
+    public static float MinimumPixelHeight { get; set; }
 
     /// <summary>Gets the height of one line at a requested size, in pixels.</summary>
     /// <param name="sizePx">The requested text size in pixels.</param>
@@ -245,6 +327,11 @@ public sealed class UiFont : IDisposable
         if (Texture.IsValid)
         {
             _owner?.DestroyImage(Texture);
+        }
+
+        foreach (UiFont reduction in _reductions)
+        {
+            reduction.Dispose();
         }
     }
 }

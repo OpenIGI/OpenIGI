@@ -66,6 +66,10 @@ public static class GBufferPushBlock
     /// </remarks>
     public const float MatteMode = -1f;
 
+    /// <summary>The mode that says this draw's detail map was authored (<see cref="SurfaceMaterial.AuthoredDetail"/>).</summary>
+    /// <remarks>Below <see cref="MatteMode"/>, so a shader that predates it reads it as matte, which is the safe fallback.</remarks>
+    public const float AuthoredDetailMode = -2f;
+
     /// <summary>Writes the block for one geometry draw.</summary>
     /// <param name="block">Room for <see cref="Floats"/> floats.</param>
     /// <param name="state">What the frame holds.</param>
@@ -121,6 +125,7 @@ public static class GBufferPushBlock
             block[19] = blend == BlendMode.Modulate2X
                 ? GroundBakeMode
                 : state.GroundDetail ? GroundDetailMode
+                : state.Material.AuthoredDetail ? AuthoredDetailMode
                 : state.Material.Matte ? MatteMode : 0f;
 
             block[20] = normalMatrix.M12;

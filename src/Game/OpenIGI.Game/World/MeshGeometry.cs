@@ -8,6 +8,13 @@ namespace OpenIGI.Game.World;
 /// <param name="Subsets">One entry per draw record, in record order.</param>
 public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, MeshSubset[] Subsets)
 {
+    /// <summary>Gets a value indicating whether the model stored no normals and these were worked out from its faces.</summary>
+    /// <remarks>
+    /// Such a model is not wound to this renderer's front and has to stay two-sided, so what asks whether a
+    /// mesh can be culled asks this as well as whether it has normals.
+    /// </remarks>
+    public bool HasDerivedNormals { get; init; }
+
     /// <summary>Gets a conservative local-space bound calculated once when geometry is built.</summary>
     public BoundingSphere Bounds { get; } = BoundingSphere.FromVertices(Vertices);
 

@@ -1,5 +1,3 @@
-using OpenIGI.Core.Configuration;
-
 namespace OpenIGI.Core.Configuration.Presets;
 
 /// <summary>

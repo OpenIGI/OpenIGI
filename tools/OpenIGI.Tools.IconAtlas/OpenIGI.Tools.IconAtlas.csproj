@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Bakes the touch controls' icons from their SVG sources into the one atlas of alpha tiles the game draws them
+       from. The atlas is committed, like the compiled shaders: a build needs neither this tool nor Skia. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Tools.Common\OpenIGI.Tools.Common.csproj" />
+  </ItemGroup>
+
+</Project>

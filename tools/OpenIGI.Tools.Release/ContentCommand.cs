@@ -41,7 +41,8 @@ internal static class ContentCommand
         string? subject = verb == "list" ? null : args[1];
         HashSet<string> flags = new(StringComparer.Ordinal);
         Dictionary<string, string> options = new(StringComparer.Ordinal);
-        for (int i = verb == "list" ? 1 : 2; i < args.Count; i++)
+        int i = verb == "list" ? 1 : 2;
+        while (i < args.Count)
         {
             if (args[i] is "--dry-run" or "--yes" or "--no-thumbnail" or "--no-site")
             {
@@ -55,6 +56,8 @@ internal static class ContentCommand
             {
                 return context.Usage(Usage, $"{args[i]} needs a value.");
             }
+
+            i++;
         }
 
         try

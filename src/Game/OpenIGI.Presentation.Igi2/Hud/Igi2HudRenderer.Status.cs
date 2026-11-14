@@ -9,9 +9,7 @@ using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Pickups;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
 using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Presentation.Igi2.Hud;

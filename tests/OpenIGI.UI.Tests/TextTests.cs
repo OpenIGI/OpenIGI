@@ -57,6 +57,59 @@ public sealed class TextTests
         Assert.Equal(cell * 8f, font.MeasureWidth("r_vsync ", 14f), 2);
     }
 
+    // ---- Smaller rasterisations for small text ----
+
+    [Fact]
+    public void Small_text_is_drawn_from_the_smallest_rasterisation_that_is_not_magnified()
+    {
+        UiFont font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
+        UiFont half = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 24f));
+        UiFont quarter = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 12f));
+        font.AddReduction(quarter);
+        font.AddReduction(half);
+
+        Assert.Same(quarter, font.ForDrawSize(11.3f));
+        Assert.Same(quarter, font.ForDrawSize(12f));
+        Assert.Same(half, font.ForDrawSize(14.5f));
+        Assert.Same(half, font.ForDrawSize(24f));
+        Assert.Same(font, font.ForDrawSize(25f));
+        Assert.Same(font, font.ForDrawSize(96f));
+    }
+
+    [Fact]
+    public void A_font_with_no_reductions_draws_from_itself()
+    {
+        UiFont font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
+
+        Assert.Same(font, font.ForDrawSize(8f));
+    }
+
+    /// <summary>
+    /// Layout measures with the font it was given and the painter draws with the reduction, so the two must agree
+    /// on every advance or text would overrun the box measured for it.
+    /// </summary>
+    [Fact]
+    public void A_reduction_measures_as_the_font_it_stands_in_for()
+    {
+        UiFont font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
+        UiFont quarter = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 12f));
+        const string text = "Resolution scale — 1366 × 768";
+
+        Assert.Equal(font.MeasureWidth(text, 11.3f), quarter.MeasureWidth(text, 11.3f), 2);
+        Assert.Equal(font.LineHeight(11.3f), quarter.LineHeight(11.3f), 2);
+        Assert.Equal(font.Ascent(11.3f), quarter.Ascent(11.3f), 2);
+    }
+
+    [Fact]
+    public void A_reduction_is_a_smaller_atlas_of_the_same_kind()
+    {
+        UiFont font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 24f));
+
+        Assert.Throws<ArgumentException>(() => font.AddReduction(UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f))));
+        Assert.Throws<ArgumentException>(() => font.AddReduction(
+            UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 12f, FontAtlasKind.SignedDistanceField))));
+    }
+
     // ---- Packing (pure) ----
 
     [Fact]

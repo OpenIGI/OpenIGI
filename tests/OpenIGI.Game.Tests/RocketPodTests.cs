@@ -7,7 +7,6 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -131,15 +130,15 @@ public sealed class RocketPodTests
         IgiRandom random = IgiRandom.Seeded();
         int draws = 0;
         random.Drew = _ => draws++;
-        runtime.VehicleRandom = random;
-        runtime.ConfigureVehicleParts(
+        runtime.Vehicles.VehicleRandom = random;
+        runtime.Vehicles.ConfigureVehicleParts(
             world,
             name => magic.TryGet(name, out MagicObjectDefinition definition) ? definition : null,
             definition => magic.TaskTypeName(definition.TaskType));
 
         foreach (WorldPlacement placement in world.Placements)
         {
-            runtime.VehiclePartMade(placement);
+            runtime.Vehicles.VehiclePartMade(placement);
         }
 
         // Heli_353 and Heli_356 are the mission's two Hinds.
@@ -154,7 +153,7 @@ public sealed class RocketPodTests
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

@@ -36,11 +36,6 @@ public sealed partial class GameHost
             // Resolved per frame rather than cached, so the options menu's sensitivity slider takes
             // effect on the next frame instead of the next launch. It is two multiplies and a Pow.
             MouseLookSettings look = MouseLookSettings.FromProfile(_configuration.Active);
-            if (HostedPlayer is not null)
-            {
-                HostedPlayer.LookSettings = look;
-            }
-
             if (Viewpoint is { } lookViewpoint)
             {
                 lookViewpoint.LookSettings = look;
@@ -57,10 +52,10 @@ public sealed partial class GameHost
                 // The system cursor stays hidden: the console draws its own, as the shell does,
                 // so the pointer looks the same everywhere and is drawn over the panels rather
                 // than by the compositor on top of them.
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = false;
             }
-            else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu))
+            else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu, _menuFlow.MenuMode && state.Shell is not null))
             {
                 // A paused view does not turn, and the cursor has to be free to reach the menu. The
                 // release is repeated every pass rather than done once on the way in, so nothing can
@@ -75,15 +70,14 @@ public sealed partial class GameHost
                 // cursor each frame and the branch below re-took it, which is the pointer that
                 // flashed and would not move. Standing every camera branch down is what actually
                 // settles it; excluding them one at a time only moves the fight further down.
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = false;
             }
             else if (_demoWatched is not null)
             {
                 // Watching a player in a demo: the viewer's own body stands still; fire watches the next player, the other
                 // button lets the viewer walk the level itself again.
-                HostedPlayer?.HoldStill();
-                HostedPlayer?.ReleaseLook();
+                (TitlePlayer as ITitleMatchPlayer)?.HoldStill();
                 _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
                 if (_window.Input.Mouse.WasPressed(Input.MouseButton.Left))
                 {
@@ -111,10 +105,9 @@ public sealed partial class GameHost
                 // The look is not driving the view this frame, so it must not consider itself
                 // capturing: whenever the orbit hands control back, the first frame of look is a
                 // settling one and the re-lock's re-centring is absorbed rather than aimed with.
-                HostedPlayer?.ReleaseLook();
+                ReleasePlayerLook();
             }
-            else if (HostedPlayer is { IsOnLadder: true }
-                or { IsInWorldInteraction: true, IsMountedStationaryGun: false })
+            else if (Viewpoint?.OrbitsBody == true)
             {
                 // A mounted gun is not among these: its look turns the barrel, so it falls through
                 // to the ordinary first-person look below.
@@ -124,26 +117,31 @@ public sealed partial class GameHost
                 // you can look around while you climb rather than being locked behind the character.
                 Viewpoint?.ControlInteractionView(rawX, rawY);
                 _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
-                HostedPlayer?.ReleaseLook();
+                ReleasePlayerLook();
             }
             else if (_computerOpen)
             {
                 // The computer takes the pointer outright. Re-arming the look here is what stops
                 // closing it from throwing the view: dropping the lock restores the desktop pointer,
                 // and taking it back re-centres the backend's virtual one.
-                _window.CursorLocked = false;
-                HostedPlayer?.ReleaseLook();
+                //
+                // The original computer moves its own pointer by the mouse's counts alone, so the mouse stays locked
+                // away for it: a free desktop pointer stops at the edge of the screen and its counts stop with it, which
+                // left the computer's pointer stuck short of where it was going. The remastered computer reads where
+                // the desktop pointer is, and needs it free.
+                _window.CursorLocked = UsesMissionComputer && !OverlayHasPointer && !state.CaptureMode;
+                ReleasePlayerLook();
             }
-            else if (_mission.Cutscenes?.IsPlaying == true)
+            else if (_mission.Scenes?.IsPlaying == true)
             {
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = false;
             }
             else if (_playerMode && SteerWeaponWheel(rawX, rawY))
             {
                 // The weapon wheel has the mouse: it steers the wheel, and the view holds where it was. The settling
                 // frame is re-armed so letting go does not throw the view with the travel the wheel took.
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
             }
             else if (_playerMode && TitlePlayer is not null)
@@ -152,13 +150,6 @@ public sealed partial class GameHost
                 // gathers what the mouse and the keys did since the last one.
                 GatherTitleInput();
                 _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
-            }
-            else if (_playerMode && HostedPlayer is not null)
-            {
-                // Looking is per frame so the view is as smooth as the display allows; the body itself
-                // moves on the fixed tick below, so it steps identically whatever the frame rate.
-                HostedPlayer.Look(_window.Input, elapsed);
-                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode && HostedPlayer.IsCapturingMouse;
             }
             else if (_sunGizmo.Active)
             {

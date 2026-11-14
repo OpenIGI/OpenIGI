@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Player;
-using OpenIGI.Presentation;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.UI.Layout;
@@ -83,7 +82,7 @@ public sealed partial class GameHost
     private void DrawRemasteredBinoculars(FrameLoopState state, in FrameView view, float? rangeMetres)
     {
         if (!view.RemasteredOptics || !BinocularsOpen || BinocularHud is not { } hud || _computerOpen
-            || _mission.Cutscenes?.IsPlaying == true || (!TitleBinocularsOpen && !view.ShowFirstPersonHud))
+            || _mission.Scenes?.IsPlaying == true || (!TitleBinocularsOpen && !view.ShowFirstPersonHud))
         {
             return;
         }
@@ -101,7 +100,7 @@ public sealed partial class GameHost
         {
             float tanX = view.Sight.TanX;
             shown = new RemasteredBinocularView(
-                HostedPlayer?.Body.Yaw ?? 0f,
+                TitlePlayer?.Heading ?? 0f,
                 tanX > 1e-4f ? HumanView.DefaultTanX / tanX : 1f,
                 _binocularContacts,
                 _binocularOptics.Seconds,

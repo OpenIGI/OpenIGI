@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -212,7 +211,7 @@ public sealed class RetailObjectsGoldenTests
         List<Visited> visited = [];
         Collect(tree.Root, 0, visited);
 
-        return new Loaded(tree, types, visited);
+        return new Loaded(tree, visited);
     }
 
     private static void Collect(GameTask task, int depth, List<Visited> into)
@@ -226,11 +225,9 @@ public sealed class RetailObjectsGoldenTests
 
     private sealed record Visited(GameTask Task, int Depth);
 
-    private sealed class Loaded(TaskTree tree, TaskTypeRegistry types, IReadOnlyList<Visited> tasks)
+    private sealed class Loaded(TaskTree tree, IReadOnlyList<Visited> tasks)
     {
         public TaskTree Tree => tree;
-
-        public TaskTypeRegistry Types => types;
 
         public IReadOnlyList<Visited> Tasks => tasks;
 

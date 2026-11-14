@@ -8,7 +8,7 @@ using OpenIGI.Game.Player;
 namespace OpenIGI.Game.World;
 
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
-public sealed class WorldInteraction
+public sealed partial class WorldInteraction : Saves.IExchangedState
 {
     /// <summary>The fixed length of fence locomotion state 41, returned by IGI1 <c>0x440270</c>.</summary>
     public const int FenceTraversalTicks = 6 * 30;
@@ -22,7 +22,6 @@ public sealed class WorldInteraction
 
     private int _pressStamp;
     private bool _humming;
-    private Action<InteractionSoundEvent>? _sounds;
     private int _useStamp;
     private int _completeStamp;
     private Func<bool?>? _onCondition;
@@ -41,7 +40,7 @@ public sealed class WorldInteraction
     private readonly Vector3d _authoredMarker;
     private readonly Vector3d _markerLocal;
 
-    internal WorldInteraction(
+    public WorldInteraction(
         DeclaredTask task,
         InteractionActivateType type,
         Vector3d anchor,
@@ -89,12 +88,12 @@ public sealed class WorldInteraction
     // As the match began: every latch, press, power and placement this task's play can change.
     private Start _start;
 
-    internal void MarkLevelStart() => _start = new Start(
+    public void MarkLevelStart() => _start = new Start(
         _pressStamp, _humming, _useStamp, _completeStamp, _wireOrigin, _offset, Pressed.Value, Pressed.Last, InUse.Value, InUse.Last,
         IsOn, IsElectrified, IsCompleted, CompletedThisTick, IsSearched, IsPicked, IsLocked, IsDestroyed, MirroredOn,
         MirroredElectrified, PlacedFacing, LastOn, LastDestroyed, ModelSlot, PlacedPosition, PlacedOrientation);
 
-    internal void ResetToLevelStart()
+    public void ResetToLevelStart()
     {
         Start s = _start;
         (_pressStamp, _humming, _useStamp, _completeStamp, _wireOrigin, _offset) = (s.PressStamp, s.Humming, s.UseStamp, s.CompleteStamp, s.WireOrigin, s.Offset);
@@ -116,6 +115,48 @@ public sealed class WorldInteraction
         ModelSlot = s.ModelSlot;
         PlacedPosition = s.PlacedPosition;
         PlacedOrientation = s.PlacedOrientation;
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Start levelStart = _start;
+        MarkLevelStart();
+        Start s = _start;
+        _start = new Start(
+            exchange.Int(s.PressStamp),
+            exchange.Bool(s.Humming),
+            exchange.Int(s.UseStamp),
+            exchange.Int(s.CompleteStamp),
+            exchange.Position(s.WireOrigin),
+            exchange.Position(s.Offset),
+            exchange.Bool(s.Pressed),
+            exchange.Bool(s.LastPressed),
+            exchange.Bool(s.InUse),
+            exchange.Bool(s.LastInUse),
+            exchange.Bool(s.IsOn),
+            exchange.Bool(s.IsElectrified),
+            exchange.Bool(s.IsCompleted),
+            exchange.Bool(s.CompletedThisTick),
+            exchange.Bool(s.IsSearched),
+            exchange.Bool(s.IsPicked),
+            exchange.Bool(s.IsLocked),
+            exchange.Bool(s.IsDestroyed),
+            exchange.Bool(s.MirroredOn),
+            exchange.Bool(s.MirroredElectrified),
+            exchange.Real(s.PlacedFacing),
+            exchange.Bool(s.LastOn),
+            exchange.Bool(s.LastDestroyed),
+            exchange.Int(s.ModelSlot),
+            exchange.Position(s.PlacedPosition),
+            exchange.Frame(s.PlacedOrientation));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     private readonly record struct Start(
@@ -175,19 +216,19 @@ public sealed class WorldInteraction
     /// <summary>Marks the interaction completed, as its completion does, for the scenario runs that script one.</summary>
     internal void CompleteForTesting() => IsCompleted = true;
     public bool CompletedThisTick { get; private set; }
-    public bool IsSearched { get; internal set; }
+    public bool IsSearched { get; set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
-    public bool IsDestroyed { get; internal set; }
+    public bool IsDestroyed { get; set; }
 
     /// <summary>
     /// Gets or sets the co-op server's word on <see cref="IsOn"/>, which a client's update takes in place of its own On
     /// expression; <see langword="null"/> where the level decides for itself.
     /// </summary>
-    internal bool? MirroredOn { get; set; }
+    public bool? MirroredOn { get; set; }
 
     /// <summary>Gets or sets the co-op server's word on whether a fence is electrified, in place of its Electric Expression.</summary>
-    internal bool? MirroredElectrified { get; set; }
+    public bool? MirroredElectrified { get; set; }
 
     /// <summary>Gets the facing of the last plant, which with <see cref="PlacedPosition"/> places the charge.</summary>
     public float PlacedFacing { get; private set; }
@@ -198,9 +239,9 @@ public sealed class WorldInteraction
 
     /// <summary>Whether this end pressed the switch itself within the last ticks, so a server's word of a press is its own come back.</summary>
     /// <param name="ticks">How many ticks back.</param>
-    internal bool PressedHereWithin(int ticks) => _ownPressStamp is { } at && Clock() - at <= ticks;
+    public bool PressedHereWithin(int ticks) => _ownPressStamp is { } at && Clock() - at <= ticks;
 
-    internal void PressAsServerDid()
+    public void PressAsServerDid()
     {
         Pressed.Shift(true);
         _pressStamp = Clock();
@@ -210,7 +251,7 @@ public sealed class WorldInteraction
     /// The task is finished as a co-op server's was: its this-tick pulse and stamp and the latch it leaves -- a cabinet searched,
     /// a lock picked, a terminal hacked, a TBA done. A picked door's swing is the doors' own to send.
     /// </summary>
-    internal void FinishAsServerDid()
+    public void FinishAsServerDid()
     {
         CompletedThisTick = true;
         _completeStamp = Clock();
@@ -229,10 +270,10 @@ public sealed class WorldInteraction
     }
 
     /// <summary>Gets or sets what <see cref="IsOn"/> was the last tick the task ran, its <c>isLastOn</c>.</summary>
-    internal bool LastOn { get; set; } = true;
+    public bool LastOn { get; set; } = true;
 
     /// <summary>Gets or sets what <see cref="IsDestroyed"/> was the last tick the task ran, its <c>isLastDestroyed</c>.</summary>
-    internal bool LastDestroyed { get; set; }
+    public bool LastDestroyed { get; set; }
 
     /// <summary>Gets a value indicating whether a round breaks this switch, its <c>Destructable</c> flag.</summary>
     public bool IsDestructable { get; init; }
@@ -247,11 +288,7 @@ public sealed class WorldInteraction
     public (float First, float Second)? FenceSpan { get; init; }
 
     /// <summary>Gets or sets where the task's sounds go.</summary>
-    internal Action<InteractionSoundEvent>? Sounds
-    {
-        get => _sounds;
-        set => _sounds = value;
-    }
+    public Action<InteractionSoundEvent>? Sounds { get; set; }
 
     /// <summary>Gets a value indicating whether a GenericTBA runs ExplodeObject's update, and its children with it: its <c>Explodable</c> flag (<c>+568</c>).</summary>
     public bool IsExplodable { get; init; }
@@ -401,12 +438,14 @@ public sealed class WorldInteraction
     /// <summary>Gets the wire model's origin, the middle of its authored span, which the ride is measured from.</summary>
     public Vector3d WireOrigin => _wireOrigin + _offset;
 
+#pragma warning disable S2292 // Set at construction by callers and again by ResetToLevelStart: an init accessor over a field the class also writes.
     /// <summary>Gets the wire model's origin as authored, before any carrier moves it.</summary>
-    internal Vector3d WireOriginAuthored
+    public Vector3d WireOriginAuthored
     {
         get => _wireOrigin;
         init => _wireOrigin = value;
     }
+#pragma warning restore S2292
 
     /// <summary>Gets where the cable starts along its own axis from <see cref="WireOrigin"/>: magic vertex 0's stretched local Y.</summary>
     public double WireStartLocalY { get; init; }
@@ -661,13 +700,14 @@ public sealed class WorldInteraction
         return Type switch
         {
             InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
-            InteractionActivateType.PlaceExplosive => inFront > 0.0,
+
+            // A PlaceExplosiveTBA (0x4389E0) reads the view alone, never its own facing: see the registry's scan.
             _ => true,
         };
     }
 
     /// <summary>Gets or sets the level's tick, which a press, a use and a completion are stamped with.</summary>
-    internal Func<int> Clock { get; set; } = static () => 0;
+    public Func<int> Clock { get; set; } = static () => 0;
 
     /// <summary>The switch is pressed (<c>0x444BC0</c>): <c>isPressed</c> shifts into <c>isLastPressed</c>, is set, and is stamped.</summary>
     public void Press()
@@ -755,118 +795,6 @@ public sealed class WorldInteraction
         }
     }
 
-    /// <summary>The task's update, where its pulses clear on their stamps and its expressions are read.</summary>
-    /// <param name="now">The level's tick.</param>
-    /// <remarks>
-    /// <para>
-    /// Each type's own update, as retail runs it: a switch (<c>0x4450F0</c>) reads its On expression, then, two ticks past its
-    /// press, shifts <c>isPressed</c> into <c>isLastPressed</c> and clears it, so <c>isLastPressed</c> holds for the one update
-    /// that clears it; a terminal (<c>0x4438E0</c>) and a GenericTBA (<c>0x4480B0</c>) read their On expression, are off while
-    /// exploded, and clear <c>isInUse</c> and the finished-this-tick byte two ticks past their stamps; a cabinet
-    /// (<c>0x444590</c>) clears <c>isInUse</c> likewise; a fence (<c>0x43FC30</c>) is electrified as its expression says, or
-    /// not at all. Every <c>isLast*</c> takes its value in the same update, after the clear.
-    /// </para>
-    /// <para>
-    /// An expression slot that is empty or did not compile leaves its byte as it was, so a script's write to it stands; a door's
-    /// expressions are its own update's (<see cref="PlacedDoor.Conditions"/>).
-    /// </para>
-    /// </remarks>
-    internal void Run(int now)
-    {
-        _offset = _dynamicOffset?.Invoke() ?? default;
-        switch (Type)
-        {
-            case InteractionActivateType.Switch:
-                if ((MirroredOn ?? _onCondition?.Invoke()) is bool switchedOn)
-                {
-                    IsOn = switchedOn;
-                }
-
-                if (now > _pressStamp + 2)
-                {
-                    Pressed.EndPulse();
-                }
-
-                // On a change of its on, pressed or destroyed byte it wears one of its five models, and the first, on and
-                // at rest, comes with its click: the "switch" definition where it stands.
-                if (IsOn != LastOn || Pressed.Value != Pressed.Last || IsDestroyed != LastDestroyed)
-                {
-                    ModelSlot = IsDestroyed ? 4 : IsOn ? (Pressed.Value ? 1 : 0) : (Pressed.Value ? 3 : 2);
-                    if (ModelSlot == 0)
-                    {
-                        Sound(InteractionSound.Played, SwitchSound, TaskPosition + _offset);
-                    }
-                }
-
-                LastOn = IsOn;
-                LastDestroyed = IsDestroyed;
-                break;
-            case InteractionActivateType.Terminal:
-            case InteractionActivateType.Generic:
-            case InteractionActivateType.PlaceExplosive:
-                if ((MirroredOn ?? _onCondition?.Invoke()) is bool on)
-                {
-                    IsOn = on;
-                }
-
-                ClearUse(now);
-                if (now > _completeStamp + 2)
-                {
-                    CompletedThisTick = false;
-                }
-
-                break;
-            case InteractionActivateType.Cabinet:
-                ClearUse(now);
-                break;
-            case InteractionActivateType.Fence:
-                IsElectrified = MirroredElectrified ?? _electricCondition?.Invoke() ?? false;
-                RunFenceHum();
-                InUse.CommitTick();
-                break;
-            default:
-                InUse.CommitTick();
-                break;
-        }
-    }
-
-    // 0x43FC30: a powered fence makes its own AmbientArea, buzzing elfence_loop in a box two metres up its middle, the
-    // length of the span between its magic vertices 0 and 1 and a metre and a half past each end; it deletes it with the power.
-    private void RunFenceHum()
-    {
-        if (_humming && !IsElectrified)
-        {
-            _humming = false;
-            Sound(InteractionSound.AreaStopped, string.Empty, default);
-        }
-        else if (!_humming && IsElectrified && FenceSpan is (float first, float second))
-        {
-            _humming = true;
-            double middle = ((double)second + first) * 0.5;
-            Vector3f offset = Orientation.Transposed().Transform(new Vector3f((float)middle, 0f, 8192f));
-            _sounds?.Invoke(new InteractionSoundEvent(
-                Task,
-                InteractionSound.AreaStarted,
-                FenceSound,
-                TaskPosition + new Vector3d(offset.X, offset.Y, offset.Z),
-                Orientation,
-                new Vector3d((((double)second - first) * 0.00012207031) + 1.5, 1.75, 2.0)));
-        }
-    }
-
-    private void Sound(InteractionSound what, string sound, Vector3d at) =>
-        _sounds?.Invoke(new InteractionSoundEvent(Task, what, sound, at, Matrix3f.Identity, default));
-
-    private void ClearUse(int now)
-    {
-        if (now > _useStamp + 2)
-        {
-            InUse.Value = false;
-        }
-
-        InUse.CommitTick();
-    }
-
     // The door's own update runs these (0x446D10), where the level walk reaches it: Open and Close, then Locked, which a
     // picked lock overrides; with no Locked expression the lock stands as it was.
     private void RunDoorConditions()
@@ -877,7 +805,7 @@ public sealed class WorldInteraction
         IsLocked = locked != 0;
     }
 
-    internal void SetConditions(
+    public void SetConditions(
         Func<bool?>? on,
         Func<double>? locked,
         Func<bool>? open = null,
@@ -894,7 +822,7 @@ public sealed class WorldInteraction
         IsLocked = locked is not null && unchecked((byte)(long)locked()) != 0;
     }
 
-    internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
+    public void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
 
     /// <summary>Sets where this task's marker is carried to, as the frame presents it.</summary>
     /// <remarks>
@@ -902,11 +830,11 @@ public sealed class WorldInteraction
     /// simulation's own offset has to be the tick's exact value, because activation is decided on it,
     /// while a marker has to sit where the object is being drawn this frame or it judders against it.
     /// </remarks>
-    internal void SetPresentedOffset(Func<float, Vector3d> offset) => _presentedOffset = offset;
+    public void SetPresentedOffset(Func<float, Vector3d> offset) => _presentedOffset = offset;
 
-    internal void SetPressHandler(Action handler) => _onPress = handler;
+    public void SetPressHandler(Action handler) => _onPress = handler;
 
-    internal bool SegmentTouchesFence(Vector3d from, Vector3d to)
+    public bool SegmentTouchesFence(Vector3d from, Vector3d to)
     {
         if (Type != InteractionActivateType.Fence || !IsElectrified || !HasLocalBounds)
         {
@@ -927,7 +855,7 @@ public sealed class WorldInteraction
                 ref enter, ref exit);
     }
 
-    internal bool PointTouchesFence(Vector3d point)
+    public bool PointTouchesFence(Vector3d point)
         => SegmentTouchesFence(point, point);
 
     private static bool Slab(

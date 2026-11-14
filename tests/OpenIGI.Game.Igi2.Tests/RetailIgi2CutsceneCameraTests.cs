@@ -98,7 +98,7 @@ public sealed class RetailIgi2CutsceneCameraTests
 
         Igi2TitlePlayer player = RetailIgi2Mission1.Stand(RetailIgi2Mission1.Load(collision: true).Collision!, m.Level, null, camera.Position, 0f);
         player.Level = m.Run;
-        Igi2CutsceneView now = m.Run.CutsceneView!;
+        Igi2CutsceneView now = m.Run.CutsceneView;
         Assert.Equal(now.Position, player.EyePosition);
         Assert.Equal(new Vector3f(now.Orientation[2], now.Orientation[5], now.Orientation[8]), player.ViewOrientation.Row3);
         Assert.Equal(now.FieldOfView, player.FieldOfViewScale);

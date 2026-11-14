@@ -114,7 +114,7 @@ public sealed class PlayerCameraReloadOpticsTests
     private static PlayerCamera ArmedWith(string scriptId)
     {
         WeaponType weapon = LoadRoster().Weapons.Single(candidate => candidate.ScriptId == scriptId);
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([weapon.WeaponId]);
         camera.Carry(weapon, new AmmoType { AmmoId = AmmoId, CalibreId = weapon.CalibreId });
         camera.UseViewRig(LoadViewSet());
@@ -154,6 +154,8 @@ public sealed class PlayerCameraReloadOpticsTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

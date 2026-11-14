@@ -109,7 +109,7 @@ public sealed partial class GameHost
         // backwards after every tick, then glide forwards again. Retail presents the cinematic
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
         bool smoothPresentation = !MenuPausesGame
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && (!_options.Lockstep || _options.CaptureRate > _loop.Clock.TickRate)
             && FrameCVars.SmoothPresentation.Value;
         double pacingWall = _loop.Clock.FrameInstantMilliseconds;
@@ -126,7 +126,7 @@ public sealed partial class GameHost
             pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
         _pacing.SampleGate(
             _menuFlow.PauseMenu,
-            _mission.Cutscenes?.IsPlaying == true,
+            _mission.Scenes?.IsPlaying == true,
             _options.Lockstep,
             FrameCVars.SmoothPresentation.Value);
         if (_loop.Clock.FrameCount % 600 == 0)
@@ -135,7 +135,7 @@ public sealed partial class GameHost
         }
         SightZoomFrame sight = _playerMode && Viewpoint?.SightZoom(tickBlend) is { } playerSight
             ? playerSight
-            : _playerMode && TitlePlayer is { } titleLens
+            : _playerMode && TitlePlayer is not null
                 ? new SightZoomFrame(_titlePresentation.FieldOfView(_titlePresentationBlend), HumanView.DefaultViewModelTanX)
                 : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
@@ -233,16 +233,15 @@ public sealed partial class GameHost
         float aspectRatio = view.AspectRatio;
         float verticalFieldOfView = view.VerticalFieldOfView;
 
-        // What the tube is doing this frame, and how hard the shot is smearing. Read here, next
-        // to the camera they belong to, rather than at the resolve five hundred lines below,
-        // where the transition would be a name with no visible source.
+        // How hard the computer's shot is smearing. Read here, next to the camera it belongs to,
+        // rather than at the resolve five hundred lines below, where the transition would be a
+        // name with no visible source. The map's feed is the computer's own pass, over the picture.
         bool tacticalUp = _computerOpen && TacticalComputer is not null;
-        TacticalDisplaySettings computerDisplay = tacticalUp ? _computerFlight.Display : default;
         float computerFlightBlur = tacticalUp ? _computerFlight.MotionBlur : 0f;
 
         // The binocular glass, raised on its own wall clock so the lens fades in at the same
         // rate whatever the frame rate. Gated on the device being open (the fade sits at 0
-        // otherwise) and the lens cvar; the map tube above and this glass are never both up.
+        // otherwise) and the lens cvar; the map's feed and this glass are never both up.
         // How long this frame took, for the shutter the motion blur measures its smear against.
         int motionNow = _loop.TimeSource.Milliseconds;
         float frameDeltaSeconds =
@@ -292,7 +291,6 @@ public sealed partial class GameHost
             ColourLookup: PostCVars.ColourLookup.Value,
             AutoExposure: ExposureCVars.AutoExposure.Value,
             GreenPhosphor: false,
-            Tactical: computerDisplay,
             Binocular: binocularDisplay,
 
             // Fast while the GI is still filling in after a load, slow once it has settled. Counted
@@ -440,7 +438,7 @@ public sealed partial class GameHost
                     ThirdPersonAllowed: !_session.FailedMenu
                         && !_computerOpen
                         && !_entry.IsCameraActive
-                        && _mission.Cutscenes?.IsPlaying != true
+                        && _mission.Scenes?.IsPlaying != true
                         && mapScene is null
                         && !_menuFlow.OverShowcase,
                     Paused: _menuFlow.MenuMode,
@@ -464,7 +462,7 @@ public sealed partial class GameHost
             && !_session.FailedMenu
             && !_computerOpen
             && !_entry.IsCameraActive
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && mapScene is null
             && !_menuFlow.OverShowcase
             && Viewpoint?.HasPlayer == true;

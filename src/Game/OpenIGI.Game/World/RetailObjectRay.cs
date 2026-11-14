@@ -182,7 +182,6 @@ public static class RetailModelRay
         X87 dzl = qz - lsz, dyl = (X87)ley - lsy, dxl = (X87)lex - lsx;
         X87 len2 = dxl * dxl + dyl * dyl + dzl * dzl;
         float lenf = X87.Sqrt(len2).F;
-        float[] ls = [lsx, lsy, lsz];
 
         float[] p0 = [lex, ley, lez];
         double best = 0d;

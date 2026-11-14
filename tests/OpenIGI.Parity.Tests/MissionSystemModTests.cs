@@ -53,6 +53,7 @@ public sealed class MissionSystemModTests
             int frames = 0;
             while (host.Step() && ++frames < 3)
             {
+                // The loop's condition does the work.
             }
 
             host.Stop();

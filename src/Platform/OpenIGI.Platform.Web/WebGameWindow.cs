@@ -16,7 +16,8 @@ namespace OpenIGI.Platform.Web;
 /// <b>A lost pointer lock is an Escape.</b> Escape is how a browser takes the lock back, and it keeps
 /// the key to itself when it does. A game that asked for the lock has lost it in the middle of play, and
 /// the one thing a player pressing Escape then expects is the pause menu -- so a lock lost while the game
-/// still wants it is handed on as that key, pressed for one frame.
+/// still wants it is handed on as that key going down. The page then says when it comes up: at once for a tap, and
+/// for as long as the key is held otherwise, which is what lets a cutscene be skipped by holding it.
 /// </para>
 /// <para>
 /// <b>Every press lasts a frame.</b> The page queues events for as long as a frame takes, and a quick click
@@ -57,6 +58,7 @@ public sealed class WebGameWindow : IGameWindow
         _title = settings.Title;
         _cursorVisible = settings.CursorVisible;
         _size = page.CanvasSize;
+        PixelDensity = Density(page);
         IsFocused = page.HasFocus;
 
         _page.SetTitle(_title);
@@ -101,6 +103,27 @@ public sealed class WebGameWindow : IGameWindow
             _mode = value;
             _page.RequestFullscreen(value != WindowMode.Windowed);
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The page's device pixel ratio, read again whenever the canvas changes size: a zoom or a move to another screen does both.</remarks>
+    public float PixelDensity { get; private set; }
+
+    /// <inheritdoc/>
+    /// <remarks>Read from the page each time: turning the phone moves the notch from one side to the other.</remarks>
+    public (float Left, float Top, float Right, float Bottom) SafeInsets =>
+        (Inset(0), Inset(1), Inset(2), Inset(3));
+
+    private float Inset(int side)
+    {
+        double inset = _page.SafeInset(side);
+        return inset > 0d && double.IsFinite(inset) ? (float)inset : 0f;
+    }
+
+    private static float Density(IBrowserPage page)
+    {
+        double ratio = page.PixelRatio;
+        return ratio > 0d && double.IsFinite(ratio) ? (float)ratio : 1f;
     }
 
     /// <inheritdoc/>
@@ -361,6 +384,7 @@ public sealed class WebGameWindow : IGameWindow
                 (int Width, int Height) size = ((int)input.X, (int)input.Y);
                 if (size != _size && size.Width > 0 && size.Height > 0)
                 {
+                    PixelDensity = Density(_page);
                     _size = size;
                     Resized?.Invoke(this, new WindowResizedEventArgs(size.Width, size.Height));
                 }
@@ -385,8 +409,10 @@ public sealed class WebGameWindow : IGameWindow
                 PointerLockGranted = input.Down;
                 if (lost && _cursorLocked)
                 {
+                    // Down from here; the page says when it comes up (platform.js, escapeTaken), as it does for any key --
+                    // in this same frame for a tap, which the frame's press then outlasts like any other.
+                    _pressedThisFrame.Add(KeyCode.Escape);
                     Input.Keyboard.SetKey(KeyCode.Escape, down: true);
-                    _releaseNextFrame.Add(KeyCode.Escape);
                 }
 
                 break;

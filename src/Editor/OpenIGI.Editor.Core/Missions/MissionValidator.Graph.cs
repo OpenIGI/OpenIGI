@@ -1,5 +1,4 @@
 using System.Globalization;
-using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Graphs;
 using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Scripting.Expressions;
@@ -98,7 +97,7 @@ public static partial class MissionValidator
         }
 
         foreach (ExpressionGraphNode call in graph.Nodes.Values.OfType<ExpressionGraphNode>()
-            .Where(n => n.Owner.Task == node.Key && n.Kind == ExpressionNodeKind.Call && n.Native is { } native))
+            .Where(n => n.Owner.Task == node.Key && n.Kind == ExpressionNodeKind.Call && n.Native is not null))
         {
             int arguments = graph.Links.Count(l => l.To.Node == call.Key);
             if (!call.Native!.Accepts(arguments))

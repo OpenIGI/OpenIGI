@@ -32,13 +32,21 @@ namespace OpenIGI.Game.World;
 /// and collision paths read <see cref="IsActive"/>.
 /// </para>
 /// </remarks>
-public partial class ConditionalContainerTask : TickedTask
+public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedState
 {
     /// <summary>The script name the level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalContainer";
 
     private byte? _isRun;
     private bool _resolving;
+
+    // Not retail for Project I.G.I., which kept no save games: whether its children are in the world, once that is settled,
+    // and whether it runs.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        _isRun = exchange.Int(_isRun) is { } run ? (byte)run : null;
+        IsActive = exchange.Bool(IsActive);
+    }
 
     /// <summary>The expression that decides whether the subtree is in the world — <c>Condition</c>.</summary>
     [ScriptParam(ScriptParamType.VarString, "Condition")]
@@ -180,7 +188,7 @@ public partial class ConditionalContainerTask : TickedTask
     /// <summary>Settles the condition again outside the tick and returns whether <see cref="IsRun"/> changed.</summary>
     /// <param name="started"><see langword="true"/> when this change started the container.</param>
     /// <returns>Whether it changed.</returns>
-    internal bool Refresh(out bool started)
+    public bool Refresh(out bool started)
     {
         bool before = _isRun is { } latched && latched != 0;
         bool after = ConditionResolver is null ? true : ConditionResolver(this) ?? before;

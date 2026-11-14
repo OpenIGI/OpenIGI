@@ -188,7 +188,7 @@ public sealed class Igi2Terminal(IIgi2TerminalOwner owner)
     /// was last, whether it may be hacked, has been and was this tick, and when.
     /// </summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Saves.Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Bool(_isInUse != 0);
@@ -202,7 +202,7 @@ public sealed class Igi2Terminal(IIgi2TerminalOwner owner)
 
     /// <summary>Reads its save state back.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Saves.Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         _isInUse = reader.Bool() ? (byte)1 : (byte)0;

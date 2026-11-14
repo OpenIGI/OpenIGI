@@ -13,7 +13,6 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -23,9 +22,9 @@ public sealed class Issue105Tests
     public void MissionSixRetailContractSeparatesApcLimoC4AndFuelTargets()
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
-        DeclaredTask apc = Assert.IsType<DeclaredTask>(root.Tree.FromId(800));
-        DeclaredTask fakeApc = Assert.IsType<DeclaredTask>(root.Tree.FromId(803));
-        DeclaredTask limo = Assert.IsType<DeclaredTask>(root.Tree.FromId(801));
+        DeclaredTask apc = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(800));
+        DeclaredTask fakeApc = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(803));
+        DeclaredTask limo = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(801));
 
         Assert.True(apc.TryGetValue("Can fire", out object? rawCanFire));
         Assert.Equal("1", Assert.IsType<string>(rawCanFire));
@@ -90,6 +89,19 @@ public sealed class Issue105Tests
             float yaw = (float)Math.Atan2(aim.X, aim.Y);
             float pitch = (float)Math.Atan2(aim.Z, Math.Sqrt((aim.X * aim.X) + (aim.Y * aim.Y)));
             Assert.Same(tank, interactions.Resolve(eye, yaw, pitch));
+
+            // 0x4389E0 reads the view and the authored 6.8 m, not the task's facing: the spot is offered from every
+            // side of the tank, six metres out, and from none at seven or with the view turned a quarter-turn off it.
+            foreach ((double x, double y) in new[] { (0.0, 1.0), (1.0, 0.0), (-1.0, 0.0), (0.0, -1.0) })
+            {
+                Vector3d level = new(tank.Anchor.X, tank.Anchor.Y, tank.Anchor.Z);
+                Vector3d near = level + new Vector3d(x * 6.0 * WorldScene.UnitsPerMetre, y * 6.0 * WorldScene.UnitsPerMetre, 0.0);
+                Vector3d far = level + new Vector3d(x * 7.0 * WorldScene.UnitsPerMetre, y * 7.0 * WorldScene.UnitsPerMetre, 0.0);
+                float toward = (float)Math.Atan2(-x, -y);
+                Assert.Same(tank, interactions.Resolve(near, toward, 0f));
+                Assert.Null(interactions.Resolve(far, toward, 0f));
+                Assert.Null(interactions.Resolve(near, toward + (MathF.PI / 3f), 0f));
+            }
 
             Assert.True(tank.BeginUse());
             tank.CompleteUse();
@@ -177,7 +189,7 @@ public sealed class Issue105Tests
             Assert.True(cabinet.IsSearched);
         }
 
-        objectives.Tick();
+        objectives.StepFlow();
         Assert.True(variables.TryRead("StatusMessage_706.isSendt", out QvmValue completed));
         Assert.Equal(1, completed.Integer);
     }
@@ -351,15 +363,15 @@ public sealed class Issue105Tests
         };
         string graphPath = Path.Combine(GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
-        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
         string limoGraphPath = Path.Combine(GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH11.DAT");
         GraphFile limoGraph = GraphFile.Read(File.ReadAllBytes(limoGraphPath));
-        DeclaredTask limoGraphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(11));
+        DeclaredTask limoGraphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(11));
         Assert.True(limoGraphTask.TryGetValue("Graph position", out object? rawLimoGraphPosition));
         limoGraph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawLimoGraphPosition));
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph, [11] = limoGraph });
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph, [11] = limoGraph });
         GameTask fakeApc = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(803));
         GameTask alarmApc = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
         Assert.True(ConditionalContainerGate.IsTaskActive(fakeApc));
@@ -436,8 +448,8 @@ public sealed class Issue105Tests
         bool reachedHelipad = false;
         for (int tick = 0; tick < 12_000 && ConditionalContainerGate.IsTaskActive(limo); tick++)
         {
-            objectives.SetVehicleOccupants(runtime.VehicleOccupants());
-            objectives.TickLevelState();
+            objectives.SetVehicleOccupants(runtime.Vehicles.VehicleOccupants());
+            objectives.StepLevelState();
             if (variables.TryRead("AreaActivate_162.nActive", out QvmValue active)
                 && active.ToInt32() > 0)
             {
@@ -459,7 +471,7 @@ public sealed class Issue105Tests
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
         WorldScene scene = WorldScene.Build(mission, root);
-        DeclaredTask tank = Assert.IsType<DeclaredTask>(root.Tree.FromId(1600));
+        DeclaredTask tank = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1600));
         WorldPlacement placement = Assert.Single(scene.Placements, candidate => ReferenceEquals(candidate.Owner, tank));
         ObjectCollisionIndex collision = ObjectCollisionIndex.Build([placement]);
         Assert.True(collision.Count > 0, "the visible fuel tank has no bullet collision mesh");
@@ -522,10 +534,10 @@ public sealed class Issue105Tests
         string graphPath = Path.Combine(
             GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
-        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
 
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
         // CarAI drives its car through the car's own physics: the first packet only sets the receiver
@@ -595,17 +607,17 @@ public sealed class Issue105Tests
         Assert.True(liveApc.IsDestroyed);
 
         Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d wreckPosition, out _));
-        runtime.ConfigureVehicleCombat(apc, new WeaponType
+        runtime.Vehicles.ConfigureVehicleCombat(apc, new WeaponType
         {
             ScriptId = "WEAPON_ID_APC",
             MuzzleVelocity = 5f,
             RoundsPerMinute = 12,
         });
         List<VehicleCombatShot> postDestructionShots = [];
-        runtime.VehicleCombatTarget = () => wreckPosition * WorldScene.UnitsPerMetre
+        runtime.Vehicles.VehicleCombatTarget = () => wreckPosition * WorldScene.UnitsPerMetre
             + new Vector3d(0d, 37.0137d * WorldScene.UnitsPerMetre, 0d);
-        runtime.VehicleCombatLineOfSight = static (_, _, _) => true;
-        runtime.VehicleCombatShotFired = postDestructionShots.Add;
+        runtime.Vehicles.VehicleCombatLineOfSight = static (_, _, _) => true;
+        runtime.Vehicles.VehicleCombatShotFired = postDestructionShots.Add;
 
         for (int tick = 0; tick < 8; tick++)
         {
@@ -624,7 +636,7 @@ public sealed class Issue105Tests
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
         new ConditionalContainerGate(variables).Prepare(root);
-        DeclaredTask apc = Assert.IsType<DeclaredTask>(root.Tree.FromId(800));
+        DeclaredTask apc = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(800));
         Assert.True(apc.TryGetValue("Position", out object? rawPosition));
         Vector3d playerEye = Assert.IsType<Vector3d>(rawPosition)
             + new Vector3d(0d, 37.0137d * WorldScene.UnitsPerMetre, 0d);
@@ -633,11 +645,11 @@ public sealed class Issue105Tests
         string graphPath = Path.Combine(
             GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
-        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
-        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
-        runtime.ConfigureVehicleCombat(apc, new WeaponType
+        runtime.Vehicles.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
+        runtime.Vehicles.ConfigureVehicleCombat(apc, new WeaponType
         {
             ScriptId = "WEAPON_ID_APC",
             MuzzleVelocity = 5f,
@@ -645,9 +657,9 @@ public sealed class Issue105Tests
         });
 
         List<VehicleCombatShot> shots = [];
-        runtime.VehicleCombatTarget = () => playerEye;
-        runtime.VehicleCombatLineOfSight = static (_, _, _) => true;
-        runtime.VehicleCombatShotFired = shots.Add;
+        runtime.Vehicles.VehicleCombatTarget = () => playerEye;
+        runtime.Vehicles.VehicleCombatLineOfSight = static (_, _, _) => true;
+        runtime.Vehicles.VehicleCombatShotFired = shots.Add;
 
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
         runtime.Tick(); // Target becomes visible and is retained; retail does not fire in this pass.
@@ -669,7 +681,7 @@ public sealed class Issue105Tests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

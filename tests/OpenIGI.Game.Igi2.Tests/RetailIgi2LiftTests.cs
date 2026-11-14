@@ -58,7 +58,7 @@ public sealed class RetailIgi2LiftTests
         m.Run.Tick();
         Assert.False(lift.IsMoving);
 
-        Igi2EditVariableTask variable = m.Tree.OfType<Igi2EditVariableTask>().Single(static v => v.Id == 271);
+        OpenIGI.Game.Flow.EditVariableTask variable = m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 271);
         variable.Value = 1;
         m.Run.Tick();
         Assert.Same(up, lift.ActiveFloor);

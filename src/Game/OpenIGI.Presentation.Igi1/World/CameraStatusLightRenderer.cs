@@ -1,4 +1,3 @@
-using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -9,7 +8,6 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -29,8 +27,6 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
     public const string SpriteName = "alarmlight.spr";
 
     private const int MaximumCameras = 128;
-    private const int VerticesPerCamera = 4;
-    private const int IndicesPerCamera = 6;
     private const float RedSmallHalfSize = 512f / (float)WorldScene.UnitsPerMetre;
     private const float RedLargeHalfSize = 1433.6f / (float)WorldScene.UnitsPerMetre;
     private const float GreenSmallHalfSize = 307.2f / (float)WorldScene.UnitsPerMetre;
@@ -51,8 +47,8 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
 
     private readonly IGraphicsDevice _device;
     private readonly IOpenIgiLogger _logger;
-    private readonly QuadBatch _lamps = new(0f, 0f, 1f, 1f);
-    private readonly QuadBatch _glows = new(0f, 0f, 1f, 1f);
+    private readonly GlowQuadBatch _lamps = new(MaximumCameras);
+    private readonly GlowQuadBatch _glows = new(MaximumCameras);
     private SpriteResource? _sprite;
     private SpriteFrame _frame;
     private bool _disposed;
@@ -105,7 +101,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
             // SpriteFrame carries normalized texture coordinates already. alarmlight.spr is a 16x16
             // texture with a 0..1 frame; dividing those values by the dimensions samples only its
             // transparent top-left corner and makes every camera lamp disappear.
-            foreach (QuadBatch batch in new[] { _lamps, _glows })
+            foreach (GlowQuadBatch batch in new[] { _lamps, _glows })
             {
                 batch.U0 = _frame.U0;
                 batch.V0 = _frame.V0;
@@ -181,7 +177,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         Flush(_glows, used, eye, projection);
     }
 
-    private void Flush(QuadBatch batch, int used, in Camera3D eye, in Matrix4f projection)
+    private void Flush(GlowQuadBatch batch, int used, in Camera3D eye, in Matrix4f projection)
     {
         if (used == 0)
         {
@@ -198,7 +194,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         {
             if (!batch.Mesh.IsValid)
             {
-                batch.Mesh = _device.CreateAnimatedMesh(batch.Vertices, BuildIndices());
+                batch.Mesh = _device.CreateAnimatedMesh(batch.Vertices, batch.BuildIndices());
             }
 
             _device.UpdateAnimatedMesh(batch.Mesh, batch.Vertices.AsSpan(0, used));
@@ -206,7 +202,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
             _device.DrawMesh(
                 batch.Mesh,
                 0,
-                (used / VerticesPerCamera) * IndicesPerCamera,
+                (used / GlowQuadBatch.VerticesPerQuad) * GlowQuadBatch.IndicesPerQuad,
                 eye.CreateModelView(eye.Position, Matrix3f.Identity),
                 _sprite!.Textures[_frame.TextureIndex],
                 TextureHandle.None,
@@ -223,75 +219,6 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         }
     }
 
-    // One camera-facing quad list with its own mesh, so the lamps and the glows each keep the vertices they were drawn with.
-    private sealed class QuadBatch(float u0, float v0, float u1, float v1)
-    {
-        private int _lastUsed;
-
-        public Vertex3D[] Vertices { get; } = new Vertex3D[MaximumCameras * VerticesPerCamera];
-
-        public MeshHandle Mesh { get; set; } = MeshHandle.None;
-
-        public float U0 { get; set; } = u0;
-
-        public float V0 { get; set; } = v0;
-
-        public float U1 { get; set; } = u1;
-
-        public float V1 { get; set; } = v1;
-
-        // A quad facing the eye about a point in metres, its half-size in metres, pulled toward the eye by the bias.
-        public int Add(int used, Vector3d pointMetres, float half, Bgra32 colour, double biasMetres, in Camera3D eye)
-        {
-            if (used + VerticesPerCamera > Vertices.Length)
-            {
-                return used;
-            }
-
-            Vector3d centre = pointMetres - eye.Position;
-            double distance = centre.Length;
-            if (!(distance > 1e-6))
-            {
-                return used;
-            }
-
-            Vector3d toEye = centre / -distance;
-            Vector3d reference = Math.Abs(toEye.Z) < 0.9 ? new Vector3d(0, 0, 1) : new Vector3d(1, 0, 0);
-            Vector3d rightD = Vector3d.Cross(reference, toEye);
-            double rightLength = rightD.Length;
-            if (!(rightLength > 1e-9))
-            {
-                return used;
-            }
-
-            rightD /= rightLength;
-            Vector3d upD = Vector3d.Cross(toEye, rightD);
-            centre += toEye * biasMetres;
-            Vector3f right = new((float)(rightD.X * half), (float)(rightD.Y * half), (float)(rightD.Z * half));
-            Vector3f up = new((float)(upD.X * half), (float)(upD.Y * half), (float)(upD.Z * half));
-            Vector3f centreF = new((float)centre.X, (float)centre.Y, (float)centre.Z);
-            Vector3f normal = new((float)toEye.X, (float)toEye.Y, (float)toEye.Z);
-
-            Vertices[used] = new Vertex3D(centreF - right - up, normal, U0, V0, colour: colour);
-            Vertices[used + 1] = new Vertex3D(centreF + right - up, normal, U1, V0, colour: colour);
-            Vertices[used + 2] = new Vertex3D(centreF + right + up, normal, U1, V1, colour: colour);
-            Vertices[used + 3] = new Vertex3D(centreF - right + up, normal, U0, V1, colour: colour);
-            return used + VerticesPerCamera;
-        }
-
-        // Clears what an earlier, fuller draw left past this one's quads.
-        public void Trim(int used)
-        {
-            if (_lastUsed > used)
-            {
-                Array.Clear(Vertices, used, _lastUsed - used);
-            }
-
-            _lastUsed = used;
-        }
-    }
-
-    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -301,7 +228,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         _disposed = true;
         _sprite?.Dispose();
         _sprite = null;
-        foreach (QuadBatch batch in new[] { _lamps, _glows })
+        foreach (GlowQuadBatch batch in new[] { _lamps, _glows })
         {
             if (batch.Mesh.IsValid)
             {
@@ -326,21 +253,4 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         SecurityCameraLamp.Green => new Bgra32(0, 64, 0, 255),
         _ => default,
     };
-
-    private static ushort[] BuildIndices()
-    {
-        ushort[] indices = new ushort[MaximumCameras * IndicesPerCamera];
-        for (int camera = 0; camera < MaximumCameras; camera++)
-        {
-            int vertex = camera * VerticesPerCamera;
-            int index = camera * IndicesPerCamera;
-            indices[index] = (ushort)vertex;
-            indices[index + 1] = (ushort)(vertex + 1);
-            indices[index + 2] = (ushort)(vertex + 2);
-            indices[index + 3] = (ushort)vertex;
-            indices[index + 4] = (ushort)(vertex + 2);
-            indices[index + 5] = (ushort)(vertex + 3);
-        }
-        return indices;
-    }
 }

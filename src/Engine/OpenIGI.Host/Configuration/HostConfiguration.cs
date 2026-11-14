@@ -46,7 +46,7 @@ internal static class HostConfiguration
         {
             logger.Information(
                 "Config",
-                "Profiles still on the original controls were moved to WASD with the mouse not inverted.");
+                "Profiles never rebound were moved to the current default controls.");
         }
 
         return config;

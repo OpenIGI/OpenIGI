@@ -37,7 +37,7 @@ public readonly record struct ElevatorMotion(Vector3d Position, int Floor, int? 
 /// not <c>Linear</c> has straight segments, which the car follows knot to knot either way.
 /// </para>
 /// </remarks>
-public sealed class ElevatorState
+public sealed class ElevatorState : Saves.IExchangedState
 {
     private const double TickSeconds = 1.0 / 30.0;
     /// <summary>DAT_0053182c — remaining spline distance that switches UpdatePosition to the brake curve.</summary>
@@ -177,7 +177,7 @@ public sealed class ElevatorState
     /// <param name="motion">The other copy's <see cref="Motion"/>.</param>
     /// <remarks>
     /// A co-op client's lift takes the server's this way. The previous position stays where the car was, so the collision
-    /// placed after it (<see cref="ElevatorRegistry.Restore"/>) moves the car and what rides it by the jump.
+    /// placed after it (<c>ElevatorRegistry.Restore</c>) moves the car and what rides it by the jump.
     /// </remarks>
     public void Restore(ElevatorMotion motion)
     {
@@ -209,6 +209,31 @@ public sealed class ElevatorState
         InactiveTicks = _start.Inactive;
         IsStart = false;
         IsStop = false;
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Start levelStart = _start;
+        MarkLevelStart();
+        ElevatorMotion motion = _start.Motion;
+        _start = new Start(
+            new ElevatorMotion(
+                exchange.Position(motion.Position), exchange.Int(motion.Floor), exchange.Int(motion.Target), exchange.Real64(motion.Speed)),
+            exchange.Int(_start.PendingDirection),
+            exchange.Int(_start.PendingTarget),
+            exchange.Bool(_start.LastUp),
+            exchange.Bool(_start.LastDown),
+            exchange.Bool(_start.LastCanStart),
+            exchange.Real64(_start.LastFloor),
+            exchange.Int(_start.Inactive));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     private Start _start;
@@ -349,7 +374,7 @@ public sealed class ElevatorState
                 : Math.Max(_maxSpeed, _speed - _inertia);
         }
 
-        AdvanceToward(targetIndex, _speed * TickSeconds);
+        AdvanceToward(_speed * TickSeconds);
         FinishExports(paramBefore, wantedBefore, canStart);
     }
 
@@ -413,7 +438,7 @@ public sealed class ElevatorState
         _pendingTargetFloor = floorIndex;
     }
 
-    private void AdvanceToward(int targetIndex, double stepUnits)
+    private void AdvanceToward(double stepUnits)
     {
         int guard = _floors.Count + 1;
         while (stepUnits > 0.0 && TargetFloorIndex is int dest && dest != CurrentFloorIndex && guard-- > 0)

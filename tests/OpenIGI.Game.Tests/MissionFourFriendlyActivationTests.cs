@@ -16,7 +16,6 @@ using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -43,7 +42,7 @@ public sealed class MissionFourFriendlyActivationTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -55,7 +54,7 @@ public sealed class MissionFourFriendlyActivationTests
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
 
         HumanSoldierTask friendly = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(400));
-        DeclaredTask anim = Assert.IsType<DeclaredTask>(root.Tree.FromId(850));
+        DeclaredTask anim = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(850));
         Assert.Equal("AnimTask", anim.Type?.Name);
         GameTask? task760 = root.Tree.FromId(760);
         _output.WriteLine($"  task760 type=[{task760?.Type?.Name}] runtimeType=[{task760?.GetType().Name}]");
@@ -69,9 +68,9 @@ public sealed class MissionFourFriendlyActivationTests
         {
             // Keep the mission objectives (which own the ConditionalContainerGate variable exports)
             // in step with the cutscene runtime so container conditions can time off AnimTask_850.nTick.
-            objectives.TickLevelState();
+            objectives.StepLevelState();
             runtime.Tick();
-            objectives.TickAfterLevelState();
+            objectives.StepAfterLevelState();
             if (cursor < window.Length && tick == window[cursor])
             {
                 bool nTickReads = loop.Variables.TryRead("AnimTask_850.nTick", out OpenIGI.Scripting.Runtime.QvmValue nTick);
@@ -206,7 +205,7 @@ public sealed class MissionFourFriendlyActivationTests
             new HumanOccupant(407, 1, anywhere, IsDead: true),
             new HumanOccupant(408, 1, anywhere, IsDead: true),
         ]);
-        objectives.TickLevelState();
+        objectives.StepLevelState();
 
         Assert.True(loop.Variables.TryRead("EditVariable_752.nValue", out QvmValue afterFirstGuardLine));
         Assert.Equal(1, afterFirstGuardLine.ToInt32());
@@ -236,7 +235,7 @@ public sealed class MissionFourFriendlyActivationTests
             new HumanOccupant(418, 1, anywhere, IsDead: true),
             new HumanOccupant(419, 1, anywhere, IsDead: true),
         ]);
-        objectives.TickLevelState();
+        objectives.StepLevelState();
 
         Assert.True(loop.Variables.TryRead("EditVariable_752.nValue", out QvmValue afterSecondGuardLine));
         Assert.Equal(2, afterSecondGuardLine.ToInt32());
@@ -288,7 +287,7 @@ public sealed class MissionFourFriendlyActivationTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -311,7 +310,7 @@ public sealed class MissionFourFriendlyActivationTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

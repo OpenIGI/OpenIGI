@@ -18,6 +18,12 @@ public sealed partial class BrowserPage : IBrowserPage
     public (int Width, int Height) CanvasSize => (CanvasWidth(), CanvasHeight());
 
     /// <inheritdoc/>
+    public double PixelRatio => DevicePixelRatio();
+
+    /// <inheritdoc/>
+    public double SafeInset(int side) => SafeAreaInset(side);
+
+    /// <inheritdoc/>
     public bool HasFocus => PageHasFocus();
 
     /// <inheritdoc/>
@@ -49,6 +55,12 @@ public sealed partial class BrowserPage : IBrowserPage
 
     /// <inheritdoc/>
     public void SetTextTrigger(float x, float y, float width, float height) => SetPageTextTrigger(x, y, width, height);
+
+    [JSImport("safeInset", ModuleName)]
+    private static partial double SafeAreaInset(int side);
+
+    [JSImport("pixelRatio", ModuleName)]
+    private static partial double DevicePixelRatio();
 
     [JSImport("canvasWidth", ModuleName)]
     private static partial int CanvasWidth();

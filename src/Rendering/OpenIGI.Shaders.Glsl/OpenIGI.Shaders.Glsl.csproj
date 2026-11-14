@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The shader library's GLSL forms, apart from the rest of it. They are translated by
+       tools/OpenIGI.Tools.ShaderBuild into ../OpenIGI.Shaders/Generated beside the SPIR-V, the WGSL and the
+       DXIL, but embedded here, in an assembly only the OpenGL backend references, for the same reason the
+       DXIL is: OpenIGI.Shaders is downloaded by every browser that opens the game. The reflection that
+       describes them, their units included, stays in OpenIGI.Shaders, shared. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\OpenIGI.Shaders\Generated\**\*.glsl" LogicalName="OpenIGI.Shaders.Generated.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

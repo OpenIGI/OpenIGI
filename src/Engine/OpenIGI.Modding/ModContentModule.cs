@@ -69,11 +69,11 @@ internal sealed class ModContentModule(InstalledMod mod, GameTitle title) : ICon
 
         public IOpenIgiLogger Logger => load.Logger;
 
-        public bool TryGetDataRoot(GameTitle other, [NotNullWhen(true)] out string? root)
+        public bool TryGetDataRoot(GameTitle title, [NotNullWhen(true)] out string? root)
         {
-            ArgumentNullException.ThrowIfNull(other);
+            ArgumentNullException.ThrowIfNull(title);
             root = null;
-            return load.Services.TryGet(out ITitleDataLocator? locator) && locator.TryGetDataRoot(other, out root);
+            return load.Services.TryGet(out ITitleDataLocator? locator) && locator.TryGetDataRoot(title, out root);
         }
     }
 }

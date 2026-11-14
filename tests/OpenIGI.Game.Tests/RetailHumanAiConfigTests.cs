@@ -1,6 +1,5 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
@@ -219,6 +218,7 @@ public sealed class RetailHumanAiConfigTests
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         HumanAiConfigRegistry.RegisterTypes(loop.Types);
 
         HumanAiConfigRegistry config = new();

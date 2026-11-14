@@ -36,8 +36,21 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// either.
 /// </para>
 /// </remarks>
-public sealed class AiAlarmControlState
+public sealed class AiAlarmControlState : OpenIGI.Game.Saves.IExchangedState
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// What I.G.I. 2 keeps of its own <c>AlarmControl</c> in a save game, in its order (<c>AlarmControl_Open</c>'s serialize
+    /// list): <c>isTrigger</c>, <c>isAlarm</c>, <c>isLastAlarm</c> and <c>nTriggerLastTick</c>. Project I.G.I. kept no save games.
+    /// </remarks>
+    void OpenIGI.Game.Saves.IExchangedState.Exchange(OpenIGI.Game.Saves.StateExchange exchange)
+    {
+        IsTriggered = exchange.Bool(IsTriggered);
+        IsOn = exchange.Bool(IsOn);
+        WasOn = exchange.Bool(WasOn);
+        LastTriggeredTick = exchange.Int(LastTriggeredTick);
+    }
+
     /// <summary>The instance size in bytes in the original.</summary>
     public const int Size = 848;
 

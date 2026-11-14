@@ -6,14 +6,12 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
@@ -138,6 +136,8 @@ public sealed class AiPerceptionRetailIntegrationTests
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
             ResourceRegistry resources = new(fileSystem);
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+            OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
             PlayerTaskTypes.RegisterAll(loop.Types);
 
             MissionRegistry registry = new();

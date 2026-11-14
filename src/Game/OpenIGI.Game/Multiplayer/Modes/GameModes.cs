@@ -86,9 +86,14 @@ public static class GameModes
     private static DeathmatchSettings Deathmatch() =>
         NetCVars.TimeLimit.Value > 0 ? new DeathmatchSettings { TimeLimitMinutes = NetCVars.TimeLimit.Value } : new DeathmatchSettings();
 
-    // A round's settings, its buy time the server's mp_buytime.
+    // A round's settings: its buy time and the pauses after it the server's mp_buytime, mp_roundendtime and mp_bombendtime.
     private static RoundSettings Rounds(RoundSettings? settings) =>
-        (settings ?? new RoundSettings()) with { BuySeconds = NetCVars.BuyTime.Value };
+        (settings ?? new RoundSettings()) with
+        {
+            BuySeconds = NetCVars.BuyTime.Value,
+            RoundOverSeconds = NetCVars.RoundEndTime.Value,
+            DetonatedRoundOverSeconds = NetCVars.BombEndTime.Value,
+        };
 
     private static IGameMode Made(string? id, IReplicatedWorld world, int tickRate)
     {

@@ -3,12 +3,10 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Time;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend;
-using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
 using OpenIGI.Platform;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Kit;
 
@@ -49,7 +47,7 @@ internal sealed class FrameLoopState
 
     public int CutsceneCaptureStartTick { get; set; }
 
-    public CutSceneTask? PreviousCapturedScene { get; set; }
+    public OpenIGI.Engine.Tasks.GameTask? PreviousCapturedScene { get; set; }
 
     public int CutsceneCaptureLimit { get; set; }
 

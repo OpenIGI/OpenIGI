@@ -1,7 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
-using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 
@@ -70,7 +69,59 @@ public sealed class HudDrawContext
     /// Gets how many pixels a design pixel is drawn as: the widgets are drawn in one size for both titles, a 720-line display's
     /// pixels, carried to the title's authored display.
     /// </summary>
-    public float DesignScale => Scale * Theme.AuthoredHeight / HudTheme.DesignHeight;
+    /// <remarks>Times the size the player's layout gives the readout being drawn (<see cref="BeginElement"/>).</remarks>
+    public float DesignScale => Scale * Theme.AuthoredHeight / HudTheme.DesignHeight * _elementScale;
+
+    private float _elementScale = 1f;
+    private float _elementOpacity = 1f;
+    private bool _inElement;
+
+    /// <summary>Gets the player's own arrangement of the readouts, or <see langword="null"/> for the theme's.</summary>
+    public HudLayoutOverrides? Layout { get; init; }
+
+    /// <summary>Starts a readout: what is drawn until <see cref="EndElement"/> is at the size and opacity the player's layout gives it.</summary>
+    /// <param name="element">The readout.</param>
+    public void BeginElement(HudElement element)
+    {
+        if (Layout is not { } arranged || _inElement)
+        {
+            return;
+        }
+
+        Touch.HudPlacement placement = arranged.Layout.Resolve(element);
+        _elementScale = placement.Scale;
+        _elementOpacity = placement.Visible ? placement.Opacity : HiddenOpacity;
+        _inElement = true;
+        Painter.PushOpacity(_elementOpacity);
+    }
+
+    /// <summary>Ends the readout <see cref="BeginElement"/> started.</summary>
+    public void EndElement()
+    {
+        if (!_inElement)
+        {
+            return;
+        }
+
+        Painter.PopOpacity();
+        _elementScale = 1f;
+        _elementOpacity = 1f;
+        _inElement = false;
+    }
+
+    /// <summary>Tells the layout's editor where a readout came to stand.</summary>
+    /// <param name="element">The readout.</param>
+    /// <param name="box">Its box on the screen, in pixels.</param>
+    public void Report(HudElement element, UiRect box)
+    {
+        if (Layout is { } arranged)
+        {
+            arranged.Boxes[element] = box;
+        }
+    }
+
+    // How much of a readout the player left out the editor still shows.
+    private const float HiddenOpacity = 0.28f;
 
     /// <summary>Gets or sets how much of the part being drawn shows, at the display's density; the painter's own opacity carries it to shapes and text.</summary>
     public float PartOpacity { get; internal set; } = 1f;
@@ -86,11 +137,11 @@ public sealed class HudDrawContext
     {
         if (Smooth is { } smooth && Icons.Resolve(icon) is { Asset.Frames.Count: > 0 } source && smooth.Get(source) is { } copy)
         {
-            copy.DrawFrame(Batch, copy.Asset.Frames[0], x, y, scale, scale, Fade(colour, PartOpacity * Behind));
+            copy.DrawFrame(Batch, copy.Asset.Frames[0], x, y, scale, scale, Fade(colour, PartOpacity * Behind * _elementOpacity));
             return;
         }
 
-        Icons.Draw(Batch, icon, x, y, scale, Fade(colour, PartOpacity * Behind));
+        Icons.Draw(Batch, icon, x, y, scale, Fade(colour, PartOpacity * Behind * _elementOpacity));
     }
 
     /// <summary>Gets or sets how much of the display under the weapon wheel shows, one with the wheel shut.</summary>
@@ -116,8 +167,28 @@ public sealed class HudDrawContext
     /// <summary>Where a part stands, or <see langword="null"/> where the theme does not place it.</summary>
     /// <param name="element">The part.</param>
     /// <returns>The point, in pixels.</returns>
-    public UiVec2? Place(HudElement element) =>
-        Theme.Place(element, Width, Height, Scale) is { } at ? new UiVec2(at.X, at.Y) : null;
+    /// <remarks>Moved as the player's layout moves it, and nowhere when the layout leaves it out.</remarks>
+    public UiVec2? Place(HudElement element)
+    {
+        if (Theme.Place(element, Width, Height, Scale) is not { } at)
+        {
+            return null;
+        }
+
+        if (Layout is not { } arranged)
+        {
+            return new UiVec2(at.X, at.Y);
+        }
+
+        Touch.HudPlacement placement = arranged.Layout.Resolve(element);
+        if (!placement.Visible && !arranged.Editing)
+        {
+            return null;
+        }
+
+        float unit = HudLayoutOverrides.Unit(Height);
+        return new UiVec2(at.X + (placement.Dx * unit), at.Y + (placement.Dy * unit));
+    }
 
     /// <summary>A colour at an opacity.</summary>
     /// <param name="colour">The colour.</param>

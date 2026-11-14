@@ -480,7 +480,7 @@ public sealed class TerrainRegionGenerator
 
         // Cuts triangles of the grid to the cube's slab, collecting the slice's vertices and triangles; a vertex that is a
         // grid point is remembered as one, for its collapse.
-        void Cut((int A, int B, int C)[] mesh, (double X, double Y, double Z)[] points, List<(int X, int Y, int Z)> into, Dictionary<(int, int, int), int> index, List<(int A, int B, int C)> faces, Dictionary<(int, int, int), int> grids)
+        static void Cut((int A, int B, int C)[] mesh, (double X, double Y, double Z)[] points, List<(int X, int Y, int Z)> into, Dictionary<(int, int, int), int> index, List<(int A, int B, int C)> faces, Dictionary<(int, int, int), int> grids)
         {
             foreach ((int a, int b, int c) in mesh)
             {

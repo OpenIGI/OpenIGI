@@ -1,5 +1,4 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Expressions;
@@ -86,10 +85,12 @@ public partial class MenuManagerTask
 
         foreach (MenuInputEvent unused in _host.DrainEvents())
         {
+            // The loop's condition does the work.
         }
 
         foreach (char unused in _host.DrainTypedText())
         {
+            // The loop's condition does the work.
         }
     }
 

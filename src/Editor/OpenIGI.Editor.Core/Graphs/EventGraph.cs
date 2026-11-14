@@ -238,7 +238,7 @@ public sealed class EventGraph
         for (int i = 0; i < statements.Count; i++)
         {
             GraphNodeKey key = new(string.Create(CultureInfo.InvariantCulture, $"{path}{i}"));
-            EventStatementNode node = ReadStatement(statements[i], key, top);
+            ReadStatement(statements[i], key, top);
             _links.Add(new GraphLink(exec, new GraphPinRef(key, EventStatementNode.In)));
             exec = new GraphPinRef(key, EventStatementNode.Next);
         }

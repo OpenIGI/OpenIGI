@@ -1,5 +1,3 @@
-using OpenIGI.Rendering.Rhi;
-
 namespace OpenIGI.TestSupport.Rhi;
 
 /// <summary>One thing a frame asked the device to do.</summary>

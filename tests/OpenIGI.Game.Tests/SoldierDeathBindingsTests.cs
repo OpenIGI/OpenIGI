@@ -11,7 +11,6 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -33,7 +32,7 @@ public sealed class SoldierDeathBindingsTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -73,7 +72,7 @@ public sealed class SoldierDeathBindingsTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -85,11 +84,10 @@ public sealed class SoldierDeathBindingsTests
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
 
         // Find area 155 (the internal plateau) and its centre position.
-        DeclaredTask? area155 = WalkAll(root)
-            .OfType<DeclaredTask>()
-            .FirstOrDefault(d => d.Type?.Name == "AreaActivate" && d.Id == 155);
+        GameTask? area155 = WalkAll(root)
+            .FirstOrDefault(d => d.Id == 155 && d.Type.Name == "AreaActivate");
         Assert.NotNull(area155);
-        Assert.True(area155.TryGetValue("Position", out object? positionRaw),
+        Assert.True(area155.TryGetScriptValue("Position", out object? positionRaw),
             "area 155 must author a Position for the friendly-advance test");
         OpenIGI.Core.Numerics.Vector3d plateau = positionRaw is OpenIGI.Core.Numerics.Vector3d v
             ? v
@@ -112,7 +110,7 @@ public sealed class SoldierDeathBindingsTests
         objectives.SetSoldierOccupants([new HumanOccupant(400, 0, plateau, IsDead: false)]);
         for (int tick = 0; tick < 600; tick++)
         {
-            objectives.Tick();
+            objectives.StepFlow();
             if (loop.Variables.TryRead("StatusMessage_987.isSendt", out QvmValue sent) && sent.ToInt32() != 0)
             {
                 return;
@@ -145,7 +143,7 @@ public sealed class SoldierDeathBindingsTests
             new HumanOccupant(406, 1, anywhere, IsDead: true),
             new HumanOccupant(407, 1, anywhere, IsDead: false),
         ]);
-        objectives.TickLevelState();
+        objectives.StepLevelState();
 
         Assert.True(loop.Variables.TryRead("HumanSoldier_406.isDead", out QvmValue dead),
             "HumanSoldier_406.isDead must be readable after the host reports it");
@@ -169,7 +167,7 @@ public sealed class SoldierDeathBindingsTests
             new HumanOccupant(407, 1, anywhere, IsDead: true),
             new HumanOccupant(408, 1, anywhere, IsDead: true),
         ]);
-        objectives.TickLevelState();
+        objectives.StepLevelState();
 
         Assert.True(loop.Variables.TryRead("EditVariable_752.nValue", out QvmValue gate),
             "EditVariable_752.nValue must be bound by the runtime");

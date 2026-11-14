@@ -27,6 +27,7 @@ public sealed class ModHarnessTests : IDisposable
         }
         catch (UnauthorizedAccessException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 

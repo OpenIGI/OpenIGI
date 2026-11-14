@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -168,7 +167,13 @@ public sealed class Party : IDisposable
         {
             _askedAt = now;
             string at = playing is null ? string.Empty : $"&at={Uri.EscapeDataString(playing)}";
-            _call = Send(HttpMethod.Get, $"/v1/parties/{State!.Code}?member={Member.ToString(CultureInfo.InvariantCulture)}&token={Token}{at}", null);
+            // The token in a header, out of the address asked, which is what a log or a proxy keeps. A master from before it
+            // read the header knows the token only in the address: asked that way once the header has been turned down.
+            string member = Member.ToString(CultureInfo.InvariantCulture);
+            _askedByHeader = !_tokenInAddress;
+            _call = _tokenInAddress
+                ? Send(HttpMethod.Get, $"/v1/parties/{State!.Code}?member={member}&token={Token}{at}", null)
+                : Send(HttpMethod.Get, $"/v1/parties/{State!.Code}?member={member}{at}", null, Token);
         }
 
         return Follow(playing);
@@ -199,8 +204,31 @@ public sealed class Party : IDisposable
         return string.Equals(target, playing, StringComparison.OrdinalIgnoreCase) ? null : target;
     }
 
+    // Whether the last ask carried the token in a header, whether a master has yet answered one that did, and whether this
+    // party's master has turned the header down and is asked the old way.
+    private bool _askedByHeader;
+    private bool _headerAnswered;
+    private bool _tokenInAddress;
+
     private void Take(Task<(HttpStatusCode Status, JsonObject? Body)> call)
     {
+        bool byHeader = _askedByHeader;
+        _askedByHeader = false;
+        if (byHeader && !_headerAnswered)
+        {
+            // A master that doesn't read the header says this member isn't in the party, or -- to a browser -- refuses the
+            // header itself: not the party's end, only an older master.
+            if (!call.IsCompletedSuccessfully
+                || (call.Result.Status == HttpStatusCode.Forbidden && call.Result.Body?["error"]?.GetValue<string>() == "not in the party"))
+            {
+                _tokenInAddress = true;
+                _askedAt = double.NegativeInfinity;
+                return;
+            }
+
+            _headerAnswered = call.Result.Status == HttpStatusCode.OK;
+        }
+
         if (!call.IsCompletedSuccessfully)
         {
             // The master didn't answer: tried again at the next ask, except a party not yet made or joined, which is lost.
@@ -282,9 +310,14 @@ public sealed class Party : IDisposable
             body["version"]?.GetValue<int>() ?? 0);
     }
 
-    private async Task<(HttpStatusCode Status, JsonObject? Body)> Send(HttpMethod method, string path, JsonObject? body)
+    private async Task<(HttpStatusCode Status, JsonObject? Body)> Send(HttpMethod method, string path, JsonObject? body, string? token = null)
     {
         using HttpRequestMessage request = new(method, new Uri(_master, path));
+        if (token is not null)
+        {
+            request.Headers.TryAddWithoutValidation("x-openigi-token", token);
+        }
+
         if (body is not null)
         {
             request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
@@ -299,6 +332,7 @@ public sealed class Party : IDisposable
         }
         catch (System.Text.Json.JsonException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
 
         return (response.StatusCode, answer);

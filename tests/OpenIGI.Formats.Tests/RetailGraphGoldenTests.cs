@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using OpenIGI.Formats.Ai;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -240,8 +241,8 @@ public sealed class RetailGraphGoldenTests
             Dictionary<int, HashSet<int>> adjacency = [];
             foreach (GraphLink link in graph.Links)
             {
-                (adjacency.TryGetValue(link.NodeA, out HashSet<int>? a) ? a : adjacency[link.NodeA] = []).Add(link.NodeB);
-                (adjacency.TryGetValue(link.NodeB, out HashSet<int>? b) ? b : adjacency[link.NodeB] = []).Add(link.NodeA);
+                adjacency.GetOrAdd(link.NodeA).Add(link.NodeB);
+                adjacency.GetOrAdd(link.NodeB).Add(link.NodeA);
             }
 
             foreach (GraphNode from in graph.Nodes)

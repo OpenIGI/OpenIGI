@@ -39,7 +39,7 @@ public sealed class Mesh3DPassOnVulkanTests(ITestOutputHelper output)
 
         using (vulkan)
         {
-            byte[] pixels = DrawTriangle(vulkan!.Rhi);
+            byte[] pixels = DrawTriangle(vulkan.Rhi);
 
             output.WriteLine($"upper: {Alpha(pixels, Size / 2, Size / 4)}");
             output.WriteLine($"lower: {Alpha(pixels, Size / 2, Size * 3 / 4)}");

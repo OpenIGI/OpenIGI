@@ -252,7 +252,7 @@ public sealed class SnapshotTests
         history.Acknowledge(4);
         Assert.Equal(5, history.Baseline!.Tick);
         history.Acknowledge(1);
-        Assert.Equal(5, history.Baseline!.Tick);
+        Assert.Equal(5, history.Baseline.Tick);
 
         for (long tick = 7; tick <= 12; tick++)
         {
@@ -310,6 +310,30 @@ public sealed class SnapshotTests
         Assert.True(history.Sample(30 - 3.5, 9, out ReplicatedHuman seen));
         Assert.Equal((int)(26.5 * 1024), seen.Position.X);
         Assert.False(history.Sample(10, 99, out _));
+    }
+
+    [Fact]
+    public void Codec_CarriesTheNumberOfTheFirstEvent()
+    {
+        ReplicatedImpact impact = new(ImpactKind.Surface, 3, new Int3(1, 2, 3), new Vector3f(0, 0, 1));
+        Snapshot sent = new(40, [Human(1, 10, 10)], Impacts: [impact, impact], ImpactSequence: 0xFFFF_FFFF);
+
+        Assert.True(RoundTrip(sent, null, out Snapshot? read));
+        Assert.Equal(0xFFFF_FFFFu, read!.ImpactSequence);
+        Assert.Equal(2, read.Impacts!.Length);
+    }
+
+    [Fact]
+    public void Interpolator_HoldsAHumanPutSomewhereElse_RatherThanSlidingItThere()
+    {
+        SnapshotInterpolator interpolator = new();
+        interpolator.Add(new Snapshot(10, [Human(1, 0, 0)]));
+        interpolator.Add(new Snapshot(11, [Human(1, 400 * 4096, 0)]));
+
+        Assert.True(interpolator.Sample(10.5, 1, out ReplicatedHuman between));
+        Assert.Equal(0, between.Position.X);
+        Assert.True(interpolator.Sample(11, 1, out ReplicatedHuman after));
+        Assert.Equal(400 * 4096, after.Position.X);
     }
 
     private static bool RoundTrip(Snapshot snapshot, Snapshot? baseline, out Snapshot? read)

@@ -50,7 +50,7 @@ public sealed partial class GameHost
                     _world as IShatterableWorld,
                     debrisWorld: new OpenIGI.Game.Physics.RagdollWorld(_mission.Collision.Cast));
                 string said = shown
-                    ? FormattableString.Invariant($"Bomb blast at {metres.X:0.#},{metres.Y:0.#},{metres.Z:0.#}, radius {radius:0.#} m.")
+                    ? string.Create(CultureInfo.InvariantCulture, $"Bomb blast at {metres.X:0.#},{metres.Y:0.#},{metres.Z:0.#}, radius {radius:0.#} m.")
                     : "The remastered bomb blast is off (r_blast_quality 0).";
 
                 // To the log too, for a headless -runat capture, which has no scrollback to read.
@@ -66,7 +66,7 @@ public sealed partial class GameHost
                 float seconds = float.TryParse(context[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float s) ? s : 5f;
                 int ticks = Math.Clamp((int)MathF.Round(seconds * 30f), 0, 30 * 120);
                 _effects.FastForward(ticks);
-                string said = FormattableString.Invariant($"Bomb blast moved on {ticks / 30f:0.#} s.");
+                string said = string.Create(CultureInfo.InvariantCulture, $"Bomb blast moved on {ticks / 30f:0.#} s.");
                 context.Print(said);
                 _logger.Information("Blast", said);
             });

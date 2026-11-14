@@ -230,9 +230,9 @@ public sealed class Igi2GunFire : IIgi2FireHandler
         float[] o = request.Orientation;
         Fpu reach = (Fpu)gun.EffectiveRangeMeters * 4096f;
         Vector3f line = new(
-            (((((Fpu)o[2] + o[0]) * 0f) + (reach * o[1]))).F,
-            (((((Fpu)o[5] + o[3]) * 0f) + (reach * o[4]))).F,
-            (((((Fpu)o[8] + o[6]) * 0f) + (reach * o[7]))).F);
+            ((((Fpu)o[2] + o[0]) * 0f) + (reach * o[1])).F,
+            ((((Fpu)o[5] + o[3]) * 0f) + (reach * o[4])).F,
+            ((((Fpu)o[8] + o[6]) * 0f) + (reach * o[7])).F);
         float range = gun.AIdetectionRange;
         if (range > LoudRange)
         {

@@ -132,7 +132,7 @@ internal sealed class SurfaceCacheBindings
             int at = i * 4;
             _device.SetComputeUniform(
                 shader,
-                FormattableString.Invariant($"uSkySh[{i}]"),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"uSkySh[{i}]"),
                 sh[at],
                 sh[at + 1],
                 sh[at + 2],
@@ -189,7 +189,7 @@ internal sealed class SurfaceCacheBindings
 
             _device.SetComputeUniform(
                 shader,
-                FormattableString.Invariant($"uClipmapOrigin[{level}]"),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"uClipmapOrigin[{level}]"),
                 (float)(corner.X - _origin.X),
                 (float)(corner.Y - _origin.Y),
                 (float)(corner.Z - _origin.Z),
@@ -197,7 +197,7 @@ internal sealed class SurfaceCacheBindings
 
             _device.SetComputeUniform(
                 shader,
-                FormattableString.Invariant($"uClipmapRange[{level}]"),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"uClipmapRange[{level}]"),
                 shadows.RangeOfLevel(level));
         }
 

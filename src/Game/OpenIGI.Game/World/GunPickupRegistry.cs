@@ -1,8 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Level;
 using OpenIGI.Game.Physics;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.World;
@@ -26,7 +24,8 @@ public sealed class GunPickup
     private Matrix3f _startOrientation;
     private bool _startCollected;
 
-    internal GunPickup(
+    /// <summary>Initializes a new instance of the <see cref="GunPickup"/> class.</summary>
+    public GunPickup(
         DeclaredTask? task,
         Vector3d position,
         Matrix3f orientation,
@@ -42,7 +41,8 @@ public sealed class GunPickup
         Ammo = ammo;
     }
 
-    internal void MarkLevelStart()
+    /// <summary>Marks the state the level starts in, to be put back by <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart()
     {
         _startPosition = Position;
         _startOrientation = Orientation;
@@ -50,7 +50,8 @@ public sealed class GunPickup
     }
 
     // Back where the match began with it, lying still.
-    internal void ResetToLevelStart()
+    /// <summary>Puts back the state the level started in.</summary>
+    public void ResetToLevelStart()
     {
         _position = _startPosition;
         _orientation = _startOrientation;
@@ -98,17 +99,24 @@ public sealed class GunPickup
     public AmmoType? Ammo { get; }
 
     /// <summary>Gets whether the pickup has already been consumed.</summary>
-    public bool IsCollected { get; internal set; }
+    public bool IsCollected { get; set; }
+
+    /// <summary>
+    /// Gets the pickup's place among those made while the level runs, from one; zero for one the level placed. A dropped
+    /// gun is a task made under the level's <c>Dynamic</c> task (<c>0x479C20</c>), run there after everything made before it.
+    /// </summary>
+    public long Made { get; set; }
 
     /// <summary>Gets the rounds its magazine holds, for one a player dropped; <see langword="null"/> for a full one.</summary>
-    public int? Rounds { get; internal set; }
+    public int? Rounds { get; set; }
 
     // The inventory that dropped it, which does not take it back until it has stepped out of reach.
-    internal object? HeldOffFrom { get; set; }
+    /// <summary>Gets the inventory that dropped the gun, which cannot take it back until it steps out of reach.</summary>
+    public object? HeldOffFrom { get; set; }
 
     /// <summary>Gets how a player threw it -- where it left the hand, how it was turned, and its speed in units a tick -- or
     /// <see langword="null"/> for any other pickup: what another machine flies the same throw from.</summary>
-    public (Vector3d Position, Matrix3f Orientation, Vector3d Velocity)? Launch { get; internal set; }
+    public (Vector3d Position, Matrix3f Orientation, Vector3d Velocity)? Launch { get; set; }
 
     /// <summary>Gets or sets whether walking over it takes it: off for a bomb mode's bomb, which the mode hands out by its own rule.</summary>
     public bool WalkOverTakes { get; set; } = true;
@@ -141,7 +149,7 @@ public sealed class GunPickup
     /// <summary>Starts the fall.</summary>
     /// <param name="realistic">Whether to fall as a rigid body; otherwise exactly as the original's pickup.</param>
     /// <param name="velocity">What the gun leaves the hand with, units per tick; the original ignores it.</param>
-    internal void StartFalling(bool realistic, Vector3d velocity)
+    public void StartFalling(bool realistic, Vector3d velocity)
     {
         _realistic = realistic;
         Matrix3f orientation = realistic ? _orientation : RetailGunDrop.LyingOrientation(_orientation);
@@ -155,7 +163,7 @@ public sealed class GunPickup
     /// <param name="position">Where it struck, in world units.</param>
     /// <param name="speed">How fast it closed, units per tick.</param>
     /// <returns><see langword="true"/> once per landing.</returns>
-    internal bool TryTakeImpact(out Vector3d position, out double speed)
+    public bool TryTakeImpact(out Vector3d position, out double speed)
     {
         (position, speed) = _impact ?? default;
         bool any = _impact is not null;
@@ -163,7 +171,8 @@ public sealed class GunPickup
         return any;
     }
 
-    internal void Tick(RagdollWorld world)
+    /// <summary>Advances a dropped gun one tick of its fall.</summary>
+    public void Tick(RagdollWorld world)
     {
         // A gun at rest is drawn at rest. Without this the blend keeps interpolating from the last moving
         // state -- for the original's drop, a tick of fall below the floor -- on every frame for ever,
@@ -264,375 +273,6 @@ public sealed class GunPickup
         Vector3f row2 = Vector3f.Cross(blended3, row1).Normalized();
         return Matrix3f.FromRows(row1, row2, Vector3f.Cross(row1, row2));
     }
-}
-
-/// <summary>Finds and resolves the original game's automatic world weapon pickups.</summary>
-/// <remarks>
-/// <para><c>GunPickup</c>'s proximity handler at <c>0x46D230</c> tests the Human's origin (<c>+32</c>, sent every
-/// tick by <c>0x410F70</c>), not its feet, against the pickup: planar distance must be less than 2867.2 units
-/// (0.7 m) -- or the model's bounding radius, when that is larger -- and vertical distance less than 4096
-/// units (1 m). It does not require aiming or the activate key. On success it sends the human the
-/// weapon id plus one full magazine, marks itself for deletion and publishes <c>PICKEDUPWEAPON…</c>.</para>
-/// <para>Presentation owns the sound and notification; this registry owns only the level data, range
-/// test and task lifetime.</para>
-/// </remarks>
-public sealed class GunPickupRegistry : ILevelReset
-{
-    private readonly List<GunPickup> _items = [];
-    private readonly List<GunPickupImpact> _impacts = [];
-    private readonly AmmoTypeRegistry _ammunition;
-    private ScriptVarRegistry? _variables;
-    private bool _inWalk;
-
-    /// <summary>
-    /// Gets or sets a value indicating whether a taken pickup keeps its task: for a level a match's rounds put back
-    /// (<see cref="ILevelReset"/>), where the task has to be there to come back. The pickup is out of play by being taken either
-    /// way; only the original's deletion of its task, which nothing reads in such a level, is not done.
-    /// </summary>
-    public bool KeepsTakenTasks { get; set; }
-
-    private GunPickupRegistry(AmmoTypeRegistry ammunition) => _ammunition = ammunition;
-
-    /// <summary>Gets every resolved pickup, including consumed ones for diagnostics.</summary>
-    public IReadOnlyList<GunPickup> Items => _items;
-
-    /// <summary>Builds the pickup list from a loaded level tree, and exports each authored pickup's <c>isPickedUp</c>.</summary>
-    /// <param name="root">The level's task tree.</param>
-    /// <param name="weapons">The weapon table, which names what each pickup is.</param>
-    /// <param name="ammunition">The ammunition table, which names what each weapon is loaded with.</param>
-    /// <param name="variables">Where the pickups' variables are exported, or <see langword="null"/> for none.</param>
-    /// <remarks>
-    /// GunPickup exports <c>%s.isPickedUp</c> on its byte <c>+297</c> (<c>0x46D170</c>), as GenericPickup and AmmoPickup
-    /// do theirs. Mission 11 counts GunPickup_202's into EditVariable_101.
-    /// </remarks>
-    public static GunPickupRegistry Build(
-        GameTask root,
-        WeaponTypeRegistry weapons,
-        AmmoTypeRegistry ammunition,
-        ScriptVarRegistry? variables = null)
-    {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(weapons);
-        ArgumentNullException.ThrowIfNull(ammunition);
-
-        GunPickupRegistry registry = new(ammunition) { _variables = variables };
-        Collect(root, registry, weapons, ammunition);
-        if (variables is not null)
-        {
-            foreach (GunPickup pickup in registry._items)
-            {
-                if (pickup.Task is { } task)
-                {
-                    TakenPickupTask.Export(variables, task, () => pickup.IsCollected, value => pickup.IsCollected = value);
-                }
-            }
-        }
-
-        return registry;
-    }
-
-    /// <summary>
-    /// Gets or sets whether the pickups are a co-op client's, taken when the server says who took them rather than by whoever
-    /// walks over them here.
-    /// </summary>
-    public bool Mirrored { get; set; }
-
-    /// <summary>Consumes every pickup within the retail reach of the Human's origin this tick.</summary>
-    /// <param name="position">The Human's origin (<c>+32</c>) in engine units, not its feet.</param>
-    /// <param name="inventory">The player's weapon inventory.</param>
-    /// <returns>The pickups collected in level-tree order.</returns>
-    public IReadOnlyList<GunPickup> CollectAt(Vector3d position, PlayerWeapons inventory)
-    {
-        ArgumentNullException.ThrowIfNull(inventory);
-        if (Mirrored)
-        {
-            return [];
-        }
-
-        List<GunPickup>? collected = null;
-        foreach (GunPickup pickup in _items)
-        {
-            bool reached = PickupReach.IsWithinRange(position, pickup.Position);
-            if (ReferenceEquals(pickup.HeldOffFrom, inventory))
-            {
-                pickup.HeldOffFrom = reached ? inventory : null;
-                continue;
-            }
-
-            if (!pickup.IsCollected && pickup.WalkOverTakes && reached && CollectInto(pickup, inventory))
-            {
-                (collected ??= []).Add(pickup);
-            }
-        }
-
-        return collected ?? [];
-    }
-
-    /// <summary>Puts a pickup in a player's hands and takes it out of the level, as walking over it does.</summary>
-    /// <param name="pickup">The pickup.</param>
-    /// <param name="inventory">The player's weapons.</param>
-    /// <returns><see langword="false"/> when it was already taken.</returns>
-    public bool CollectInto(GunPickup pickup, PlayerWeapons inventory)
-    {
-        ArgumentNullException.ThrowIfNull(pickup);
-        ArgumentNullException.ThrowIfNull(inventory);
-        if (pickup.IsCollected || !_items.Contains(pickup) || (inventory.LimitsCarry && !CarrySlots.Admits(inventory, pickup.Weapon, pickup.Ammo)))
-        {
-            return false;
-        }
-
-        // GunPickup::Update forwards its configured clip size. The human handler deliberately
-        // leaves an existing weapon in place and turns the same payload into loose reserve ammo.
-        inventory.PickUp(pickup.Weapon, pickup.Ammo, pickup.Rounds ?? pickup.Weapon.RoundsPerClip);
-        Take(pickup);
-        return true;
-    }
-
-    /// <summary>
-    /// Takes a pickup out of the level as collecting it does, into no one's hands: another game's pickup lies in its place, for
-    /// that game's player to take.
-    /// </summary>
-    /// <param name="pickup">The pickup.</param>
-    public void Withdraw(GunPickup pickup)
-    {
-        ArgumentNullException.ThrowIfNull(pickup);
-        if (pickup.IsCollected || !_items.Contains(pickup))
-        {
-            return;
-        }
-
-        Take(pickup);
-    }
-
-    /// <summary>Puts each authored pickup's update into the level's walk, where its task deletes itself once taken.</summary>
-    /// <param name="walker">The level walk.</param>
-    /// <remarks>See <see cref="TakenPickupTask"/>.</remarks>
-    public void AttachTo(LevelRun walker)
-    {
-        ArgumentNullException.ThrowIfNull(walker);
-        _inWalk = true;
-        foreach (GunPickup pickup in _items)
-        {
-            if (pickup.Task is { } task)
-            {
-                TakenPickupTask.BindUpdate(walker, task, () => pickup.IsCollected && !KeepsTakenTasks, _variables);
-            }
-        }
-    }
-
-    // Takes the pickup out of the level. In a level walk, its task stays until its own update deletes it. Without
-    // a walk, nothing would run that update, so the task goes now.
-    private void Take(GunPickup pickup)
-    {
-        pickup.IsCollected = true;
-        if (!_inWalk && !KeepsTakenTasks && pickup.Task is { } task)
-        {
-            TakenPickupTask.Delete(task, _variables);
-        }
-    }
-
-    /// <summary>Creates a runtime pickup when a human drops their gun.</summary>
-    /// <remarks>
-    /// Gun's drop handler calls <c>GunPickup_Create</c> at <c>0x46C980</c>, passing the gun's weapon id
-    /// and world transform. Runtime drops deliberately use the same type and range test as authored
-    /// <c>GunPickup</c> tasks; only their task owner is absent.</remarks>
-    /// <param name="position">The hand position, in world units.</param>
-    /// <param name="orientation">The hand orientation.</param>
-    /// <param name="weapon">The weapon.</param>
-    /// <param name="velocity">What the gun leaves the hand with, units per tick.</param>
-    /// <param name="rounds">The rounds left in its magazine, or <see langword="null"/> for a full one.</param>
-    /// <param name="droppedBy">The inventory of the player who dropped it, which cannot take it back until it steps out of reach.</param>
-    /// <returns>The pickup.</returns>
-    public GunPickup Spawn(
-        Vector3d position, Matrix3f orientation, WeaponType weapon, Vector3d velocity = default, int? rounds = null, PlayerWeapons? droppedBy = null)
-    {
-        ArgumentNullException.ThrowIfNull(weapon);
-
-        bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null) { Rounds = rounds, HeldOffFrom = droppedBy };
-        pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
-        _items.Add(pickup);
-        Spawned?.Invoke(pickup);
-        return pickup;
-    }
-
-    /// <summary>Throws a gun a player lets go of, as I.G.I. 2's player throws its own: always flown as a body, whatever
-    /// <see cref="GameplayCVars.RealisticDrops"/> says of the guns the dead let fall, so the throw's speed carries it.</summary>
-    /// <param name="position">Where it leaves the hand, in world units.</param>
-    /// <param name="orientation">How it is turned.</param>
-    /// <param name="weapon">The weapon.</param>
-    /// <param name="velocity">Its speed, units a tick.</param>
-    /// <param name="rounds">The rounds left in its magazine, or <see langword="null"/> for a full one.</param>
-    /// <param name="droppedBy">The thrower's inventory, which cannot take it back until it steps out of reach; none on a
-    /// machine flying another's throw.</param>
-    /// <returns>The pickup.</returns>
-    public GunPickup Throw(Vector3d position, Matrix3f orientation, WeaponType weapon, Vector3d velocity, int? rounds, PlayerWeapons? droppedBy = null)
-    {
-        ArgumentNullException.ThrowIfNull(weapon);
-        bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null)
-        {
-            Rounds = rounds,
-            HeldOffFrom = droppedBy,
-            Launch = (position, orientation, velocity),
-        };
-        pickup.StartFalling(realistic: true, velocity);
-        _items.Add(pickup);
-        Spawned?.Invoke(pickup);
-        return pickup;
-    }
-
-    /// <summary>Lays a dropped gun where another machine's lies, at rest: a co-op server's drop, as a client shows it.</summary>
-    /// <param name="position">Where it lies.</param>
-    /// <param name="orientation">How it lies.</param>
-    /// <param name="weapon">The weapon.</param>
-    /// <param name="rounds">The rounds left in its magazine, or <see langword="null"/> for a full one.</param>
-    /// <returns>The pickup.</returns>
-    public GunPickup SpawnResting(Vector3d position, Matrix3f orientation, WeaponType weapon, int? rounds = null)
-    {
-        ArgumentNullException.ThrowIfNull(weapon);
-        bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null) { Rounds = rounds };
-        _items.Add(pickup);
-        Spawned?.Invoke(pickup);
-        return pickup;
-    }
-
-    /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>
-    public event Action<GunPickup>? Spawned;
-
-    /// <summary>Raised as a dropped gun leaves the level for good: a round put the level back without it.</summary>
-    public event Action<GunPickup>? Removed;
-
-    // The guns there were as the match began; every other was dropped since.
-    private readonly HashSet<GunPickup> _atStart = new(ReferenceEqualityComparer.Instance);
-    private readonly HashSet<GunPickup> _authored = new(ReferenceEqualityComparer.Instance);
-    private bool _levelCleared;
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the guns the level itself lays about are all gone, for good: a versus match,
-    /// where a gun is bought or taken off a player who dropped it. Guns dropped later still lie where they fall; every round
-    /// put back keeps the level's own gone.
-    /// </summary>
-    public bool LevelCleared
-    {
-        get => _levelCleared;
-        set
-        {
-            // Only as it first goes: what lies about by then is the level's own; a gun dropped after is a player's.
-            bool clearing = value && !_levelCleared;
-            _levelCleared = value;
-            if (clearing)
-            {
-                foreach (GunPickup pickup in _items)
-                {
-                    _authored.Add(pickup);
-                    pickup.IsCollected = true;
-                }
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    public void MarkLevelStart()
-    {
-        _atStart.Clear();
-        foreach (GunPickup pickup in _items)
-        {
-            pickup.MarkLevelStart();
-            _atStart.Add(pickup);
-        }
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>
-    /// The guns there were as the match began lie where they lay then, taken or not as they were; every gun dropped since is
-    /// gone.
-    /// </remarks>
-    public void ResetToLevelStart(ObjectCollisionIndex? solids)
-    {
-        for (int i = _items.Count - 1; i >= 0; i--)
-        {
-            GunPickup pickup = _items[i];
-            if (!_atStart.Contains(pickup))
-            {
-                _items.RemoveAt(i);
-                Removed?.Invoke(pickup);
-            }
-            else
-            {
-                pickup.ResetToLevelStart();
-                if (_levelCleared && _authored.Contains(pickup))
-                {
-                    pickup.IsCollected = true;
-                }
-            }
-        }
-
-        _impacts.Clear();
-    }
-
-    /// <summary>Advances runtime gun drops; authored level pickups remain fixed in place.</summary>
-    public void Tick(RagdollWorld world)
-    {
-        ArgumentNullException.ThrowIfNull(world);
-        _impacts.Clear();
-        foreach (GunPickup pickup in _items)
-        {
-            if (!pickup.IsCollected)
-            {
-                pickup.Tick(world);
-                if (pickup.TryTakeImpact(out Vector3d at, out double speed))
-                {
-                    GunPickupImpact impact = new(pickup, at, speed);
-                    _impacts.Add(impact);
-                    Landed?.Invoke(impact);
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Gets or sets what is told of each landing as the gun makes it: <c>0x46CEA0</c> draws its clatter in the
-    /// pickup's own tick, so whoever plays it draws there too.
-    /// </summary>
-    public Action<GunPickupImpact>? Landed { get; set; }
-
-    /// <summary>Gets the landings dropped guns made on the last tick, for their sound.</summary>
-    public IReadOnlyList<GunPickupImpact> Impacts => _impacts;
-
-    private static void Collect(
-        GameTask task,
-        GunPickupRegistry registry,
-        WeaponTypeRegistry weapons,
-        AmmoTypeRegistry ammunition)
-    {
-        if (task is DeclaredTask declared
-            && string.Equals(declared.Type.Name, "GunPickup", StringComparison.Ordinal)
-            && declared.TryGet("Position", out Vector3d position)
-            && declared.TryGetValue("ID", out object? raw)
-            && raw is string id
-            && weapons.TryGetByScriptId(id, out WeaponType weapon))
-        {
-            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-            registry._items.Add(new GunPickup(
-                declared,
-                position,
-                OrientationOf(declared),
-                weapon,
-                hasAmmo ? ammo : null));
-        }
-
-        foreach (GameTask child in task.Children)
-        {
-            Collect(child, registry, weapons, ammunition);
-        }
-    }
-
-    private static Matrix3f OrientationOf(DeclaredTask task) =>
-        task.TryGetValue("Orientation", out object? raw) && raw is Vector3f angles
-            ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
-            : Matrix3f.Identity;
 }
 
 /// <summary>One landing a dropped gun made.</summary>

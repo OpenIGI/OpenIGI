@@ -30,8 +30,31 @@ const REGIONS = ["eu", "na", "sa", "asia", "oce", "af", "me"];
 // Live rooms one address may have open at once, public or not.
 const MAX_ROOMS_PER_IP = 4;
 
+// The parties one address may make in a minute.
+const MAX_PARTIES_PER_MINUTE = 6;
+
+// The seconds a GET of the list or the stats is kept at the edge, so a browser asking every few seconds -- every player
+// on the multiplayer page -- costs the list's Durable Object one request a few seconds per Cloudflare location, not one
+// each. Durable Object requests are counted, and the free plan has 100,000 a day.
+const EDGE_SECONDS = { "/v1/servers": 5, "/v1/stats": 15 };
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    try {
+      return await route(request, env, ctx);
+    } catch (error) {
+      // An uncaught throw is Cloudflare's bare "error code: 1101"; a game is told something it can read instead.
+      return cors(fallback(request, env, error) ?? failure(error));
+    }
+  },
+
+  // Every minute: the relays probed, so one that stops answering stops being handed out.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(relays(env).fetch("https://relays/probe", { method: "POST" }));
+  },
+};
+
+async function route(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") {
       return cors(new Response(null, { status: 204 }));
@@ -42,6 +65,15 @@ export default {
       // An address with too many rooms open already is turned away before a code is spent on it.
       const ip = request.headers.get("CF-Connecting-IP") ?? "";
       const reserve = await list.fetch("https://list/rooms/reserve", { method: "POST", body: JSON.stringify({ ip }) });
+      if (!reserve.ok) {
+        return cors(reserve);
+      }
+    }
+
+    if (url.pathname === "/v1/parties" && request.method === "POST") {
+      // And an address making parties faster than anyone gathers friends is turned away: each is an object kept.
+      const ip = request.headers.get("CF-Connecting-IP") ?? "";
+      const reserve = await list.fetch("https://list/parties/reserve", { method: "POST", body: JSON.stringify({ ip }) });
       if (!reserve.ok) {
         return cors(reserve);
       }
@@ -65,14 +97,92 @@ export default {
       return cors(json({ error: "not found" }, 404));
     }
 
-    return cors(await list.fetch(request));
-  },
+    const seconds = request.method === "GET" ? EDGE_SECONDS[url.pathname] : undefined;
+    if (seconds) {
+      return cors(await kept(request, env, ctx, seconds, () => list.fetch(request)));
+    }
 
-  // Every minute: the relays probed, so one that stops answering stops being handed out.
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(relays(env).fetch("https://relays/probe", { method: "POST" }));
-  },
-};
+    return cors(await list.fetch(request));
+}
+
+// A GET answered from this location's cache while it is fresh, and otherwise asked and kept. NO_EDGE_CACHE=1 (the tests'
+// env file) asks every time, so a test sees a change at once.
+async function kept(request, env, ctx, seconds, ask) {
+  if (env.NO_EDGE_CACHE === "1") {
+    return ask();
+  }
+
+  const cache = caches.default;
+  const key = new Request(request.url, { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) {
+    return hit;
+  }
+
+  const answer = await ask();
+  if (!answer.ok) {
+    return answer;
+  }
+
+  const keep = new Response(answer.body, answer);
+  keep.headers.set("cache-control", `public, max-age=${seconds}`);
+  ctx.waitUntil(cache.put(key, keep.clone()));
+  return keep;
+}
+
+// What a throw becomes. Out of Durable Object requests (the free plan's daily allowance, back at 00:00 UTC) or an object
+// overloaded is a 503 that says when to come back; anything else a 500.
+function failure(error) {
+  const message = String(error?.message ?? error);
+  console.error(message);
+  if (/Durable Objects free tier/i.test(message)) {
+    const now = new Date();
+    const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+    return withRetry(json({ error: "the master server is out of capacity for today; try again later" }, 503), Math.ceil((midnight - now) / 1000));
+  }
+
+  if (/overloaded/i.test(message)) {
+    return withRetry(json({ error: "the master server is busy; try again shortly" }, 503), 10);
+  }
+
+  return json({ error: "internal error" }, 500);
+}
+
+// Out of Durable Object requests, the list and the stats are still answered: the servers named in FALLBACK_SERVERS
+// (wrangler.toml), which a game then asks over UDP for what they really play and who is on them. Rooms and parties live
+// in Durable Objects and have no stand-in until the allowance is back.
+function fallback(request, env, error) {
+  const path = new URL(request.url).pathname;
+  if (request.method !== "GET" || !(path in EDGE_SECONDS) || !/Durable Objects free tier/i.test(String(error?.message ?? error))) {
+    return null;
+  }
+
+  let named = [];
+  try {
+    named = JSON.parse(env.FALLBACK_SERVERS ?? "[]");
+  } catch {
+    // None.
+  }
+
+  const url = new URL(request.url);
+  const title = url.searchParams.get("title");
+  // The browser marks a line of another protocol unjoinable; the asked one is echoed, as the game's own handshake still
+  // turns a mismatch away.
+  const protocol = url.searchParams.get("protocol");
+  const entries = named
+    .filter((s) => !title || s.title === title)
+    .map((s) => ({ wsPort: 0, players: 0, passworded: false, room: null, ...s, protocol: protocol ?? s.protocol ?? "", lastSeen: Date.now() }));
+  if (path === "/v1/stats") {
+    return json({ ...stats(new Map(entries.map((s) => [`${s.address}:${s.port}`, s])), new Map(), []), degraded: true });
+  }
+
+  return json({ servers: entries.map((s) => ({ ...publicView(s, false), degraded: true })) });
+}
+
+function withRetry(response, seconds) {
+  response.headers.set("retry-after", String(seconds));
+  return response;
+}
 
 function relays(env) {
   return env.RELAYS.get(env.RELAYS.idFromName("global"));
@@ -87,7 +197,12 @@ function geoOf(request, env) {
     return readGeo({ lat, lon });
   }
 
-  return readGeo({ lat: request.cf?.latitude, lon: request.cf?.longitude });
+  // Run on our own machine behind Cloudflare's proxy (selfhost/), there is no request.cf: the zone's "add visitor location
+  // headers" transform says the same, and the origin takes requests from Cloudflare's edge alone, so nobody else says it.
+  return readGeo({
+    lat: request.cf?.latitude ?? request.headers.get("cf-iplatitude"),
+    lon: request.cf?.longitude ?? request.headers.get("cf-iplongitude"),
+  });
 }
 
 // The relay list's admin routes, for us alone: a bearer token checked against the Worker secret ADMIN_TOKEN, and no
@@ -132,7 +247,11 @@ export class ServerList {
       const title = url.searchParams.get("title");
       const protocol = url.searchParams.get("protocol");
       const matches = (s) => (!title || s.title === title) && (!protocol || s.protocol === protocol);
-      const servers = [...this.servers.values()].filter(matches).map((s) => publicView(s, this.verified(s)));
+      // A server names the room browsers join it through; a room that has since closed is not passed on, or every browser
+      // sent to it would be told there is no such room.
+      const servers = [...this.servers.values()]
+        .filter(matches)
+        .map((s) => publicView(s.room !== null && !this.rooms.has(s.room) ? { ...s, room: null } : s, this.verified(s)));
       // A dedicated server's own room is the server, listed once.
       const servedRooms = new Set(servers.map((s) => s.room).filter(Boolean));
       const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view) && !servedRooms.has(r.view.room)).map((r) => r.view);
@@ -153,6 +272,26 @@ export class ServerList {
     }
 
     // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers and /v1/stats are).
+    if (request.method === "POST" && url.pathname === "/parties/reserve") {
+      const { ip } = await request.json();
+      this.partiesMade ??= new Map();
+      const recent = (this.partiesMade.get(ip) ?? []).filter((at) => now - at < 60_000);
+      if (ip && recent.length >= MAX_PARTIES_PER_MINUTE) {
+        this.partiesMade.set(ip, recent);
+        return json({ error: "too many parties from this address; wait a minute" }, 429);
+      }
+      recent.push(now);
+      this.partiesMade.set(ip, recent);
+      if (this.partiesMade.size > 4096) {
+        for (const [who, made] of this.partiesMade) {
+          if (made.every((at) => now - at >= 60_000)) {
+            this.partiesMade.delete(who);
+          }
+        }
+      }
+      return json({ ok: true });
+    }
+
     if (request.method === "POST" && url.pathname === "/rooms/reserve") {
       const { ip } = await request.json();
       const open = [...this.rooms.values()].filter((r) => r.ip === ip).length;
@@ -320,15 +459,23 @@ function validate(body, ip, now) {
 // A room counts once its host is connected (one still waiting for its host is only "waiting"), and as playing once
 // anyone has joined its host. Each relay counts the rooms whose host it was handed first, and their players: what the
 // master chose, not what ICE ended up using, which only the players' games know.
+// A dedicated server's own room is the server: counted under servers (as the list shows it once), though its relay still
+// counts it. The servers are listed too, as the server browser lists them, by name -- never an address, port or room code.
 export function stats(servers, rooms, relayStatus = []) {
   const tally = () => ({ open: 0, playing: 0, players: 0 });
-  const out = { rooms: { public: tally(), private: tally(), waiting: 0 }, servers: { open: 0, players: 0 }, byTitle: {}, relays: {} };
+  const out = {
+    rooms: { public: tally(), private: tally(), waiting: 0 },
+    servers: { open: 0, playing: 0, players: 0, list: [] },
+    byTitle: {},
+    relays: {},
+  };
   for (const r of relayStatus) {
     if (r.enabled) {
       out.relays[r.id] = { region: r.region, healthy: r.healthy, rooms: 0, players: 0 };
     }
   }
 
+  const served = new Set([...servers.values()].map((s) => s.room).filter(Boolean));
   for (const r of rooms.values()) {
     if (!r.hosted) {
       out.rooms.waiting++;
@@ -336,14 +483,18 @@ export function stats(servers, rooms, relayStatus = []) {
     }
 
     const players = r.view.players ?? 1;
-    const title = (out.byTitle[r.view.title] ??= { rooms: 0, servers: 0, players: 0 });
-    title.rooms++;
-    title.players += players;
     if (r.relay && out.relays[r.relay]) {
       out.relays[r.relay].rooms++;
       out.relays[r.relay].players += players;
     }
 
+    if (served.has(r.view.room)) {
+      continue;
+    }
+
+    const title = (out.byTitle[r.view.title] ??= { rooms: 0, servers: 0, players: 0 });
+    title.rooms++;
+    title.players += players;
     const kind = r.public ? out.rooms.public : out.rooms.private;
     kind.open++;
     kind.players += players;
@@ -358,8 +509,25 @@ export function stats(servers, rooms, relayStatus = []) {
     title.players += s.players;
     out.servers.open++;
     out.servers.players += s.players;
+    if (s.players > 0) {
+      out.servers.playing++;
+    }
+
+    out.servers.list.push({
+      name: s.name,
+      title: s.title,
+      version: s.version,
+      mode: s.mode,
+      map: s.map,
+      players: s.players,
+      maxPlayers: s.maxPlayers,
+      region: s.region,
+      passworded: s.passworded,
+    });
   }
 
+  // Busiest first, then by name, so the list reads the same between two looks.
+  out.servers.list.sort((a, b) => b.players - a.players || String(a.name).localeCompare(String(b.name)));
   return out;
 }
 
@@ -387,6 +555,7 @@ function cors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  headers.set("access-control-allow-headers", "content-type");
+  headers.set("access-control-allow-headers", "content-type, x-openigi-token");
+  headers.set("access-control-max-age", "86400");
   return new Response(response.body, { status: response.status, headers });
 }

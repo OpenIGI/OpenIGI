@@ -6,7 +6,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -14,6 +13,9 @@ namespace OpenIGI.Host;
 
 public sealed partial class GameHost
 {
+    // The missions' pictures the menu shows of maps whose level is not behind it; made when the first is asked for.
+    private Menu.MissionPictures? _missionPictures;
+
     /// <summary>
     /// Makes a preview built on a worker the live backdrop, doing on the render thread only what has to
     /// happen there.
@@ -258,7 +260,7 @@ public sealed partial class GameHost
         // worker, so this is the whole of what a backdrop swap costs the render thread.
         _logger.Information(
             "Preview",
-            FormattableString.Invariant(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms ({stages} ms), {SinceProcessStart():0} ms after the process started."));
     }
 

@@ -118,7 +118,7 @@ public sealed class RetailIgi2SoldierTests
         Assert.Equal("rsg3_1", drawn.Model);
         Assert.Equal(body.Position, drawn.Position);
         Assert.NotNull(drawn.Pose);
-        Assert.Equal(body.Animation.Rig!.BoneCount, drawn.Pose!.BoneCount);
+        Assert.Equal(body.Animation.Rig!.BoneCount, drawn.Pose.BoneCount);
         string makarov = body.Weapon.Inventory!.Current!.WeaponType.FixedModel;
         Game.Player.TitleWorldModel gun = Assert.Single(models, m => m.Model == makarov && (m.Position - body.Position).Length < 12000.0);
         Assert.Null(gun.Pose);

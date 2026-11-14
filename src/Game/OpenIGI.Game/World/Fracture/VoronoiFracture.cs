@@ -245,7 +245,7 @@ public static class VoronoiFracture
             FracturePolygon? kept = source;
             foreach (FracturePlane plane in planes)
             {
-                kept!.Split(plane, out FracturePolygon? inside, out _);
+                kept.Split(plane, out FracturePolygon? inside, out _);
                 kept = inside;
                 if (kept is null)
                 {

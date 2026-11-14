@@ -145,6 +145,65 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierGunShotRounds.FileTracer"/>
     public void FileTracer(GunShotTracer tracer) => _rounds.FileTracer(tracer);
 
+    /// <inheritdoc cref="SoldierDamage.SilentDeaths"/>
+    public HashSet<SoldierView> SilentDeaths => _damage.SilentDeaths;
+
+    /// <inheritdoc cref="SoldierDamage.Struck"/>
+    public List<Action<SoldierStrike>> Struck => _damage.Struck;
+
+    /// <inheritdoc cref="SoldierDamage.DropGun"/>
+    public void DropGun(SoldierView view, Vector3d position, Vector3d away) => _damage.DropGun(view, position, away);
+
+    /// <summary>Gets a soldier's brain, or <see langword="null"/> for one the simulation does not run: what a mod reads him by, and tells him with. <b>Not retail.</b></summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>His brain.</returns>
+    public Igi1HumanAi? BrainOf(SoldierView view) => Brains.GetValueOrDefault(view);
+
+    /// <summary>Gets how many ticks the simulation has run: a clock for a mod's own timings. <b>Not retail.</b></summary>
+    public int TicksRun => TickCount;
+
+    /// <summary>
+    /// Gives each guard what a mod's factory makes for him (<see cref="IGuardBehaviour"/>): every guard now, and every one made
+    /// or respawned after, once he has his id. The factory is handed what the behaviour may have him do, and returns
+    /// <see langword="null"/> for a guard it leaves to the game. Several may be attached: each guard hears from them in the
+    /// order they were. <b>Not retail.</b>
+    /// </summary>
+    /// <param name="factory">The factory.</param>
+    /// <returns>What lets go of it, and of every behaviour it made.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    public IDisposable AttachGuardBehaviour(Func<GuardControl, IGuardBehaviour?> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _context.GuardBehaviours.Add(factory);
+        foreach (Igi1HumanAi brain in Brains.Values)
+        {
+            brain.Attach(factory, _context.Logger);
+        }
+
+        return new GuardBehaviourAttachment(this, factory);
+    }
+
+    // Lets go of one factory's behaviours, once.
+    private sealed class GuardBehaviourAttachment(SoldierSimulation soldiers, Func<GuardControl, IGuardBehaviour?> factory) : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+            soldiers._context.GuardBehaviours.Remove(factory);
+            foreach (Igi1HumanAi brain in soldiers.Brains.Values)
+            {
+                brain.Detach(factory);
+            }
+        }
+    }
+
     /// <inheritdoc cref="SoldierDamage.BloodSpray"/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get => _damage.BloodSpray; set => _damage.BloodSpray = value; }
 
@@ -160,11 +219,8 @@ public sealed partial class SoldierSimulation
     /// <summary>Gets the soldiers as the simulation walks them: each drawn group's roster, in the groups' order.</summary>
     internal List<SoldierModelGroup> Roster => _context.Roster;
 
-    /// <summary>Gets each soldier's damage state.</summary>
-    internal Dictionary<SoldierView, HumanHealth> Health => _context.Health;
-
-    /// <inheritdoc cref="SoldierContext.DetectorMarkerScaleMetres"/>
-    internal Dictionary<SoldierView, float> DetectorMarkerScaleMetres => _context.DetectorMarkerScaleMetres;
+    /// <summary>Gets the damage state of every soldier that has been hit.</summary>
+    internal IEnumerable<HumanHealth> Healths => _context.Healths;
 
     /// <summary>Gets each soldier's brain.</summary>
     internal Dictionary<SoldierView, Igi1HumanAi> Brains => _context.Brains;
@@ -194,7 +250,7 @@ public sealed partial class SoldierSimulation
     internal Action<SoldierFall>? BodyFell { get => _damage.BodyFell; set => _damage.BodyFell = value; }
 
     /// <inheritdoc cref="GuardGeneratorSpawner.SpawnedBody"/>
-    internal Func<GuardGeneratorTask, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody
+    internal Func<string, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody
     {
         get => _generators.SpawnedBody;
         set => _generators.SpawnedBody = value;
@@ -424,10 +480,10 @@ public sealed partial class SoldierSimulation
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
-        double objectTolerance,
+        double minimumVisibility,
         GameTask? ignoredOwner = null,
         Func<GameTask, bool>? standsAside = null) =>
-        SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner, standsAside);
+        SoldierSightQueries.HasLineOfSight(trace, from, to, minimumVisibility, ignoredOwner, standsAside);
 
     /// <inheritdoc cref="SoldierBodyQueries.MapHumans"/>
     public IReadOnlyList<(GameTask Task, int Team, Vector3d Position, float Facing, bool Live)> MapHumans() => _bodies.MapHumans();
@@ -702,7 +758,8 @@ public sealed partial class SoldierSimulation
     internal RagdollSkeleton? RagdollRigFor(BoneAnimationSet set, MefModel? model) => _ragdolls.RagdollRigFor(set, model);
 
     /// <inheritdoc cref="SoldierRagdolls.RagdollWorldForCorpses"/>
-    internal RagdollWorld RagdollWorldForCorpses() => _ragdolls.RagdollWorldForCorpses();
+    /// <remarks>Public for a mod whose bodies fall as ragdolls of their own, among the same walls and floor as the game's. <b>Not retail.</b></remarks>
+    public RagdollWorld RagdollWorldForCorpses() => _ragdolls.RagdollWorldForCorpses();
 
     /// <inheritdoc cref="SoldierPlayerBody.StartTraversalAnimation"/>
     internal void StartPlayerTraversalAnimation(
@@ -730,8 +787,8 @@ public sealed partial class SoldierSimulation
     internal bool ClearSightForTesting(Vector3d from, Vector3d to) => _sight.ClearSightForTesting(from, to);
 
     /// <summary>A soldier's accumulated damage, for scenario runs.</summary>
-    internal float DamageForTesting(SoldierView soldier) =>
-        Health.TryGetValue(soldier, out HumanHealth? health) ? health.Damage : 0f;
+    internal static float DamageForTesting(SoldierView soldier) =>
+        soldier.Health is { } health ? health.Damage : 0f;
 
     /// <inheritdoc cref="SoldierSightQueries.DescribeSightForTesting"/>
     internal string DescribeSightForTesting(Vector3d from, Vector3d to) => _sight.DescribeSightForTesting(from, to);

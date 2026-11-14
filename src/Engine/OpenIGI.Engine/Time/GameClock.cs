@@ -427,6 +427,28 @@ public sealed class GameClock
         }
     }
 
+    /// <summary>Leaves a span that has already gone by out of the schedule.</summary>
+    /// <param name="milliseconds">How long the span was; nothing happens for a span that is not positive.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Not retail.</b> For time the loop was not run at all -- a browser's tab left hidden gets no frames -- which nothing
+    /// could bracket with <see cref="BeginExcludedTime"/> because nothing was running to open the span. Counted, the
+    /// schedule comes back that far behind and pays it off eleven ticks to the frame: the game runs at several times its
+    /// speed until it has caught up with a minute nobody was playing.
+    /// </para>
+    /// <para>
+    /// Ignored while a span is open: that span's close counts the same time, and counting it twice would hold the next
+    /// tick back by as long again.
+    /// </para>
+    /// </remarks>
+    public void ExcludeElapsed(int milliseconds)
+    {
+        if (milliseconds > 0 && _exclusionDepth == 0)
+        {
+            ExcludedMilliseconds = unchecked(ExcludedMilliseconds + milliseconds);
+        }
+    }
+
     /// <summary>Opens an excluded-time span that closes when the returned value is disposed.</summary>
     /// <returns>A scope that ends the span.</returns>
     public ExcludedTimeScope ExcludeTime()

@@ -1,5 +1,4 @@
 using System.Text;
-using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering.WebGpu.Native;
 using Xunit;
 

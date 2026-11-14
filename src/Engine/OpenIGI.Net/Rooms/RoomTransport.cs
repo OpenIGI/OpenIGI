@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -72,10 +71,21 @@ public sealed class RoomTransport : INetTransport
     // The close code the room's own closing carries: the room is gone, not the line.
     private const int RoomClosedCode = 4001;
 
+    // How long a host that reopens its room waits before opening another, at first and at most; doubled each time one fails
+    // straight away, so a master that is down is not asked without end.
+    private static readonly TimeSpan ReopenFirst = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ReopenMost = TimeSpan.FromSeconds(60);
+
+    // What the host's own task tells the network's thread when it gives a room up for another: see Handle.
+    private const string ReopeningMessage = "reopening";
+
     private readonly Uri _master;
     private readonly IRtcPeerFactory _factory;
     private readonly IOpenIgiLogger _logger;
     private readonly bool _hosting;
+
+    // Whether a host whose room is gone opens another, rather than ending: a dedicated server, which outlives any one room.
+    private readonly bool _reopens;
     private readonly CancellationTokenSource _stop = new();
     private readonly ConcurrentQueue<string> _inbox = new();
     private readonly ConcurrentQueue<string> _outbox = new();
@@ -90,15 +100,27 @@ public sealed class RoomTransport : INetTransport
     private int _next;
     private volatile string? _code;
     private volatile string? _error;
+
+    // Why the room last closed itself, for a host that reopens to say; and what the host last told the list of itself, to
+    // tell the next room: how many play (-1 before it has said) and on what map.
+    private volatile string? _closedBecause;
+    private volatile int _reportedPlayers = -1;
+    private volatile string? _reportedMap;
+
+    // The room numbers its joiners from the start again; a host on its second room still has the first room's players. So
+    // each room's numbers are moved past every number used before it. The network thread's alone.
+    private int _peerOffset;
+    private int _highestPeer;
     private volatile RoomStatus _status = RoomStatus.Connecting;
     private bool _disposed;
 
-    private RoomTransport(Uri master, IRtcPeerFactory factory, IOpenIgiLogger logger, bool hosting)
+    private RoomTransport(Uri master, IRtcPeerFactory factory, IOpenIgiLogger logger, bool hosting, bool reopens = false)
     {
         _master = master ?? throw new ArgumentNullException(nameof(master));
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _hosting = hosting;
+        _reopens = hosting && reopens;
     }
 
     /// <summary>Gets the room's code, once it has one.</summary>
@@ -128,11 +150,17 @@ public sealed class RoomTransport : INetTransport
     /// <param name="request">The room.</param>
     /// <param name="factory">Makes the WebRTC connections.</param>
     /// <param name="logger">Where its progress is told.</param>
+    /// <param name="reopens">
+    /// Whether the host opens another room when this one is gone -- the master restarted, or out of reach for longer than
+    /// a room waits -- instead of ending. For a dedicated server, which runs for weeks: without it the server went on
+    /// listing a room that no longer was, and no browser could join it until it was restarted. The players already in
+    /// are untouched; <see cref="Code"/> is <see langword="null"/> between rooms and then the new room's.
+    /// </param>
     /// <returns>The transport, opening the room.</returns>
-    public static RoomTransport Host(Uri master, RoomRequest request, IRtcPeerFactory factory, IOpenIgiLogger logger)
+    public static RoomTransport Host(Uri master, RoomRequest request, IRtcPeerFactory factory, IOpenIgiLogger logger, bool reopens = false)
     {
         ArgumentNullException.ThrowIfNull(request);
-        RoomTransport transport = new(master, factory, logger, hosting: true);
+        RoomTransport transport = new(master, factory, logger, hosting: true, reopens);
         transport.Start(transport.HostAsync(request));
         return transport;
     }
@@ -161,13 +189,13 @@ public sealed class RoomTransport : INetTransport
             return;
         }
 
-        JsonObject state = new() { ["type"] = "state", ["players"] = players };
+        _reportedPlayers = players;
         if (map is not null)
         {
-            state["map"] = map;
+            _reportedMap = map;
         }
 
-        Post(state);
+        Post(StateMessage(players, map));
     }
 
     /// <inheritdoc/>
@@ -287,7 +315,13 @@ public sealed class RoomTransport : INetTransport
                 JsonObject message = new() { ["type"] = signal.Kind, ["data"] = data };
                 if (_hosting)
                 {
-                    message["peer"] = id;
+                    // A player of a room since given up has nothing to say to the room there is now.
+                    if (id < _peerOffset)
+                    {
+                        continue;
+                    }
+
+                    message["peer"] = id - _peerOffset;
                 }
 
                 Post(message);
@@ -328,7 +362,7 @@ public sealed class RoomTransport : INetTransport
         }
 
         string type = (string?)message["type"] ?? string.Empty;
-        int peer = message["peer"] is JsonValue p ? (int)p : 0;
+        int peer = message["peer"] is JsonValue p ? (int)p + (_hosting ? _peerOffset : 0) : 0;
         JsonObject? data = message["data"] as JsonObject;
         switch (type)
         {
@@ -349,8 +383,16 @@ public sealed class RoomTransport : INetTransport
                 Add(peer, _factory.Create(message["ice"] is JsonArray pairIce ? ReadIce(pairIce) : _ice, offerer: false));
                 break;
 
+            // A joiner's socket to the room closed. One still on its way in is gone; one whose channel is open is playing, and
+            // has only lost the room -- its line blinked, the master was redeployed -- which it needs no longer. Its channel
+            // says so itself when it really goes. Dropped here, every redeploy of the master put every joiner of every room
+            // out of its game.
             case "leave" when _hosting:
-                Drop(peer);
+                if (!_peers.TryGetValue(peer, out IRtcPeer? leaving) || leaving.State != RtcPeerState.Open)
+                {
+                    Drop(peer);
+                }
+
                 break;
 
             case "offer" or "answer" when data is not null:
@@ -372,6 +414,12 @@ public sealed class RoomTransport : INetTransport
             case "closed":
                 Close((string?)message["reason"] ?? "the room closed");
                 break;
+
+            // This host gave its room up and is opening another, whose joiners are numbered from the start again: past
+            // every number a player of the old room holds, so none of them is taken for a newcomer and dropped.
+            case ReopeningMessage when _hosting:
+                _peerOffset = _highestPeer + 1;
+                break;
         }
     }
 
@@ -380,6 +428,7 @@ public sealed class RoomTransport : INetTransport
         Drop(id);
         _peers[id] = peer;
         _order.Add(id);
+        _highestPeer = Math.Max(_highestPeer, id);
     }
 
     private void Drop(int id)
@@ -415,14 +464,81 @@ public sealed class RoomTransport : INetTransport
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default);
 
+    private static JsonObject StateMessage(int players, string? map)
+    {
+        JsonObject state = new() { ["type"] = "state", ["players"] = players };
+        if (map is not null)
+        {
+            state["map"] = map;
+        }
+
+        return state;
+    }
+
+    // Hosts a room until it ends; and, for a host that reopens, another after it, for as long as the host runs.
     private async Task HostAsync(RoomRequest request)
+    {
+        TimeSpan wait = ReopenFirst;
+        while (true)
+        {
+            DateTime opened = DateTime.UtcNow;
+            string? lost;
+            try
+            {
+                lost = await HostRoomAsync(request).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (_reopens && !_stop.IsCancellationRequested
+                && ex is InvalidOperationException or WebSocketException or HttpRequestException or OperationCanceledException)
+            {
+                // The master out of reach, refusing, or never answering (the request timing out): not the end for a host
+                // that will ask again.
+                lost = Reason(ex);
+            }
+
+            if (_stop.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!_reopens)
+            {
+                if (lost is not null)
+                {
+                    _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = lost }.ToJsonString());
+                }
+
+                return;
+            }
+
+            // The room is gone, the game is not: its players play on over their own connections. Nothing of the old room
+            // is said to the new one, and the list is told of no room until there is one.
+            string was = _code ?? "(none)";
+            _code = null;
+            _status = RoomStatus.Connecting;
+            while (_outbox.TryDequeue(out _))
+            {
+            }
+
+            _inbox.Enqueue(new JsonObject { ["type"] = ReopeningMessage }.ToJsonString());
+
+            // A room that lasted was lost to something passing; one that never opened, to something still wrong.
+            wait = DateTime.UtcNow - opened > ReopenMost ? ReopenFirst : wait;
+            _logger.Warning(LogCategory, $"Room {was} is gone ({lost ?? _closedBecause ?? "the room closed"}); opening another in {wait.TotalSeconds:0} s.");
+            await Task.Delay(wait, _stop.Token).ConfigureAwait(false);
+            wait = TimeSpan.FromSeconds(Math.Min(ReopenMost.TotalSeconds, wait.TotalSeconds * 2));
+        }
+    }
+
+    // One room, made and hosted until it ends. Why the host lost it, when it did; null when the room closed itself (which
+    // it has said) or the host stopped.
+    private async Task<string?> HostRoomAsync(RoomRequest request)
     {
         JsonObject body = new()
         {
             ["title"] = request.Title,
             ["protocol"] = request.Protocol,
             ["name"] = request.Name,
-            ["map"] = request.Map,
+            ["map"] = _reportedMap ?? request.Map,
             ["mode"] = request.Mode,
             ["version"] = request.Version,
             ["maxPlayers"] = request.MaxPlayers,
@@ -433,8 +549,18 @@ public sealed class RoomTransport : INetTransport
         using HttpClient http = new();
         using StringContent content = new(body.ToJsonString(), Encoding.UTF8, "application/json");
         using HttpResponseMessage response = await http.PostAsync(new Uri(_master, "/v1/rooms"), content, _stop.Token).ConfigureAwait(false);
-        JsonObject made = JsonNode.Parse(await response.Content.ReadAsStringAsync(_stop.Token).ConfigureAwait(false)) as JsonObject
-            ?? throw new InvalidOperationException("the master server answered nothing");
+        JsonObject? answered;
+        try
+        {
+            answered = JsonNode.Parse(await response.Content.ReadAsStringAsync(_stop.Token).ConfigureAwait(false)) as JsonObject;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Not the master's own answer: an error page from whatever stands in front of it.
+            throw new InvalidOperationException($"the master server answered {(int)response.StatusCode}");
+        }
+
+        JsonObject made = answered ?? throw new InvalidOperationException("the master server answered nothing");
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException((string?)made["error"] ?? $"the master server answered {(int)response.StatusCode}");
@@ -445,6 +571,12 @@ public sealed class RoomTransport : INetTransport
         _code = code;
         string token = (string?)made["hostToken"] ?? string.Empty;
         Uri signalling = new(_master, $"/v1/rooms/{code}/ws?role=host&token={Uri.EscapeDataString(token)}&returns=1");
+
+        // A room opened in place of one lost starts from what the list was last told, not from an empty game.
+        if (_reportedPlayers >= 0)
+        {
+            Post(StateMessage(_reportedPlayers, _reportedMap));
+        }
 
         // The socket to the room drops -- the line blinks, the master is redeployed -- while the game runs on between the
         // players: the host goes back to its room, which waits for it, so new joiners can still arrive. Only the first
@@ -458,7 +590,7 @@ public sealed class RoomTransport : INetTransport
                 bool roomClosed = await ConnectAsync(signalling).ConfigureAwait(false);
                 if (roomClosed || _stop.IsCancellationRequested)
                 {
-                    return;
+                    return null;
                 }
 
                 lostAt = DateTime.UtcNow;
@@ -472,8 +604,7 @@ public sealed class RoomTransport : INetTransport
 
             if (DateTime.UtcNow - lostAt > HostReturn)
             {
-                _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = "lost the master server" }.ToJsonString());
-                return;
+                return "lost the master server";
             }
 
             await Task.Delay(wait, _stop.Token).ConfigureAwait(false);
@@ -514,7 +645,13 @@ public sealed class RoomTransport : INetTransport
                     if (roomClosed && (_hosting || _status != RoomStatus.Open))
                     {
                         string reason = socket.CloseStatusDescription is { Length: > 0 } said ? said : "the room closed";
-                        _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = reason }.ToJsonString());
+                        _closedBecause = reason;
+
+                        // A host that reopens is not closed by its room closing: it opens another.
+                        if (!_reopens)
+                        {
+                            _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = reason }.ToJsonString());
+                        }
                     }
 
                     break;

@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi1.Physics;
 

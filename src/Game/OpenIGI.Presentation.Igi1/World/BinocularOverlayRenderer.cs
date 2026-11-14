@@ -405,7 +405,7 @@ internal sealed class BinocularOverlayRenderer
     /// </remarks>
     internal static string FormatBinocularRange(float distanceMetres) => distanceMetres >= 1000f
         ? "DISTANCE: 1000+M"
-        : FormattableString.Invariant($"DISTANCE: {MathF.Round(MathF.Max(0f, distanceMetres)):0}M");
+        : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"DISTANCE: {MathF.Round(MathF.Max(0f, distanceMetres)):0}M");
 
     /// <summary>Returns the native range label, including the no-contact fallback.</summary>
     internal static string BinocularRangeText(EnemyOverlayBox? nearest) => nearest is { } target

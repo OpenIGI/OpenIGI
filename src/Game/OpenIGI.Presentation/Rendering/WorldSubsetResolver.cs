@@ -160,7 +160,12 @@ internal sealed class WorldSubsetResolver
             if (model is null || entry.Displayed is null || variant != entry.Variant || destroyed != entry.WasDestroyed)
             {
                 WorldPlacement displayed = _transforms.DisplayedPlacement(authored);
-                model ??= resolvedVariants[variant] = ResolveModel(displayed);
+                if (model is null)
+                {
+                    model = ResolveModel(displayed);
+                    resolvedVariants[variant] = model;
+                }
+
                 entry.Displayed = displayed;
             }
         }

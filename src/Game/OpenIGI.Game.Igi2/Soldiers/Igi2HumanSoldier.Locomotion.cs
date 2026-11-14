@@ -2,7 +2,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Soldiers;
 

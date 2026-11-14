@@ -193,7 +193,7 @@ public sealed class SessionLoopbackTests
         Assert.True(client.CommandPacketsHeld > 0, "the line never filled");
 
         // Its commands still get there, several to a packet, and its player walks on the server.
-        Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 600 * 100, $"walked only {world.PlayerOf(client.EntityId!.Value).Position.X}");
+        Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 600 * 100, $"walked only {world.PlayerOf(client.EntityId.Value).Position.X}");
     }
 
     [Fact]
@@ -278,7 +278,7 @@ public sealed class SessionLoopbackTests
         client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
 
         float[] idle = new float[ToyWorld.Channels];
-        int landed = 0;
+        List<int> landed = [];
         for (long tick = 0; tick < 3 * TickRate; tick++)
         {
             now = tick / (double)TickRate;
@@ -289,9 +289,9 @@ public sealed class SessionLoopbackTests
             world.Landed = [new ReplicatedImpact(ImpactKind.Surface, 1, new Int3((int)tick, 0, 0), new Vector3f(0, 0, 1))];
             server.Send(now, tick);
             client.Receive(now);
-            if (client.Latest is { } latest && latest.Tick > 0)
+            if (client.TakeLatest() is { } latest && latest.Tick > 0)
             {
-                landed += latest.Impacts?.Length ?? 0;
+                landed.AddRange((latest.Impacts ?? []).Select(static i => i.Position.X));
                 Assert.Equal(world.Doors, latest.Doors);
                 Assert.True(latest.Humans.Length > 1);
             }
@@ -300,11 +300,13 @@ public sealed class SessionLoopbackTests
             client.Flush(now);
         }
 
-        // Every snapshot read carried its doors and its one round, however many parts it came in.
-        Assert.True(landed > 0, "no round reached the client");
+        // Every snapshot read carried its doors, however many parts it came in; and every round landed once and in order,
+        // none missed between the first and the last, though each rode every snapshot until one was acknowledged.
+        Assert.True(landed.Count > 0, "no round reached the client");
         Assert.Equal(0, client.DroppedSnapshots);
+        Assert.Equal(Enumerable.Range(landed[0], landed.Count), landed);
         Snapshot newest = Assert.IsType<Snapshot>(client.Latest);
-        Assert.Single(newest.Impacts!);
+        Assert.Null(newest.Impacts);
         Assert.Equal(world.Doors, newest.Doors);
     }
 
@@ -737,7 +739,7 @@ public sealed class SessionLoopbackTests
         // Welcomed as nobody, sent the player it does not have, and no player of the match or the server's.
         Assert.Equal(ServerSession.WatcherEntity, watcher.EntityId);
         Assert.NotNull(player.EntityId);
-        Assert.True(watcher.Latest is { } seen && seen.TryGet(player.EntityId!.Value, out _), "the watcher was never sent the player");
+        Assert.True(watcher.Latest is { } seen && seen.TryGet(player.EntityId.Value, out _), "the watcher was never sent the player");
         Assert.Single(server.Clients);
         Assert.Single(server.Match.Players.Keys, k => k != ServerSession.HostSlot);
         Assert.Null(watcher.EndReason);

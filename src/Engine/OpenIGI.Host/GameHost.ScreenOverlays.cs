@@ -46,7 +46,7 @@ public sealed partial class GameHost
             remasterHud,
             HudCVars.TacticalMessages.Value);
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && _mission.Cutscenes?.IsPlaying != true
+            && _mission.Scenes?.IsPlaying != true
             && Viewpoint?.IsDeathViewActive != true
             && _demoWatched is null
             && Viewpoint?.HasPlayerHud == true;
@@ -121,7 +121,6 @@ public sealed partial class GameHost
 
     /// <summary>What the mission's HUD draws from this frame.</summary>
     private MissionHudFrame HudFrame(
-        FrameLoopState state,
         bool remasterHud,
         bool remasteredOptics,
         bool showFirstPersonHud,
@@ -168,7 +167,7 @@ public sealed partial class GameHost
     private List<StatusMessageDisplay> GuestMissionMessages()
     {
         _guestMessages.Clear();
-        if (HostedPlayer is null && _mission.Objectives is { } runtime)
+        if (!_mission.HasOwnPlayer && _mission.Progress is { } runtime)
         {
             _guestMessages.AddRange(runtime.DisplayedMessages);
         }
@@ -183,7 +182,7 @@ public sealed partial class GameHost
     /// <param name="view">The frame's view, whose eye and projection place their markers.</param>
     private void DrawModHudOverlays(FrameLoopState state, in FrameView view)
     {
-        if (_hudOverlays.Count == 0 || !_playerMode || _computerOpen || _mission.Cutscenes?.IsPlaying == true
+        if (_hudOverlays.Count == 0 || !_playerMode || _computerOpen || _mission.Scenes?.IsPlaying == true
             || _shellType?.Body is not { } font)
         {
             return;
@@ -214,7 +213,6 @@ public sealed partial class GameHost
         bool showPlayerHud = view.ShowPlayerHud;
         bool smoothPresentation = view.SmoothPresentation;
         float tickBlend = view.TickBlend;
-        SightZoomFrame sight = view.Sight;
         bool worldInteractionPrompt = view.WorldInteractionPrompt;
         Camera3D eye = view.Eye;
         float horizontalTangent = view.HorizontalTangent;
@@ -238,7 +236,6 @@ public sealed partial class GameHost
             _device.EndSceneCapture();
             UpdateModPostPasses();
             _device.ResolveScene(postProcess);
-            captured = false;
             EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
         }
 
@@ -249,7 +246,7 @@ public sealed partial class GameHost
         // affect the world and first-person rig. The damage and flash washes intentionally remain
         // later in the draw order and still cover the HUD exactly as they did before this separation.
         if (TitlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
-            && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Cutscenes?.IsPlaying != true
+            && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Scenes?.IsPlaying != true
             && Viewpoint?.ShowsViewModel != false)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -259,7 +256,7 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        MissionHudFrame hudFrame = HudFrame(state, remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
+        MissionHudFrame hudFrame = HudFrame(remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
         _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
         DrawRemasteredBinoculars(state, view, binocularRangeMetres);
 
@@ -309,18 +306,27 @@ public sealed partial class GameHost
             && ComputerObjectives is { } computerObjectives
             && ComputerBodyUnits is { } computerBody)
         {
+            // The feed over the picture, then the display through the visor: passes of the computer's own, between which
+            // it opens and closes the batch itself.
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
             tacticalChrome.Draw(
                 state.Batch,
                 computerObjectives,
                 computerBody,
-                _soldiers?.MapContacts() ?? [],
-                _computerHighlights?.Visible() ?? [],
-                _window.Width,
-                _window.Height,
-                _computerFlight.ChromeOpacity);
-            state.Batch.End();
+                ComputerContacts(),
+                ComputerHighlights(),
+                new ComputerFrame(
+                    _window.Width,
+                    _window.Height,
+                    _options.UiScale,
+                    _computerFlight.ChromeOpacity,
+                    _computerFlight.Display,
+                    ComputerSubject() is { } computerSubject ? OpenIGI.Presentation.Cameras.CameraPose.FromCamera(computerSubject.Camera).Yaw : 0f)
+                {
+                    CloseKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.MapComputer)) ?? string.Empty,
+                    PixelDensity = _window.PixelDensity,
+                    Touch = _window.Input.Touch.InUse,
+                });
         }
 
         _hudOverlay?.DrawWashes(state.Batch, hudFrame);
@@ -528,7 +534,7 @@ public sealed partial class GameHost
 
         // Cutscene StatusMessages are subtitles, not HUD. They remain visible while the authored
         // camera owns the frame even though the arms, weapon and ordinary mission UI are hidden.
-        if (_mission.Cutscenes?.IsPlaying == true && _mission.Objectives is { } subtitleRuntime)
+        if (_mission.Scenes?.IsPlaying == true && _mission.Progress is { } subtitleRuntime)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();

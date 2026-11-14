@@ -1,7 +1,6 @@
 ﻿using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
@@ -22,7 +21,6 @@ public sealed class GuardRounds
     private readonly SoldierSimulation _soldiers;
     private readonly WorldTraceCast _trace;
     private readonly MissionWorld _mission;
-    private readonly Igi1PlayerHarm _harm;
     private readonly Igi1Blasts _blasts;
     private readonly Igi1HumanSounds _sounds;
     private readonly Igi1ImpactEffects _impacts;
@@ -33,8 +31,7 @@ public sealed class GuardRounds
     /// <param name="soldiers">The soldiers, who fire the rounds and may take the ones that pass the player.</param>
     /// <param name="trace">Where the world stops a round.</param>
     /// <param name="mission">The mission's world: the player, its health and the shot stream.</param>
-    /// <param name="harm">What a hit does to the player.</param>
-    /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
+        /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
     /// <param name="sounds">The sound of the hits.</param>
     /// <param name="impacts">The material's own effects where a marched round lands.</param>
     /// <param name="host">The burst of the hits.</param>
@@ -43,7 +40,6 @@ public sealed class GuardRounds
         SoldierSimulation soldiers,
         WorldTraceCast trace,
         MissionWorld mission,
-        Igi1PlayerHarm harm,
         Igi1Blasts blasts,
         Igi1HumanSounds sounds,
         Igi1ImpactEffects impacts,
@@ -52,7 +48,6 @@ public sealed class GuardRounds
     {
         _impacts = impacts ?? throw new ArgumentNullException(nameof(impacts));
         _mission = mission ?? throw new ArgumentNullException(nameof(mission));
-        _harm = harm ?? throw new ArgumentNullException(nameof(harm));
         _blasts = blasts ?? throw new ArgumentNullException(nameof(blasts));
         _sounds = sounds ?? throw new ArgumentNullException(nameof(sounds));
         _soldiers = soldiers ?? throw new ArgumentNullException(nameof(soldiers));
@@ -106,7 +101,7 @@ public sealed class GuardRounds
             return;
         }
 
-        HumanHealth health = _mission.PlayerHealth;
+        HumanHealth health = _mission.PlayerLife.Health;
         Random random = _mission.ShotRandom;
 
         // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
@@ -449,7 +444,7 @@ public sealed class GuardRounds
     // the shove). Returns whether it killed the player.
     private bool StrikePlayerWith(HumanHit struck, Vector3d from, Vector3d to, WeaponType weapon, float damageFactor, SoldierView? shooter)
     {
-        HumanHealth health = _mission.PlayerHealth;
+        HumanHealth health = _mission.PlayerLife.Health;
         HitsOnPlayer++;
         Igi1WeaponHit round = new(struck, from, to, damageFactor, weapon.Category, shooter, FromPlayer: false);
         if (_mission.PlayerTask is { } task)
@@ -552,7 +547,7 @@ public sealed class GuardRounds
             // The player is visible to a round only from another side, and only through the evaluate's two rolls of the
             // shooter's probability: the visit's gate and the narrow contact's (0x45F53D, 0x4D76DA).
             if (mission.Player is { } player
-                && !mission.PlayerHealth.IsDead
+                && !mission.PlayerLife.Health.IsDead
                 && side != rounds._soldiers.PlayerTeam
                 && rounds._soldiers.TryCastPlayerBody(start, limit, player.Body.Position, player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> crossings)
                 && crossings.Count > 0

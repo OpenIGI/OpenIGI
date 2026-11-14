@@ -1,7 +1,6 @@
 ﻿using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Globalization;
-using OpenIGI.Formats;
 
 namespace OpenIGI.Formats.World;
 

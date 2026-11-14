@@ -1,10 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -30,6 +28,7 @@ public sealed class GenericPickupRegistryTests
     public void CollectionPublishesIsPickedUpAndKeepsTheTaskForMissionExpressions()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -67,6 +66,7 @@ public sealed class GenericPickupRegistryTests
     public void AmmoScriptStoredInModelIsNormalizedToItsWorldMesh()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",

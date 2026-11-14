@@ -40,7 +40,7 @@ public sealed class RetailIgi2InGameMenuTests
         Igi2MenuTextTask ok = Texts(menu.CurrentScreen!).First(t => t.TextResource == "OK");
         Assert.True(ok.Click(level));
         Settle(menu, level);
-        Assert.Equal(0.25f, config.Active!.Music.Volume, 3);
+        Assert.Equal(0.25f, config.Active.Music.Volume, 3);
         Assert.Equal(901, menu.CurrentScreen?.Id);
         Assert.Empty(menu.Stack);
 

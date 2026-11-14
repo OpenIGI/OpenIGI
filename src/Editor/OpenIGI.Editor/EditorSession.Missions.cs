@@ -75,7 +75,7 @@ internal sealed partial class EditorSession
         (MissionDescriptor from, string name, int id, bool joinCampaign, MissionTarget target) = (request.From, request.Name, request.Id, request.JoinCampaign, request.Target);
         if (_host.Missions.Any(m => m.Id == id))
         {
-            Notify(FormattableString.Invariant($"Mission {id} is taken already."), isError: true);
+            Notify(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Mission {id} is taken already."), isError: true);
             return false;
         }
 
@@ -162,13 +162,13 @@ internal sealed partial class EditorSession
                 else
                 {
                     _workspace.Execute(shaped);
-                    shapedNote = ground == BlankGround.Flat ? "Flattened the ground. " : FormattableString.Invariant($"Generated the ground from seed {seed}. ");
+                    shapedNote = ground == BlankGround.Flat ? "Flattened the ground. " : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Generated the ground from seed {seed}. ");
                 }
             }
 
             LookOverPlayer(document);
             string graphNote = BuildNavGraph(PlayArea(document), announce: false) is { } graph
-                ? FormattableString.Invariant($"Built AI graph {graph.Id} over the play area. ")
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Built AI graph {graph.Id} over the play area. ")
                 : string.Empty;
             _workspace.Save();
             Notify($"{shapedNote}{graphNote}Saved the mission.");

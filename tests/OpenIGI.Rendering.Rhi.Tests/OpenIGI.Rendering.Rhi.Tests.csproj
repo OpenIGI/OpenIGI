@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.D3D12\OpenIGI.Rendering.D3D12.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.OpenGL\OpenIGI.Rendering.OpenGL.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
@@ -20,6 +21,8 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
+    <!-- A hidden window, for the OpenGL backend's context. -->
+    <PackageReference Include="Silk.NET.Windowing" />
   </ItemGroup>
 
 </Project>

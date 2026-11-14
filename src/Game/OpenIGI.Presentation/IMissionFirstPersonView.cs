@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation;
@@ -15,6 +16,10 @@ namespace OpenIGI.Presentation;
 /// <param name="LoadedForWeapon">The mission whose packs a newly held weapon's model is read from, or <see langword="null"/>.</param>
 /// <param name="Sun">The level's fixed-function light the rig is lit by, or <see langword="null"/>.</param>
 /// <param name="AspectRatio">The screen's width over its height, which the rig's lens is fitted to.</param>
+/// <param name="Projection">
+/// The view model's projection where the caller has made it already; <see langword="null"/> to make it from
+/// <paramref name="ViewModelTanX"/> and <paramref name="FarPlane"/>.
+/// </param>
 public readonly record struct FirstPersonFrame(
     bool ShowViewModel,
     float ViewModelTanX,
@@ -26,7 +31,8 @@ public readonly record struct FirstPersonFrame(
     IHeldWeaponPresenter? Held,
     LoadedMission? LoadedForWeapon,
     FixedFunctionSun? Sun = null,
-    float AspectRatio = 4f / 3f);
+    float AspectRatio = 4f / 3f,
+    Matrix4f? Projection = null);
 
 /// <summary>What the first-person view drew.</summary>
 /// <param name="DrewRig">Whether it drew the title's rig, in which case nothing else draws a first-person view.</param>

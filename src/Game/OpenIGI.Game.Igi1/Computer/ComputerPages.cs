@@ -93,6 +93,7 @@ public sealed class ComputerObjectivesPage : ComputerPage
         }
 
         computer.AddTab(2, w * 0.1f, h * 0.775f, "LOG", OnTab);
+        computer.AddSaveTab(OnTab);
         if (computer.MapEnabled)
         {
             // Off the display until the page is laid out and finds a row for them.
@@ -157,6 +158,10 @@ public sealed class ComputerObjectivesPage : ComputerPage
         {
             Computer.SetScreen(ComputerScreenKind.Log);
         }
+        else if (id == ComputerSavePage.TabId)
+        {
+            Computer.SetScreen(ComputerScreenKind.Save);
+        }
     }
 
     // 0x469060: the button beside a row opens the map over the row's task.
@@ -205,6 +210,7 @@ public sealed class ComputerLogPage : ComputerPage
         }
 
         computer.AddTab(2, w * 0.1f, h * 0.775f, "OBJECTIVES", OnTab);
+        computer.AddSaveTab(OnTab);
         float x = w * 0.090625f, y = h * 0.1f;
         ComputerSprites up = new("arrowup_1.spr", "arrowup_2.spr", "arrowup_3.spr");
         ComputerSprites down = new("arrowdown_1.spr", "arrowdown_2.spr", "arrowdown_3.spr");
@@ -256,6 +262,10 @@ public sealed class ComputerLogPage : ComputerPage
         else if (id == 2)
         {
             Computer.SetScreen(ComputerScreenKind.Objectives);
+        }
+        else if (id == ComputerSavePage.TabId)
+        {
+            Computer.SetScreen(ComputerScreenKind.Save);
         }
     }
 

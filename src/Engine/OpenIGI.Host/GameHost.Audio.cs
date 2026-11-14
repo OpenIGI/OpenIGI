@@ -7,7 +7,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Services;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 
@@ -88,37 +87,16 @@ public sealed partial class GameHost
     /// </remarks>
     private void UpdateListener()
     {
-        if (TitlePlayer is { } title)
-        {
-            // A title's own player: its eyes as the last tick left them, in the camera's own row order.
-            _audioOut.Device.Listener = AudioListenerState.FromViewRotation(title.EyePosition / TitleUnitsPerMetre, title.ViewOrientation);
-            return;
-        }
-
-        if (HostedPlayer is not { } player)
+        if (TitlePlayer is not { } title)
         {
             return;
         }
 
-        // The last frame's camera, whichever drew it; see ComposeFrameEye. The head below is for the frames before a
-        // mission has drawn one.
-        if (_earCamera is { } ear)
-        {
-            _audioOut.Device.Listener = AudioListenerState.FromViewRotation(ear.Position, ear.Orientation);
-            return;
-        }
-
-        // The same blend the presentation uses, so the ear and the eye agree about where the head is.
-        float alpha = FrameCVars.SmoothPresentation.Value
-            ? _loop.Clock.TickFraction(_loop.Clock.FrameInstantMilliseconds)
-            : 1f;
-
-        // The EYE, not the feet: an ear 1.8 m below the head is a metre and a half of error against
-        // sounds whose whole audible range is fifty. And through FromViewRotation, because what the
-        // camera hands back is a world-to-view rotation with its axes in its rows -- the listener wants
-        // the engine eye basis, which keeps them in its columns and in a different order.
-        _audioOut.Device.Listener = AudioListenerState.FromViewRotation(
-            player.SmoothedEyeMetres(alpha), player.SmoothedLookRotation(alpha));
+        // The last frame's camera, whichever drew it; see ComposeFrameEye. The player's eyes, as the last tick left them in the
+        // camera's own row order, are for the frames before a mission has drawn one.
+        _audioOut.Device.Listener = _earCamera is { } ear
+            ? AudioListenerState.FromViewRotation(ear.Position, ear.Orientation)
+            : AudioListenerState.FromViewRotation(title.EyePosition / TitleUnitsPerMetre, title.ViewOrientation);
     }
 
     /// <summary>Empties the bank and re-mounts what does not belong to a mission.</summary>
@@ -220,7 +198,7 @@ public sealed partial class GameHost
         }
 
         // No player is the menu, where there is no ear to place the weather around.
-        bool raining = AudioCVars.Rain.Value && HostedPlayer is not null && (_rain?.IsWeatherEnabled ?? false);
+        bool raining = AudioCVars.Rain.Value && PlayerStands && (_rain?.IsWeatherEnabled ?? false);
         float intensity = raining
             ? (_storm is { Enabled: true } ? WeatherCVars.StormIntensity.Value : 1f)
             : 0f;
@@ -228,7 +206,7 @@ public sealed partial class GameHost
         rain.Update(
             _audioOut.Device.Listener.Position,
             _shelterField,
-            HostedPlayer?.GrenadeWalls,
+            _mission.Trace is { } shelterTrace ? WorldTrace.AsRayCast(shelterTrace) : null,
             WorldScene.UnitsPerMetre,
             intensity,
             AudioCVars.RainVolume.Value,

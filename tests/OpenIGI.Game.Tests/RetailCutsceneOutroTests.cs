@@ -27,6 +27,7 @@ public sealed class RetailCutsceneOutroTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         // Leave the intro through the same native edge the Escape key uses, then trigger the authored
         // mission-success variable that registers ConditionalContainer 4007.
@@ -107,7 +108,7 @@ public sealed class RetailCutsceneOutroTests
                 return null;
             },
             vehicleObstacleReleased: _ => false);
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(778));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(778));
         Assert.Equal("Car which Jones drives into base", truck.Label);
         Assert.True(truck.TryGetValue(WorldScene.ModelParameter, out object? model));
         Assert.Equal("622_01_1", model);
@@ -141,7 +142,7 @@ public sealed class RetailCutsceneOutroTests
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
 
         new ConditionalContainerGate(loop.Variables).Prepare(root);
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1099));
         Assert.Equal("Truck which Jones will steal", truck.Label);
         Assert.True(truck.TryGetValue(WorldScene.ModelParameter, out object? model));
         Assert.Equal("622_01_1", model);
@@ -169,6 +170,7 @@ public sealed class RetailCutsceneOutroTests
             vehicleObstacleReleased: obstacle => doors.Doors
                 .FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
         RefreshCutsceneCollision(solids, world, runtime);
         RefreshDoorCollision(solids, doors);
         AssertGateCollisionState(solids, gate, expected: !gateStartsOpen);

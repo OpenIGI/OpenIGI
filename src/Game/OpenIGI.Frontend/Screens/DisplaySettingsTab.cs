@@ -15,11 +15,20 @@ internal static class DisplaySettingsTab
     /// <summary>Builds the category's rows.</summary>
     /// <param name="rowBuilder">What the rows are built with; its lookup goes through the draft.</param>
     /// <param name="theme">The theme.</param>
-    public static List<Control> Build(SettingsRowBuilder rowBuilder, UiTheme theme)
+    public static List<SettingsGroup> Build(SettingsRowBuilder rowBuilder, UiTheme theme)
     {
-        var rows = new List<Control>();
+        // What the screen is and how the picture is put on it, apart; the language on its own.
+        var screen = new List<Control>();
+        var output = new List<Control>();
+        var language = new List<Control>();
         foreach (GraphicsSetting setting in GraphicsMenu.DisplaySettings)
         {
+            List<Control> rows = setting.Variable switch
+            {
+                "r_renderer" or "r_window_mode" or "r_resolution" => screen,
+                _ when setting.Variable.Contains("lang", StringComparison.OrdinalIgnoreCase) => language,
+                _ => output,
+            };
             switch (setting.Variable)
             {
                 case "r_resolution":
@@ -47,7 +56,16 @@ internal static class DisplaySettingsTab
             }
         }
 
-        return rows;
+        List<SettingsGroup> groups = [];
+        foreach ((string title, List<Control> rows) in new[] { ("Screen", screen), ("Output", output), ("Language", language) })
+        {
+            if (rows.Count > 0)
+            {
+                groups.Add(new SettingsGroup(title, rows));
+            }
+        }
+
+        return groups;
     }
 
     /// <summary>A row choosing among a list of a variable's values, and the variable; nulls where it is not registered.</summary>

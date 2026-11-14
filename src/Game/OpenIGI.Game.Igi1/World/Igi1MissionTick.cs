@@ -16,14 +16,33 @@ namespace OpenIGI.Game.Igi1.World;
 /// the soldiers, in the order the port runs them each tick.
 /// </summary>
 /// <param name="mission">The mission's world.</param>
-/// <param name="harm">What a vehicle that runs the player down does to them.</param>
+/// <param name="harm">What hurts a player of the mission and how it dies.</param>
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
+public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick,
+    OpenIGI.Game.Level.ITaskRun<HumanTask>, OpenIGI.Game.Level.ITaskRun<HumanPlayerInputTask>, OpenIGI.Game.Level.ITaskRun<ElevatorTask>
 {
     // Partners' guns are voiced below every soldier's runtime id, which counts up from zero.
     private const int PartnerVoiceBase = -1_000_000;
+
+    // Whether the player's update made its own sounds this tick, where the walk ran it.
+    private bool _playerSounded;
+
+    // Whether the player's rounds were handed to what they struck as the walk left the child of Dynamic its guns stand
+    // under, and whether what flew went off at Dynamic's tail, this tick.
+    private bool _playerRoundsApplied;
+    private bool _detonationsResolved;
+
+    // The child of the level's Dynamic task the player's task stands under: its guns' GunShot tasks stand after it.
+    private GameTask? _playerAnchor;
+
+    // The player's place among the tasks under that child, in the order the level made them: its guns' GunShot tasks stand
+    // among the soldiers' there by it.
+    private int _playerOrder;
+
+    // Whether the level's runtime tasks ran this tick.
+    private bool _dynamicTasksRan;
 
     private bool _reportedShot;
     private int _reportedHumanHits;
@@ -39,6 +58,21 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     {
         _ownClimb.Reset();
         _ownInteraction.Reset();
+    }
+
+    /// <inheritdoc/>
+    public void BreakIntoOutro()
+    {
+        if (mission.Cutscenes is not { } cutscenes || mission.Objectives is not { } objectives)
+        {
+            throw new InvalidOperationException("The mission's cut-scenes and objectives are not built yet.");
+        }
+
+        cutscenes.RequestBreak();
+        cutscenes.Tick();
+        objectives.TickLevelState();
+        objectives.TickAfterLevelState();
+        cutscenes.FinishExpressionTick();
     }
 
     /// <summary>Runs one pass of the loop.</summary>
@@ -74,6 +108,10 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         // The partners, when the mission's own player did not run them this tick.
         RunPartners();
+
+        // What the level made while it runs, after its own objects: the walk ran it as it left the Dynamic task; here for a
+        // level whose player updates after the walk, or one stepped without it.
+        RunDynamicTasks();
 
         if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.Player is not null)
         {
@@ -208,19 +246,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // while the player is down.
         host.StepWeather();
 
-        if (mission.Elevators is { } elevators)
+        // A level the walk does not reach steps its lifts here, ahead of everything else.
+        if (mission.Elevators is { } elevators && !mission.ObjectsInWalk)
         {
-            // The player's position is for carrying a passenger, not for starting a car: the original
-            // starts one on its own script alone.
-            elevators.SetPlayerPositionProvider(mission.Player is not null || mission.PlayerStandIn is not null ? () => PlayerFeet : null);
-
-            // A level the walk does not reach steps its lifts here, ahead of everything else.
-            if (!mission.ElevatorsInWalk)
+            foreach (PlacedElevator elevator in elevators.Elevators)
             {
-                foreach (PlacedElevator elevator in elevators.Elevators)
-                {
-                    StepElevator(elevators, elevator);
-                }
+                StepElevator(elevators, elevator);
             }
         }
 
@@ -238,7 +269,11 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             playerAlive: !mission.IsPlayerDead || mission.CoopClient || mission.NetworkPlayers.Any(static p => !p.IsDead));
         mission.PlayerTicked = false;
         mission.InteractionsTickedByPlayer = false;
-        if (mission.SoldiersInWalk)
+        _playerSounded = false;
+        _playerRoundsApplied = false;
+        _detonationsResolved = false;
+        _dynamicTasksRan = false;
+        if (mission.ObjectsInWalk)
         {
             mission.Soldiers?.BeginTick(mission.CurrentEnemy ??= SoldierEnemyNow);
         }
@@ -246,7 +281,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         mission.Cutscenes?.Tick();
         if (mission.Cutscenes is { } soundingVehicles)
         {
-            host.SoundVehicles(soundingVehicles);
+            host.SoundVehicles(
+                soundingVehicles.Vehicles.VehicleSoundSources().Concat(mission.RotatingObjects?.SoundSources() ?? []),
+                soundingVehicles.Vehicles.VehicleGunSounds());
         }
 
         if (mission.Cutscenes is { } liveCutscenes && host.Scene is { } cinematicScene && mission.Solids is { } cinematicSolids)
@@ -268,10 +305,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
     private void EndTick()
     {
+        RunModsAtTickEnd();
+
         // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
         // fixed tick, for the same determinism reason the bodies are.
-        mission.DamageFlash.Tick();
-        mission.FlashbangFlash.Tick();
+        mission.PlayerLife.DamageFlash.Tick();
+        mission.PlayerLife.FlashbangFlash.Tick();
         host.StepScreen();
 
         // The player's eye is what the guards' view cones are tested against -- and in the
@@ -309,7 +348,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // is a counter, and the renderer turns the transform from it when it draws.
         mission.Spins?.Advance();
         // A level the walk does not reach updates its cameras here, after everything else.
-        if (!mission.CamerasInWalk && mission.SecurityCameras is { } cameras)
+        if (!mission.ObjectsInWalk && mission.SecurityCameras is { } cameras)
         {
             cameras.Tick(CameraScanNow());
             foreach (SecurityCamera camera in cameras.Cameras)
@@ -328,7 +367,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         ISoldierPresenter? soldiers = mission.SoldierPresenter;
-        if (mission.SoldiersInWalk)
+        if (mission.ObjectsInWalk && mission.Soldiers is not null)
         {
             // The soldiers updated inside the level walk; this closes their tick (corpses, skinning).
             soldiers?.EndTick();
@@ -425,6 +464,14 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     private void ResolvePartnerCommand(Multiplayer.Igi1NetworkPlayer partner)
     {
         PlayerCamera rig = partner.Player;
+        if (rig.ProjectilesRunByLevel)
+        {
+            // What it threw flies as the level's task (RunPartnersProjectiles); the throw itself is heard as it is made.
+            NotifyGrenadesThrown(rig);
+            blasts.ApplyRounds(rig);
+            return;
+        }
+
         if (mission.Soldiers is { } soldiers)
         {
             NotifyGrenadeAiEvents(rig, soldiers);
@@ -449,17 +496,39 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
-        if (mission.PlayerTicked
-            || mission.Cutscenes?.IsPlaying == true
-            || !host.PlayerMode
-            || mission.Player is not { } player
-            || mission.IsPlayerDead
-            || host.FailedMenu)
+        // A mod's prompt lasts the tick it is offered on: dead, in a cutscene or at the map computer, there is none.
+        if (!mission.PlayerTicked)
+        {
+            mission.OfferedPrompt = null;
+        }
+
+        if (mission.PlayerTicked || mission.Cutscenes?.IsPlaying == true || !host.PlayerMode || !CanStepPlayer)
         {
             return;
         }
 
         mission.PlayerTicked = true;
+        StepPlayer(player => player.Tick(host.ViewInput, host.Ground));
+    }
+
+    /// <summary>
+    /// The mission's part of its player's tick, around the rig's own (<paramref name="tick"/>): what the rig meets is published
+    /// first, and what its walk set in motion -- the map computer, the vehicles' rockets, being run over, the grenades' AI
+    /// events -- follows it, whether the mission ticks its player or the host does on its title path.
+    /// </summary>
+    /// <param name="tick">The rig's tick, with the input it is given.</param>
+    /// <returns><see langword="false"/> where the player does not tick: none stands, it is dead, or the mission has failed.</returns>
+    /// <remarks>
+    /// Whoever drives the tick -- the mission, or the host on its title path -- has taken it for this tick already
+    /// (<see cref="MissionState.PlayerTicked"/>), in player mode and out of a cutscene.
+    /// </remarks>
+    public bool StepPlayer(Action<PlayerCamera> tick)
+    {
+        ArgumentNullException.ThrowIfNull(tick);
+        if (!CanStepPlayer || mission.Player is not { } player)
+        {
+            return false;
+        }
 
         // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
         mission.Soldiers?.PublishCollisionBodies();
@@ -475,7 +544,25 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
         else
         {
-            player.Tick(host.ViewInput, host.Ground);
+            RunModsBeforePlayer(player);
+            tick(player);
+
+            // What the update made that the soldiers hear is told from the update itself: the original broadcasts a
+            // shot's noise as the gun fires and a step's as the foot lands (HumanAI_Broadcast, 0x450CE0, from the gun's
+            // fire and the human's update), so a soldier the walk reaches after the player takes it this tick, and one
+            // before it the next. Their sounds are the host's, played after the walk.
+            // Its own sounds are made in its update too (the gun's as it fires, the step's as the foot lands), in the order
+            // they always were: they draw from the level's stream, ahead of whatever the walk reaches after the player.
+            audio.SoundPlayerUpdate();
+            Igi1PlayerHearing.Gunshot(player, mission.Soldiers);
+            audio.SoundPlayerWeaponAndBody();
+            if (player.TakeFootstep() is { } landed)
+            {
+                audio.PlayFootstep(landed);
+                Igi1PlayerHearing.Step(player, landed, mission.Soldiers);
+            }
+
+            _playerSounded = true;
 
             // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
             // Do not advance the same registry again after the walk.
@@ -485,13 +572,181 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         // A co-op session's other players, each on its client's command for this tick, after the mission's own.
         RunPartners();
+        if (player.ProjectilesRunByLevel)
+        {
+            // A grenade's creation is heard as it is thrown (the type 17 event, sent from the throw); the rest of what
+            // flies is the level's Dynamic tasks' to say, after its objects (RunDynamicTasks).
+            CheckRunOver();
+            NotifyGrenadesThrown(player);
+            return true;
+        }
+
         mission.TickVehicleMissiles();
         CheckRunOver();
 
         // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
         // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
         NotifyGrenadeAiEvents();
+        return true;
     }
+
+    /// <summary>
+    /// Runs the tasks the level made while it runs -- the grenades, mines, rockets and launcher rounds of the mission's own
+    /// player's pool, then the vehicles' rockets -- where the original runs them: under the level's Dynamic task
+    /// (<c>Level_GetDynamic</c>, <c>0x4F0EE0</c>), after the level's own objects (<c>0x4F0660</c>).
+    /// </summary>
+    /// <remarks>
+    /// On the ticks the player's update asked for it, so what flies stops where it stopped before: under a cut-scene. Their
+    /// bounces, mine triggers and blasts are heard by the soldiers from here, so at each soldier's next update.
+    /// </remarks>
+    private void RunDynamicTasks()
+    {
+        if (_dynamicTasksRan || mission.Player is not { } player)
+        {
+            return;
+        }
+
+        _dynamicTasksRan = true;
+
+        // A picked-up gun's GunShot task stands here too (0x45FFC0 -> 0x477C50 makes the gun while the level runs).
+        if (mission.PlayerTicked && !_playerRoundsApplied && player.RoundsRunByLevel)
+        {
+            player.RunDeferredRounds();
+            host.PresentPlayerImpacts();
+            blasts.ApplyPlayerRounds();
+            _playerRoundsApplied = true;
+        }
+
+        // Set here rather than as the player is stood: a level stepped without its walk keeps them in the player's update.
+        // From the tick after, the level runs them every tick it runs -- the player's update or not, a cut-scene or not:
+        // Dynamic runs its children unless the level is paused (0x4F0660), and nothing ever pauses it.
+        bool byLevel = player.ProjectilesRunByLevel;
+        player.ProjectilesRunByLevel = mission.ObjectsInWalk;
+        player.RoundsRunByLevel = mission.ObjectsInWalk;
+        if (player.Weapons is { } carried)
+        {
+            carried.LevelRunning = true;
+        }
+
+        RunPartnersProjectiles();
+        if (!(byLevel ? player.RunProjectilesByLevel() : player.RunDeferredProjectiles()))
+        {
+            return;
+        }
+
+        mission.TickVehicleMissiles();
+        NotifyGrenadeAiEvents();
+
+        // What ran out of fuse or struck goes off here: an Explosion0 is a task made under Dynamic by the grenade's, the
+        // rocket's or the round's own run (camera/explosion's spawn on Level_GetDynamic), so it is made at the tail.
+        blasts.ResolveGrenadeDetonations();
+        blasts.ResolveMissileDetonations();
+        blasts.ResolveM203Detonations();
+        audio.PlayGrenadeBounces();
+        blasts.RecordBounces(player);
+        audio.SoundMissiles();
+        _detonationsResolved = true;
+    }
+
+    /// <summary>
+    /// Runs the tasks made under <c>Dynamic</c> while one of its children was built, as the walk leaves that child: the
+    /// <c>GunShot</c> tasks of the soldiers' guns under it, and of the player's when the player stands under it.
+    /// </summary>
+    /// <param name="child">The child of <c>Dynamic</c> the walk has just run.</param>
+    /// <remarks>
+    /// A gun's create handler (<c>0x478540</c>) makes its <c>GunShot</c> task on <c>Level_GetDynamic</c>, linked at the
+    /// tail as it then stands: after the child the gun is being made under, before the next. So a round is marched, and
+    /// what it struck is told, before the walk reaches the level's later children.
+    /// </remarks>
+    private void RunDynamicTasksMadeUnder(GameTask child)
+    {
+        if (!ReferenceEquals(child, _playerAnchor))
+        {
+            mission.Soldiers?.MarchRoundsMadeUnder(child);
+            return;
+        }
+
+        // In the order the level made the guns: the soldiers' declared ahead of the player, the player's, the rest.
+        mission.Soldiers?.MarchRoundsMadeUnder(child, int.MinValue, _playerOrder);
+        if (mission.PlayerTicked && !_playerRoundsApplied && mission.Player is { } player && !player.PendingRoundsAtTail)
+        {
+            // The gun the level declared for the player: its GunShot task marches what it fired this tick (0x47B690).
+            player.RunDeferredRounds();
+            host.PresentPlayerImpacts();
+            blasts.ApplyPlayerRounds();
+            _playerRoundsApplied = true;
+        }
+
+        mission.Soldiers?.MarchRoundsMadeUnder(child, _playerOrder, int.MaxValue);
+    }
+
+    // Dynamic's tail as the walk leaves it: the soldiers' side of it (the guns made since the level began and the guns the
+    // dead dropped, in the order they were made), then what the players threw and fired.
+    private void RunDynamicTail()
+    {
+        mission.Soldiers?.RunDynamicTail();
+        RunDynamicTasks();
+    }
+
+    // A co-op partner's grenades, mines, rockets and launcher rounds are the level's tasks as the mission's own player's
+    // are: run once a tick of the level, not once for each of its client's commands.
+    private void RunPartnersProjectiles()
+    {
+        foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
+        {
+            PlayerCamera rig = other.Player;
+            bool byLevel = rig.ProjectilesRunByLevel;
+            rig.ProjectilesRunByLevel = mission.ObjectsInWalk;
+            if (!byLevel || !rig.RunProjectilesByLevel())
+            {
+                continue;
+            }
+
+            mission.ImpactSource = other.Entity;
+            if (mission.Soldiers is { } soldiers)
+            {
+                NotifyGrenadeAiEvents(rig, soldiers);
+            }
+
+            blasts.ResolveDetonations(rig);
+            audio.PlayGrenadeBounces(rig);
+            blasts.RecordBounces(rig);
+            mission.ImpactSource = 0;
+        }
+    }
+
+    // The child of the level's Dynamic task a task stands under, or null for one that stands under none.
+    private static GameTask? DynamicChildOver(GameTask task)
+    {
+        for (GameTask? at = task; at?.Parent is { } parent; at = parent)
+        {
+            if (parent is DynamicTask)
+            {
+                return at;
+            }
+        }
+
+        return null;
+    }
+
+    // The grenades thrown this tick, heard as they leave the hand.
+    private void NotifyGrenadesThrown(PlayerCamera rig)
+    {
+        if (mission.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        foreach (Vector3d origin in rig.Grenades.Thrown)
+        {
+            soldiers.NotifyGrenadeThrown(origin);
+        }
+
+        rig.Grenades.ClearThrownEvents();
+    }
+
+    // Whether there is a living player to step, and no failure screen over it.
+    private bool CanStepPlayer => mission.Player is not null && !mission.IsPlayerDead && !host.FailedMenu;
 
     /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
     // Every player a vehicle drives through is run over, a co-op partner as the player is.
@@ -510,7 +765,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
 
             Vector3d origin = rig.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.HumanOriginStandingInUnits);
-            if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+            if (!runtime.Vehicles.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
             {
                 continue;
             }
@@ -602,6 +857,45 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>The player's update, then its children: for a player task with no input child to move it.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<HumanTask>.Run(HumanTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        UpdatePlayer();
+        level.RunChildren(task);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The player's update, where the walk reaches its <c>HumanPlayerInput</c> child: that task reads the controls and sends
+    /// them to the <c>HumanPlayer</c> above it, whose control handler runs its update.
+    /// </remarks>
+    void OpenIGI.Game.Level.ITaskRun<HumanPlayerInputTask>.Run(HumanPlayerInputTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        UpdatePlayer();
+        level.RunChildren(task);
+    }
+
+    // The player's run handler (0x45EEA0): its children, and nothing of its own.
+    private sealed class PlayerChildren : OpenIGI.Game.Level.ITaskRun<HumanTask>
+    {
+        public void Run(HumanTask task, OpenIGI.Game.Level.LevelRun level) => level.RunChildren(task);
+    }
+
+    // What runs the player's own task: it has no state of its own.
+    private readonly PlayerChildren _playerChildren = new();
+
+    /// <inheritdoc/>
+    /// <remarks>A lift's update (<c>0x43D280</c>): its children first, then its own floor expressions and its move.</remarks>
+    void OpenIGI.Game.Level.ITaskRun<ElevatorTask>.Run(ElevatorTask task, OpenIGI.Game.Level.LevelRun level)
+    {
+        level.RunChildren(task);
+        if (mission.Elevators is { } elevators && task.Elevator is { } elevator)
+        {
+            StepElevator(elevators, elevator);
+        }
+    }
+
     /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
     /// <remarks>
     /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
@@ -611,16 +905,22 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     /// <param name="levelRoot">The level's task tree.</param>
     public void AttachToLevelWalk(GameTask levelRoot)
     {
-        mission.SoldiersInWalk = false;
+        mission.ObjectsInWalk = false;
         mission.PlayerInWalk = false;
-        mission.ElevatorsInWalk = false;
-        mission.CamerasInWalk = false;
         if (mission.Cutscenes is not { } cutscenes)
         {
             return;
         }
 
         LevelUpdateWalker walker = cutscenes.Walker;
+        mission.ObjectsInWalk = true;
+
+        // What the level made while it runs is the Dynamic task's, reached as the walk leaves that task's own children.
+        walker.DynamicTail = RunDynamicTail;
+        walker.AfterDynamicChild = RunDynamicTasksMadeUnder;
+        HumanPlayerTask? stood = PlayerSpawn.FindGameplayTask(levelRoot);
+        _playerAnchor = stood is null ? null : DynamicChildOver(stood);
+        _playerOrder = stood is not null && _playerAnchor is not null ? SoldierSimulation.OrderUnder(_playerAnchor, stood) : 0;
 
         // A lift updates where the walk reaches it (Elevator's UPDATE, 0x43D280): its children first -- the
         // doors, switches and indicators that ride it -- then its own floor expressions and its move, after
@@ -630,21 +930,35 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             foreach (PlacedElevator elevator in elevators.Elevators)
             {
-                walker.Bind(elevator.Task, task =>
+                if (OpenIGI.Game.Level.LevelTaskClass.TryAs(elevator.Task, walker, out ElevatorTask? lift))
                 {
-                    walker.RunChildren(task);
-                    StepElevator(elevators, elevator);
-                });
+                    lift.Runner = this;
+                    lift.Elevator = elevator;
+                }
             }
-
-            mission.ElevatorsInWalk = true;
         }
 
         // The switches, terminals, cabinets, fences, wires, GenericTBAs, stationary guns and generators update where the
         // walk reaches them, each in its own update's order -- before the cameras bind, whose controls extend a terminal's.
         if (mission.Interactions is { } interactions)
         {
+            // The radios chatter from the walk, so their sounds have somewhere to go from its first tick.
+            interactions.RadioSounds = audio.RadioSounds;
             interactions.AttachTo(walker);
+        }
+
+        // An ExplodeObject, and the types built on one, read their explosion where the walk reaches them (0x481970);
+        // an alarm light turns where it is reached (0x43A270).
+        {
+            mission.Destructibles?.AttachToWalk();
+            // A siren's and an alarm light's sounds are started and stopped in their own run handlers.
+            if (mission.AlarmSpeakers is { } speakers)
+            {
+                speakers.Sound = audio.SoundSpeaker;
+                speakers.AttachTo(walker);
+            }
+
+            mission.SmokePlumes?.AttachTo(walker);
         }
 
         // A camera updates where the walk reaches it (SCamera's UPDATE, 0x442610): its lens sweeps and scans the
@@ -652,8 +966,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // (0x440D70) read the isDetection of the cameras ahead of them this tick.
         if (mission.SecurityCameras is { } cameras)
         {
-            cameras.AttachTo(walker, CameraScanNow, CarryCameraHead);
-            mission.CamerasInWalk = true;
+            // A camera's beep and motor are its lens's to make, as its own task runs.
+            cameras.AttachTo(walker, CameraScanNow, camera =>
+            {
+                CarryCameraHead(camera);
+                audio.SoundCamera(camera);
+            });
         }
 
         // A RotatingObject updates where the walk reaches it (0x439090), reading its On expression then.
@@ -670,16 +988,22 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         if (mission.Soldiers is { } soldiers)
         {
             soldiers.AttachTo(walker);
-            mission.SoldiersInWalk = true;
         }
 
-        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
+        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask
+            && OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
         {
-            walker.Bind(playerTask, task =>
+            // The player's run handler only runs its children (0x45EEA0); its HumanPlayerInput child moves it.
+            if (playerTask.Children.OfType<HumanPlayerInputTask>().FirstOrDefault() is { } input)
             {
-                UpdatePlayer();
-                walker.RunChildren(task);
-            });
+                human.Runner = _playerChildren;
+                input.Runner = this;
+            }
+            else
+            {
+                human.Runner = this;
+            }
+
             mission.PlayerInWalk = true;
         }
     }
@@ -747,58 +1071,59 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         PlayerCamera player = mission.Player!;
         if (mission.PlayerTicked)
         {
-            audio.SoundPlayerUpdate();
-
-            // Hearing is emitted once per round, not once per projectile intersection. The weapon
-            // row carries the exact retail radius (for example 4096 for suppressed fire and
-            // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
-            // silenced weapons no longer wake the whole 30-metre neighbourhood.
-            if (player.FiredThisTick && player.HeldWeaponType is { } audibleWeapon)
+            // The player's update made its own sounds where the walk ran it (StepPlayer); here for a tick it did not run.
+            if (!_playerSounded)
             {
-                // Along the view, as far as the gun reaches: the line another game's humans see the shot by.
-                Matrix3f view = player.Camera.Orientation;
-                float reach = audibleWeapon.EffectiveRange * (float)WorldScene.UnitsPerMetre;
-                mission.Soldiers?.NotifyGunshot(
-                    player.Body.Eye,
-                    audibleWeapon.AiDetectionRange,
-                    line: new Vector3f(view.M31 * reach, view.M32 * reach, view.M33 * reach));
+                audio.SoundPlayerUpdate();
+                audio.SoundPlayerWeaponAndBody();
             }
-
-            audio.SoundPlayerWeaponAndBody();
 
             // And the player's own feet. Positional like anyone else's, and placed where the
             // foot landed rather than on the listener, because the sound belongs to the ground.
-            if (player.TakeFootstep() is { } step)
+            if (!_playerSounded && player.TakeFootstep() is { } step)
             {
                 audio.PlayFootstep(step);
-
-                // The step is also a NOISE the AI hears: 0x463920's tail posts AIEVENT_WALK
-                // (type 10, filter 0x46) with the ground material's own radius, unless the
-                // walker is crouching -- sneaking really is silent to the AI. guard.qvm's WALK
-                // branch is AIAction_SetCombat, so a guard that hears footsteps it cannot see
-                // starts hunting.
-                if (!player.IsCrouched)
-                {
-                    mission.Soldiers?.NotifyWalk(
-                        step.PositionInUnits, player.Body.Position, step.HearingRadiusInUnits);
-                }
+                Igi1PlayerHearing.Step(player, step, mission.Soldiers);
             }
 
-            host.PresentPlayerImpacts();
+            // The player's rounds were told to what they struck as the walk left the child of Dynamic its guns stand under
+            // (RunDynamicTasksMadeUnder); here for a level whose walk did not.
+            if (!_playerRoundsApplied)
+            {
+                player.RunDeferredRounds();
+                host.PresentPlayerImpacts();
+            }
 
             // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
             // and the casualties.
-            blasts.ResolveGrenadeDetonations();
-            blasts.ResolveMissileDetonations();
-            blasts.ResolveM203Detonations();
-            audio.PlayGrenadeBounces();
-            blasts.RecordBounces(player);
-            audio.SoundMissiles();
+            if (!_detonationsResolved)
+            {
+                blasts.ResolveGrenadeDetonations();
+            }
+            if (!_detonationsResolved)
+            {
+                blasts.ResolveMissileDetonations();
+            }
+            if (!_detonationsResolved)
+            {
+                blasts.ResolveM203Detonations();
+            }
+            if (!_detonationsResolved)
+            {
+                audio.PlayGrenadeBounces();
+            }
+            if (!_detonationsResolved)
+            {
+                blasts.RecordBounces(player);
+            }
+            if (!_detonationsResolved)
+            {
+                audio.SoundMissiles();
+            }
 
             // The alarm speakers, following their own level expressions -- the siren the
             // room hears when a guard reaches a switch.
             blasts.TickDestructibles();
-            blasts.TickMineFields();
             mission.SmokePlumes?.Tick();
             audio.SoundAlarms();
             mission.AlarmSpeakers?.RunLights();
@@ -806,7 +1131,10 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
             // impact list carries both the instant rays and the ballistic arrivals, so either
             // mode can shoot the siren off the wall.
-            blasts.ApplyPlayerRounds();
+            if (!_playerRoundsApplied)
+            {
+                blasts.ApplyPlayerRounds();
+            }
 
             // The level's ambience, which is keyed off where the ear is rather than where the
             // body stands: an area is a box you listen from the inside of.
@@ -826,17 +1154,22 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     // sirens and the alarm lights.
     private void StepLevelWhileDown(PlayerCamera player)
     {
-        player.TickProjectilesAlone();
-        mission.TickVehicleMissiles();
-        NotifyGrenadeAiEvents();
-        blasts.ResolveGrenadeDetonations();
-        blasts.ResolveMissileDetonations();
-        blasts.ResolveM203Detonations();
-        audio.PlayGrenadeBounces();
-        blasts.RecordBounces(player);
-        audio.SoundMissiles();
+        // Past the level's objects already: where its Dynamic tasks run -- and ran, when the walk reached them this tick.
+        if (!_detonationsResolved)
+        {
+            player.TickProjectilesAlone();
+            player.RunDeferredProjectiles();
+            mission.TickVehicleMissiles();
+            NotifyGrenadeAiEvents();
+            blasts.ResolveGrenadeDetonations();
+            blasts.ResolveMissileDetonations();
+            blasts.ResolveM203Detonations();
+            audio.PlayGrenadeBounces();
+            blasts.RecordBounces(player);
+            audio.SoundMissiles();
+        }
+
         blasts.TickDestructibles();
-        blasts.TickMineFields();
         mission.SmokePlumes?.Tick();
         audio.SoundAlarms();
         mission.AlarmSpeakers?.RunLights();

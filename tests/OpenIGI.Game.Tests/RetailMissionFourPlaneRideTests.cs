@@ -30,7 +30,7 @@ public sealed class RetailMissionFourPlaneRideTests
     public void MissionThreePilotKeepsItsAuthoredCabinOffsetWhenHelicopterParks()
     {
         (CutsceneRuntime runtime, LevelTask root, _, _) = LoadMission(3);
-        DeclaredTask heli = Assert.IsType<DeclaredTask>(root.Tree.FromId(603));
+        DeclaredTask heli = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(603));
         DeclaredTask pilot = Assert.Single(heli.Children.OfType<DeclaredTask>(),
             child => child.TryGetValue("Model", out object? model) && Equals(model, "715_01_1"));
         Assert.True(heli.TryGetValue("Position", out object? heliPosition));
@@ -165,9 +165,8 @@ public sealed class RetailMissionFourPlaneRideTests
         }
 
         Assert.NotNull(mover);
-        riders = [.. riders.Where(rider => HasAncestor(rider, mover!))];
         before = before
-            .Where(pair => HasAncestor(pair.Key, mover!))
+            .Where(pair => HasAncestor(pair.Key, mover))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
         Assert.True(before.Count > 0, "QVM children of the moving heli must be attached");
 
@@ -177,7 +176,7 @@ public sealed class RetailMissionFourPlaneRideTests
             runtime.FinishExpressionTick();
         }
 
-        Assert.True(runtime.TryGetDrawTransform(mover!, out Vector3d moverAfter, out _));
+        Assert.True(runtime.TryGetDrawTransform(mover, out Vector3d moverAfter, out _));
         Vector3d moverDelta = moverAfter - moverBefore;
         if (moverDelta.Length < 0.5)
         {
@@ -204,7 +203,7 @@ public sealed class RetailMissionFourPlaneRideTests
     {
         (CutsceneRuntime runtime, LevelTask root, TerrainData? terrain, ObjectCollisionIndex _) = LoadMission(4);
         Assert.NotNull(terrain);
-        Assert.True(terrain!.IsUsable);
+        Assert.True(terrain.IsUsable);
         if (root.Tree.FromId(3902) is ConditionalContainerTask transport)
         {
             transport.Condition = "1";
@@ -271,7 +270,7 @@ public sealed class RetailMissionFourPlaneRideTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

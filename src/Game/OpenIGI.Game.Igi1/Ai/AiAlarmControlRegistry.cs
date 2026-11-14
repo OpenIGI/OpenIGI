@@ -1,7 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -24,19 +23,25 @@ public sealed class AiAlarmControlRegistry
 
     private readonly Dictionary<int, Entry> _controls = [];
     private readonly LevelExpressionRuntime _expressions;
+    private Func<int>? _tick;
+    private Action<int>? _ticked;
 
     private AiAlarmControlRegistry(LevelExpressionRuntime expressions) => _expressions = expressions;
+
+    /// <summary>Gets each control's task with what a save game keeps of it.</summary>
+    public IEnumerable<KeyValuePair<GameTask, OpenIGI.Game.Saves.ISavedState>> SavedStates =>
+        _controls.Values.Select(static entry => new KeyValuePair<GameTask, OpenIGI.Game.Saves.ISavedState>(entry.Task, entry.State));
 
     /// <summary>Gets the number of controls collected from the task tree.</summary>
     public int Count => _controls.Count;
 
     /// <summary>Builds and exports every <c>AlarmControl</c> below <paramref name="root"/>.</summary>
-    public static AiAlarmControlRegistry Build(GameTask root, ScriptVarRegistry variables)
+    public static AiAlarmControlRegistry Build(GameTask root, ScriptVarRegistry variables, LevelExpressionRuntime? expressions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
-        AiAlarmControlRegistry registry = new(new LevelExpressionRuntime(variables));
+        AiAlarmControlRegistry registry = new(expressions ?? new LevelExpressionRuntime(variables));
         registry.Collect(root, variables);
         return registry;
     }
@@ -64,12 +69,22 @@ public sealed class AiAlarmControlRegistry
         ArgumentNullException.ThrowIfNull(tick);
         foreach (Entry entry in _controls.Values)
         {
-            walker.Bind(entry.Task, task =>
-            {
-                walker.RunChildren(task);
-                Tick(entry, tick());
-                ticked?.Invoke(task.Id);
-            });
+            _ = OpenIGI.Game.Level.LevelTaskClass.TryAs(entry.Task, walker, out Igi1AlarmControlTask? _);
+        }
+
+        _tick = tick;
+        _ticked = ticked;
+    }
+
+    /// <summary>A control's own update, where the level's walk reaches its task (<c>0x4408A0</c>), after its children.</summary>
+    /// <param name="control">The control's task.</param>
+    /// <remarks>Until the walk is attached the controls are stepped by <see cref="Tick(int)"/>.</remarks>
+    internal void RunFromWalk(Igi1AlarmControlTask control)
+    {
+        if (_tick is not null && _controls.TryGetValue(control.Id, out Entry? entry) && ReferenceEquals(entry.Task, control))
+        {
+            Tick(entry, _tick());
+            _ticked?.Invoke(control.Id);
         }
     }
 
@@ -129,20 +144,19 @@ public sealed class AiAlarmControlRegistry
 
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
-        if (task is DeclaredTask declared
-            && task.Id != GameTask.NoId
-            && task.Type.Name == "AlarmControl")
+        if (task is Igi1AlarmControlTask declared && task.Id != GameTask.NoId)
         {
             AiAlarmControlState state = new();
             string explodedSymbol = $"{declared.Name}.isExploded";
             Entry entry = new(
                 declared,
                 state,
-                ReadString(declared, "Trigger Expression"),
-                ReadString(declared, "Alarm Expression"),
-                ReadString(declared, "On Expression"),
+                declared.TriggerExpression,
+                declared.AlarmExpression,
+                declared.OnExpression,
                 () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls[task.Id] = entry;
+            declared.Alarms = this;
 
             // AlarmControl_RegisterScriptSymbolsHandler exports exactly these three names. They are
             // live aliases and the expressions may refer back to the control's previous isAlarm value.
@@ -157,6 +171,4 @@ public sealed class AiAlarmControlRegistry
         }
     }
 
-    private static string ReadString(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is string value ? value : string.Empty;
 }

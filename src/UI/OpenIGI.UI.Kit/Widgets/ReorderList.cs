@@ -465,12 +465,9 @@ public sealed class ReorderHandle : Control
         }
 
         // Carried: up and down move the item, and left and right are swallowed so focus stays with it.
-        if (direction is NavDirection.Up or NavDirection.Down)
+        if (direction is NavDirection.Up or NavDirection.Down && List!.Step(direction == NavDirection.Up ? -1 : 1))
         {
-            if (List!.Step(direction == NavDirection.Up ? -1 : 1))
-            {
-                PlaySound(UiSounds.Move);
-            }
+            PlaySound(UiSounds.Move);
         }
 
         return true;

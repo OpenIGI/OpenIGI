@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -50,7 +49,7 @@ public readonly record struct AiDetectionCandidate(
             Vector3d origin = Origin ?? new Vector3d(
                 Feet.X,
                 Feet.Y,
-                Feet.Z + (Crouching ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits));
+                Feet.Z + Igi1HumanAi.HumanOriginAboveFeet(Crouching));
             return new Vector3d(origin.X, origin.Y, origin.Z + (Crouching ? 1024.0 : 2048.0));
         }
     }

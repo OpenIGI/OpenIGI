@@ -12,7 +12,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -40,6 +39,7 @@ public sealed class RetailInteractionInventoryTests
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
         _ = loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -263,7 +263,7 @@ public sealed class RetailInteractionInventoryTests
 
         for (int tick = 0; tick < 5 && sounds.Count == 0; tick++)
         {
-            objectives.Tick();
+            objectives.StepFlow();
         }
 
         Assert.Equal(["message"], sounds);
@@ -655,7 +655,7 @@ public sealed class RetailInteractionInventoryTests
                 Assert.Equal(placement.Orientation, door.DrawOrientation);
 
                 door.State.Toggle();
-                DeclaredTask doorTask = Assert.IsType<DeclaredTask>(door.Task);
+                DeclaredTask doorTask = Assert.IsAssignableFrom<DeclaredTask>(door.Task);
                 int motionTicks = Math.Max(1, (int)Math.Ceiling(ReadReal(doorTask, "Open time", 1f) * 30f));
                 for (int tick = 0; tick <= motionTicks; tick++)
                 {
@@ -785,7 +785,7 @@ public sealed class RetailInteractionInventoryTests
                          static item => item.Type == InteractionActivateType.StationaryGun))
             {
                 stationaryGunCount++;
-                DeclaredTask declared = Assert.IsType<DeclaredTask>(gun.Task);
+                DeclaredTask declared = Assert.IsAssignableFrom<DeclaredTask>(gun.Task);
                 string parameters = string.Join(
                     "; ",
                     declared.Type.Parameters.Select(
@@ -827,6 +827,7 @@ public sealed class RetailInteractionInventoryTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
@@ -846,6 +847,7 @@ public sealed class RetailInteractionInventoryTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         AmmoTypeRegistry ammo = new();
         ammo.Register(loop.Natives);
         ammo.Load(fileSystem, resources, loop.Natives);

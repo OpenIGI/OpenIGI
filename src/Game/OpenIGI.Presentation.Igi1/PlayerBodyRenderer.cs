@@ -111,8 +111,8 @@ internal sealed class PlayerBodyRenderer(
             return false;
         }
 
-        Group? group = _owner.Meshes.BuildGroup(mission, model, view);
-        if (group is null)
+        if (!SoldierBodyModel.TryPose(mission, model, view, _logger, out SoldierBodyModel? body, out MeshGeometry? geometry, out Vertex3D[]? skin)
+            || _owner.Meshes.BuildGroup(mission, new SoldierLoadedGroup(new SoldierModelGroup(body), model, view, geometry, skin)) is not { } group)
         {
             return false;
         }
@@ -251,12 +251,8 @@ internal sealed class PlayerBodyRenderer(
 
         double px = _state.View.Position.X + world.X;
         double py = _state.View.Position.Y + world.Y;
-        double pz = _state.View.Position.Z + world.Z;
-        if (_ground is { } ground
-            && ground(px, py, pz + SoldierSimulation.ProbeAboveInUnits, out double groundZ))
-        {
-            pz = groundZ;
-        }
+        double pz = SoldierDeathFall.SettleOnGround(
+            _ground, px, py, _state.View.Position.Z + world.Z, _state.View.Position.Z, SoldierSimulation.ProbeAboveInUnits);
 
         _state.View.PlaceAt(new Vector3d(px, py, pz), _state.View.Orientation);
 
@@ -403,7 +399,9 @@ internal sealed class PlayerBodyRenderer(
     public BoneAttachment? HandAttachment()
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
-        if (!_state.Following || _state.View is not { } view || _member is not { } member)
+        // A fallen body holds nothing. Its hand is the corpse's from then on, and the clip's hand asked for here is
+        // not where that is drawn: a gun hung off it stayed in the air over the body until it was stood up again.
+        if (_active || !_state.Following || _state.View is not { } view || _member is not { } member)
         {
             return null;
         }

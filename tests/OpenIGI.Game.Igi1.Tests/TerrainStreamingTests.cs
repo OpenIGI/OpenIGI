@@ -8,7 +8,6 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -276,6 +275,8 @@ public sealed class TerrainStreamingTests
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
             ResourceRegistry resources = new(fileSystem);
             GameLoop loop = new(new ManualTimeSource());
+            OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+            OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
 
             MissionRegistry registry = new();
             registry.Register(loop.Natives);

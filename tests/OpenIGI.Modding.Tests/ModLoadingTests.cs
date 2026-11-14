@@ -33,6 +33,7 @@ public sealed class ModLoadingTests : IDisposable
         }
         catch (UnauthorizedAccessException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 
@@ -344,6 +345,7 @@ public sealed class ModLoadingTests : IDisposable
         Assert.Equal(
             [
                 "Greyscale.default.compute.dxil",
+                "Greyscale.default.compute.glsl",
                 "Greyscale.default.reflection.json",
                 "Greyscale.default.spv",
                 "Greyscale.default.wgsl",

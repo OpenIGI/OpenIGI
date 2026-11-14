@@ -1,6 +1,3 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
-
 namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>What the patrol combat arm decided to do this tick — <c>sub_48BFD0</c>'s eight outcomes.</summary>

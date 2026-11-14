@@ -49,7 +49,7 @@ public sealed class ComputeProgramOnVulkanTests(ITestOutputHelper output)
                 }
             }
 
-            byte[] result = Dilate(vulkan!.Rhi, rejection);
+            byte[] result = Dilate(vulkan.Rhi, rejection);
 
             for (int y = 0; y < Height; y++)
             {
@@ -74,7 +74,7 @@ public sealed class ComputeProgramOnVulkanTests(ITestOutputHelper output)
 
         using (vulkan)
         {
-            using ComputeProgram program = new(vulkan!.Rhi, ShaderModuleId.UpscaleRejectionDilate);
+            using ComputeProgram program = new(vulkan.Rhi, ShaderModuleId.UpscaleRejectionDilate);
 
             output.WriteLine($"workgroup {program.WorkgroupSize}, {program.GroupLayouts.Count} group(s)");
 

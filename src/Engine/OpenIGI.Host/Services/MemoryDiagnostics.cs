@@ -110,5 +110,5 @@ internal sealed class MemoryDiagnostics(IGraphicsDevice device, IOpenIgiLogger l
     }
 
     private static string Mib(long bytes) =>
-        FormattableString.Invariant($"{bytes / (1024.0 * 1024.0):F0} MiB");
+        string.Create(CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024.0):F0} MiB");
 }

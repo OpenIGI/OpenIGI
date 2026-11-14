@@ -380,10 +380,10 @@ public sealed partial class Igi2CarTask
         int kind = cp >= 0 ? body.ContactPoints[cp].Type : -1;
         if (g <= 0.009999999776482582)
         {
-            return g < -0.009999999776482582 && kind == 0 ? (((((Fpu)g + 0.5) + g) + 0.5)).F : 1f;
+            return g < -0.009999999776482582 && kind == 0 ? ((((Fpu)g + 0.5) + g) + 0.5).F : 1f;
         }
 
-        return kind != 1 ? 1f : (((((Fpu)0.5 - g) + 0.5) - g)).F;
+        return kind != 1 ? 1f : ((((Fpu)0.5 - g) + 0.5) - g).F;
     }
 
     /// <summary>

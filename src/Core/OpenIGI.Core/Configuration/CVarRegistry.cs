@@ -102,6 +102,21 @@ public sealed class CVarRegistry
             .Where(variable => (variable.Flags & flags) == flags && !variable.IsDefault)
             .OrderBy(variable => variable.Name, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Enumerates the variables whose value differs from what they are held at, or from their default where nothing holds them.</summary>
+    /// <param name="flags">Only variables carrying every one of these flags are returned.</param>
+    /// <param name="held">The value something outside the variable puts it back to at every start, or <see langword="null"/> for none.</param>
+    /// <returns>The matching variables, ordered by name.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="held"/> is <see langword="null"/>.</exception>
+    public IEnumerable<ICVar> Modified(CVarOptions flags, Func<ICVar, string?> held)
+    {
+        ArgumentNullException.ThrowIfNull(held);
+
+        return _ordered
+            .Where(variable => (variable.Flags & flags) == flags
+                && (held(variable) is { } value ? !variable.MatchesText(value) : !variable.IsDefault))
+            .OrderBy(variable => variable.Name, StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>Restores every registered variable to its default.</summary>
     public void ResetAll()
     {

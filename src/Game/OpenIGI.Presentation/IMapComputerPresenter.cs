@@ -8,8 +8,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.UI;
 
 namespace OpenIGI.Presentation;
 
@@ -116,6 +114,26 @@ public interface ITacticalComputerPresenter : IDisposable
     /// </remarks>
     bool MapAvailable { get; set; }
 
+    /// <summary>
+    /// Gets or sets what the display's save page saves and loads with, as I.G.I. 2's computer does; <see langword="null"/> for a
+    /// mission that keeps no save games, which has no such page.
+    /// </summary>
+    OpenIGI.Game.Computer.IComputerSaves? Saves
+    {
+        get => null;
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
+    }
+
+    /// <summary>
+    /// Gets or sets where the display's sounds are played, by their definitions' names: the original computer's own
+    /// (<c>mapcomp_01</c>, <c>mapcomp_03</c>, <c>mapcomp_05</c>), unplaced; <see langword="null"/> for a silent display.
+    /// </summary>
+    Action<string>? PlaySound
+    {
+        get => null;
+        set => _ = value; // Ignored: only an implementer that keeps the value overrides this.
+    }
+
     /// <summary>Loads the fonts the display is drawn from.</summary>
     /// <returns><see langword="false"/> when they are unavailable.</returns>
     bool Load();
@@ -149,24 +167,46 @@ public interface ITacticalComputerPresenter : IDisposable
     /// <param name="player">Where the player is, in engine units.</param>
     /// <param name="guards">Where the guards the display knows about are.</param>
     /// <param name="highlights">The marks to show.</param>
-    /// <param name="screenWidth">The target width in pixels.</param>
-    /// <param name="screenHeight">The target height in pixels.</param>
-    /// <param name="opacity">How far the display has faded in, from zero to one.</param>
+    /// <param name="frame">The screen, how far the display has come up, and which way the player faces.</param>
     void Draw(
         SpriteBatch batch,
         IComputerObjectives runtime,
         Vector3d player,
         IReadOnlyList<Vector3d> guards,
         IEnumerable<ComputerMapHighlight> highlights,
-        int screenWidth,
-        int screenHeight,
-        float opacity);
+        in ComputerFrame frame);
 
     /// <summary>Draws the mission-failed page.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     void DrawMissionFailed(SpriteBatch batch, int screenWidth, int screenHeight);
+}
+
+/// <summary>What the remastered computer is drawn with this frame.</summary>
+/// <param name="Width">The screen's width in pixels.</param>
+/// <param name="Height">The screen's height in pixels.</param>
+/// <param name="RequestedScale">The interface scale the player asked for, or automatic.</param>
+/// <param name="Opacity">How far the interface has come up, nought to one.</param>
+/// <param name="Feed">How far the map's feed has come up; its look is the computer's own to add.</param>
+/// <param name="HeadingRadians">Which way the player faces: nought along +Y, turning towards +X.</param>
+public readonly record struct ComputerFrame(int Width, int Height, int RequestedScale, float Opacity, MapFeedSettings Feed, float HeadingRadians)
+{
+    /// <summary>Gets the name of the key that shuts the computer, for its hint; empty for none.</summary>
+    public string CloseKey { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the display is being worked with fingers, which have no keys to be told of.</summary>
+    public bool Touch { get; init; }
+
+    /// <summary>Gets how many of the target's pixels there are to a pixel as the person sees it; 1 on a desktop window.</summary>
+    public float PixelDensity { get; init; } = 1f;
+}
+
+/// <summary>Where a title's own font comes from, for the remastered computer to set its text in.</summary>
+public interface IComputerFontSource : IDisposable
+{
+    /// <summary>Gets the title's font, loaded on its first use; <see langword="null"/> where the installation has none.</summary>
+    Rendering.BitmapTextRenderer? Font { get; }
 }
 
 /// <summary>What a title needs in order to build its map computer.</summary>
@@ -189,14 +229,8 @@ public readonly record struct MapComputerPresentationRequest(
 /// <summary>What a title needs in order to build the catalogue of places its computer marks.</summary>
 /// <param name="LevelRoot">The level's task tree, which the marks are read from.</param>
 /// <param name="Variables">The script variables a mark's visibility is gated on.</param>
-public readonly record struct ComputerHighlightRequest(GameTask LevelRoot, ScriptVarRegistry Variables);
-
-/// <remarks>
-/// In the seam rather than beside the renderer that fills it, because it is what the interface
-/// takes: a type a presenter names in its signature is part of the contract, not an implementation
-/// detail of one title.
-/// </remarks>
-public readonly record struct ComputerMapHighlight(Vector3d Position, string TitleResource, string Sprite);
+/// <param name="Expressions">The level's expressions, or <see langword="null"/> for a catalogue that compiles with its own.</param>
+public readonly record struct ComputerHighlightRequest(GameTask LevelRoot, ScriptVarRegistry Variables, LevelExpressionRuntime? Expressions = null);
 
 /// <summary>The second, straight-down 3D view owned by the retail map page.</summary>
 /// <remarks>

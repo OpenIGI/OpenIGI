@@ -12,7 +12,8 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="Team">Its team, or -1.</param>
 /// <param name="Kills">Its kills.</param>
 /// <param name="Deaths">Its deaths.</param>
-public readonly record struct ServerPlayer(int Slot, string Name, string PlayerId, int Ping, int Team, int Kills, int Deaths);
+/// <param name="AddressId">What the machine it plays from is banned by, or empty for a line with no address of its own.</param>
+public readonly record struct ServerPlayer(int Slot, string Name, string PlayerId, int Ping, int Team, int Kills, int Deaths, string AddressId = "");
 
 /// <content>What a server's operator does: the mode played next, the map's end, the players and their removal.</content>
 public sealed partial class HostedSession
@@ -106,7 +107,8 @@ public sealed partial class HostedSession
                     session.PingOf(slot),
                     standing?.Team ?? -1,
                     standing?.Kills ?? 0,
-                    standing?.Deaths ?? 0));
+                    standing?.Deaths ?? 0,
+                    session.AddressIdOf(slot) ?? string.Empty));
             }
 
             return players;

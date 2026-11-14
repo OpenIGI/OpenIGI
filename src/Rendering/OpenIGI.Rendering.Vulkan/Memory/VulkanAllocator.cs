@@ -1,5 +1,4 @@
 using System.Numerics;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 
@@ -85,7 +84,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
 
     // Retained free blocks, bucketed by the exact shape an allocation asked for, so a reused block always
     // satisfies the new resource's size, type and device-address requirements without re-checking them.
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Dictionary<PoolKey, Stack<DeviceMemory>> _free = new();
 
     // The shape each live block was allocated for, so Free can bucket a block back without the caller
@@ -578,7 +577,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
     }
 
     private static string Mib(long bytes) =>
-        FormattableString.Invariant($"{bytes / (1024.0 * 1024.0):F1} MiB");
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024.0):F1} MiB");
 
     private static string Describe(MemoryPropertyFlags flags)
     {

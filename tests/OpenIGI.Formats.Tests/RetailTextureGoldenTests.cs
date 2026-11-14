@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using OpenIGI.Core;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;

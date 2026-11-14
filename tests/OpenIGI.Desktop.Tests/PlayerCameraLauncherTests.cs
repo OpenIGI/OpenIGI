@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
@@ -74,7 +73,7 @@ public sealed class PlayerCameraLauncherTests
 
         camera.Tick(input, terrain: null);
 
-        Assert.Equal(roundsBefore, camera.Weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(roundsBefore, camera.Weapons.InHand.Value.Gun.RoundsInClip);
         Assert.Empty(camera.Weapons.Shots);
         Assert.Equal(MissileSimulation.MaximumLive, camera.Missiles.Missiles.Count);
     }
@@ -112,6 +111,8 @@ public sealed class PlayerCameraLauncherTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

@@ -2,7 +2,6 @@
 using OpenIGI.Engine.Resources;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;

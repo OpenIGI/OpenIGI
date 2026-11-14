@@ -1,6 +1,5 @@
 using System.Globalization;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qsc;
 
@@ -127,15 +126,6 @@ public static partial class MissionValidator
                 Fixes = [new IssueFix("Drop to Ground", () => SetParameterCommand.Numbers(document, standing, "Position", [x, y, WorldUnits.FromMetres(ground)]))],
             });
         }
-    }
-
-    // A task scripts name as Type_Id, or null for one they name otherwise (this, a native's prefix).
-    private static (string Type, int Id)? Referenced(string subject)
-    {
-        int split = subject.LastIndexOf('_');
-        return split > 0 && int.TryParse(subject.AsSpan(split + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int id)
-            ? (subject[..split], id)
-            : null;
     }
 
     // The lowest id in the game's table no task has.

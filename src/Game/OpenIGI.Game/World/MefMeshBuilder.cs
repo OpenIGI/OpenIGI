@@ -89,14 +89,87 @@ public static class MefMeshBuilder
         // faces whose normals were smoothed across an edge. Wound to the normals, those faces turned inside out and the
         // preset that culls drew their insides. The stored order is mirrored whole into this renderer's facing.
         // A model with no normals (IGI 2's lightmapped geometry) is drawn two-sided and keeps the order it was stored in.
-        if (HasNormals(vertices))
+        bool authored = HasNormals(vertices);
+        if (authored)
         {
             MirrorWinding(indices);
+        }
+        else
+        {
+            // Baked geometry is lit by its bake alone in the original, so it stores no normal. A look that
+            // lights the world itself has nothing to light such a surface by -- a hall of it stays black
+            // under its own lamps -- so each vertex is given the normal its faces have.
+            FaceNormals(vertices, indices);
         }
 
         // Wound as stored, a sheet's two faces face apart, and the faces that coincide can be drawn culled.
         MeshSubset[] partitioned = CoincidentSkins.Partition(vertices, indices, subsets, SkinPlaneToleranceUnits * scale);
-        return new MeshGeometry(vertices, indices, partitioned);
+        return new MeshGeometry(vertices, indices, partitioned) { HasDerivedNormals = !authored };
+    }
+
+    /// <summary>Gives every vertex the area-weighted normal of the faces that meet at it, facing whoever sees them.</summary>
+    /// <param name="vertices">The vertices, whose normals are written.</param>
+    /// <param name="indices">The triangle list, in the order the model stores it.</param>
+    /// <remarks>
+    /// <para>
+    /// The stored order faces each surface AWAY from whoever is meant to see it (see <see cref="MirrorWinding"/>),
+    /// so the side that is looked at is the one opposite the stored winding's normal, and that is the side
+    /// the normal is put on.
+    /// </para>
+    /// <para>
+    /// The raw cross product has the triangle's doubled area for its length, so summing them weights each
+    /// face by its size without weighting anything by hand. A vertex whose faces cancel keeps no normal
+    /// rather than an arbitrary one.
+    /// </para>
+    /// </remarks>
+    public static void FaceNormals(Vertex3D[] vertices, ushort[] indices)
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(indices);
+
+        Vector3f[] summed = new Vector3f[vertices.Length];
+
+        for (int at = 0; at + 2 < indices.Length; at += 3)
+        {
+            int a = indices[at];
+            int b = indices[at + 1];
+            int c = indices[at + 2];
+
+            if (a >= vertices.Length || b >= vertices.Length || c >= vertices.Length)
+            {
+                continue;
+            }
+
+            Vector3f ab = vertices[b].Position - vertices[a].Position;
+            Vector3f ac = vertices[c].Position - vertices[a].Position;
+            Vector3f seen = new(
+                (ac.Y * ab.Z) - (ac.Z * ab.Y),
+                (ac.Z * ab.X) - (ac.X * ab.Z),
+                (ac.X * ab.Y) - (ac.Y * ab.X));
+
+            summed[a] += seen;
+            summed[b] += seen;
+            summed[c] += seen;
+        }
+
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float length = MathF.Sqrt(summed[i].LengthSquared);
+
+            if (!(length > 1e-12f) || !float.IsFinite(length))
+            {
+                continue;
+            }
+
+            Vertex3D v = vertices[i];
+            vertices[i] = new Vertex3D(
+                v.Position,
+                new Vector3f(summed[i].X / length, summed[i].Y / length, summed[i].Z / length),
+                v.DiffuseU,
+                v.DiffuseV,
+                v.LightmapU,
+                v.LightmapV);
+        }
     }
 
     /// <summary>Turns every triangle over: the authored draw order faces the other way to this renderer's front.</summary>

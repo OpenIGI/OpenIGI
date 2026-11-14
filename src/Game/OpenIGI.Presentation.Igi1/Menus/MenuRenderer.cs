@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
@@ -270,7 +269,7 @@ public sealed class MenuRenderer : IDisposable
         }
 
         SpriteFrame frame = sprite.Asset.Frames[0];
-        return ((int)frame.Width, (int)frame.Height);
+        return (frame.Width, frame.Height);
     }
 
     private void DrawSubtree(SpriteBatch batch, MenuWindowTask window, int screenWidth, int screenHeight)
@@ -600,7 +599,7 @@ public sealed class MenuRenderer : IDisposable
         // A .pic is a tile grid, so its size is the grid times the tile — the same shape the
         // background uses. A plain sprite reports its first frame instead.
         (int width, int height) = logo.Asset.TileLayout is { } grid && logo.Asset.Frames.Count > 0
-            ? (grid.Columns * (int)logo.Asset.Frames[0].Width, grid.Rows * (int)logo.Asset.Frames[0].Height)
+            ? (grid.Columns * logo.Asset.Frames[0].Width, grid.Rows * logo.Asset.Frames[0].Height)
             : ((int)LogoWidth(logo), (int)LogoHeight(logo));
 
         RectF destination = Centred(

@@ -3,10 +3,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -21,10 +21,14 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="harm">What a fall and a powered fence do to the player.</param>
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="sounds">The clatter of a dropped gun landing.</param>
+/// <param name="animations">The animation sets the rig walks on and its first-person rig is posed by.</param>
 /// <param name="host">What shows and plays it.</param>
 public sealed partial class Igi1PlayerSetup(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, Igi1PlayerAnimations animations, IPlayerSetupHost host) : IPlayerBringUp
 {
+    /// <inheritdoc/>
+    public BoneAnimationSet? BodyAnimations => animations.Body;
+
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
 
@@ -56,8 +60,6 @@ public sealed partial class Igi1PlayerSetup(
     public PlayerSpawnPoint? LevelSpawn() =>
         _bringUp is { } b && PlayerSpawn.TryFindGameplay(b.LevelRoot, out PlayerSpawnPoint spawn) ? spawn : null;
 
-    /// <summary>Gets the rig being brought up, as the host steers it.</summary>
-    public IHostedPlayer Player => Candidate;
 
     /// <inheritdoc/>
     void IPlayerBringUp.Begin(LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, MissionStringResolver missionText) =>
@@ -72,11 +74,17 @@ public sealed partial class Igi1PlayerSetup(
     public void Configure() => Configure(Candidate);
 
     /// <summary>Gives the rig being brought up the first-person rig every Human builds (skeleton 5, model 005_01_1).</summary>
-    /// <param name="animations">The first-person rig's animation set.</param>
-    public void UseViewRig(BoneAnimationSet animations)
+    /// <returns>Whether the game has its set.</returns>
+    public bool UseViewRig()
     {
-        _viewRig = animations;
-        Candidate.UseViewRig(animations);
+        if (animations.ViewRig is not { } viewRig)
+        {
+            return false;
+        }
+
+        _viewRig = viewRig;
+        Candidate.UseViewRig(viewRig);
+        return true;
     }
 
     /// <summary>Hands the rig being brought up what the level's own <c>HumanPlayer</c> declares it carries.</summary>
@@ -144,7 +152,7 @@ public sealed partial class Igi1PlayerSetup(
             if (mission.PlayerTask is { } task)
             {
                 task.Events = mission.PlayerEvents;
-                task.Body = new Igi1PlayerBody(mission);
+                task.Body = new Igi1PlayerBody(() => mission.Player, task);
             }
         }
 
@@ -186,38 +194,29 @@ public sealed partial class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(missionText);
-        PlayerCamera candidate = new(host.Logger);
+        // 000.iff, kept so the player's third-person body can be built from the same set it walks on (HumanPlayerBody: the body
+        // is skeleton 0, and this is skeleton 0's set). Read once for the installation rather than per mission
+        // (Igi1Gameplay.PlayerAnimations): it lives under common/, so it is the same 1.5 MB of IFF for all fourteen. The walls
+        // are the index built for the soldiers' ground probe.
+        PlayerCamera candidate = Igi1PlayerRig.Build(
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), animations.Body, host.Logger);
         Candidate = candidate;
         _bringUp = (loaded, levelRoot, solids, missionText);
-        WirePlayer(candidate, loaded, solids, missionText);
+        WirePlayer(candidate, loaded);
 
-        // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
-        // symbols that get their values as the two tables are read, so the rosters have to load
-        // before humanplayer.qvm runs -- otherwise every id in its weapon cycle is a placeholder
-        // and the cycle names weapons nobody carries.
+        // ORDER MATTERS, and it is the original's: Igi1Arsenal reads the tables before humanplayer.qvm runs, or every id in
+        // its weapon cycle is a placeholder and the cycle names weapons nobody carries. Empty until then, so a mission whose
+        // tables cannot be read still has tables to ask.
         Weapons = new(host.Logger);
         Ammunition = new(host.Logger);
-        WeaponTypeRegistry weaponRoster = Weapons;
-        AmmoTypeRegistry ammoTable = Ammunition;
-        GameMaterialRegistry materialTable = new(host.Logger);
         try
         {
-            weaponRoster.Register(host.Game.Natives);
-            weaponRoster.Load(host.FileSystem, host.Resources, host.Game.Natives);
-            WeaponConfigRegistry.RegisterTypes(host.Game.Types);
-            WeaponConfigRegistry weaponConfig = new(host.Logger);
-            if (weaponConfig.Load(host.Resources, host.Game.Natives, host.Game.Tasks) == WeaponConfigRegistry.NoScript)
-            {
-                host.Logger.Warning(
-                    "Weapon",
-                    $"No weapon configuration at {WeaponConfigRegistry.ScriptResource}; this title keeps it elsewhere.");
-            }
-            else
-            {
-                weaponConfig.AttachTo(weaponRoster);
-            }
-            ammoTable.Register(host.Game.Natives);
-            ammoTable.Load(host.FileSystem, host.Resources, host.Game.Natives);
+            Igi1Arsenal arsenal = Igi1Arsenal.Load(host.Game, host.FileSystem, host.Resources, host.Logger);
+            Weapons = arsenal.Weapons;
+            Ammunition = arsenal.Ammunition;
+            WeaponTypeRegistry weaponRoster = Weapons;
+            AmmoTypeRegistry ammoTable = Ammunition;
+            GameMaterialRegistry materialTable = arsenal.Materials;
 
             // Shared with the guard-round handler: the ammunition record is what colours the retail tracer.
             mission.AmmoTypes = ammoTable;
@@ -227,23 +226,10 @@ public sealed partial class Igi1PlayerSetup(
             mission.WeaponTypes = weaponRoster;
 
             // What every surface in the world is made of, and therefore what a round leaves on it.
-            materialTable.Register(host.Game.Natives);
-            if (host.FileSystem.Exists(GameMaterialRegistry.ScriptResource))
-            {
-                host.Resources.Register(
-                    GameMaterialRegistry.ScriptResource,
-                    host.FileSystem.ReadAllBytes(GameMaterialRegistry.ScriptResource));
-            }
-            else
-            {
-                host.Logger.Warning("Material", $"No material table at {GameMaterialRegistry.ScriptResource}.");
-            }
-
-            int materialCount = materialTable.Load(host.Resources, host.Game.Natives);
             candidate.UseMaterials(materialTable);
             mission.Soldiers?.UseMaterials(materialTable);
             mission.Materials = materialTable;
-            host.Logger.Information("Material", $"Read {materialCount} game material(s).");
+            host.Logger.Information("Material", $"Read {arsenal.MaterialCount} game material(s).");
 
             // What the open ground is made of. The terrain declares it the same way a mesh face
             // does -- see FootstepSounds.TerrainGameMaterialIndex -- and it is Snow in the Arctic
@@ -312,42 +298,9 @@ public sealed partial class Igi1PlayerSetup(
     /// <summary>Wires a player's rig into the level: its animations, walls, grenades and missiles, ladders, interactions and pickups.</summary>
     /// <param name="candidate">The rig.</param>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
-    /// <param name="solids">The collision index over the placed objects.</param>
-    /// <param name="missionText">The mission's text.</param>
     /// <remarks>Everything <see cref="Begin"/> does for the one rig it makes; a co-op session's other players are wired the same way.</remarks>
-    private void WirePlayer(PlayerCamera candidate, LoadedMission loaded, ObjectCollisionIndex solids, MissionStringResolver missionText)
+    private void WirePlayer(PlayerCamera candidate, LoadedMission loaded)
     {
-
-        // 000.iff, kept so the player's third-person body can be built from the same set it walks on
-        // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
-        // animation's own root motion, so without it the player can stand and fall but not walk.
-        //
-        // Read once for the session rather than per mission: it lives under common/, so it is the
-        // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
-        // a mission started was most of that step's cost.
-        BoneAnimationSet? playerBodySet = host.ReadSharedAnimations();
-        if (playerBodySet is not null)
-        {
-            candidate.UseAnimations(playerBodySet);
-        }
-
-        // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
-        // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
-        // The index is the one built above for the soldiers' ground probe.
-        candidate.UseWalls(solids);
-        host.Logger.Information(
-            "Player",
-            $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
-
-        // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
-        // ground query, but a grenade has no such query and would fall through the world.
-        candidate.GrenadeWalls = host.Terrain is { } grenadeGround
-            ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
-            : solids.Caster();
-        candidate.GrenadeTrace = host.Terrain is { } grenadeTraceGround
-            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
-            : solids.Tracer();
-
         // The mine weapon lays nothing on a pane, a door or a vehicle (0x4755A0); its model's bound and magic vertex 0 are
         // what a blast is measured against and where its own starts.
         candidate.MineSurfaceRefused = hit => RefusesMine(hit);
@@ -378,20 +331,6 @@ public sealed partial class Igi1PlayerSetup(
                     velocity)
                 : null;
 
-        // The view model's forward sweep, which wants a ray through the terrain rather than the
-        // height under a point. Null for a title whose ground nothing can trace yet, and the
-        // pullback then meets placed objects only.
-        candidate.TerrainTrace = host.Terrain is { } viewModelGround
-            ? TerrainRayTrace.Caster(viewModelGround)
-            : null;
-
-        // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
-        // W/S up and down, E held to slide).
-        if (host.Scene is not null)
-        {
-            candidate.UseLadders(host.Scene.Ladders);
-            host.Logger.Information("Player", $"{host.Scene.Ladders.Count} ladder(s) to climb.");
-        }
         if (mission.Interactions is { } interactions)
         {
             candidate.UseInteractions(interactions);
@@ -469,24 +408,14 @@ public sealed partial class Igi1PlayerSetup(
     {
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
-        PlayerCamera extra = new(host.Logger);
-        WirePlayer(extra, loaded, solids, missionText);
+        PlayerCamera extra = Igi1PlayerRig.Build(
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), animations.Body, host.Logger);
+        WirePlayer(extra, loaded);
         WirePickups(extra, missionText);
         // Tuned, rigged and then armed, in the order the mission's own player is.
         if (_config is { } config)
         {
-            if (config.Parameters is { } tuning)
-            {
-                extra.UseParameters(tuning);
-            }
-
-            extra.UseWeaponCycle(config.WeaponCycle);
-            foreach ((int ammoId, int limit) in config.AmmoLimits)
-            {
-                extra.Weapons?.Ammunition.SetLimit(ammoId, limit);
-            }
-
-            extra.Weapons?.UseCategories(config.Categories);
+            Igi1PlayerRig.Tune(extra, config, host.Logger);
         }
 
         if (_viewRig is { } viewRig)
@@ -499,7 +428,7 @@ public sealed partial class Igi1PlayerSetup(
             Carry(extra, loadout, Weapons, Ammunition);
         }
 
-        HumanHealth health = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
+        HumanHealth health = new(HumanHitZoneTable.Player, mission.PlayerLife.MaximumHealth)
         {
             DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
         };
@@ -520,63 +449,17 @@ public sealed partial class Igi1PlayerSetup(
     public void Configure(PlayerCamera candidate)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
-        // is what says how high a jump goes and how far a step travels.
         try
         {
-            HumanPlayerConfig config = new();
-            config.Register(host.Game.Natives);
-            config.Load(host.Resources, host.Game.Natives);
+            // Read once for the level: a co-op session's other players are tuned by the same reading (BeginExtra).
+            HumanPlayerConfig config = Igi1PlayerRig.ReadTuning(host.Game, host.Resources, host.Logger);
             _config = config;
 
-            if (config.PlaceholderIds.Count > 0)
+            // Its delta translation scale, its full health and a powered fence's dose are the player's life's (Igi1PlayerLife.Tune).
+            if (Igi1PlayerRig.Tune(candidate, config, host.Logger) is { } tuning)
             {
-                host.Logger.Warning(
-                    "Player",
-                    $"humanplayer.qvm left {config.PlaceholderIds.Count} id(s) unresolved; the weapon "
-                        + "cycle may name weapons that do not exist.");
+                mission.PlayerLife.Tune(tuning, mission.PlayerDifficulty);
             }
-
-            if (config.Parameters is { } tuning)
-            {
-                candidate.UseParameters(tuning);
-
-                // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
-                mission.PlayerDeltaTranslationScale = tuning.DeltaTranslationScale;
-
-                // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
-                // 3.0 in retail, and the single number that sets the player's time-to-kill.
-                mission.PlayerMaximumHealth = tuning.MaximumHealth;
-
-                // Argument 8 is the dose one powered fence contact adds (0x412F80's fmul against
-                // the human's damage scale) -- 0.5 in retail. Read it for the same reason argument
-                // 7 is read: a retuned humanplayer.qvm owns its own shock, not the shipped number.
-                mission.ElectricFenceDose = tuning.ElectricFenceDose;
-                mission.PlayerHealth = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
-                {
-                    DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
-                };
-            }
-            else
-            {
-                host.Logger.Warning("Player", "humanplayer.qvm published no parameters; using the retail defaults.");
-            }
-
-            // The same script says which weapon starts in hand, and it is not a guess any more:
-            // 0x40F760's cycle index begins at -1, so the first update lands on entry 0 of
-            // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
-            // list starts with the knife.
-            candidate.UseWeaponCycle(config.WeaponCycle);
-
-            // 0x410370 caps the new player's ammunition at DefineHumanPlayerAmmoLimit's figures before anything is put in
-            // its pockets, so every pickup after is held to them.
-            foreach ((int ammoId, int limit) in config.AmmoLimits)
-            {
-                candidate.Weapons?.Ammunition.SetLimit(ammoId, limit);
-            }
-
-            // And the nine categories the number keys select — 0x411000 reads exactly this table.
-            candidate.Weapons?.UseCategories(config.Categories);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
         {
@@ -589,198 +472,26 @@ public sealed partial class Igi1PlayerSetup(
         // default health exists for standalone physics use; the desktop must give it the exact
         // accumulator the HUD, guard hits and death state already share. The sink crosses the
         // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
-        candidate.UseHealth(mission.PlayerHealth);
+        candidate.UseHealth(mission.PlayerLife.Health);
         candidate.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(candidate, impact));
     }
 
     /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
-    /// <remarks>
-    /// <para>
-    /// A vehicle's guns are attachments of its model (<c>0x4F4800</c> spawns them through <c>0x4C4950</c>);
-    /// each <c>TASKTYPE_AISTATIONARYGUN</c> names its weapon by model (<c>0x413C00</c>). A gun mounted on
-    /// another gun -- a T80's coaxial M2HB on its turret -- sits at the sum of both attachment offsets.
-    /// </para>
-    /// <para>
-    /// Missile rows (T80, APC) launch into the vehicle missile simulation; gunshot rows (M2HB, MIL) go
-    /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
-    /// </para>
-    /// </remarks>
     /// <param name="loaded">The mission, whose packs hold the vehicles' models.</param>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="roster">The weapon table.</param>
     /// <param name="player">The player the guns aim at.</param>
+    /// <seealso cref="Igi1VehicleArming"/>
     public void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
     {
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(player);
-        if (mission.Cutscenes is not { } runtime || mission.MagicObjects is not { } magic)
+        if (mission.Cutscenes is { } runtime && mission.MagicObjects is { } magic)
         {
-            return;
+            new Igi1VehicleArming(mission, host, loaded, roster, player, runtime, magic).Arm(levelRoot);
         }
-
-        int armed = 0;
-        List<string> weaponModels = [];
-        foreach (DeclaredTask vehicle in levelRoot.Descendants().OfType<DeclaredTask>())
-        {
-            if (vehicle.Type.Name is ("Car" or "Heli")
-                && vehicle.TryGetValue("Model", out object? rawZoneModel)
-                && rawZoneModel is string zoneModel)
-            {
-                runtime.ConfigureDeathZones(
-                    vehicle,
-                    VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
-            }
-
-            // A gun holder carries its guns as attachments of its holder model, as a car does of its own.
-            if (vehicle.Type.Name == "AIStationaryGunHolder"
-                && vehicle.TryGetValue("Holder model", out object? rawHolderModel)
-                && rawHolderModel is string holderModel)
-            {
-                armed += ArmGuns(vehicle, holderModel) ? 1 : 0;
-                continue;
-            }
-
-            // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
-            if (vehicle.Type.Name is not ("Car" or "Heli")
-                || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
-                || rawCanFire is not string canFire
-                || string.IsNullOrWhiteSpace(canFire)
-                || !vehicle.TryGetValue("Model", out object? rawModel)
-                || rawModel is not string modelName)
-            {
-                continue;
-            }
-
-            armed += ArmGuns(vehicle, modelName) ? 1 : 0;
-        }
-
-        if (armed == 0)
-        {
-            return;
-        }
-
-        // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
-        if (host.Scene is { } armedScene)
-        {
-            runtime.BindVehicleGunPlacements(armedScene);
-        }
-
-        mission.SoldierPresenter?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
-
-        // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
-        // about a metre over the feet standing and half that crouched -- not the eye.
-        // The rig, or another game's player standing in its stead: where its feet are and whether it keeps low.
-        (Vector3d Feet, bool Low)? Target() =>
-            mission.IsPlayerDead || mission.PlayerHealth.IsDead ? null
-            : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
-            : (player.Body.Position, player.Body.IsCrouched);
-        runtime.VehicleCombatTarget = () => Target() is { } aim
-            ? aim.Feet + new Vector3d(
-                0d,
-                0d,
-                aim.Low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
-            : null;
-        // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
-        // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.VehicleSightTarget = () => Target() is { } seen
-            ? seen.Feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(seen.Low))
-            : null;
-        // A holder's record is offered every human in the global list's order (0x489750), each described by itself
-        // (0x45FE30): the player, the partners, then the soldiers.
-        List<AiDetectable> detectables = [];
-        runtime.GunHolderSubjects = () =>
-        {
-            detectables.Clear();
-            int playerTeam = mission.Soldiers?.PlayerTeam ?? 0;
-            object playerKey = (object?)mission.PlayerStandIn ?? player;
-            (Vector3d feet, bool low) = mission.PlayerStandIn is { } standIn
-                ? (standIn.Feet, standIn.IsKeepingLow)
-                : (player.Body.Position, player.Body.IsCrouched);
-            detectables.Add(HumanDetectable(playerKey, feet, low, playerTeam, alive: Target() is not null));
-            foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
-            {
-                detectables.Add(HumanDetectable(
-                    partner, partner.Player.Body.Position, partner.Player.IsCrouched, playerTeam, alive: !partner.IsDead));
-            }
-
-            mission.Soldiers?.AddDetectables(detectables);
-            return detectables;
-        };
-        runtime.VehicleCombatLineOfSight = (owner, from, to) =>
-            mission.Trace is null
-            || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.SightObstructionTolerance, owner);
-        runtime.VehicleCombatShotFired = shot =>
-        {
-            if (shot.IsHitscan)
-            {
-                if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
-                {
-                    mission.VehicleRoundOwner = shot.Owner;
-                    try
-                    {
-                        mission.Soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
-                    }
-                    finally
-                    {
-                        mission.VehicleRoundOwner = null;
-                    }
-                }
-
-                return;
-            }
-
-            // The report is the gun's, on the hold edges Gun_Fire plays it on (VehicleSoundPlayer); the missile
-            // task makes no launch sound of its own.
-            mission.VehicleMissiles.Spawn(
-                shot.Origin,
-                shot.Target,
-                shot.MissileType,
-                shot.MuzzleVelocityMetresPerSecond,
-                shot.Direction,
-                shot.ModelName,
-                collisionOwner: shot.Owner,
-                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
-        };
-        host.Logger.Information("Ai", $"{armed} armed vehicle(s) and gun holder(s).");
-
-        bool ArmGuns(DeclaredTask carrier, string modelName)
-        {
-            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
-                modelName,
-                ModelOf,
-                magic,
-                roster,
-                (attachment, weaponModel) => host.Logger.Warning(
-                    "Ai",
-                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
-            if (guns.Count == 0)
-            {
-                return false;
-            }
-
-            runtime.ConfigureVehicleGuns(carrier, guns);
-            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
-            host.Logger.Information(
-                "Ai",
-                $"{carrier.Type.Name} {carrier.Id} ({modelName}) carries "
-                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
-            return true;
-        }
-
-        // A human as it describes itself to a record: its mark over the feet, its origin, its side, whether it lives.
-        static AiDetectable HumanDetectable(object key, Vector3d feet, bool low, int team, bool alive) => new(
-            key,
-            feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(low)),
-            feet + new Vector3d(0d, 0d, low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits),
-            team,
-            alive);
-
-        MefModel? ModelOf(string name) =>
-            loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
-                ? mef
-                : null;
     }
 
     /// <summary>Hands the player everything the mission declares, with the ammunition each weapon draws from.</summary>
@@ -871,7 +582,7 @@ public sealed partial class Igi1PlayerSetup(
         candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
         {
             bool found = soldierProximity(center, radiusUnits, out target);
-            if (!mission.PlayerHealth.IsDead)
+            if (!mission.PlayerLife.Health.IsDead)
             {
                 double distance = Vector3d.Distance(center, candidate.Body.Position);
                 if (distance <= radiusUnits && (!found || distance < target.Distance))
@@ -883,14 +594,7 @@ public sealed partial class Igi1PlayerSetup(
 
             return found;
         };
-        // A round's impact, which another game's humans tell from a landing by its flight from the eye.
-        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(
-            impact,
-            candidate.Body.Position,
-            flight: new Vector3f(
-                (float)(impact.X - candidate.Body.Eye.X), (float)(impact.Y - candidate.Body.Eye.Y), (float)(impact.Z - candidate.Body.Eye.Z)));
-        candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
-            noise, candidate.Body.Position, candidate.Body.Position);
+        Igi1PlayerHearing.Attach(candidate, guards.Simulation);
 
         // A glancing round whizzes where it turned, on the ricochet sound's own limit --
         // 0x47BD7B sounds it there directly rather than through the material's window.

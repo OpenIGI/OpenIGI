@@ -42,7 +42,6 @@ public sealed class SnowRenderer : IDisposable
     private bool _active;
     private bool _authoredAvailable;
     private float _speedMultiplier = 1f;
-    private bool _indoors;
     private float _startMeters = 10f;
     private float _endMeters = 2f;
     private float _alpha = 0.25f;
@@ -75,17 +74,13 @@ public sealed class SnowRenderer : IDisposable
     }
 
     /// <summary>Gets whether snow is enabled and visible outdoors.</summary>
-    public bool IsActive => _active && !_indoors;
+    public bool IsActive => _active && !Indoors;
 
     /// <summary>Gets whether snow is enabled before the indoor visibility test.</summary>
     public bool IsWeatherEnabled => _active;
 
     /// <summary>Gets or sets whether the camera is inside a building.</summary>
-    public bool Indoors
-    {
-        get => _indoors;
-        set => _indoors = value;
-    }
+    public bool Indoors { get; set; }
 
     /// <summary>Gets the authored upper traceline distance.</summary>
     public float StartMeters => _startMeters;

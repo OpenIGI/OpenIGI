@@ -8,14 +8,11 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats;
 using OpenIGI.Game.Igi1;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
@@ -48,7 +45,7 @@ public sealed class DestructibleModelReplacementTests
 
             foreach (WorldPlacement placement in explodeObjects)
             {
-                DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
+                DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(placement.Owner);
                 Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
                 string destroyedModel = Assert.IsType<string>(rawDestroyed);
 
@@ -202,7 +199,7 @@ public sealed class DestructibleModelReplacementTests
         foreach (IGrouping<GameTask, (WorldPlacement Placement, int Index)> group in placements.GroupBy(entry => entry.Placement.Owner))
         {
             WorldPlacement placement = group.Last().Placement;
-            DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
+            DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(placement.Owner);
             Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
             string destroyedModel = Assert.IsType<string>(rawDestroyed);
             DestructibleObject destructible = Assert.Single(
@@ -217,7 +214,7 @@ public sealed class DestructibleModelReplacementTests
                 Assert.True(
                     ownedPlacement.DestroyedReplacement is not null,
                     $"Mission {mission}, {family} '{task.Name}': {ownedPlacement.Instance.Name} has no binding for {destroyedModel}.");
-                WorldModelBinding replacement = ownedPlacement.DestroyedReplacement!;
+                WorldModelBinding replacement = ownedPlacement.DestroyedReplacement;
 
                 Assert.Equal(destroyedModel, replacement.Instance.Name);
                 Assert.Equal(destroyedModel, destructible.DestroyedModelName);
@@ -261,7 +258,8 @@ public sealed class DestructibleModelReplacementTests
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
 
         MissionRegistry missions = new();
@@ -282,7 +280,7 @@ public sealed class DestructibleModelReplacementTests
             scene.Placements,
             loop.Variables);
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Destructibles = destructibles };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Objects = new OpenIGI.Game.Igi1.World.Igi1PlacementObjects(new OpenIGI.Game.Igi1.World.MissionWorld { Destructibles = destructibles }) };
         return new Scenario(scene, destructibles, device, renderer);
     }
 

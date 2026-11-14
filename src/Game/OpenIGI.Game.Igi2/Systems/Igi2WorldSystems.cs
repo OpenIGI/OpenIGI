@@ -41,12 +41,18 @@ internal static class Igi2WorldSystems
             }
             else if (ReferenceEquals(node, b.PlayerTask))
             {
-                detection.Detectables.Add(player.Human);
+                // Another game's player standing for the level's own is seen in its stead.
+                detection.Detectables.Add(player.StoodFor is null ? player.Human : player.StandIn as Game.Ai.IAiDetectable ?? player.Human);
             }
             else if (node is Ai.Igi2HumanSoldierTask { Body: { } soldier })
             {
                 detection.Detectables.Add(soldier);
                 Igi2Gameplay.SeeThrough(soldier, detection);
+            }
+            else if (node is Ai.Igi2HumanSoldierTask { StandIn: Game.Ai.IAiDetectable standIn })
+            {
+                // Another game's body standing for the soldier is seen where it stands.
+                detection.Detectables.Add(standIn);
             }
         }
 
@@ -62,6 +68,12 @@ internal static class Igi2WorldSystems
                     detection.Remove(living);
                 }
             }
+        }
+
+        // Another game's humans joined to the level are seen where they stand.
+        foreach (Game.Ai.IAiDetectable joined in b.Level.Joined.Seen)
+        {
+            detection.Detectables.Add(joined);
         }
 
         b.Sight = detection;
@@ -186,7 +198,11 @@ internal static class Igi2WorldSystems
             {
                 smoke.Particles = particles;
                 smoke.Stream = smokeRandom;
-                smoke.Players.Set(player.Human);
+                if (player.StoodFor is null)
+                {
+                    smoke.Players.Set(player.Human);
+                }
+
                 player.SmokeRosters.Add(smoke.Players);
                 smoke.Prepare();
             }

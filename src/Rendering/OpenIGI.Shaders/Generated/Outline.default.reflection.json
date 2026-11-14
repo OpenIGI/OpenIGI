@@ -23,7 +23,8 @@
       "class": "ConstantBuffer",
       "register": 1,
       "space": 0
-    }
+    },
+    "glslUnit": 0
   },
   "specializationConstants": [
     {
@@ -38,5 +39,6 @@
     "class": "ConstantBuffer",
     "register": 0,
     "space": 0
-  }
+  },
+  "glslSamplers": []
 }

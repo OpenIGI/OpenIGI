@@ -4,8 +4,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;
@@ -45,13 +43,13 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
     public MaterialLibrary Materials { get; set; } = MaterialLibrary.Empty;
 
     /// <summary>Loads every resolved pickup model in a level.</summary>
-    public void Load(LoadedMission mission, GunPickupRegistry pickups)
+    public void Load(LoadedMission mission, IReadOnlyList<GunPickup> pickups)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(pickups);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        foreach (GunPickup pickup in pickups.Items)
+        foreach (GunPickup pickup in pickups)
         {
             Add(mission, pickup);
         }

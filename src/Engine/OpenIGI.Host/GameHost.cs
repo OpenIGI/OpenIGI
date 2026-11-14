@@ -12,7 +12,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Hosting;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
@@ -44,10 +43,6 @@ public sealed partial class GameHost : IDisposable
     private const float NearPlane = ViewPlanes.NearMetres;
     private const float FarPlane = ViewPlanes.FarMetres;
 
-    // How long a load will hold for the lighting before giving up and letting the player in anyway. A
-    // level that somehow never finishes tracing must not become a game that never starts.
-    private const int LightingWaitMilliseconds = 30_000;
-
     // How long -entrytime lets the backdrop show the chosen hour before -entrycam presses Play: about a
     // second of the menu, as a player choosing it would leave.
     private const int EntryTimeSettleFrames = 60;
@@ -57,7 +52,6 @@ public sealed partial class GameHost : IDisposable
     private readonly IWorkScheduler _work;
     private readonly ILoadGate _loadGate;
     private readonly IGameWindow _window;
-    private readonly IAudioDeviceFactory _audioFactory;
     // The games this build can run. Held rather than resolved once, because the shell can change which
     // one is running: a switch resolves a different title's four services through the same catalogue the
     // first one came from, so there is no second path that could answer differently.
@@ -80,6 +74,27 @@ public sealed partial class GameHost : IDisposable
 
     /// <summary>Gets the window height, or the authored 240 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowHeight => _window.Height > 0 ? _window.Height : 240;
+
+    /// <summary>Gets the layout the menus are updated and drawn in this frame: the window's, enlarged on a small screen.</summary>
+    /// <remarks>The shell's update and its draw both take this one, so a pointer lands on what is drawn.</remarks>
+    private OpenIGI.UI.Layout.LayoutContext ShellLayout()
+    {
+        // Clear of a phone's notch and home bar: the level behind the menus runs to the screen's edge, the menus do not.
+        (float left, float top, float right, float bottom) = _window.SafeInsets;
+        float scale = UiScale.MenuBoost(_window.Width, _window.Height, _window.PixelDensity);
+
+        // The scale is counted from the whole screen's height; the layout counts it from what is left inside the insets.
+        float inner = SafeWindowHeight - top - bottom;
+        if (inner > 1f)
+        {
+            scale *= SafeWindowHeight / inner;
+        }
+
+        return new(SafeWindowWidth, SafeWindowHeight, safeArea: new OpenIGI.UI.Layout.Thickness(left, top, right, bottom), userScale: scale);
+    }
+
+    /// <summary>Gets the smallest the menus' text is drawn on this window, in its own pixels.</summary>
+    private float ShellSmallestText => UiScale.MenuSmallestTextPixels * MathF.Max(1f, _window.PixelDensity);
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
@@ -144,17 +159,13 @@ public sealed partial class GameHost : IDisposable
 
     // --- The player's own life, damage and death ---
 
-
     /// <summary>The wall clock the third-person move is advanced on; it is a camera move, not a tick.</summary>
 
     /// <summary>The pull-in ray, kept so a frame does not allocate one; rebuilt when the level's does.</summary>
 
-
-
     // What the level says about its own light, for a title that authors that rather than a sky. Null for
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
     private DeferredLighting? _deferredLighting;
-
 
     // What a person has said outright about which models are lamps, which beats anything the detector
     // works out. One file for the whole game; see Assets/lamps.json.
@@ -163,11 +174,31 @@ public sealed partial class GameHost : IDisposable
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     // The first game's mission, its world, and the host's side of it.
     private readonly MissionHostServices _missionHost;
-    private readonly IHostedMission _hosted;
-    private readonly MissionState _mission;
+    private IHostedMission _hosted = null!;
+
+    // Starts the mission that is up afresh: the pause menu's restart, which a save game's load asks for too.
+    private Action? _restartMission;
+    private Action? _resumeMission;
+    private MissionState _mission = null!;
 
     // The player the host steers and looks through, when the mission has one.
-    private IHostedPlayer? HostedPlayer => _hosted.Player;
+
+    // Holds the standing player still while something else has the pointer: nothing the mouse or the keys did since the last
+    // tick goes through, and taking the cursor back is not read as aim.
+    private void HoldPlayerStill()
+    {
+        if (TitlePlayer is not null)
+        {
+            ForgetTitleInput();
+            _titleFeatures?.Look?.ResetLook();
+        }
+    }
+
+    // Lets go of the standing player's look while another camera has the mouse, so handing it back is not read as aim.
+    private void ReleasePlayerLook() => _titleFeatures?.Look?.ResetLook();
+
+    // Whether a player stands in the mission.
+    private bool PlayerStands => TitlePlayer is not null;
 
     // The console's handle on the content layers.
     private readonly ContentLayerCommands _contentLayers;
@@ -200,6 +231,41 @@ public sealed partial class GameHost : IDisposable
     /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
     private const int MaxTicksPerStep = 8;
 
+    /// <summary>How long the host may stay away between two steps before the time counts as not played, in milliseconds.</summary>
+    /// <remarks>
+    /// Longer than any frame a machine that can play the game takes -- a slow one catches up as it always did -- and far
+    /// shorter than a tab left for another.
+    /// </remarks>
+    private const int TimeAwayMilliseconds = 1000;
+
+    /// <summary>Leaves out of the schedule the time the host stayed away between two steps, when it was long.</summary>
+    /// <param name="leftAt">The clock's reading as the last step returned.</param>
+    /// <remarks>
+    /// <para>
+    /// A browser steps the game from its animation frames, and a tab that is hidden -- another tab, another window over it, the
+    /// screen locked -- gets none. The clock kept counting, so the player came back to a schedule minutes behind and a game
+    /// that ran several times too fast until it had caught up: guards sprinting, a cutscene over before it was seen.
+    /// </para>
+    /// <para>
+    /// Not in a session, whose clock is everyone's: there the page keeps stepping from a worker while it is hidden, and a
+    /// player who does fall behind has to catch up with the others. Not under lockstep, whose clock only the frames move.
+    /// The desktop never leaves its loop, so this finds nothing there.
+    /// </para>
+    /// </remarks>
+    private void ForgetTimeAway(int leftAt)
+    {
+        if (_options.Lockstep || TickObserver is not null)
+        {
+            return;
+        }
+
+        int away = unchecked(_loop.TimeSource.Milliseconds - leftAt);
+        if (away > TimeAwayMilliseconds)
+        {
+            _loop.Clock.ExcludeElapsed(away);
+        }
+    }
+
     /// <summary>Milliseconds since the process was started, for the start-up timings.</summary>
     /// <remarks>
     /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
@@ -230,7 +296,6 @@ public sealed partial class GameHost : IDisposable
 
     // --- The player, the held weapon, the HUD and the soldiers ---
     private IHeldWeaponPresenter? _heldWeapon;
-    private IGunPickupPresenter? _gunPickupRenderer;
 
     // The over-the-shoulder camera's and the flashlight's wall cast, cached against the collision it is built from.
     private DebugOverlayRenderer? _debugOverlay;
@@ -243,15 +308,11 @@ public sealed partial class GameHost : IDisposable
     private long _titleCycleLeg;
     private int _missionCycleMission;
 
-    private IBulletMarkPresenter? _marks;
-
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
     // and the player's own material lookup already use.
 
-    private ICameraStatusLightPresenter? _cameraStatusLights;
-    private IGrenadePresenter? _grenadeRenderer;
-    private IMissilePresenter? _missileRenderer;
+    private ModelGlowRenderer? _modelGlows;
 
     // How the level's models give up detail with distance, or none.
     private ModelLodPolicy? _modelLod;
@@ -342,8 +403,7 @@ public sealed partial class GameHost : IDisposable
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
         _missionHost = new MissionHostServices(this);
-        _hosted = titles.CreateHostedMission(_missionHost);
-        _mission = _hosted.World;
+        BindMission(titles, binding);
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,
@@ -353,14 +413,12 @@ public sealed partial class GameHost : IDisposable
                 return report;
             },
             logger);
-        _audioFactory = audioFactory;
         _work = work;
         _loadGate = loadGate;
         _titles = titles;
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
-        _gameplay = binding.Gameplay;
         _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
         _options = options;
@@ -373,7 +431,7 @@ public sealed partial class GameHost : IDisposable
         _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
-        _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this), _work);
+        _effects = new WorldEffects(device, logger, () => _mission.SoundRandom, new WorldEffectsHost(this), _work);
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);
@@ -394,6 +452,7 @@ public sealed partial class GameHost : IDisposable
 
         while (Step())
         {
+            // The loop's condition does the work.
         }
 
         Stop();
@@ -580,7 +639,7 @@ public sealed partial class GameHost : IDisposable
         // which is collected below, before the first line that reads it.
         Task audioReady = _work.Run(OpenAudioDevice);
 
-        BindDeviceVariables(state);
+        BindDeviceVariables();
 
         CreateClocksAndLighting(state);
 
@@ -597,7 +656,7 @@ public sealed partial class GameHost : IDisposable
 
         ResetPlayerAndCaptures(state);
 
-        LoadSharedRenderData(state);
+        LoadSharedRenderData();
 
         ForgetLevel(state);
 
@@ -627,7 +686,9 @@ public sealed partial class GameHost : IDisposable
             if (state.LastOutcome != FrameOutcome.Tick || ++state.TicksSinceStep >= MaxTicksPerStep)
             {
                 state.TicksSinceStep = 0;
+                int leftAt = _loop.TimeSource.Milliseconds;
                 yield return true;
+                ForgetTimeAway(leftAt);
             }
 
             // Until this pass runs the loop: one that ends before it has drawn nothing and ticked nothing.
@@ -680,7 +741,7 @@ public sealed partial class GameHost : IDisposable
             {
                 RunSessionCycles(state);
                 RunDeferredCommands(state);
-                AdvanceWorldClocks(state);
+                AdvanceWorldClocks();
             }
             else
             {
@@ -692,7 +753,8 @@ public sealed partial class GameHost : IDisposable
                 UpdatePlayerDevices(state);
                 UpdateMenuBackdrop(state);
                 HandleDeveloperKeys(state);
-                AdvanceWorldClocks(state);
+                HandleSaveKeys();
+                AdvanceWorldClocks();
                 UpdateFlyingView(state);
             }
 
@@ -723,7 +785,7 @@ public sealed partial class GameHost : IDisposable
             // is one the player never gets to watch.
             if (_session.LevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel;
+                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel;
             }
 
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
@@ -743,7 +805,7 @@ public sealed partial class GameHost : IDisposable
                 state.FirstFrameReported = true;
                 _logger.Information(
                     "Desktop",
-                    FormattableString.Invariant($"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
             }
 
             // Retire finished voices, refill streaming buffers and advance any crossfade. This sits
@@ -756,7 +818,7 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel))
             {
                 // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
                 if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
@@ -901,9 +963,16 @@ public sealed partial class GameHost : IDisposable
     /// below them takes it back: the death orbit, the ladder camera, the look. Whichever runs last in
     /// the frame wins, so a menu that does not stop the chain here ends up fighting one of them and the
     /// pointer flashes between locked and free without ever moving.
+    /// <para>
+    /// The front end is the third. A level that has been left is released, but what its cameras read is
+    /// not: a player who died, or was on a ladder, when the mission was abandoned is still dead or still
+    /// climbing as far as the viewpoint knows, and the death orbit and the ladder camera lock the cursor
+    /// whether or not a level is up. Locked, the backend's pointer is a virtual one with no edges, and
+    /// the shell draws its cursor wherever that says -- which is any distance off the screen.
+    /// </para>
     /// </remarks>
-    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu) =>
-        pauseMenu || missionFailedMenu;
+    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu, bool frontEnd) =>
+        pauseMenu || missionFailedMenu || frontEnd;
 
     /// <summary>
     /// Releases the GPU-backed resources the game owns. The window, device and developer console are owned
@@ -934,19 +1003,18 @@ public sealed partial class GameHost : IDisposable
         _menuBackdrop.Dispose();
         _menuFlow.Dispose();
         _heldWeapon?.Dispose();
-        _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
+        _touchIcons?.Dispose();
+        _missionPictures?.Dispose();
         _debugOverlay?.Dispose();
         _mapComputer?.Dispose();
         _mapComputerDevice?.Dispose();
         _tacticalComputer?.Dispose();
         _messages?.Dispose();
-        _marks?.Dispose();
+        (_worldView as IDisposable)?.Dispose();
         _effects.Dispose();
-        _cameraStatusLights?.Dispose();
-        _grenadeRenderer?.Dispose();
-        _missileRenderer?.Dispose();
+        _modelGlows?.Dispose();
         _retailMenus?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();

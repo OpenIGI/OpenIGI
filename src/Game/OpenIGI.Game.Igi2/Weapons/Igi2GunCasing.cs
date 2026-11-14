@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Weapons;

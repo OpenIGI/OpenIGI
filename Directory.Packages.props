@@ -38,6 +38,13 @@
     <PackageVersion Include="Silk.NET.Direct3D12" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.DXGI" Version="2.23.0" />
     <PackageVersion Include="Microsoft.Direct3D.D3D12" Version="1.620.1" />
+    <!-- The OpenGL backend uses Silk.NET.OpenGL, pinned below beside the launcher's use of it. -->
+    <!-- SPIRV-Cross, for the shader build tool only: the OpenGL forms of the library are the SPIR-V Vulkan
+         runs, translated to GLSL 4.30. Pinned here rather than taken from the Vulkan SDK because the GLSL is
+         committed and checked byte for byte, and two SPIRV-Cross builds do not emit the same text. The
+         native package carries the C library for every platform the tool runs on. -->
+    <PackageVersion Include="Silk.NET.SPIRV.Cross" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.OpenAL" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.OpenAL.Extensions.EXT" Version="2.23.0" />
     <PackageVersion Include="Concentus" Version="2.2.2" />
@@ -65,7 +72,8 @@
     <PackageVersion Include="SkiaSharp" Version="3.119.4" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
 
-    <!-- The launcher's window is a plain OpenGL surface Skia renders into. -->
+    <!-- The launcher's window is a plain OpenGL surface Skia renders into, and the OpenGL renderer
+         backend draws the game through the same bindings. -->
     <PackageVersion Include="Silk.NET.OpenGL" Version="2.23.0" />
   </ItemGroup>
 

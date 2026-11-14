@@ -224,7 +224,7 @@ public sealed partial class Igi2TitlePlayer
             return null;
         }
 
-        foreach (Computer.Igi2ComputerObjective objective in objectives)
+        foreach (OpenIGI.Game.Flow.ComputerObjective objective in objectives)
         {
             if (objective.TextResource.Length == 0 || objective.IsComplete || objective.IsFailed)
             {
@@ -232,10 +232,7 @@ public sealed partial class Igi2TitlePlayer
             }
 
             string text = Strings?.Get(objective.TextResource) ?? objective.TextResource;
-            Vector3d? place = objective.LinkToPosition != -1 && TaskById?.Invoke(objective.LinkToPosition) is Flow.IIgi2CameraTarget target
-                ? target.CameraTargetPosition
-                : null;
-            return (text, place);
+            return (text, ObjectivePlace(objective));
         }
 
         return null;

@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -58,9 +57,6 @@ internal sealed class WorldFrameState
         _subsets = subsets;
         _occlusionSettle = occlusionSettle;
     }
-
-    /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
-    internal GenericPickupRegistry? GenericPickups { get; set; }
 
     /// <summary>Gets or sets the title's own view culling, asked once a frame for every placement.</summary>
     internal IPlacementVisibility? Visibility { get; set; }
@@ -209,8 +205,9 @@ internal sealed class WorldFrameState
             ResolvedWorldModel? wasModel = entry.Model;
             Vector3d wasPosition = entry.Position;
 
-            if (GenericPickups?.IsCollected(authored.Owner) == true
-                || !ConditionalContainerGate.IsTaskActive(authored.Owner))
+            if (_transforms.Objects?.IsTaken(authored) == true
+                || !ConditionalContainerGate.IsTaskActive(authored.Owner)
+                || _transforms.Presence?.IsInWorld(authored) == false)
             {
                 NoteGone(wasSkipped, wasModel, wasPosition);
                 entry.Skip = true;
@@ -220,8 +217,7 @@ internal sealed class WorldFrameState
             // Blown up with nothing authored to stand in its place: there is no rubble model to
             // swap to, so the placement leaves the frame entirely rather than drawing intact.
             // A placement a bomb shattered has left as its pieces, whatever it would otherwise have been drawn as.
-            if (((_transforms.Destructibles?.IsDestroyed(authored) == true || _transforms.Destruction?.IsDestroyed(authored) == true
-                    || _transforms.AlarmSpeakers?.IsLightGone(authored.Owner) == true)
+            if (((_transforms.IsBroken(authored) || _transforms.Objects?.IsLightGone(authored) == true)
                 && authored.DestroyedReplacement is null)
                 || (_transforms.Shattered.Count > 0 && _transforms.Shattered.Contains(authored)))
             {
@@ -254,17 +250,17 @@ internal sealed class WorldFrameState
 
             // What nothing claims is drawn where it stands, as the original draws an object from its own matrix (0x49DF60):
             // asked once, and again only when a claim is made or let go.
-            int epoch = PlacementClaims.Epoch;
+            int epoch = entry.Displayed.Owner.PlacementEpoch + _transforms.Swaps;
             if (entry.ClaimEpoch != epoch || !ReferenceEquals(entry.ClaimFor, entry.Displayed))
             {
-                entry.Unclaimed = !_transforms.IsClaimed(entry.Displayed!);
+                entry.Unclaimed = !_transforms.IsClaimed(entry.Displayed);
                 entry.ClaimEpoch = epoch;
                 entry.ClaimFor = entry.Displayed;
             }
 
             if (entry.Unclaimed)
             {
-                entry.Position = entry.Displayed!.Position;
+                entry.Position = entry.Displayed.Position;
                 entry.Orientation = entry.Displayed.Orientation;
                 entry.Rotor = default;
                 entry.HasRotor = false;
@@ -272,7 +268,7 @@ internal sealed class WorldFrameState
             else
             {
                 _transforms.ResolveDrawTransform(
-                    entry.Displayed!,
+                    entry.Displayed,
                     out entry.Position,
                     out entry.Orientation,
                     out entry.Rotor,

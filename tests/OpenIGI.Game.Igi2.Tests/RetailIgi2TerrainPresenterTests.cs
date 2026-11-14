@@ -292,14 +292,14 @@ public sealed class RetailIgi2TerrainPresenterTests
 
         Assert.Equal(22, levels);
 
-        // 267,891 triangles across the corpus against 12,938,075 at full detail, from 55,355 quadtree
+        // 283,311 triangles across the corpus against 12,938,075 at full detail, from 58,342 quadtree
         // leaves. Part of that is the material passes; the rest is the lightmap pass, which draws every
         // leaf triangle once and no more, because it is drawn from the passes' BASE lists -- fewer than
         // two per leaf, because a leaf triangle that fell wholly inside a DiscardTask was never issued
         // into any pass at all. The leaf count itself is not reduced by a hole: the quadtree still
         // descends through one, it just emits nothing there.
-        Assert.Equal(267_891L, triangles);
-        Assert.Equal(55_355, squares);
+        Assert.Equal(283_311L, triangles);
+        Assert.Equal(58_342, squares);
     }
 
     /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>

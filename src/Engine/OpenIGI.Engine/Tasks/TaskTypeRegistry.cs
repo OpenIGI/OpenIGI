@@ -82,6 +82,31 @@ public sealed class TaskTypeRegistry
         return type;
     }
 
+    /// <summary>Registers a class for a task type whose parameters stay the ones level data declares.</summary>
+    /// <typeparam name="T">The implementing class, a <see cref="DeclaredTask"/>.</typeparam>
+    /// <param name="name">The name scripts spawn it by.</param>
+    /// <param name="parent">The parent type, or <see langword="null"/> for a root type.</param>
+    /// <returns>The registered type.</returns>
+    /// <exception cref="InvalidOperationException">The name is already registered by another class.</exception>
+    /// <remarks>
+    /// The class gives the type its handlers; the level's <c>Task_DeclareParameters</c> gives it its parameter list, before or
+    /// after this, and a task's values are read by the names declared there.
+    /// </remarks>
+    public TaskType RegisterDeclared<T>(string name, TaskType? parent = null)
+        where T : DeclaredTask, new()
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        IReadOnlyList<TaskParameter> declared = _types.TryGetValue(name, out TaskType? placeholder) && placeholder.IsDeclared
+            ? placeholder.Parameters
+            : [];
+        bool wasDeclared = placeholder?.IsDeclared == true;
+        TaskType type = Register(name, static () => new T(), parent);
+        type.TakesDeclaredParameters = true;
+        type.Parameters = declared;
+        type.IsDeclared = wasDeclared;
+        return type;
+    }
+
     /// <summary>Replaces the class that implements a registered task type.</summary>
     /// <typeparam name="T">The new implementing class.</typeparam>
     /// <param name="name">The type's name.</param>
@@ -178,7 +203,7 @@ public sealed class TaskTypeRegistry
 
         if (_types.TryGetValue(name, out TaskType? existing))
         {
-            if (existing.IsDeclarationOnly || existing.ParameterAdapter is not null)
+            if (existing.IsDeclarationOnly || existing.TakesDeclaredParameters || existing.ParameterAdapter is not null)
             {
                 existing.Parameters = [.. parameters];
                 existing.IsDeclared = true;

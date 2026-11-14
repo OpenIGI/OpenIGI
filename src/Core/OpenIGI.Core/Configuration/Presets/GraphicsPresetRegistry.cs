@@ -1,5 +1,3 @@
-using OpenIGI.Core.Configuration;
-
 namespace OpenIGI.Core.Configuration.Presets;
 
 /// <summary>
@@ -138,6 +136,26 @@ public sealed class GraphicsPresetRegistry
 
         LockedPreset = preset;
         return Apply(preset);
+    }
+
+    /// <summary>The value the lock holds a variable at.</summary>
+    /// <param name="variable">The variable.</param>
+    /// <returns>
+    /// The locked preset's value for it, or <see langword="null"/> where nothing is locked, the variable is not managed, or
+    /// the locked preset leaves it alone.
+    /// </returns>
+    /// <remarks>
+    /// What a locked build's settings file measures a managed variable against, in place of its default: the lock applies
+    /// the preset at every start, so the player's own change is whatever differs from it. Measured against the default, a
+    /// change back to the default was not written at all, and the next start's lock undid it.
+    /// </remarks>
+    public string? LockedValue(ICVar variable)
+    {
+        ArgumentNullException.ThrowIfNull(variable);
+
+        return LockedPreset is { } locked && _managed.TryGetValue(variable, out string?[]? values)
+            ? values[(int)locked]
+            : null;
     }
 
     /// <summary>Records every managed variable's value and the preset they read as, to put back with <see cref="Restore"/>.</summary>

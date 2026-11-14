@@ -2,7 +2,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Core.Numerics;
 using Xunit;
-using OpenIGI.Presentation.Igi1;
 
 namespace OpenIGI.Desktop.Tests;
 

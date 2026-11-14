@@ -120,7 +120,7 @@ public sealed class PlayerCameraMapComputerOpticsTests
 
     private static PlayerCamera Arm(params WeaponType[] weapons)
     {
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([.. weapons.Select(weapon => weapon.WeaponId)]);
         foreach (WeaponType weapon in weapons)
         {
@@ -176,6 +176,8 @@ public sealed class PlayerCameraMapComputerOpticsTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

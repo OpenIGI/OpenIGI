@@ -50,6 +50,10 @@ public sealed class TextBox : Control
     /// <summary>Gets or sets the faint prompt shown while the field is empty.</summary>
     public string Placeholder { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets what draws a mark before the text -- a magnifying glass on a search box -- or <see langword="null"/> for none.</summary>
+    /// <remarks>Given the painter, the mark's centre, its size in pixels and its colour.</remarks>
+    public Action<UiPainter, UiVec2, float, Bgra32>? LeadingGlyph { get; set; }
+
     /// <summary>Gets or sets the maximum accepted character count.</summary>
     public int MaxLength { get; set; } = 256;
 
@@ -83,27 +87,37 @@ public sealed class TextBox : Control
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
-        float size = context.Px(Theme.BodyTextSize);
+        float size = context.Px(TextSize);
         return new UiVec2(available.X, Theme.Body.LineHeight(size) + context.Px(24f));
     }
+
+    // The large look sets a field's text at the size of a button's caption, not a row's.
+    private float TextSize => Theme.Large ? MathF.Min(17f, Theme.BodyTextSize) : Theme.BodyTextSize;
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
         float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
-        float size = painter.Context.Px(Theme.BodyTextSize);
+        float size = painter.Context.Px(TextSize);
         float pad = painter.Context.Px(14f);
-        Bgra32 border = Interpolate.Lerp(Theme.Border, Theme.Accent, focus);
+        Bgra32 border = Interpolate.Lerp(Theme.Large ? UiPalette.White(0.28f) : Theme.Border, Theme.Accent, focus);
         Bgra32 text = IsEnabled ? Theme.Text : Theme.TextDisabled;
         string drawn = _text.Length == 0 ? Placeholder : _text;
         Bgra32 color = _text.Length == 0 ? Theme.TextMuted : text;
 
-        painter.FillRect(Bounds, Theme.Panel.WithAlpha((byte)(175 + (45 * focus))), UiBlend.AlphaBlend);
+        painter.FillRect(Bounds, Theme.Large ? UiPalette.InkAt(0.6f) : Theme.Panel.WithAlpha((byte)(175 + (45 * focus))), UiBlend.AlphaBlend);
         painter.StrokeRect(Bounds, painter.Context.Px(1f), border, UiBlend.AlphaBlend);
+        float lead = 0f;
+        if (LeadingGlyph is { } glyph)
+        {
+            float mark = painter.Context.Px(18f);
+            glyph(painter, new UiVec2(Bounds.X + pad + (mark * 0.5f), Bounds.Center.Y), mark, Theme.TextMuted);
+            lead = mark + painter.Context.Px(10f);
+        }
 
         // The text stays inside the field. Not being edited, a long value is cut short with an ellipsis; being
         // edited, it slides left so its end, where the caret is, stays in view.
-        var inner = new UiRect(Bounds.X + pad, Bounds.Y, MathF.Max(0f, Bounds.Width - (pad * 2f)), Bounds.Height);
+        var inner = new UiRect(Bounds.X + pad + lead, Bounds.Y, MathF.Max(0f, Bounds.Width - (pad * 2f) - lead), Bounds.Height);
         bool editing = Visual.Focus > 0.45f && IsEnabled;
         float caretWidth = painter.Context.Px(2f);
         float textWidth = Theme.Body.MeasureWidth(drawn, size);

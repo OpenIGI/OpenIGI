@@ -5,9 +5,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Rendering;
-using OpenIGI.Presentation;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;

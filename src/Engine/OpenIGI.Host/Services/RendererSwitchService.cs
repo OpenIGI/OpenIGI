@@ -171,9 +171,9 @@ internal sealed class RendererSwitchService(IGraphicsDevice device, IOpenIgiLogg
     {
         ArgumentNullException.ThrowIfNull(request);
         return request.Pose is { } pose
-            ? FormattableString.Invariant(
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"mission {request.MissionId} at hour {request.TimeHours:F2} {(pose.Flying ? "flying" : "standing")} at ({pose.Position.X:F2}, {pose.Position.Y:F2}, {pose.Position.Z:F2}) yaw {pose.Yaw:F3} pitch {pose.Pitch:F3}")
-            : request.MissionId > 0 ? FormattableString.Invariant($"mission {request.MissionId} at hour {request.TimeHours:F2}") : "the menu";
+            : request.MissionId > 0 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"mission {request.MissionId} at hour {request.TimeHours:F2}") : "the menu";
     }
 
     /// <inheritdoc/>

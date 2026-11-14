@@ -259,7 +259,7 @@ public static class CarDynamics
         motion.Velocity += force / mass;
         motion.YawRate += torque / inertia;
 
-        double rise = Suspend(motion, physics, wheels, position, forward, lateral, mass, groundHeightAt);
+        double rise = Suspend(motion, wheels, position, forward, lateral, mass, groundHeightAt);
         Vector3d translation = motion.Velocity + new Vector3d(0d, 0d, rise);
         double yawDelta = motion.YawRate;
 
@@ -347,7 +347,6 @@ public static class CarDynamics
     /// </remarks>
     private static double Suspend(
         CarMotionState motion,
-        in CarPhysicsDefinition physics,
         IReadOnlyList<CarWheel> wheels,
         Vector3d position,
         Vector3d forward,

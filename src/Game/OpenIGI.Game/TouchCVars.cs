@@ -42,6 +42,42 @@ public static class TouchCVars
         false,
         CVarOptions.Archive,
         "Tilting the top of the phone away looks down instead of up.");
+
+    /// <summary>How far the view turns for a finger's drag, against the shipped rate.</summary>
+    public static readonly NumericCVar<float> LookSensitivity = CVar.Float(
+        "touch_look_sensitivity",
+        1f,
+        0.2f,
+        4f,
+        CVarOptions.Archive,
+        "How far the view turns for a drag across the screen. 1 is the shipped rate.");
+
+    /// <summary>Which of the player's three layouts the touch screen is laid out by.</summary>
+    public static readonly NumericCVar<int> Layout = CVar.Int(
+        "touch_layout",
+        1,
+        1,
+        LayoutSlots,
+        CVarOptions.Archive,
+        "Which of the three saved layouts the touch controls and the display's readouts stand by.");
+
+    /// <summary>The three saved layouts, as text (the layout editor writes them); empty is the shipped layout.</summary>
+    public static readonly StringCVar[] Layouts =
+    [
+        CVar.Text("touch_layout_1", string.Empty, CVarOptions.Archive, "The first saved touch layout, as the layout editor wrote it. Empty is the shipped layout."),
+        CVar.Text("touch_layout_2", string.Empty, CVarOptions.Archive, "The second saved touch layout. Empty is the shipped layout."),
+        CVar.Text("touch_layout_3", string.Empty, CVarOptions.Archive, "The third saved touch layout. Empty is the shipped layout."),
+    ];
+
+    /// <summary>Whether the mouse is read as a finger, to try the touch controls and their editor at a desk.</summary>
+    public static readonly BoolCVar Emulate = CVar.Bool(
+        "touch_emulate",
+        false,
+        CVarOptions.None,
+        "Reads the left mouse button as a finger on a touch screen, for trying the touch controls without one.");
+
+    /// <summary>How many layouts a player keeps.</summary>
+    public const int LayoutSlots = 3;
 }
 
 /// <summary>When the gyroscope aims.</summary>

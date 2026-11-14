@@ -237,7 +237,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uPages",
@@ -253,7 +254,8 @@
         "register": 7,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uCells",
@@ -269,7 +271,8 @@
         "register": 8,
         "space": 0,
         "stride": 8
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uCellPages",
@@ -285,7 +288,8 @@
         "register": 9,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uAlbedo",
@@ -420,10 +424,79 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uLit",
+      "sampler": "uLitSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uSceneDepth",
+      "unit": 1
+    },
+    {
+      "texture": "uSceneDepth",
+      "sampler": "uSceneDepthSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uNormal",
+      "sampler": "uNormalSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uMaterial",
+      "sampler": "uMaterialSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uSkyView",
+      "unit": 5
+    },
+    {
+      "texture": "uSkyView",
+      "sampler": "uSkyViewSampler",
+      "unit": 6
+    },
+    {
+      "texture": "uShelterMap",
+      "unit": 7
+    },
+    {
+      "texture": "uBaseColour",
+      "sampler": "uBaseColourSampler",
+      "unit": 8
+    },
+    {
+      "texture": "uAlbedo",
+      "unit": 9
+    },
+    {
+      "texture": "uAlbedo",
+      "sampler": "uAlbedoSampler",
+      "unit": 10
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 11
+    },
+    {
+      "texture": "uFinal",
+      "sampler": "uFinalSampler",
+      "unit": 12
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 13
+    }
+  ]
 }

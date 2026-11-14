@@ -1,9 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
-using OpenIGI.Game.World;
+﻿using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Hosting;
 

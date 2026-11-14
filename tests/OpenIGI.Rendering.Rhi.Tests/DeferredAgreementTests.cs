@@ -1,9 +1,9 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Pipeline.Sky;
-using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Sky;
 using Xunit;
 using Xunit.Abstractions;
@@ -109,6 +109,11 @@ public sealed class DeferredAgreementTests(ITestOutputHelper output)
 
         lighting.BindSky(sky.SkyViewTable, sky.TransmittanceTable, sky.IrradianceTable, sky.Sampler);
 
+        // No lamps here, so no grid is built: the shading is handed the grid of no tiles, as a frame without one is.
+        using RetiredResources retired = new(framesInFlight: 1);
+        using LampGrid lampGrid = new(device, framesInFlight: 1, retired);
+        lighting.BindLampGrid(lampGrid.Empty);
+
         // A G-buffer of chosen bytes. Cleared rather than drawn, so nothing about a rasteriser can make
         // the two runs start from different texels.
         using (IRhiCommandEncoder encoder = device.CreateCommandEncoder("gbuffer"))
@@ -123,6 +128,7 @@ public sealed class DeferredAgreementTests(ITestOutputHelper output)
                 new RhiDepthAttachment(targets.View(SceneTargetId.Depth), DepthClearValue: 0.5f),
                 Label: "gbuffer")))
             {
+                // The pass is begun and ended with nothing drawn in it: the clears are the test.
             }
 
             device.Submit([encoder.Finish()]);

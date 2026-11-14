@@ -1,7 +1,6 @@
 // The mesh search as I.G.I. 2 had it before the engine's shared one replaced it: the oracle MeshRaySearchTests holds it to.
 #pragma warning disable
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
 

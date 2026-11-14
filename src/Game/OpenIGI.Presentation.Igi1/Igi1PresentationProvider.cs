@@ -2,12 +2,9 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
-using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Presentation.Igi1.Menus;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Igi1.World;
@@ -37,11 +34,11 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MissionPresentationRequest, IMissionHudOverlay>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1HudOverlay(request.Device, gameplay) : null)
             .Add<MissionPresentationRequest, IMissionFirstPersonView>(static (in MissionPresentationRequest request) =>
-                request.Gameplay is Igi1Gameplay gameplay ? new Igi1FirstPersonView(request.Device, gameplay, request.Logger) : null)
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1FirstPersonView(request.Device, () => gameplay.World.Player, () => gameplay.World.Solids, request.Logger) : null)
             .Add<MissionPresentationRequest, IMissionWorldView>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1WorldView(gameplay) : null)
             .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>
-                request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay) : null)
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay, request.Logger) : null)
             .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
                 new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic, SoldierWeapons(request)) { DetailMaps = request.DetailMaps, Sun = request.Sun, Lod = request.Lod })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
@@ -205,7 +202,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             : null;
 
     /// <inheritdoc/>
-    private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
+    private static IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
         new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger, additiveFaceGroups: OpenIGI.Rendering.BlendMode.AddColour);
 
     /// <inheritdoc/>
@@ -213,15 +210,15 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// The dome is sized to the far plane, which is this game's rule and not the sequel's; a layer's
     /// texture is a path under <c>LOCAL:</c>, so the file system is the half of the request it reads.
     /// </remarks>
-    private ISkyPresenter CreateSky(in SkyPresentationRequest request) =>
+    private static ISkyPresenter CreateSky(in SkyPresentationRequest request) =>
         new SkyRenderer(request.Device, request.FileSystem, request.LevelRoot, request.FarPlane, request.Logger);
 
     /// <inheritdoc/>
-    private IViewModelPresenter CreateViewModel(in ViewModelPresentationRequest request) =>
+    private static IViewModelPresenter CreateViewModel(in ViewModelPresentationRequest request) =>
         new ViewModelRenderer(request.Device, request.Resources, request.Logger);
 
     /// <inheritdoc/>
-    private IHeldWeaponPresenter CreateHeldWeapon(in ViewModelPresentationRequest request) =>
+    private static IHeldWeaponPresenter CreateHeldWeapon(in ViewModelPresentationRequest request) =>
         new HeldWeaponRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     // The multipart weapon a soldier or a co-op partner holds, its flame among its parts: the renderer the player's own gun
@@ -240,15 +237,15 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     }
 
     /// <inheritdoc/>
-    private IGrenadePresenter CreateGrenades(in ViewModelPresentationRequest request) =>
+    private static IGrenadePresenter CreateGrenades(in ViewModelPresentationRequest request) =>
         new GrenadeRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     /// <inheritdoc/>
-    private IMissilePresenter CreateMissiles(in ViewModelPresentationRequest request) =>
+    private static IMissilePresenter CreateMissiles(in ViewModelPresentationRequest request) =>
         new MissileRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     /// <inheritdoc/>
-    private IGunPickupPresenter CreateGunPickups(in ViewModelPresentationRequest request) =>
+    private static IGunPickupPresenter CreateGunPickups(in ViewModelPresentationRequest request) =>
         new GunPickupRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     /// <summary>Takes the magic-object table these renderers cannot do without.</summary>
@@ -264,35 +261,41 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             "Project I.G.I.'s view model needs its magic-object table, and the request carries none.");
 
     /// <inheritdoc/>
-    private IBulletMarkPresenter CreateBulletMarks(in EffectsPresentationRequest request) =>
+    private static IBulletMarkPresenter CreateBulletMarks(in EffectsPresentationRequest request) =>
         new BulletMarkRenderer(request.Device, request.Resources, request.Logger);
 
     /// <inheritdoc/>
-    private ICameraStatusLightPresenter CreateCameraStatusLights(in EffectsPresentationRequest request) =>
+    private static ICameraStatusLightPresenter CreateCameraStatusLights(in EffectsPresentationRequest request) =>
         new CameraStatusLightRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
-    private IHudPresenter CreateHud(in HudPresentationRequest request) =>
+    private static IHudPresenter CreateHud(in HudPresentationRequest request) =>
         new StatusScreenRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
-    private IRemasteredHudPresenter CreateRemasteredHud(in HudPresentationRequest request) =>
+    private static IRemasteredHudPresenter CreateRemasteredHud(in HudPresentationRequest request) =>
         new RemasteredHudRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
-    private IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>
+    private static IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>
         new MapComputerRenderer(request.Device, request.Logger, request.Gameplay);
 
     /// <inheritdoc/>
-    private ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request) =>
-        new TacticalComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText);
+    private static ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request) =>
+        new TacticalComputerRenderer(
+            request.Device,
+            request.Resources,
+            request.Logger,
+            request.ResolveText,
+            OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme,
+            new Igi1ComputerFont(request.Device, request.Resources.FileSystem, request.Logger));
 
     /// <inheritdoc/>
-    private IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request) =>
-        new ComputerHighlightCatalog(request.LevelRoot, request.Variables);
+    private static IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request) =>
+        new ComputerHighlightCatalog(request.LevelRoot, request.Variables, request.Expressions);
 
     /// <inheritdoc/>
-    private ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>
+    private static ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>
         new TerrainRenderer(
             request.Device,
             request.Surface,

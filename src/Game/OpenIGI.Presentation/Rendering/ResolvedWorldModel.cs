@@ -18,7 +18,7 @@ internal sealed class ResolvedWorldModel(MeshGeometry geometry, MeshHandle mesh)
     /// </remarks>
     public bool CanCull => _hasNormals;
 
-    private readonly bool _hasNormals = MefMeshBuilder.HasNormals(geometry.Vertices);
+    private readonly bool _hasNormals = !geometry.HasDerivedNormals && MefMeshBuilder.HasNormals(geometry.Vertices);
 
     public WorldSubsetDraw[]? Subsets { get; set; }
 

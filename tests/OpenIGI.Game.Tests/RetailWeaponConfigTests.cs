@@ -1,10 +1,8 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -23,6 +21,7 @@ public sealed class RetailWeaponConfigTests
     public void RegisteringWeaponConfigTypesIsSafeAcrossMissionReloads()
     {
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         WeaponConfigRegistry.RegisterTypes(loop.Types);
         WeaponConfigRegistry.RegisterTypes(loop.Types);
@@ -327,6 +326,7 @@ public sealed class RetailWeaponConfigTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         WeaponTypeRegistry weapons = new();
         weapons.Register(loop.Natives);
         weapons.Load(fileSystem, resources, loop.Natives);
@@ -351,6 +351,7 @@ public sealed class RetailWeaponConfigTests
     public void AnAbsentScriptIsReportedRatherThanFatal()
     {
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         WeaponConfigRegistry.RegisterTypes(loop.Types);
 
         // An installation with nothing at that path, which is what a title that keeps its weapons
@@ -374,6 +375,7 @@ public sealed class RetailWeaponConfigTests
     public void AMalformedScriptIsStillFatal()
     {
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         WeaponConfigRegistry.RegisterTypes(loop.Types);
 
         ResourceRegistry resources = new(new VirtualFileSystem());
@@ -390,6 +392,7 @@ public sealed class RetailWeaponConfigTests
         resources = new ResourceRegistry(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         natives = loop.Natives;
         WeaponConfigRegistry.RegisterTypes(loop.Types);
 

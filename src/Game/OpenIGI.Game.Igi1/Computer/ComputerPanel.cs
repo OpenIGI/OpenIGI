@@ -156,6 +156,10 @@ public sealed class ComputerPanel
         return item;
     }
 
+    /// <summary>Takes away the items a screen no longer offers.</summary>
+    /// <param name="gone">Which of them go.</param>
+    public void RemoveWhere(Predicate<ComputerItem> gone) => _items.RemoveAll(gone);
+
     /// <summary>Gets the selected item, the last of them (<c>0x505A30</c>), or <see langword="null"/>.</summary>
     public ComputerItem? Selected => _items.LastOrDefault(static item => item.IsSelected);
 

@@ -5,24 +5,19 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Configuration;
 using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
-using OpenIGI.Game;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
-using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Content;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Screens;
 using OpenIGI.UI.Widgets;
 
@@ -167,10 +162,11 @@ public sealed partial class GameHost
         _presentation = binding.Presentation;
         _hudOverlay = null;
         _firstPerson = null;
+        (_worldView as IDisposable)?.Dispose();
         _worldView = null;
         _viewpoint = null;
         _worldBuilder = binding.WorldBuilder;
-        _gameplay = binding.Gameplay;
+        BindMission(_titles, binding);
         RestoreTitleInputBindings();
         _missionCatalogue = binding.Missions;
         _gamePath = binding.DataRoot;
@@ -180,7 +176,7 @@ public sealed partial class GameHost
         // skeletons -- and a set that is merely present is enough to send the mission down a path it
         // would otherwise have skipped, which is how a switch to a title with no animations at all
         // ended in an unhandled exception rather than a warning.
-        ForgetSharedAnimations();
+        _hosted.Prefetch();
 
         // The same file system, re-pointed. VirtualFileSystem keys devices by name, so registering a
         // second LOCAL replaces the first -- which matters because the console, the audio system and the

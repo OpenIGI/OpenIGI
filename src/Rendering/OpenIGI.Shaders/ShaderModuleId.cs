@@ -226,6 +226,9 @@ public enum ShaderModuleId
     /// <summary>A sniper's scope catching the light: a star of streaks added over the picture (<c>Ui/ScopeGlint.slang</c>).</summary>
     ScopeGlint,
 
+    /// <summary>The remastered computer's map as a one-colour satellite feed, laid over the overhead picture (<c>Ui/MapFeed.slang</c>).</summary>
+    MapFeed,
+
     /// <summary>Post: what the binoculars marked, a fill inside a soft outline laid over the finished picture (<c>Post/Silhouette.slang</c>).</summary>
     Silhouette,
 

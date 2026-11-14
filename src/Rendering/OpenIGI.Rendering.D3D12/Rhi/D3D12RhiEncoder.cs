@@ -1,7 +1,6 @@
 using OpenIGI.Rendering.D3D12.Interop;
 using OpenIGI.Rendering.D3D12.Sync;
 using OpenIGI.Rendering.Rhi;
-using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using Silk.NET.DXGI;
 

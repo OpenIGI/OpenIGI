@@ -176,7 +176,7 @@ public sealed partial class Igi2LensflareItemTask : Igi2Task
     /// <summary>Gets a sprite's file.</summary>
     /// <param name="sprite">The sprite.</param>
     /// <returns>Its file.</returns>
-    public static string SpriteFile(int sprite) => FormattableString.Invariant($"{SpritePrefix}{sprite}.tex");
+    public static string SpriteFile(int sprite) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{SpritePrefix}{sprite}.tex");
 
     /// <summary>Adds its quads at a place, <c>Lensflaretask_DrawLensflareItem</c>.</summary>
     /// <param name="intensity">The flare's intensity.</param>

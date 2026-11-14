@@ -23,7 +23,7 @@ public sealed class RetailCarSpawnTests
         RetailCarStepCapture capture = RetailCarStepCapture.Load(fixture);
         byte[] first = capture.Ticks[0].Entry;
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(data.Root.Tree.FromId(id));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(data.Root.Tree.FromId(id));
         string modelName = Assert.IsType<string>(task.TryGetValue(WorldScene.ModelParameter, out object? value) ? value : null);
         Assert.True(data.Vehicles.TryGetCar(modelName, out CarPhysicsDefinition physics));
         Assert.True(data.Mission.TryGetModel(modelName, out MefModel? model));

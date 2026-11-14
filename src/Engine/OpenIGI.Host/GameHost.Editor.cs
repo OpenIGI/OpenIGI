@@ -4,7 +4,6 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -292,7 +291,7 @@ public sealed partial class GameHost
         // it, as it opens no pause menu either, and the press that starts the hold must not end the test.
         if (editor.IsPlaying)
         {
-            bool cutscene = _mission.Cutscenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true };
+            bool cutscene = _mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true };
             if (!state.Console.IsOpen && !cutscene && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
                 editor.StopPlaying();
@@ -330,7 +329,7 @@ public sealed partial class GameHost
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
-            EditorFailed(state, error);
+            EditorFailed(error);
             return false;
         }
 
@@ -364,14 +363,14 @@ public sealed partial class GameHost
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
-            EditorFailed(state, error);
+            EditorFailed(error);
         }
 
         state.Batch.End();
         _device.EndStageTiming();
     }
 
-    private void EditorFailed(FrameLoopState state, Exception error)
+    private void EditorFailed(Exception error)
     {
         _logger.Error("Editor", $"The editor failed and was closed: {error}");
         _editorCloseWanted = true;

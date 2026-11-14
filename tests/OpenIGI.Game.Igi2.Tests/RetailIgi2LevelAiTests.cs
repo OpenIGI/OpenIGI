@@ -11,6 +11,7 @@ using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Saves;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Igi2;
@@ -65,7 +66,7 @@ public sealed class RetailIgi2LevelAiTests
         // The desktop's shared soldier renderer registers the first game's AI before standing the title player.
         _ = new OpenIGI.Game.Igi1.Ai.AiScriptHost(promoted.Natives);
         Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(new Igi2Gameplay().CreatePlayer(
-            new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
+            new TitlePlayerRequest(world, built, m.Services, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
         Assert.NotNull(player.Level);
         Assert.NotNull(player.Ai);
         Assert.Same(promoted.Natives, player.Ai.Natives);
@@ -73,7 +74,7 @@ public sealed class RetailIgi2LevelAiTests
         Assert.NotEmpty(minds);
         Assert.All(minds, static mind => Assert.NotNull(mind.Script));
         // HumanSoldier_UpdateInternalDataAfterLoadHandler: living soldiers of team 1 are off the detection list in mission 11.
-        Assert.All(player.Soldiers!.Bodies.Where(static body => body.Team == 1 && !body.IsDead),
+        Assert.All(player.Soldiers.Bodies.Where(static body => body.Team == 1 && !body.IsDead),
             body => Assert.DoesNotContain(body, player.Ai.Detection!.Detectables));
         Assert.Contains(player.Human, player.Ai.Detection!.Detectables);
         player.Human.Damage.MaxDamage = 1000000f;
@@ -203,7 +204,7 @@ public sealed class RetailIgi2LevelAiTests
     public void A_soldier_with_a_mind_stands_on_its_graph()
     {
         (RetailIgi2Mission1 m, Igi2Soldiers soldiers, Igi2AiWorld _, _) = Build();
-        m.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         for (int tick = 0; tick < 600; tick++)
         {
             m.Run.Tick();
@@ -241,7 +242,7 @@ public sealed class RetailIgi2LevelAiTests
     public void A_soldier_fights_the_player_in_front_of_him()
     {
         (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build(facing: 400);
-        m.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         Igi2HumanAi mind = (Igi2HumanAi)m.Tree.OfType<Igi2HumanSoldierTask>().Single(static t => t.Id == 400).Body!.Mind!;
         bool seen = false, held = false;
         int shots = 0, last = mind.AmmoInWeapon();
@@ -294,18 +295,18 @@ public sealed class RetailIgi2LevelAiTests
     public void Soldiers_and_squads_saved_and_loaded_are_as_they_were()
     {
         (RetailIgi2Mission1 played, Igi2Soldiers bodies, _, _) = Build();
-        played.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        played.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         for (int tick = 0; tick < 300; tick++)
         {
             played.Run.Tick();
         }
 
-        string script = Saves.Igi2SaveGame.Create(played.Tree[0], new Saves.Igi2SaveInfo(Saves.Igi2SaveInfo.CurrentVersion, 11, 0))!;
+        string script = SaveScript.Create(played.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
         Assert.Contains("\"HumanAI\"", script, StringComparison.Ordinal);
         Assert.Contains("\"AISquad\"", script, StringComparison.Ordinal);
 
         (RetailIgi2Mission1 fresh, _, _, _) = Build();
-        Saves.Igi2SaveGame.Load(script, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions);
+        SaveScript.Load(script, fresh.Tree[0], Saves.Igi2SaveFormat.Context());
         Assert.Equal(Soldiers(played), Soldiers(fresh));
         Assert.Equal(Squads(played), Squads(fresh));
         Assert.Contains(bodies.Bodies, static b => b.Mind is Igi2HumanAi { Patrols.Count: > 0 });
@@ -345,7 +346,7 @@ public sealed class RetailIgi2LevelAiTests
         }
 
         byte[] bytes = File.ReadAllBytes(file);
-        Saves.Igi2SaveInfo header = Saves.Igi2SaveGame.CheckFile(bytes);
+        SaveInfo header = SaveScript.Check(bytes, Saves.Igi2SaveFormat.Context());
         Assert.Equal(63, header.Version);
         Assert.Equal(11, header.MissionId);
 
@@ -353,17 +354,95 @@ public sealed class RetailIgi2LevelAiTests
         m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
         int before = m.Run.LevelFlow!.Tick;
         List<string> misread = [];
-        Saves.Igi2SaveInfo loaded = Saves.Igi2SaveGame.LoadFile(bytes, m.Tree[0], m.Run.Natives, m.Run.Functions, misread);
+        SaveInfo loaded = SaveScript.Load(bytes, m.Tree[0], Saves.Igi2SaveFormat.Context(), misread);
         Assert.Equal(header, loaded);
         Assert.NotEqual(before, m.Run.LevelFlow.Tick);
         foreach (string other in Directory.GetFiles(Path.GetDirectoryName(file)!, "0-0-11-*.igi2save"))
         {
             (RetailIgi2Mission1 n, _, _, Igi2TitlePlayer np) = Build();
             n.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = np.Human;
-            Saves.Igi2SaveGame.LoadFile(File.ReadAllBytes(other), n.Tree[0], n.Run.Natives, n.Run.Functions, misread);
+            SaveScript.Load(File.ReadAllBytes(other), n.Tree[0], Saves.Igi2SaveFormat.Context(), misread);
         }
 
         Assert.Empty(misread);
+    }
+
+    /// <summary>
+    /// A save made here of mission 11 as it starts keeps the state of the tasks retail's own save of the mission keeps, and of no
+    /// others: the types each <c>DefineTaskState</c> names, the ancestor's and each step's down, and how many of each, are the same
+    /// -- the weapons lying in the level against the buildings they lie in, the player's weapons and view against the player, and
+    /// nothing of a soldier's but the soldier and its mind. The weapons dropped since, which retail keeps beneath the level's
+    /// <c>Dynamic</c> task, are the one kind a level just started has none of.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_save_keeps_the_tasks_a_retail_save_keeps()
+    {
+        string folder = Path.Combine(GameDataSource.Igi2.RequireRoot(), "savegames");
+        string first = Path.Combine(folder, "0-0-11-0.igi2save"), later = Path.Combine(folder, "0-0-11-3.igi2save");
+        if (!File.Exists(first) || !File.Exists(later))
+        {
+            return;
+        }
+
+        (RetailIgi2Mission1 m, _, _, _) = Build();
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(m.Services!, m.Tree[0], m.Services!.Require<Igi2PlayerTuning>())!;
+        (Igi2HumanPlayer armed, _, _) = Igi2PlayerFakes.OnFloor(weapons);
+        m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = armed;
+        Pickups.Igi2PickupList pickups = Pickups.Igi2PickupList.Build(
+            m.Tree[0], m.Services.Require<Igi2HumanWeapons>().Tables, m.Level.ModelFor, m.Collision!, m.Materials);
+        SaveContext context = Saves.Igi2SaveFormat.Context(null, pickups, m.Tree[0]);
+
+        string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), context)!;
+        Assert.Equal(Kinds(File.ReadAllBytes(first)), Kinds(System.Text.Encoding.Latin1.GetBytes(script)));
+
+        // Game_LoadFromSlot deletes every pickup, and the load makes each the save holds again: saved once more, each weapon is
+        // written as it was, under the id it had.
+        int lying = pickups.Items.Count;
+        Assert.NotEqual(0, lying);
+        pickups.DeleteAll();
+        Assert.Empty(pickups.Items);
+        List<string> misread = [];
+        SaveScript.Load(script, m.Tree[0], context, misread);
+        Assert.Empty(misread);
+        Assert.Equal(lying, pickups.Items.Count);
+        Assert.Equal(Lines(script), Lines(SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), context)!));
+
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } dump)
+        {
+            File.WriteAllText(dump + ".a", script);
+            File.WriteAllText(dump + ".b", SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), context)!);
+        }
+
+        // A retail save made later in the mission holds the weapons its dead dropped, beneath Dynamic: they are made too.
+        byte[] retail = File.ReadAllBytes(later);
+        pickups.DeleteAll();
+        SaveScript.Load(retail, m.Tree[0], context, misread);
+        Assert.Empty(misread);
+        Assert.Equal(SaveScript.TaskPaths(retail).Count(static p => p.EndsWith("/GunPickup", StringComparison.Ordinal)), pickups.Items.Count);
+        Assert.Contains(pickups.Items, static p => p.Holder is null);
+
+        static string[] Kinds(byte[] file) =>
+        [
+            .. SaveScript.TaskPaths(file)
+                .Where(static p => !p.StartsWith("Dynamic/", StringComparison.Ordinal))
+                .GroupBy(static p => p, StringComparer.Ordinal)
+                .OrderBy(static g => g.Key, StringComparer.Ordinal)
+                .Select(static g => $"{g.Count()} {g.Key}"),
+        ];
+
+        // A frame is written as its three angles and read back as a frame, which moves an angle in its last place: reals are
+        // compared to five figures.
+        static string[] Lines(string text) =>
+        [
+            .. text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Where(static l => l.Contains("\"GunPickup\"", StringComparison.Ordinal))
+                .Select(static l => string.Join(", ", l.Split(", ").Select(static f =>
+                    f.Contains('.', StringComparison.Ordinal)
+                    && double.TryParse(f, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double real)
+                        ? real.ToString("G5", System.Globalization.CultureInfo.InvariantCulture)
+                        : f)))
+                .Order(StringComparer.Ordinal),
+        ];
     }
 
     /// <summary>
@@ -379,28 +458,27 @@ public sealed class RetailIgi2LevelAiTests
             (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
             m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
             Saves.Igi2SaveSlots slots = new(folder);
-            Saves.Igi2SaveOwner owner = new(0, 1, 11);
-            Assert.True(slots.Save(owner, 1, m.Tree[0], 30 * 3725));
-            Assert.True(slots.Save(owner, Saves.Igi2SaveSlots.QuickSave, m.Tree[0], 30));
-            File.SetLastWriteTimeUtc(slots.PathOf(Saves.Igi2SaveSlots.SlotFileName(owner, Saves.Igi2SaveSlots.QuickSave)), DateTime.UtcNow.AddHours(-1));
+            SaveOwner owner = new(0, 1, 11);
+            Assert.True(slots.Save(owner, 1, m.Tree[0], 30 * 3725, Saves.Igi2SaveFormat.Context()));
+            Assert.True(slots.Save(owner, SaveRules.QuickSave, m.Tree[0], 30, Saves.Igi2SaveFormat.Context()));
+            File.SetLastWriteTimeUtc(slots.PathOf(Saves.Igi2SaveSlots.SlotFileName(owner, SaveRules.QuickSave)), DateTime.UtcNow.AddHours(-1));
             Assert.True(File.Exists(Path.Combine(folder, "savegames", "0-1-11-1.igi2save")));
 
-            Assert.Equal(new Saves.Igi2SaveInfo(63, 11, 30 * 3725), slots.Check(owner, 1));
+            Assert.Equal(new SaveInfo(63, 11, 30 * 3725, true), slots.Check(owner, 1));
             Assert.Equal(1, slots.CountValid(owner));
             Assert.True(slots.TryFindNewest(owner, out int newest));
             Assert.Equal(1, newest);
             IReadOnlyList<Saves.Igi2SaveListing> lines = slots.Listings(owner, static key => key == Saves.Igi2SaveSlots.QuickSaveKey ? "Quicksave" : "Mission Time");
-            Assert.Equal([1, Saves.Igi2SaveSlots.QuickSave, 12345678], lines.Select(static l => l.Slot));
+            Assert.Equal([1, SaveRules.QuickSave, 12345678], lines.Select(static l => l.Slot));
             Assert.EndsWith(" Mission Time: 1:02:05", lines[0].Text, StringComparison.Ordinal);
             Assert.Contains("[Quicksave]", lines[1].Text, StringComparison.Ordinal);
             Assert.Equal(new Saves.Igi2SaveListing(12345678, "menusystem/Restart Mission", true), lines[2]);
 
             (RetailIgi2Mission1 fresh, _, _, Igi2TitlePlayer again) = Build();
             fresh.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = again.Human;
-            Assert.True(slots.Load(owner, 1, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions).IsValid);
-            Assert.False(slots.Load(owner, 2, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions).IsValid);
-            Assert.Equal([3, 2, 0], Enumerable.Range(0, 3).Select(Saves.Igi2SaveSlots.AvailableSlots));
-            Assert.True(Saves.Igi2SaveSlots.TryParseSlotFileName("savegames/0-1-11-5.igi2save", out Saves.Igi2SaveOwner parsed, out int slot));
+            Assert.True(slots.Load(owner, 1, fresh.Tree[0], Saves.Igi2SaveFormat.Context()).IsValid);
+            Assert.False(slots.Load(owner, 2, fresh.Tree[0], Saves.Igi2SaveFormat.Context()).IsValid);
+            Assert.True(Saves.Igi2SaveSlots.TryParseSlotFileName("savegames/0-1-11-5.igi2save", out SaveOwner parsed, out int slot));
             Assert.Equal((owner, 5), (parsed, slot));
         }
         finally
@@ -426,7 +504,7 @@ public sealed class RetailIgi2LevelAiTests
         }
 
         Saves.Igi2SaveSlots retail = new(root);
-        Saves.Igi2SaveOwner owner = new(0, 0, 11);
+        SaveOwner owner = new(0, 0, 11);
         Assert.Equal(5, retail.Listings(owner, static key => key).Count);
         Assert.True(retail.TryFindNewest(owner, out _));
 
@@ -436,8 +514,8 @@ public sealed class RetailIgi2LevelAiTests
         m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = armed;
         List<string> misread = [];
         byte[] carry = File.ReadAllBytes(Path.Combine(root, "savegames", "missions", "co000012.qsc"));
-        Assert.Equal(12, Saves.Igi2SaveGame.CheckFile(carry).MissionId);
-        Saves.Igi2SaveGame.LoadFile(carry, m.Tree[0], m.Run.Natives, m.Run.Functions, misread);
+        Assert.Equal(12, SaveScript.Check(carry, Saves.Igi2SaveFormat.Context()).MissionId);
+        SaveScript.Load(carry, m.Tree[0], Saves.Igi2SaveFormat.Context(), misread);
         Assert.Empty(misread);
         Assert.Contains(weapons.Inventory.Weapons, static w => w.IsActive);
 
@@ -445,11 +523,11 @@ public sealed class RetailIgi2LevelAiTests
         try
         {
             Saves.Igi2SaveSlots slots = new(folder);
-            Saves.Igi2SaveOwner next = new(0, 0, 12);
+            SaveOwner next = new(0, 0, 12);
             Assert.True(slots.SaveCarryOver(next, m.Tree.OfType<Igi2HumanPlayerTask>().Single()));
             byte[] written = File.ReadAllBytes(slots.PathOf(Saves.Igi2SaveSlots.CarryOverFileName(next)));
             Assert.EndsWith("co000012.qsc", Saves.Igi2SaveSlots.CarryOverFileName(next), StringComparison.Ordinal);
-            Saves.Igi2SaveGame.LoadFile(written, m.Tree[0], m.Run.Natives, m.Run.Functions, misread);
+            SaveScript.Load(written, m.Tree[0], Saves.Igi2SaveFormat.Context(), misread);
             Assert.Empty(misread);
         }
         finally
@@ -462,8 +540,8 @@ public sealed class RetailIgi2LevelAiTests
     }
 
     /// <summary>
-    /// The pause menu's saves: on normal two slots and three saves a mission, each save using one and none once they are spent; a load
-    /// puts the mission back and counts itself; hard keeps no slots.
+    /// The mission's saves: on normal three saves a mission to the computer's five slots, each save using one and none once they are
+    /// spent; a load puts the mission back and counts itself; hard has the slots and no saves.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void Mission_saves_spend_the_battery_and_count_loads()
@@ -474,14 +552,14 @@ public sealed class RetailIgi2LevelAiTests
             (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
             m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
             int difficulty = 1;
-            Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), () => new Saves.Igi2SaveOwner(0, difficulty, 11), m.Run, player.Human);
-            Assert.Equal(2, saves.Slots.Count);
+            Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), () => new SaveOwner(0, difficulty, 11), m.Run, player.Human);
+            Assert.Equal(SaveRules.MenuSlots + 1, saves.Slots.Count);
             Assert.Equal(3, saves.SavesLeft);
             Assert.False(saves.Slots[0].IsUsed);
 
             Assert.True(saves.Save(0));
             Assert.True(saves.Save(1));
-            Assert.False(saves.Save(2));
+            Assert.False(saves.Save(SaveRules.MenuSlots));
             Assert.Equal(1, saves.SavesLeft);
             Assert.True(saves.Slots[0].IsUsed);
             Assert.True(saves.Save(0));
@@ -493,8 +571,9 @@ public sealed class RetailIgi2LevelAiTests
             Assert.False(saves.Load(4));
 
             difficulty = 2;
-            Assert.Empty(saves.Slots);
+            Assert.DoesNotContain(saves.Slots, static s => s.IsUsed);
             Assert.Equal(0, saves.SavesLeft);
+            Assert.Equal(0f, saves.BatteryLevel);
         }
         finally
         {
@@ -596,7 +675,7 @@ public sealed class RetailIgi2LevelAiTests
         Collision.Igi2CollisionWorld world = Collision.Igi2CollisionWorld.Build(
             m.Level.Scene, m.Level.ModelFor, null, Igi2Gameplay.TerrainOwner, magic: m.Services!.Require<Igi2MagicObjTypes>());
         Interaction.Igi2GlassContainer glass = Interaction.Igi2GlassContainer.Build(world, m.Level.ModelFor, new IgiRandom(), explosions: null);
-        Saves.Igi2SaveGame.LoadFile(File.ReadAllBytes(file), m.Tree[0], m.Run.Natives, m.Run.Functions, glass: glass);
+        SaveScript.Load(File.ReadAllBytes(file), m.Tree[0], Saves.Igi2SaveFormat.Context(glass));
         Interaction.Igi2Glass broken = glass.Find("0-603_08_1-450")!;
         Assert.True(broken.IsBroken);
         Assert.Single(glass.Panes, static p => p.IsBroken);
@@ -651,7 +730,7 @@ public sealed class RetailIgi2LevelAiTests
         player.Human.Collider = new Collision.Igi2BoneCollider(player.Human, player.Human);
         m.Collision!.AddBody(player.Human.Collider);
 
-        Igi2DetectionWorld detection = new(m.Collision!, m.Materials)
+        Igi2DetectionWorld detection = new(m.Collision, m.Materials)
         {
             FlowTicks = () => m.Run.Ticks,
             LevelTick = () => m.Run.LevelFlow?.Tick ?? 0,
@@ -683,10 +762,10 @@ public sealed class RetailIgi2LevelAiTests
             () => m.Run.LevelFlow?.Tick ?? 0)
         {
             Detection = detection,
-            FireTaskTypes = m.Services!.Require<Igi2HumanWeapons>().FireTaskTypes,
-            Config = m.Services!.TryGet(out Igi2HumanAiConfig? config) ? config : null,
+            FireTaskTypes = m.Services.Require<Igi2HumanWeapons>().FireTaskTypes,
+            Config = m.Services.TryGet(out Igi2HumanAiConfig? config) ? config : null,
             Difficulty = 1,
-            World = m.Services!.Require<Igi2AiWorld>(),
+            World = m.Services.Require<Igi2AiWorld>(),
         });
         return (m, soldiers, ai, player);
     }

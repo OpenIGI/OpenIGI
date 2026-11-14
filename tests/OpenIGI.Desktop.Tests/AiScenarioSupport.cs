@@ -145,6 +145,7 @@ internal sealed class AiScenarioSupport : IDisposable
         }
         catch (IOException)
         {
+            // Nothing to do: the failure is expected here and leaves nothing to undo.
         }
     }
 

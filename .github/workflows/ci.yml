@@ -53,12 +53,14 @@ jobs:
       - name: Build
         run: dotnet build OpenIGI.slnx --configuration Release --no-restore
 
-      # No retail data and no GPU here: the tests that need either skip themselves and say why.
+      # No retail data and no GPU here: the tests that need either skip themselves and say why. OpenGL draws
+      # in software (Mesa's llvmpipe) on a virtual X server, where the image has one.
       - name: Test
         env:
           # No sound device on a runner: OpenAL's silent backend, so audio start-up cannot take the host down.
           ALSOFT_DRIVERS: "null"
         run: >
+          $(command -v xvfb-run > /dev/null && echo "xvfb-run -a")
           dotnet test OpenIGI.slnx --configuration Release --no-build
           --logger "trx;LogFilePrefix=results" --results-directory test-results
 

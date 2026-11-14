@@ -56,6 +56,21 @@ public sealed partial class Igi1HumanAi
         }
     }
 
+    /// <summary>
+    /// Lets go of everything the level holds for this mind -- its place among its target's attackers, the gun it sits at, the
+    /// alarm panel's claim handles and its node cell -- as the deletion of its task does (<c>0x4015F0</c>), for a mind that is
+    /// replaced while its soldier still lives.
+    /// </summary>
+    internal void Retire()
+    {
+        _gunnerCombat?.End();
+        SetTarget(null);
+        _pendingActions.Clear();
+        ReleaseActivateClaims();
+        _occupancy?.Release(this);
+        _occupancy?.ReleaseDead(this);
+    }
+
     /// <summary>Creates the fresh HumanAI instance installed by a GuardGenerator respawn.</summary>
     /// <param name="position">The authored soldier spawn position.</param>
     /// <param name="facing">The authored soldier heading.</param>
@@ -164,7 +179,7 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        if (generated || (!drawnLastRender && !bodiesStay))
+        if (generated || (!drawnLastRender && !bodiesStay && Behaviours is not { KeepsUnseenBody: true }))
         {
             HasLeftWorld = true;
             return true;
@@ -224,23 +239,9 @@ public sealed partial class Igi1HumanAi
         _deathClipEnded |= deathClipEnded;
         double x = Position.X + world.X + slide.X;
         double y = Position.Y + world.Y + slide.Y;
-        double z = Position.Z + world.Z + slide.Z;
-
-        if (_ground is not null && _ground(x, y, z + GroundProbeAboveUnits, out double groundZ))
-        {
-            z = groundZ;
-        }
-        else if (_ground is not null)
-        {
-            // Some placed upper floors are visual-only in the remaster's collision index. A live guard
-            // on one of those floors stays at the authored/nav height, but the death clip's descending
-            // root delta used to push its Human position below that plane. The renderer then also applies
-            // the clip's current root height, putting the entire corpse under the floor (Mission 4 guards
-            // 417-419). When a world ground service exists but cannot find a replacement support, retain
-            // the last valid feet height; the death pose still lowers the pelvis through RootSample.
-            z = Position.Z;
-        }
-
+        // Some placed upper floors are visual-only in the remaster's collision index (Mission 4 guards 417-419): with no support
+        // found the corpse keeps its last height rather than following the clip's root under the floor.
+        double z = SoldierDeathFall.SettleOnGround(_ground, x, y, Position.Z + world.Z + slide.Z, Position.Z, GroundProbeAboveUnits);
         Position = new Vector3d(x, y, z);
     }
 
@@ -373,6 +374,10 @@ public sealed partial class Igi1HumanAi
             OfferCandidates(candidates);
         }
 
+        // Who was offered, for a mod's behaviour to read during the tick (OfferedHumans).
+        TakeOffer(_offeredReferences is not null, candidates);
+
+        Behaviours?.TickStarted(tick);
         _enemyAlive = TargetHuman?.Candidate.Alive ?? true;
 
         // 0x44F410 zeroes the whole input-channel block (+15476, 0xA0 bytes) before anything runs: only the
@@ -428,6 +433,7 @@ public sealed partial class Igi1HumanAi
                 RunWithoutAction();
             }
 
+            Behaviours?.TickEnded();
             StepBodyOrWait();
             return;
         }
@@ -503,6 +509,12 @@ public sealed partial class Igi1HumanAi
         {
             if (friend.Slot.IsVisible && !friend.Candidate.Alive)
             {
+                Vector3d fallenAt = friend.Candidate.Feet;
+                if (Sensed(GuardStimulusKind.FallenFriend, ref fallenAt, friend.Candidate.Id) is not null)
+                {
+                    continue;
+                }
+
                 PostDetection(AiEvent.FriendlyDetection, friend);
             }
         }
@@ -530,7 +542,8 @@ public sealed partial class Igi1HumanAi
         // reaches from ENEMYDETECTION -- and posts IDLE whenever the action stack is empty (0x450DC0).
         // Declared priority, not a pending-event test, keeps IDLE behind the events that matter: a "nothing
         // pending" condition never let IDLE through while the alarm posted ALARMON every tick, which froze
-        // a guard in place for the rest of the alarm.
+        // a guard in place for the rest of the alarm. A mod's behaviour may give him something first (BeforeIdle).
+        Behaviours?.BeforeIdle();
         if (!_pendingActions.HasPending)
         {
             Events.Post(AiEventRecord.Simple(AiEvent.Idle), owner: 0, worldTests: null);
@@ -547,6 +560,7 @@ public sealed partial class Igi1HumanAi
             RunWithoutAction();
         }
 
+        Behaviours?.TickEnded();
         StepBodyOrWait();
     }
 

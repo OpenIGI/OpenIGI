@@ -27,7 +27,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uPages",
@@ -43,7 +44,8 @@
         "register": 1,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uTiles",
@@ -59,7 +61,8 @@
         "register": 2,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uLights",
@@ -75,7 +78,8 @@
         "register": 3,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uCells",
@@ -91,7 +95,8 @@
         "register": 1,
         "space": 0,
         "stride": 8
-      }
+      },
+      "glslUnit": 3
     },
     {
       "name": "uCellPages",
@@ -107,7 +112,8 @@
         "register": 2,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 4
     },
     {
       "name": "uProbePos",
@@ -123,7 +129,8 @@
         "register": 3,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 5
     },
     {
       "name": "uActiveTiles",
@@ -139,7 +146,8 @@
         "register": 4,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 6
     },
     {
       "name": "uLampMapRecords",
@@ -155,7 +163,8 @@
         "register": 11,
         "space": 0,
         "stride": 16
-      }
+      },
+      "glslUnit": 7
     },
     {
       "name": "uAlbedo",
@@ -292,7 +301,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAlbedoSampler",
@@ -665,5 +675,49 @@
       }
     ],
     "hlslSize": 448
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uAlbedo",
+      "unit": 0
+    },
+    {
+      "texture": "uAlbedo",
+      "sampler": "uAlbedoSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uNormal",
+      "sampler": "uNormalSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 4
+    },
+    {
+      "texture": "uPrevious",
+      "unit": 5
+    },
+    {
+      "texture": "uPrevious",
+      "sampler": "uPreviousSampler",
+      "unit": 6
+    },
+    {
+      "texture": "uIndirectRead",
+      "sampler": "uIndirectReadSampler",
+      "unit": 7
+    },
+    {
+      "texture": "uLampMaps",
+      "unit": 8
+    }
+  ]
 }

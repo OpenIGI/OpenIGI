@@ -1,5 +1,3 @@
-using OpenIGI.Core.Numerics;
-
 namespace OpenIGI.Game.Igi2.Ai;
 
 /// <summary>One node of an A* search, <c>AIGraphAStarSearchNode_s</c>.</summary>

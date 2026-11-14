@@ -132,12 +132,14 @@ public static class LogWire
         }
 
         StringBuilder text = new(value.Length);
-        for (int i = 0; i < value.Length; i++)
+        int i = 0;
+        while (i < value.Length)
         {
             char c = value[i];
             if (c != '\\' || i + 1 == value.Length)
             {
                 text.Append(c);
+                i++;
                 continue;
             }
 
@@ -149,6 +151,8 @@ public static class LogWire
                 'n' => '\n',
                 _ => next,
             });
+
+            i++;
         }
 
         return text.ToString();

@@ -20,7 +20,7 @@ namespace OpenIGI.Game.World;
 /// high inside the crate he leans on once the wagon reached the flat, where the two agree again.
 /// </para>
 /// </remarks>
-internal sealed class RailroadPath
+public sealed class RailroadPath
 {
     private const float Pi = 3.1415927f;
 
@@ -276,7 +276,7 @@ internal sealed class RailroadPath
                     double beta = Acos((float)((toA - toB - ((double)pieceLength * pieceLength)) / ((double)toEnd * pieceLength * -2.0)));
                     float sinBeta = (float)Math.Sin(beta);
                     float rest = (float)(Pi - beta);
-                    double apex = rest - Asin((float)(sinBeta / span * toEnd));
+                    double apex = rest - Asin((sinBeta / span * toEnd));
                     if (apex <= 0.001)
                     {
                         double toStart = Math.Sqrt(toA);
@@ -327,7 +327,7 @@ internal sealed class RailroadPath
                         double alpha = Acos((float)((toB - (double)toA - ((double)pieceLength * pieceLength)) / ((double)toStart * pieceLength * -2.0)));
                         float sinAlpha = (float)Math.Sin(alpha);
                         float rest = (float)(Pi - alpha);
-                        double apex = rest - Asin((float)(sinAlpha / step * toStart));
+                        double apex = rest - Asin((sinAlpha / step * toStart));
                         fraction = apex <= 0.001
                             ? (float)((step - toStart) / (Math.Sqrt(toB) - toStart))
                             : (float)(Math.Sin(apex) * step / sinAlpha / pieceLength);
@@ -487,7 +487,7 @@ internal sealed class RailroadPath
 /// first and then each child Train's in order, all signed by the LEAD's flip; <c>0x42A7C0</c> lays each child on
 /// the next pair. Each car keeps its own pivot fraction and displacement.
 /// </remarks>
-internal sealed class RailroadConsist(RailroadPath railroad)
+public sealed class RailroadConsist(RailroadPath railroad)
 {
     private readonly List<Car> _cars = [];
 

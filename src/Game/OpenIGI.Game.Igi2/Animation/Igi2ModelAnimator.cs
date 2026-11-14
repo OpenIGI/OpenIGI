@@ -74,7 +74,7 @@ public sealed class Igi2ModelAnimator : IModelAnimator
 
                 Igi2AnimationClip[] clips = [clip, .. library.ClipsOf(rig).Where(c => c.Name != clip.Name && c.BoneCount == rig.BoneCount)];
                 Igi2ModelAnimator animator = new(skin, rig, clips);
-                string facts = FormattableString.Invariant($"clip {clip.Name}, {clip.BoneCount} bones, {clip.TotalTime / TimePerSecond:0.##} s  \u2022  played on {name}");
+                string facts = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"clip {clip.Name}, {clip.BoneCount} bones, {clip.TotalTime / TimePerSecond:0.##} s  \u2022  played on {name}");
                 return new AnimationFilePreview(model, name, animator, 0, facts);
             }
         }

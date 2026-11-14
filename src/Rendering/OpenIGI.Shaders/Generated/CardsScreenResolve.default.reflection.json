@@ -26,7 +26,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uAccumPosition",
@@ -41,7 +42,8 @@
         "class": "UnorderedAccess",
         "register": 1,
         "space": 0
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uProbe",
@@ -162,7 +164,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uProbeSampler",
@@ -448,5 +451,38 @@
       }
     ],
     "hlslSize": 288
-  }
+  },
+  "glslSamplers": [
+    {
+      "texture": "uProbe",
+      "unit": 0
+    },
+    {
+      "texture": "uSceneDepth",
+      "sampler": "uSceneDepthSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uSceneNormal",
+      "sampler": "uSceneNormalSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uHistory",
+      "unit": 3
+    },
+    {
+      "texture": "uHistoryPosition",
+      "unit": 4
+    },
+    {
+      "texture": "uProbePosition",
+      "unit": 5
+    },
+    {
+      "texture": "uVelocity",
+      "sampler": "uVelocitySampler",
+      "unit": 6
+    }
+  ]
 }

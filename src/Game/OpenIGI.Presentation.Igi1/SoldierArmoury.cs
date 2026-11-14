@@ -1,10 +1,6 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation.Igi1;
@@ -81,12 +77,14 @@ internal sealed class SoldierArmoury(
     /// <returns><see langword="true"/> the first time.</returns>
     public bool FirstDrawOf(int taskId) => _reportedStationaryVisuals.Add(taskId);
 
-    /// <summary>Binds every stationary gun its weapon, and hands every soldier the weapon it carries.</summary>
+    /// <summary>
+    /// Builds the weapon models the soldiers and the stationary guns are drawn holding, once the simulation has armed them
+    /// (<see cref="SoldierSimulation.Arm"/>).
+    /// </summary>
     /// <param name="mission">The mission whose packs hold the weapon models.</param>
-    /// <param name="roster">The weapon table.</param>
     /// <param name="count">How many soldiers there are, for the report.</param>
     /// <returns>How many soldiers hold a weapon model.</returns>
-    public int Arm(LoadedMission mission, WeaponTypeRegistry roster, int count)
+    public int Dress(LoadedMission mission, int count)
     {
         _heldWeaponsByModel.Clear();
 
@@ -101,33 +99,13 @@ internal sealed class SoldierArmoury(
                 .Select(static item => item.StationaryGun)
                 .OfType<AiStationaryGun>())
             {
-                if (!roster.TryGetByScriptId(gun.WeaponId, out WeaponType weapon))
+                if (gun.Weapon is not { } weapon)
                 {
-                    gun.BindWeapon(null);
                     _stationaryWeaponVisuals[gun] = null;
-                    _logger.Warning(
-                        SoldierRenderer.LogCategory + ".Gunner",
-                        $"task={gun.TaskId} weapon={gun.WeaponId} is not in the weapon table.");
                     continue;
                 }
 
-                gun.BindWeapon(weapon);
-
-                // 0x478BA0 fires a mounted gun from its own model's magic vertex 2 -- the origin when
-                // the model has no such vertex -- because the stand passes it no eye to start from.
-                if (mission.TryGetModel(weapon.GunModel, out MefModel? gunModel)
-                    && gunModel is not null
-                    && gunModel.TryGetMagicVertex(2, out Vector3f muzzle))
-                {
-                    gun.MuzzleVertex = muzzle;
-                }
-
-                if (!cache.TryGetValue(weapon.GunModel, out SoldierHeldWeapon? held))
-                {
-                    held = _meshes.BuildWeapon(mission, weapon.GunModel);
-                    cache[weapon.GunModel] = held;
-                }
-
+                SoldierHeldWeapon? held = Build(weapon.GunModel);
                 _stationaryWeaponVisuals[gun] = held;
                 _logger.Information(
                     SoldierRenderer.LogCategory + ".Gunner",
@@ -138,50 +116,11 @@ internal sealed class SoldierArmoury(
         }
 
         int armed = 0;
-
         foreach (SoldierGroup group in _groups)
         {
             foreach (SoldierMember member in group.Soldiers)
             {
-                IReadOnlyList<LoadoutWeapon> carried = PlayerLoadout.WeaponsOf(member.Agent.View.Soldier);
-
-                // Human inventory scan 0x44FBA0 examines every carried Weapon task, not only slot 0.
-                // Category 4 publishes HumanAI+15869, which is the patrol grenade chooser's gate.
-                bool hasGrenade = carried.Any(item =>
-                    roster.TryGetByScriptId(item.WeaponId, out WeaponType candidate)
-                    && candidate.Category == WeaponCategory.Grenade);
-                if (_sim.Brains.TryGetValue(member.Agent.View, out Igi1HumanAi? brain))
-                {
-                    brain.SetGrenadeAvailable(hasGrenade);
-                }
-
-                if (carried.Count == 0)
-                {
-                    continue;
-                }
-
-                // Slot 0 of the weapon list, which is the first child that named a weapon.
-                string weaponId = carried[0].WeaponId;
-                if (!roster.TryGetByScriptId(weaponId, out WeaponType weapon))
-                {
-                    _logger.Warning(SoldierRenderer.LogCategory, $"'{weaponId}' is not in the weapon table.");
-                    continue;
-                }
-
-                // The Human's held Weapon task exists independently of the third-person mesh. Combat
-                // reads that task directly (IGI1 0x48D8E0; IGI2 HumanAIContent_RunFire), so a missing or
-                // unrenderable model must not turn an armed guard into an unarmed AI that only stares.
-                member.Agent.WeaponType = weapon;
-                member.Agent.CarriedWeaponType = weapon;
-                member.Agent.AmmoInClip = weapon.RoundsPerClip;
-
-                if (!cache.TryGetValue(weapon.GunModel, out SoldierHeldWeapon? held))
-                {
-                    held = _meshes.BuildWeapon(mission, weapon.GunModel);
-                    cache[weapon.GunModel] = held;
-                }
-
-                if (held is null)
+                if (member.Agent.WeaponType is not { } weapon || Build(weapon.GunModel) is not { } held)
                 {
                     continue;
                 }
@@ -198,6 +137,17 @@ internal sealed class SoldierArmoury(
             $"{armed} of {count} soldier(s) hold a weapon model, over {cache.Values.Count(w => w is not null)} " +
             $"distinct model(s).");
         return armed;
+
+        SoldierHeldWeapon? Build(string gunModel)
+        {
+            if (!cache.TryGetValue(gunModel, out SoldierHeldWeapon? held))
+            {
+                held = _meshes.BuildWeapon(mission, gunModel);
+                cache[gunModel] = held;
+            }
+
+            return held;
+        }
     }
 
     /// <summary>Builds the weapon models the vehicles' guns carry, and remembers where the runtime poses each.</summary>

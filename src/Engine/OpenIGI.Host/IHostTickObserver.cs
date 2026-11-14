@@ -107,6 +107,7 @@ public sealed partial class GameHost
     /// One set is a multiplayer session, and while it is set every cheat is held off (<see cref="Game.Player.PlayerCheatLock"/>)
     /// and the free camera is not offered: the session switches cheats off as it begins, and nothing turns them on until it
     /// ends. Every hit is marked and sounded while it runs, whatever the settings (<see cref="OpenIGI.Rendering.HudCVars.InSession"/>).
+    /// And no save game is made, read or listed while it runs (<see cref="Game.Saves.SaveGameLock"/>).
     /// </remarks>
     public IHostTickObserver? TickObserver
     {
@@ -119,6 +120,7 @@ public sealed partial class GameHost
             if (value is not null && !was)
             {
                 Game.Player.PlayerCheatLock.Hold();
+                Game.Saves.SaveGameLock.Hold();
                 Game.Player.PlayerCheatCVars.CheatsEnabled.Value = false;
                 OpenIGI.Rendering.HudCVars.InSession = true;
                 _logger.Information("Coop", "Cheats and the free camera are off for the session.");
@@ -126,6 +128,7 @@ public sealed partial class GameHost
             else if (value is null && was)
             {
                 Game.Player.PlayerCheatLock.Release();
+                Game.Saves.SaveGameLock.Release();
                 OpenIGI.Rendering.HudCVars.InSession = false;
             }
         }

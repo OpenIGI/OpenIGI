@@ -1,10 +1,7 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Game.Player;
 

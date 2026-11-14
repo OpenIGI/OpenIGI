@@ -56,7 +56,7 @@ public class ActionRow : Control
         float appear = Visual.Appear;
         float height = context.Px(36f);
         float top = Bounds.Center.Y - (height * 0.5f);
-        float right = Bounds.Right - context.Px(UiRowStyle.Inset);
+        float right = Bounds.Right - context.Px(Theme.RowInset);
 
         float labelSize = context.Px(16f);
         float buttonWidth = UiPainter.MeasureLabel(Theme.Heading, _action, labelSize, 0.16f) + context.Px(28f);
@@ -85,7 +85,7 @@ public class ActionRow : Control
     // least half of the room beside the button for the caption.
     private UiRect FieldRect(LayoutContext context, UiRect button, float top, float height)
     {
-        float room = button.X - context.Px(8f) - (Bounds.X + context.Px(UiRowStyle.Inset));
+        float room = button.X - context.Px(8f) - (Bounds.X + context.Px(Theme.RowInset));
         float width = MathF.Max(0f, MathF.Min(context.Px(FieldWidth), room * 0.5f));
         return new UiRect(button.X - context.Px(8f) - width, top, width, height);
     }

@@ -2,11 +2,10 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats.Sprites;
+using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Presentation.Igi2.Hud;
 
@@ -377,7 +376,7 @@ public sealed partial class Igi2HudRenderer : OpenIGI.Game.Computer.IComputerFon
         string battery = display.Text(flat ? "computer/BATTERY LOW" : "computer/Battery Level");
         ComputerText(batch, text, battery, (int)((w * 0.78125f) - StringWidth(text, battery)), (int)((h * 0.6458333134651184f) + 64f - LineHeight(text)),
             Colour(flat ? Igi2ComputerColour.DarkRed : Igi2ComputerColour.Green));
-        if (display.SaveState == Igi2ComputerSaveState.Overwrite)
+        if (display.SaveState == ComputerSaveState.Overwrite)
         {
             ComputerText(batch, text, display.Text("computer/Overwrite?"), display.OverwriteX, display.OverwriteY, Colour(Igi2ComputerColour.DarkRed));
             ComputerText(batch, text, Igi2ComputerDisplay.SaveSlash, display.SlashX, display.OverwriteY, Colour(Igi2ComputerColour.Green));
@@ -391,7 +390,7 @@ public sealed partial class Igi2HudRenderer : OpenIGI.Game.Computer.IComputerFon
         ComputerStretch(batch, "COMPUTER:battery.spr", left, h * 0.6458333134651184f, left + 64f, (h * 0.6458333134651184f) + 64f,
             Colour(Igi2ComputerColour.Green), BlendMode.AlphaBlend);
 
-        if (display.SaveState is Igi2ComputerSaveState.Uploading or Igi2ComputerSaveState.Complete)
+        if (display.SaveState is ComputerSaveState.Uploading or ComputerSaveState.Complete)
         {
             float progress = display.UploadProgress;
             Bgra32 from = Colour128(0f, progress * 128f, 128f), to = Colour128(0f, 128f, 128f);
@@ -399,7 +398,7 @@ public sealed partial class Igi2HudRenderer : OpenIGI.Game.Computer.IComputerFon
             string uploading = display.Text("computer/Uploading") + ":";
             float labelY = (int)((h * 0.7916666865348816f) - LineHeight(text) - 2f), labelX = (int)(w * 0.15625f);
             ComputerText(batch, text, uploading, labelX, labelY, Colour(Igi2ComputerColour.Green));
-            string count = display.SaveState == Igi2ComputerSaveState.Complete
+            string count = display.SaveState == ComputerSaveState.Complete
                 ? display.Text("computer/Complete")
                 : ((int)(progress * 100f)).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
             ComputerText(batch, text, count, (int)(StringWidth(text, uploading) + labelX), labelY, Colour(Igi2ComputerColour.White));

@@ -102,7 +102,8 @@
         "class": "UnorderedAccess",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "uClipmapsSampler",
@@ -132,7 +133,8 @@
         "class": "ConstantBuffer",
         "register": 0,
         "space": 0
-      }
+      },
+      "glslUnit": 0
     },
     {
       "name": "f",
@@ -147,7 +149,8 @@
         "class": "ConstantBuffer",
         "register": 1,
         "space": 0
-      }
+      },
+      "glslUnit": 1
     },
     {
       "name": "uSunVisibility",
@@ -227,7 +230,8 @@
         "class": "ConstantBuffer",
         "register": 2,
         "space": 0
-      }
+      },
+      "glslUnit": 2
     },
     {
       "name": "uLampGrid",
@@ -243,10 +247,45 @@
         "register": 4,
         "space": 0,
         "stride": 4
-      }
+      },
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uDepth",
+      "sampler": "uDepthSampler",
+      "unit": 0
+    },
+    {
+      "texture": "uNormal",
+      "sampler": "uNormalSampler",
+      "unit": 1
+    },
+    {
+      "texture": "uClipmaps",
+      "sampler": "uClipmapsSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uSunVisibility",
+      "unit": 3
+    },
+    {
+      "texture": "uLampMaps",
+      "unit": 4
+    },
+    {
+      "texture": "uLampMaps",
+      "sampler": "uLampMapSampler",
+      "unit": 5
+    },
+    {
+      "texture": "uCoarseMaps",
+      "unit": 6
+    }
+  ]
 }

@@ -1,5 +1,3 @@
-using OpenIGI.Game.Ai;
-
 namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>A human offered to one soldier's scan by reference, described only when the soldier reads it.</summary>

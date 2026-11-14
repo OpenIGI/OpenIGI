@@ -16,4 +16,9 @@
     <ProjectReference Include="..\..\UI\OpenIGI.UI.Kit\OpenIGI.UI.Kit.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The touch controls' icons, baked from assets/touch-icons by tools/OpenIGI.Tools.IconAtlas (TouchIconAtlas reads it). -->
+    <EmbeddedResource Include="Hud/Remastered/Touch/touch-icons.bin" LogicalName="OpenIGI.Presentation.touch-icons.bin" />
+  </ItemGroup>
+
 </Project>

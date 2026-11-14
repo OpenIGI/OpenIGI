@@ -73,7 +73,7 @@ public sealed class StormDropSpreadTests
     {
         // The spread is a push that keeps acting, so a drop one second old must lean measurably further
         // than one a tenth of a second old.
-        (float x, float y, float z) = PrecipitationSimulation.SpawnDrift(Spread, 1f, 0f, 0.5f);
+        (float x, float y, _) = PrecipitationSimulation.SpawnDrift(Spread, 1f, 0f, 0.5f);
 
         float young = Lean(PrecipitationSimulation.DriftAt(0f, 0f, x, y, 0.1f), Fall);
         float old = Lean(PrecipitationSimulation.DriftAt(0f, 0f, x, y, 2.0f), Fall);

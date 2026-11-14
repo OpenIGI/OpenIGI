@@ -53,6 +53,7 @@ public sealed class RetailVehicleGunMountTests
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         GameLoop loop = new();
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         MagicObjectRegistry magic = new();
         magic.Register(loop.Natives);
         magic.Load(new ResourceRegistry(fileSystem), loop.Natives);

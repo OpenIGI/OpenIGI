@@ -15,11 +15,8 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailCutsceneRuntimeTests
 {
-    private readonly ITestOutputHelper _output;
-
     public RetailCutsceneRuntimeTests(ITestOutputHelper output)
     {
-        _output = output;
     }
 
     [RequiresGameDataTheory]
@@ -47,6 +44,7 @@ public sealed class RetailCutsceneRuntimeTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        objectives.AttachTo(runtime.Walker);
 
         Assert.NotEmpty(Walk(root).OfType<CutSceneTask>());
         Assert.True(runtime.IsPlaying);
@@ -99,11 +97,10 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(1, firstBinocularFrame.Scene.Ticks);
         Assert.True(firstBinocularFrame.BinocularOverlayVisible);
 
-        CutsceneFrame lastBinocularFrame = firstBinocularFrame;
         int lastBinocularTick = firstBinocularFrame.Scene.Ticks;
         for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3501; tick++)
         {
-            lastBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            CutsceneFrame lastBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
             lastBinocularTick = lastBinocularFrame.Scene.Ticks;
             Assert.True(lastBinocularFrame.BinocularOverlayVisible);
             runtime.Tick();

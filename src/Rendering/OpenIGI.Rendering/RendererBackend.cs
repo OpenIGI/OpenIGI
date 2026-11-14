@@ -18,6 +18,12 @@ public enum RendererBackend
 
     /// <summary>WebGPU through wgpu-native: the browser's API, run on the desktop to compare against Vulkan.</summary>
     WebGpu,
+
+    /// <summary>
+    /// OpenGL 4.3 core: for a machine with neither a Vulkan driver nor Direct3D 12's baseline, which the game falls
+    /// back to by itself when the others will not start. No ray tracing and no NVIDIA features.
+    /// </summary>
+    OpenGL,
 }
 
 /// <summary>What <see cref="RendererBackend.Auto"/> and a backend this platform lacks come to.</summary>

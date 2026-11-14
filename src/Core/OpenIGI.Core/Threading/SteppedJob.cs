@@ -123,6 +123,7 @@ public static class Stepping
 
         foreach (bool _ in slices)
         {
+            // The loop's condition does the work.
         }
     }
 

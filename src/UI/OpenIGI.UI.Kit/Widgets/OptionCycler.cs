@@ -149,10 +149,25 @@ public class OptionCycler : Control
     }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        Inline
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
+    {
+        if (Theme.Large)
+        {
+            return Inline ? UiRowStyle.Measure(this, context, available) : new UiVec2(context.Px(LargeCellWidth), available.Y);
+        }
+
+        return Inline
             ? new(available.X, context.Px(InlineHeight))
             : new(context.Px(26f + ContentWidth + 6f + 30f + 10f), available.Y);
+    }
+
+    // The large look, in design units: an arrow's box, a cell's width where the page gives none, and the room a row's
+    // arrows and value take together.
+    private const float LargeArrow = 44f;
+    private const float LargeCellWidth = 232f;
+    private const float LargeRowControl = 248f;
+
+    private bool Small => Theme.BodyTextSize < 18f;
 
     // A row's height, and how far in from its edges its label and arrows stand. Layout pixels.
     private const float InlineHeight = 57f;
@@ -161,6 +176,28 @@ public class OptionCycler : Control
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
+        if (Theme.Large)
+        {
+            float arrowBox = context.Px(LargeArrow);
+            if (Inline)
+            {
+                // A row: the arrows either side of the value, against the row's right inset.
+                float control = MathF.Min(context.Px(Small ? 196f : LargeRowControl), contentRect.Width * 0.55f);
+                float edge = contentRect.Right - context.Px(Theme.RowInset) + context.Px(8f);
+                float y = contentRect.Center.Y - (arrowBox * 0.5f);
+                _down = new UiRect(edge - control, y, arrowBox, arrowBox);
+                _up = new UiRect(edge - arrowBox, y, arrowBox, arrowBox);
+                return;
+            }
+
+            // A cell: its caption across the top, the arrows at its sides under that.
+            float top = contentRect.Y + context.Px(CellCaptionBand);
+            float cy = top + ((contentRect.Bottom - top - arrowBox) * 0.5f);
+            _down = new UiRect(contentRect.X + context.Px(6f), cy, arrowBox, arrowBox);
+            _up = new UiRect(contentRect.Right - context.Px(6f) - arrowBox, cy, arrowBox, arrowBox);
+            return;
+        }
+
         if (Inline)
         {
             float box = context.Px(30f);
@@ -182,6 +219,12 @@ public class OptionCycler : Control
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
+        if (Theme.Large)
+        {
+            DrawLarge(painter);
+            return;
+        }
+
         if (Inline)
         {
             DrawInline(painter);
@@ -229,6 +272,83 @@ public class OptionCycler : Control
 
         DrawArrow(painter, _up, UiDirection.Up, appear);
         DrawArrow(painter, _down, UiDirection.Down, appear);
+    }
+
+    // The band a cell's caption has across its top, in design units.
+    private const float CellCaptionBand = 30f;
+
+    // The large look, row or cell: the value between two arrows a thumb can take, a pip under it for each choice.
+    private void DrawLarge(UiPainter painter)
+    {
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
+        float hot = UiRowStyle.Highlight(this);
+        if (Inline)
+        {
+            UiRowStyle.DrawFrame(painter, this, Caption, hot, _down.X);
+        }
+        else
+        {
+            painter.FillRect(Bounds, Bgra32.FromRgba(12, 14, 15, (byte)(199f * appear)));
+            if (hot > 0.001f)
+            {
+                painter.FillRect(Bounds, UiPalette.White(0.06f * hot * appear));
+            }
+
+            painter.StrokeRect(Bounds, context.Px(1f), UiPalette.White(0.12f * appear));
+            if (Visual.Focus > 0.001f)
+            {
+                painter.StrokeRect(Bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
+            }
+
+            float captionSize = context.Px(Small ? 13f : 14f);
+            float captionWidth = UiPainter.MeasureLabel(Theme.Heading, Label, captionSize, 0.14f);
+            var band = new UiRect(Bounds.X, Bounds.Y + context.Px(10f), Bounds.Width, captionSize * 1.2f);
+            painter.DrawLabel(Theme.Heading, Label, new UiVec2(Bounds.Center.X - (captionWidth * 0.5f), UiRowStyle.CapsCenterY(Theme.Heading, captionSize, band)), captionSize, UiPalette.Fade(Theme.TextSecondary, appear), 0.14f);
+        }
+
+        float centre = (_down.Right + _up.X) * 0.5f;
+        float room = _up.X - _down.Right;
+        float valueSize = context.Px(Small ? 16f : 18f);
+        float caps = valueSize * 0.72f;
+        bool pips = _pips.Count is > 1 and <= 8;
+        float pipHeight = context.Px(3f);
+        float block = caps + (pips ? context.Px(6f) + pipHeight : 0f);
+        float top = _down.Center.Y - (block * 0.5f);
+        if (_options.Count > 0)
+        {
+            string value = OpenIGI.UI.Text.TextFit.ToWidth(Theme.Heading, _shown[_selected], valueSize, room);
+            float width = UiPainter.MeasureLabel(Theme.Heading, value, valueSize, 0.1f);
+            var valueBox = new UiRect(centre - (width * 0.5f), top, width, caps);
+            painter.DrawLabel(Theme.Heading, value, new UiVec2(valueBox.X, UiRowStyle.CapsCenterY(Theme.Heading, valueSize, valueBox)), valueSize, UiPalette.Fade(IsEnabled ? Theme.Text : Theme.TextDisabled, appear), 0.1f);
+        }
+
+        if (pips)
+        {
+            float pip = context.Px(10f);
+            float gap = context.Px(3f);
+            float x = centre - (((_pips.Count * pip) + ((_pips.Count - 1) * gap)) * 0.5f);
+            for (int i = 0; i < _pips.Count; i++)
+            {
+                Bgra32 ink = Interpolate.Lerp(UiPalette.White(0.22f), IsEnabled ? Theme.Accent : Theme.TextDisabled, _pips[i].Value);
+                painter.FillRect(new UiRect(x + (i * (pip + gap)), top + caps + context.Px(6f), pip, pipHeight), UiPalette.Fade(ink, appear));
+            }
+        }
+
+        DrawLargeArrow(painter, _down, -1f, appear);
+        DrawLargeArrow(painter, _up, 1f, appear);
+    }
+
+    private void DrawLargeArrow(UiPainter painter, UiRect box, float sign, float appear)
+    {
+        bool hot = IsEnabled && IsPointerOver && box.Contains(_pointer);
+        float reach = painter.Context.Px(6f);
+        float thick = painter.Context.Px(2f);
+        UiVec2 c = box.Center;
+        Bgra32 ink = UiPalette.Fade(!IsEnabled ? Theme.TextDisabled : hot ? Theme.Accent : Theme.TextSecondary, appear);
+        var tip = new UiVec2(c.X + (sign * reach * 0.5f), c.Y);
+        painter.StrokeLine(new UiVec2(tip.X - (sign * reach), c.Y - reach), tip, thick, ink);
+        painter.StrokeLine(new UiVec2(tip.X - (sign * reach), c.Y + reach), tip, thick, ink);
     }
 
     // The row: its label on the left, its value centred between the arrows with the pips under it, a hairline beneath.

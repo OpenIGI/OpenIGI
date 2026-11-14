@@ -81,9 +81,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private bool _started;
     private Igi2Pose? _built;
-    private IAttachParent? _attachParent;
-    private readonly float[] _relativeOrientation = new float[9];
-    private Vector3f _relativePosition;
+    private readonly Igi2Attachment _attachment = new();
 
     /// <summary>Gets or sets where it stands shut, <c>Position start</c>.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position start")]
@@ -492,62 +490,20 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     /// </remarks>
     public void UpdateAttachment()
     {
-        if (_attachParent is not { } parent)
+        if (!_attachment.TryResolve(out Vector3d start, out float[] frame))
         {
             return;
         }
 
-        IReadOnlyList<float> p = parent.AttachOrientation;
-        float[] a = _relativeOrientation;
-        Vector3f r = _relativePosition;
-        float tx = ((((Fpu)p[1] * r.Y) + ((Fpu)r.X * p[0])) + ((Fpu)p[2] * r.Z)).F;
-        float ty = ((((Fpu)r.X * p[3]) + ((Fpu)r.Z * p[5])) + ((Fpu)p[4] * r.Y)).F;
-        float tz = ((((Fpu)p[7] * r.Y) + ((Fpu)p[6] * r.X)) + ((Fpu)p[8] * r.Z)).F;
-        _base =
-        [
-            ((((Fpu)p[2] * a[6]) + ((Fpu)p[1] * a[3])) + ((Fpu)a[0] * p[0])).F,
-            ((((Fpu)p[0] * a[1]) + ((Fpu)p[2] * a[7])) + ((Fpu)p[1] * a[4])).F,
-            ((((Fpu)p[2] * a[8]) + ((Fpu)p[1] * a[5])) + ((Fpu)p[0] * a[2])).F,
-            ((((Fpu)a[6] * p[5]) + ((Fpu)a[3] * p[4])) + ((Fpu)a[0] * p[3])).F,
-            ((((Fpu)a[7] * p[5]) + ((Fpu)a[4] * p[4])) + ((Fpu)a[1] * p[3])).F,
-            ((((Fpu)p[3] * a[2]) + ((Fpu)p[5] * a[8])) + ((Fpu)p[4] * a[5])).F,
-            ((((Fpu)p[8] * a[6]) + ((Fpu)p[7] * a[3])) + ((Fpu)p[6] * a[0])).F,
-            ((((Fpu)p[6] * a[1]) + ((Fpu)p[8] * a[7])) + ((Fpu)p[7] * a[4])).F,
-            ((((Fpu)p[8] * a[8]) + ((Fpu)p[7] * a[5])) + ((Fpu)p[6] * a[2])).F,
-        ];
-        Vector3d at = parent.AttachPosition;
-        _start = new Vector3d(((Fpu)tx + at.X).Value, ((Fpu)ty + at.Y).Value, ((Fpu)tz + at.Z).Value);
+        _base = frame;
+        _start = start;
         Position = _start;
         SetPosition();
     }
 
     // Door_AttachToParent (igi2 0x536520): a door inside a parent that holds its children keeps its frame and its start against
     // the parent's, the frame as the parent's transpose times its own, the start as the offset turned back into the parent.
-    private void AttachToParent()
-    {
-        _attachParent = Parent as IAttachParent;
-        if (_attachParent is not { } parent)
-        {
-            return;
-        }
-
-        IReadOnlyList<float> p = parent.AttachOrientation;
-        float[] d = _base;
-        for (int i = 0; i < 3; i++)
-        {
-            for (int c = 0; c < 3; c++)
-            {
-                _relativeOrientation[(3 * i) + c] = ((((Fpu)p[i] * d[c]) + ((Fpu)p[6 + i] * d[6 + c])) + ((Fpu)p[3 + i] * d[3 + c])).F;
-            }
-        }
-
-        Vector3d at = parent.AttachPosition;
-        float r0 = ((Fpu)_start.X - at.X).F, r1 = ((Fpu)_start.Y - at.Y).F, r2 = ((Fpu)_start.Z - at.Z).F;
-        _relativePosition = new Vector3f(
-            ((((Fpu)p[0] * r0) + ((Fpu)p[3] * r1)) + ((Fpu)p[6] * r2)).F,
-            ((((Fpu)p[1] * r0) + ((Fpu)p[4] * r1)) + ((Fpu)p[7] * r2)).F,
-            ((((Fpu)p[2] * r0) + ((Fpu)p[5] * r1)) + ((Fpu)p[8] * r2)).F);
-    }
+    private void AttachToParent() => _attachment.Attach(Parent as IAttachParent, _start, _base);
 
     // Toward where it is told to be, by a thirtieth of its open time, not past it.
     private bool Move()

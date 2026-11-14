@@ -297,11 +297,8 @@ public sealed partial class Igi1HumanAi
 
     private readonly List<AiChannelWrite> _channelWrites = [];
 
-    private void WriteChannel(AiCombatChannel channel, float value) =>
+    internal void WriteChannel(AiCombatChannel channel, float value) =>
         _channelWrites.Add(new AiChannelWrite(channel, AiCombatChannels.SlotOf(_type, channel), value));
-
-    private bool WroteChannel(AiCombatChannel channel) =>
-        _channelWrites.Any(write => write.Channel == channel && write.Value != 0f);
 
     /// <summary>Gets direct physical input-frame writes made this tick.</summary>
     /// <remarks>Unlike <see cref="ChannelWrites"/>, these bypass the AI-type channel map.</remarks>
@@ -311,9 +308,6 @@ public sealed partial class Igi1HumanAi
 
     private void WriteRawInputSlot(int slot, float value) =>
         _rawInputWrites.Add(new AiRawInputWrite(slot, value));
-
-    private bool WroteRawInputSlot(int slot) =>
-        _rawInputWrites.Any(write => write.Slot == slot && write.Value != 0f);
 
     /// <summary>Gets the hit probability the last burst set — <c>Human+1236</c>.</summary>
     /// <remarks>The weapon reads it with every round; the AI never decides a hit itself.</remarks>
@@ -392,8 +386,10 @@ public sealed partial class Igi1HumanAi
     /// It runs however the fight ends — the arm giving up, the target dying, the action being ended to
     /// make way for another — and nothing else: the body is left as it is, for whatever runs next.
     /// </remarks>
-    private void EndCombat()
+    internal void EndCombat()
     {
+        // The behaviours are told once the fight is down, so one that ends a fight from here finds none to end.
+        bool wasInstalled = _combatInstalled;
         _combatInstalled = false;
         _combat?.Cancel();
         _gunnerCombat?.End();
@@ -411,6 +407,11 @@ public sealed partial class Igi1HumanAi
         if (Activity == AiSoldierActivity.Engaging)
         {
             Activity = AiSoldierActivity.Idle;
+        }
+
+        if (wasInstalled)
+        {
+            Behaviours?.CombatEnded();
         }
     }
 
@@ -504,7 +505,13 @@ public sealed partial class Igi1HumanAi
         }
 
         bool mounted = false;
-        if (_gunnerCombat is not null && RunGunnerMount(_gunnerCombat, enemy, out mounted))
+        if (_gunnerCombat is not null && RunGunnerMount(_gunnerCombat, out mounted))
+        {
+            return;
+        }
+
+        // A mod's fight in place of the game's, for a guard or a patrol (IGuardCombat.Fight); a gunner keeps his own.
+        if (Behaviours?.Fight(enemy) == true)
         {
             return;
         }
@@ -563,10 +570,9 @@ public sealed partial class Igi1HumanAi
 
     /// <summary>The gunner arm's mount and dismount, which own the whole tick while they run.</summary>
     /// <param name="gunnerCombat">The gunner arm.</param>
-    /// <param name="enemy">Where combat believes the target is.</param>
     /// <param name="mounted">Receives whether the gunner fires the mounted weapon this tick.</param>
     /// <returns><see langword="true"/> when the gunner ended the fight or is mounting, and the tick is done.</returns>
-    private bool RunGunnerMount(AiGunnerCombat gunnerCombat, Vector3d enemy, out bool mounted)
+    private bool RunGunnerMount(AiGunnerCombat gunnerCombat, out bool mounted)
     {
         mounted = false;
         // 0x48D340 tests the gun's cone against 0x451380's point -- the target's origin raised, read live -- not the

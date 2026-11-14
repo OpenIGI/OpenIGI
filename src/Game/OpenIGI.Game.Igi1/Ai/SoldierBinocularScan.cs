@@ -102,8 +102,8 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
 
             // 0x470F70 sizes the marker as projectionScale * Human+0xA0 / depth, where Human+0xA0 is the model's authored
             // MESH+0x78 bound (~0.94 m for the soldier LODs), and 0x471B60 centres it on the human's origin (Human+32).
-            if (!_context.DetectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
-                || markerScaleMetres <= 0f)
+            float markerScaleMetres = view.DetectorMarkerScaleMetres;
+            if (markerScaleMetres <= 0f)
             {
                 continue;
             }
@@ -143,21 +143,18 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
             // looking, the human looked at), and a contact the line comes back from at a fraction of exactly 0 -- a wall, the
             // ground -- is occluded: it keeps its slot, refreshed, but is not drawn.
             bool visible = true;
-            if (_context.SightTrace is { } trace)
+            if (_context.SightTrace is { } trace && (simulationTick == int.MinValue || !Visibility.TryGetValue(view, out visible)))
             {
-                if (simulationTick == int.MinValue || !Visibility.TryGetValue(view, out visible))
+                int seen = view.Soldier.Id;
+                visible = SoldierSightQueries.HasLineOfSight(
+                    trace,
+                    eyeUnits,
+                    brain.EyePosition(),
+                    double.Epsilon,
+                    standsAside: owner => _context.GunStandsAside(owner, AiDetectionCandidate.PlayerId, seen));
+                if (simulationTick != int.MinValue)
                 {
-                    int seen = view.Soldier.Id;
-                    visible = SoldierSightQueries.HasLineOfSight(
-                        trace,
-                        eyeUnits,
-                        brain.EyePosition(),
-                        double.Epsilon,
-                        standsAside: owner => _context.GunStandsAside(owner, AiDetectionCandidate.PlayerId, seen));
-                    if (simulationTick != int.MinValue)
-                    {
-                        Visibility[view] = visible;
-                    }
+                    Visibility[view] = visible;
                 }
             }
 

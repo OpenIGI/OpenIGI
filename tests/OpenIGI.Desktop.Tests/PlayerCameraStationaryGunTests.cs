@@ -13,7 +13,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
@@ -132,7 +131,7 @@ public sealed class PlayerCameraStationaryGunTests
         // 0x474360 passes the gun no origin, so 0x478BA0 fires from the gun's own muzzle.
         Assert.True(fired);
         Assert.True(firstOrigin.HasValue);
-        AssertClose(muzzleUnits, firstOrigin!.Value);
+        AssertClose(muzzleUnits, firstOrigin.Value);
         Assert.NotEqual(camera.EyeUnits, firstOrigin.Value);
         Assert.True(target.IsDead);
         Assert.Equal(-1, gun.RemainingAmmunition);
@@ -208,7 +207,8 @@ public sealed class PlayerCameraStationaryGunTests
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
 
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();

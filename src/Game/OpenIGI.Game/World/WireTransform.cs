@@ -167,7 +167,8 @@ public readonly record struct WireTransform(
                 vertex.Colour);
         }
 
-        return new MeshGeometry(vertices, [.. source.Indices], source.Subsets);
+        // Strung, a model with no normals of its own stays two-sided, as it was before.
+        return new MeshGeometry(vertices, [.. source.Indices], source.Subsets) { HasDerivedNormals = source.HasDerivedNormals };
     }
 
     /// <summary>Gets column 2 of the retail cable frame: cable-relative up.</summary>

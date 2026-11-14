@@ -20,18 +20,18 @@ public sealed partial class GameHost
     private sealed class MissionHostServices(GameHost host) : IMissionHostServices
     {
 
-        public void SpawnImpactBurst(in WorldRayHit worldHit)
+        public void SpawnImpactBurst(in WorldRayHit hit)
         {
             if (host._effects.Particles is { } bursts
                 && CombatEffectCVars.ImpactParticles.Value is > 0f and var intensity)
             {
                 string material = host._mission.Materials is { } names
-                    && names.TryGet(worldHit.Material, out GameMaterial struck)
+                    && names.TryGet(hit.Material, out GameMaterial struck)
                     ? struck.Name
                     : string.Empty;
                 bursts.SpawnBurst(
-                    worldHit.Position,
-                    worldHit.Normal,
+                    hit.Position,
+                    hit.Normal,
                     ImpactParticleRenderer.KindOf(material),
                     intensity);
             }
@@ -52,7 +52,7 @@ public sealed partial class GameHost
         public void StepWeather() => host._storm?.Tick(host._stormEyeMetres);
 
 
-        public void SoundVehicles(CutsceneRuntime cutscenes)
+        public void SoundVehicles(IEnumerable<VehicleSoundSource> engines, IEnumerable<VehicleGunSound> guns)
         {
             if (host._audioOut.Sounds is not { } vehicleSoundSystem)
             {
@@ -61,8 +61,8 @@ public sealed partial class GameHost
 
             host._vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
             host._vehicleSounds.Tick(
-                cutscenes.VehicleSoundSources().Concat(host._mission.RotatingObjects?.SoundSources() ?? []),
-                cutscenes.VehicleGunSounds(),
+                engines,
+                guns,
                 host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
         }
 
@@ -83,6 +83,8 @@ public sealed partial class GameHost
         public OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput() => host.TakeComputerInput();
 
         public void ComputerChanged(bool open) => host.MissionComputerChanged(open);
+
+        public OpenIGI.Game.Computer.IComputerSaves? ComputerSaves => host.ComputerSaves;
 
         public bool TickTitlePlayer() => host.TickTitlePlayer();
 
@@ -151,19 +153,13 @@ public sealed partial class GameHost
 
         public TerrainData? Terrain => host._mission.Terrain;
 
-        public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
-        {
-            host.ReadSharedAnimations();
-            return host._playerBodyAnimations;
-        }
-
         public void EndStage(string what) => host.EndStage(what);
 
 
 
-        public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
+        public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host.WorldView?.WeaponDropped(loaded, pickup);
 
-        public void WeaponRemoved(GunPickup pickup) => host._gunPickupRenderer?.Remove(pickup);
+        public void WeaponRemoved(GunPickup pickup) => host.WorldView?.WeaponRemoved(pickup);
 
         public void LevelWasReset() => host._effects.Clear();
 
@@ -191,7 +187,17 @@ public sealed partial class GameHost
 
         public string GamePath => host._gamePath;
 
+        public OpenIGI.Core.Threading.IWorkScheduler Work => host._work;
+
         public bool PlayCutscenes => host._options.PlayCutscenes;
+
+        public int ActiveProfileIndex => host._configuration.ActiveIndex;
+
+        public IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => host._titleRuntime.Mods;
+
+        public void RestartMission() => host._restartMission?.Invoke();
+
+        public void SaveReadOntoLevel() => host.SaveReadOntoLevel();
 
         public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
         {

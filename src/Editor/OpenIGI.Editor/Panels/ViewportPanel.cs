@@ -9,11 +9,9 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Editor;
 using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
-using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Editor.Panels;
@@ -58,7 +56,6 @@ internal sealed partial class ViewportPanel : EditorElement
     private readonly BoxGizmo _box = new();
     private readonly TerrainTool _terrain;
     private MissionTask? _graphTask;
-    private readonly List<InspectableEntity> _entities = [];
     private readonly EditorCamera _camera = new();
     private readonly Dictionary<MissionTask, Vector3d> _moveStarts = new(ReferenceEqualityComparer.Instance);
     private double? _gridHeight;

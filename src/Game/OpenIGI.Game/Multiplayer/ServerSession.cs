@@ -210,10 +210,10 @@ public sealed partial class ServerSession : IModeHost
 
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _pending.TryGetValue(e.Peer, out PendingJoin? pending):
-                    ReadProof(pending, e.Message.Data);
+                    ReadProof(e.Peer, pending, e.Message.Data);
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _clients.TryGetValue(e.Peer, out ClientState? client):
-                    ReadMessage(e.Peer, client, e.Message.Data, serverTick);
+                    ReadMessage(e.Peer, client, e.Message.Data);
                     break;
             }
         }
@@ -258,7 +258,7 @@ public sealed partial class ServerSession : IModeHost
 
     // A client's answer to its challenge: its key, and its signature, checked as the verifier can (a browser's asynchronously).
     // A client with no identity to give (an empty key) is let in as someone new, who can't rejoin as itself.
-    private void ReadProof(PendingJoin pending, byte[] data)
+    private void ReadProof(int slot, PendingJoin pending, byte[] data)
     {
         BitReader reader = new(data);
         if ((SessionMessage)reader.ReadBits(8) != SessionMessage.Proof || pending.Check is not null || pending.Anonymous)
@@ -275,12 +275,22 @@ public sealed partial class ServerSession : IModeHost
 
         if (key.Length == 0 || _verifier is null)
         {
+            // No key, where this server can check one and asks for it: turned away. Let in as someone new, a player the
+            // host removed came straight back as nobody.
+            if (RequireIdentity && _verifier is not null)
+            {
+                _pending.Remove(slot);
+                _watching.Remove(slot);
+                _net.Disconnect(slot, "this server lets in only games that can say who they are");
+                return;
+            }
+
             pending.Anonymous = true;
             return;
         }
 
         pending.Key = key;
-        pending.Check = _verifier.VerifyAsync(key, PlayerIdentities.ProofOf(_protocolId, pending.Challenge), signature);
+        pending.Check = _verifier.VerifyAsync(key, PlayerIdentities.ProofOf(_protocolId, pending.Challenge, _net.GetConnection(slot)?.ChannelBinding ?? []), signature);
     }
 
     // The clients whose proofs are in let in, those that failed or took too long dropped.
@@ -336,7 +346,7 @@ public sealed partial class ServerSession : IModeHost
     public void Send(double now, long tick)
     {
         TickSay(now);
-        foreach ((string name, (int parked, double since)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
+        foreach ((string name, (int parked, _)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
         {
             _world.ForgetPlayer(parked);
             Match.Leave(parked);
@@ -402,6 +412,11 @@ public sealed partial class ServerSession : IModeHost
         Snapshot snapshot = _world.Capture(tick);
         LastSnapshot = snapshot;
         LagCompensationHistory.Add(snapshot);
+        foreach (ClientState client in _clients.Values)
+        {
+            client.Queue(snapshot.Impacts, snapshot.Senses);
+        }
+
         foreach ((int slot, ClientState client) in _clients)
         {
             if (tick % Math.Max(Math.Max(1, SnapshotInterval), _intervals.GetValueOrDefault(slot, 1)) != 0)
@@ -418,7 +433,7 @@ public sealed partial class ServerSession : IModeHost
             }
 
             client.History.Add(snapshot);
-            SendSnapshot(slot, snapshot, client.History.Baseline, tick);
+            SendSnapshot(slot, client, snapshot, client.History.Baseline, tick);
         }
 
         _net.Flush(now);
@@ -428,7 +443,7 @@ public sealed partial class ServerSession : IModeHost
     // written against the same baseline and names its place, and the client takes the tick once it holds them all. The
     // doors, the rounds and the senses ride the first part alone: the others carry the baseline's doors (a bit) and no
     // events, so nothing lands twice.
-    private void SendSnapshot(int slot, Snapshot snapshot, Snapshot? baseline, long tick)
+    private bool TrySendParts(int slot, Snapshot snapshot, Snapshot? baseline, long tick)
     {
         UserCommandBuffer? commands = _world.CommandsFor(slot);
         long ran = commands?.LastTakenTick ?? -1;
@@ -488,9 +503,11 @@ public sealed partial class ServerSession : IModeHost
                     counted.Parts = parts;
                 }
 
-                return;
+                return true;
             }
         }
+
+        return false;
     }
 
     /// <summary>Describes each client's connection since the last call, for finding where its round trip goes, and starts afresh.</summary>
@@ -584,7 +601,7 @@ public sealed partial class ServerSession : IModeHost
 
     private void Join(int slot, string name, string skin, string playerId)
     {
-        if (TurnedAway(playerId) is { } refusal)
+        if (TurnedAway(slot, playerId) is { } refusal)
         {
             _net.Disconnect(slot, refusal);
             return;
@@ -675,7 +692,7 @@ public sealed partial class ServerSession : IModeHost
             return;
         }
 
-        _barred[client.PlayerId] = client.Name;
+        Bar(slot, client);
         _world.RemovePlayer(slot);
         Match.Leave(slot);
         _net.Disconnect(slot, "the host removed you from this room");
@@ -692,7 +709,7 @@ public sealed partial class ServerSession : IModeHost
 
     /// <summary>Marks a place for every player, as the listen server's own player.</summary>
     /// <param name="position">Where, in world units.</param>
-    public void Mark(Int3 position) => Mark(new WorldMark(HostEntity, position));
+    public void Mark(Int3 position) => Mark(new WorldMark(HostEntity, position), HostSlot);
 
     /// <summary>Sends a moment of the listen server's own player's voice to every player.</summary>
     /// <param name="packet">The encoded voice.</param>
@@ -710,7 +727,8 @@ public sealed partial class ServerSession : IModeHost
     // A voice to everyone but the one it is: the speaker hears itself already.
     private void Speak(VoicePacket voice, int? except)
     {
-        if (except is not null)
+        int speaker = except ?? HostSlot;
+        if (except is not null && !Withheld(speaker, HostSlot))
         {
             _voices.Add(voice);
         }
@@ -719,7 +737,7 @@ public sealed partial class ServerSession : IModeHost
         SessionTalk.WriteVoice(_writer, voice.Entity, voice.Packet);
         foreach (int slot in _clients.Keys)
         {
-            if (slot != except)
+            if (slot != except && !Withheld(speaker, slot))
             {
                 _net.Send(slot, NetChannel.Unreliable, _writer.AsSpan());
             }
@@ -751,7 +769,8 @@ public sealed partial class ServerSession : IModeHost
         int? team = line.Kind == ChatKind.Team && Mode.IsTeamMode && speaker is { } from && Match.Players.TryGetValue(from, out MatchPlayer? who)
             ? who.Team
             : null;
-        bool Hears(int slot) => team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side);
+        bool Hears(int slot) =>
+            (team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side)) && !Withheld(speaker, slot);
 
         if (Hears(HostSlot) || speaker == HostSlot)
         {
@@ -769,12 +788,22 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
-    private void Mark(WorldMark mark)
+    private void Mark(WorldMark mark, int speaker)
     {
-        _marked.Add(mark);
+        if (!Withheld(speaker, HostSlot))
+        {
+            _marked.Add(mark);
+        }
+
         _writer.Reset();
         SessionTalk.WriteMark(_writer, mark.Entity, mark.Position);
-        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+        foreach (int slot in _clients.Keys)
+        {
+            if (!Withheld(speaker, slot))
+            {
+                _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+            }
+        }
     }
 
     /// <summary>Tells every player the level the server has begun loading, for each to load alongside it.</summary>
@@ -843,6 +872,13 @@ public sealed partial class ServerSession : IModeHost
         if (Match.Players.TryGetValue(HostSlot, out MatchPlayer? host))
         {
             world.SetSkin(HostSlot, host.Skin);
+
+            // The host's side too, where sides are played: the new level's world knows none, and whose rounds hurt whom goes
+            // by the world's.
+            if (Mode.IsTeamMode)
+            {
+                world.SetTeam(HostSlot, host.Team);
+            }
         }
 
         foreach ((int slot, ClientState client) in _clients.ToArray())
@@ -858,6 +894,12 @@ public sealed partial class ServerSession : IModeHost
             if (!client.Watching)
             {
                 world.SetSkin(slot, Match.Players.GetValueOrDefault(slot)?.Skin ?? string.Empty);
+
+                // And its side: the new level's world knows none, and took everyone for the one side until each next spawned.
+                if (Match.Players.TryGetValue(slot, out MatchPlayer? played))
+                {
+                    world.SetTeam(slot, played.Team);
+                }
             }
 
             _clients[slot] = new ClientState(client.Name, entity, client.PlayerId) { Watching = client.Watching };
@@ -906,7 +948,7 @@ public sealed partial class ServerSession : IModeHost
         return entity == HostEntity ? HostSlot : -1;
     }
 
-    private void ReadMessage(int slot, ClientState client, byte[] data, long serverTick)
+    private void ReadMessage(int slot, ClientState client, byte[] data)
     {
         BitReader reader = new(data);
         switch ((SessionMessage)reader.ReadBits(8))
@@ -923,7 +965,7 @@ public sealed partial class ServerSession : IModeHost
             case SessionMessage.Mark when SessionTalk.ReadMark(ref reader) is { } mark:
                 if (client.Marks.TrySpend(_now))
                 {
-                    Mark(mark with { Entity = client.Entity });
+                    Mark(mark with { Entity = client.Entity }, slot);
                 }
 
                 return;
@@ -956,12 +998,13 @@ public sealed partial class ServerSession : IModeHost
 
         long acknowledged = reader.ReadBits(32) | ((long)reader.ReadBits(32) << 32);
         _commands.Clear();
-        if (reader.IsOverflowed || !_codec.Read(ref reader, _commands))
+        if (reader.IsOverflowed || !_codec.Read(ref reader, _commands, acknowledged))
         {
             return;
         }
 
         client.History.Acknowledge(acknowledged);
+        client.Acknowledge(acknowledged);
         if (_world.CommandsFor(slot) is { } buffer)
         {
             buffer.MaxRewindTicks = MaxRewindTicks(slot);
@@ -995,7 +1038,7 @@ public sealed partial class ServerSession : IModeHost
         public bool Anonymous { get; set; }
     }
 
-    private sealed class ClientState(string name, int entity, string playerId)
+    private sealed partial class ClientState(string name, int entity, string playerId)
     {
         public bool Watching { get; init; }
 

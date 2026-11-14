@@ -2,7 +2,6 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -191,6 +190,7 @@ public sealed class RetailAmmoTypeTests
         resources = new ResourceRegistry(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         natives = loop.Natives;
 
         weapons = new WeaponTypeRegistry();

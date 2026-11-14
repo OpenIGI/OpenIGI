@@ -41,10 +41,12 @@ internal sealed class HistoryPanel(EditorTheme theme, MissionWorkspace workspace
         int target = Math.Clamp(row, 0, Count - 1);
         while (workspace.History.Done.Count > target && workspace.History.Undo())
         {
+            // The loop's condition does the work.
         }
 
         while (workspace.History.Done.Count < target && workspace.History.Redo())
         {
+            // The loop's condition does the work.
         }
 
         return true;

@@ -269,12 +269,12 @@ public sealed class RetailIgi2DoorTests
         Assert.Equal(0, door.HoldTimer);
 
         trace.Evaluator = player.Human;
-        m.Collision!.TraceLines(trace, ~Igi2CollisionWorld.TerrainGroup);
+        m.Collision.TraceLines(trace, ~Igi2CollisionWorld.TerrainGroup);
         Assert.Equal(0, door.HoldTimer);
 
-        WorldLineTrace behind = Through(m.Collision!, door, f, fromAhead: false);
+        WorldLineTrace behind = Through(m.Collision, door, f, fromAhead: false);
         behind.Evaluator = player.Human;
-        m.Collision!.TraceLines(behind, ~Igi2CollisionWorld.TerrainGroup);
+        m.Collision.TraceLines(behind, ~Igi2CollisionWorld.TerrainGroup);
         Assert.Equal(Igi2DoorTask.HoldTicks, door.HoldTimer);
 
         m.Run.Tick();

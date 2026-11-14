@@ -92,6 +92,12 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// <summary>Gets the targets explosions reach, in the order they joined.</summary>
     public IReadOnlyList<IExplosionHitTarget> Targets => _targets;
 
+    /// <summary>
+    /// Gets or sets another game's humans joined to the level, struck after the world's own targets with the blast as both games
+    /// know it; <see langword="null"/> for none.
+    /// </summary>
+    public Game.World.LevelJoiners? Joined { get; set; }
+
     /// <summary>Adds a target, <c>QTaskList_Register(GameFunctions_ptExplosionQTaskList)</c> in its create handler.</summary>
     /// <param name="target">The target.</param>
     public void AddTarget(IExplosionHitTarget target)
@@ -446,6 +452,14 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
                 target.ExplosionHit(hit.ToShared());
             }
         }
+
+        if (Joined is { ExplosionTargets.Count: > 0 } joined)
+        {
+            foreach (IExplosionHitTarget target in joined.ExplosionTargets.ToArray())
+            {
+                target.ExplosionHit(hit.ToShared());
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -495,7 +509,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
 
         Vector3f d = axis;
         Fpu z0 = (Fpu)d.Z * 0f;
-        Vector3f across = new((((Fpu)d.Y - z0)).F, (-((Fpu)d.X - z0)).F, (((Fpu)d.X * 0f) - ((Fpu)d.Y * 0f)).F);
+        Vector3f across = new(((Fpu)d.Y - z0).F, (-((Fpu)d.X - z0)).F, (((Fpu)d.X * 0f) - ((Fpu)d.Y * 0f)).F);
         Vector3f up;
         float length = Fpu.Sqrt((((Fpu)across.X * across.X) + ((Fpu)across.Y * across.Y)) + ((Fpu)across.Z * across.Z)).F;
         if (length <= 0.1f)

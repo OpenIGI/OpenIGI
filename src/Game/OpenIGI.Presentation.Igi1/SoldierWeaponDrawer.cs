@@ -174,7 +174,18 @@ internal sealed class SoldierWeaponDrawer(
                     _device.SetObjectFogRange(depth - radius, depth + radius);
                 }
 
-                if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
+                if (member.Styled is { } styled)
+                {
+                    // A mod's body in his place (SoldierRenderer.BodyStyle): the same pass, the same placement. A failed draw is
+                    // logged, the device is reset below all the same, and the body is let go of on the next tick.
+                    SoldierRenderer.RunStyled(
+                        _logger,
+                        member,
+                        "A mod's soldier body's Draw",
+                        (styled, Camera: camera, IsEye: Visibility is null || Visibility.IsEye(camera), ModelView: modelView),
+                        static draw => draw.styled.Draw(in draw.Camera, draw.IsEye, in draw.ModelView));
+                }
+                else if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
                 {
                     SoldierLevel lower = group.Lower[level - 1];
                     SoldierLevelOfDetail.Flush(_device, group, member);
@@ -410,7 +421,7 @@ internal sealed class SoldierWeaponDrawer(
     /// </remarks>
     internal void DrawWeapon(SoldierMember member, in Camera3D camera, in Matrix4f projection)
     {
-        if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
+        if (member.Weapon is not { } weapon || !member.HasWeaponFrameState || member.Styled is { HidesHeldWeapon: true })
         {
             return;
         }

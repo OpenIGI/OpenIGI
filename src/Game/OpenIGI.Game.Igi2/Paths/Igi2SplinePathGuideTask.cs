@@ -47,7 +47,6 @@ public sealed partial class Igi2SplinePathGuideTask : Igi2Task
     private int _flags;
     private float _t;
     private float _speedScale = 1f;
-    private double _speed = 1.0;
     private double _position;
     private Vector3f _velocity;
 
@@ -87,11 +86,7 @@ public sealed partial class Igi2SplinePathGuideTask : Igi2Task
     public Vector3f Velocity => _velocity;
 
     /// <summary>Gets or sets its speed's scale, <c>vSpeed</c>, which scripts may change.</summary>
-    public double Speed
-    {
-        get => _speed;
-        set => _speed = value;
-    }
+    public double Speed { get; set; } = 1.0;
 
     /// <summary>Registers <see cref="SetRunningNative"/>, which starts or stops the guide whose children are running.</summary>
     /// <param name="natives">The namespace.</param>
@@ -139,7 +134,7 @@ public sealed partial class Igi2SplinePathGuideTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _speedScale = ((Fpu)_speed).F;
+        _speedScale = ((Fpu)Speed).F;
         level.Natives.SetSymbolContext(SetRunningNative, this);
         try
         {
@@ -184,7 +179,7 @@ public sealed partial class Igi2SplinePathGuideTask : Igi2Task
     {
         ArgumentNullException.ThrowIfNull(variables);
         variables.BindReal(this, "vPosition", () => _position, value => _position = value);
-        variables.BindReal(this, "vSpeed", () => _speed, value => _speed = value);
+        variables.BindReal(this, "vSpeed", () => Speed, value => Speed = value);
     }
 
     /// <inheritdoc/>
@@ -202,11 +197,11 @@ public sealed partial class Igi2SplinePathGuideTask : Igi2Task
         if (_speedScale <= 0f)
         {
             _speedScale = 0f;
-            _speed = 0.0;
+            Speed = 0.0;
         }
         else
         {
-            _speed = _speedScale;
+            Speed = _speedScale;
         }
     }
 

@@ -96,7 +96,7 @@ public sealed class RetailObjectRayTests(ITestOutputHelper output)
     private IEnumerable<object> Objects(RetailMissionData data)
     {
         // Car 361, standing where the level puts it.
-        DeclaredTask car = Assert.IsType<DeclaredTask>(data.Root.Tree.FromId(361));
+        DeclaredTask car = Assert.IsAssignableFrom<DeclaredTask>(data.Root.Tree.FromId(361));
         yield return Model(data, car, Text(car, WorldScene.ModelParameter));
 
         // Every segment of the level's spline chains: each waypoint names the model laid from the previous one.

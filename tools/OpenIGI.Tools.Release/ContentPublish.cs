@@ -309,11 +309,11 @@ internal static class ContentPublish
         long total = chunked.Chunks.Sum(static chunk => (long)chunk.StoredSize);
         long sent = upload.Sum(static chunk => (long)chunk.StoredSize);
         ContentManifest manifest = chunked.Manifest;
-        log.WriteLine(FormattableString.Invariant(
+        log.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"{manifest.Id} {manifest.Version}: {manifest.Files.Count} file(s), {Mib(manifest.Size)} installed, {chunked.Chunks.Count} chunk(s), {Mib(total)} stored"));
-        log.WriteLine(FormattableString.Invariant(
+        log.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"  new: {upload.Count} chunk(s), {Mib(sent)} -- what this upload sends, and what a player on the previous version downloads to update"));
-        log.WriteLine(FormattableString.Invariant(
+        log.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"  reused: {chunked.Chunks.Count - upload.Count} chunk(s) already in the store"));
 
         if (!dryRun)

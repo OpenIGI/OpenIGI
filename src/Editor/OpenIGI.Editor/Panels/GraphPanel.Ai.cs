@@ -1,7 +1,6 @@
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Editor.Core.Graphs;
-using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Scripting.Qsc;
 using OpenIGI.Scripting.Qvm;
 

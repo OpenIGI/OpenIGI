@@ -65,8 +65,6 @@ public sealed class MissileFlightTests
     public void AntiTankNearRegimeUsesTheThreeDimensionalBallisticLob()
     {
         // 0x004280B0 flattens Z only to choose the regime, then 0x00428040 lobs with the 3D length.
-        Vector3d origin = new(0, 0, 0);
-        Vector3d target = new(40960, 0, 40960);
         float horizontal = 40960f;
         float threeD = (float)Math.Sqrt((40960d * 40960d) + (40960d * 40960d));
         Assert.True(horizontal < MissileFlight.AntiTankDirectRangeUnits);

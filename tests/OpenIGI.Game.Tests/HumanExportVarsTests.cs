@@ -1,5 +1,4 @@
 using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Runtime;
@@ -24,6 +23,7 @@ public sealed class HumanExportVarsTests
     private static GameLoop Loop()
     {
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         return loop;
     }

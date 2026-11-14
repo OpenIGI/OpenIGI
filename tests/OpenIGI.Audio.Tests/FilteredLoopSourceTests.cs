@@ -1,4 +1,3 @@
-using OpenIGI.Audio;
 using Xunit;
 
 namespace OpenIGI.Audio.Tests;

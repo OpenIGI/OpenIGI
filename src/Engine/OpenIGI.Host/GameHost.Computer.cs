@@ -33,6 +33,19 @@ public sealed partial class GameHost
     private ITacticalComputerPresenter? TacticalComputer =>
         HudCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
+    /// <summary>
+    /// Gets a value indicating whether the remastered computer's map owns the frame and has arrived over the level: the
+    /// overhead view is then drawn in clear air, with no fog and no weather between the eye and the ground.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not retail</b>. A map is read for what is on the ground, and from nine hundred metres up a level's haze is a
+    /// wash over all of it and its rain a sheet across it. The climb and the fall keep both, so the shot leaves and
+    /// returns to the weather the player stands in; they go as the display is driven and come back as it is taken down.
+    /// The original's computer is left as it draws.
+    /// </remarks>
+    private bool ComputerMapClear =>
+        _computerOpen && !_computerFlight.IsFlying && TacticalComputer is { MapAvailable: true };
+
     // The map gate of the level last asked about; rebuilt when another level comes up.
     private MapComputerGate? _mapGate;
 
@@ -46,7 +59,7 @@ public sealed partial class GameHost
 
         if (_mapGate is null || !ReferenceEquals(_mapGate.LevelRoot, root))
         {
-            _mapGate = new MapComputerGate(root, _loop.Variables);
+            _mapGate = new MapComputerGate(root, _loop.Variables, _mission.Expressions);
         }
 
         return _mapGate.MapAvailable;
@@ -59,7 +72,7 @@ public sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
         MissionStringResolver missionText = b.MissionText!;
 
-        _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables));
+        _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables, _mission.Expressions));
         _mapComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get, _hosted));
         if (_mapComputer is not null && !_mapComputer.Load(_fileSystem))
@@ -84,6 +97,12 @@ public sealed partial class GameHost
         {
             _tacticalComputer.Dispose();
             _tacticalComputer = null;
+        }
+
+        // Its sounds are the original computer's, played as that plays them: unplaced (0x4E7200).
+        if (_tacticalComputer is not null)
+        {
+            _tacticalComputer.PlaySound = name => _audioOut.Sounds?.PlayDefinition(name, priority: 180);
         }
 
         // The comms cards. Built here rather than beside the HUD below, because the messages belong to the
@@ -115,42 +134,46 @@ public sealed partial class GameHost
     /// objectives; the mission's own computer, laid over the level the player stands in, does.
     /// </remarks>
     private bool TitleUsesMissionComputer =>
-        HostedPlayer is null && TitlePlayer is not null && TacticalComputer is not null && ComputerObjectives is not null;
+        !_mission.HasOwnPlayer && TitlePlayer is not null && TacticalComputer is not null && ComputerObjectives is not null;
 
     /// <summary>
     /// Gets what the computer lists: the mission's own objectives where it has them -- Project I.G.I.'s, whoever plays them --
     /// else the title's player's own computer's, in a level of the title's own.
     /// </summary>
     private IComputerObjectives? ComputerObjectives =>
-        (IComputerObjectives?)_mission.Objectives ?? (TitlePlayer as ITitlePlayerComputer)?.ComputerObjectives;
+        _mission.Progress ?? TitleComputer?.ComputerObjectives;
+
+    /// <summary>
+    /// Gets the title's player's own computer, which the remastered computer shows in a level of the title's own: none where the
+    /// mission has objectives of its own, which it shows instead.
+    /// </summary>
+    private ITitlePlayerComputer? TitleComputer => _mission.Progress is null ? TitlePlayer as ITitlePlayerComputer : null;
 
     /// <summary>Whether the computer offers its map: the mission's own gate where it has one, else the title's player's computer's.</summary>
     private bool ComputerMapOffered() =>
-        _mission.Objectives is null && TitlePlayer is ITitlePlayerComputer titleComputer
-            ? titleComputer.ComputerMapAvailable
-            : MapComputerAvailable();
+        TitleComputer?.ComputerMapAvailable ?? MapComputerAvailable();
+
+    /// <summary>The guards the computer's map plots: the mission's own soldiers where it has them, else the title's player's computer's.</summary>
+    private IReadOnlyList<Vector3d> ComputerContacts() =>
+        TitleComputer?.ComputerMapContacts ?? _soldiers?.MapContacts() ?? [];
+
+    /// <summary>The places the computer's map marks: the mission's own highlights where it has them, else the title's player's computer's.</summary>
+    private IEnumerable<ComputerMapHighlight> ComputerHighlights() =>
+        TitleComputer?.ComputerMapHighlights ?? _computerHighlights?.Visible() ?? [];
 
     /// <summary>The player the computer serves, where it stands in engine units and the eye it looks through; or none.</summary>
     /// <returns>The mission's own player, else a title's player using the mission's computer.</returns>
     private ComputerSubjectView? ComputerSubject() =>
-        HostedPlayer is { } hosted ? new ComputerSubjectView(hosted.Body.Position, hosted.Camera)
-        : TitleUsesMissionComputer && _playerMode && TitlePlayer is { } title ? new ComputerSubjectView(title.Position, TitleCamera(title))
-        : null;
+        TitlePlayer is { } title && (_mission.HasOwnPlayer || (TitleUsesMissionComputer && _playerMode))
+            ? new ComputerSubjectView(title.Position, TitleCamera(title))
+            : null;
 
     /// <summary>Gets where the player the computer serves stands, in engine units, or none.</summary>
     private Vector3d? ComputerBodyUnits => ComputerSubject()?.BodyUnits;
 
-    /// <summary>Whether the computer's key went down this frame, by the mission player's own bindings or the profile's.</summary>
-    private bool ComputerKeyPressed()
-    {
-        if (HostedPlayer is { } hosted)
-        {
-            hosted.InputProfile = _configuration.Active;
-            return hosted.WasActionPressed(_window.Input, PlayerAction.MapComputer);
-        }
-
-        return PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(PlayerAction.MapComputer));
-    }
+    /// <summary>Whether the computer's key went down this frame, by the profile's bindings.</summary>
+    private bool ComputerKeyPressed() =>
+        PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(PlayerAction.MapComputer));
 
     /// <summary>The player the computer serves: where it stands, in engine units, and the eye the computer climbs from.</summary>
     /// <param name="BodyUnits">Where it stands.</param>
@@ -172,16 +195,25 @@ public sealed partial class GameHost
             // -computercam presses C on a named frame, so the transition can be captured from a
             // moment somebody can ask for again. Latched, not held: it must open the computer once
             // and then leave the key alone, or every frame past it would toggle.
+            // It waits out a cinematic, during which the computer does not open, rather than spend its one press on it.
             bool automaticOpen = _options.ComputerCamFrame > 0
                 && !_computerCamFired
-                && _loop.Clock.FrameCount >= _options.ComputerCamFrame;
+                && _loop.Clock.FrameCount >= _options.ComputerCamFrame
+                && !_entry.IsCameraActive
+                && _mission.Scenes?.IsPlaying != true;
             if (automaticOpen)
             {
                 _computerCamFired = true;
             }
 
             bool toggleComputer = ComputerKeyPressed() || automaticOpen;
-            bool closeComputer = _computerOpen && TacticalComputer is not null && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
+            // The save page closes the display itself once its upload is done or a download is under way.
+            bool quit = _computerQuit && TacticalComputer is not null;
+            bool closeComputer = _computerOpen && TacticalComputer is not null && (quit || _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape));
+            if (quit)
+            {
+                _computerQuit = false;
+            }
 
             // The computer always opens; whether its map is there to read is the level's to say.
             bool mapAvailable = ComputerMapOffered();
@@ -208,14 +240,18 @@ public sealed partial class GameHost
 
                 // Without the device there is no map to climb to: the pages come up over the player's own view.
                 tacticalComputer.MapAvailable = mapAvailable;
+                tacticalComputer.Saves = ComputerSaves;
                 CameraPose vantage = mapAvailable ? tacticalComputer.Vantage() : eye;
                 float vantageFieldOfView = mapAvailable ? tacticalComputer.FieldOfView : gameplayFieldOfView;
 
-                if (!_computerOpen && toggleComputer)
+                // Not during a cinematic: the view is the cutscene's or the entry camera's, not the player's to leave, and
+                // the original takes no map key while one plays.
+                bool cinematic = _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true;
+                if (!_computerOpen && toggleComputer && !cinematic)
                 {
                     _computerOpen = true;
                     tacticalComputer.Open(subject.BodyUnits);
-                    HostedPlayer?.SetMapComputerOpen(true);
+                    _mission.SetPlayerComputerOpen(true);
                     _computerFlight.BeginOpen(
                         eye,
                         gameplayFieldOfView,
@@ -262,13 +298,13 @@ public sealed partial class GameHost
                     {
                         _computerOpen = false;
                         _computerFlight.Reset();
-                        HostedPlayer?.SetMapComputerOpen(false);
+                        _mission.SetPlayerComputerOpen(false);
                     }
 
                     _window.Input.Captured = true;
                 }
             }
-            else if (_mapComputer is { IsReady: true } retailComputer && HostedPlayer is not null)
+            else if (_mapComputer is { IsReady: true } retailComputer && _mission.HasOwnPlayer)
             {
                 // The original's own computer is the mission's: its tick opens it from the weapon's idle state and closes it
                 // on the key, and it reads the mouse the frames gather here. Escape does not close it.
@@ -364,8 +400,10 @@ public sealed partial class GameHost
             _computerWheel++;
         }
 
-        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey);
+        // The save page's own closing reaches the mission's computer as the map key does.
+        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey || _computerQuit);
         _computerMapKey = false;
+        _computerQuit = false;
         _computerCountsX = 0f;
         _computerCountsY = 0f;
         _computerButtons = 0;
@@ -377,19 +415,20 @@ public sealed partial class GameHost
     {
         _computerOpen = open;
         _computerMapKey = false;
+        _computerQuit = false;
         if (open)
         {
             _computerOpenedFrame = _loop.Clock.FrameCount;
         }
 
-        // The computer draws its own pointer; the platform's would be a second one over it.
+        // The computer draws its own pointer; the platform's would be a second one over it. Whether the mouse is locked
+        // away is the frame's to say, where the view's own lock is decided.
         _window.CursorVisible = false;
-        _window.CursorLocked = false;
         _computerWheel = 0;
     }
 
     /// <summary>Gets a value indicating whether the title's own computer is in use rather than the tactical one.</summary>
-    private bool UsesMissionComputer => TacticalComputer is null && _mapComputer is { IsReady: true } && HostedPlayer is not null;
+    private bool UsesMissionComputer => TacticalComputer is null && _mapComputer is { IsReady: true } && _mission.HasOwnPlayer;
 
     /// <summary>Gets the display the computer lays its screens across: the back buffer at the interface's magnification.</summary>
     private (int Width, int Height) ComputerDisplaySize

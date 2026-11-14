@@ -124,12 +124,10 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     /// <summary>Gets a value indicating whether this round's bomb went off.</summary>
     public bool Exploded { get; private set; }
 
-    /// <summary>The seconds a round the bomb ended is held before the next: long enough to watch the blast and what it
-    /// brought down.</summary>
-    public const double DetonatedRoundOverSeconds = 20;
-
     /// <inheritdoc/>
-    protected override double RoundOverSeconds => Exploded ? Math.Max(DetonatedRoundOverSeconds, Settings.RoundOverSeconds) : base.RoundOverSeconds;
+    /// <remarks>A round the bomb ended is held <see cref="RoundSettings.DetonatedRoundOverSeconds"/> (the server's <c>mp_bombendtime</c>).</remarks>
+    protected override double RoundOverSeconds =>
+        Exploded ? Math.Max(Settings.DetonatedRoundOverSeconds, Settings.RoundOverSeconds) : base.RoundOverSeconds;
 
     /// <inheritdoc/>
     public override string Status(long tick)

@@ -228,9 +228,9 @@ public sealed class RagdollHumanTests
     // The test rig with a person's joints: hinged elbows and knees, everything else a ball.
     private static RagdollSkeleton HingedRig()
     {
-        float Rad(float degrees) => degrees * MathF.PI / 180f;
-        RagdollJointSpec Ball(float swing, float twist) => new(RagdollJointKind.Ball, Rad(swing), -Rad(twist), Rad(twist));
-        RagdollJointSpec Hinge(float high, Vector3f toward) =>
+        static float Rad(float degrees) => degrees * MathF.PI / 180f;
+        static RagdollJointSpec Ball(float swing, float twist) => new(RagdollJointKind.Ball, Rad(swing), -Rad(twist), Rad(twist));
+        static RagdollJointSpec Hinge(float high, Vector3f toward) =>
             new(RagdollJointKind.Hinge, 0f, 0f, 0f, Rad(-3f), Rad(high), toward);
 
         Vector3f forwards = new(0f, 1f, 0f);
@@ -284,6 +284,26 @@ public sealed class RagdollHumanTests
         Quaternion32[] locals = new Quaternion32[skeleton.BoneCount];
         Array.Fill(locals, Quaternion32.Identity);
         return BonePose.Evaluate(skeleton, locals);
+    }
+
+    /// <summary>A rig measured from no points is the rig guessed without a model; a point on a bone the skeleton lacks is skipped.</summary>
+    [RequiresGameDataFact]
+    public void AMeasuredRigSkipsPointsOnBonesItHasNot()
+    {
+        (BoneAnimationSet set, _) = Soldier();
+        RagdollLimits limits = RagdollLimits.Measure(set);
+        RagdollSkeleton guessed = RagdollSkeleton.Build(set.Skeleton, limits);
+
+        RagdollSkeleton unmeasured = RagdollSkeleton.BuildMeasured(set.Skeleton, [], limits);
+        RagdollSkeleton strays = RagdollSkeleton.BuildMeasured(
+            set.Skeleton, [(-1, new Vector3f(1f, 2f, 3f)), (set.Skeleton.BoneCount, new Vector3f(4f, 5f, 6f))], limits);
+
+        Assert.Equal(guessed.BodyCount, unmeasured.BodyCount);
+        for (int body = 0; body < guessed.BodyCount; body++)
+        {
+            Assert.Equal(guessed.BodyAt(body).Radius, unmeasured.BodyAt(body).Radius);
+            Assert.Equal(guessed.BodyAt(body).Radius, strays.BodyAt(body).Radius);
+        }
     }
 
     private static (BoneAnimationSet Set, MefModel Model) Soldier()

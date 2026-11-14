@@ -1,4 +1,4 @@
-namespace OpenIGI.Engine.Tasks;
+﻿namespace OpenIGI.Engine.Tasks;
 
 /// <summary>
 /// A task of a type that level data declared but no class implements yet: it parses its parameters
@@ -15,8 +15,12 @@ namespace OpenIGI.Engine.Tasks;
 /// So a whole mission's object tree loads and can be asserted on before the ~150 concrete task classes
 /// exist. As each real class arrives it registers under the same name and takes over.
 /// </para>
+/// <para>
+/// A class may derive from it to give a type behaviour while keeping the parameters its level declares, read by name: the
+/// step between a type that is only data and one whose parameters a class spells out (<see cref="TaskTypeRegistry.RegisterDeclared{T}"/>).
+/// </para>
 /// </remarks>
-public sealed class DeclaredTask : GameTask
+public class DeclaredTask : GameTask
 {
     private TaskParameterValues? _values;
 
@@ -71,6 +75,14 @@ public sealed class DeclaredTask : GameTask
 
         return _values.TryGetValue(name, out value);
     }
+
+    /// <summary>
+    /// Gives the task its parameters' values in code, as a level's script gives them: for a task another game makes in a level it
+    /// hosts, which no script declares.
+    /// </summary>
+    /// <param name="values">The values, by parameter name; a parameter not named has none.</param>
+    /// <exception cref="ArgumentException">A value names no parameter of the task's type.</exception>
+    public void Assign(IReadOnlyDictionary<string, object?> values) => _values = TaskParameterValues.From(ScriptParameters, values);
 
     /// <inheritdoc/>
     /// <remarks>What the level gave the task, changed after it was read: as a level reshaped for another use is.</remarks>

@@ -67,7 +67,7 @@ public sealed partial class Igi1HumanAi
     /// </summary>
     private void RunLookAtEvent(int tick)
     {
-        Vector3d watched = _lookAtPoint!.Value;
+        Vector3d watched = LookingAt!.Value;
         if (_lookAtDeadline < 0)
         {
             _lookAtDeadline = tick + _lookAtDurationTicks;
@@ -76,7 +76,7 @@ public sealed partial class Igi1HumanAi
         Activity = AiSoldierActivity.Idle;
         if (TurnTowards(watched, (float)AiGuardCombat.AimToleranceRadians) && tick > _lookAtDeadline)
         {
-            _lookAtPoint = null;
+            LookingAt = null;
         }
     }
 
@@ -166,6 +166,11 @@ public sealed partial class Igi1HumanAi
             WriteChannel(AiCombatChannel.Kneel, 1f);
         }
 
+        if (Behaviours?.HoldsPatrolStop(tick) == true)
+        {
+            return;
+        }
+
         bool finished = route.Begin(tick);
 
         switch (command.Kind)
@@ -227,6 +232,7 @@ public sealed partial class Igi1HumanAi
         {
             _animationFinished = false;
             route.Advance();
+            Behaviours?.PatrolCommandFinished(tick);
         }
     }
 
@@ -264,7 +270,7 @@ public sealed partial class Igi1HumanAi
             return candidate.Origin ?? new Vector3d(
                 candidate.Feet.X,
                 candidate.Feet.Y,
-                candidate.Feet.Z + (candidate.Crouching ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits));
+                candidate.Feet.Z + HumanOriginAboveFeet(candidate.Crouching));
         }
 
         if (_locateTask is not null && _locateTask(_currentEventSubject, out Vector3d position))
@@ -509,7 +515,6 @@ public sealed partial class Igi1HumanAi
 
         GoTo(node);
         _activate = new ActivateTask(taskId, run, node);
-        _activateTaskId = taskId;
         Activity = AiSoldierActivity.Patrolling;
     }
 
@@ -539,7 +544,6 @@ public sealed partial class Igi1HumanAi
         }
 
         _activate = null;
-        _activateTaskId = -1;
     }
 
     /// <summary>SetCombat's start, <c>0x48E560</c>: post COMBAT to this AI's own queue, about the current event.</summary>
@@ -576,7 +580,7 @@ public sealed partial class Igi1HumanAi
         // aimed AND expired. This is a guard "noticing" a shot it heard.
         if (_currentEventPosition is { } noticed)
         {
-            _lookAtPoint = noticed;
+            LookingAt = noticed;
             _lookAtDurationTicks = (int)(action.Real(0) * 30.0f);
             _lookAtDeadline = -1;
         }

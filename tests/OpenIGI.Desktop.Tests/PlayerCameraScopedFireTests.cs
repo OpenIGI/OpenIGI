@@ -4,11 +4,9 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Animation;
-using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game;
 using OpenIGI.Input;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -26,7 +24,7 @@ public sealed class PlayerCameraScopedFireTests
     {
         WeaponType dragunov = LoadRoster().Weapons.Single(
             weapon => weapon.ScriptId == "WEAPON_ID_DRAGUNOV");
-        PlayerCamera camera = new();
+        PlayerCamera camera = new() { InputProfile = KeyboardOpticsProfile.Create() };
         camera.UseWeaponCycle([dragunov.WeaponId]);
         camera.Carry(dragunov, new AmmoType { AmmoId = 1, CalibreId = dragunov.CalibreId });
         camera.UseViewRig(LoadViewSet());
@@ -84,7 +82,7 @@ public sealed class PlayerCameraScopedFireTests
         }
 
         Assert.NotNull(camera.Weapons?.InHand);
-        Assert.Equal(HumanWeaponState.Ready, camera.Weapons!.State);
+        Assert.Equal(HumanWeaponState.Ready, camera.Weapons.State);
     }
 
     private static BoneAnimationSet LoadViewSet() => BoneAnimationSet.Read(File.ReadAllBytes(
@@ -96,6 +94,8 @@ public sealed class PlayerCameraScopedFireTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         WeaponTypeRegistry roster = new();
         roster.Register(loop.Natives);
         roster.Load(fileSystem, resources, loop.Natives);

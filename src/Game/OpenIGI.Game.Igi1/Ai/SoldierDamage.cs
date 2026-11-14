@@ -49,8 +49,58 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// <summary>Gets or sets where a soldier's death cry is sounded, at the position the body fell from.</summary>
     public Action<Vector3d>? DeathSound { get; set; }
 
+    /// <summary>
+    /// Gets the soldiers who die without their death cry or the sounds of their own fall: a mod that kills one plays its own.
+    /// A soldier in it plays none of his animation's sound triggers, the melee whoosh included. Only sounds: the clip's
+    /// gameplay events still happen, so a melee blow still lands and a grenade still leaves his hand. A mod adds him as it
+    /// kills him. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    public HashSet<SoldierView> SilentDeaths { get; } = [];
+
     /// <summary>Gets or sets where a dead soldier's weapon is published as it becomes a world pickup.</summary>
     public Action<WeaponType, Vector3d, Matrix3f, Vector3d>? WeaponDrop { get; set; }
+
+    /// <summary>
+    /// Gets what mods are told of each round that strikes a living soldier it can hurt: an invulnerable one is not told of. By
+    /// either path it is told once the round's damage is applied, and before his brain hears of it, he flinches, turns to the
+    /// round or falls, so a listener reads him as he stood when it struck: <see cref="SoldierStrike.Killed"/> means he dies of
+    /// it, though he is not down yet. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    /// <remarks>
+    /// A list here rather than a game event: events are raised once the tick has run, and a listener needs the soldier as
+    /// the round found him.
+    /// </remarks>
+    public List<Action<SoldierStrike>> Struck { get; } = [];
+
+    /// <summary>Gets the soldiers who let go of their gun before they died (<see cref="DropGun"/>), so their death drops no other. <b>Not retail.</b></summary>
+    public HashSet<SoldierView> LetGoOfGun { get; } = [];
+
+    // Tells each mod listening of a round that struck (Struck), from whichever of the two round paths it came by. By index,
+    // so a listener may add or remove one; a listener's failure is its own, and the tick and the others go on.
+    private void TellStruck(SoldierStrike strike)
+    {
+        for (int i = 0; i < Struck.Count; i++)
+        {
+            Contained.Run(_context.Logger, SoldierContext.LogCategory, "A Struck listener", (Listener: Struck[i], Strike: strike), static told => told.Listener(told.Strike));
+        }
+    }
+
+    /// <summary>Has a living soldier let go of his gun now, as a pickup that falls from his hand; he fires it no more. <b>Not retail.</b></summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="position">Where it leaves his hand, in world units.</param>
+    /// <param name="away">Which way it goes.</param>
+    public void DropGun(SoldierView view, Vector3d position, Vector3d away)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (_context.FindAgent(view) is { CarriedWeaponType: { } gun } && LetGoOfGun.Add(view))
+        {
+            BonePose pose = view.UnrotatedPose();
+            Matrix3f rotation = HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount
+                ? view.Orientation * pose.Rotations[HumanAttachPoints.ThirdPersonWeapon]
+                : view.Orientation;
+            WeaponDrop?.Invoke(gun, position, rotation, DropVelocity(default, away));
+        }
+    }
 
     /// <summary>Gets or sets where a struck soldier's grunt is sounded.</summary>
     public Action<string, int, Vector3d>? HitSound { get; set; }
@@ -84,8 +134,21 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         return carried + push + new Vector3d(0.0, 0.0, lift);
     }
 
-    /// <summary>Forgets the deaths no update has taken yet, for a new level.</summary>
-    public void ClearPendingDeaths() => _pendingDeaths.Clear();
+    /// <summary>Forgets what is held of the last level's soldiers, for a new level: the deaths no update has taken yet, who dies silently, and who let go of his gun.</summary>
+    public void ClearForLevel()
+    {
+        _pendingDeaths.Clear();
+        SilentDeaths.Clear();
+        LetGoOfGun.Clear();
+    }
+
+    /// <summary>Forgets what is held of soldiers that a save game's load makes afresh: that, and each one's recoil and quiet after a hit.</summary>
+    public void ClearForLoad()
+    {
+        ClearForLevel();
+        _recoil.Clear();
+        _hitQuietUntil.Clear();
+    }
 
     /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
     /// <remarks>
@@ -157,7 +220,9 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         // The gun leaves from where it hangs (Gun_Drop hands GunPickup_Create the gun's own position, gun+32): the origin
         // the last tick left plus the hand's offset in the palette as last built.
         SoldierAgent? dying = _context.FindAgent(view);
-        WeaponType? droppedWeapon = dying is null ? null : WeaponForDrop(dying.CarriedWeaponType, dying.WeaponType);
+        WeaponType? droppedWeapon = dying is null || (LetGoOfGun.Count > 0 && LetGoOfGun.Contains(view))
+            ? null
+            : WeaponForDrop(dying.CarriedWeaponType, dying.WeaponType);
         Vector3d dropPosition = view.Position;
         Matrix3f dropRotation = view.Orientation;
         if (droppedWeapon is not null && dying is not null)
@@ -179,14 +244,17 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         }
 
         // And the death cry, once, on the alive-to-dead edge: the death state's entry (0x45C440 -> 0x4638A0).
-        DeathSound?.Invoke(view.Position);
+        if (!SilentDeaths.Contains(view))
+        {
+            DeathSound?.Invoke(view.Position);
+        }
         _footsteps.Forget(view);
 
         // Everything above is the original's, and it stays that way whatever follows: the body's
         // authoritative position, the clip that moves it and what the guards around it are told are all
         // exactly what they were. The ragdoll its renderer seeds from the fall replaces THE POSE THAT IS
         // DRAWN, and nothing else.
-        if (_context.FindAgent(view) is { } agent)
+        if (_context.FindAgent(view) is not null)
         {
             Vector3f carried = view.RootMotion();
             double grounded = _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
@@ -272,6 +340,13 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         if (!invulnerable)
         {
             float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+
+            // Told once the damage is in, before the brain hears of it or he flinches, as TakeRound tells it.
+            if (Struck.Count > 0)
+            {
+                TellStruck(new SoldierStrike(struck, hit, origin, end, weapon.Category, dealt, health.IsDead));
+            }
+
             brain?.ReceiveDamage(origin, shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
             if (health.IsDead)
             {
@@ -342,6 +417,13 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
             float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
             round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
+
+            // Told once the damage is in, before the brain hears of it, he flinches, turns to the round or falls, as StrikeWithRound tells it.
+            if (Struck.Count > 0)
+            {
+                TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));
+            }
+
             if (health.IsDead)
             {
                 // The brain hears of the round that kills it too: the event is posted to an AI that is not dead yet,
@@ -516,7 +598,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     {
         if (!_recoil.TryGetValue(soldier, out HumanRecoil? recoil))
         {
-            float? configured = _context.Combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.RecoilThreshold : null;
+            float? configured = soldier.Combat is { } row ? row.RecoilThreshold : null;
             recoil = soldier.Soldier.Class.CreateRecoil(configured);
             _recoil[soldier] = recoil;
         }

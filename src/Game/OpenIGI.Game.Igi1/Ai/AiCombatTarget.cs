@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi1.Ai;
 

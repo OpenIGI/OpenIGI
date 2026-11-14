@@ -101,7 +101,8 @@
       "dimensions": 2,
       "storageFormat": "R8Unorm",
       "wgslStorageFormat": "None",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "glslUnit": 0
     },
     {
       "name": "uGuide",
@@ -111,7 +112,8 @@
       "dimensions": 2,
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "None",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "glslUnit": 1
     },
     {
       "name": "uThinGeometry",
@@ -141,10 +143,35 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "glslUnit": 0
     }
   ],
   "pushBlock": null,
   "specializationConstants": [],
-  "globals": null
+  "globals": null,
+  "glslSamplers": [
+    {
+      "texture": "uCurrent",
+      "unit": 0
+    },
+    {
+      "texture": "uDilatedVelocity",
+      "unit": 1
+    },
+    {
+      "texture": "uPrevGuide",
+      "sampler": "uPrevGuideSampler",
+      "unit": 2
+    },
+    {
+      "texture": "uParallaxRejection",
+      "sampler": "uParallaxRejectionSampler",
+      "unit": 3
+    },
+    {
+      "texture": "uThinGeometry",
+      "unit": 4
+    }
+  ]
 }

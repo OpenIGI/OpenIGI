@@ -5,51 +5,43 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
-using OpenIGI.UI.Text;
-using OpenIGI.UI.Widgets;
+using OpenIGI.UI.Rhi;
 
 namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
-/// The remaster's map computer: a full-screen tactical interface drawn over a live overhead view of the
-/// level, set in the shell's own faces.
+/// The remaster's map computer: the level seen from overhead as a one-colour satellite feed filling the screen, with the
+/// interface projected over it through the heads-up display's visor, in the title's own colours and font.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>There is no device.</b> The retail computer is a model held up in front of the camera with a 4:3
-/// aperture cut in it, and everything the player came to read is inside that aperture — which at a modern
-/// resolution is a postage stamp in the middle of the screen surrounded by a low-polygon casing. This
-/// draws the map edge to edge and floats the interface over it, which is the whole reason the redesign
-/// exists. the retail map computer (<see cref="IMapComputerPresenter"/>) keeps the original for the vanilla path; the two do not
-/// share code, because the one that must not change cannot be built out of the one that will.
+/// <b>Not retail.</b> The original's computer is a model held up before the camera with a 4:3 aperture cut in it, which at a
+/// modern resolution is a small picture in a low-polygon casing; it is kept whole for the vanilla path
+/// (<see cref="IMapComputerPresenter"/>) and shares no code with this.
 /// </para>
 /// <para>
-/// <b>The map is always underneath.</b> Every page — the map, the objectives, the log — is drawn over the
-/// same live overhead pass, with the text pages laid on a translucent card rather than on a black
-/// rectangle. That is not decoration: it means switching pages never costs the player their sense of
-/// where they are, and it means the level is still moving behind the objective they are reading.
+/// <b>One look with the heads-up display.</b> Its colours, its corners, brackets and rules, and its visor are the title's
+/// <see cref="HudTheme"/>; its glass is the display's (<see cref="Hud.Remastered.Widgets.HudPanel"/>); it is drawn into the
+/// display's layer and laid over the picture by the same pass (<see cref="IDisplayDevice.ComposeHudLayer"/>). Its text is the
+/// title's own bitmap font (<see cref="ComputerText"/>).
 /// </para>
 /// <para>
-/// <b>Everything is vector.</b> The markers, the grid, the scale bar and the cursor are rectangles,
-/// triangles and text rather than sprites, so they are sharp at any resolution and can be coloured by
-/// meaning — hostile, complete, selected — instead of by which frame of which sprite happened to be
-/// authored. The one thing that would be worth a texture, the phosphor itself, is not drawn here at all:
-/// it is a display transform applied to the resolved scene, and this interface is drawn crisp on top of
-/// it, exactly as a real overlay on a real screen would be.
+/// <b>The map is a feed.</b> The overhead picture is turned into one colour's display by a pass of its own
+/// (<see cref="IDisplayDevice.DrawMapFeed"/>), which also brings it up: the tear and the refresh band of a display being
+/// driven. Every page is drawn over it, the text pages on one glass panel under which it dims.
 /// </para>
 /// <para>
-/// <b>Fonts are owned here.</b> The shell's faces are only built when the cinematic shell is, and the
-/// computer has to work under <c>-vanillamenu</c> too, so this loads its own through
-/// <see cref="UiFontLibrary"/>. The atlas cache on disk means that costs a file read rather than a
-/// rasterisation.
+/// <b>The map is left clear.</b> A strip of tabs along the top, a status line along the bottom, and nothing else over the
+/// ground but its grid and its marks.
 /// </para>
 /// </remarks>
-public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
+public sealed partial class TacticalComputerRenderer : ITacticalComputerPresenter
 {
     private const string LogCategory = "Computer";
 
@@ -65,91 +57,135 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     /// <summary>How quickly the zoom eases towards what the wheel asked for, per second.</summary>
     private const float ZoomResponse = 16f;
 
-    private static readonly string[] PageNames = ["MAP", "OBJECTIVES", "LOG"];
-    private static readonly KeyCode[] PageKeys = [KeyCode.D1, KeyCode.D2, KeyCode.D3];
+    /// <summary>How far the display bows at its corners, as a share of the screen: not at all, the map is read flat.</summary>
+    /// <remarks>One figure for the feed, the display laid over it and the pointer read through it, so the three agree.</remarks>
+    public const float TubeCurvature = 0f;
+
+    /// <summary>The original's computer's sounds, by their definitions' names: a control newly under the pointer, a click, and the picture changing.</summary>
+    private const string HoverSound = "mapcomp_05", ClickSound = "mapcomp_01", StaticSound = "mapcomp_03";
+
+    /// <summary>The least time between two of the zoom's sounds, in seconds: a wheel spun is one sound, not a rattle.</summary>
+    private const float ZoomSoundGap = 0.14f;
+
+    /// <summary>How long a change of page disturbs the feed, in seconds.</summary>
+    private const float BurstSeconds = 0.2f;
+
+    private static readonly string[] PageNames = ["MAP", "OBJECTIVES", "LOG", "SAVE"];
+    private static readonly KeyCode[] PageKeys = [KeyCode.D1, KeyCode.D2, KeyCode.D3, KeyCode.D4];
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
     private readonly Func<string, string> _resolveText;
+    private readonly HudTheme _theme;
+    private readonly IComputerFontSource? _fonts;
     private readonly TacticalMapOverlay _overlay;
+    private readonly UiRect[] _tabs = new UiRect[PageNames.Length];
+    private readonly float[] _tabWidths = new float[PageNames.Length];
+    private readonly List<string> _lines = [];
 
-    private UiFont? _body;
-    private UiFont? _label;
-    private UiFont? _display;
+    private ComputerText? _text;
+    private RhiBackdrop? _glass;
+    private BackdropBlur? _blur;
 
     private Page _page = Page.Map;
 
     /// <inheritdoc/>
     public bool MapAvailable { get; set; } = true;
+
+    /// <inheritdoc/>
+    public Action<string>? PlaySound { get; set; }
+
+    private float _inputClock;
+    private float _zoomSoundAt = float.NegativeInfinity;
     private Vector3d _centreUnits;
     private bool _hasCentre;
     private float _zoom = DefaultZoom;
     private float _zoomTarget = DefaultZoom;
-    private float _seconds;
+    private float _clock;
     private float _mouseX;
     private float _mouseY;
     private bool _dragging;
     private int _hoverPage = -1;
+    private int _requestedScale = UiScale.Automatic;
+    private float _pageDim;
+    private float _burst;
+
+    // Whether the last frame was laid over the picture through the visor, which bends it: the pointer is then read where
+    // the bend puts it.
+    private bool _layered = true;
+
+    // The screen's pixel density and whether fingers are working it, as the last frame drawn said.
+    private float _density = 1f;
+    private bool _touch;
+
+    // Fingers on the map: how far apart two were last frame, and where and when the last tap landed.
+    private float _pinch;
+    private float _tapAt = -1f;
+    private float _tapX;
+    private float _tapY;
+    private bool _bent;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="TacticalComputerRenderer"/> class.</summary>
-    /// <param name="device">The device the font atlases are uploaded to.</param>
+    /// <param name="device">The device the display is drawn through.</param>
     /// <param name="resources">The registry the mission's localised strings were preloaded into.</param>
     /// <param name="logger">Where to report a missing font.</param>
     /// <param name="resolveText">The fallback used for a string the archives do not carry.</param>
-    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <param name="theme">The title's look, the heads-up display's own.</param>
+    /// <param name="fonts">Where the title's font comes from; <see langword="null"/> to set every line in the shared face.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public TacticalComputerRenderer(
         IGraphicsDevice device,
         ResourceRegistry resources,
         IOpenIgiLogger logger,
-        Func<string, string> resolveText)
+        Func<string, string> resolveText,
+        HudTheme theme,
+        IComputerFontSource? fonts = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(resolveText);
+        ArgumentNullException.ThrowIfNull(theme);
 
         _device = device;
         _resources = resources;
         _logger = logger;
         _resolveText = resolveText;
+        _theme = theme;
+        _fonts = fonts;
         _overlay = new TacticalMapOverlay(ComputerString);
     }
 
     /// <summary>Gets a value indicating whether the interface has its faces and can draw.</summary>
-    public bool IsReady => _body is not null;
+    public bool IsReady => _text is not null;
 
     /// <summary>Gets the vertical field of view the map is currently read at, in radians.</summary>
     public float FieldOfView => TacticalMapProjection.FieldOfViewFor(_zoom);
 
     /// <summary>Builds the interface's faces.</summary>
-    /// <returns><see langword="false"/> when the fonts are missing and the computer cannot be shown.</returns>
+    /// <returns><see langword="false"/> when the shared faces are missing and the computer cannot be shown.</returns>
     public bool Load()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!UiFontLibrary.TypographyAvailable)
         {
-            _logger.Warning(LogCategory, $"No interface font at {UiFontLibrary.FontsDirectory}; the tactical computer cannot draw.");
+            _logger.Warning(LogCategory, $"No interface font at {UiFontLibrary.FontsDirectory}; the remastered computer cannot draw.");
             return false;
         }
 
         try
         {
-            // The design's faces, shared with the menus and the HUD: Barlow for prose, the condensed
-            // semibold for the letterspaced capitals the interface labels everything in, and the
-            // distance-field title face for the wordmark, so it can carry an outline and a glow.
+            // The title's own font sets the text; the interface's monospaced face stands in for what it cannot.
             IgiTypography typography = UiFontLibrary.Typography(_device);
-            _body = typography.Body;
-            _label = typography.Heading;
-            _display = typography.Display;
-
+            _text = new ComputerText(typography.Mono);
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
         {
-            _logger.Warning(LogCategory, $"Could not build the tactical computer's fonts: {ex.Message}");
+            _logger.Warning(LogCategory, $"Could not build the remastered computer's fonts: {ex.Message}");
             return false;
         }
     }
@@ -163,7 +199,14 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         _zoom = DefaultZoom;
         _zoomTarget = DefaultZoom;
         _page = MapAvailable ? Page.Map : Page.Objectives;
+        _pageDim = _page == Page.Map ? 0f : 1f;
+        _burst = 0f;
         _dragging = false;
+        _saveShown = false;
+
+        // The picture coming up, as the original sounds a view that has changed (0x467970's flare).
+        PlaySound?.Invoke(HoverSound);
+        PlaySound?.Invoke(StaticSound);
     }
 
     /// <summary>Takes a frame's input: page selection, pan, and cursor-anchored zoom.</summary>
@@ -176,27 +219,40 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     public void Update(InputState input, float elapsedSeconds, Vector3d playerUnits, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(input);
+        if (_text is null)
+        {
+            return;
+        }
 
         float step = Math.Clamp(elapsedSeconds, 0f, 0.1f);
-        _seconds += step;
-        _mouseX = input.Mouse.X;
-        _mouseY = input.Mouse.Y;
+        _inputClock += step;
+        int width = Math.Max(1, screenWidth), height = Math.Max(1, screenHeight);
+        (_mouseX, _mouseY) = Warp(input.Mouse.X, input.Mouse.Y, width, height);
 
         if (!MapAvailable && _page == Page.Map)
         {
             _page = Page.Objectives;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        TacticalComputerChrome chrome = TacticalComputerChrome.Measure(context, _page != Page.Map, PageNames.Length);
+        TacticalComputerChrome chrome = Layout(width, height);
 
+        // An upload under way keeps its page.
+        Page shown = _page;
+        bool held = SaveBusy;
+        int hoverBefore = _hoverPage;
         _hoverPage = -1;
         for (int i = 0; i < PageNames.Length; i++)
         {
-            if (IsSelectable((Page)i) && TacticalComputerChrome.Contains(chrome.PageRow(i), _mouseX, _mouseY))
+            if (IsSelectable((Page)i) && TacticalComputerChrome.Contains(_tabs[i], _mouseX, _mouseY))
             {
                 _hoverPage = i;
             }
+        }
+
+        // A tab newly under the pointer clicks, as the original's menu items do (ComputerMenu_TextItemActivateCB).
+        if (_hoverPage >= 0 && _hoverPage != hoverBefore)
+        {
+            PlaySound?.Invoke(HoverSound);
         }
 
         if (input.Mouse.WasPressed(MouseButton.Left) && _hoverPage >= 0)
@@ -221,11 +277,31 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             while (!IsSelectable(_page));
         }
 
-        // Back to the player, which is the one navigation action a map that can be panned across a whole
-        // level genuinely needs. Bound to both the obvious keys rather than one.
+        if (held || !IsSelectable(_page))
+        {
+            _page = shown;
+            if (!IsSelectable(_page))
+            {
+                _page = Page.Objectives;
+            }
+        }
+
+        // A change of page disturbs the feed for a moment, and sounds as the original's chosen item does.
+        if (_page != shown)
+        {
+            PlaySound?.Invoke(ClickSound);
+            _burst = 1f;
+            chrome = chrome with { PageVisible = _page != Page.Map };
+        }
+
+        UpdateSave(input, step, chrome);
+
+        // Back to the player, which is the one navigation action a map that can be panned across a whole level needs.
+        // Bound to both the obvious keys rather than one.
         if (input.Keyboard.WasPressed(KeyCode.Home) || input.Keyboard.WasPressed(KeyCode.Space))
         {
             _centreUnits = playerUnits;
+            PlaySound?.Invoke(ClickSound);
         }
 
         bool overMap = !chrome.OverInterface(_mouseX, _mouseY);
@@ -240,6 +316,7 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             _dragging = true;
         }
 
+        float zoomAsked = _zoomTarget;
         if (input.Mouse.WheelDelta != 0f && (overMap || _page == Page.Map))
         {
             _zoomTarget = Math.Clamp(_zoomTarget + (input.Mouse.WheelDelta * 0.085f), 0f, 1f);
@@ -255,17 +332,26 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             _zoomTarget = Math.Clamp(_zoomTarget - 0.12f, 0f, 1f);
         }
 
+        // A step of the zoom sounds as the original's does: its button's click, and the view changing (0x467970).
+        if (_zoomTarget != zoomAsked && _inputClock - _zoomSoundAt >= ZoomSoundGap)
+        {
+            _zoomSoundAt = _inputClock;
+            PlaySound?.Invoke(ClickSound);
+            PlaySound?.Invoke(HoverSound);
+            PlaySound?.Invoke(StaticSound);
+        }
+
         Viewport map = MapViewport(screenWidth, screenHeight);
         float previousFieldOfView = TacticalMapProjection.FieldOfViewFor(_zoom);
 
-        // Exponential smoothing framed as a half-life rather than a per-frame factor, so the zoom takes
-        // the same real time to arrive whatever the frame rate is.
+        // Exponential smoothing framed as a half-life rather than a per-frame factor, so the zoom takes the same real
+        // time to arrive whatever the frame rate is.
         _zoom += (_zoomTarget - _zoom) * (1f - MathF.Exp(-ZoomResponse * step));
         float fieldOfView = TacticalMapProjection.FieldOfViewFor(_zoom);
 
-        // Cursor-anchored zoom: whatever is under the pointer stays under it. Done by unprojecting the
-        // same pixel through the old and the new frustum and moving the centre by the difference, which
-        // is exact at every intermediate step of the ease rather than only at its ends.
+        // Cursor-anchored zoom: whatever is under the pointer stays under it. Done by unprojecting the same pixel through
+        // the old and the new frustum and moving the centre by the difference, which is exact at every intermediate step
+        // of the ease rather than only at its ends.
         if (MathF.Abs(fieldOfView - previousFieldOfView) > 1e-7f)
         {
             Vector3d before = TacticalMapProjection.Unproject(_mouseX, _mouseY, _centreUnits, previousFieldOfView, map);
@@ -276,6 +362,8 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 _centreUnits.Z);
         }
 
+        UpdateTouch(input, chrome, playerUnits, map, fieldOfView);
+
         if (_dragging && (input.Mouse.DeltaX != 0f || input.Mouse.DeltaY != 0f))
         {
             (double unitsPerPixelX, double unitsPerPixelY) = TacticalMapProjection.UnitsPerPixel(fieldOfView, map);
@@ -283,6 +371,107 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 _centreUnits.X - (input.Mouse.DeltaX * unitsPerPixelX),
                 _centreUnits.Y + (input.Mouse.DeltaY * unitsPerPixelY),
                 _centreUnits.Z);
+        }
+    }
+
+    // A touch screen's map: one finger drags it, two pinch it about the point between them, a tap on a tab opens its
+    // page, and two taps on the map bring it back over the player. The pointer the fingers are also given moves no
+    // distance a frame -- it is put where the finger is -- so a drag read from it never panned.
+    private void UpdateTouch(InputState input, TacticalComputerChrome chrome, Vector3d playerUnits, Viewport map, float fieldOfView)
+    {
+        IReadOnlyList<TouchPoint> points = input.Touch.Points;
+        int down = 0;
+        TouchPoint first = default, second = default;
+        foreach (TouchPoint point in points)
+        {
+            if (point.Ended)
+            {
+                continue;
+            }
+
+            if (down == 0)
+            {
+                first = point;
+            }
+            else if (down == 1)
+            {
+                second = point;
+            }
+
+            down++;
+        }
+
+        (double unitsPerPixelX, double unitsPerPixelY) = TacticalMapProjection.UnitsPerPixel(fieldOfView, map);
+        if (down >= 2 && _page == Page.Map)
+        {
+            float apart = MathF.Sqrt(((second.X - first.X) * (second.X - first.X)) + ((second.Y - first.Y) * (second.Y - first.Y)));
+            if (_pinch > 1f && apart > 1f)
+            {
+                // Twice as far apart is one step in; the zoom is anchored where the pointer is, so put it between them.
+                _zoomTarget = Math.Clamp(_zoomTarget + (MathF.Log2(apart / _pinch) * 0.3f), 0f, 1f);
+                _zoom = _zoomTarget;
+                (_mouseX, _mouseY) = ((first.X + second.X) * 0.5f, (first.Y + second.Y) * 0.5f);
+            }
+
+            _pinch = apart;
+
+            // And the pair dragged together moves the map with them.
+            float dx = (first.DeltaX + second.DeltaX) * 0.5f, dy = (first.DeltaY + second.DeltaY) * 0.5f;
+            _centreUnits = new Vector3d(_centreUnits.X - (dx * unitsPerPixelX), _centreUnits.Y + (dy * unitsPerPixelY), _centreUnits.Z);
+            _tapAt = -1f;
+            return;
+        }
+
+        _pinch = 0f;
+        if (down == 1 && _page == Page.Map && !chrome.OverInterface(first.StartX, first.StartY) && (first.DeltaX != 0f || first.DeltaY != 0f))
+        {
+            _centreUnits = new Vector3d(
+                _centreUnits.X - (first.DeltaX * unitsPerPixelX),
+                _centreUnits.Y + (first.DeltaY * unitsPerPixelY),
+                _centreUnits.Z);
+        }
+
+        // A finger lifted about where it landed is a tap.
+        float slop = chrome.Px(14f);
+        foreach (TouchPoint point in points)
+        {
+            if (!point.Ended || MathF.Abs(point.X - point.StartX) > slop || MathF.Abs(point.Y - point.StartY) > slop)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < PageNames.Length; i++)
+            {
+                // A tab is a line of text tall; a thumb is given the whole strip's height over it.
+                UiRect tab = _tabs[i];
+                var reach = new UiRect(tab.X - chrome.Px(4f), 0f, tab.Width + chrome.Px(8f), MathF.Max(chrome.Top.Bottom, chrome.Px(44f)));
+                if (IsSelectable((Page)i) && !SaveBusy && TacticalComputerChrome.Contains(reach, point.X, point.Y) && _page != (Page)i)
+                {
+                    _page = (Page)i;
+                    PlaySound?.Invoke(ClickSound);
+                    _burst = 1f;
+                    _tapAt = -1f;
+                    return;
+                }
+            }
+
+            if (_page != Page.Map || chrome.OverInterface(point.X, point.Y))
+            {
+                continue;
+            }
+
+            bool again = _tapAt >= 0f && _inputClock - _tapAt < 0.35f
+                && MathF.Abs(point.X - _tapX) < slop * 3f && MathF.Abs(point.Y - _tapY) < slop * 3f;
+            if (again)
+            {
+                _centreUnits = playerUnits;
+                PlaySound?.Invoke(ClickSound);
+                _tapAt = -1f;
+            }
+            else
+            {
+                (_tapAt, _tapX, _tapY) = (_inputClock, point.X, point.Y);
+            }
         }
     }
 
@@ -317,70 +506,103 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             MapComputerCamera.MapPitch);
     }
 
-    /// <summary>Draws the interface over the overhead view already on screen.</summary>
-    /// <param name="batch">The batch to draw into; it must already be between Begin and End.</param>
-    /// <param name="runtime">The mission's objectives and event log.</param>
-    /// <param name="player">Where the player is, in engine units.</param>
-    /// <param name="guards">The hostile contacts the map is allowed to show, in engine units.</param>
-    /// <param name="highlights">The authored points of interest currently visible.</param>
-    /// <param name="screenWidth">The back buffer's width.</param>
-    /// <param name="screenHeight">The back buffer's height.</param>
-    /// <param name="opacity">How much of the interface is showing, 0 to 1, as the display comes up.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <inheritdoc/>
+    /// <remarks>The batch is handed in closed, and is left closed: the feed and the visor are passes of their own between its draws.</remarks>
     public void Draw(
         SpriteBatch batch,
         IComputerObjectives runtime,
         Vector3d player,
         IReadOnlyList<Vector3d> guards,
         IEnumerable<ComputerMapHighlight> highlights,
-        int screenWidth,
-        int screenHeight,
-        float opacity)
+        in ComputerFrame frame)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(guards);
         ArgumentNullException.ThrowIfNull(highlights);
 
-        if (_body is not { } body || opacity <= 0.004f)
+        if (_text is not { } text || frame.Width <= 0 || frame.Height <= 0)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        TacticalComputerChrome chrome = TacticalComputerChrome.Measure(context, _page != Page.Map, PageNames.Length);
-        Viewport map = MapViewport(screenWidth, screenHeight);
+        // The display's own clock: the feed's, which runs on while the simulation is held behind it.
+        float elapsed = Math.Clamp(frame.Feed.Seconds - _clock, 0f, 0.1f);
+        _clock = frame.Feed.Seconds;
+        _requestedScale = frame.RequestedScale;
+        _density = frame.PixelDensity > 0f ? frame.PixelDensity : 1f;
+        _touch = frame.Touch;
+        _burst = MathF.Max(0f, _burst - (elapsed / BurstSeconds));
+        _pageDim += ((_page == Page.Map ? 0f : 1f) - _pageDim) * (1f - MathF.Exp(-12f * elapsed));
+
+        // The feed first, over the picture; then the frame is copied again, so the glass stands on the feed.
+        float curvature = TubeCurvature;
+        bool fed = _device.DrawMapFeed(Feed(frame.Feed, _layered ? curvature : 0f));
+        _glass = Glass(frame.Width, frame.Height);
+
+        float opacity = Math.Clamp(frame.Opacity, 0f, 1f);
+        if (opacity <= 0.004f)
+        {
+            _bent = false;
+            return;
+        }
+
+        // A phone draws the display straight onto the picture. The visor is a layer of its own, bent and composited
+        // over the frame: two more passes over every pixel of a screen with three times a monitor's rows to the inch,
+        // on a graphics chip a fraction of a desktop's, and the map dragged along behind the finger.
+        _layered = !frame.Touch && _device.BeginHudLayer();
+        _bent = _layered && fed;
+
+        batch.Begin();
+        var layout = new LayoutContext(frame.Width, frame.Height);
+        UiPainter painter = UiPainter.Create(batch, layout, _glass);
+        TacticalComputerChrome chrome = Layout(frame.Width, frame.Height);
+
+        // Through the visor the display flickers in band by band; without it, it fades.
+        float fade = _layered ? 1f : opacity;
+        painter.PushOpacity(fade);
+        text.Begin(batch, painter, fade);
+        var canvas = new ComputerCanvas(painter, text, _theme, chrome, _clock);
+
+        if (!fed)
+        {
+            // No feed to stand on: the title's glass colour over the picture, so the display is still its own.
+            painter.FillRect(new UiRect(0f, 0f, frame.Width, frame.Height), _theme.Palette.Glass.WithAlpha((byte)(150f + (60f * _pageDim))));
+        }
+
+        Viewport map = MapViewport(frame.Width, frame.Height);
         float fieldOfView = TacticalMapProjection.FieldOfViewFor(_zoom);
-
-        // The whole interface fades and rises together. A few pixels of travel is the difference between
-        // the screen having been switched on and the interface having been brought up on it.
-        painter.PushOpacity(opacity);
-        float lift = (1f - opacity) * context.Px(14f);
-
-        _overlay.Draw(
-            painter, context, chrome, map, fieldOfView, runtime, player, guards, highlights,
-            _centreUnits, _seconds, _label ?? body);
+        if (MapAvailable)
+        {
+            painter.PushOpacity(1f - (0.75f * _pageDim));
+            _overlay.Draw(canvas, map, fieldOfView, runtime, player, frame.HeadingRadians, guards, highlights, _centreUnits);
+            painter.PopOpacity();
+        }
 
         if (_page != Page.Map)
         {
-            DrawPagePanel(painter, context, chrome, body, runtime, lift);
+            DrawPage(canvas, runtime);
         }
 
-        DrawHeader(painter, context, chrome, body, runtime, guards.Count, lift);
-        DrawRail(painter, context, chrome, body, lift);
-        DrawStatusBlock(painter, context, chrome, body, player, map, fieldOfView, lift);
-        DrawFooter(painter, context, chrome, body, map, fieldOfView, lift);
-
+        DrawTopStrip(canvas, runtime, guards.Count);
+        DrawBottomStrip(canvas, player, map, fieldOfView, frame.CloseKey);
+        DrawCursor(canvas, player, map, fieldOfView);
         painter.PopOpacity();
+        batch.End();
 
-        // The cursor is outside the fade. It is the player's own pointer rather than part of the screen
-        // being brought up, and one that faded in with the chrome would leave them without one for the
-        // half-second the display takes to arrive.
-        DrawCursor(painter, context, chrome.OverInterface(_mouseX, _mouseY));
+        if (_layered)
+        {
+            _device.ComposeHudLayer(_theme.Fx with
+            {
+                Intensity = 1f,
+                Curvature = _bent ? curvature : 0f,
+                Appear = opacity,
+                Seconds = _clock,
+            });
+        }
     }
 
-    /// <summary>Draws the mission-failed panel in the interface's own language.</summary>
+    /// <summary>Draws the mission-failed panel in the display's own language.</summary>
     /// <param name="batch">The batch to draw into; it must already be between Begin and End.</param>
     /// <param name="screenWidth">The back buffer's width.</param>
     /// <param name="screenHeight">The back buffer's height.</param>
@@ -388,38 +610,15 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     public void DrawMissionFailed(SpriteBatch batch, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-
-        if (_body is not { } body)
+        if (_text is not { } text || screenWidth <= 0 || screenHeight <= 0)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        UiFont label = _label ?? body;
-
-        painter.FillRect(new UiRect(0f, 0f, screenWidth, screenHeight), UiPalette.InkAt(0.84f));
-
-        float width = context.Px(620f);
-        float height = context.Px(240f);
-        var card = new UiRect((screenWidth - width) * 0.5f, (screenHeight - height) * 0.5f, width, height);
-
-        painter.FillRect(card, PanelSolid);
-        painter.StrokeRect(card, context.Px(1f), UiPalette.Danger.WithAlpha(110));
-        painter.FillRect(new UiRect(card.X, card.Y, card.Width, context.Px(3f)), Hostile);
-
-        float pad = context.Px(40f);
-        UiVectors.DrawTracked(painter, label, "MISSION FAILED", new UiVec2(card.X + pad, card.Y + context.Px(44f)),
-            context.Px(34f), Hostile, context.Px(3.5f));
-
-        painter.FillRect(
-            new UiRect(card.X + pad, card.Y + context.Px(102f), card.Width - (pad * 2f), MathF.Max(1f, context.Px(1f))),
-            Border);
-
-        DrawKeyHint(painter, context, body, "ENTER", "RESTART MISSION",
-            new UiVec2(card.X + pad, card.Y + context.Px(132f)));
-        DrawKeyHint(painter, context, body, "ESC", "ABORT TO MENU",
-            new UiVec2(card.X + pad, card.Y + context.Px(176f)));
+        UiPainter painter = UiPainter.Create(batch, new LayoutContext(screenWidth, screenHeight));
+        TacticalComputerChrome chrome = Layout(screenWidth, screenHeight);
+        text.Begin(batch, painter, 1f);
+        DrawMissionFailed(new ComputerCanvas(painter, text, _theme, chrome, _clock), screenWidth, screenHeight);
     }
 
     /// <inheritdoc/>
@@ -432,481 +631,12 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         _disposed = true;
 
-        // The faces are the device's shared set, not this renderer's to free.
-        _body = null;
-        _label = null;
-        _display = null;
+        // The shared faces are the device's, not this renderer's to free; the title's font is its source's.
+        _text = null;
+        _glass = null;
+        _blur = null;
+        _fonts?.Dispose();
     }
-
-    // ---------------------------------------------------------------------------------------------
-    // The chrome.
-    // ---------------------------------------------------------------------------------------------
-
-    private void DrawHeader(
-        UiPainter painter,
-        LayoutContext context,
-        in TacticalComputerChrome chrome,
-        UiFont body,
-        IComputerObjectives runtime,
-        int contacts,
-        float lift)
-    {
-        UiRect bar = chrome.Header with { Y = chrome.Header.Y - lift };
-        UiFont label = _label ?? body;
-
-        painter.FillRect(bar, Panel);
-        painter.FillRect(new UiRect(bar.X, bar.Bottom - MathF.Max(1f, context.Px(1f)), bar.Width, MathF.Max(1f, context.Px(1f))), Border);
-
-        float x = chrome.Gutter;
-        float mid = bar.Y + (bar.Height * 0.5f);
-
-        // The system mark: a small solid block, then the name. The block is doing real work — it is what
-        // the eye lands on first and what tells it where the interface starts.
-        float block = context.Px(16f);
-        painter.FillRect(new UiRect(x, mid - (block * 0.5f), block, block), Signal);
-        painter.FillRect(new UiRect(x + context.Px(4f), mid - (block * 0.5f) + context.Px(4f), block - context.Px(8f), block - context.Px(8f)), PanelSolid);
-        x += block + context.Px(14f);
-
-        float markSize = context.Px(26f);
-        if (_display is { } display)
-        {
-            SdfTextParams effects = SdfTextParams.Plain(0f)
-                .WithOutline(Bgra32.FromRgba(0, 0, 0, 170), 0.16f)
-                .WithGlow(Signal, 0.4f, 0.55f);
-            painter.DrawText(display, "SIMOTECH", new UiVec2(x, mid - (display.LineHeight(markSize) * 0.5f)),
-                markSize, UiPalette.TextBright, effects);
-            x += display.MeasureWidth("SIMOTECH", markSize) + context.Px(16f);
-        }
-        else
-        {
-            x += UiVectors.DrawTracked(painter, label, "SIMOTECH", new UiVec2(x, mid - (label.LineHeight(markSize) * 0.5f)),
-                markSize, UiPalette.TextBright, context.Px(2f)) + context.Px(16f);
-        }
-
-        painter.FillRect(new UiRect(x, mid - context.Px(10f), MathF.Max(1f, context.Px(1f)), context.Px(20f)), Border);
-        x += context.Px(16f);
-
-        float subSize = context.Px(13f);
-        UiVectors.DrawTracked(painter, label, "TACTICAL MAP INTERFACE",
-            new UiVec2(x, mid - (label.LineHeight(subSize) * 0.5f)), subSize, TextMuted, context.Px(2.4f));
-
-        // The readouts, right-aligned and laid out from the right edge inwards so the widest one does not
-        // push the others off the screen on a narrow window.
-        int complete = runtime.Objectives.Count(objective => objective.State == MissionObjectiveState.Complete);
-        float chipRight = bar.Right - chrome.Gutter;
-        chipRight = DrawReadout(
-            painter,
-            context,
-            label,
-            chipRight,
-            mid,
-            "CONTACTS",
-            contacts.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            Hostile);
-        chipRight -= context.Px(14f);
-        DrawReadout(painter, context, label, chipRight, mid, "OBJECTIVES",
-            $"{complete}/{runtime.Objectives.Count}", complete >= runtime.Objectives.Count && runtime.Objectives.Count > 0 ? Complete : Signal);
-    }
-
-    private static float DrawReadout(
-        UiPainter painter,
-        LayoutContext context,
-        UiFont label,
-        float right,
-        float middle,
-        string caption,
-        string value,
-        Bgra32 valueColour)
-    {
-        float captionSize = context.Px(11f);
-        float valueSize = context.Px(19f);
-        float tracking = context.Px(1.8f);
-        float captionWidth = UiVectors.MeasureTracked(label, caption, captionSize, tracking);
-        float valueWidth = UiVectors.MeasureTracked(label, value, valueSize, tracking);
-        float width = MathF.Max(captionWidth, valueWidth);
-        float left = right - width;
-
-        UiVectors.DrawTracked(painter, label, caption, new UiVec2(right - captionWidth, middle - context.Px(17f)),
-            captionSize, TextMuted, tracking);
-        UiVectors.DrawTracked(painter, label, value, new UiVec2(right - valueWidth, middle - context.Px(3f)),
-            valueSize, valueColour, tracking);
-        return left;
-    }
-
-    private void DrawRail(UiPainter painter, LayoutContext context, in TacticalComputerChrome chrome, UiFont body, float lift)
-    {
-        UiFont label = _label ?? body;
-        UiRect card = chrome.Rail with { X = chrome.Rail.X - lift };
-
-        painter.FillRect(card, Panel);
-        painter.StrokeRect(card, MathF.Max(1f, context.Px(1f)), Border);
-
-        for (int i = 0; i < PageNames.Length; i++)
-        {
-            UiRect row = chrome.PageRow(i) with { X = chrome.PageRow(i).X - lift };
-            bool selected = (int)_page == i;
-            bool hovered = _hoverPage == i;
-
-            if (selected)
-            {
-                painter.FillRect(row, UiPalette.AccentAt(0.13f));
-                painter.FillRect(new UiRect(row.X, row.Y, context.Px(3f), row.Height), Accent);
-            }
-            else if (hovered)
-            {
-                painter.FillRect(row, UiPalette.White(0.06f));
-            }
-
-            // A page the level has not given the player stays listed, greyed, the way the original leaves
-            // its MAP link out rather than renumbering what is left.
-            Bgra32 colour = selected ? UiPalette.AccentLight : hovered ? Text : TextMuted;
-            if (!IsSelectable((Page)i))
-            {
-                colour = TextMuted.WithAlpha(70);
-            }
-
-            float indexSize = context.Px(11f);
-            float nameSize = context.Px(16f);
-            float textX = row.X + context.Px(20f);
-
-            UiVectors.DrawTracked(painter, label, $"0{i + 1}", new UiVec2(textX, row.Y + context.Px(9f)),
-                indexSize, selected ? Accent : TextMuted.WithAlpha(150), context.Px(1.4f));
-            UiVectors.DrawTracked(painter, label, PageNames[i], new UiVec2(textX + context.Px(34f), row.Y + context.Px(7f)),
-                nameSize, colour, context.Px(2.2f));
-        }
-    }
-
-    private void DrawStatusBlock(
-        UiPainter painter,
-        LayoutContext context,
-        in TacticalComputerChrome chrome,
-        UiFont body,
-        Vector3d player,
-        Viewport map,
-        float fieldOfView,
-        float lift)
-    {
-        UiFont label = _label ?? body;
-        UiRect card = chrome.Status with { X = chrome.Status.X - lift };
-
-        painter.FillRect(card, Panel);
-        painter.StrokeRect(card, MathF.Max(1f, context.Px(1f)), Border);
-
-        float pad = context.Px(20f);
-        float y = card.Y + context.Px(16f);
-        UiVectors.DrawTracked(painter, label, "OPERATOR", new UiVec2(card.X + pad, y), context.Px(11f), TextMuted, context.Px(2f));
-        y += context.Px(20f);
-
-        // The player's own position, in metres east and north of the level's origin. The engine keeps it
-        // in 1/4096 of a metre, which is a number nobody can read; this is that number made into a grid
-        // reference, which is what a map is for.
-        long east = (long)Math.Round(player.X / UnitsPerMetre);
-        long north = (long)Math.Round(player.Y / UnitsPerMetre);
-        long altitude = (long)Math.Round(player.Z / UnitsPerMetre);
-        UiVectors.DrawTracked(painter, label, $"E {east:0000}  N {north:0000}", new UiVec2(card.X + pad, y),
-            context.Px(16f), Signal, context.Px(1.2f));
-        y += context.Px(26f);
-        UiVectors.DrawTracked(painter, label, $"ALT {altitude} M", new UiVec2(card.X + pad, y),
-            context.Px(13f), TextMuted, context.Px(1.4f));
-
-        y += context.Px(26f);
-        painter.FillRect(new UiRect(card.X + pad, y, card.Width - (pad * 2f), MathF.Max(1f, context.Px(1f))), Border);
-        y += context.Px(14f);
-
-        // The scale as a ratio, which is the one number that says how far in the map is without the
-        // player having to measure the bar.
-        double halfHeightMetres = AltitudeMetres * Math.Tan(fieldOfView * 0.5);
-        double metresPerPixel = 2.0 * halfHeightMetres / Math.Max(1, map.Height);
-        UiVectors.DrawTracked(painter, label, "SCALE", new UiVec2(card.X + pad, y), context.Px(11f), TextMuted, context.Px(2f));
-        UiVectors.DrawTracked(painter, label, $"1:{Math.Round(metresPerPixel * 1000.0):0}", new UiVec2(card.X + pad + context.Px(74f), y),
-            context.Px(11f), Text, context.Px(1.4f));
-    }
-
-    private void DrawFooter(
-        UiPainter painter,
-        LayoutContext context,
-        in TacticalComputerChrome chrome,
-        UiFont body,
-        Viewport map,
-        float fieldOfView,
-        float lift)
-    {
-        UiFont label = _label ?? body;
-        UiRect bar = chrome.Footer with { Y = chrome.Footer.Y + lift };
-
-        painter.FillRect(bar, Panel);
-        painter.FillRect(new UiRect(bar.X, bar.Y, bar.Width, MathF.Max(1f, context.Px(1f))), Border);
-
-        float mid = bar.Y + (bar.Height * 0.5f);
-        float x = chrome.Gutter;
-        x = DrawKeyCap(painter, context, label, "C", "CLOSE", x, mid);
-        x = DrawKeyCap(painter, context, label, "1-3", "SECTION", x, mid);
-        x = DrawKeyCap(painter, context, label, "DRAG", "PAN", x, mid);
-        x = DrawKeyCap(painter, context, label, "WHEEL", "ZOOM", x, mid);
-        DrawKeyCap(painter, context, label, "SPACE", "RECENTRE", x, mid);
-
-        TacticalMapOverlay.DrawScaleBar(painter, context, label, bar, map, fieldOfView);
-    }
-
-    private static float DrawKeyCap(
-        UiPainter painter,
-        LayoutContext context,
-        UiFont label,
-        string key,
-        string action,
-        float x,
-        float middle)
-    {
-        float keySize = context.Px(12f);
-        float actionSize = context.Px(12f);
-        float tracking = context.Px(1.2f);
-        float keyWidth = UiVectors.MeasureTracked(label, key, keySize, tracking);
-        float padX = context.Px(7f);
-        float capHeight = context.Px(20f);
-
-        var cap = new UiRect(x, middle - (capHeight * 0.5f), keyWidth + (padX * 2f), capHeight);
-        painter.FillRect(cap, UiPalette.White(0.1f));
-        painter.StrokeRect(cap, MathF.Max(1f, context.Px(1f)), Border);
-        UiVectors.DrawTracked(painter, label, key, new UiVec2(cap.X + padX, cap.Y + context.Px(3f)), keySize, Text, tracking);
-
-        float textX = cap.Right + context.Px(9f);
-        float actionWidth = UiVectors.DrawTracked(painter, label, action,
-            new UiVec2(textX, middle - (label.LineHeight(actionSize) * 0.5f)), actionSize, TextMuted, context.Px(2f));
-
-        return textX + actionWidth + context.Px(26f);
-    }
-
-    private static void DrawKeyHint(UiPainter painter, LayoutContext context, UiFont font, string key, string action, UiVec2 at)
-    {
-        float size = context.Px(15f);
-        float width = font.MeasureWidth(key, size);
-        painter.FillRect(new UiRect(at.X, at.Y - context.Px(3f), width + context.Px(16f), context.Px(26f)),
-            UiPalette.White(0.1f));
-        painter.DrawText(font, key, new UiVec2(at.X + context.Px(8f), at.Y), size, Text);
-        painter.DrawText(font, action, new UiVec2(at.X + width + context.Px(32f), at.Y), size, TextMuted);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // The text pages.
-    // ---------------------------------------------------------------------------------------------
-
-    private void DrawPagePanel(
-        UiPainter painter,
-        LayoutContext context,
-        in TacticalComputerChrome chrome,
-        UiFont body,
-        IComputerObjectives runtime,
-        float lift)
-    {
-        UiRect card = chrome.Page with { Y = chrome.Page.Y + lift };
-        UiFont label = _label ?? body;
-
-        painter.FillRect(card, PanelSolid);
-        painter.StrokeRect(card, MathF.Max(1f, context.Px(1f)), Border);
-        painter.FillRect(new UiRect(card.X, card.Y, card.Width, MathF.Max(1f, context.Px(2f))), Signal.WithAlpha(160));
-
-        float pad = context.Px(34f);
-        float y = card.Y + context.Px(26f);
-        UiVectors.DrawTracked(painter, label, PageNames[(int)_page], new UiVec2(card.X + pad, y),
-            context.Px(20f), Text, context.Px(3.2f));
-        y += context.Px(38f);
-        painter.FillRect(new UiRect(card.X + pad, y, card.Width - (pad * 2f), MathF.Max(1f, context.Px(1f))), Border);
-        y += context.Px(24f);
-
-        painter.PushClip(card);
-        if (_page == Page.Objectives)
-        {
-            DrawObjectives(painter, context, body, label, runtime, card, pad, y);
-        }
-        else
-        {
-            DrawLog(painter, context, body, label, runtime, card, pad, y);
-        }
-
-        painter.PopClip();
-    }
-
-    private void DrawObjectives(
-        UiPainter painter,
-        LayoutContext context,
-        UiFont body,
-        UiFont label,
-        IComputerObjectives runtime,
-        UiRect card,
-        float pad,
-        float y)
-    {
-        if (runtime.Objectives.Count == 0)
-        {
-            UiVectors.DrawTracked(painter, label, "NO OBJECTIVES ON FILE", new UiVec2(card.X + pad, y),
-                context.Px(14f), TextMuted, context.Px(2f));
-            return;
-        }
-
-        float textSize = context.Px(17f);
-        float rowPad = context.Px(18f);
-        float width = card.Width - (pad * 2f);
-        float textLeft = card.X + pad + context.Px(58f);
-        float textWidth = width - context.Px(58f) - context.Px(140f);
-
-        for (int i = 0; i < runtime.Objectives.Count; i++)
-        {
-            MissionObjective objective = runtime.Objectives[i];
-            string text = objective.Text.Length > 0 ? objective.Text : ComputerString(objective.TextResource);
-            string wrapped = body.WrapText(text, textSize, MathF.Max(context.Px(120f), textWidth));
-            float textHeight = body.Measure(wrapped, textSize).Y;
-            float rowHeight = MathF.Max(context.Px(58f), textHeight + (rowPad * 2f));
-            var row = new UiRect(card.X + pad, y, width, rowHeight);
-
-            (Bgra32 accent, string state) = objective.State switch
-            {
-                MissionObjectiveState.Complete => (Complete, "COMPLETE"),
-                MissionObjectiveState.Failed => (Hostile, "FAILED"),
-                _ => (Accent, "ACTIVE"),
-            };
-
-            painter.FillRect(row, UiPalette.White(0.05f));
-            painter.FillRect(new UiRect(row.X, row.Y, context.Px(3f), row.Height), accent);
-
-            UiVectors.DrawTracked(painter, label, $"0{i + 1}", new UiVec2(row.X + context.Px(20f), row.Y + rowPad),
-                context.Px(15f), accent, context.Px(1.6f));
-
-            painter.DrawText(body, wrapped, new UiVec2(textLeft, row.Y + rowPad), textSize,
-                objective.State == MissionObjectiveState.Complete ? TextMuted : Text);
-
-            DrawStatusPill(painter, context, label, state, accent,
-                new UiVec2(row.Right - context.Px(20f), row.Y + rowPad));
-
-            y += rowHeight + context.Px(10f);
-        }
-    }
-
-    private void DrawLog(
-        UiPainter painter,
-        LayoutContext context,
-        UiFont body,
-        UiFont label,
-        IComputerObjectives runtime,
-        UiRect card,
-        float pad,
-        float y)
-    {
-        if (runtime.Log.Count == 0)
-        {
-            UiVectors.DrawTracked(painter, label, "NO TRANSMISSIONS LOGGED", new UiVec2(card.X + pad, y),
-                context.Px(14f), TextMuted, context.Px(2f));
-            return;
-        }
-
-        float textSize = context.Px(16f);
-        float railX = card.X + pad + context.Px(6f);
-        float textLeft = railX + context.Px(28f);
-        float textWidth = card.Right - pad - textLeft;
-        float top = y;
-
-        // Newest first: the last thing that happened is the thing being looked for, and a log that reads
-        // downwards makes the player scroll to find out what they were just told.
-        int index = 0;
-        foreach (MissionComputerLogEntry entry in runtime.Log.Reverse())
-        {
-            if (y > card.Bottom - context.Px(30f))
-            {
-                break;
-            }
-
-            string wrapped = body.WrapText(entry.Text.Length > 0 ? entry.Text : ComputerString(entry.TextResource), textSize, MathF.Max(context.Px(120f), textWidth));
-            float height = body.Measure(wrapped, textSize).Y;
-
-            // The newest entry is the only one at full strength. Older ones step back a little each time
-            // and then hold, so recency is legible at a glance without the tail becoming unreadable.
-            byte alpha = (byte)(index == 0 ? 255 : Math.Max(120, 210 - (index * 18)));
-            UiVectors.FillDisc(painter, new UiVec2(railX, y + context.Px(9f)), context.Px(index == 0 ? 4f : 2.5f),
-                (index == 0 ? Signal : SignalDim).WithAlpha(alpha), 10);
-            painter.DrawText(body, wrapped, new UiVec2(textLeft, y), textSize,
-                (index == 0 ? Text : TextMuted).WithAlpha(alpha));
-
-            y += height + context.Px(16f);
-            index++;
-        }
-
-        // The rail behind the dots, drawn last so it runs exactly as far as the entries did.
-        painter.FillRect(
-            new UiRect(railX - MathF.Max(1f, context.Px(0.5f)), top + context.Px(9f), MathF.Max(1f, context.Px(1f)),
-                MathF.Max(0f, y - top - context.Px(25f))),
-            Border);
-    }
-
-    private static void DrawStatusPill(
-        UiPainter painter,
-        LayoutContext context,
-        UiFont label,
-        string text,
-        Bgra32 colour,
-        UiVec2 rightTop)
-    {
-        float size = context.Px(11f);
-        float tracking = context.Px(1.8f);
-        float width = UiVectors.MeasureTracked(label, text, size, tracking);
-        float padX = context.Px(10f);
-        float height = context.Px(22f);
-
-        var pill = new UiRect(rightTop.X - width - (padX * 2f), rightTop.Y, width + (padX * 2f), height);
-        painter.FillRect(pill, colour.WithAlpha(38));
-        painter.StrokeRect(pill, MathF.Max(1f, context.Px(1f)), colour.WithAlpha(120));
-        UiVectors.DrawTracked(painter, label, text, new UiVec2(pill.X + padX, pill.Y + context.Px(4f)), size, colour, tracking);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // The cursor.
-    // ---------------------------------------------------------------------------------------------
-
-    /// <summary>Draws the pointer, as a reticle over the map and as an arrow over the interface.</summary>
-    /// <remarks>
-    /// Two shapes because they answer two questions. Over the map the pointer is a position — it is what
-    /// the zoom anchors on and what the drag moves — so it is a crosshair with an open middle that does
-    /// not hide the thing being pointed at. Over the interface it is a click, so it is an arrow.
-    /// </remarks>
-    private void DrawCursor(UiPainter painter, LayoutContext context, bool overInterface)
-    {
-        var at = new UiVec2(_mouseX, _mouseY);
-
-        if (overInterface)
-        {
-            float size = context.Px(16f);
-            painter.FillTriangle(
-                new UiVec2(at.X + context.Px(1f), at.Y + context.Px(1f)),
-                new UiVec2(at.X + context.Px(1f), at.Y + size + context.Px(2f)),
-                new UiVec2(at.X + (size * 0.66f) + context.Px(2f), at.Y + (size * 0.72f) + context.Px(2f)),
-                Bgra32.FromRgba(0, 0, 0, 190));
-            painter.FillTriangle(
-                at,
-                new UiVec2(at.X, at.Y + size),
-                new UiVec2(at.X + (size * 0.66f), at.Y + (size * 0.72f)),
-                UiPalette.TextBright);
-            return;
-        }
-
-        float arm = context.Px(13f);
-        float gap = context.Px(4f);
-        float weight = MathF.Max(1f, context.Px(1.4f));
-        Bgra32 shadow = Bgra32.FromRgba(0, 0, 0, 150);
-
-        foreach ((float dx, float dy) in new[] { (-1f, 0f), (1f, 0f), (0f, -1f), (0f, 1f) })
-        {
-            float x = at.X + (dx * gap) - (dx < 0f ? arm - gap : 0f) - (dx == 0f ? weight * 0.5f : 0f);
-            float y = at.Y + (dy * gap) - (dy < 0f ? arm - gap : 0f) - (dy == 0f ? weight * 0.5f : 0f);
-            float w = dx == 0f ? weight : arm - gap;
-            float h = dy == 0f ? weight : arm - gap;
-            painter.FillRect(new UiRect(x + 1f, y + 1f, w, h), shadow);
-            painter.FillRect(new UiRect(x, y, w, h), Signal);
-        }
-
-        UiVectors.FillDisc(painter, at, context.Px(1.6f), UiPalette.TextBright, 8);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Layout, projection and drawing primitives: see TacticalComputerChrome and TacticalMapProjection.
-    // ---------------------------------------------------------------------------------------------
 
     /// <summary>Gets the part of the screen the overhead view is rendered into: all of it.</summary>
     /// <param name="width">The back buffer's width.</param>
@@ -914,6 +644,80 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     /// <returns>The full-screen viewport.</returns>
     public static Viewport MapViewport(int width, int height) =>
         new(0, 0, Math.Max(1, width), Math.Max(1, height));
+
+    /// <summary>The feed's look in a title's colours: its glass for the shadows, its quiet colour for the body, its own for the lights.</summary>
+    /// <param name="theme">The title's look.</param>
+    /// <param name="signal">How far the feed has come up.</param>
+    /// <param name="curvature">How far the visor over it bends it.</param>
+    /// <param name="dim">How far a text page dims it.</param>
+    /// <param name="burst">The disturbance of a change of page.</param>
+    /// <returns>The feed.</returns>
+    public static MapFeedSettings FeedFor(HudTheme theme, in MapFeedSettings signal, float curvature, float dim, float burst)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        HudPalette palette = theme.Palette;
+        Bgra32 light = Mix(palette.Primary, palette.Highlight, 0.3f);
+        return signal with
+        {
+            Dim = dim,
+            Burst = burst,
+            Curvature = curvature,
+            ScanlineDensity = theme.Fx.ScanlineDensity,
+            ScanlineStrength = theme.Fx.ScanlineStrength * 0.85f,
+            Grain = 0.05f,
+            Shadow = (palette.Glass.R / 255f * 0.55f, palette.Glass.G / 255f * 0.55f, palette.Glass.B / 255f * 0.55f),
+            Body = (palette.Dim.R / 255f, palette.Dim.G / 255f, palette.Dim.B / 255f),
+            Highlight = (light.R / 255f, light.G / 255f, light.B / 255f),
+        };
+    }
+
+    private MapFeedSettings Feed(in MapFeedSettings signal, float curvature) => FeedFor(_theme, signal, curvature, _pageDim, _burst);
+
+    private static Bgra32 Mix(Bgra32 a, Bgra32 b, float t) => Bgra32.FromRgba(
+        (byte)(a.R + ((b.R - a.R) * t)),
+        (byte)(a.G + ((b.G - a.G) * t)),
+        (byte)(a.B + ((b.B - a.B) * t)),
+        255);
+
+    // This frame's layout, from the text as it will be set: one measure for the hit tests and the draws.
+    private TacticalComputerChrome Layout(int width, int height)
+    {
+        ComputerText text = _text!;
+        text.Use(_fonts?.Font, ComputerText.ScaleFor(_requestedScale, height, _density));
+        for (int i = 0; i < PageNames.Length; i++)
+        {
+            _tabWidths[i] = text.Measure(PageNames[i]);
+        }
+
+        return TacticalComputerChrome.Measure(width, height, text.LineHeight, _page != Page.Map, _tabWidths, _tabs, _density);
+    }
+
+    // Where the pointer is on the display as drawn: the visor draws a point of the display nearer the middle the further
+    // out it is, so what is under the pointer is a little further out than the pointer.
+    private (float X, float Y) Warp(float x, float y, int width, int height)
+    {
+        if (!_bent)
+        {
+            return (x, y);
+        }
+
+        float cx = ((x / width) * 2f) - 1f, cy = ((y / height) * 2f) - 1f;
+        float k = 1f + (TubeCurvature * ((cx * cx) + (cy * cy)));
+        return ((((cx * k) * 0.5f) + 0.5f) * width, (((cy * k) * 0.5f) + 0.5f) * height);
+    }
+
+    // The frame blurred for the glass, restated for the painter; kept while the device hands back the same blur.
+    private RhiBackdrop? Glass(int width, int height)
+    {
+        BackdropBlur blur = _device.BlurFrameForBackdrop();
+        if (!ReferenceEquals(blur, _blur) || _glass is null)
+        {
+            _blur = blur;
+            _glass = RhiBackdrop.From(blur, width, height);
+        }
+
+        return _glass;
+    }
 
     private string ComputerString(string key)
     {
@@ -932,29 +736,19 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         return _resolveText(key);
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // The palette: the shell's own tokens, so the computer reads as the same product as the menus. The
-    // design's amber carries the chrome, its lighter hover tone the two things that are about the player
-    // rather than about the level — where they are, and what is selected — over warm greys and dark glass.
-    // ---------------------------------------------------------------------------------------------
-
-    internal static Bgra32 Signal => UiPalette.Accent;
-    internal static Bgra32 SignalDim => UiPalette.AccentAt(0.6f);
-    internal static Bgra32 Accent => UiPalette.AccentLight;
-    internal static Bgra32 Hostile => UiPalette.Danger;
-    internal static Bgra32 Complete => UiPalette.Success;
-    internal static Bgra32 Text => UiPalette.Text;
-    internal static Bgra32 TextMuted => UiPalette.TextMuted;
-    internal static Bgra32 Panel => UiPalette.GlassDense;
-    internal static Bgra32 PanelSolid => UiPalette.GlassMenu;
-    internal static Bgra32 Border => UiPalette.Hairline;
-
-    private bool IsSelectable(Page page) => page != Page.Map || MapAvailable;
+    // The map is the level's to give; the save page is there for a mission that keeps save games.
+    private bool IsSelectable(Page page) => page switch
+    {
+        Page.Map => MapAvailable,
+        Page.Save => Saves is not null,
+        _ => true,
+    };
 
     private enum Page
     {
         Map,
         Objectives,
         Log,
+        Save,
     }
 }

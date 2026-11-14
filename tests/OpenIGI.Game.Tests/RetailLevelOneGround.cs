@@ -8,7 +8,6 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -148,6 +147,7 @@ internal static class RetailLevelOneGround
         ResourceRegistry resources = new(fileSystem);
         _resources = resources;
         GameLoop loop = new(new ManualTimeSource());
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.Register(loop.Types);
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);

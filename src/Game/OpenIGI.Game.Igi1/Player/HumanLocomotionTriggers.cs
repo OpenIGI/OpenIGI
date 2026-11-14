@@ -1,5 +1,4 @@
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.Player;
 

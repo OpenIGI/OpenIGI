@@ -168,7 +168,12 @@ internal sealed partial class GraphPanel
             return;
         }
 
-        if (_ai is null && (ids = ActionDelete(ids)).Count == 0)
+        if (_ai is null)
+        {
+            ids = ActionDelete(ids);
+        }
+
+        if (_ai is null && ids.Count == 0)
         {
             return;
         }

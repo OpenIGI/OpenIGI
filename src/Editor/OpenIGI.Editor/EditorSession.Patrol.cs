@@ -4,9 +4,7 @@ using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Editor.Panels;
 using OpenIGI.Editor.Viewport;
 using OpenIGI.Scripting.Qsc;
-using OpenIGI.Scripting.Qvm;
 using OpenIGI.UI.Editor.Actions;
-using OpenIGI.UI.Editor.Input;
 
 namespace OpenIGI.Editor;
 
