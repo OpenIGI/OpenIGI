@@ -702,6 +702,71 @@ internal sealed partial class SequencerPanel : EditorElement
         }
     }
 
+    /// <summary>
+    /// Makes an intro from the mission's objectives: a scene that pushes in on each thing an objective is about in turn, gliding
+    /// from one to the next, played from the mission's start as retail intros are; one undo step, then opened.
+    /// </summary>
+    public void MakeIntro()
+    {
+        if (_workspace.Document is not { } document)
+        {
+            return;
+        }
+
+        MissionTask[] targets = [.. CutsceneModel.ObjectiveTargets(document).Where(static t => TaskPresentation.PositionMetres(t) is not null)];
+        if (targets.Length == 0)
+        {
+            Notify?.Invoke("No objective names a thing in the world to show: give the mission an objective that is about a task (a terminal hacked, a guard dead).", true);
+            return;
+        }
+
+        HashSet<int> used = [.. document.EnumerateTasks().Select(static t => t.Id)];
+        int id = Enumerable.Range(1, MissionDocument.MaximumTaskId - 1).First(i => !used.Contains(i));
+        if (CutsceneModel.AddScene(document, "Intro", id) is not { } made)
+        {
+            Notify?.Invoke("This level does not declare cutscenes.", true);
+            return;
+        }
+
+        List<IEditorCommand> steps = [made.Step];
+        made.Step.Apply();
+        MissionTask? after = null;
+        foreach (MissionTask target in targets)
+        {
+            Vector3d centre = TaskPresentation.PositionMetres(target)!.Value;
+            double? SurfaceBelow(double x, double y) => _host.SurfaceBelow(new Vector3d(x, y, centre.Z + 300), 600);
+
+            // From the south-west and above, as an establishing shot comes in, then in to it over four seconds.
+            foreach (MoveShot shot in CameraMoves.Shots(CameraMove.PushIn, centre, centre + new Vector3d(-25, -25, 12), 4, SurfaceBelow))
+            {
+                if (CutsceneModel.AddShot(document, made.Scene, after, (shot.PositionUnits.X, shot.PositionUnits.Y, shot.PositionUnits.Z), (shot.Angles.X, shot.Angles.Y, shot.Angles.Z), shot.Seconds == 0 ? 1.5 : shot.Seconds) is not { } added)
+                {
+                    break;
+                }
+
+                added.Step.Apply();
+                steps.Add(added.Step);
+                after = added.Camera;
+            }
+        }
+
+        IEditorCommand start = CutsceneModel.PlayAtStart(document, made.Scene);
+        start.Apply();
+        steps.Add(start);
+        for (int i = steps.Count - 1; i >= 0; i--)
+        {
+            steps[i].Undo();
+        }
+
+        _workspace.Execute(new CompositeCommand("Make Intro from Objectives", steps));
+        _stale = true;
+        Refresh();
+        _scene = made.Scene;
+        _scenes.SelectedIndex = IndexOf(_sceneList, made.Scene);
+        _time = 0;
+        Notify?.Invoke(string.Create(CultureInfo.InvariantCulture, $"Made an intro over {targets.Length} objective target(s), played as the mission starts. A level's own intro plays too: take its Run away to have only this one."), false);
+    }
+
     /// <summary>Makes a new scene, as New Cutscene does.</summary>
     public void MakeScene() => NewScene();
 

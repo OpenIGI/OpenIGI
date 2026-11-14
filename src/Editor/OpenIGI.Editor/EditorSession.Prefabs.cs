@@ -24,6 +24,15 @@ internal sealed partial class EditorSession
             Category = "Tools",
             CanExecute = () => _workspace.Document is not null && _workspace.Selection.Count > 0,
         });
+        actions.Add(new EditorAction("tools.intro", "Make Intro from Objectives", () =>
+        {
+            _dock.Show("sequencer");
+            _sequencer.MakeIntro();
+        })
+        {
+            Category = "Tools",
+            CanExecute = () => _workspace.Document?.Declarations.ContainsKey(Core.Cutscenes.CutsceneModel.SceneType) == true,
+        });
         actions.Add(new EditorAction("tools.placeprefab", "Place Prefab…", OfferPrefabs)
         {
             Category = "Tools",

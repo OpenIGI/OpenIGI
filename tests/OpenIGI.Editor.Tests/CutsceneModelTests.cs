@@ -177,6 +177,35 @@ public sealed class CutsceneModelTests
     }
 
     /// <summary>
+    /// What the objectives are about, in their order, once each, only tasks with a place; a scene made the intro runs from the
+    /// start until it is finished, as retail intros do.
+    /// </summary>
+    [Fact]
+    public void An_intro_goes_to_what_the_objectives_are_about()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_DeclareParameters("CutScene", "Run", "VarString", "Initial run", "bool8", "Time scale", "Real32");
+            Task_DeclareParameters("Terminal", "Position", "ObjectPos");
+            Task_DeclareParameters("HumanSoldier", "Position", "ObjectPos");
+            Task_DeclareParameters("EditVariable", "Add", "VarString");
+            Task_DeclareParameters("DefineComputerObjective", "Objective 1 Complete Expression", "VarString", "Objective 2 Complete Expression", "VarString");
+            Task_New(-1, "Container", "Root",
+                Task_New(50, "CutScene", "Intro", "", FALSE, 1),
+                Task_New(10, "Terminal", "t", 0, 0, 0),
+                Task_New(20, "HumanSoldier", "boss", 0, 0, 0),
+                Task_New(30, "EditVariable", "count", ""),
+                Task_New(1, "DefineComputerObjective", "objectives", "HumanSoldier_20.isDead && EditVariable_30.nValue", "Terminal_10.isHacked || HumanSoldier_20.isDead"));
+            """, QvmProgram.IgiVersion));
+
+        Assert.Equal([20, 10], CutsceneModel.ObjectiveTargets(document).Select(static t => t.Id));
+
+        MissionTask scene = CutsceneModel.Scenes(document)[0];
+        CutsceneModel.PlayAtStart(document, scene).Apply();
+        string script = QscPrinter.Print(document.ToScript());
+        Assert.Contains("\"!CutScene_50.isFinished\", TRUE", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Every retail scene reads, its shots the scene's own EditCameras, and level 1's intro has its subtitles cued off it; every
     /// scene that waits on something runs only until it is finished.
     /// </summary>

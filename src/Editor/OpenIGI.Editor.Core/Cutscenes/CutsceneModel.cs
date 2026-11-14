@@ -207,6 +207,64 @@ public static partial class CutsceneModel
         return [.. found.OrderBy(static a => a.Start)];
     }
 
+    /// <summary>
+    /// What a mission's objectives are about: each task an objective's complete expression reads (<c>Terminal_1402.isHacked</c>),
+    /// in the objectives' order, once each, those with a place in the world.
+    /// </summary>
+    /// <param name="document">The mission.</param>
+    /// <returns>The tasks.</returns>
+    public static IReadOnlyList<MissionTask> ObjectiveTargets(MissionDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        Dictionary<int, MissionTask> byId = [];
+        foreach (MissionTask task in document.EnumerateTasks().Where(static t => t.Id >= 0))
+        {
+            byId.TryAdd(task.Id, task);
+        }
+
+        List<MissionTask> targets = [];
+        foreach (MissionTask objectives in document.EnumerateTasks().Where(static t => t.TypeName == "DefineComputerObjective"))
+        {
+            foreach (MissionParameter parameter in objectives.Parameters.Where(static p => p.Name.StartsWith("Objective ", StringComparison.Ordinal) && p.Name.EndsWith(" Complete Expression", StringComparison.Ordinal)))
+            {
+                if (parameter.Arguments is not [QscStringLiteral { Value: { } text }])
+                {
+                    continue;
+                }
+
+                foreach (Match reference in TaskReference().Matches(text))
+                {
+                    if (int.TryParse(reference.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)
+                        && byId.TryGetValue(id, out MissionTask? target) && target.TypeName == reference.Groups[1].Value
+                        && target.FindParameter("Position") is not null && !targets.Contains(target))
+                    {
+                        targets.Add(target);
+                    }
+                }
+            }
+        }
+
+        return targets;
+    }
+
+    /// <summary>The step that makes a scene play as a mission's intro does: from the level's start, once (<c>!CutScene_N.isFinished</c>).</summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="scene">The scene.</param>
+    /// <returns>The step.</returns>
+    public static IEditorCommand PlayAtStart(MissionDocument document, MissionTask scene)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(scene);
+        return new CompositeCommand("Play at the Mission's Start",
+        [
+            new SetParameterCommand(document, scene, "Run", [new QscStringLiteral(string.Create(CultureInfo.InvariantCulture, $"!CutScene_{scene.Id}.isFinished"))]),
+            SetParameterCommand.Numbers(document, scene, "Initial run", [1]),
+        ]);
+    }
+
+    [GeneratedRegex(@"\b([A-Za-z]\w*?)_(\d+)\b")]
+    private static partial Regex TaskReference();
+
     /// <summary>The step that moves a shot's camera: where it stands and how it is turned.</summary>
     /// <param name="document">The mission.</param>
     /// <param name="camera">The shot's camera.</param>

@@ -35,6 +35,24 @@ internal sealed partial class SequencerPanel
 
     private bool LiveActive => Live is { Scene: { } id } && _scene is { } scene && scene.Id == id;
 
+    /// <summary>Turns Live on or off, as its button does.</summary>
+    /// <param name="on">Whether scenes play live.</param>
+    public void SetLive(bool on)
+    {
+        if (_live.IsChecked == on || (on && _host.CutscenePreview is null))
+        {
+            return;
+        }
+
+        _live.IsChecked = on;
+        if (!on)
+        {
+            _host.CutscenePreview?.Finish();
+            _wantPlay = false;
+            _draggingBack = false;
+        }
+    }
+
     /// <summary>Gets whether the scene is shown live, as the game plays it.</summary>
     public bool IsLive => LiveActive;
 

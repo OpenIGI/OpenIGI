@@ -630,6 +630,7 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.Separator,
                 MenuItem.For(actions["tools.saveprefab"]),
                 MenuItem.For(actions["tools.placeprefab"]),
+                MenuItem.For(actions["tools.intro"]),
             ])
             .Add("View", [
                 MenuItem.For(actions["view.palette"]),
