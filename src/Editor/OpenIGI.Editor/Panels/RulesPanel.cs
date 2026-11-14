@@ -61,7 +61,7 @@ internal sealed partial class RulesPanel : EditorElement
                 Icon = static row => row.Icon,
                 Detail = static row => row.Detail,
                 Dimmed = static row => row.Dimmed,
-                Tint = row => row.Kind == RuleRowKind.Rule ? theme.Accent : null,
+                Tint = row => row.Kind is RuleRowKind.Rule or RuleRowKind.LevelGroup ? theme.Accent : null,
             },
             _selection)
         {
@@ -81,7 +81,7 @@ internal sealed partial class RulesPanel : EditorElement
         Add(string.Empty, KitIcon.ArrowUp, "Move it earlier", () => Move(-1), () => Selected is { Kind: RuleRowKind.Rule or RuleRowKind.Step });
         Add(string.Empty, KitIcon.ArrowDown, "Move it later", () => Move(1), () => Selected is { Kind: RuleRowKind.Rule or RuleRowKind.Step });
         Add("On / Off", KitIcon.None, "Switch the rule off without losing it, or on again", ToggleEnabled, HasRule);
-        Add("Delete", KitIcon.Close, "Delete the selected rule or line (Delete)", () => Delete(Selected), () => Selected is { Kind: not RuleRowKind.When and not RuleRowKind.Otherwise });
+        Add("Delete", KitIcon.Close, "Delete the selected rule or line (Delete)", () => Delete(Selected), () => Selected is { Kind: RuleRowKind.Rule or RuleRowKind.Condition or RuleRowKind.Step });
 
         workspace.Changed += () => _stale = true;
         workspace.Logic.Changed += () => _stale = true;
@@ -210,6 +210,9 @@ internal sealed partial class RulesPanel : EditorElement
             { Kind: RuleRowKind.Step, Step: DriveStep drive } => $"Makes '{drive.Pin}' hold from this point of the rule on.",
             { Kind: RuleRowKind.Step, Step: WaitStep } => "Counted in game time: 30 ticks a second.",
             { Kind: RuleRowKind.Otherwise } => "The steps done when the If above does not hold. Select it and add steps.",
+            { Kind: RuleRowKind.LevelGroup } => "What the level's own tasks do and what each waits for, read out of the level. Changing one changes that task.",
+            { Kind: RuleRowKind.LevelRule, Level: { } level } => $"{level.Task.Task.TypeName} {level.Task.Task.Id}, its '{level.Parameter}'. Double-click to select it.",
+            { Kind: RuleRowKind.LevelWhen, Level: { } level } => $"As the game reads it: {level.Condition}",
             _ => string.Empty,
         };
 
@@ -257,6 +260,7 @@ internal sealed partial class RulesPanel : EditorElement
             }
         }
 
+        LevelRules(live, graph);
         foreach (string gone in _rows.Keys.Where(k => !live.Contains(k)).ToArray())
         {
             _rows.Remove(gone);
@@ -264,6 +268,39 @@ internal sealed partial class RulesPanel : EditorElement
 
         _selection.Prune(row => live.Contains(row.Key));
         _list.Invalidate();
+    }
+
+    // The rules the level itself holds, under one heading after the mission's own: each task condition the title has
+    // words for, as what it does and what it waits for. The heading starts folded: a retail level has dozens.
+    private void LevelRules(HashSet<string> live, MissionGraph graph)
+    {
+        IReadOnlyList<LevelRule> lifted = RuleLifter.Lift(graph, _host.Vocabulary, Actions);
+        if (lifted.Count == 0)
+        {
+            return;
+        }
+
+        bool isNew = !_rows.ContainsKey("level");
+        RuleRow group = Row(live, "level", RuleRowKind.LevelGroup, null, null, "In the level itself", KitIcon.Folder);
+        if (isNew && _rules.Count == 0)
+        {
+            // With no rules of the mission's own, the level's are what there is to read.
+            _list.SetExpanded(group, expanded: true);
+        }
+
+        group.Detail = lifted.Count.ToString(CultureInfo.InvariantCulture);
+        _roots.Add(group);
+        foreach (LevelRule rule in lifted)
+        {
+            string key = $"{rule.Task.Key.Value}/{rule.Parameter}";
+            // What it does, then what it waits for, on the one line: a level's rules are read down the list, not unfolded.
+            string waits = _text!.Condition(rule.Condition);
+            string label = $"{_text.Action(rule.Task.Task, rule.Parameter)}   ·   {(waits is "always" or "never" ? waits : "when " + waits)}";
+            RuleRow row = Child(live, group, "lv:" + key, RuleRowKind.LevelRule, null, label, KitIcon.ArrowRight);
+            row.Level = rule;
+            RuleRow when = Child(live, row, "lw:" + key, RuleRowKind.LevelWhen, null, $"WHEN   {_text.Condition(rule.Condition)}", KitIcon.ChevronRight);
+            when.Level = rule;
+        }
     }
 
     private void Steps(HashSet<string> live, RuleRow parent, Rule rule, IReadOnlyList<RuleStep> steps)
@@ -289,7 +326,7 @@ internal sealed partial class RulesPanel : EditorElement
         }
     }
 
-    private RuleRow Child(HashSet<string> live, RuleRow parent, string key, RuleRowKind kind, Rule rule, string label, KitIcon icon)
+    private RuleRow Child(HashSet<string> live, RuleRow parent, string key, RuleRowKind kind, Rule? rule, string label, KitIcon icon)
     {
         RuleRow row = Row(live, key, kind, rule, parent, label, icon);
         row.Dimmed = parent.Dimmed;
@@ -298,7 +335,7 @@ internal sealed partial class RulesPanel : EditorElement
     }
 
     // Rows are kept by key, so the selection and what is unfolded survive a rebuild.
-    private RuleRow Row(HashSet<string> live, string key, RuleRowKind kind, Rule rule, RuleRow? parent, string label, KitIcon icon)
+    private RuleRow Row(HashSet<string> live, string key, RuleRowKind kind, Rule? rule, RuleRow? parent, string label, KitIcon icon)
     {
         if (!_rows.TryGetValue(key, out RuleRow? row))
         {
@@ -312,6 +349,7 @@ internal sealed partial class RulesPanel : EditorElement
         row.Label = label;
         row.Icon = icon;
         row.Step = null;
+        row.Level = null;
         row.Detail = null;
         row.Index = null;
         row.Children.Clear();
@@ -419,6 +457,18 @@ internal sealed partial class RulesPanel : EditorElement
     // A double click on a line: its value picked or typed again.
     private void Edit(RuleRow row)
     {
+        if (row is { Level: { } level })
+        {
+            // The task is selected either way, so the Inspector and the viewport show what the rule is about.
+            _workspace.Selection.Set(level.Task.Task);
+            if (row.Kind == RuleRowKind.LevelWhen && _workspace.Document is { } document)
+            {
+                PickCondition("When what holds", level.Condition, text => _workspace.Execute(level.WithCondition(document, text)));
+            }
+
+            return;
+        }
+
         if (Current(row) is not { } rule)
         {
             return;

@@ -25,6 +25,15 @@ internal enum RuleRowKind
 
     /// <summary>The "otherwise" half of an If step.</summary>
     Otherwise,
+
+    /// <summary>The heading over the rules the level itself holds.</summary>
+    LevelGroup,
+
+    /// <summary>A rule the level itself holds: what one of its tasks does.</summary>
+    LevelRule,
+
+    /// <summary>What a rule of the level waits for.</summary>
+    LevelWhen,
 }
 
 /// <summary>One row of the rules list, kept by its key across rebuilds.</summary>
@@ -38,6 +47,8 @@ internal sealed class RuleRow(string key)
     public Rule? Rule { get; set; }
 
     public RuleStep? Step { get; set; }
+
+    public LevelRule? Level { get; set; }
 
     public int? Index { get; set; }
 

@@ -55,6 +55,22 @@ internal sealed partial class EditorSession
             return $"Opening the {graphName} graph once the mission is open.";
         }
 
+        // editor rules: the Rules panel in front, once the mission is open.
+        if (arguments is [string rulesVerb] && rulesVerb.Equals("rules", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("rules");
+                return true;
+            });
+            return "Showing the rules once the mission is open.";
+        }
+
         // editor rule <when> then wait 2 then call Game_X() then do StatusMessage_40.Send: a rule made from one line, in the Rules panel.
         if (arguments is [string ruleVerb, _, ..] && ruleVerb.Equals("rule", StringComparison.OrdinalIgnoreCase))
         {

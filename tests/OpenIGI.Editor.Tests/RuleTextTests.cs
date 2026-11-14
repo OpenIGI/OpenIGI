@@ -39,7 +39,10 @@ public sealed class RuleTextTests
         Assert.Equal("not: Main terminal is hacked", text.Condition("!Terminal_10.isHacked"));
         Assert.Equal("AreaActivate 11 count inside > 0", text.Condition(" AreaActivate_11.nActive > 0 "));
         Assert.Equal("Main terminal someField", text.Condition("Terminal_10.someField"));
-        Assert.Equal("Terminal_10.isHacked && Door_20.isOpen", text.Condition("Terminal_10.isHacked && Door_20.isOpen"));
+        Assert.Equal("Main terminal is hacked and Gate is open", text.Condition("Terminal_10.isHacked && Door_20.isOpen"));
+        Assert.Equal("not: Main terminal is on or Main terminal ticks run > 120 s", text.Condition("(!Terminal_10.isOn ||\n  Terminal_10.nTick > 120*GAME_FREQUENCY)"));
+        Assert.Equal("Terminal_10.isHacked && Bogus(1)", text.Condition("Terminal_10.isHacked &&\nBogus(1)"));
+        Assert.Equal("always", text.Condition(" 1 "));
         Assert.Equal("Terminal_99.isHacked", text.Condition("Terminal_99.isHacked"));
         Assert.Equal("(nothing yet)", text.Condition(string.Empty));
     }
@@ -85,6 +88,34 @@ public sealed class RuleTextTests
         rule = RuleEdits.Remove(RuleEdits.Remove(rule, "if"), "z");
         Assert.Equal(["b", "a", "y"], rule.AllSteps().Select(static s => s.Id));
         Assert.Null(RuleEdits.Find(rule, "t"));
+    }
+
+    /// <summary>
+    /// The level's own rules are its tasks' named conditions that have something written: read without changing anything,
+    /// one a mission rule drives left out, and changing what one waits for writes that parameter alone and undoes.
+    /// </summary>
+    [Fact]
+    public void The_levels_own_rules_are_read_from_its_tasks()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript(Level.Replace("\"\", \"M1_MSG_1\"", "\"Terminal_10.isHacked\", \"M1_MSG_1\"", StringComparison.Ordinal)
+            .Replace("0, 0, 0, \"\", \"\")", "0, 0, 0, \"Terminal_10.isOn\", \"odd\")", StringComparison.Ordinal), QvmProgram.IgiVersion));
+        ScriptVocabulary vocabulary = new Igi1Runtime().CreateScriptVocabulary();
+        MissionGraph graph = MissionGraph.Build(document, TaskCatalogue.Build(document.Declarations.Values, vocabulary), vocabulary, LevelExpressionDialect.Igi1);
+        string before = QscPrinter.Print(document.ToScript());
+
+        IReadOnlyList<LevelRule> rules = RuleLifter.Lift(graph, vocabulary, new OpenIGI.Editor.Core.Graphs.Exec.ExecLayer());
+        Assert.Equal(["Door.Open door expression: Terminal_10.isOn", "StatusMessage.Send: Terminal_10.isHacked"], rules.Select(static r => $"{r.Task.Task.TypeName}.{r.Parameter}: {r.Condition}"));
+        Assert.Equal(before, QscPrinter.Print(document.ToScript()));
+
+        OpenIGI.Editor.Core.Graphs.Exec.ExecLayer driving = new();
+        RuleBook.With(driving, new Rule("r", "X()", [new DriveStep("d", new GraphNodeKey("t40"), "Send")])).Into(driving);
+        Assert.Equal(["Door"], RuleLifter.Lift(graph, vocabulary, driving).Select(static r => r.Task.Task.TypeName));
+
+        OpenIGI.Editor.Core.Commands.IEditorCommand change = rules[1].WithCondition(document, "Terminal_10.isOn");
+        change.Apply();
+        Assert.Contains("\"Terminal_10.isOn\", \"M1_MSG_1\"", QscPrinter.Print(document.ToScript()), StringComparison.Ordinal);
+        change.Undo();
+        Assert.Equal(before, QscPrinter.Print(document.ToScript()));
     }
 
     /// <summary>Every condition the first game's words name is one its levels declare, under that very name.</summary>

@@ -54,30 +54,128 @@ public sealed partial class RuleText(MissionDocument document, MissionGraph grap
     /// <summary>A condition in plain words.</summary>
     /// <param name="expression">The level-expression text.</param>
     /// <returns>The words, or the text itself when it is more than one field read.</returns>
+    /// <remarks>
+    /// Levels write their conditions over several lines and in brackets; the words are on one line. A condition made of
+    /// field reads joined by <c>||</c> or <c>&amp;&amp;</c> is said part by part; ticks counted against
+    /// <c>GAME_FREQUENCY</c> are said in seconds.
+    /// </remarks>
     public string Condition(string expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
-        string text = expression.Trim();
+        string text = Spaces().Replace(expression, " ").Trim();
         if (text.Length == 0)
         {
             return "(nothing yet)";
         }
 
+        return Say(text) ?? text;
+    }
+
+    // The words for a condition, or null when some part of it is more than a field read.
+    private string? Say(string text)
+    {
+        text = Unbracket(text);
+        switch (text)
+        {
+            case "1" or "TRUE":
+                return "always";
+            case "0" or "FALSE":
+                return "never";
+        }
+
+        foreach ((string op, string word) in (ReadOnlySpan<(string, string)>)[("||", " or "), ("&&", " and ")])
+        {
+            List<string> parts = SplitTopLevel(text, op);
+            if (parts.Count > 1)
+            {
+                List<string> said = [];
+                foreach (string part in parts)
+                {
+                    if (Say(part) is not { } words)
+                    {
+                        return null;
+                    }
+
+                    said.Add(words);
+                }
+
+                return string.Join(word, said);
+            }
+        }
+
+        return SayRead(text);
+    }
+
+    private string? SayRead(string text)
+    {
         Match match = FieldRead().Match(text);
         if (!match.Success || !int.TryParse(match.Groups["id"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int id)
             || document.EnumerateTasks().FirstOrDefault(t => t.Id == id && t.TypeName == match.Groups["type"].Value) is not { } task)
         {
-            return text;
+            return null;
         }
 
         string field = match.Groups["field"].Value;
         string said = $"{Name(task)} {vocabulary.StateOf(field) ?? field}";
         if (match.Groups["op"].Success)
         {
-            said = $"{said} {match.Groups["op"].Value} {match.Groups["value"].Value}";
+            string value = match.Groups["value"].Value;
+            Match seconds = Seconds().Match(value);
+            said = seconds.Success
+                ? $"{said} {match.Groups["op"].Value} {seconds.Groups["n"].Value} s"
+                : $"{said} {match.Groups["op"].Value} {value}";
         }
 
         return match.Groups["not"].Success ? $"not: {said}" : said;
+    }
+
+    // The text without brackets that hold all of it.
+    private static string Unbracket(string text)
+    {
+        text = text.Trim();
+        while (text.Length > 1 && text[0] == '(' && text[^1] == ')' && Closes(text) == text.Length - 1)
+        {
+            text = text[1..^1].Trim();
+        }
+
+        return text;
+    }
+
+    // Where the bracket that opens the text closes.
+    private static int Closes(string text)
+    {
+        int depth = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            depth += text[i] switch { '(' => 1, ')' => -1, _ => 0 };
+            if (depth == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    // The parts an operator joins outside any bracket.
+    private static List<string> SplitTopLevel(string text, string op)
+    {
+        List<string> parts = [];
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            depth += text[i] switch { '(' => 1, ')' => -1, _ => 0 };
+            if (depth == 0 && string.CompareOrdinal(text, i, op, 0, op.Length) == 0)
+            {
+                parts.Add(text[start..i].Trim());
+                start = i + op.Length;
+                i += op.Length - 1;
+            }
+        }
+
+        parts.Add(text[start..].Trim());
+        return parts;
     }
 
     /// <summary>A step in plain words.</summary>
@@ -124,6 +222,13 @@ public sealed partial class RuleText(MissionDocument document, MissionGraph grap
             : "Make a condition hold (its task is gone)";
 
     // One field read, perhaps negated, perhaps compared with one value.
-    [GeneratedRegex(@"^(?<not>!\s*)?(?<type>\w+)_(?<id>\d+)\.(?<field>\w+)(\s*(?<op>==|!=|>=|<=|>|<)\s*(?<value>[\w\.\-]+))?$")]
+    [GeneratedRegex(@"^(?<not>!\s*)?(?<type>\w+)_(?<id>\d+)\.(?<field>\w+)(\s*(?<op>==|!=|>=|<=|>|<)\s*(?<value>[\w\.\-]+(\s*\*\s*GAME_FREQUENCY)?))?$")]
     private static partial Regex FieldRead();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Spaces();
+
+    // A count of ticks written as seconds of the game's 30 a second.
+    [GeneratedRegex(@"^(?<n>\d+(\.\d+)?)\s*\*\s*GAME_FREQUENCY$")]
+    private static partial Regex Seconds();
 }
