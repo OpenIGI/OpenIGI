@@ -218,6 +218,9 @@ public interface IEditorHost
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }
 
+    /// <summary>Gets how many times a level has been loaded: a save made since the last load is not yet in the level that is up.</summary>
+    int LevelLoads => 0;
+
     /// <summary>Gets what plays the mission's cutscenes on the level itself, or <see langword="null"/> where the game has nothing to.</summary>
     IEditorCutscenePreview? CutscenePreview => null;
 

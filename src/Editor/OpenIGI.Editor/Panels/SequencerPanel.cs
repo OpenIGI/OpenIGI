@@ -23,7 +23,7 @@ namespace OpenIGI.Editor.Panels;
 /// to move it, and put the viewport's camera in as a new shot.
 /// </summary>
 /// <remarks>Every change is a step on the mission: the shots are its <c>EditCamera</c> tasks, the cues its conditions.</remarks>
-internal sealed class SequencerPanel : EditorElement
+internal sealed partial class SequencerPanel : EditorElement
 {
     private const float LabelWidth = 120f;
     private const float RulerHeight = 22f;
@@ -44,6 +44,7 @@ internal sealed class SequencerPanel : EditorElement
     private readonly Dropdown _scenes;
     private readonly Button _play;
     private readonly Button _preview;
+    private readonly Button _live;
     private readonly Button _addShot;
     private readonly Button _deleteShot;
     private readonly Button _playInGame;
@@ -79,11 +80,23 @@ internal sealed class SequencerPanel : EditorElement
             _time = 0;
             _playing = false;
             _scroll = 0;
+            EndLive();
         };
         _play = new Button(theme, "Play", KitIcon.Play) { Style = ButtonStyle.Flat, Tooltip = "Play the scene from the playhead (Space)" };
         _play.Clicked += TogglePlay;
         _preview = new Button(theme, "Look Through") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = true, Tooltip = "Move the viewport's camera along the scene's own camera as you scrub and play" };
         _preview.Clicked += () => _preview.IsChecked = !_preview.IsChecked;
+        _live = new Button(theme, "Live") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = host.CutscenePreview is not null, IsEnabled = host.CutscenePreview is not null, Tooltip = "Play the scene on the level itself, as the game plays it: its vehicles, soldiers and sounds, through its own camera. Off: the shots' path alone, which shows changes not yet saved" };
+        _live.Clicked += () =>
+        {
+            _live.IsChecked = !_live.IsChecked;
+            if (!_live.IsChecked)
+            {
+                _host.CutscenePreview?.Finish();
+                _wantPlay = false;
+                _draggingBack = false;
+            }
+        };
         _addShot = new Button(theme, "Add Shot from View", KitIcon.Plus) { Style = ButtonStyle.Flat, Tooltip = "Put the viewport's camera in as a new shot after the one at the playhead" };
         _addShot.Clicked += AddShotFromView;
         _deleteShot = new Button(theme, "Delete Shot", KitIcon.Close) { Style = ButtonStyle.Flat, Tooltip = "Delete the selected shot" };
@@ -94,7 +107,7 @@ internal sealed class SequencerPanel : EditorElement
         _newScene.Clicked += NewScene;
         _addMove = new Button(theme, "Add Move…") { Style = ButtonStyle.Flat, Tooltip = "Add a ready-made camera move round the selected object: orbit, push in, fly-over, crane up, pan" };
         _addMove.Clicked += OfferMoves;
-        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
+        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _live, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
         {
             AddChild(child);
         }
@@ -158,9 +171,12 @@ internal sealed class SequencerPanel : EditorElement
     /// <param name="seconds">The moment.</param>
     public void Seek(double seconds)
     {
-        _time = Math.Max(0, seconds);
-        Look();
+        ScrubTo(seconds);
+        EndScrub();
     }
+
+    /// <summary>Plays or pauses the scene, as Play does.</summary>
+    public void PlayOrPause() => TogglePlay();
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => available;
@@ -173,7 +189,7 @@ internal sealed class SequencerPanel : EditorElement
         float y = contentRect.Y + Theme.Px(5f);
         _scenes.Place(context, new UiRect(x, y, Theme.Px(220f), Theme.ControlHeight));
         x += Theme.Px(228f);
-        foreach (Button button in (Button[])[_play, _preview, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
+        foreach (Button button in (Button[])[_play, _preview, _live, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
         {
             float width = Theme.Font.MeasureWidth(button.Text, Theme.TextSize) + Theme.Px(button.Icon == KitIcon.None ? 24f : 44f);
             button.Place(context, new UiRect(x, y, width, Theme.ControlHeight));
@@ -191,6 +207,11 @@ internal sealed class SequencerPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
+        if (UpdateLive())
+        {
+            return;
+        }
+
         if (!_playing || _scene is null)
         {
             return;
@@ -338,10 +359,11 @@ internal sealed class SequencerPanel : EditorElement
             painter.FillRect(new UiRect(head - 1f, line.Y, 2f, line.Height), Bgra32.FromRgb(0xFF, 0x5A, 0x4A));
         }
 
-        if (ShotAt(shots, _time) is { } now && Number(now.Camera, "Link task ID", -1) is >= 0 and double link
+        EditorDraw.Label(painter, Theme, LiveStatus(), new UiRect(Bounds.X + Theme.Px(8f), Bounds.Bottom - (Theme.RowHeight * 2) - Theme.Px(2f), Bounds.Width - Theme.Px(16f), Theme.RowHeight), LiveActive ? Theme.Success : Theme.TextMuted);
+        if (!LiveActive && ShotAt(shots, _time) is { } now && Number(now.Camera, "Link task ID", -1) is >= 0 and double link
             && document.EnumerateTasks().FirstOrDefault(t => t.Id == (int)link) is { } carrier)
         {
-            string note = $"This shot rides {TaskPresentation.Name(carrier)} ({carrier.TypeName} {carrier.Id}): the preview shows it where {TaskPresentation.Name(carrier)} starts. Play in Game shows it moving.";
+            string note = $"This shot rides {TaskPresentation.Name(carrier)} ({carrier.TypeName} {carrier.Id}): the shots' path shows it where {TaskPresentation.Name(carrier)} starts; Live shows it moving.";
             EditorDraw.Label(painter, Theme, note, new UiRect(Bounds.X + Theme.Px(8f), Bounds.Bottom - Theme.RowHeight - Theme.Px(2f), Bounds.Width - Theme.Px(16f), Theme.RowHeight), Theme.Warning);
         }
 
@@ -468,7 +490,7 @@ internal sealed class SequencerPanel : EditorElement
         }
 
         _scrubbing = true;
-        Seek(Seconds(e.Position.X));
+        ScrubTo(Seconds(e.Position.X));
         return true;
     }
 
@@ -482,7 +504,7 @@ internal sealed class SequencerPanel : EditorElement
         }
         else if (_scrubbing)
         {
-            Seek(Seconds(e.Position.X));
+            ScrubTo(Seconds(e.Position.X));
         }
         else if (_resizing is { } resize)
         {
@@ -508,6 +530,11 @@ internal sealed class SequencerPanel : EditorElement
             {
                 _workspace.Execute(retime);
             }
+        }
+
+        if (_scrubbing)
+        {
+            EndScrub();
         }
 
         _scrubbing = false;
@@ -561,6 +588,12 @@ internal sealed class SequencerPanel : EditorElement
     {
         if (_scene is null)
         {
+            return;
+        }
+
+        if (Live is not null && _scene.Id >= 0)
+        {
+            LiveTogglePlay();
             return;
         }
 

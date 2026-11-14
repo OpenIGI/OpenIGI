@@ -744,6 +744,7 @@ internal sealed partial class ViewportPanel : EditorElement
 
         DrawPatrol(painter);
         DrawCameraPath(painter);
+        DrawLetterbox(painter);
 
         if (SelectedBox is { } box && _graph.PickedNode is null)
         {

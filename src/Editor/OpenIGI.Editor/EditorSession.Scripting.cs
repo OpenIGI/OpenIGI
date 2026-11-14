@@ -150,6 +150,22 @@ internal sealed partial class EditorSession
             return saving ? "Keeping the selection once the mission is open." : "Placing the prefab once the mission is open.";
         }
 
+        // editor play: the sequencer's Play (Space), live where the game can play scenes on the level.
+        if (arguments is [string playVerb] && playVerb.Equals("play", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.PlayOrPause();
+                return true;
+            });
+            return "Playing the scene once the mission is open.";
+        }
+
         // editor shot <n>: the menu of the open scene's nth shot.
         if (arguments is [string shotVerb, string shotNumber] && shotVerb.Equals("shot", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(shotNumber, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int shotIndex))

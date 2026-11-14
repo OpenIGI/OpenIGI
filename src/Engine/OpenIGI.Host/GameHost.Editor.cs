@@ -575,6 +575,8 @@ public sealed partial class GameHost
 
         public IEditorCutscenePreview? CutscenePreview => host.CutscenePreview;
 
+        public int LevelLoads => host._levelLoads;
+
         public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);
 
         public IWorldInspector Inspector => host._inspector;

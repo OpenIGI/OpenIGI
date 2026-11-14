@@ -19,6 +19,26 @@ internal sealed partial class ViewportPanel
     /// <summary>Gets or sets what gives the camera path to draw, when there is one.</summary>
     public Func<CameraPathView?>? CameraPath { get; set; }
 
+    /// <summary>
+    /// Gets or sets what gives the share of the picture's height a cutscene played live leaves between its letterbox bars, or
+    /// null when none is shown through its camera.
+    /// </summary>
+    public Func<float?>? Letterbox { get; set; }
+
+    // A scene's letterbox, over the view as the player sees it over the screen.
+    private void DrawLetterbox(UiPainter painter)
+    {
+        if (Letterbox?.Invoke() is not { } share || share >= 0.999f)
+        {
+            return;
+        }
+
+        UiRect world = WorldRect;
+        float bar = world.Height * (1f - Math.Clamp(share, 0f, 1f)) * 0.5f;
+        painter.FillRect(new UiRect(world.X, world.Y, world.Width, bar), Bgra32.Black);
+        painter.FillRect(new UiRect(world.X, world.Bottom - bar, world.Width, bar), Bgra32.Black);
+    }
+
     // The path, its shots numbered with the way each looks, and where the playhead has the camera.
     private void DrawCameraPath(UiPainter painter)
     {

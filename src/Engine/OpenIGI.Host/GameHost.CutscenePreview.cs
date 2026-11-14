@@ -116,6 +116,15 @@ public sealed partial class GameHost
             }
 
             Scene = sceneId;
+            if (host.PresentationHoldsLevel && !_reloading)
+            {
+                // The level is still coming up: the scene starts on it once it is in.
+                _reloading = true;
+                _replaced = null;
+                _target = 0;
+                return true;
+            }
+
             if (_reloading)
             {
                 // The level the last preview ran is being loaded afresh already: the scene starts on it.

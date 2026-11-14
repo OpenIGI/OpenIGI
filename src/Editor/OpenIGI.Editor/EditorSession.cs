@@ -66,6 +66,9 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly MapPanel _map;
     private readonly SequencerPanel _sequencer;
     private readonly GuidePanel _guide;
+
+    // The level load in which the mission was last saved: while it is still the level up, what was saved is not in it.
+    private int _savedInLevelLoad = -1;
     private readonly GuardOrders _guards;
     private bool _disposed;
 
@@ -162,7 +165,16 @@ internal sealed partial class EditorSession : IEditorSession
         };
         _dock.Register(new DockPanel("map", "Map", _map) { Icon = KitIcon.Search });
         _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play, PlaceCamera = _viewport.PlaceCamera, Notify = (message, isError) => Notify(message, isError) };
-        _viewport.CameraPath = () => _dock.IsInFront("sequencer") ? _sequencer.Path() : null;
+        _viewport.CameraPath = () => _dock.IsInFront("sequencer") && host.CutscenePreview is not { Scene: not null, ShowsCamera: true } ? _sequencer.Path() : null;
+        _viewport.Letterbox = () => host.CutscenePreview is { Scene: not null, ShowsCamera: true, IsPreparing: false } live ? live.ViewportHeight : null;
+        _sequencer.PrepareLive = PrepareLive;
+
+        // An edit during a live scene ends it as Play would: the mission saved, the level loaded afresh with the edit in it.
+        _sequencer.LiveInterrupted = () =>
+        {
+            Save();
+            host.CutscenePreview?.Finish();
+        };
         _dock.Register(new DockPanel("sequencer", "Sequencer", _sequencer) { Icon = KitIcon.Play });
         _guide = new GuidePanel(_theme, _workspace, Core.Missions.MissionGuide.Igi1) { Show = ShowGuideStep };
         _dock.Register(new DockPanel("guide", "Getting Started", _guide) { Icon = KitIcon.Info });
@@ -796,6 +808,39 @@ internal sealed partial class EditorSession : IEditorSession
         }
     }
 
+    // The level made to match the mission before a scene plays live on it: saved and loaded afresh when the mission has changes
+    // not yet saved, then the scene begun once the level is up.
+    private void PrepareLive(Action begin)
+    {
+        // The level plays the mission as its files hold it: changes not saved, or saved since the level was loaded, are not in it.
+        bool behind = _workspace.History.IsDirty || _savedInLevelLoad == _host.LevelLoads;
+        if (!behind)
+        {
+            begin();
+            return;
+        }
+
+        if (_workspace.History.IsDirty && !Save())
+        {
+            return;
+        }
+
+        _host.ReloadMission();
+        int frames = 0;
+        _pendingSteps.Enqueue(() =>
+        {
+            // The reload is taken up between frames: a frame or two for it to start, then until the level is in.
+            if (++frames < 3 || _host.IsWarmingUp || _workspace.Document is null)
+            {
+                return false;
+            }
+
+            begin();
+            return true;
+        });
+        Notify("Saved; loading the level to play the scene on it.");
+    }
+
     // What a guide step opens or runs: a panel brought forward, or an action.
     private void ShowGuideStep(string show)
     {
@@ -865,6 +910,7 @@ internal sealed partial class EditorSession : IEditorSession
         {
             if (_workspace.Save())
             {
+                _savedInLevelLoad = _host.LevelLoads;
                 Notify($"Saved to {_workspace.Project.Name}. Ctrl+R reloads the level from it.");
                 return true;
             }

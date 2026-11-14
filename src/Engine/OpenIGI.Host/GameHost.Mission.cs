@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
@@ -27,6 +27,9 @@ public sealed partial class GameHost
     /// <summary>Gets whether the mission-failed page is up: what a versus test checks never opens.</summary>
     internal bool ShowsMissionFailed => _session.FailedMenu;
 
+    // How many levels have been loaded, for the editor to know whether what it saved is in the level that is up.
+    private int _levelLoads;
+
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -52,6 +55,7 @@ public sealed partial class GameHost
         ReleasePlayedMission();
 
         _logger.Information("Mission", $"Starting {chosen}.");
+        _levelLoads++;
         LevelTask levelRoot = (LevelTask)_loop.Tasks.New(_loop.Tasks.Root, _loop.Types.Get(EngineTaskTypes.Level));
         _session.Begin(chosen, levelRoot);
 
