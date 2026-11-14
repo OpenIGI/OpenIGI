@@ -73,13 +73,26 @@ internal sealed class GuardOrders
     /// <summary>The step that gives a guard new orders, written to its script when the mission is saved.</summary>
     /// <param name="soldier">The soldier.</param>
     /// <param name="orders">The orders.</param>
-    /// <returns>The step, or null for a soldier with no mind.</returns>
-    public IEditorCommand? Set(MissionTask soldier, AiGuardOrders orders)
+    /// <param name="refusal">Receives why the orders cannot be given, when they cannot.</param>
+    /// <returns>The step, or null for a soldier with no mind or a script that cannot be changed so.</returns>
+    /// <remarks>
+    /// A guard with a script of its own keeps it, changed only where the orders are said (<see cref="AiGuardScriptEdit"/>);
+    /// a script laid out so that the change cannot be made and read back the same is not changed at all.
+    /// </remarks>
+    public IEditorCommand? Set(MissionTask soldier, AiGuardOrders orders, out string? refusal)
     {
         ArgumentNullException.ThrowIfNull(soldier);
         ArgumentNullException.ThrowIfNull(orders);
+        refusal = null;
         if (PatrolPaths.Ai(soldier) is not { Id: >= 0 } ai)
         {
+            refusal = "It has no mind with an id, so it has no script to give orders in.";
+            return null;
+        }
+
+        if (Script(ai.Id) is { } existing && Write(existing, orders) is null)
+        {
+            refusal = $"Its script ({MissionValidator.AiScriptPath(ai.Id)}) is laid out in a way this cannot be changed without losing what else it does; change it in the Script panel.";
             return null;
         }
 
@@ -107,10 +120,30 @@ internal sealed class GuardOrders
             });
     }
 
+    // A mind's script as the game finds it, or null when it has none.
+    private ReadOnlyMemory<byte>? Script(int aiId) =>
+        _workspace.Mission is { } mission && _host.TryReadFile("LOCAL:" + MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), out ReadOnlyMemory<byte> bytes)
+            ? bytes
+            : null;
+
+    // A script changed to orders, or null when it cannot be.
+    private byte[]? Write(ReadOnlyMemory<byte> existing, AiGuardOrders orders)
+    {
+        try
+        {
+            return AiGuardScriptEdit.Apply(existing, orders, Squads);
+        }
+        catch (Exception error) when (error is InvalidDataException or ArgumentException or QvmFormatException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private bool Squads => Equals(_host.Title, global::OpenIGI.Core.Titles.GameTitle.Igi2);
+
     private AiGuardOrders Read(int aiId)
     {
-        if (_workspace.Mission is not { } mission
-            || !_host.TryReadFile("LOCAL:" + MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), out ReadOnlyMemory<byte> bytes))
+        if (Script(aiId) is not { } bytes)
         {
             return AiGuardOrders.None;
         }
@@ -134,10 +167,17 @@ internal sealed class GuardOrders
             return;
         }
 
-        bool squads = Equals(_host.Title, global::OpenIGI.Core.Titles.GameTitle.Igi2);
         foreach ((int aiId, AiGuardOrders orders) in _pending)
         {
-            _workspace.WriteToProject(MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), AiGuardScript.Build(orders, squads));
+            // A script of its own changed where the orders are said; a guard with none given one in the games' shape.
+            byte[]? bytes = Script(aiId) is { } existing ? Write(existing, orders) : AiGuardScript.Build(orders, Squads);
+            if (bytes is null)
+            {
+                _host.Logger.Warning("Editor", $"The script of mind {aiId} could not be changed to its new orders; it is left as it was.");
+                continue;
+            }
+
+            _workspace.WriteToProject(MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), bytes);
             _read[aiId] = orders;
         }
 

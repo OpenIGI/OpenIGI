@@ -107,7 +107,9 @@ internal sealed partial class EditorSession : IEditorSession
         _dock = new DockSpace(_theme);
         _dock.Register(new DockPanel("viewport", "Viewport", _viewport) { Icon = KitIcon.Camera, CanClose = false, IsTransparent = true });
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
-        _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace, host)) { Icon = KitIcon.Gear });
+        _guards = new GuardOrders(host, _workspace);
+        InspectorPanel inspector = new(_theme, _workspace, host, _guards) { EditPatrol = soldier => { _workspace.Selection.Set(soldier); StartPatrol(); }, Notify = (message, isError) => Notify(message, isError) };
+        _dock.Register(new DockPanel("inspector", "Inspector", inspector) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
         ScriptPanel script = new(_theme, host, _workspace);
         _dock.Register(new DockPanel("script", "Script", script) { Icon = KitIcon.Script });
@@ -150,7 +152,6 @@ internal sealed partial class EditorSession : IEditorSession
         _rules = new RulesPanel(_theme, host, _workspace, (message, isError) => Notify(message, isError));
         _dock.Register(new DockPanel("rules", "Rules", _rules) { Icon = KitIcon.Play });
         _logicWatch = new LogicWatch(host, _workspace);
-        _guards = new GuardOrders(host, _workspace);
         _map = new MapPanel(_theme, host, _workspace, _guards);
         _map.GoTo += task =>
         {

@@ -15,13 +15,14 @@ namespace OpenIGI.Editor.Panels;
 /// The selected task's identity and parameters as a property grid. Every edit goes through the history; a scrub
 /// is one undo step however many frames it takes.
 /// </summary>
-internal sealed class InspectorPanel : EditorElement
+internal sealed partial class InspectorPanel : EditorElement
 {
     private static readonly string[] ColorLabels = ["R", "G", "B"];
 
     private readonly MissionWorkspace _workspace;
     private readonly IEditorHost _host;
     private readonly PropertyGrid _grid;
+    private readonly GuardOrders? _guards;
     private MissionTask? _shown;
     private int _shownRevision = -1;
     private string? _shownDetails;
@@ -30,11 +31,18 @@ internal sealed class InspectorPanel : EditorElement
     /// <param name="theme">The theme.</param>
     /// <param name="workspace">The open mission and its selection.</param>
     /// <param name="host">The running game, for what conditions read in it.</param>
-    public InspectorPanel(EditorTheme theme, MissionWorkspace workspace, IEditorHost host)
+    /// <param name="guards">The guards' orders, for a soldier's behaviour; none to leave it out.</param>
+    public InspectorPanel(EditorTheme theme, MissionWorkspace workspace, IEditorHost host, GuardOrders? guards = null)
         : base(theme)
     {
         _workspace = workspace;
         _host = host;
+        _guards = guards;
+        if (guards is not null)
+        {
+            guards.Changed += () => _shownRevision = -1;
+        }
+
         _grid = new PropertyGrid(theme);
         AddChild(_grid);
     }
@@ -179,6 +187,7 @@ internal sealed class InspectorPanel : EditorElement
         }
 
         _grid.RevertAll = () => Revert(document, task, [.. _workspace.Baseline.ModifiedParameters(task)]);
+        AddGuardSection(document, task);
     }
 
     // Puts parameters back to their saved values, as one undo step.
