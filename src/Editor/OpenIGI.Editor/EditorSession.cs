@@ -62,6 +62,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly ProblemsPanel _problems;
     private readonly GraphPanel _logic;
     private readonly RulesPanel _rules;
+    private readonly LogicWatch _logicWatch;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -146,6 +147,7 @@ internal sealed partial class EditorSession : IEditorSession
         _dock.Register(new DockPanel("logic", "Logic Graph", _logic) { Icon = KitIcon.Graph });
         _rules = new RulesPanel(_theme, host, _workspace, (message, isError) => Notify(message, isError));
         _dock.Register(new DockPanel("rules", "Rules", _rules) { Icon = KitIcon.Play });
+        _logicWatch = new LogicWatch(host, _workspace);
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
         _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
@@ -265,6 +267,7 @@ internal sealed partial class EditorSession : IEditorSession
         if (IsPlaying)
         {
             DrawPlayingBanner(painter);
+            _logicWatch.Draw(painter, _theme);
             return;
         }
 

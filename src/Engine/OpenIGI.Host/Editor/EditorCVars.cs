@@ -19,6 +19,13 @@ public static class EditorCVars
         CVarOptions.Archive,
         "How large the editor draws: 0 picks a size from the screen, otherwise a multiple of its normal size.");
 
+    /// <summary>Whether a mission played from the editor shows its rules over the game, each with whether it has run yet.</summary>
+    public static readonly BoolCVar LogicWatch = CVar.Bool(
+        "ed_logic_watch",
+        true,
+        CVarOptions.Archive,
+        "Whether a mission played from the editor shows its rules over the game, each with whether and when it has run.");
+
     /// <summary>Whether the editor uses its light theme.</summary>
     public static readonly BoolCVar LightTheme = CVar.Bool(
         "ed_light_theme",
