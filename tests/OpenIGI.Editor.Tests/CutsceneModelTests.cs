@@ -186,6 +186,13 @@ public sealed class CutsceneModelTests
         }
 
         Assert.True(scenes >= 40, $"{scenes} scenes");
+
+        // Level 1's insertion scene flies the helicopter (1502) on keys that run for seconds.
+        string level1 = GameDataSource.Igi1.EnumerateFiles("objects.qvm").First(static p => p.Replace('\\', '/').Contains("location0/level1/", StringComparison.OrdinalIgnoreCase));
+        MissionDocument first = MissionDocument.Read(File.ReadAllBytes(level1));
+        MissionTask insertion = CutsceneModel.Scenes(first).First(static s => s.Id == 1200);
+        CutsceneAnimation heli = Assert.Single(CutsceneModel.Animations(first, insertion), static a => a.TargetId == 1502);
+        Assert.True(heli.Length > 5, $"the helicopter's keys run {heli.Length} s");
         Assert.True(cues > 50, $"{cues} cues");
     }
 

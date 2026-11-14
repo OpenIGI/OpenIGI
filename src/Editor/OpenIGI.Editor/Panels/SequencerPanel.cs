@@ -327,9 +327,27 @@ internal sealed partial class SequencerPanel : EditorElement
         painter.PopClip();
         laneY += Theme.Px(LaneHeight);
 
+        // What the scene animates, a row each, a clip for as long as its keys run, named by what it moves.
+        IReadOnlyList<CutsceneAnimation> animations = CutsceneModel.Animations(document, scene);
+        foreach (CutsceneAnimation animation in animations)
+        {
+            DrawLaneLabel(painter, "Animation", laneY);
+            painter.PushClip(line);
+            {
+                double start = _moving is { } held && ReferenceEquals(held.Cue.Task, animation.Task) ? held.Seconds : animation.Start;
+                UiRect clip = new(X(start) + 1f, laneY + 2f, MathF.Max(Theme.Px(6f), (float)(animation.Length * _pixelsPerSecond) - 2f), Theme.Px(LaneHeight) - 4f);
+                bool isSelected = ReferenceEquals(animation.Task, selected);
+                EditorDraw.Frame(painter, Theme, clip, (isSelected ? Theme.Accent : Bgra32.FromRgb(0x5E, 0x8C, 0x4A)).WithAlpha(isSelected ? (byte)200 : (byte)170), isSelected ? Theme.Accent : Theme.Border);
+                EditorDraw.Label(painter, Theme, EditorDraw.Fit(Theme.Font, AnimationName(document, animation), Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f) }, Bgra32.White);
+            }
+
+            painter.PopClip();
+            laneY += Theme.Px(LaneHeight);
+        }
+
         foreach ((string title, Func<string, bool> holds) in CueLanes)
         {
-            CutsceneCue[] mine = [.. cues.Where(c => LaneOf(c) == title)];
+            CutsceneCue[] mine = [.. cues.Where(c => LaneOf(c) == title && (title != "Animation" || animations.Count == 0))];
             if (mine.Length == 0)
             {
                 continue;
@@ -359,7 +377,12 @@ internal sealed partial class SequencerPanel : EditorElement
             painter.FillRect(new UiRect(head - 1f, line.Y, 2f, line.Height), Bgra32.FromRgb(0xFF, 0x5A, 0x4A));
         }
 
-        EditorDraw.Label(painter, Theme, LiveStatus(), new UiRect(Bounds.X + Theme.Px(8f), Bounds.Bottom - (Theme.RowHeight * 2) - Theme.Px(2f), Bounds.Width - Theme.Px(16f), Theme.RowHeight), LiveActive ? Theme.Success : Theme.TextMuted);
+        // How the scene is shown, at the ruler's end, over the seconds past the scene.
+        string status = LiveStatus();
+        float statusWidth = Theme.Font.MeasureWidth(status, Theme.TextSize) + Theme.Px(12f);
+        UiRect statusBox = new(line.Right - statusWidth - Theme.Px(4f), line.Y, statusWidth, Theme.Px(RulerHeight));
+        painter.FillRect(statusBox, Theme.Chrome);
+        EditorDraw.Label(painter, Theme, status, statusBox with { X = statusBox.X + Theme.Px(6f) }, LiveActive ? Theme.Success : Theme.TextMuted);
         if (!LiveActive && ShotAt(shots, _time) is { } now && Number(now.Camera, "Link task ID", -1) is >= 0 and double link
             && document.EnumerateTasks().FirstOrDefault(t => t.Id == (int)link) is { } carrier)
         {
@@ -368,6 +391,15 @@ internal sealed partial class SequencerPanel : EditorElement
         }
 
         EditorDraw.Label(painter, Theme, string.Create(CultureInfo.InvariantCulture, $"{_time:0.00} / {CutsceneModel.Length(scene):0.00} s"), new UiRect(Bounds.X + Theme.Px(8f), Bounds.Y + Bar + Theme.Px(2f), Theme.Px(LabelWidth), Theme.RowHeight), Theme.Text);
+    }
+
+    // An animation named by what it moves, else by its own name.
+    private static string AnimationName(MissionDocument document, CutsceneAnimation animation)
+    {
+        string moves = animation.TargetId >= 0 && document.EnumerateTasks().FirstOrDefault(t => t.Id == animation.TargetId) is { } target
+            ? $"{TaskPresentation.Name(target)} ({target.TypeName} {target.Id})"
+            : animation.Task.Label.Length > 0 ? animation.Task.Label : "Animation";
+        return string.Create(CultureInfo.InvariantCulture, $"{moves}  {animation.Length:0.#}s");
     }
 
     private void DrawLaneLabel(UiPainter painter, string title, float y)
@@ -467,12 +499,31 @@ internal sealed partial class SequencerPanel : EditorElement
             }
         }
 
-        // A cue's diamond takes hold of the cue.
+        // An animation's clip: selected, so the Inspector edits its keys; one started by a cue is dragged along the clock by it.
         UiVec2 pointer = e.Position;
         float y = laneY + Theme.Px(LaneHeight);
+        IReadOnlyList<CutsceneAnimation> animations = CutsceneModel.Animations(document, scene);
+        foreach (CutsceneAnimation hit in animations)
+        {
+            if (pointer.Y >= y && pointer.Y < y + Theme.Px(LaneHeight)
+                && pointer.X >= X(hit.Start) && pointer.X < X(hit.Start + Math.Max(hit.Length, 0.2)))
+            {
+                _workspace.Selection.Set(hit.Task);
+                if (CutsceneModel.Cues(document, scene).FirstOrDefault(c => ReferenceEquals(c.Task, hit.Task)) is { } started)
+                {
+                    _moving = (started, started.Seconds);
+                }
+
+                return true;
+            }
+
+            y += Theme.Px(LaneHeight);
+        }
+
+        // A cue's diamond takes hold of the cue.
         foreach ((string title, _) in CueLanes)
         {
-            CutsceneCue[] mine = [.. CutsceneModel.Cues(document, scene).Where(c => LaneOf(c) == title)];
+            CutsceneCue[] mine = [.. CutsceneModel.Cues(document, scene).Where(c => LaneOf(c) == title && (title != "Animation" || animations.Count == 0))];
             if (mine.Length == 0)
             {
                 continue;

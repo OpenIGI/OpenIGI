@@ -19,6 +19,13 @@ public sealed record CutsceneShot(MissionTask Camera, double Start, double Lengt
 /// <param name="InSeconds">Whether the condition writes it as seconds (<c>N*GAME_FREQUENCY</c>) rather than ticks.</param>
 public sealed record CutsceneCue(MissionTask Task, string Parameter, double Seconds, bool InSeconds);
 
+/// <summary>An animation a scene runs: its task, when on the scene's clock it starts, how long its keys run, and what it moves.</summary>
+/// <param name="Task">The <c>AnimTask</c>.</param>
+/// <param name="Start">When it starts, in scene seconds.</param>
+/// <param name="Length">How long its keys run, in seconds.</param>
+/// <param name="TargetId">The id of the task it moves, or -1.</param>
+public sealed record CutsceneAnimation(MissionTask Task, double Start, double Length, int TargetId);
+
 /// <summary>
 /// A cutscene as the sequencer edits it: a <c>CutScene</c> task, its camera shots (its <c>EditCamera</c> knots, depth first as
 /// the game flattens them, <c>0x4F4880</c>), and the mission's tasks cued off its clock (an animation, a message, a sound whose
@@ -111,6 +118,9 @@ public static partial class CutsceneModel
         return [.. cues.OrderBy(static c => c.Seconds)];
     }
 
+    /// <summary>The type a scene's animations are.</summary>
+    public const string AnimationType = "AnimTask";
+
     /// <summary>A new scene, its settings those of the mission's first scene where it has one, in a container of its own.</summary>
     /// <param name="document">The mission, which must declare <c>CutScene</c>.</param>
     /// <param name="name">What the scene is called.</param>
@@ -160,6 +170,41 @@ public static partial class CutsceneModel
         holder.AddChild(scene);
         MissionTask? root = document.RootTasks.LastOrDefault();
         return (new InsertTaskCommand(document, holder, new TaskLocation(root, root?.Children.Count ?? 0)), scene);
+    }
+
+    /// <summary>
+    /// What a scene animates: every <c>AnimTask</c> it runs -- its own children, which it runs as it runs (<c>0x4F51D0</c>), and any
+    /// whose Run reads the scene -- each from its cue on the scene's clock (or the scene's start), for as long as its keys run.
+    /// </summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="scene">The scene.</param>
+    /// <returns>The animations, by when they start.</returns>
+    public static IReadOnlyList<CutsceneAnimation> Animations(MissionDocument document, MissionTask scene)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(scene);
+        string name = string.Create(CultureInfo.InvariantCulture, $"CutScene_{scene.Id}");
+        IReadOnlyList<CutsceneCue> cues = Cues(document, scene);
+        List<CutsceneAnimation> found = [];
+        foreach (MissionTask task in document.EnumerateTasks().Where(static t => t.TypeName == AnimationType))
+        {
+            bool own = task.Parent is not null && scene.SelfAndSubtree().Contains(task);
+            bool reads = task.FindParameter("Run") is { Arguments: [QscStringLiteral { Value: { } run }] } && run.Contains(name, StringComparison.Ordinal);
+            if (!own && !reads)
+            {
+                continue;
+            }
+
+            double length = task.Parameters.FirstOrDefault(static p => p.Declaration.Type == Engine.Tasks.ScriptParamType.AnimData) is { } keys
+                && AnimTimeline.TryParse(keys.Arguments, out AnimTimeline timeline)
+                ? timeline.Length / (double)AnimTimeline.TicksPerSecond
+                : 0;
+            double start = cues.FirstOrDefault(c => ReferenceEquals(c.Task, task))?.Seconds ?? 0;
+            int target = (int)(Number(task, "TargetID") ?? Number(task, "Target ID") ?? -1);
+            found.Add(new CutsceneAnimation(task, start, length, target));
+        }
+
+        return [.. found.OrderBy(static a => a.Start)];
     }
 
     /// <summary>The step that moves a shot's camera: where it stands and how it is turned.</summary>
@@ -291,4 +336,8 @@ public static partial class CutsceneModel
     private static Regex TickOf(int id) => new(
         string.Create(CultureInfo.InvariantCulture, $@"CutScene_{id}\.nTick\s*(>=|>|==)\s*(?<n>\d+(\.\d+)?)(?<sec>\s*\*\s*GAME_FREQUENCY)?"),
         RegexOptions.CultureInvariant);
+
+    // A parameter's first number, or null where it has none.
+    private static double? Number(MissionTask task, string parameter) =>
+        task.FindParameter(parameter) is { } found && found.TryGetNumbers(out double[] values) && values.Length > 0 ? values[0] : null;
 }
