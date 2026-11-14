@@ -770,7 +770,9 @@ internal sealed partial class SequencerPanel : EditorElement
         Vector3d from = _host.Camera?.Position ?? centre + new Vector3d(30, 0, 10);
         MissionTask? after = CutsceneModel.Shots(scene).LastOrDefault(s => s.Start <= _time)?.Camera;
         List<IEditorCommand> steps = [];
-        foreach (MoveShot shot in CameraMoves.Shots(move, centre, from, 6))
+        // The surface under each shot, found from well above it so one laid under the ground still finds the ground.
+        double? SurfaceBelow(double x, double y) => _host.SurfaceBelow(new Vector3d(x, y, centre.Z + 300), 600);
+        foreach (MoveShot shot in CameraMoves.Shots(move, centre, from, 6, SurfaceBelow))
         {
             if (CutsceneModel.AddShot(document, scene, after, (shot.PositionUnits.X, shot.PositionUnits.Y, shot.PositionUnits.Z), (shot.Angles.X, shot.Angles.Y, shot.Angles.Z), shot.Seconds) is not { } added)
             {

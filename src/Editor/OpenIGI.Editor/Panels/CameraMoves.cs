@@ -31,13 +31,20 @@ internal readonly record struct MoveShot(Vector3d PositionUnits, Vector3f Angles
 /// <summary>Lays a move's shots round a subject, each turned to look at it as the game turns a camera to a target.</summary>
 internal static class CameraMoves
 {
+    /// <summary>How far above the surface under it a shot stands at least, in metres: about a man's eye.</summary>
+    public const double Clearance = 1.5;
+
     /// <summary>A move's shots.</summary>
     /// <param name="move">The move.</param>
     /// <param name="subjectMetres">What it looks at, in world metres.</param>
     /// <param name="fromMetres">Where the camera stands now: the side the move starts from.</param>
     /// <param name="seconds">How long the whole move takes.</param>
+    /// <param name="surfaceBelow">
+    /// The surface under a point, objects and terrain alike, in metres up, or null for none: a shot nearer it than
+    /// <see cref="Clearance"/> is raised to it, so no move looks out from under the ground or through a roof.
+    /// </param>
     /// <returns>The shots, in order; the last holds for nought, so the move ends on it.</returns>
-    public static IReadOnlyList<MoveShot> Shots(CameraMove move, Vector3d subjectMetres, Vector3d fromMetres, double seconds)
+    public static IReadOnlyList<MoveShot> Shots(CameraMove move, Vector3d subjectMetres, Vector3d fromMetres, double seconds, Func<double, double, double?>? surfaceBelow = null)
     {
         Vector3d away = fromMetres - subjectMetres;
         double distance = Math.Clamp(Math.Sqrt((away.X * away.X) + (away.Y * away.Y)), 8, 120);
@@ -61,7 +68,13 @@ internal static class CameraMoves
             Vector3d look = move == CameraMove.Pan
                 ? subjectMetres + (new Vector3d(-Math.Sin(heading), Math.Cos(heading), 0) * (distance * (i == 0 ? 0.6 : -0.6)))
                 : subjectMetres;
-            Vector3d at = places[i] * WorldUnits.PerMetre;
+            Vector3d place = places[i];
+            if (surfaceBelow?.Invoke(place.X, place.Y) is { } surface && place.Z < surface + Clearance)
+            {
+                place = new Vector3d(place.X, place.Y, surface + Clearance);
+            }
+
+            Vector3d at = place * WorldUnits.PerMetre;
             Matrix3f turn = CutsceneCameraMath.LookAt(at, look * WorldUnits.PerMetre);
             double hold = i == places.Length - 1 ? 0 : seconds / (places.Length - 1);
             shots.Add(new MoveShot(at, turn.ToEngineEulerAngles(), hold));

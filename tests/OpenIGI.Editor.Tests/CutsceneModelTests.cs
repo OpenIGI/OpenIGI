@@ -135,6 +135,23 @@ public sealed class CutsceneModelTests
         }
     }
 
+    /// <summary>A move laid over ground higher than its shots keeps every shot above it, still looking at its subject.</summary>
+    [Fact]
+    public void Camera_moves_keep_above_the_ground()
+    {
+        OpenIGI.Core.Numerics.Vector3d subject = new(100, 200, 30);
+        foreach (Panels.CameraMove move in Enum.GetValues<Panels.CameraMove>().Where(static m => m != Panels.CameraMove.Pan))
+        {
+            foreach (Panels.MoveShot shot in Panels.CameraMoves.Shots(move, subject, subject + new OpenIGI.Core.Numerics.Vector3d(40, 0, 5), 6, static (_, _) => 80))
+            {
+                Assert.True(shot.PositionUnits.Z / OpenIGI.Core.Numerics.WorldUnits.PerMetre >= 80 + Panels.CameraMoves.Clearance - 1e-6, $"{move} puts a shot under the ground");
+                OpenIGI.Core.Numerics.Vector3f forward = OpenIGI.Game.World.CutsceneCameraMath.ToCameraOrientation(OpenIGI.Core.Numerics.Matrix3f.FromEngineEulerAngles(shot.Angles.X, shot.Angles.Y, shot.Angles.Z)).Row3;
+                OpenIGI.Core.Numerics.Vector3d towards = (subject * OpenIGI.Core.Numerics.WorldUnits.PerMetre) - shot.PositionUnits;
+                Assert.True(((forward.X * towards.X) + (forward.Y * towards.Y) + (forward.Z * towards.Z)) / towards.Length > 0.999, $"{move}: a raised shot no longer faces its subject");
+            }
+        }
+    }
+
     /// <summary>
     /// The viewport looking through a move's key, as the sequencer's preview turns it (the engine's path, then the view's
     /// yaw and pitch), faces the subject.
