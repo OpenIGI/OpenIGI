@@ -74,7 +74,22 @@ internal sealed class PatrolPaths(MissionWorkspace workspace)
     public PatrolWalk? Walk(MissionTask soldier)
     {
         ArgumentNullException.ThrowIfNull(soldier);
-        if (Path(soldier) is not { } path || GraphTask(soldier) is not { } graphTask || Graph(soldier) is not { } graph)
+        return Path(soldier) is { } path && GraphTask(soldier) is { } graphTask ? Walk(TaskPresentation.PositionMetres(soldier), path, graphTask) : null;
+    }
+
+    /// <summary>
+    /// A route laid out in the world: a <c>PatrolPath</c> walked on an AI graph from a start, as a soldier walks his patrol
+    /// and a <c>CarAI</c> drives its car along its route.
+    /// </summary>
+    /// <param name="start">Where the walker stands at first, or null.</param>
+    /// <param name="path">The <c>PatrolPath</c> task.</param>
+    /// <param name="graphTask">The <c>AIGraph</c> task its nodes are on.</param>
+    /// <returns>The walk, or null when the route has no waypoints or the graph cannot be read.</returns>
+    public PatrolWalk? Walk(Vector3d? start, MissionTask path, MissionTask graphTask)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(graphTask);
+        if (workspace.Mission is not { } mission || workspace.Graphs.Get(mission, graphTask) is not { } graph)
         {
             return null;
         }
@@ -90,8 +105,8 @@ internal sealed class PatrolPaths(MissionWorkspace workspace)
         List<PatrolStop> stops = [];
         List<(Vector3d, Vector3d)> looks = [];
 
-        // From the soldier to the first waypoint, then each leg along the graph's routes.
-        Vector3d? last = TaskPresentation.PositionMetres(soldier);
+        // From the start to the first waypoint, then each leg along the graph's routes.
+        Vector3d? last = start;
         int? lastNode = null;
         for (int i = 0; i < route.Waypoints.Count; i++)
         {

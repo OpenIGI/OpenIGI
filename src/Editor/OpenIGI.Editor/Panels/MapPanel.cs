@@ -84,7 +84,7 @@ internal sealed partial class MapPanel : EditorElement
         _workspace = workspace;
         _guards = guards;
         _paths = new PatrolPaths(workspace);
-        _guardsShown = new Button(theme, "Guards") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = false, Tooltip = "Draw every guard's sight and patrol and every camera's sweep, not only the selected ones'" };
+        _guardsShown = new Button(theme, "Guards") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = false, Tooltip = "Draw every guard's sight and patrol, every camera's sweep, every mounted gun's arc and every AI vehicle's route, not only the selected ones'" };
         _guardsShown.Clicked += () => _guardsShown.IsChecked = !_guardsShown.IsChecked;
         AddChild(_guardsShown);
         _images = new RhiImageFactory(host.Device);
@@ -209,6 +209,7 @@ internal sealed partial class MapPanel : EditorElement
 
         DrawGuards(painter, selected, offset);
         DrawCameras(painter, selected);
+        DrawVehicles(painter, selected);
         DrawLinks(painter, selected);
         foreach (Mark mark in Marks())
         {
