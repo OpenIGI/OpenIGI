@@ -30,7 +30,13 @@ internal sealed partial class EditorSession
             Category = "Tools",
             CanExecute = () => _host.Title.Id == "igi1" && _workspace.Selection.Items.Any(PatrolTool.IsSoldier),
         });
-        actions.Add(new EditorAction("ai.addguard", "Add Guard Here", AddGuard)
+        actions.Add(new EditorAction("ai.guardbuilding", "Guard This Building", GuardBuilding)
+        {
+            Category = "Tools",
+            CanExecute = () => _host.Title.Id == "igi1" && _workspace.Selection.Primary is { } picked && !PatrolTool.IsSoldier(picked)
+                && TaskPresentation.PositionMetres(picked) is not null && _workspace.Document?.Declarations.ContainsKey("HumanSoldier") == true,
+        });
+        actions.Add(new EditorAction("ai.addguard", "Add Guard Here", () => AddGuard(null))
         {
             Category = "Tools",
             CanExecute = () => _host.Title.Id == "igi1" && _workspace.Document?.Declarations.ContainsKey("HumanSoldier") == true && _host.Terrain is not null,
@@ -93,12 +99,32 @@ internal sealed partial class EditorSession
             : $"Laid a patrol round {TaskPresentation.Name(subject)}; drag its waypoints to shape it.");
     }
 
-    // A guard in the middle of the view, on the AI graph there (built when there is none), selected with its patrol tool on.
-    private void AddGuard()
+    // A guard by the selected building, walking a patrol round it: Add Guard at its side, then Patrol Round Selection.
+    private void GuardBuilding()
     {
-        if (_workspace.Document is not { } document || _viewport.PlacementPoint() is not { } at || _host.Terrain is not { } terrain)
+        if (_workspace.Selection.Primary is not { } building || TaskPresentation.PositionMetres(building) is not { } centre)
         {
             return;
+        }
+
+        double reach = (_live.RadiusMetres(building) ?? 4.0) + 4.0;
+        if (AddGuard(centre + new Vector3d(reach, 0, 0)) is not { } guard)
+        {
+            return;
+        }
+
+        _workspace.Selection.Set([guard, building]);
+        PatrolRound();
+        Notify($"A guard now walks round {TaskPresentation.Name(building)}. Drag his waypoints to shape the patrol; the Inspector sets what he does when he sees you.");
+    }
+
+    // A guard at a point, or in the middle of the view, on the AI graph there (built when there is none), selected with its
+    // patrol tool on; the guard, or null when none could be added.
+    private MissionTask? AddGuard(Vector3d? standing)
+    {
+        if (_workspace.Document is not { } document || (standing ?? _viewport.PlacementPoint()) is not { } at || _host.Terrain is not { } terrain)
+        {
+            return null;
         }
 
         if (terrain.TryGetHeight(at.X, at.Y, out double z))
@@ -110,7 +136,7 @@ internal sealed partial class EditorSession
         if (missing.Length > 0)
         {
             Notify($"This level does not declare {string.Join(", ", missing)}, which a guard needs.", isError: true);
-            return;
+            return null;
         }
 
         MissionTask? graph = NearestGraph(document, at) ?? BuildNavGraph(at, announce: false);
@@ -149,6 +175,7 @@ internal sealed partial class EditorSession
 
         StartPatrol();
         Notify("Added a guard. Click the ground to give it a patrol, or leave it to stand guard.");
+        return soldier;
     }
 
     // The AIGraph whose nodes come nearest a point, within a hundred metres.

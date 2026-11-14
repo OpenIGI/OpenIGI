@@ -627,6 +627,7 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.Separator,
                 MenuItem.For(actions["ai.addguard"]),
                 MenuItem.For(actions["ai.patrolround"]),
+                MenuItem.For(actions["ai.guardbuilding"]),
                 MenuItem.For(actions["ai.reinforcement"]),
                 MenuItem.For(actions["tools.fencerun"]),
                 MenuItem.Separator,
