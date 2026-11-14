@@ -123,6 +123,23 @@ internal sealed partial class EditorSession
             return "Adding the move once the mission is open.";
         }
 
+        // editor shot <n>: the menu of the open scene's nth shot.
+        if (arguments is [string shotVerb, string shotNumber] && shotVerb.Equals("shot", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(shotNumber, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int shotIndex))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.ShotMenu(shotIndex);
+                return true;
+            });
+            return "Opening the shot's menu once the mission is open.";
+        }
+
         // editor seek <seconds> [outside]: the sequencer's playhead in the scene it has open; outside, the viewport stands back
         // to show the whole camera path rather than looking through it.
         if (arguments is [string seekVerb, string seekText, ..] && arguments.Count <= 3 && seekVerb.Equals("seek", StringComparison.OrdinalIgnoreCase)

@@ -608,6 +608,16 @@ internal sealed class SequencerPanel : EditorElement
         Place(view, eye, centre);
     }
 
+    /// <summary>Opens a shot's menu, as a right click on it does.</summary>
+    /// <param name="number">The shot's number, from one.</param>
+    public void ShotMenu(int number)
+    {
+        if (_scene is { } scene && CutsceneModel.Shots(scene) is { } shots && number >= 1 && number <= shots.Count)
+        {
+            OpenShotMenu(shots[number - 1]);
+        }
+    }
+
     /// <summary>Makes a new scene, as New Cutscene does.</summary>
     public void MakeScene() => NewScene();
 
@@ -721,7 +731,7 @@ internal sealed class SequencerPanel : EditorElement
         MissionTask camera = shot.Camera;
         _workspace.Selection.Set(camera);
         int watching = (int)Number(camera, "Target task ID", -1), riding = (int)Number(camera, "Link task ID", -1);
-        bool smooth = Number(camera, "Smooth to next", 0) != 0;
+        bool smooth = Flag(camera, "Smooth to next");
         List<PaletteEntry> entries =
         [
             new("Set to View", SetShotToView) { Detail = "stand where the viewport's camera is, looking the same way", Icon = KitIcon.Camera },
@@ -894,11 +904,15 @@ internal sealed class SequencerPanel : EditorElement
             (float)Number(camera, "Gamma", 0),
             (float)Math.Clamp(Number(camera, "FOV", 1), 0.001, 3),
             (float)Number(camera, "Duration", 0),
-            Number(camera, "Smooth to next", 0) != 0,
+            Flag(camera, "Smooth to next"),
             (float)(camera.Parameters.FirstOrDefault(static p => p.Name.StartsWith("Time of day", StringComparison.Ordinal)) is { } hour && hour.TryGetNumbers(out double[] h) && h.Length > 0 ? h[0] : -1),
             (float)Number(camera, "Noise", 0),
             (float)Number(camera, "Camera shake", 0));
     }
+
+    // A flag as the levels spell it, TRUE or FALSE, or as a number.
+    private static bool Flag(MissionTask task, string parameter) =>
+        task.FindParameter(parameter) is { Arguments: [var only] } && ScriptValues.TryGetBool(only, out bool value) && value;
 
     private static double Number(MissionTask task, string parameter, double fallback) =>
         task.FindParameter(parameter) is { } found && found.TryGetNumbers(out double[] values) && values.Length > 0 ? values[0] : fallback;
