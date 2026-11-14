@@ -65,6 +65,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly LogicWatch _logicWatch;
     private readonly MapPanel _map;
     private readonly SequencerPanel _sequencer;
+    private readonly GuidePanel _guide;
     private readonly GuardOrders _guards;
     private bool _disposed;
 
@@ -163,6 +164,8 @@ internal sealed partial class EditorSession : IEditorSession
         _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play, PlaceCamera = _viewport.PlaceCamera, Notify = (message, isError) => Notify(message, isError) };
         _viewport.CameraPath = () => _dock.IsInFront("sequencer") ? _sequencer.Path() : null;
         _dock.Register(new DockPanel("sequencer", "Sequencer", _sequencer) { Icon = KitIcon.Play });
+        _guide = new GuidePanel(_theme, _workspace, Core.Missions.MissionGuide.Igi1) { Show = ShowGuideStep };
+        _dock.Register(new DockPanel("guide", "Getting Started", _guide) { Icon = KitIcon.Info });
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
         _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
@@ -540,7 +543,7 @@ internal sealed partial class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "map", "rules", "sequencer", "logic", "terrain" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "map", "rules", "sequencer", "logic", "terrain", "guide" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -607,8 +610,14 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["tool.rotate"]),
                 MenuItem.For(actions["tool.scale"]),
                 MenuItem.For(actions["tool.terrain"]),
+                MenuItem.For(actions["tool.patrol"]),
+                MenuItem.Separator,
                 MenuItem.For(actions["ai.addguard"]),
+                MenuItem.For(actions["ai.patrolround"]),
                 MenuItem.For(actions["ai.reinforcement"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["tools.saveprefab"]),
+                MenuItem.For(actions["tools.placeprefab"]),
             ])
             .Add("View", [
                 MenuItem.For(actions["view.palette"]),
@@ -640,6 +649,8 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["window.rules"]),
                 MenuItem.For(actions["window.sequencer"]),
                 MenuItem.For(actions["window.logic"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["window.guide"]),
             ]);
     }
 
@@ -785,6 +796,21 @@ internal sealed partial class EditorSession : IEditorSession
         }
     }
 
+    // What a guide step opens or runs: a panel brought forward, or an action.
+    private void ShowGuideStep(string show)
+    {
+        if (show.StartsWith("panel:", StringComparison.Ordinal))
+        {
+            _dock.Show(show["panel:".Length..]);
+            return;
+        }
+
+        if (_root.Actions.All.FirstOrDefault(a => a.Id == show) is { } action && !action.TryExecute())
+        {
+            Notify($"{action.CurrentTitle} cannot be done yet: {(action.Id == "tool.patrol" ? "select a guard first." : "see the step's hint.")}", isError: true);
+        }
+    }
+
     private void Play()
     {
         if (_workspace.Document is null || (_workspace.History.IsDirty && !Save()))
@@ -795,6 +821,7 @@ internal sealed partial class EditorSession : IEditorSession
         _root.CloseAllPopups();
         _root.SetFocus(null);
         IsPlaying = true;
+        _guide.HasPlayed = true;
         _host.ReloadMission(play: true);
     }
 

@@ -114,6 +114,10 @@ internal sealed partial class EditorSession
             if (request.Blank)
             {
                 ShapeBlankGround(id, request.Ground, request.Seed);
+
+                // A blank mission is a first mission's start: the guide takes it from there.
+                _guide.HasPlayed = false;
+                _dock.Show("guide", beside: "inspector");
             }
             else
             {
