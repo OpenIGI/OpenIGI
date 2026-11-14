@@ -146,14 +146,11 @@ fn Letter_0( p_2 : vec2<f32>,  letter_0 : f32) -> f32
 fn Disc_0( uv_1 : vec2<f32>,  time_0 : f32,  alarm_0 : f32,  letter_1 : f32) -> vec2<f32>
 {
     var r_0 : f32 = length(uv_1);
-    if(r_0 > 1.01999998092651367f)
-    {
-        return vec2<f32>(0.0f, 0.0f);
-    }
     var angle_0 : f32 = atan2(uv_1.y, uv_1.x);
     var stroke_0 : f32 = Letter_0(uv_1, letter_1);
-    var glow_0 : f32 = saturate(Cover_0(abs(r_0 - 0.9649999737739563f) - 0.02999999932944775f) + Cover_0(abs(r_0 - 0.88499999046325684f) - 0.00600000005215406f) * 0.55000001192092896f + Cover_0(abs(r_0 - 0.92500001192092896f) - 0.01400000043213367f) * step(fract((angle_0 / 6.28318548202514648f + time_0 * (0.18000000715255737f + alarm_0 * 0.60000002384185791f)) * 24.0f), 0.57999998331069946f) * 0.80000001192092896f + Cover_0(abs(fract(angle_0 / 6.28318548202514648f * 12.0f + 0.5f) - 0.5f) * r_0 * 0.52359879016876221f - 0.00800000037997961f) * Cover_0(abs(r_0 - 0.81999999284744263f) - 0.05000000074505806f) * 0.60000002384185791f + Cover_0(stroke_0) + exp(- max(stroke_0, 0.0f) * 18.0f) * 0.34999999403953552f * step(0.5f, letter_1));
-    return vec2<f32>(saturate(glow_0 + smoothstep(0.15000000596046448f, 0.95999997854232788f, r_0) * 0.2199999988079071f * (1.0f - smoothstep(0.95999997854232788f, 1.0f, r_0))), glow_0);
+    var inside_0 : f32 = step(r_0, 1.01999998092651367f);
+    var glow_0 : f32 = saturate(Cover_0(abs(r_0 - 0.9649999737739563f) - 0.02999999932944775f) + Cover_0(abs(r_0 - 0.88499999046325684f) - 0.00600000005215406f) * 0.55000001192092896f + Cover_0(abs(r_0 - 0.92500001192092896f) - 0.01400000043213367f) * step(fract((angle_0 / 6.28318548202514648f + time_0 * (0.18000000715255737f + alarm_0 * 0.60000002384185791f)) * 24.0f), 0.57999998331069946f) * 0.80000001192092896f + Cover_0(abs(fract(angle_0 / 6.28318548202514648f * 12.0f + 0.5f) - 0.5f) * r_0 * 0.52359879016876221f - 0.00800000037997961f) * Cover_0(abs(r_0 - 0.81999999284744263f) - 0.05000000074505806f) * 0.60000002384185791f + Cover_0(stroke_0) + exp(- max(stroke_0, 0.0f) * 18.0f) * 0.34999999403953552f * step(0.5f, letter_1)) * inside_0;
+    return vec2<f32>(saturate(glow_0 + smoothstep(0.15000000596046448f, 0.95999997854232788f, r_0) * 0.2199999988079071f * (1.0f - smoothstep(0.95999997854232788f, 1.0f, r_0))) * inside_0, glow_0);
 }
 
 fn Column_0( uv_2 : vec2<f32>,  time_1 : f32,  alarm_1 : f32) -> f32
@@ -203,11 +200,11 @@ fn fragmentMain( _S12 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
     var time_2 : f32 = push_0.state_0.y;
     var alarm_2 : f32 = saturate(push_0.state_0.z);
     var colour_1 : vec3<f32> = push_0.colour_0.xyz * vec3<f32>(push_0.colour_0.w) * vec3<f32>((1.0f + alarm_2 * (0.60000002384185791f + 0.60000002384185791f * sin(time_2 * 2.0f * 3.14159274101257324f * 1.60000002384185791f))));
+    var disc_0 : vec2<f32> = Disc_0(_S12.uv_3, time_2, alarm_2, push_0.state_0.x);
     var light_0 : vec3<f32>;
     var cover_0 : f32;
     if((_S12.shape_1) < 0.5f)
     {
-        var disc_0 : vec2<f32> = Disc_0(_S12.uv_3, time_2, alarm_2, push_0.state_0.x);
         var _S13 : f32 = disc_0.y;
         var _S14 : f32 = disc_0.x;
         var _S15 : f32 = _S14 * 0.60000002384185791f;

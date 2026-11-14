@@ -149,10 +149,6 @@ float Letter(float2 p, float letter)
 float2 Disc(float2 uv, float time, float alarm, float letter)
 {
     float r = length(uv);
-    if (r > 1.02)
-    {
-        return float2(0.0, 0.0);
-    }
 
     // The outer ring, and a thin one just inside it.
     float outer = Cover(abs(r - 0.965) - 0.03);
@@ -176,8 +172,11 @@ float2 Disc(float2 uv, float time, float alarm, float letter)
     // A fill that rises toward the edge, so the ground inside reads as the site's.
     float fill = smoothstep(0.15, 0.96, r) * 0.22 * (1.0 - smoothstep(0.96, 1.0, r));
 
-    float glow = saturate(outer + inner + dash + tick + glyph + halo);
-    return float2(saturate(glow + fill), glow);
+    // Nothing past the rim. Masked here and not left early above: an edge's width is a screen-space derivative,
+    // which WGSL allows only where every pixel of a quad takes the same path, so no pixel may leave before one.
+    float inside = step(r, 1.02);
+    float glow = saturate(outer + inner + dash + tick + glyph + halo) * inside;
+    return float2(saturate(glow + fill) * inside, glow);
 }
 
 // The wall's brightness: a band of light standing on the ring, fading upward, with soft bands drifting up it.
@@ -202,11 +201,14 @@ float4 fragmentMain(ModePointVaryings input) : SV_Target
     float pulse = 1.0 + (alarm * (0.6 + (0.6 * sin(time * 2.0 * Pi * 1.6))));
     float3 colour = push.colour.rgb * push.colour.a * pulse;
 
+    // The disc is worked out for every pixel, the column's included, and only then chosen: its edges take
+    // screen-space derivatives, which must not sit behind a branch on what a vertex carried.
+    float2 disc = Disc(input.uv, time, alarm, push.state.x);
+
     float3 light;
     float cover;
     if (input.shape < 0.5)
     {
-        float2 disc = Disc(input.uv, time, alarm, push.state.x);
         light = colour * (disc.y + ((disc.x - disc.y) * 0.5));
         cover = disc.x * 0.6;
     }
