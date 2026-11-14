@@ -39,7 +39,7 @@
     <!-- The design's faces, linked from the game's own asset folder rather than copied, so the launcher
          and the game can never ship different fonts. The launcher does not reference the game's
          composition project, which would pull the whole engine in behind the files. -->
-    <None Include="..\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-SemiBold.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-Bold.ttf;..\OpenIGI.Composition\Assets\fonts\JetBrainsMono-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\OFL-Barlow.txt;..\OpenIGI.Composition\Assets\fonts\OFL-JetBrainsMono.txt"
+    <None Include="..\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\Barlow-Medium.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-SemiBold.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-Bold.ttf;..\OpenIGI.Composition\Assets\fonts\JetBrainsMono-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\OFL-Barlow.txt;..\OpenIGI.Composition\Assets\fonts\OFL-JetBrainsMono.txt"
           Link="Assets\fonts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
 
