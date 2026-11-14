@@ -120,6 +120,21 @@ async function pickFolder() {
   });
 }
 
+// What the runtime last said on the error console: an exception nothing caught is printed there before the game
+// stops, and the stop itself says only that it stopped. Kept to show beside it.
+const lastErrors = [];
+for (const level of ["error", "warn"]) {
+  const original = console[level].bind(console);
+  console[level] = (...parts) => {
+    const line = parts.map(String).join(" ").slice(0, 600);
+    if (level === "error" || /exception|abort|memory|assert/i.test(line)) {
+      lastErrors.push(line);
+      if (lastErrors.length > 8) lastErrors.shift();
+    }
+    original(...parts);
+  };
+}
+
 /** On a phone or a tablet: the page goes fullscreen and sideways as Play is pressed, while the press allows it. */
 const touchDevice = matchMedia('(pointer: coarse)').matches;
 
@@ -374,7 +389,10 @@ async function start() {
     } catch (error) {
       platform.uninstall();
       device.destroy();
-      offerReload('Reload', `The game stopped: ${error.message}`, 'error');
+      // With where it stopped, as far as the browser says: the message alone names a trap, not what trapped.
+      const where = String(error.stack || '').split('\n').filter(line => line && !line.includes(error.message)).slice(0, 12).join('\n');
+      const said = lastErrors.join('\n');
+      offerReload('Reload', `The game stopped: ${error.message}${said ? `\n${said}` : ''}${where ? `\n${where}` : ''}`, 'error');
       throw error;
     }
 
