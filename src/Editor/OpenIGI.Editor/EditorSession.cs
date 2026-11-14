@@ -246,6 +246,7 @@ internal sealed partial class EditorSession : IEditorSession
         }
 
         _workspace.Sync();
+        Autosave(elapsedSeconds);
         _live.Update();
         if (!_pendingPick && _workspace.Document is not null && _host.View.Width > 0f
             && _pendingSteps.TryPeek(out Func<bool>? step) && step())
@@ -524,6 +525,7 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterPatrolActions(actions);
         RegisterReinforcementActions(actions);
         RegisterPrefabActions(actions);
+        StartAutosave();
         RegisterMissionActions(actions);
         RegisterShellActions(actions);
         actions.Add(new EditorAction("view.light", "Light Theme", () => EditorCVars.LightTheme.Value = !EditorCVars.LightTheme.Value)

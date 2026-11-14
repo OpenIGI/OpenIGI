@@ -26,6 +26,15 @@ public static class EditorCVars
         CVarOptions.Archive,
         "Whether a mission played from the editor shows its rules over the game, each with whether and when it has run.");
 
+    /// <summary>How often, in minutes, the editor copies a mission with unsaved changes aside to recover; 0 never.</summary>
+    public static readonly NumericCVar<float> AutosaveMinutes = CVar.Float(
+        "ed_autosave_minutes",
+        3f,
+        0f,
+        60f,
+        CVarOptions.Archive,
+        "How often, in minutes, the editor copies a mission with unsaved changes aside so it can be recovered; 0 never.");
+
     /// <summary>Whether the editor uses its light theme.</summary>
     public static readonly BoolCVar LightTheme = CVar.Bool(
         "ed_light_theme",
