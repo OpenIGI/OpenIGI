@@ -111,6 +111,57 @@ public static partial class CutsceneModel
         return [.. cues.OrderBy(static c => c.Seconds)];
     }
 
+    /// <summary>A new scene, its settings those of the mission's first scene where it has one, in a container of its own.</summary>
+    /// <param name="document">The mission, which must declare <c>CutScene</c>.</param>
+    /// <param name="name">What the scene is called.</param>
+    /// <param name="id">The id it takes, which rules name it by.</param>
+    /// <returns>The step that puts it in, and the scene; null when the level does not declare scenes.</returns>
+    /// <remarks>
+    /// The scene runs while its <c>Run</c> holds, which a rule makes it ("Play the cutscene"); until then it is held. Its letterbox
+    /// and fades are the level's own scenes', so a new scene looks like the ones beside it.
+    /// </remarks>
+    public static (IEditorCommand Step, MissionTask Scene)? AddScene(MissionDocument document, string name, int id)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        MissionTask scene = new(SceneType, name, id);
+        if (!document.ApplyDeclaration(scene))
+        {
+            return null;
+        }
+
+        if (Scenes(document) is [var like, ..])
+        {
+            foreach (MissionParameter parameter in scene.Parameters)
+            {
+                if (parameter.Declaration.Type != Engine.Tasks.ScriptParamType.VarString && like.FindParameter(parameter.Name) is { } theirs)
+                {
+                    parameter.Arguments.Clear();
+                    parameter.Arguments.AddRange(theirs.Arguments);
+                }
+            }
+        }
+        else
+        {
+            scene.FindParameter(TimeScaleParameter)?.SetNumbers([1]);
+            scene.FindParameter("Viewport height factor")?.SetNumbers([0.75]);
+            scene.FindParameter("Viewport height factor fade in time")?.SetNumbers([0.5]);
+            scene.FindParameter("Viewport height factor fade out time")?.SetNumbers([0.5]);
+            scene.FindParameter("Time of day")?.SetNumbers([-1]);
+        }
+
+        scene.FindParameter("Initial run")?.SetNumbers([0]);
+        MissionTask holder = new(TaskCatalogue.ContainerType, "Cutscenes made in the editor");
+        MissionTask? existing = document.EnumerateTasks().FirstOrDefault(static t => t.TypeName == TaskCatalogue.ContainerType && t.Label == "Cutscenes made in the editor");
+        if (existing is not null)
+        {
+            return (new InsertTaskCommand(document, scene, new TaskLocation(existing, existing.Children.Count)), scene);
+        }
+
+        holder.AddChild(scene);
+        MissionTask? root = document.RootTasks.LastOrDefault();
+        return (new InsertTaskCommand(document, holder, new TaskLocation(root, root?.Children.Count ?? 0)), scene);
+    }
+
     /// <summary>The step that makes a shot last so long.</summary>
     /// <param name="document">The mission.</param>
     /// <param name="scene">The scene, whose time scale the duration is written under.</param>
@@ -185,7 +236,8 @@ public static partial class CutsceneModel
         camera.FindParameter("Smooth to next")?.SetNumbers([1]);
         camera.FindParameter("Link task ID")?.SetNumbers([-1]);
         camera.FindParameter("Target task ID")?.SetNumbers([-1]);
-        camera.FindParameter("Time of day")?.SetNumbers([-1]);
+        // "Time of day (-1 means use default)" as the levels declare it: the scene's own hour.
+        camera.Parameters.FirstOrDefault(static p => p.Name.StartsWith("Time of day", StringComparison.Ordinal))?.SetNumbers([-1]);
 
         TaskLocation at = after is not null && after.Parent is not null
             ? document.Locate(after) with { Index = document.Locate(after).Index + 1 }

@@ -47,6 +47,8 @@ internal sealed class SequencerPanel : EditorElement
     private readonly Button _addShot;
     private readonly Button _deleteShot;
     private readonly Button _playInGame;
+    private readonly Button _newScene;
+    private readonly Button _addMove;
     private IReadOnlyList<MissionTask> _sceneList = [];
     private MissionTask? _scene;
     private double _time;
@@ -88,13 +90,20 @@ internal sealed class SequencerPanel : EditorElement
         _deleteShot.Clicked += DeleteShot;
         _playInGame = new Button(theme, "Play in Game", KitIcon.Play) { Style = ButtonStyle.Flat, Tooltip = "Save and play the mission, to see its scenes as the game plays them, vehicles and all" };
         _playInGame.Clicked += () => PlayInGame?.Invoke();
-        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _addShot, _deleteShot, _playInGame])
+        _newScene = new Button(theme, "New Cutscene", KitIcon.Plus) { Style = ButtonStyle.Flat, Tooltip = "Make a cutscene of the mission's own, its first shot the viewport's camera; a rule plays it" };
+        _newScene.Clicked += NewScene;
+        _addMove = new Button(theme, "Add Move…") { Style = ButtonStyle.Flat, Tooltip = "Add a ready-made camera move round the selected object: orbit, push in, fly-over, crane up, pan" };
+        _addMove.Clicked += OfferMoves;
+        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
         {
             AddChild(child);
         }
 
         workspace.Changed += () => _stale = true;
     }
+
+    /// <summary>Gets or sets what shows a message: the text, and whether it is an error.</summary>
+    public Action<string, bool>? Notify { get; set; }
 
     /// <summary>Gets or sets what plays the mission in the game, as Play does.</summary>
     public Action? PlayInGame { get; set; }
@@ -112,7 +121,16 @@ internal sealed class SequencerPanel : EditorElement
     public bool Open(string name)
     {
         Refresh();
+        // A name given exactly first, then the first title holding it.
         int index = -1;
+        for (int i = 0; i < _sceneList.Count && index < 0; i++)
+        {
+            if (_sceneList[i].Label.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                index = i;
+            }
+        }
+
         for (int i = 0; i < _sceneList.Count && index < 0; i++)
         {
             MissionTask scene = _sceneList[i];
@@ -152,7 +170,7 @@ internal sealed class SequencerPanel : EditorElement
         float y = contentRect.Y + Theme.Px(5f);
         _scenes.Place(context, new UiRect(x, y, Theme.Px(220f), Theme.ControlHeight));
         x += Theme.Px(228f);
-        foreach (Button button in (Button[])[_play, _preview, _addShot, _deleteShot, _playInGame])
+        foreach (Button button in (Button[])[_play, _preview, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
         {
             float width = Theme.Font.MeasureWidth(button.Text, Theme.TextSize) + Theme.Px(button.Icon == KitIcon.None ? 24f : 44f);
             button.Place(context, new UiRect(x, y, width, Theme.ControlHeight));
@@ -163,6 +181,8 @@ internal sealed class SequencerPanel : EditorElement
         _play.Icon = _playing ? KitIcon.Pause : KitIcon.Play;
         _addShot.IsEnabled = _scene is not null && _host.Camera is not null;
         _deleteShot.IsEnabled = SelectedShot() is not null;
+        _addMove.IsEnabled = _scene is not null && Subject() is not null;
+        _newScene.IsEnabled = _workspace.Document?.Declarations.ContainsKey(CutsceneModel.SceneType) == true;
     }
 
     /// <inheritdoc/>
@@ -556,6 +576,96 @@ internal sealed class SequencerPanel : EditorElement
         }
     }
 
+    /// <summary>Makes a new scene, as New Cutscene does.</summary>
+    public void MakeScene() => NewScene();
+
+    /// <summary>Adds a camera move round an object, as Add Move does.</summary>
+    /// <param name="move">The move.</param>
+    /// <param name="subject">What it goes round.</param>
+    public void Move(CameraMove move, MissionTask subject) => AddMove(move, subject);
+
+    // A new scene, opened, its first shot where the viewport's camera is.
+    private void NewScene()
+    {
+        if (_workspace.Document is not { } document)
+        {
+            return;
+        }
+
+        HashSet<int> used = [.. document.EnumerateTasks().Select(static t => t.Id)];
+        int id = Enumerable.Range(1, MissionDocument.MaximumTaskId - 1).First(i => !used.Contains(i));
+        int number = CutsceneModel.Scenes(document).Count + 1;
+        if (CutsceneModel.AddScene(document, string.Create(CultureInfo.InvariantCulture, $"Cutscene {number}"), id) is not { } added)
+        {
+            Notify?.Invoke("This level does not declare cutscenes.", true);
+            return;
+        }
+
+        _workspace.Execute(added.Step);
+        _stale = true;
+        Refresh();
+        _scene = added.Scene;
+        _scenes.SelectedIndex = IndexOf(_sceneList, added.Scene);
+        _time = 0;
+        AddShotFromView();
+        Notify?.Invoke("Made a cutscene. Fly the viewport and Add Shot from View for each shot, or Add Move round an object; a rule's \"Play the cutscene\" starts it.", false);
+    }
+
+    // What a move goes round: the selected object, unless it is one of the scene's own cameras.
+    private MissionTask? Subject() =>
+        _workspace.Selection.Primary is { } task && task.TypeName != CutsceneModel.CameraType && TaskPresentation.PositionMetres(task) is not null ? task : null;
+
+    private void OfferMoves()
+    {
+        if (Root is not { } root || Subject() is not { } subject)
+        {
+            return;
+        }
+
+        (CameraMove Move, string Title, string Detail)[] moves =
+        [
+            (CameraMove.Orbit, "Orbit", "a full turn round it"),
+            (CameraMove.PushIn, "Push In", "from well back straight in"),
+            (CameraMove.FlyOver, "Fly-Over", "comes in high and settles in front"),
+            (CameraMove.CraneUp, "Crane Up", "rises to look down on it"),
+            (CameraMove.Pan, "Pan", "turns across it from where the camera stands"),
+        ];
+        CommandPalette.Open(root, [.. moves.Select(m => new PaletteEntry(m.Title, () => AddMove(m.Move, subject)) { Detail = m.Detail, Icon = KitIcon.Play })], $"A camera move round {TaskPresentation.Name(subject)}");
+    }
+
+    // A move's shots, after the one at the playhead, from the side the viewport's camera is on, six seconds long.
+    private void AddMove(CameraMove move, MissionTask subject)
+    {
+        if (_scene is not { } scene || _workspace.Document is not { } document || TaskPresentation.PositionMetres(subject) is not { } centre)
+        {
+            return;
+        }
+
+        Vector3d from = _host.Camera?.Position ?? centre + new Vector3d(30, 0, 10);
+        MissionTask? after = CutsceneModel.Shots(scene).LastOrDefault(s => s.Start <= _time)?.Camera;
+        List<IEditorCommand> steps = [];
+        foreach (MoveShot shot in CameraMoves.Shots(move, centre, from, 6))
+        {
+            if (CutsceneModel.AddShot(document, scene, after, (shot.PositionUnits.X, shot.PositionUnits.Y, shot.PositionUnits.Z), (shot.Angles.X, shot.Angles.Y, shot.Angles.Z), shot.Seconds) is not { } added)
+            {
+                return;
+            }
+
+            // Each shot goes in after the last, so they run in order.
+            added.Step.Apply();
+            steps.Add(added.Step);
+            after = added.Camera;
+        }
+
+        // Taken out again and put through the history as one step.
+        for (int i = steps.Count - 1; i >= 0; i--)
+        {
+            steps[i].Undo();
+        }
+
+        _workspace.Execute(new CompositeCommand(string.Create(CultureInfo.InvariantCulture, $"Add {move} Move"), steps));
+    }
+
     // The viewport's camera as a new shot, after the one at the playhead (or last), held three seconds.
     private void AddShotFromView()
     {
@@ -616,7 +726,7 @@ internal sealed class SequencerPanel : EditorElement
             (float)Math.Clamp(Number(camera, "FOV", 1), 0.001, 3),
             (float)Number(camera, "Duration", 0),
             Number(camera, "Smooth to next", 0) != 0,
-            (float)Number(camera, "Time of day", -1),
+            (float)(camera.Parameters.FirstOrDefault(static p => p.Name.StartsWith("Time of day", StringComparison.Ordinal)) is { } hour && hour.TryGetNumbers(out double[] h) && h.Length > 0 ? h[0] : -1),
             (float)Number(camera, "Noise", 0),
             (float)Number(camera, "Camera shake", 0));
     }

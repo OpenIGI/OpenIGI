@@ -76,6 +76,70 @@ public sealed class CutsceneModelTests
         Assert.Equal(3, CutsceneModel.Shots(scene).Count);
     }
 
+    /// <summary>A new scene takes the mission's first scene's settings, is held until a rule plays it, and goes in a container of its own.</summary>
+    [Fact]
+    public void A_new_scene_is_like_the_missions_own()
+    {
+        MissionDocument document = Document();
+        (Core.Commands.IEditorCommand step, MissionTask scene) = CutsceneModel.AddScene(document, "Cutscene 2", 70)!.Value;
+        step.Apply();
+
+        Assert.Equal(2, CutsceneModel.Scenes(document).Count);
+        Assert.Equal(2.0, CutsceneModel.TimeScale(scene));
+        Assert.Equal("Cutscenes made in the editor", scene.Parent!.Label);
+        Assert.Empty(CutsceneModel.Shots(scene));
+
+        (Core.Commands.IEditorCommand second, MissionTask another) = CutsceneModel.AddScene(document, "Cutscene 3", 71)!.Value;
+        second.Apply();
+        Assert.Same(scene.Parent, another.Parent);
+        step.Undo();
+    }
+
+    /// <summary>Every shot of every move looks at its subject, and the move lasts as long as asked, its last shot holding none.</summary>
+    [Fact]
+    public void Camera_moves_look_at_their_subject()
+    {
+        OpenIGI.Core.Numerics.Vector3d subject = new(100, 200, 30);
+        foreach (Panels.CameraMove move in Enum.GetValues<Panels.CameraMove>().Where(static m => m != Panels.CameraMove.Pan))
+        {
+            IReadOnlyList<Panels.MoveShot> shots = Panels.CameraMoves.Shots(move, subject, subject + new OpenIGI.Core.Numerics.Vector3d(40, 0, 5), 6);
+            Assert.Equal(6.0, shots.Sum(static s => s.Seconds), 6);
+            Assert.Equal(0.0, shots[^1].Seconds);
+            foreach (Panels.MoveShot shot in shots)
+            {
+                OpenIGI.Core.Numerics.Matrix3f turn = OpenIGI.Core.Numerics.Matrix3f.FromEngineEulerAngles(shot.Angles.X, shot.Angles.Y, shot.Angles.Z);
+                OpenIGI.Core.Numerics.Vector3f forward = OpenIGI.Game.World.CutsceneCameraMath.ToCameraOrientation(turn).Row3;
+                OpenIGI.Core.Numerics.Vector3d towards = (subject * OpenIGI.Core.Numerics.WorldUnits.PerMetre) - shot.PositionUnits;
+                double cos = ((forward.X * towards.X) + (forward.Y * towards.Y) + (forward.Z * towards.Z)) / towards.Length;
+                Assert.True(cos > 0.999, $"{move}: a shot looks {Math.Acos(Math.Min(1, cos)) * 180 / Math.PI:0.#} degrees off its subject");
+            }
+        }
+    }
+
+    /// <summary>
+    /// The viewport looking through a move's key, as the sequencer's preview turns it (the engine's path, then the view's
+    /// yaw and pitch), faces the subject.
+    /// </summary>
+    [Fact]
+    public void The_preview_faces_the_subject()
+    {
+        OpenIGI.Core.Numerics.Vector3d subject = new(6020, -13663, 42590);
+        IReadOnlyList<Panels.MoveShot> shots = Panels.CameraMoves.Shots(Panels.CameraMove.Orbit, subject, new OpenIGI.Core.Numerics.Vector3d(5989, -13820, 42607), 6);
+        OpenIGI.Game.World.CutsceneKey[] keys = [.. shots.Select(static s => new OpenIGI.Game.World.CutsceneKey(s.PositionUnits, s.Angles.X, s.Angles.Y, s.Angles.Z, 1, (float)s.Seconds, true, -1, 0, 0))];
+        double start = 0;
+        foreach (Panels.MoveShot shot in shots)
+        {
+            OpenIGI.Game.World.CutscenePathPoint point = OpenIGI.Game.World.CutsceneCameraMath.Evaluate(keys, 1, start, -1);
+            OpenIGI.Core.Numerics.Vector3f forward = OpenIGI.Game.World.CutsceneCameraMath.ToCameraOrientation(point.Orientation).Row3;
+            float yaw = MathF.Atan2(forward.X, forward.Y), pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
+            OpenIGI.Core.Numerics.Vector3f seen = OpenIGI.Core.Graphics.Camera3D.LookRotation(yaw, pitch).Row3;
+            OpenIGI.Core.Numerics.Vector3d towards = subject - (point.Position / OpenIGI.Core.Numerics.WorldUnits.PerMetre);
+            double cos = ((seen.X * towards.X) + (seen.Y * towards.Y) + (seen.Z * towards.Z)) / towards.Length;
+            Assert.True(cos > 0.999, $"at {start}s the view looks {Math.Acos(Math.Min(1, cos)) * 180 / Math.PI:0.#} degrees off the subject");
+            start += shot.Seconds;
+        }
+    }
+
     /// <summary>Every retail scene reads, its shots the scene's own EditCameras, and level 1's intro has its subtitles cued off it.</summary>
     [RequiresTitleDataFact("igi1")]
     public void Retail_scenes_read()

@@ -84,6 +84,62 @@ internal sealed partial class EditorSession
             return $"Showing {panel} once the mission is open.";
         }
 
+        // editor scene new: a new cutscene; editor move <orbit|pushin|flyover|craneup|pan> #<id>: a move round an object.
+        if (arguments is [string newVerb, string newWhat] && newVerb.Equals("scene", StringComparison.OrdinalIgnoreCase) && newWhat.Equals("new", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("sequencer");
+                _dock.Show("viewport");
+                _sequencer.MakeScene();
+                return true;
+            });
+            return "Making a cutscene once the mission is open.";
+        }
+
+        if (arguments is [string moveVerb, string moveName, string subjectId] && moveVerb.Equals("move", StringComparison.OrdinalIgnoreCase)
+            && Enum.TryParse(moveName, ignoreCase: true, out Panels.CameraMove cameraMove))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is not { } document || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                if (int.TryParse(subjectId.TrimStart('#'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id)
+                    && document.EnumerateTasks().FirstOrDefault(t => t.Id == id) is { } subject)
+                {
+                    _sequencer.Move(cameraMove, subject);
+                }
+
+                return true;
+            });
+            return "Adding the move once the mission is open.";
+        }
+
+        // editor seek <seconds>: the sequencer's playhead in the scene it has open.
+        if (arguments is [string seekVerb, string seekText] && seekVerb.Equals("seek", StringComparison.OrdinalIgnoreCase)
+            && double.TryParse(seekText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seekTo))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.Seek(seekTo);
+                return true;
+            });
+            return "Seeking once the mission is open.";
+        }
+
         // editor scene <#id|name> [seconds]: the sequencer on a cutscene, its playhead at a moment.
         if (arguments is [string sceneVerb, string scene, ..] && sceneVerb.Equals("scene", StringComparison.OrdinalIgnoreCase))
         {
