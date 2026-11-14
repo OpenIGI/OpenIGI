@@ -53,6 +53,9 @@ internal sealed class MapPanel : EditorElement
     private readonly Button _frame;
     private readonly Button _labels;
     private readonly Button _props;
+    private readonly Button _guardsShown;
+    private readonly GuardOrders _guards;
+    private readonly PatrolPaths _paths;
     private OverheadMap? _map;
     private UiImage _image = UiImage.None;
     private int? _mapFor;
@@ -72,11 +75,17 @@ internal sealed class MapPanel : EditorElement
     /// <param name="theme">The theme.</param>
     /// <param name="host">The editor host.</param>
     /// <param name="workspace">The open mission.</param>
-    public MapPanel(EditorTheme theme, IEditorHost host, MissionWorkspace workspace)
+    /// <param name="guards">The guards' orders, for how far and wide each sees.</param>
+    public MapPanel(EditorTheme theme, IEditorHost host, MissionWorkspace workspace, GuardOrders guards)
         : base(theme)
     {
         _host = host;
         _workspace = workspace;
+        _guards = guards;
+        _paths = new PatrolPaths(workspace);
+        _guardsShown = new Button(theme, "Guards") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = false, Tooltip = "Draw every guard's sight and patrol, not only the selected ones'" };
+        _guardsShown.Clicked += () => _guardsShown.IsChecked = !_guardsShown.IsChecked;
+        AddChild(_guardsShown);
         _images = new RhiImageFactory(host.Device);
         _redraw = new Button(theme, "Redraw", KitIcon.History) { Style = ButtonStyle.Flat, Tooltip = "Draw the level from above again, as it is loaded now" };
         _redraw.Clicked += () => _mapFor = null;
@@ -108,6 +117,9 @@ internal sealed class MapPanel : EditorElement
 
     private UiRect MapRect => UiRect.FromEdges(Bounds.X, Bounds.Y + Bar, Bounds.Right, Bounds.Bottom);
 
+    /// <summary>Draws every guard's sight and patrol, as the Guards button does.</summary>
+    public void ShowAllGuards() => _guardsShown.IsChecked = true;
+
     /// <summary>Releases the picture.</summary>
     public void Release()
     {
@@ -122,7 +134,7 @@ internal sealed class MapPanel : EditorElement
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
         float x = contentRect.X + Theme.Px(6f);
-        foreach (Button button in (Button[])[_redraw, _frame, _labels, _props])
+        foreach (Button button in (Button[])[_redraw, _frame, _labels, _props, _guardsShown])
         {
             float width = Theme.Font.MeasureWidth(button.Text, Theme.TextSize) + Theme.Px(button.Icon == KitIcon.None ? 24f : 44f);
             button.Place(context, new UiRect(x, contentRect.Y + Theme.Px(5f), width, Theme.ControlHeight));
@@ -189,6 +201,7 @@ internal sealed class MapPanel : EditorElement
             DrawVolume(painter, mark, at, isSelected);
         }
 
+        DrawGuards(painter, selected, offset);
         foreach (Mark mark in Marks())
         {
             bool isSelected = selected.Contains(mark.Task);
@@ -222,6 +235,70 @@ internal sealed class MapPanel : EditorElement
 
         painter.PopClip();
         DrawScale(painter, area);
+    }
+
+    // The guards: which way each faces; for the selected ones (every one with Guards on) how far and wide it sees, from
+    // its own script's orders over the game's default cone (0x44F060), and the patrol it walks along the AI graph.
+    private void DrawGuards(UiPainter painter, HashSet<MissionTask> selected, Vector3d offset)
+    {
+        Bgra32 sight = Bgra32.FromRgb(0xF2, 0xD0, 0x4C);
+        Bgra32 walk = Bgra32.FromRgb(0x6F, 0xB8, 0xFF);
+        Bgra32 run = Bgra32.FromRgb(0xE8, 0x8A, 0x2E);
+        Game.Ai.AiViewCone cone = Game.Ai.AiViewCone.DefaultPrimary;
+        Span<UiVec2> fan = stackalloc UiVec2[14];
+        foreach (Mark mark in Marks().Where(static m => m.IsPerson))
+        {
+            bool isSelected = selected.Contains(mark.Task);
+            Vector3d at = isSelected ? mark.At + offset : mark.At;
+            double heading = Heading(mark.Task);
+            Vector3d forward = new(-Math.Sin(heading), Math.Cos(heading), 0);
+            UiVec2 p = ToScreen(at);
+            painter.StrokeLine(p, ToScreen(at + (forward * (Theme.Px(14f) / _scale))), Theme.Px(1.5f), mark.Colour);
+            if (!isSelected && !_guardsShown.IsChecked || !PatrolPaths.IsSoldier(mark.Task))
+            {
+                continue;
+            }
+
+            Game.Ai.AiGuardOrders orders = _guards.Of(mark.Task);
+            double length = orders.ViewLength ?? (cone.Length / Game.Ai.AiViewCone.UnitsPerMetre);
+            double half = orders.ViewGamma is { } degrees ? degrees * Game.Ai.AiViewCone.DegreesToRadians : cone.Gamma;
+            fan[0] = p;
+            for (int i = 0; i < fan.Length - 1; i++)
+            {
+                double angle = heading - half + (2 * half * i / (fan.Length - 2));
+                fan[i + 1] = ToScreen(at + (new Vector3d(-Math.Sin(angle), Math.Cos(angle), 0) * length));
+            }
+
+            painter.FillPolygon(fan, sight.WithAlpha((byte)(isSelected ? 60 : 30)));
+            painter.StrokePolygon(fan, 1f, sight.WithAlpha((byte)(isSelected ? 200 : 90)));
+
+            if (_paths.Walk(mark.Task) is { } route)
+            {
+                foreach (PatrolLeg leg in route.Legs)
+                {
+                    painter.StrokeLine(ToScreen(leg.From), ToScreen(leg.To), Theme.Px(leg.IsWayBack ? 1f : 2f), (leg.Run ? run : walk).WithAlpha((byte)(leg.IsWayBack ? 90 : isSelected ? 230 : 140)));
+                }
+
+                foreach (PatrolStop stop in route.Stops)
+                {
+                    UiVec2 s = ToScreen(stop.At);
+                    painter.FillRect(new UiRect(s.X - Theme.Px(3f), s.Y - Theme.Px(3f), Theme.Px(6f), Theme.Px(6f)), stop.Stop.Run ? run : walk);
+                }
+            }
+        }
+    }
+
+    // Which way a person faces, in radians about the up axis: a soldier's Gamma (0x45F890 turns its body by it alone), or the
+    // turn of a task's orientation; forward is the body's +Y.
+    private static double Heading(MissionTask task)
+    {
+        if (task.FindParameter("Gamma") is { } gamma && gamma.TryGetNumbers(out double[] value) && value.Length == 1)
+        {
+            return value[0];
+        }
+
+        Vector3d forward = TaskPresentation.OrientationMatrix(task).Transposed().Transform(new Vector3d(0, 1, 0));
+        return Math.Atan2(-forward.X, forward.Y);
     }
 
     // What the level placed, each model's box seen from above in stone grey: the buildings and props the ground picture,

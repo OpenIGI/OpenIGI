@@ -159,8 +159,9 @@ internal sealed partial class EditorSession
         foreach (MissionTask soldier in document.EnumerateTasks().Where(PatrolTool.IsSoldier))
         {
             MissionTask ai = soldier.Children.First(static c => c.TypeName == "HumanAI");
-            if (ai.Id < 0)
+            if (ai.Id < 0 || _guards.HasPending(ai.Id))
             {
+                // Orders changed in the editor write the script themselves when the mission is saved.
                 continue;
             }
 

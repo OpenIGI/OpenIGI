@@ -59,7 +59,8 @@ internal sealed partial class EditorSession
         if (arguments is [string panelVerb, ..] && (panelVerb.Equals("rules", StringComparison.OrdinalIgnoreCase) || panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase)
             || (panelVerb.Equals("show", StringComparison.OrdinalIgnoreCase) && arguments.Count == 2)))
         {
-            string panel = (arguments.Count == 2 ? arguments[1] : panelVerb).ToLowerInvariant();
+            bool allGuards = arguments is [_, string option] && panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase) && option.Equals("guards", StringComparison.OrdinalIgnoreCase);
+            string panel = (arguments.Count == 2 && !allGuards ? arguments[1] : panelVerb).ToLowerInvariant();
             if (!_dock.Panels.ContainsKey(panel))
             {
                 return $"No panel '{panel}'.";
@@ -73,6 +74,11 @@ internal sealed partial class EditorSession
                 }
 
                 _dock.Show(panel);
+                if (allGuards)
+                {
+                    _map.ShowAllGuards();
+                }
+
                 return true;
             });
             return $"Showing {panel} once the mission is open.";

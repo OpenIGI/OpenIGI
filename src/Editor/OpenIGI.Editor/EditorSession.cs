@@ -64,6 +64,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly RulesPanel _rules;
     private readonly LogicWatch _logicWatch;
     private readonly MapPanel _map;
+    private readonly GuardOrders _guards;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -149,7 +150,8 @@ internal sealed partial class EditorSession : IEditorSession
         _rules = new RulesPanel(_theme, host, _workspace, (message, isError) => Notify(message, isError));
         _dock.Register(new DockPanel("rules", "Rules", _rules) { Icon = KitIcon.Play });
         _logicWatch = new LogicWatch(host, _workspace);
-        _map = new MapPanel(_theme, host, _workspace);
+        _guards = new GuardOrders(host, _workspace);
+        _map = new MapPanel(_theme, host, _workspace, _guards);
         _map.GoTo += task =>
         {
             _dock.Show("viewport");
