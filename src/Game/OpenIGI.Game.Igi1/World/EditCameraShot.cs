@@ -21,4 +21,8 @@ internal sealed record EditCameraShot(
     Vector3f FilterColor,
     float Shake,
     Vector3d LinkOrigin,
-    Matrix3f LinkOriginOrientation);
+    Matrix3f LinkOriginOrientation)
+{
+    /// <summary>Gets the knot as the shared camera path reads it.</summary>
+    public CutsceneKey Key => new(Position, Alpha, Beta, Gamma, FieldOfView, Duration, SmoothToNext, TimeOfDay, Noise, Shake);
+}

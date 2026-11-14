@@ -7,6 +7,9 @@ internal sealed class CutsceneSceneState(CutSceneTask task, List<EditCameraShot>
 {
     public CutSceneTask Task { get; } = task;
     public List<EditCameraShot> Shots { get; } = shots;
+
+    /// <summary>Gets the knots as the shared camera path reads them, made once with the scene.</summary>
+    public List<CutsceneKey> Keys { get; } = [.. shots.Select(static s => s.Key)];
     public int LastShotIndex { get; set; } = -1;
 
     /// <summary>The tick this tick's frame is set from -- the count before its increment; null before the first.</summary>

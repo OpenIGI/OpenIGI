@@ -27,49 +27,19 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
     {
         CutSceneTask scene = state.Task;
         List<CutsceneTimedShot> timed = state.Timed(scene.TimeScale);
-        // IGI1 0x4F4880 retains every authored knot, including duration zero.
-        // 0x4F5400 selects the last start <= the scene time without a duration filter.
-        // Scene completion/presentation must not be repaired by changing knot ownership.
-        int current = 0;
-        for (int i = 1; i < timed.Count; i++)
-        {
-            if (timed[i].Start > time)
-            {
-                break;
-            }
-            current = i;
-        }
 
-        int i0 = Math.Max(0, current - 1);
-        int i1 = current;
-        int i2 = Math.Min(timed.Count - 1, current + 1);
-        int i3 = Math.Min(timed.Count - 1, current + 2);
-
-        CutsceneTimedShot p0 = timed[i0];
-        CutsceneTimedShot p1 = timed[i1];
-        CutsceneTimedShot p2 = timed[i2];
-        CutsceneTimedShot p3 = timed[i3];
-        if (!p0.Shot.SmoothToNext) { p0 = p1; }
-        if (!p1.Shot.SmoothToNext) { p2 = p1; }
-        if (!p2.Shot.SmoothToNext) { p3 = p2; }
-
-        Vector3d position = new(
-            Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Position.X, p1.Shot.Position.X, p2.Shot.Position.X, p3.Shot.Position.X),
-            Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Position.Y, p1.Shot.Position.Y, p2.Shot.Position.Y, p3.Shot.Position.Y),
-            Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Position.Z, p1.Shot.Position.Z, p2.Shot.Position.Z, p3.Shot.Position.Z));
-        float alpha = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Alpha, p1.Shot.Alpha, p2.Shot.Alpha, p3.Shot.Alpha);
-        float beta = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Beta, p1.Shot.Beta, p2.Shot.Beta, p3.Shot.Beta);
-        float gamma = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Gamma, p1.Shot.Gamma, p2.Shot.Gamma, p3.Shot.Gamma);
-        float fov = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.FieldOfView, p1.Shot.FieldOfView, p2.Shot.FieldOfView, p3.Shot.FieldOfView);
-        float shake = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Shake, p1.Shot.Shake, p2.Shot.Shake, p3.Shot.Shake);
-        float noise = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start,
-            p0.Shot.Noise, p1.Shot.Noise, p2.Shot.Noise, p3.Shot.Noise);
-        static float ShotTimeOfDay(EditCameraShot shot, CutSceneTask owner) =>
-            shot.TimeOfDay < 0f ? owner.TimeOfDay : shot.TimeOfDay;
-        float timeOfDay = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start,
-            ShotTimeOfDay(p0.Shot, scene), ShotTimeOfDay(p1.Shot, scene),
-            ShotTimeOfDay(p2.Shot, scene), ShotTimeOfDay(p3.Shot, scene));
-        Matrix3f orientation = Matrix3f.FromEngineEulerAngles(alpha, beta, gamma);
+        // The path through the knots is the shared one the editor previews with (CutsceneCameraMath.Evaluate): every
+        // authored knot kept, the last start not after the time chosen, each channel on 0x4F55D0's Hermite.
+        CutscenePathPoint point = CutsceneCameraMath.Evaluate(state.Keys, scene.TimeScale, time, scene.TimeOfDay);
+        int current = point.Current;
+        int i2 = point.Next;
+        Vector3d position = point.Position;
+        Matrix3f orientation = point.Orientation;
+        float fov = point.FieldOfView;
+        float noise = point.Noise;
+        float shake = point.Shake;
+        float timeOfDay = point.TimeOfDay;
+        (double spanStart, double spanEnd) = (point.SpanStart, point.SpanEnd);
 
         EditCameraShot active = timed[current].Shot;
         bool shotChanged = state.LastShotIndex != current;
@@ -124,14 +94,14 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
         float fadeOut = scene.ViewportFadeOut > 0f ? Math.Clamp((float)((total - time) / scene.ViewportFadeOut), 0f, 1f) : 1f;
         float fade = Math.Min(fadeIn, fadeOut);
         float viewportHeight = 1f + ((scene.ViewportHeightFactor - 1f) * fade);
-        float local = p2.Start > p1.Start ? Math.Clamp((float)((time - p1.Start) / (p2.Start - p1.Start)), 0f, 1f) : 0f;
+        float local = spanEnd > spanStart ? Math.Clamp((float)((time - spanStart) / (spanEnd - spanStart)), 0f, 1f) : 0f;
         float colorLocal = local;
-        if (noise == 0f && IsBandFilter(active.Filter) && p2.Start - p1.Start > 0.5)
+        if (noise == 0f && IsBandFilter(active.Filter) && spanEnd - spanStart > 0.5)
         {
             // DrawBandFilter completes its colour transition half a second before a long zero-noise
             // segment ends (0x4F5E20), leaving the final half-second as a settled hold.
             colorLocal = Math.Clamp(
-                (float)((time - p1.Start) / ((p2.Start - p1.Start) - 0.5)), 0f, 1f);
+                (float)((time - spanStart) / ((spanEnd - spanStart) - 0.5)), 0f, 1f);
         }
 
         return new CutsceneFrame(
