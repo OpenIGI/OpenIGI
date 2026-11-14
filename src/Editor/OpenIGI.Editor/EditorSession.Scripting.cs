@@ -467,8 +467,10 @@ internal sealed partial class EditorSession
             return null;
         }
 
-        string name = string.Join(' ', arguments.Skip(1));
-        _pendingSteps.Enqueue(() => SelectNamed(name));
+        // editor select also <name>: added to the selection rather than replacing it.
+        bool also = arguments.Count > 2 && arguments[1].Equals("also", StringComparison.OrdinalIgnoreCase);
+        string name = string.Join(' ', arguments.Skip(also ? 2 : 1));
+        _pendingSteps.Enqueue(() => SelectNamed(name, also));
         return $"Selecting '{name}' once the mission is open.";
     }
 
@@ -539,7 +541,7 @@ internal sealed partial class EditorSession
     }
 
     // The object a script names, selected and framed; in turn with the other scripted steps.
-    private bool SelectNamed(string name)
+    private bool SelectNamed(string name, bool adding = false)
     {
         if (_workspace.Document is not { } document)
         {
@@ -559,7 +561,7 @@ internal sealed partial class EditorSession
             return true;
         }
 
-        _workspace.Selection.Set(task);
+        _workspace.Selection.Set(adding ? [.. _workspace.Selection.Items.Where(t => !ReferenceEquals(t, task)), task] : [task]);
         _viewport.Frame(task);
         _host.Logger.Information("Editor", $"Selected {TaskPresentation.Name(task)}.");
         return true;

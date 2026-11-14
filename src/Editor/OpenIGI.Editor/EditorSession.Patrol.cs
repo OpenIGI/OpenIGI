@@ -25,6 +25,11 @@ internal sealed partial class EditorSession
             CanExecute = () => _host.Title.Id == "igi1" && PatrolTool.IsSoldier(_workspace.Selection.Primary),
             DynamicTitle = () => PatrolTool.IsSoldier(_workspace.Selection.Primary) ? "Patrol Tool" : "Patrol Tool (select a soldier first)",
         });
+        actions.Add(new EditorAction("ai.patrolround", "Patrol Round Selection", PatrolRound)
+        {
+            Category = "Tools",
+            CanExecute = () => _host.Title.Id == "igi1" && _workspace.Selection.Items.Any(PatrolTool.IsSoldier),
+        });
         actions.Add(new EditorAction("ai.addguard", "Add Guard Here", AddGuard)
         {
             Category = "Tools",
@@ -62,6 +67,30 @@ internal sealed partial class EditorSession
             _viewport.Tool = ViewportTool.Patrol;
             _dock.Show("viewport");
         }
+    }
+
+    // The selected soldier's patrol laid as a ring round the other thing selected (a building, a tower), far enough out to
+    // walk round it; with only the soldier selected, round where he stands.
+    private void PatrolRound()
+    {
+        if (_viewport.Patrol is not { } tool || _workspace.Selection.Items.FirstOrDefault(PatrolTool.IsSoldier) is not { } soldier)
+        {
+            return;
+        }
+
+        MissionTask? subject = _workspace.Selection.Items.FirstOrDefault(t => !ReferenceEquals(t, soldier) && TaskPresentation.PositionMetres(t) is not null);
+        if ((subject ?? soldier) is not { } centreTask || TaskPresentation.PositionMetres(centreTask) is not { } centre || !tool.Begin(soldier))
+        {
+            return;
+        }
+
+        double radius = subject is null ? 10.0 : (_live.RadiusMetres(subject) ?? 4.0) + 4.0;
+        tool.Circle(centre, Math.Clamp(radius, 4.0, 80.0));
+        _workspace.Selection.Set([soldier]);
+        _viewport.Tool = ViewportTool.Patrol;
+        Notify(subject is null
+            ? "Laid a patrol round where the soldier stands; drag its waypoints to shape it."
+            : $"Laid a patrol round {TaskPresentation.Name(subject)}; drag its waypoints to shape it.");
     }
 
     // A guard in the middle of the view, on the AI graph there (built when there is none), selected with its patrol tool on.

@@ -75,6 +75,42 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
         return GraphTask() is not null;
     }
 
+    /// <summary>
+    /// Lays the soldier's patrol as a ring round a point: waypoints on the ground, each on the graph's node there or a new
+    /// one as a click there would make, walked in turn and round again; one undo step.
+    /// </summary>
+    /// <param name="centre">What the ring goes round, in world metres.</param>
+    /// <param name="radius">How far out, in metres.</param>
+    /// <param name="stops">How many waypoints.</param>
+    /// <returns>Whether the patrol was laid.</returns>
+    public bool Circle(Vector3d centre, double radius, int stops = 8)
+    {
+        if (Soldier is null || GraphTask() is not { } graphTask)
+        {
+            return false;
+        }
+
+        using (workspace.History.BeginTransaction("Patrol Round"))
+        {
+            List<PatrolWaypoint> waypoints = [];
+            for (int i = 0; i < stops; i++)
+            {
+                double angle = i * Math.Tau / stops;
+                double x = centre.X + (Math.Cos(angle) * radius), y = centre.Y + (Math.Sin(angle) * radius);
+                Vector3d at = new(x, y, Height(x, y) ?? centre.Z);
+                int? node = (Graph() is { } graph ? NodeNear(graphTask, graph, at) : null) ?? AddNode(graphTask, at);
+                if (node is { } id)
+                {
+                    waypoints.Add(PatrolWaypoint.WalkTo(id));
+                }
+            }
+
+            Edit(Route with { Waypoints = waypoints }, "Patrol Round");
+        }
+
+        return true;
+    }
+
     /// <summary>Stops editing.</summary>
     public void End()
     {
