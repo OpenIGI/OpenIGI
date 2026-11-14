@@ -6,7 +6,13 @@ namespace OpenIGI.Scripting.Vocabulary;
 /// <summary>A family of named integer constants, such as every <c>AIEVENT_*</c>.</summary>
 /// <param name="Name">The family's name.</param>
 /// <param name="Values">Each constant's name and value, in the order they are offered.</param>
-public sealed record ConstantFamily(string Name, IReadOnlyList<KeyValuePair<string, int>> Values);
+public sealed record ConstantFamily(string Name, IReadOnlyList<KeyValuePair<string, int>> Values)
+{
+    /// <summary>Gets what each constant means, by its name, for the ones worth a word; an editor shows it beside the name.</summary>
+    public IReadOnlyDictionary<string, string> Notes { get; init; } = NoNotes;
+
+    private static IReadOnlyDictionary<string, string> NoNotes { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+}
 
 /// <summary>Everything a title's scripts can name: natives with their signatures, and constants grouped into families.</summary>
 /// <remarks>
@@ -22,6 +28,20 @@ public sealed class ScriptVocabulary
     private readonly Dictionary<string, IReadOnlyList<NativeParameter>> _taskFields = new(StringComparer.Ordinal);
     private readonly Dictionary<string, NativeParameter> _globals = new(StringComparer.Ordinal);
     private readonly HashSet<string> _openIgiOnly = new(StringComparer.Ordinal);
+    private readonly List<TaskListLimit> _taskLists = [];
+
+    /// <summary>Gets the fixed-size lists the game keeps tasks in, each with the types that fill it.</summary>
+    public IReadOnlyList<TaskListLimit> TaskLists => _taskLists;
+
+    /// <summary>Adds fixed-size task lists.</summary>
+    /// <param name="lists">The lists.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary Add(IEnumerable<TaskListLimit> lists)
+    {
+        ArgumentNullException.ThrowIfNull(lists);
+        _taskLists.AddRange(lists);
+        return this;
+    }
 
     /// <summary>Gets the natives, by name.</summary>
     public IReadOnlyDictionary<string, NativeSignature> Natives => _natives;

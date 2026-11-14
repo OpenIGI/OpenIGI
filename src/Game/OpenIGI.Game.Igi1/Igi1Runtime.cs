@@ -39,7 +39,9 @@ public sealed class Igi1Runtime : IGameTitleRuntime
         .Add(World.Igi1MissionScriptVocabulary.Signatures)
         .Add(AiScriptVocabulary.Families)
         .Add(MissionScriptVocabulary.Families)
+        .Add(Igi1AreaCriteria.Family)
         .Add(TitleScriptVocabulary.RecordTaskFields(Modules))
         .Add(World.Igi1TaskFields.Fields)
+        .Add(World.Igi1TaskLists.All)
         .AddGlobals(MissionScriptVocabulary.Globals);
 }

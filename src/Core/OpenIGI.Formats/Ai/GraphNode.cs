@@ -101,21 +101,37 @@ public sealed class GraphNode
     /// <remarks>The query masks against the <see cref="GraphNodeCriteria.View"/> bit alone (<c>0x509870</c>).</remarks>
     public bool IsExcludedFromNearestQuery => (Criteria & GraphNodeCriteria.View) != 0;
 
-    /// <summary>Resolves a criteria name to its bit.</summary>
-    /// <param name="name">The name as stored, or the empty string.</param>
-    /// <returns>The bit, or <see cref="GraphNodeCriteria.None"/> for an empty or unregistered name.</returns>
+    /// <summary>Resolves a node's criteria text to its bits.</summary>
+    /// <param name="name">The text as stored, or the empty string.</param>
+    /// <returns>The bits, or <see cref="GraphNodeCriteria.None"/> for empty text or a name that is not registered.</returns>
     /// <remarks>
+    /// <para>
+    /// The text is an expression, not a label: the original keeps <c>Script_EvalExpr(criteria)</c> as the node's flags when
+    /// it adds the node (<c>0x4F9510</c>), so names joined with <c>|</c> give a node several bits. Every text in the retail
+    /// corpus is one name; a graph made in the editor may join them.
+    /// </para>
+    /// <para>
     /// An unregistered name resolves to zero rather than being an error: the engine looks the string up in
-    /// the same global name table the script constants live in and a miss yields nothing. Every name in the
-    /// retail corpus is one of the three registered ones.
+    /// the same global name table the script constants live in and a miss yields nothing.
+    /// </para>
     /// </remarks>
-    public static GraphNodeCriteria ResolveCriteria(string name) => name switch
+    public static GraphNodeCriteria ResolveCriteria(string name)
     {
-        "NODECRITERIA_DOOR" => GraphNodeCriteria.Door,
-        "NODECRITERIA_VIEW" => GraphNodeCriteria.View,
-        "NODECRITERIA_STAIR" => GraphNodeCriteria.Stair,
-        _ => GraphNodeCriteria.None,
-    };
+        ArgumentNullException.ThrowIfNull(name);
+        GraphNodeCriteria criteria = GraphNodeCriteria.None;
+        foreach (Range part in name.AsSpan().Split('|'))
+        {
+            criteria |= name.AsSpan(part).Trim() switch
+            {
+                "NODECRITERIA_DOOR" => GraphNodeCriteria.Door,
+                "NODECRITERIA_VIEW" => GraphNodeCriteria.View,
+                "NODECRITERIA_STAIR" => GraphNodeCriteria.Stair,
+                _ => GraphNodeCriteria.None,
+            };
+        }
+
+        return criteria;
+    }
 
     /// <inheritdoc/>
     public override string ToString() =>

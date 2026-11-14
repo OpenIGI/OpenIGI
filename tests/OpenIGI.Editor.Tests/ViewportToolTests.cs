@@ -48,7 +48,7 @@ public sealed class ViewportToolTests
         Assert.Null(TaskVolume.Of(Task(document, "Hut")));
     }
 
-    /// <summary>A box's corners are its local corners turned by the transposed orientation, as AreaActivation builds them.</summary>
+    /// <summary>A box's corners are its local corners turned by the transposed orientation, as AreaActivateTask builds them.</summary>
     [Fact]
     public void A_box_stands_in_its_task_frame()
     {

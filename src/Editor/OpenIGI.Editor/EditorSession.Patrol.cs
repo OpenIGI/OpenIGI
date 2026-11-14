@@ -167,7 +167,7 @@ internal sealed partial class EditorSession
             MissionTask? path = soldier.Children.FirstOrDefault(static c => c.TypeName == PatrolRoute.PathType);
             bool patrols = path is not null && path.Id >= 0 && PatrolRoute.Read(path).Waypoints.Count > 0;
             byte[] wanted = SoldierScripts.Compile(patrols ? SoldierScripts.Patroller(path!.Id) : SoldierScripts.Guard);
-            string gamePath = MissionWorkspace.GamePath(mission, string.Create(CultureInfo.InvariantCulture, $"ai/{ai.Id}.qvm"));
+            string gamePath = MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(ai.Id));
             if (_host.TryReadFile("LOCAL:" + gamePath, out ReadOnlyMemory<byte> existing))
             {
                 if (existing.Span.SequenceEqual(wanted))

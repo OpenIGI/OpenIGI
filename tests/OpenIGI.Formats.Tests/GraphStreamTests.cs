@@ -391,6 +391,8 @@ public sealed class GraphStreamTests
     [InlineData("NODECRITERIA_VIEW", GraphNodeCriteria.View)]
     [InlineData("NODECRITERIA_STAIR", GraphNodeCriteria.Stair)]
     [InlineData("NODECRITERIA_SOMETHING", GraphNodeCriteria.None)]
+    [InlineData("NODECRITERIA_DOOR|NODECRITERIA_STAIR", GraphNodeCriteria.Door | GraphNodeCriteria.Stair)]
+    [InlineData("NODECRITERIA_VIEW | NODECRITERIA_SOMETHING", GraphNodeCriteria.View)]
     public void TheCriteriaNamesResolveToTheirBits(string name, GraphNodeCriteria expected) =>
         Assert.Equal(expected, GraphNode.ResolveCriteria(name));
 

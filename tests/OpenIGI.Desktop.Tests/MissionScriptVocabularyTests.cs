@@ -43,6 +43,23 @@ public sealed class MissionScriptVocabularyTests
         Assert.True(new Igi2Runtime().CreateScriptVocabulary().Natives.Count >= 140);
     }
 
+    /// <summary>
+    /// Each title names its own area criteria, with what each counts: the first game's teams and vehicles, and the camera,
+    /// the player and the side-kicks only the second has.
+    /// </summary>
+    [Fact]
+    public void Each_title_lists_its_own_area_criteria()
+    {
+        ConstantFamily first = new Igi1Runtime().CreateScriptVocabulary().Families[OpenIGI.Game.World.Igi1AreaCriteria.FamilyName];
+        ConstantFamily second = new Igi2Runtime().CreateScriptVocabulary().Families[OpenIGI.Game.World.Igi1AreaCriteria.FamilyName];
+
+        Assert.Equal(["CRITERIA_HUMAN", .. Enumerable.Range(0, 8).Select(static t => "CRITERIA_HUMAN" + t), "CRITERIA_VEHICLE"], first.Values.Select(static v => v.Key));
+        Assert.All(first.Values, v => Assert.Equal(OpenIGI.Game.World.Igi1AreaCriteria.Constant(v.Key), v.Value));
+        Assert.Contains("CRITERIA_HUMANPLAYER", second.Values.Select(static v => v.Key));
+        Assert.DoesNotContain("CRITERIA_HUMANPLAYER", first.Values.Select(static v => v.Key));
+        Assert.All(first.Values.Concat(second.Values), v => Assert.True(first.Notes.ContainsKey(v.Key) || second.Notes.ContainsKey(v.Key)));
+    }
+
     /// <summary>Every task type either title registers can be asked for its fields without a level around it.</summary>
     [Fact]
     public void Every_registered_type_exports_without_a_level()

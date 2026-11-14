@@ -46,4 +46,54 @@ public static class Igi1AreaCriteria
 
         return name.Length == prefix.Length + 1 && name[^1] is >= '0' and < (char)('0' + Teams) ? Team(name[^1] - '0') : null;
     }
+
+    /// <summary>The name of the constant family the criteria are listed in.</summary>
+    public const string FamilyName = "CRITERIA";
+
+    /// <summary>Gets the criteria as a constant family, each with what it counts, for a title's script vocabulary.</summary>
+    /// <remarks>
+    /// The levels put the player and those on his side in team nought and the enemy in team one; no criterion counts the
+    /// player alone.
+    /// </remarks>
+    public static Scripting.Vocabulary.ConstantFamily Family { get; } = AreaCriteriaFamily.Build(
+        FamilyName,
+        [
+            new("CRITERIA_HUMAN", Human, "every human"),
+            .. Enumerable.Range(0, Teams).Select(static team => new AreaCriterion("CRITERIA_HUMAN" + team, Team(team), AreaCriteriaFamily.TeamNote(team))),
+            new("CRITERIA_VEHICLE", Vehicle, "every vehicle"),
+        ]);
+}
+
+/// <summary>One area criterion: the constant a level names it by, its bit, and what it counts.</summary>
+/// <param name="Name">The constant's name.</param>
+/// <param name="Bit">Its bit in an area's mask.</param>
+/// <param name="Note">What it counts, in a few words.</param>
+public readonly record struct AreaCriterion(string Name, int Bit, string Note);
+
+/// <summary>Builds the constant family a title lists its area criteria in, the same way for both games.</summary>
+public static class AreaCriteriaFamily
+{
+    /// <summary>Builds the family.</summary>
+    /// <param name="name">The family's name.</param>
+    /// <param name="criteria">The criteria, in the order they are offered.</param>
+    /// <returns>The family, each constant with its note.</returns>
+    public static Scripting.Vocabulary.ConstantFamily Build(string name, IReadOnlyList<AreaCriterion> criteria)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(criteria);
+        return new Scripting.Vocabulary.ConstantFamily(name, [.. criteria.Select(static c => new KeyValuePair<string, int>(c.Name, c.Bit))])
+        {
+            Notes = criteria.ToDictionary(static c => c.Name, static c => c.Note, StringComparer.Ordinal),
+        };
+    }
+
+    /// <summary>What a team's criterion counts, as the levels of both games use the teams.</summary>
+    /// <param name="team">The team.</param>
+    /// <returns>The note.</returns>
+    public static string TeamNote(int team) => team switch
+    {
+        0 => "team 0: the player and his side",
+        1 => "team 1: the enemy",
+        _ => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"team {team}"),
+    };
 }

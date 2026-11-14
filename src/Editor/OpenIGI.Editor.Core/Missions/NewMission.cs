@@ -33,6 +33,7 @@ public static class NewMission
 
     private const int IdArgument = 0;
     private const int NameArgument = 1;
+    private const int DescriptionArgument = 2;
     private const int NextArgument = 4;
     private const int DirectoryArgument = 5;
     private const int LevelPackDirectoryArgument = 7;
@@ -57,15 +58,27 @@ public static class NewMission
     /// <param name="id">The new mission's id.</param>
     /// <param name="name">Its name, as the menus show it.</param>
     /// <param name="previous">The mission to point at the new one, and its <c>mission.qvm</c>; none to leave the campaign as it is.</param>
+    /// <param name="missionTexts">
+    /// Each language's archive of mission names and descriptions (<c>language/&lt;language&gt;/missions.res</c>), with its path
+    /// relative to the installation; none to write the name into the script as it is.
+    /// </param>
     /// <returns>Each file's path relative to the installation, and its contents.</returns>
     /// <exception cref="ArgumentException">The name is empty or too long, or a script is not one <c>DefineMission</c> call.</exception>
+    /// <remarks>
+    /// A mission's name and description are not words but keys: the original's menus look both up in the language's
+    /// <c>missions.res</c> (<c>MenuManager_GetString</c>, <c>0x418EA0</c>) and show <c>RM: &lt;key&gt;</c> for one that is not
+    /// there. So the new mission is given keys of its own, named as the base's are (<c>Mission 15 Name</c> after
+    /// <c>Mission 1 Name</c>), and every language's archive that has the base's gets them: the name as typed, the
+    /// description the base's own.
+    /// </remarks>
     public static IReadOnlyList<(string GamePath, byte[] Bytes)> Build(
         string baseDirectory,
         ReadOnlyMemory<byte> baseScript,
         IEnumerable<(string RelativePath, ReadOnlyMemory<byte> Bytes)> baseFiles,
         int id,
         string name,
-        (string Directory, ReadOnlyMemory<byte> Script)? previous)
+        (string Directory, ReadOnlyMemory<byte> Script)? previous,
+        IEnumerable<(string GamePath, ReadOnlyMemory<byte> Bytes)>? missionTexts = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(baseFiles);
@@ -84,10 +97,16 @@ public static class NewMission
             }
         }
 
+        (string Name, string Description)? keys = AddTexts(files, baseScript, id, name, missionTexts);
         files.Add(($"{directory}/{ScriptName}", Rewrite(baseScript, arguments =>
         {
             arguments[IdArgument] = new QscIntLiteral(id);
-            arguments[NameArgument] = new QscStringLiteral(name);
+            arguments[NameArgument] = new QscStringLiteral(keys?.Name ?? name);
+            if (keys is { } named)
+            {
+                arguments[DescriptionArgument] = new QscStringLiteral(named.Description);
+            }
+
             arguments[NextArgument] = new QscSymbol("MISSION_NEXT_MISSION_UNDEFINED");
             arguments[DirectoryArgument] = new QscStringLiteral(directory);
             arguments[LevelPackDirectoryArgument] = new QscStringLiteral(directory);
@@ -100,6 +119,94 @@ public static class NewMission
 
         return files;
     }
+
+    /// <summary>Gets the key a mission's name or description is kept under, made from the base's by putting the new id for its own.</summary>
+    /// <param name="baseKey">The base mission's key, such as <c>Mission 1 Name</c>.</param>
+    /// <param name="baseId">The base mission's id.</param>
+    /// <param name="id">The new mission's id.</param>
+    /// <returns>The key, or <see langword="null"/> when the base's key does not hold its id as a word of its own.</returns>
+    public static string? KeyFor(string baseKey, int baseId, int id)
+    {
+        ArgumentNullException.ThrowIfNull(baseKey);
+        string number = baseId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        for (int at = baseKey.IndexOf(number, StringComparison.Ordinal); at >= 0; at = baseKey.IndexOf(number, at + 1, StringComparison.Ordinal))
+        {
+            bool startsWord = at == 0 || !char.IsAsciiDigit(baseKey[at - 1]);
+            bool endsWord = at + number.Length == baseKey.Length || !char.IsAsciiDigit(baseKey[at + number.Length]);
+            if (startsWord && endsWord)
+            {
+                return string.Concat(baseKey.AsSpan(0, at), id.ToString(System.Globalization.CultureInfo.InvariantCulture), baseKey.AsSpan(at + number.Length));
+            }
+        }
+
+        return null;
+    }
+
+    // The new mission's name and description added to every language archive that has the base's, and the keys they are
+    // under; null when no archive has them, so the script keeps the name as typed.
+    private static (string Name, string Description)? AddTexts(
+        List<(string, byte[])> files,
+        ReadOnlyMemory<byte> baseScript,
+        int id,
+        string name,
+        IEnumerable<(string GamePath, ReadOnlyMemory<byte> Bytes)>? missionTexts)
+    {
+        if (missionTexts is null || Arguments(baseScript) is not { } arguments
+            || arguments[IdArgument] is not QscIntLiteral { Value: int baseId }
+            || arguments[NameArgument] is not QscStringLiteral { Value: { Length: > 0 } baseName }
+            || arguments[DescriptionArgument] is not QscStringLiteral { Value: { Length: > 0 } baseDescription }
+            || KeyFor(baseName, baseId, id) is not { Length: <= MaximumNameLength } nameKey
+            || KeyFor(baseDescription, baseId, id) is not { } descriptionKey)
+        {
+            return null;
+        }
+
+        bool added = false;
+        foreach ((string path, ReadOnlyMemory<byte> bytes) in missionTexts)
+        {
+            IresArchive archive;
+            try
+            {
+                archive = IresArchive.Read(bytes);
+            }
+            catch (IlffFormatException)
+            {
+                continue;
+            }
+
+            // Named as the archive names the base's: a bare key in some, a path that ends in it in others.
+            if (archive.Entries.FirstOrDefault(e => Holds(e.Name, baseName)) is not { } nameEntry
+                || archive.Entries.FirstOrDefault(e => Holds(e.Name, baseDescription)) is not { } descriptionEntry)
+            {
+                continue;
+            }
+
+            string newName = string.Concat(nameEntry.Name.AsSpan(0, nameEntry.Name.Length - baseName.Length), nameKey);
+            string newDescription = string.Concat(descriptionEntry.Name.AsSpan(0, descriptionEntry.Name.Length - baseDescription.Length), descriptionKey);
+            List<IresWriter.Entry> entries =
+            [
+                .. archive.Entries
+                    .Where(e => !e.Name.Equals(newName, StringComparison.OrdinalIgnoreCase) && !e.Name.Equals(newDescription, StringComparison.OrdinalIgnoreCase))
+                    .Select(static e => new IresWriter.Entry(e.Name, e.Kind, e.Data)),
+                new IresWriter.Entry(newName, nameEntry.Kind, System.Text.Encoding.Latin1.GetBytes(name + "\0")),
+                new IresWriter.Entry(newDescription, descriptionEntry.Kind, descriptionEntry.Data),
+            ];
+            files.Add((path.Replace('\\', '/'), IresWriter.Write(entries)));
+            added = true;
+        }
+
+        return added ? (nameKey, descriptionKey) : null;
+
+        static bool Holds(string entry, string key) =>
+            entry.EndsWith(key, StringComparison.OrdinalIgnoreCase) && (entry.Length == key.Length || entry[^(key.Length + 1)] is '/' or ':');
+    }
+
+    // A mission script's DefineMission arguments, or null when it is not one such call.
+    private static System.Collections.ObjectModel.ReadOnlyCollection<QscExpression>? Arguments(ReadOnlyMemory<byte> image) =>
+        QscDecompiler.Decompile(image).Statements is [QscExpressionStatement { Expression: QscCall { Name: DefineFunction } call }]
+        && call.Arguments.Count == ArgumentCount
+            ? call.Arguments
+            : null;
 
     // A file of the level as it goes in the new folder: an archive whose entries are named by the base's folder (the object
     // lightmaps are, LOCAL:missions/location0/level1/lightmaps/...) renamed into the new one, or the original would look them

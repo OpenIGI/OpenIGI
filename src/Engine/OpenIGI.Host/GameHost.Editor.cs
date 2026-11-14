@@ -575,7 +575,13 @@ public sealed partial class GameHost
 
         public void CloseMission() => host._editorMissionCloseWanted = true;
 
-        public void RescanMissions() => host._missions.Scan(host._fileSystem, host._resources, host._loop.Natives);
+        public void RescanMissions()
+        {
+            host._missions.Scan(host._fileSystem, host._resources, host._loop.Natives);
+
+            // A mission made in the editor brings its name in the language archives: read again between frames.
+            host._languageChanged = true;
+        }
 
         public bool TryReadFile(string path, out ReadOnlyMemory<byte> data) => host._resources.TryLoad(path, out data);
 
