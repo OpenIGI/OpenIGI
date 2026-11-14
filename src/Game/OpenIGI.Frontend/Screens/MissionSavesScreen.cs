@@ -33,7 +33,7 @@ public sealed class MissionSavesScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Home;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("ENTER", "Load"), new("ESC", "Back")];
+    protected override IReadOnlyList<KeyHint> Hints => [new("Enter", "Load"), new("Esc", "Back")];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)

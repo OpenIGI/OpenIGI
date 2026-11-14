@@ -38,7 +38,10 @@ public sealed class MainMenuScreen : ShellScreen
     public override float BackdropBlur => 0f;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("Q E", "Sections"), new("ENTER", "Select")];
+    protected override IReadOnlyList<KeyHint> Hints => [new("Q E", "Sections"), new("Enter", "Select")];
+
+    /// <inheritdoc/>
+    protected override string FooterNote => BuildStamp.Version.Length > 0 ? $"OpenIGI {BuildStamp.Version}" : "OpenIGI";
 
     /// <inheritdoc/>
     protected override Control? InitialFocus => _continue;
@@ -82,7 +85,7 @@ public sealed class MainMenuScreen : ShellScreen
             };
             _continue.Activated += _ => Context.Host.StartMission(mission.Id, Context.Config.Active?.Difficulty ?? 1);
 
-            var select = new PrimaryAction(theme, "Mission select") { Secondary = true, Icon = PrimaryActionIcon.None };
+            var select = new PrimaryAction(theme, "Mission select") { Secondary = true, Icon = PrimaryActionIcon.None, TitleSize = 19f };
             select.Activated += _ => GoTo(ShellTab.Campaign);
             if (compact)
             {

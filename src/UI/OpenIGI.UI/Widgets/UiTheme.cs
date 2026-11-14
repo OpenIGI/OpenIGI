@@ -27,11 +27,13 @@ public sealed class UiTheme
     /// <param name="heading">The condensed font for labels, tabs, buttons and values, or <see langword="null"/> to reuse <paramref name="body"/>.</param>
     /// <param name="mono">The fixed-pitch font for eyebrows, key caps and numbers, or <see langword="null"/> to reuse <paramref name="body"/>.</param>
     /// <param name="display">The heavy font for titles, or <see langword="null"/> to reuse <paramref name="heading"/>.</param>
+    /// <param name="bodyStrong">The body font a weight up, for a row's caption and a name, or <see langword="null"/> to reuse <paramref name="body"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="body"/> is <see langword="null"/>.</exception>
-    public UiTheme(UiFont body, UiFont? heading = null, UiFont? mono = null, UiFont? display = null)
+    public UiTheme(UiFont body, UiFont? heading = null, UiFont? mono = null, UiFont? display = null, UiFont? bodyStrong = null)
     {
         ArgumentNullException.ThrowIfNull(body);
         Body = body;
+        BodyStrong = bodyStrong ?? body;
         Heading = heading ?? body;
         Mono = mono ?? body;
         Display = display ?? Heading;
@@ -39,6 +41,10 @@ public sealed class UiTheme
 
     /// <summary>Gets the font used for body text and captions.</summary>
     public UiFont Body { get; }
+
+    /// <summary>Gets the body font a weight up: a row's caption, a server's name, a line that leads its paragraph.</summary>
+    /// <remarks>Falls back to <see cref="Body"/>, so a theme built from one font has it.</remarks>
+    public UiFont BodyStrong { get; }
 
     /// <summary>Gets the condensed font used for tabs, buttons, values and section headings.</summary>
     public UiFont Heading { get; }

@@ -22,6 +22,9 @@ public sealed partial class MultiplayerScreen
     // Whether the picked game's sheet is up, on the compact page.
     private bool _sheet;
 
+    // Whether the compact page's search box is open.
+    private bool _searching;
+
     private Grid BuildCompact(UiTheme theme, ICoopRooms coop)
     {
         var page = new Grid { RowSpacing = 6f, Margin = new Thickness(SideMargin, 6f, SideMargin, 0f) };
@@ -55,7 +58,7 @@ public sealed partial class MultiplayerScreen
         }
 
         IReadOnlyList<CoopRoomInfo>? all = coop.Listing;
-        List<CoopRoomInfo> passing = all is null ? [] : [.. all.Where(r => ModeShown(r) && !(_hideFull && r.Players >= r.MaxPlayers))];
+        List<CoopRoomInfo> passing = Passing(all);
         List<CoopRoomInfo> shown = Order([.. passing.Where(r => KindShown(r, _kind))]);
         CoopRoomInfo? picked = shown.FirstOrDefault(r => r.Code == _selectedCode);
 
@@ -79,20 +82,22 @@ public sealed partial class MultiplayerScreen
 
     private Grid BuildCompactBrowse(UiTheme theme, ICoopRooms coop, IReadOnlyList<CoopRoomInfo>? all, List<CoopRoomInfo> passing, List<CoopRoomInfo> shown)
     {
-        var layout = new Grid { RowSpacing = 6f };
+        var layout = new Grid { RowSpacing = 8f };
         layout.ColumnDefinitions.Add(GridLength.Star);
+        layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
 
-        // One row of what there is to do before picking a line: the party, the last game, which lines show.
+        // What there is to do before picking a line: the party, the last game, a friend's code.
         var bar = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 8f };
         if (Parties is { } parties)
         {
             PartyView? party = parties.Party;
-            string caption = party is { Code: not null }
-                ? string.Create(CultureInfo.InvariantCulture, $"Party {party.Members.Count}/{PartyPlaces}")
-                : "Invite";
-            Button invite = CompactButton(theme, _copied is null ? caption : "Link copied", ButtonAccent.Ghost);
+            int members = party?.Members.Count ?? 1;
+            Button invite = CompactButton(theme, _copied is null ? string.Create(CultureInfo.InvariantCulture, $"Party {members}/{PartyPlaces}") : "Link copied", ButtonAccent.Ghost);
+            invite.LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.People);
+            invite.Tooltip = party is null ? "Make a party you lead, and copy its invite link for friends." : "Copy a link friends open to join the party.";
             invite.Activated += _ => Invite(parties);
             bar.Add(invite);
         }
@@ -100,33 +105,87 @@ public sealed partial class MultiplayerScreen
         if (coop.LastPlayed is not null)
         {
             Button reconnect = CompactButton(theme, "Reconnect", ButtonAccent.Ghost);
+            reconnect.LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.History);
             reconnect.Activated += _ => coop.Reconnect();
             bar.Add(reconnect);
         }
 
-        Button quick = CompactButton(theme, "Quick play", ButtonAccent.Outline);
-        quick.Activated += _ => coop.QuickPlay();
-        bar.Add(quick);
-        bar.Add(new Panel(), grow: 1f);
+        if (Parties is { } forCode)
+        {
+            Button enter = CompactButton(theme, "Enter code", ButtonAccent.Ghost);
+            enter.LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Keyboard);
+            enter.Selected = _joiningParty;
+            enter.Activated += _ =>
+            {
+                _joiningParty = !_joiningParty;
+                _focusNext = _joiningParty ? PartyCodeId : null;
+                Invalidate();
+            };
+            bar.Add(enter);
+            if (_joiningParty)
+            {
+                layout.Add(BuildCodeEntry(theme, forCode, inParty: forCode.Party is not null), 2, 0);
+            }
+        }
 
-        // Each steps to its next choice when pressed: a strip of six kinds has no room here.
+        layout.Add(bar, 0, 0);
+
+        // Which lines show -- each steps to its next choice when pressed: a strip of six kinds has no room here -- and at
+        // the other end the box to search them, the best game listed, and the list asked for again.
+        var filters = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 8f };
         int ofKind = passing.Count(r => KindShown(r, _kind));
         Button kind = CompactButton(theme, string.Create(CultureInfo.InvariantCulture, $"{Kinds[_kind]} · {ofKind}"), ButtonAccent.Ghost);
+        kind.TrailingGlyph = ChevronDown;
+        kind.GlyphSize = 12f;
         kind.Activated += _ =>
         {
             _kind = (_kind + 1) % Kinds.Length;
             Invalidate();
         };
-        bar.Add(kind);
-        string modeName = _modeFilter == 0 ? "Any mode" : GameModes.Title(FilterModes[_modeFilter]);
-        Button mode = CompactButton(theme, modeName, ButtonAccent.Ghost);
+        filters.Add(kind);
+        string modeName = _modeFilter == 0 ? "Any" : GameModes.Title(FilterModes[_modeFilter]);
+        Button mode = CompactButton(theme, $"Mode: {modeName}", ButtonAccent.Ghost);
+        mode.TrailingGlyph = ChevronDown;
+        mode.GlyphSize = 12f;
         mode.Activated += _ =>
         {
             _modeFilter = (_modeFilter + 1) % FilterModes.Length;
             Invalidate();
         };
-        bar.Add(mode);
-        layout.Add(bar, 0, 0);
+        filters.Add(mode);
+        if (_searching || _search.Length > 0)
+        {
+            var search = new TextBox(theme) { Id = SearchId, Placeholder = "Search", MaxLength = 32, Width = 150f, Height = 44f, VerticalAlignment = VerticalAlignment.Center, LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Search) };
+            search.Text = _search;
+            search.TextChanged += text =>
+            {
+                _search = text;
+                _focusNext = SearchId;
+                Invalidate();
+            };
+            filters.Add(search);
+        }
+
+        filters.Add(new Panel(), grow: 1f);
+        if (!_searching && _search.Length == 0)
+        {
+            Button find = CompactIcon(theme, OpenIGI.UI.Kit.KitIcon.Search, "Search the games by name or map.");
+            find.Activated += _ =>
+            {
+                _searching = true;
+                _focusNext = SearchId;
+                Invalidate();
+            };
+            filters.Add(find);
+        }
+
+        Button quick = CompactIcon(theme, OpenIGI.UI.Kit.KitIcon.Play, "Quick play: join the best open game listed.");
+        quick.Activated += _ => coop.QuickPlay();
+        filters.Add(quick);
+        Button refresh = CompactIcon(theme, OpenIGI.UI.Kit.KitIcon.Refresh, "Ask for the list again.");
+        refresh.Activated += _ => Refresh(coop);
+        filters.Add(refresh);
+        layout.Add(filters, 1, 0);
 
         _rows.Clear();
         var rows = new StackPanel { Orientation = Orientation.Vertical };
@@ -152,15 +211,10 @@ public sealed partial class MultiplayerScreen
             rows.AddChild(row);
         }
 
-        // A friend's room by its code, after the lines.
-        Grid code = BuildCodeJoin(theme, coop);
-        code.Margin = new Thickness(12f, 12f, 12f, 12f);
-        rows.AddChild(code);
-
         var scroll = new ScrollView(theme);
         scroll.SetContent(rows);
         _listScroll = scroll;
-        layout.Add(Panel(theme, scroll), 1, 0);
+        layout.Add(Panel(theme, scroll), 3, 0);
         return layout;
     }
 
@@ -264,9 +318,22 @@ public sealed partial class MultiplayerScreen
     }
 
     // A button a thumb tall, its caption in the page's small label size.
+    // A square button that is only its mark, a thumb wide.
+    private static Button CompactIcon(UiTheme theme, OpenIGI.UI.Kit.KitIcon icon, string tooltip) => new(theme, string.Empty)
+    {
+        Accent = ButtonAccent.Ghost,
+        LeadingGlyph = Glyph(icon),
+        GlyphSize = 18f,
+        Padding = new Thickness(13f, 0f),
+        Height = 44f,
+        VerticalAlignment = VerticalAlignment.Center,
+        Tooltip = tooltip,
+    };
+
     private static Button CompactButton(UiTheme theme, string text, ButtonAccent accent) => new(theme, text)
     {
         Accent = accent,
+        GlyphSize = 16f,
         TextSize = 15f,
         Tracking = 0.1f,
         Padding = new Thickness(14f, 0f),

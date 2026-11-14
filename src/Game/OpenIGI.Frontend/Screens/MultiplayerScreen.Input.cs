@@ -10,14 +10,14 @@ namespace OpenIGI.Frontend.Screens;
 /// pressed, the list heard again -- and a build that put the keys back on the first control and the list back at its top would
 /// throw the player off the line they were on. So each build takes the focus and the list's scroll from the one before it.
 /// The keys: TAB between BROWSE and HOST; browsing, the arrows pick the line they move onto, ENTER joins it, F plays the best
-/// game listed and R asks for the list again; ENTER in a code's box joins by the code, and ESC shuts the party's.
+/// game listed and R asks for the list again; ENTER in a code's box joins the room with the code, and ESC shuts the box.
 /// </content>
 public sealed partial class MultiplayerScreen
 {
-    // The ids of the controls the page names: a line's row, by its code after the prefix, and the two code boxes.
+    // The ids of the controls the page names: a line's row, by its code after the prefix, the code box and the search box.
     private const string RowIdPrefix = "row:";
-    private const string RoomCodeId = "room-code";
     private const string PartyCodeId = "party-code";
+    private const string SearchId = "search";
 
     // The page's content as last built, and the list's viewport in it: what the next build takes its place from.
     private UiElement? _page;
@@ -55,9 +55,9 @@ public sealed partial class MultiplayerScreen
 
         if (Focus?.Focused is TextBox box)
         {
-            if (Entered(nav, input))
+            if (EnteredText(nav, input))
             {
-                Submit(coop, box);
+                Submit(box);
                 return false;
             }
         }
@@ -77,6 +77,15 @@ public sealed partial class MultiplayerScreen
         if (nav.Back && _joiningParty)
         {
             _joiningParty = false;
+            Invalidate();
+            return false;
+        }
+
+        // And the compact page's search box, when it holds nothing worth keeping.
+        if (nav.Back && _searching)
+        {
+            _searching = false;
+            _search = string.Empty;
             Invalidate();
             return false;
         }
@@ -137,24 +146,13 @@ public sealed partial class MultiplayerScreen
     }
 
     // ENTER in a code's box: join by the code.
-    private void Submit(ICoopRooms coop, TextBox box)
+    private void Submit(TextBox box)
     {
         if (box.Id == PartyCodeId)
         {
-            if (Parties is { } parties)
-            {
-                JoinParty(parties);
-            }
-        }
-        else if (box.Id == RoomCodeId)
-        {
-            JoinByCode(coop);
+            JoinRoomByEnteredCode();
         }
     }
-
-    // Whether a box was entered: accept, but not the space bar, which in a box is a character.
-    private static bool Entered(UiNavigation nav, InputState input) =>
-        nav.Accept && !input.Keyboard.IsDown(KeyCode.Space) && !input.Keyboard.WasPressed(KeyCode.Space);
 
     // What the page being replaced leaves the next: which control held the keys, and where the list was scrolled to.
     private (string? Focus, float? Scroll) LeavePlace()

@@ -44,6 +44,7 @@ public sealed class FontAtlasData
     /// <param name="sdfPadding">For an SDF atlas, the padding baked around each glyph in texels; otherwise zero.</param>
     /// <param name="sdfOnEdge">For an SDF atlas, the texel value that marks the glyph edge; otherwise zero.</param>
     /// <param name="sdfPixelDistScale">For an SDF atlas, distance units per texel; otherwise zero.</param>
+    /// <param name="emHeight">The face's em square in atlas pixels, or zero when it is not known: the pixel height then stands for it.</param>
     /// <exception cref="ArgumentException"><paramref name="pixels"/> is not <paramref name="width"/> × <paramref name="height"/> long.</exception>
     public FontAtlasData(
         FontAtlasKind kind,
@@ -57,7 +58,8 @@ public sealed class FontAtlasData
         IReadOnlyList<GlyphInfo> glyphs,
         int sdfPadding = 0,
         byte sdfOnEdge = 0,
-        float sdfPixelDistScale = 0f)
+        float sdfPixelDistScale = 0f,
+        float emHeight = 0f)
     {
         ArgumentNullException.ThrowIfNull(pixels);
         ArgumentNullException.ThrowIfNull(glyphs);
@@ -82,6 +84,7 @@ public sealed class FontAtlasData
         SdfPadding = sdfPadding;
         SdfOnEdge = sdfOnEdge;
         SdfPixelDistScale = sdfPixelDistScale;
+        EmHeight = emHeight > 0f ? emHeight : basePixelHeight;
     }
 
     /// <summary>Gets what one texel means.</summary>
@@ -98,6 +101,14 @@ public sealed class FontAtlasData
 
     /// <summary>Gets the pixel height the glyphs were rasterised at.</summary>
     public float BasePixelHeight { get; }
+
+    /// <summary>Gets the face's em square in atlas pixels: what a size in points or CSS pixels measures.</summary>
+    /// <remarks>
+    /// Smaller than <see cref="BasePixelHeight"/>, which spans the ascender to the descender: Barlow's is five sixths
+    /// of it. A design drawn in a browser gives its sizes in ems, so text set at the same number here is that much smaller
+    /// unless the size is converted (<see cref="UiFont.SizesInEm"/>).
+    /// </remarks>
+    public float EmHeight { get; }
 
     /// <summary>Gets the baseline-to-top distance in atlas pixels.</summary>
     public float Ascent { get; }

@@ -121,7 +121,10 @@ public sealed class Shell
     /// <param name="elapsedSeconds">The real seconds since the last update.</param>
     public void Update(LayoutContext context, InputState input, float elapsedSeconds)
     {
-        Stack.Update(context, input, elapsedSeconds);
+        using (DesignSizes.Enter())
+        {
+            Stack.Update(context, input, elapsedSeconds);
+        }
 
         // The backdrop eases between pages rather than snapping: the home page's sharp level blurs as a
         // section opens over it, and the campaign's push-in on a new mission settles over a second.
@@ -155,5 +158,32 @@ public sealed class Shell
 
     /// <summary>Draws the shell.</summary>
     /// <param name="painter">The painter to draw into.</param>
-    public void Draw(UiPainter painter) => Stack.Draw(painter);
+    public void Draw(UiPainter painter)
+    {
+        using (DesignSizes.Enter())
+        {
+            Stack.Draw(painter);
+        }
+    }
+
+    /// <summary>The span in which text sizes are the design's: CSS pixels, which name a face's em.</summary>
+    /// <remarks>
+    /// The menus are built from a design drawn in a browser, and every size in them is that design's number. Outside
+    /// the shell -- the HUD, the console, the editor -- a size keeps its older meaning.
+    /// </remarks>
+    private readonly struct DesignSizes : IDisposable
+    {
+        private readonly bool _before;
+
+        private DesignSizes(bool before) => _before = before;
+
+        public static DesignSizes Enter()
+        {
+            bool before = OpenIGI.UI.Text.UiFont.SizesInEm;
+            OpenIGI.UI.Text.UiFont.SizesInEm = true;
+            return new DesignSizes(before);
+        }
+
+        public void Dispose() => OpenIGI.UI.Text.UiFont.SizesInEm = _before;
+    }
 }

@@ -24,7 +24,7 @@ public sealed class PauseScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Home;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("ENTER", "Select"), new("Q E", "Sections"), new("ESC", "Resume")];
+    protected override IReadOnlyList<KeyHint> Hints => [new("Enter", "Select"), new("Q E", "Sections"), new("Esc", "Resume")];
 
     /// <inheritdoc/>
     /// <remarks>

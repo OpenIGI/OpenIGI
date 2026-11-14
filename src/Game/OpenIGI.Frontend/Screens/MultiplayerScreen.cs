@@ -7,18 +7,22 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// Multiplayer, every way of playing with others on one page. Across the top, the page's title and the party: a square for each
-/// member, the leader's underlined, open places to invite into, the party's code. Under them, BROWSE and HOST, with QUICK PLAY
-/// and RECONNECT beside. Browsing, the list of every server and room heard of fills the left -- filtered by kind and mode, in
-/// columns -- and the line picked shows on the right with JOIN. Hosting, the game's settings and its mode's rules stand in two
-/// panels, and the game as it will be hosted on the right with HOST. The same on the desktop and in the browser.
+/// Multiplayer, every way of playing with others on one page. Across the top, the page's title with BROWSE and HOST beside
+/// it, and the party: a square for each member, the leader's underlined, open places to invite into, INVITE and ENTER CODE.
+/// Browsing, the list of every server and room heard of fills the left -- filtered by kind, name and mode, in columns -- and
+/// on the right QUICK PLAY and RECONNECT stand over the line picked, with JOIN. Hosting, the game's settings and its mode's
+/// rules stand in two panels, and the game as it will be hosted on the right with HOST. The same on the desktop and in the browser.
 /// </summary>
 public sealed partial class MultiplayerScreen : ShellScreen
 {
     // The side panel's width, and the room between panels. Layout pixels.
-    private float SideWidth => Size == ShellSize.Wide ? 520f : 440f;
+    private float SideWidth => Size == ShellSize.Wide ? 520f : 470f;
 
-    private const float PanelGap = 20f;
+    private const float PanelGap = 24f;
+
+    // The design's button text: its size and letterspacing.
+    private const float ButtonText = 17f;
+    private const float ButtonTracking = 0.12f;
 
     // How often the list is asked for again while the page is up and this player plays nowhere.
     private const float RelistSeconds = 5f;
@@ -26,7 +30,6 @@ public sealed partial class MultiplayerScreen : ShellScreen
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
     private float _sinceListed;
-    private string _code = string.Empty;
 
     // The control that held the keys on the page this one replaces, as KeyOf names it, or null for none.
     private string? _keptFocus;
@@ -53,8 +56,8 @@ public sealed partial class MultiplayerScreen : ShellScreen
 
     /// <inheritdoc/>
     protected override IReadOnlyList<KeyHint> Hints => _tab == 0
-        ? [new("↑↓", "Select"), new("ENTER", "Join"), new("F", "Quick play"), new("R", "Refresh"), new("TAB", "Host"), new("ESC", "Back")]
-        : [new("↑↓", "Select"), new("←→", "Adjust"), new("TAB", "Browse"), new("ESC", "Back")];
+        ? [new("↑ ↓", "Select"), new("Esc", "Back")]
+        : [new("↑ ↓", "Select"), new("← →", "Adjust"), new("Tab", "Browse"), new("Esc", "Back")];
 
     private ICoopRooms? Coop => Context.Host.Coop;
 
@@ -91,19 +94,22 @@ public sealed partial class MultiplayerScreen : ShellScreen
             return compact;
         }
 
-        var page = new Grid { RowSpacing = 0f, Margin = new Thickness(SideMargin, 32f, SideMargin, 16f) };
+        bool roomy = Size == ShellSize.Wide;
+        var page = new Grid { RowSpacing = 0f, Margin = new Thickness(SideMargin, roomy ? 32f : 26f, SideMargin, roomy ? 32f : 20f) };
         page.ColumnDefinitions.Add(GridLength.Star);
         page.RowDefinitions.Add(GridLength.Auto);
         page.RowDefinitions.Add(GridLength.Auto);
-        page.RowDefinitions.Add(GridLength.Auto);
         page.RowDefinitions.Add(GridLength.Star);
-        page.Add(BuildHeader(theme), 0, 0);
-        page.Add(BuildModeBar(theme, coop), 1, 0);
-        page.Add(BuildNotes(theme, coop), 2, 0);
+        page.Add(BuildHeader(theme, coop), 0, 0);
+        if (BuildNotes(theme, coop) is { } notes)
+        {
+            page.Add(notes, 1, 0);
+        }
+
         _browseTab = BuildBrowseTab(theme, coop);
         _hostTab = BuildHostTab(theme, coop);
-        page.Add(_browseTab, 3, 0);
-        page.Add(_hostTab, 3, 0);
+        page.Add(_browseTab, 2, 0);
+        page.Add(_hostTab, 2, 0);
         ShowContent();
         if (scrolled is { } offset)
         {
@@ -154,42 +160,25 @@ public sealed partial class MultiplayerScreen : ShellScreen
         }
     }
 
-    // The title on the left, the party on the right.
-    private Grid BuildHeader(UiTheme theme)
+    // The title, BROWSE and HOST beside it, and the party against the right edge: all on the title's baseline.
+    private Grid BuildHeader(UiTheme theme, ICoopRooms coop)
     {
-        var header = new Grid();
+        var header = new Grid { ColumnSpacing = Size == ShellSize.Wide ? 32f : 24f, Margin = new Thickness(0f, 0f, 0f, Size == ShellSize.Wide ? 24f : 21f) };
         header.RowDefinitions.Add(GridLength.Auto);
         header.ColumnDefinitions.Add(GridLength.Auto);
+        header.ColumnDefinitions.Add(GridLength.Auto);
         header.ColumnDefinitions.Add(GridLength.Star);
+        header.ColumnDefinitions.Add(GridLength.Auto);
         header.Add(new SectionTitle(theme, "Together", "Multiplayer") { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom }, 0, 0);
-        if (Parties is { } parties)
-        {
-            UiElement party = BuildPartyCluster(theme, parties);
-            party.HorizontalAlignment = HorizontalAlignment.Right;
-            party.VerticalAlignment = VerticalAlignment.Bottom;
-            header.Add(party, 0, 1);
-        }
-
-        return header;
-    }
-
-    // BROWSE and HOST on the left; QUICK PLAY and RECONNECT on the right.
-    private Grid BuildModeBar(UiTheme theme, ICoopRooms coop)
-    {
-        var bar = new Grid { Margin = new Thickness(0f, 20f, 0f, 0f) };
-        bar.RowDefinitions.Add(GridLength.Auto);
-        bar.ColumnDefinitions.Add(GridLength.Auto);
-        bar.ColumnDefinitions.Add(GridLength.Star);
-        bar.ColumnDefinitions.Add(GridLength.Auto);
 
         int games = coop.Listing?.Count ?? 0;
         var tabs = new TabStrip(theme, ["Browse", "Host"])
         {
-            Notes = [string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{games} {(games == 1 ? "GAME" : "GAMES")}"), "CREATE"],
-            SegmentHeight = 44f,
-            TabPadding = 28f,
-            TextSize = 17f,
-            VerticalAlignment = VerticalAlignment.Center,
+            Notes = [games.ToString(System.Globalization.CultureInfo.InvariantCulture), string.Empty],
+            SegmentHeight = 36f,
+            TabPadding = 18f,
+            TextSize = ButtonText,
+            VerticalAlignment = VerticalAlignment.Bottom,
         };
         tabs.SelectedIndex = _tab;
         tabs.SelectionChanged += index =>
@@ -204,40 +193,69 @@ public sealed partial class MultiplayerScreen : ShellScreen
             RefreshHints();
         };
         _tabs = tabs;
-        bar.Add(tabs, 0, 0);
+        header.Add(tabs, 0, 1);
 
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f, VerticalAlignment = VerticalAlignment.Center };
+        if (Parties is { } parties)
+        {
+            UiElement party = BuildPartyCluster(theme, parties);
+            party.HorizontalAlignment = HorizontalAlignment.Right;
+            party.VerticalAlignment = VerticalAlignment.Bottom;
+            header.Add(party, 0, 3);
+        }
+
+        return header;
+    }
+
+    // QUICK PLAY and RECONNECT, side by side over the line picked, and under them where RECONNECT leads.
+    private StackPanel BuildQuickActions(UiTheme theme, ICoopRooms coop)
+    {
+        var block = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
+        var row = new Grid { ColumnSpacing = 12f };
+        row.RowDefinitions.Add(GridLength.Auto);
+        row.ColumnDefinitions.Add(GridLength.Star);
         var quick = new Button(theme, "QUICK PLAY")
         {
-            Accent = ButtonAccent.Outline,
-            Key = "F",
-            TextSize = 17f,
-            Tracking = 0.12f,
-            Padding = new Thickness(22f, 0f),
-            Height = 52f,
+            Accent = ButtonAccent.Ghost,
+            Key = Context.Host.TouchScreen ? string.Empty : "F",
+            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Play),
+            GlyphSize = 16f,
+            TextSize = ButtonText,
+            Tracking = ButtonTracking,
+            Padding = new Thickness(12f, 0f),
+            Height = 44f,
             Tooltip = "Join the best open game listed: near, with people in it, room for you.",
         };
         quick.Activated += _ => coop.QuickPlay();
-        actions.AddChild(quick);
+        row.Add(quick, 0, 0);
         if (coop.LastPlayed is { } last)
         {
+            row.ColumnDefinitions.Add(GridLength.Star);
             var reconnect = new Button(theme, "RECONNECT")
             {
                 Accent = ButtonAccent.Ghost,
-                TextSize = 17f,
-                Tracking = 0.12f,
-                Padding = new Thickness(22f, 0f),
-                Height = 52f,
-                SubCaption = coop.LastPlayedAt is { } at ? $"{last} · {Ago(at)}" : last,
+                LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.History),
+                GlyphSize = 18f,
+                TextSize = ButtonText,
+                Tracking = ButtonTracking,
+                Padding = new Thickness(12f, 0f),
+                Height = 44f,
                 Tooltip = $"Join {last} again, where you last played.",
             };
             reconnect.Activated += _ => coop.Reconnect();
-            actions.AddChild(reconnect);
+            row.Add(reconnect, 0, 1);
+            block.AddChild(row);
+            string when = coop.LastPlayedAt is { } at ? $"Reconnect: {last} · {Ago(at)}" : $"Reconnect: {last}";
+            block.AddChild(new Label(theme.Mono, ServerRow.Fit(when, theme.Mono, 13f, SideWidth - 4f), 13f, theme.TextMuted) { Margin = new Thickness(2f, 0f, 0f, 0f) });
+            return block;
         }
 
-        bar.Add(actions, 0, 2);
-        return bar;
+        block.AddChild(row);
+        return block;
     }
+
+    // An icon as a button's mark.
+    private static Action<UiPainter, UiVec2, float, Bgra32> Glyph(OpenIGI.UI.Kit.KitIcon icon) =>
+        (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, icon, centre, size, ink);
 
     // Shows the tab picked and hides the other.
     private void ShowContent()
@@ -259,10 +277,11 @@ public sealed partial class MultiplayerScreen : ShellScreen
         }
     }
 
-    // Between the bar and the panels: where this player plays, when it does; the party member picked, when one is.
-    private StackPanel BuildNotes(UiTheme theme, ICoopRooms coop)
+    // Between the header and the panels: where this player plays, when it does; the party member picked, when one is.
+    // Nothing when there is nothing to say, so the panels stand straight under the header.
+    private StackPanel? BuildNotes(UiTheme theme, ICoopRooms coop)
     {
-        var notes = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, Margin = new Thickness(0f, 12f, 0f, 12f) };
+        var notes = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, Margin = new Thickness(0f, -8f, 0f, 16f) };
         if (BuildStatus(theme, coop.Status) is { } status)
         {
             notes.AddChild(status);
@@ -273,7 +292,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
             notes.AddChild(party);
         }
 
-        return notes;
+        return notes.Children.Count > 0 ? notes : null;
     }
 
     // Where this player is, once it plays: a hosted room's code large, the room or server joined, or why it couldn't, with
@@ -321,7 +340,8 @@ public sealed partial class MultiplayerScreen : ShellScreen
         return since.TotalMinutes < 1 ? "just now"
             : since.TotalHours < 1 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalMinutes}m ago")
             : since.TotalDays < 1 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalHours}h ago")
-            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalDays}d ago");
+            : (int)since.TotalDays == 1 ? "1 day ago"
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalDays} days ago");
     }
 
     // A part of a status or party line: as wide as its words, so what follows it -- LEAVE, KICK -- stands beside it. A wrapping label

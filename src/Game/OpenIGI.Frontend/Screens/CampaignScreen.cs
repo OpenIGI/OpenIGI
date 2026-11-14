@@ -74,7 +74,7 @@ public sealed class CampaignScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Campaign;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("↑↓", "Select mission"), new("ENTER", "Play"), new("ESC", "Back")];
+    protected override IReadOnlyList<KeyHint> Hints => [new("↑ ↓", "Mission"), new("← →", "Option"), new("Esc", "Back")];
 
     /// <inheritdoc/>
     protected override Control? InitialFocus =>

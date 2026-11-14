@@ -148,7 +148,30 @@ public sealed class UiFont : IDisposable
     /// <param name="sizePx">The requested text size in pixels.</param>
     /// <returns>The factor every atlas-pixel metric is multiplied by.</returns>
     /// <remarks>Never for less than <see cref="MinimumPixelHeight"/>, so measuring and drawing agree on the size used.</remarks>
-    public float ScaleFor(float sizePx) => MathF.Max(sizePx, MinimumPixelHeight) / Atlas.BasePixelHeight;
+    public float ScaleFor(float sizePx) => PixelHeightFor(sizePx) / Atlas.BasePixelHeight;
+
+    /// <summary>Gets the pixel height a requested size is measured and drawn at.</summary>
+    /// <param name="sizePx">The requested text size.</param>
+    /// <returns>
+    /// The size itself, or the pixel height of a face whose em is that size while <see cref="SizesInEm"/> is set; never
+    /// less than <see cref="MinimumPixelHeight"/>.
+    /// </returns>
+    public float PixelHeightFor(float sizePx) =>
+        MathF.Max(SizesInEm ? sizePx * Atlas.BasePixelHeight / Atlas.EmHeight : sizePx, MinimumPixelHeight);
+
+    /// <summary>Gets or sets a value indicating whether a text size names the face's em rather than its pixel height.</summary>
+    /// <remarks>
+    /// <para>
+    /// A size here has always been the distance from a face's ascender to its descender. A page designed in a browser
+    /// gives its sizes as CSS pixels, which name the em: for Barlow a fifth less, for JetBrains Mono a quarter. An
+    /// interface built from such a design sets this, and every size it asks for is the design's own number.
+    /// </para>
+    /// <para>
+    /// Like <see cref="MinimumPixelHeight"/> it is set around the interface it is meant for and put back after, and it
+    /// passes through <see cref="ScaleFor"/>, so measuring and drawing agree.
+    /// </para>
+    /// </remarks>
+    public static bool SizesInEm { get; set; }
 
     /// <summary>Gets or sets the smallest size any text is measured and drawn at, in pixels; zero for none.</summary>
     /// <remarks>

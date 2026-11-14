@@ -29,7 +29,7 @@ internal static class CvarGroupBuilder
         foreach ((ICVar cvar, Control control) in CvarRows(rowBuilder, theme, names))
         {
             string word = GroupWord(cvar.Name);
-            string title = words.GetValueOrDefault(word) >= 2 ? Humanize(word) : fallback;
+            string title = word.Length > 0 && words.GetValueOrDefault(word) >= 2 ? Humanize(word) : fallback;
             if (!byWord.TryGetValue(title, out List<Control>? rows))
             {
                 rows = [];

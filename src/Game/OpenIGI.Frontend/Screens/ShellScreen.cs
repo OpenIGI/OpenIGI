@@ -101,7 +101,10 @@ public abstract class ShellScreen : Screen
     protected abstract ShellTab Tab { get; }
 
     /// <summary>Gets the key hints the footer shows on this page.</summary>
-    protected virtual IReadOnlyList<KeyHint> Hints => [new("ESC", "Back")];
+    protected virtual IReadOnlyList<KeyHint> Hints => [new("Esc", "Back")];
+
+    /// <summary>Gets a quiet line set at the footer's left, or empty for none: the landing page's says which build this is.</summary>
+    protected virtual string FooterNote => string.Empty;
 
     /// <inheritdoc/>
     protected override UiElement? Chrome => _chrome;
@@ -217,6 +220,17 @@ public abstract class ShellScreen : Screen
         }
 
         return base.HandleInput(nav, input);
+    }
+
+    /// <summary>Gets a value indicating whether a text box was entered this frame: accept, but not the space bar, which in a box is a character.</summary>
+    /// <param name="nav">The frame's navigation.</param>
+    /// <param name="input">The frame's input.</param>
+    /// <returns><see langword="true"/> when what the box holds is to be acted on.</returns>
+    protected static bool EnteredText(UiNavigation nav, InputState input)
+    {
+        ArgumentNullException.ThrowIfNull(nav);
+        ArgumentNullException.ThrowIfNull(input);
+        return nav.Accept && !input.Keyboard.IsDown(KeyCode.Space) && !input.Keyboard.WasPressed(KeyCode.Space);
     }
 
     /// <summary>Switches to another section.</summary>
@@ -336,6 +350,8 @@ public abstract class ShellScreen : Screen
         }
 
         Button quit = HeaderButton(theme, "Quit");
+        quit.LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.Power, centre, size, ink);
+        quit.GlyphSize = 18f;
         quit.Activated += _ => Context.Host.Quit();
         right.Add(quit);
         row.Add(right);
@@ -372,6 +388,16 @@ public abstract class ShellScreen : Screen
             Margin = new Thickness(SideMargin, 0f),
         };
         _hints.SetHints(Hints);
+        if (FooterNote.Length > 0)
+        {
+            bar.AddChild(new Label(Context.Theme.Mono, FooterNote, 13f, Context.Theme.TextMuted)
+            {
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(SideMargin, 0f),
+            });
+        }
+
         bar.AddChild(_hints);
         return bar;
     }

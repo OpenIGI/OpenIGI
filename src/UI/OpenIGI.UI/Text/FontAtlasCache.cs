@@ -25,7 +25,7 @@ namespace OpenIGI.UI.Text;
 public static class FontAtlasCache
 {
     private const uint Magic = 0x49474641; // "IGFA"
-    private const byte FormatVersion = 1;
+    private const byte FormatVersion = 2;
 
     /// <summary>Loads a cached atlas if one matches, otherwise builds it and caches the result.</summary>
     /// <param name="cacheDirectory">The directory cache files live in. Created if it does not exist.</param>
@@ -145,6 +145,7 @@ public static class FontAtlasCache
             int sdfPadding = reader.ReadInt32();
             byte sdfOnEdge = reader.ReadByte();
             float sdfPixelDistScale = reader.ReadSingle();
+            float emHeight = reader.ReadSingle();
 
             int glyphCount = reader.ReadInt32();
             if (width <= 0 || height <= 0 || glyphCount < 0)
@@ -174,7 +175,7 @@ public static class FontAtlasCache
 
             atlas = new FontAtlasData(
                 kind, width, height, pixels, basePixelHeight, ascent, descent, lineGap,
-                glyphs, sdfPadding, sdfOnEdge, sdfPixelDistScale);
+                glyphs, sdfPadding, sdfOnEdge, sdfPixelDistScale, emHeight);
             return true;
         }
         catch (Exception ex) when (ex is IOException or EndOfStreamException or ArgumentException)
@@ -216,6 +217,7 @@ public static class FontAtlasCache
             writer.Write(atlas.SdfPadding);
             writer.Write(atlas.SdfOnEdge);
             writer.Write(atlas.SdfPixelDistScale);
+            writer.Write(atlas.EmHeight);
 
             writer.Write(atlas.Glyphs.Count);
             foreach (GlyphInfo glyph in atlas.Glyphs)

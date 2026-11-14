@@ -31,7 +31,7 @@ public sealed class RoomClosedScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Home;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => _code is null ? [new("ESC", "Back to menu")] : [new("ENTER", "Rejoin"), new("ESC", "Back to menu")];
+    protected override IReadOnlyList<KeyHint> Hints => _code is null ? [new("Esc", "Back to menu")] : [new("Enter", "Rejoin"), new("Esc", "Back to menu")];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)

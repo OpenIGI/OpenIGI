@@ -157,6 +157,39 @@ public sealed class GameConfig
         return true;
     }
 
+    /// <summary>Gives a profile another name.</summary>
+    /// <param name="index">The profile to rename.</param>
+    /// <param name="name">Its new name. Trailing blanks are dropped and it is cut to the original's buffer.</param>
+    /// <returns><see langword="false"/> when there is no such profile, the name is empty, or another profile has it.</returns>
+    /// <remarks>
+    /// Names are told apart without regard to case, as when a profile is made, so a profile may change the case of its
+    /// own name but not take another's. What is kept under the old name elsewhere -- its save slots -- is the caller's to move.
+    /// </remarks>
+    public bool RenameProfile(int index, string? name)
+    {
+        if (index < 0 || index >= _profiles.Count)
+        {
+            return false;
+        }
+
+        string trimmed = (name ?? string.Empty).TrimEnd(' ', '\t');
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < _profiles.Count; i++)
+        {
+            if (i != index && string.Equals(_profiles[i].Name, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        _profiles[index].Name = Truncate(trimmed);
+        return true;
+    }
+
     /// <summary>Removes a profile.</summary>
     /// <param name="index">The profile to remove.</param>
     /// <returns><see langword="false"/> when there is no such profile.</returns>

@@ -88,6 +88,9 @@ public static class FontAtlasBuilder
             float descent = -rawDescent * scale; // stb reports descent as negative; store it positive-down.
             float lineGap = rawLineGap * scale;
 
+            // The em square at this rasterisation: font units per em, times the scale from font units to atlas pixels.
+            float emHeight = scale / StbTrueType.stbtt_ScaleForMappingEmToPixels(info, 1f);
+
             foreach (int codepoint in codepoints)
             {
                 int glyph = StbTrueType.stbtt_FindGlyphIndex(info, codepoint);
@@ -177,7 +180,8 @@ public static class FontAtlasBuilder
                 glyphs,
                 padding,
                 sdfOnEdge,
-                pixelDistScale);
+                pixelDistScale,
+                emHeight);
         }
     }
 

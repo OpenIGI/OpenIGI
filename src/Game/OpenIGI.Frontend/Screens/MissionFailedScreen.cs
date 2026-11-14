@@ -27,7 +27,7 @@ public sealed class MissionFailedScreen : ShellScreen
     private bool FollowsHost => Context.Host.Coop?.Status is { Phase: CoopPhase.Playing, Hosting: false };
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => FollowsHost ? [new("ESC", "Leave room")] : [new("ENTER", "Restart"), new("ESC", "Abandon")];
+    protected override IReadOnlyList<KeyHint> Hints => FollowsHost ? [new("Esc", "Leave room")] : [new("Enter", "Restart"), new("Esc", "Abandon")];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context) =>

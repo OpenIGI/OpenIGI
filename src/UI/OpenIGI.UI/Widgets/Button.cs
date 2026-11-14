@@ -102,6 +102,16 @@ public class Button : Control
     /// </summary>
     public string Key { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets what draws a mark before the caption -- an icon -- or <see langword="null"/> for none.</summary>
+    /// <remarks>Given the painter, the mark's centre, its size in pixels and the caption's colour.</remarks>
+    public Action<UiPainter, UiVec2, float, Bgra32>? LeadingGlyph { get; set; }
+
+    /// <summary>Gets or sets what draws a mark after the caption, before its key, or <see langword="null"/> for none.</summary>
+    public Action<UiPainter, UiVec2, float, Bgra32>? TrailingGlyph { get; set; }
+
+    /// <summary>Gets or sets the size of the marks beside the caption, in design units.</summary>
+    public float GlyphSize { get; set; } = 21f;
+
     /// <summary>Gets or sets a second, small monospaced line under the caption. Empty for none.</summary>
     public string SubCaption { get; set; } = string.Empty;
 
@@ -133,7 +143,7 @@ public class Button : Control
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         float sizePx = context.Px(CaptionSize);
-        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking) + KeyWidth(context);
+        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking) + KeyWidth(context) + GlyphsWidth(context);
         float height = Face.LineHeight(sizePx);
         if (SubCaption.Length > 0)
         {
@@ -168,7 +178,13 @@ public class Button : Control
 
             case ButtonAccent.Ghost:
             {
-                Bgra32 border = !IsEnabled ? UiPalette.White(0.12f) : Interpolate.Lerp(UiPalette.GhostBorder, Theme.Accent, hot);
+                Bgra32 border = !IsEnabled ? UiPalette.White(0.12f) : Interpolate.Lerp(Theme.Large ? UiPalette.White(0.42f) : UiPalette.GhostBorder, Theme.Accent, hot);
+                if (Theme.Large)
+                {
+                    // The large look's secondary button stands on a dark wash, so it reads over a picture.
+                    painter.FillCutRect(bounds, cut, UiCorners.BottomRight, UiPalette.Fade(Bgra32.FromRgba(10, 12, 13, 89), appear));
+                }
+
                 painter.StrokeCutRect(bounds, cut, UiCorners.BottomRight, context.Px(1f), UiPalette.Fade(border, appear));
                 caption = !IsEnabled ? Theme.TextDim : Interpolate.Lerp(Theme.Text, Theme.Accent, hot);
                 break;
@@ -264,28 +280,99 @@ public class Button : Control
             return;
         }
 
-        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking) + KeyWidth(context);
+        float textWidth = ShownText.Length == 0 ? 0f : UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking);
+        float width = textWidth + KeyWidth(context) + GlyphsWidth(context);
         float x = Accent is ButtonAccent.Bar or ButtonAccent.Link
             ? Bounds.X + padding.Left
             : Bounds.X + ((Bounds.Width - width) * 0.5f);
         float y = UiRowStyle.CapsCenterY(Face, sizePx, Bounds) + press;
-        UiVec2 end = painter.DrawLabel(Face, ShownText, new UiVec2(x, y), sizePx, UiPalette.Fade(color, appear), CaptionTracking);
-        if (Key.Length > 0)
+        Bgra32 ink = UiPalette.Fade(color, appear);
+        float glyph = context.Px(GlyphSize);
+        float gap = context.Px(GlyphGap);
+        if (LeadingGlyph is { } leading)
         {
-            float keyPx = context.Px(KeySize);
-            float boxW = Theme.Mono.MeasureWidth(Key, keyPx) + context.Px(8f);
-            float boxH = Theme.Mono.LineHeight(keyPx) + context.Px(2f);
-            var box = new UiRect(end.X + context.Px(KeyGap), Bounds.Center.Y - (boxH * 0.5f) + press, boxW, boxH);
-            painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(color, appear));
-            painter.DrawText(Theme.Mono, Key, new UiVec2(box.X + context.Px(4f), UiRowStyle.CenterY(Theme.Mono, keyPx, box)), keyPx, UiPalette.Fade(color, appear));
+            leading(painter, new UiVec2(x + (glyph * 0.5f), Bounds.Center.Y + press), glyph, ink);
+            x += glyph + (textWidth > 0f ? gap : 0f);
         }
+
+        UiVec2 end = textWidth > 0f ? painter.DrawLabel(Face, ShownText, new UiVec2(x, y), sizePx, ink, CaptionTracking) : new UiVec2(x, y);
+        float after = end.X;
+        if (TrailingGlyph is { } trailing)
+        {
+            after += textWidth > 0f || LeadingGlyph is not null ? gap : 0f;
+            trailing(painter, new UiVec2(after + (glyph * 0.5f), Bounds.Center.Y + press), glyph, ink);
+            after += glyph;
+        }
+
+        if (Key.Length == 0)
+        {
+            return;
+        }
+
+        float keyPx = context.Px(KeySize);
+        float keyGap = HasLead ? context.Px(KeyGap) : 0f;
+        if (Theme.Large)
+        {
+            // A key as the large look draws it everywhere: a faint fill, a border, a heavier foot.
+            bool onAccent = Accent == ButtonAccent.Solid;
+            Bgra32 edge = UiPalette.Fade(onAccent ? UiPalette.InkAt(0.55f) : UiPalette.White(0.38f), appear);
+            float keyWidth = Theme.Mono.MeasureWidth(Key, keyPx);
+            float capW = MathF.Max(context.Px(26f), keyWidth + context.Px(12f));
+            float capH = context.Px(24f);
+            var cap = new UiRect(after + keyGap, Bounds.Center.Y - (capH * 0.5f) + press, capW, capH);
+            painter.FillRect(cap, UiPalette.Fade(onAccent ? UiPalette.InkAt(0.08f) : UiPalette.White(0.07f), appear));
+            painter.StrokeRect(cap, context.Px(1f), edge);
+            painter.FillRect(new UiRect(cap.X, cap.Bottom - context.Px(2f), cap.Width, context.Px(2f)), edge);
+            painter.DrawText(Theme.Mono, Key, new UiVec2(cap.X + ((cap.Width - keyWidth) * 0.5f), UiRowStyle.CenterY(Theme.Mono, keyPx, cap) - context.Px(0.5f)), keyPx, UiPalette.Fade(onAccent ? Theme.OnAccent : Theme.Text, appear));
+            return;
+        }
+
+        float boxW = Theme.Mono.MeasureWidth(Key, keyPx) + context.Px(8f);
+        float boxH = Theme.Mono.LineHeight(keyPx) + context.Px(2f);
+        var box = new UiRect(after + keyGap, Bounds.Center.Y - (boxH * 0.5f) + press, boxW, boxH);
+        painter.StrokeRect(box, context.Px(1f), ink);
+        painter.DrawText(Theme.Mono, Key, new UiVec2(box.X + context.Px(4f), UiRowStyle.CenterY(Theme.Mono, keyPx, box)), keyPx, ink);
     }
 
-    // The key cap's text size and its gap from the caption, and the subtitle's size. Design units.
-    private const float KeySize = 11f;
-    private const float KeyGap = 16f;
+    // The subtitle's size and the gap between a mark and the caption. Design units.
     private const float SubtitleSize = 10f;
+    private const float GlyphGap = 10f;
 
-    private float KeyWidth(LayoutContext context) =>
-        Key.Length == 0 ? 0f : context.Px(KeyGap) + Theme.Mono.MeasureWidth(Key, context.Px(KeySize)) + context.Px(8f);
+    // The key cap's text size and its gap from the caption. Design units.
+    private float KeySize => Theme.Large ? 12f : 11f;
+
+    private float KeyGap => Theme.Large ? 10f : 16f;
+
+    // Whether anything stands before the key: the caption or a mark.
+    private bool HasLead => ShownText.Length > 0 || LeadingGlyph is not null || TrailingGlyph is not null;
+
+    private float KeyWidth(LayoutContext context)
+    {
+        if (Key.Length == 0)
+        {
+            return 0f;
+        }
+
+        float text = Theme.Mono.MeasureWidth(Key, context.Px(KeySize));
+        float gap = HasLead ? context.Px(KeyGap) : 0f;
+        return gap + (Theme.Large ? MathF.Max(context.Px(26f), text + context.Px(12f)) : text + context.Px(8f));
+    }
+
+    private float GlyphsWidth(LayoutContext context)
+    {
+        float glyph = context.Px(GlyphSize);
+        float gap = context.Px(GlyphGap);
+        float width = 0f;
+        if (LeadingGlyph is not null)
+        {
+            width += glyph + (ShownText.Length > 0 ? gap : 0f);
+        }
+
+        if (TrailingGlyph is not null)
+        {
+            width += glyph + (ShownText.Length > 0 || LeadingGlyph is not null ? gap : 0f);
+        }
+
+        return width;
+    }
 }

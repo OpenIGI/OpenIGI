@@ -882,7 +882,8 @@ public sealed partial class UiPainter
 
         // Small text is drawn from the face's smaller rasterisation when it has one. They measure alike, so
         // the pen ends where the caller's measurement of the font it passed says it does.
-        font = font.ForDrawSize(deviceSize);
+        float devicePixels = font.PixelHeightFor(deviceSize);
+        font = font.ForDrawSize(devicePixels);
         var run = new GlyphRun(font, text, deviceSize, origin);
         while (run.MoveNext())
         {
@@ -895,7 +896,7 @@ public sealed partial class UiPainter
             }
 
             bool trimmed = dest != placed.Destination;
-            var glyph = new UiGlyph(dest, source, placed.Character, placed.PenX, placed.BaselineY, deviceSize, clip, trimmed);
+            var glyph = new UiGlyph(dest, source, placed.Character, placed.PenX, placed.BaselineY, devicePixels, clip, trimmed);
             Renderer.DrawGlyph(font, glyph, faded, effects, blend);
         }
 

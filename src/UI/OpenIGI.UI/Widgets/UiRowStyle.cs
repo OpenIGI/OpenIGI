@@ -97,11 +97,18 @@ public static class UiRowStyle
         Bgra32 color = !control.IsEnabled ? theme.TextDisabled : Interpolate.Lerp(theme.TextLabel, theme.TextBright, highlight);
         float x = bounds.X + painter.Context.Px(theme.RowInset);
         float room = MathF.Min(bounds.Right - painter.Context.Px(theme.RowInset), controlLeft - painter.Context.Px(Gap)) - x;
-        caption = TextFit.ToWidth(theme.Body, caption, sizePx, room);
+        // The large look sets a row's caption a weight up, so it leads the row, and as a sentence rather than a title.
+        Text.UiFont face = theme.Large ? theme.BodyStrong : theme.Body;
+        if (theme.Large)
+        {
+            caption = SentenceCase(caption);
+        }
+
+        caption = TextFit.ToWidth(face, caption, sizePx, room);
         if (!ShowsHint(control))
         {
-            float y = bounds.Y + ((bounds.Height - theme.Body.LineHeight(sizePx)) * 0.5f);
-            painter.DrawText(theme.Body, caption, new UiVec2(x, y), sizePx, UiPalette.Fade(color, appear));
+            float y = bounds.Y + ((bounds.Height - face.LineHeight(sizePx)) * 0.5f);
+            painter.DrawText(face, caption, new UiVec2(x, y), sizePx, UiPalette.Fade(color, appear));
             return;
         }
 
@@ -110,12 +117,68 @@ public static class UiRowStyle
         float gap = painter.Context.Px(3f);
         float block = theme.Body.LineHeight(sizePx) + gap + theme.Body.LineHeight(hintPx);
         float top = bounds.Y + ((bounds.Height - block) * 0.5f);
-        painter.DrawText(theme.Body, caption, new UiVec2(x, top), sizePx, UiPalette.Fade(color, appear));
+        painter.DrawText(face, caption, new UiVec2(x, top), sizePx, UiPalette.Fade(color, appear));
         string hint = TextFit.ToWidth(theme.Body, control.Hint, hintPx, room);
         painter.DrawText(theme.Body, hint, new UiVec2(x, top + theme.Body.LineHeight(sizePx) + gap), hintPx, UiPalette.Fade(theme.Large ? theme.TextSecondary : theme.TextMuted, appear));
     }
 
     private static float HintSize(UiTheme theme) => theme.BodyTextSize * 0.89f;
+
+    // Captions already turned, by the caption they were: a page has a few dozen and draws each every frame.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> Sentences = new(StringComparer.Ordinal);
+
+    /// <summary>Writes a caption as a sentence: <c>Frame Rate Cap</c> is <c>Frame rate cap</c>.</summary>
+    /// <param name="caption">The caption, as a title.</param>
+    /// <returns>
+    /// The caption with every word after the first begun in lower case, but a word that is not plainly a capitalised
+    /// one -- <c>NVIDIA</c>, <c>DLSS</c>, <c>IGI1</c>, <c>F1</c> -- and the word after such a name, which is taken as part of it.
+    /// </returns>
+    public static string SentenceCase(string caption)
+    {
+        ArgumentNullException.ThrowIfNull(caption);
+        if (caption.Length < 2 || caption.IndexOf(' ', StringComparison.Ordinal) < 0 && caption.IndexOf('-', StringComparison.Ordinal) < 0)
+        {
+            return caption;
+        }
+
+        return Sentences.GetOrAdd(caption, static text =>
+        {
+            char[] letters = text.ToCharArray();
+            bool first = true;
+            bool afterName = false;
+            int start = 0;
+            for (int i = 0; i <= letters.Length; i++)
+            {
+                if (i < letters.Length && letters[i] != ' ' && letters[i] != '-')
+                {
+                    continue;
+                }
+
+                int length = i - start;
+                if (length > 0)
+                {
+                    // A plain capitalised word: one capital, then lower-case letters only.
+                    bool plain = char.IsUpper(letters[start]);
+                    for (int k = start + 1; plain && k < i; k++)
+                    {
+                        plain = char.IsLower(letters[k]);
+                    }
+
+                    if (plain && !first && !afterName && length > 1)
+                    {
+                        letters[start] = char.ToLowerInvariant(letters[start]);
+                    }
+
+                    afterName = !plain && length > 1 && char.IsUpper(letters[start]) && !first;
+                    first = false;
+                }
+
+                start = i + 1;
+            }
+
+            return new string(letters);
+        });
+    }
 
     /// <summary>Gets a value indicating whether a row shows its line of explanation now.</summary>
     /// <param name="control">The row.</param>

@@ -141,4 +141,37 @@ public sealed class SaveSlotStoreTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void Renaming_a_profile_moves_its_saves_and_screenshots_and_leaves_other_profiles_alone()
+    {
+        string dir = TempDir();
+        try
+        {
+            var store = new SaveSlotStore(dir);
+            var pixels = new Bgra32[1];
+            SaveSlot joe = store.Save(0, "Joe", 1, "One", DateTimeOffset.UnixEpoch, pixels, 1, 1);
+            store.Save(3, "Joe", 4, "Four", DateTimeOffset.UnixEpoch, [], 0, 0);
+            SaveSlot alex = store.Save(0, "Alex", 2, "Two", DateTimeOffset.UnixEpoch, pixels, 1, 1);
+            string before = store.ScreenshotPath(joe)!;
+
+            Assert.Equal(2, store.RenameProfile("jOe", "Jones"));
+
+            // Read back from the manifest, so what was moved is what was written.
+            var reread = new SaveSlotStore(dir);
+            Assert.Null(reread.Find("Joe", 0));
+            SaveSlot moved = Assert.IsType<SaveSlot>(reread.Find("Jones", 0));
+            Assert.Equal(1, moved.MissionId);
+            Assert.NotNull(reread.Find("Jones", 3));
+            Assert.False(File.Exists(before));
+            Assert.True(File.Exists(reread.ScreenshotPath(moved)!));
+            Assert.True(File.Exists(reread.ScreenshotPath(reread.Find("Alex", 0)!)!));
+            Assert.Equal(store.ScreenshotPath(alex), reread.ScreenshotPath(reread.Find("Alex", 0)!));
+            Assert.Equal(0, reread.RenameProfile("Nobody", "Someone"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

@@ -29,12 +29,12 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Pump(shell, 0.1f);
 
             Assert.Equal(PlayerProfile.BindingCount, screen.Root.Descendants().OfType<KeyBindingRow>().Count());
-            KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "MoveLeft");
+            KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "Move left");
             KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "Fire");
             Assert.Equal(KeyCode.A, moveLeft.BoundKey);
             Assert.Equal("A", moveLeft.BoundKeyName);
             Assert.Equal("Mouse Button 1", fire.BoundKeyName);
-            Assert.NotNull(Find<Button>(screen, button => button.Text == "RESET BINDINGS TO DEFAULTS"));
+            Assert.NotNull(Find<Button>(screen, button => button.Text == "RESET BINDINGS"));
         }
         finally
         {
@@ -62,12 +62,12 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Pump(shell, 0.1f);
 
             KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "MoveLeft");
+                .Single(row => row.Action == "Move left");
             KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Fire");
             // The right button is the sight's (alternate fire) in a fresh profile.
             KeyBindingRow sight = screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "AlternateFire");
+                .Single(row => row.Action == "Alternate fire");
 
             fire.Activate();
             Assert.True(fire.TryCaptureKey(KeyCode.A));
@@ -113,7 +113,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Pump(shell, 0.1f);
             KeyBindingRow crouch = screen.Root.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Crouch");
             KeyBindingRow walk = screen.Root.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Walk/run");
-            Assert.DoesNotContain(screen.Root.Descendants().OfType<KeyBindingRow>(), r => r.Action == "ToggleWalkRun");
+            Assert.DoesNotContain(screen.Root.Descendants().OfType<KeyBindingRow>(), r => r.Action == "Walk / run");
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
             crouch.Activate();
             Assert.True(crouch.TryCaptureKey(KeyCode.RightControl));
@@ -123,7 +123,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Assert.True(walk.TryCaptureKey(KeyCode.RightControl));
             Assert.Equal(KeyCode.CapsLock, crouch.BoundKey);
             Assert.Equal(KeyCode.RightControl, walk.BoundKey);
-            Find<Button>(screen, b => b.Text == "RESET BINDINGS TO DEFAULTS")!.Activate();
+            Find<Button>(screen, b => b.Text == "RESET BINDINGS")!.Activate();
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
             Assert.Equal(KeyCode.CapsLock, walk.BoundKey);
             Assert.Equal("KEY_RIGHT_CTRL", host.Profile.Bindings.Single(b => b.Action == "Crouch").Key);
@@ -205,24 +205,24 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Pump(shell, 0.1f);
 
             KeyBindingRow moveUp = screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "MoveUp");
+                .Single(row => row.Action == "Move forward");
             moveUp.Activate();
             Assert.True(moveUp.TryCaptureKey(KeyCode.F));
             Assert.Equal(KeyCode.F, moveUp.BoundKey);
 
-            Find<Button>(screen, button => button.Text == "RESET BINDINGS TO DEFAULTS")!.Activate();
+            Find<Button>(screen, button => button.Text == "RESET BINDINGS")!.Activate();
 
             Assert.Equal(KeyCode.W, moveUp.BoundKey);
             Assert.Equal(KeyCode.A, screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "MoveLeft").BoundKey);
+                .Single(row => row.Action == "Move left").BoundKey);
             Assert.Equal(KeyCode.D, screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "MoveRight").BoundKey);
+                .Single(row => row.Action == "Move right").BoundKey);
             Assert.Equal(KeyCode.S, screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "MoveDown").BoundKey);
+                .Single(row => row.Action == "Move back").BoundKey);
             Assert.Equal(KeyCode.Space, screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Jump").BoundKey);
             Assert.Equal(KeyCode.C, screen.Root.Descendants().OfType<KeyBindingRow>()
-                .Single(row => row.Action == "MapComputer").BoundKey);
+                .Single(row => row.Action == "Map computer").BoundKey);
             Assert.Equal(KeyCode.E, screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Activate").BoundKey);
         }

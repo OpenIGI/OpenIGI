@@ -64,7 +64,7 @@ public sealed partial class MultiplayerScreen
         if (missions.Count > 0)
         {
             _mission = Math.Clamp(_mission, 0, missions.Count - 1);
-            OptionCycler mission = Row(theme, HostingCoop ? "Mission" : "Map", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission);
+            OptionCycler mission = Row(theme, HostingCoop ? "Mission" : "Map", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number:00} {m.Name}"))], _mission);
             mission.SelectionChanged += index =>
             {
                 _mission = index;
@@ -213,11 +213,11 @@ public sealed partial class MultiplayerScreen
         MissionInfo? mission = missions.Count > 0 ? missions[Math.Clamp(_mission, 0, missions.Count - 1)] : null;
         string name = mission?.Name ?? "No missions";
         var top = new StackPanel { Orientation = Orientation.Vertical };
-        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, HostingCoop ? "Mission" : "Map", name, Size == ShellSize.Compact ? 110f : 220f)
+        top.AddChild(new ColourEdge { Colour = ModeLook.Colour(HostMode) });
+        top.AddChild(new MissionPlate(theme, mission?.Number.ToString("00", CultureInfo.InvariantCulture) ?? string.Empty, HostingCoop && mission is not null ? string.Create(CultureInfo.InvariantCulture, $"Mission {mission.Number:00}") : HostingCoop ? "Mission" : "Map", name, Size == ShellSize.Compact ? 110f : 260f)
         {
             Mode = HostMode,
             Picture = mission is null ? null : Context.Host.MissionPicture(mission.Id),
-            Margin = new Thickness(20f, 20f, 20f, 0f),
         });
 
         if (coop.ServerStatus is { } running)
@@ -236,22 +236,21 @@ public sealed partial class MultiplayerScreen
             return Panel(theme, body, side: true);
         }
 
-        var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(24f, 22f, 24f, 0f) };
-        about.AddChild(new Eyebrow(theme, "Your game"));
-        about.AddChild(new Label(theme.Heading, GameModes.Title(HostMode).ToUpperInvariant(), 30f, ModeLook.Colour(HostMode)) { Wrap = true });
-        about.AddChild(Body(theme, HostSummary(), theme.TextLabel, 16f));
+        var about = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, Margin = new Thickness(20f, 20f, 20f, 0f) };
+        about.AddChild(new Eyebrow(theme, "Your game") { TextSize = 14f, Color = theme.TextMuted });
+        about.AddChild(Body(theme, HostSummary(), theme.Text, 17f));
         top.AddChild(about);
 
         {
             int going = Parties?.Party is { Code: not null } party ? party.Members.Count : 1;
             int most = HostingCoop ? 4 : Coop?.CanHostServer == true && _runsOn == 1 ? 32 : 16;
-            var coming = new Grid { Margin = new Thickness(24f, 16f, 24f, 0f) };
+            var coming = new Grid { Margin = new Thickness(20f, 14f, 20f, 0f) };
             coming.RowDefinitions.Add(GridLength.Auto);
             coming.ColumnDefinitions.Add(GridLength.Star);
             coming.ColumnDefinitions.Add(GridLength.Auto);
-            coming.Add(new Label(theme.Body, "Party joins automatically", 15f, theme.TextSecondary), 0, 0);
-            coming.Add(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{going}/{most}"), 15f, theme.Text), 0, 1);
-            top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.07f), Margin = new Thickness(24f, 16f, 24f, 0f) });
+            coming.Add(new Label(theme.Body, "Your party joins automatically", 15f, theme.TextSecondary), 0, 0);
+            coming.Add(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{going} / {most}"), 15f, theme.Text), 0, 1);
+            top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.12f), Margin = new Thickness(20f, 16f, 20f, 0f) });
             top.AddChild(coming);
         }
 

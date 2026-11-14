@@ -167,38 +167,122 @@ public class KeyBindingRow : Control
         // is rather than as a word.
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
-        float sizePx = context.Px(Theme.Large ? 14f : 13f);
+        float sizePx = context.Px(13f);
         if (!ReferenceEquals(_shownName, BoundKeyName))
         {
             _shownName = BoundKeyName;
-            _shownCap = BoundKeyName.ToUpperInvariant();
+            _shownCap = Theme.Large ? FriendlyName(BoundKeyName) : BoundKeyName.ToUpperInvariant();
         }
 
-        string value = IsListening ? "PRESS A KEY…" : _shownCap;
-        float textWidth = UiPainter.MeasureLabel(Theme.Mono, value, sizePx, 0.08f);
+        bool unbound = !IsListening && (_shownCap.Length == 0 || string.Equals(BoundKeyName, "Unbound", StringComparison.OrdinalIgnoreCase));
+        string value = IsListening ? (Theme.Large ? "Press a key…" : "PRESS A KEY…") : unbound && Theme.Large ? "—" : _shownCap;
+        float tracking = Theme.Large ? 0.02f : 0.08f;
+        float textWidth = UiPainter.MeasureLabel(Theme.Mono, value, sizePx, tracking);
         float padX = context.Px(Theme.Large ? 12f : 10f);
         float height = context.Px(Theme.Large ? 36f : 28f);
+        float width = MathF.Max(Theme.Large ? context.Px(104f) : 0f, textWidth + (padX * 2f));
         float right = Bounds.Right - context.Px(Theme.RowInset);
-        var cap = new UiRect(right - textWidth - (padX * 2f), Bounds.Y + ((Bounds.Height - height) * 0.5f), textWidth + (padX * 2f), height);
+        var cap = new UiRect(right - width, Bounds.Y + ((Bounds.Height - height) * 0.5f), width, height);
         UiRowStyle.DrawFrame(painter, this, Action, highlight, cap.X);
 
         Bgra32 border = IsListening
             ? Interpolate.Lerp(UiPalette.AccentAt(0.35f), Theme.Accent, _pulse.Value)
-            : Interpolate.Lerp(UiPalette.KeyBorder, UiPalette.AccentAt(0.45f), highlight);
+            : Interpolate.Lerp(Theme.Large ? UiPalette.White(unbound ? 0.25f : 0.38f) : UiPalette.KeyBorder, UiPalette.AccentAt(0.45f), highlight);
         if (IsListening)
         {
             painter.FillRect(cap, UiPalette.Fade(UiPalette.AccentAt(0.08f), appear));
         }
+        else if (Theme.Large && !unbound)
+        {
+            painter.FillRect(cap, UiPalette.White(0.06f * appear));
+        }
 
         painter.StrokeRect(cap, context.Px(1f), UiPalette.Fade(border, appear));
-        Bgra32 text = !IsEnabled ? Theme.TextDisabled : IsListening ? Theme.Accent : Theme.Text;
+        if (Theme.Large && !unbound)
+        {
+            // A key's heavier foot.
+            painter.FillRect(new UiRect(cap.X, cap.Bottom - context.Px(2f), cap.Width, context.Px(2f)), UiPalette.Fade(border, appear));
+        }
+
+        Bgra32 text = !IsEnabled ? Theme.TextDisabled : IsListening ? Theme.Accent : unbound ? Theme.TextMuted : Theme.Text;
         painter.DrawLabel(
             Theme.Mono,
             value,
-            new UiVec2(cap.X + padX, UiRowStyle.CenterY(Theme.Mono, sizePx, cap)),
+            new UiVec2(cap.X + ((cap.Width - textWidth) * 0.5f), UiRowStyle.CenterY(Theme.Mono, sizePx, cap)),
             sizePx,
             UiPalette.Fade(text, appear),
-            0.08f);
+            tracking);
+    }
+
+    /// <summary>Names a binding as a keyboard's own caps do: <c>Left Ctrl</c>, <c>Mouse 1</c>, <c>Wheel up</c>, <c>1</c>.</summary>
+    /// <param name="name">The binding's name, as the profile or a key's enumeration spells it.</param>
+    /// <returns>The name to show on a key.</returns>
+    public static string FriendlyName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return string.Empty;
+        }
+
+        if (name.StartsWith("Mouse Button ", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Concat("Mouse ", name.AsSpan("Mouse Button ".Length));
+        }
+
+        if (name.StartsWith("Mouse Wheel ", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Concat("Wheel ", name["Mouse Wheel ".Length..].ToLowerInvariant());
+        }
+
+        // A digit of the top row is D1 in a key's enumeration.
+        if (name.Length == 2 && name[0] == 'D' && char.IsAsciiDigit(name[1]))
+        {
+            return name[1..];
+        }
+
+        string known = name switch
+        {
+            "LeftControl" or "ControlLeft" => "Left Ctrl",
+            "RightControl" or "ControlRight" => "Right Ctrl",
+            "LeftShift" or "ShiftLeft" => "Left Shift",
+            "RightShift" or "ShiftRight" => "Right Shift",
+            "LeftAlt" or "AltLeft" => "Left Alt",
+            "RightAlt" or "AltRight" => "Right Alt",
+            "Return" => "Enter",
+            "Escape" => "Esc",
+            "Equals" or "Equal" => "=",
+            "Minus" => "-",
+            "Comma" => ",",
+            "Period" => ".",
+            "Slash" => "/",
+            "Backslash" or "BackSlash" => "\\",
+            "Semicolon" => ";",
+            "Apostrophe" => "'",
+            "LeftBracket" => "[",
+            "RightBracket" => "]",
+            "GraveAccent" or "Grave" => "`",
+            "CapsLock" => "Caps Lock",
+            _ => string.Empty,
+        };
+        if (known.Length > 0)
+        {
+            return known;
+        }
+
+        // PageUp is Page Up, Keypad1 is Keypad 1: a space where the case or the kind of character changes.
+        var spaced = new System.Text.StringBuilder(name.Length + 4);
+        for (int i = 0; i < name.Length; i++)
+        {
+            char c = name[i];
+            if (i > 0 && name[i - 1] != ' ' && ((char.IsUpper(c) && char.IsLower(name[i - 1])) || (char.IsAsciiDigit(c) && char.IsLetter(name[i - 1]))))
+            {
+                spaced.Append(' ');
+            }
+
+            spaced.Append(c);
+        }
+
+        return spaced.ToString();
     }
 
     private static string KeyName(KeyCode key) => key.ToString();

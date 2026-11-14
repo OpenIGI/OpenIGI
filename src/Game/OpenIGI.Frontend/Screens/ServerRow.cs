@@ -8,37 +8,103 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>The server browser's columns, shared by its header and its rows so the two line up.</summary>
+/// <remarks>
+/// As the design draws them: a mark for a saved game, the name taking what room is left, then the mode, the map, the
+/// players and the ping, each a fixed width, the ping set against the row's right edge.
+/// </remarks>
 internal static class ServerColumns
 {
-    /// <summary>Each column's share of the row's width: mode, name, map, players, ping.</summary>
-    public static readonly float[] Weights = [0.95f, 5.0f, 2.2f, 1.65f, 1.2f];
-
-    /// <summary>The columns' headings.</summary>
+    /// <summary>The columns the list can be ordered by, as its ordering numbers them.</summary>
     public static readonly string[] Headings = ["MODE", "NAME", "MAP", "PLAYERS", "PING"];
+
+    /// <summary>The mode's column, as the ordering numbers it.</summary>
+    public const int Mode = 0;
+
+    /// <summary>The name's column.</summary>
+    public const int Name = 1;
+
+    /// <summary>The map's column.</summary>
+    public const int Map = 2;
+
+    /// <summary>The players' column.</summary>
+    public const int Players = 3;
 
     /// <summary>The column the list is ordered by when the page opens: the ping.</summary>
     public const int Ping = 4;
 
-    /// <summary>The room left of the first column and right of the last, in design units.</summary>
-    public const float Inset = 24f;
+    /// <summary>The columns in the order they stand across a row, after the saved mark.</summary>
+    public static readonly int[] Across = [Name, Mode, Map, Players, Ping];
 
-    /// <summary>Where each column starts across a row, from its left, given the row's width.</summary>
-    /// <param name="width">The row's width, its insets taken off.</param>
-    /// <returns>Each column's left edge.</returns>
-    public static float[] Lefts(float width)
+    /// <summary>The room left of the saved mark, in design units.</summary>
+    public const float PadLeft = 8f;
+
+    /// <summary>The room right of the ping, in design units.</summary>
+    public const float PadRight = 16f;
+
+    /// <summary>The room between two columns, in design units.</summary>
+    public const float Gap = 16f;
+
+    /// <summary>The saved mark's column, in design units.</summary>
+    public const float StarWidth = 32f;
+
+    /// <summary>The mode's column, in design units.</summary>
+    public const float ModeWidth = 96f;
+
+    /// <summary>The players' column, in design units.</summary>
+    public const float PlayersWidth = 130f;
+
+    /// <summary>The ping's column, in design units.</summary>
+    public const float PingWidth = 110f;
+
+    /// <summary>Gets the map's column, in design units.</summary>
+    /// <param name="wide">Whether the page is the wide one.</param>
+    /// <returns>The width.</returns>
+    public static float MapWidth(bool wide) => wide ? 200f : 164f;
+
+    /// <summary>Gets a fixed column's width, in design units; the name's is what is left.</summary>
+    /// <param name="column">The column, as the ordering numbers it.</param>
+    /// <param name="wide">Whether the page is the wide one.</param>
+    /// <returns>The width, or zero for the name.</returns>
+    public static float Width(int column, bool wide) => column switch
     {
-        float total = Weights.Sum();
-        float[] lefts = new float[Weights.Length];
-        float x = 0f;
-        for (int i = 0; i < Weights.Length; i++)
-        {
-            lefts[i] = x;
-            x += width * Weights[i] / total;
-        }
+        Mode => ModeWidth,
+        Map => MapWidth(wide),
+        Players => PlayersWidth,
+        Ping => PingWidth,
+        _ => 0f,
+    };
 
-        return lefts;
+    /// <summary>Where each column stands across a row.</summary>
+    /// <param name="context">The layout context.</param>
+    /// <param name="bounds">The row.</param>
+    /// <param name="wide">Whether the page is the wide one.</param>
+    /// <returns>The columns' left edges and the name's and map's room, in pixels.</returns>
+    public static ServerColumnPlaces Lay(LayoutContext context, UiRect bounds, bool wide)
+    {
+        float gap = context.Px(Gap);
+        float pingRight = bounds.Right - context.Px(PadRight);
+        float ping = pingRight - context.Px(PingWidth);
+        float players = ping - gap - context.Px(PlayersWidth);
+        float mapWidth = context.Px(MapWidth(wide));
+        float map = players - gap - mapWidth;
+        float mode = map - gap - context.Px(ModeWidth);
+        float star = bounds.X + context.Px(PadLeft);
+        float name = star + context.Px(StarWidth) + gap;
+        return new ServerColumnPlaces(star, name, MathF.Max(0f, mode - gap - name), mode, map, mapWidth, players, ping, pingRight);
     }
 }
+
+/// <summary>Where a server row's columns stand, in pixels.</summary>
+/// <param name="Star">The saved mark's left edge.</param>
+/// <param name="Name">The name's left edge.</param>
+/// <param name="NameWidth">The name's room.</param>
+/// <param name="Mode">The mode's left edge.</param>
+/// <param name="Map">The map's left edge.</param>
+/// <param name="MapWidth">The map's room.</param>
+/// <param name="Players">The players' left edge.</param>
+/// <param name="Ping">The ping's left edge.</param>
+/// <param name="PingRight">The ping's right edge, which it is set against.</param>
+internal readonly record struct ServerColumnPlaces(float Star, float Name, float NameWidth, float Mode, float Map, float MapWidth, float Players, float Ping, float PingRight);
 
 /// <summary>What one line of the server browser shows.</summary>
 /// <param name="Name">The server's or room's name.</param>
@@ -72,8 +138,8 @@ internal sealed record ServerLine(string Name, string Kind, string ModeId, strin
 /// </summary>
 internal sealed class SortHeading : Control
 {
-    private const float TextSize = 13f;
-    private const float Tracking = 0.14f;
+    private const float TextSize = 14f;
+    private const float Tracking = 0.12f;
 
     private readonly string _text;
 
@@ -89,11 +155,14 @@ internal sealed class SortHeading : Control
     /// <summary>Gets or sets how the list is ordered by this column: 0 not by it, 1 lowest first, -1 highest first.</summary>
     public int Order { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the heading is set against its column's right edge, as the ping's is.</summary>
+    public bool AlignRight { get; set; }
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         float size = context.Px(TextSize);
-        return new UiVec2(UiPainter.MeasureLabel(Theme.Heading, _text, size, Tracking) + context.Px(16f), Theme.Heading.LineHeight(size) + context.Px(8f));
+        return new UiVec2(UiPainter.MeasureLabel(Theme.Heading, _text, size, Tracking) + context.Px(16f), context.Px(44f));
     }
 
     /// <inheritdoc/>
@@ -101,9 +170,11 @@ internal sealed class SortHeading : Control
     {
         LayoutContext context = painter.Context;
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
-        Bgra32 ink = UiPalette.Fade(Order != 0 ? Theme.Accent : hot > 0.5f ? Theme.TextBright : Theme.TextSecondary, Visual.Appear);
+        Bgra32 ink = UiPalette.Fade(Order != 0 || hot > 0.5f ? Theme.Text : Theme.TextSecondary, Visual.Appear);
         float size = context.Px(TextSize);
-        UiVec2 end = painter.DrawLabel(Theme.Heading, _text, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(Theme.Heading, size, Bounds)), size, ink, Tracking);
+        float width = UiPainter.MeasureLabel(Theme.Heading, _text, size, Tracking) + (Order != 0 ? context.Px(12f) : 0f);
+        float x = AlignRight ? Bounds.Right - width : Bounds.X;
+        UiVec2 end = painter.DrawLabel(Theme.Heading, _text, new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Heading, size, Bounds)), size, ink, Tracking);
         if (Order == 0)
         {
             return;
@@ -112,16 +183,17 @@ internal sealed class SortHeading : Control
         // The mark: a small triangle, its point the way the values run.
         float half = context.Px(4f);
         float rise = context.Px(3f) * Order;
-        float x = end.X + context.Px(2f) + half;
+        float markX = end.X + context.Px(2f) + half;
         float y = Bounds.Y + (Bounds.Height / 2f);
-        painter.FillTriangle(new UiVec2(x - half, y + rise), new UiVec2(x + half, y + rise), new UiVec2(x, y - rise), ink);
+        painter.FillTriangle(new UiVec2(markX - half, y + rise), new UiVec2(markX + half, y + rise), new UiVec2(markX, y - rise), ink);
     }
 }
 
 /// <summary>
-/// One line of the server browser: a server or room in columns -- its mode as a badge in the mode's colour, its name over its
-/// kind and region, the map, the players over a bar of places filling as it fills, the ping with bars by strength. Clicking
-/// picks it; the picked line is washed in the accent, with the accent down its edge and a chevron at its end.
+/// One line of the server browser: a server or room in columns -- a star when it is saved, its name over its kind and
+/// region (or why it cannot be joined), its mode as an outlined badge in the mode's colour, the map, the players over a bar
+/// of places filling as it fills, the ping with bars by strength. Clicking picks it; the picked line is washed in the
+/// accent, with the accent down its edge.
 /// </summary>
 internal sealed class ServerRow : Control
 {
@@ -135,7 +207,8 @@ internal sealed class ServerRow : Control
         : base(theme)
     {
         _line = line;
-        _under = line.Region.Length > 0 && line.Region != line.Kind ? $"{line.Kind} · {line.Region}" : line.Kind;
+        string kind = line.Kind.Length > 1 && line.Kind != "LAN" ? string.Concat(line.Kind.AsSpan(0, 1), line.Kind.AsSpan(1).ToString().ToLowerInvariant()) : line.Kind;
+        _under = line.Region.Length > 0 && line.Region != line.Kind ? $"{kind} · {line.Region}" : kind;
     }
 
     /// <summary>Gets or sets a value indicating whether it is the line picked.</summary>
@@ -153,6 +226,12 @@ internal sealed class ServerRow : Control
     /// <summary>Gets or sets why the line cannot be joined, shown under its name in place of its kind; empty when it can.</summary>
     public string Reason { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets a value indicating whether the reason is a failure -- no answer -- rather than a caution.</summary>
+    public bool ReasonIsFailure { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the page is the wide one, whose map column is wider.</summary>
+    public bool Wide { get; set; } = true;
+
     /// <summary>Gets or sets a value indicating whether the line is drawn two deep for a narrow page: its name, and under it its mode, map and players.</summary>
     public bool Compact { get; set; }
 
@@ -167,7 +246,7 @@ internal sealed class ServerRow : Control
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
         UiRect bounds = Bounds;
         float mid = bounds.Y + (bounds.Height / 2f);
-        if (Selected && !Compact)
+        if (Selected)
         {
             painter.FillRect(bounds, UiPalette.AccentAt(0.13f * appear));
             painter.StrokeRect(bounds, context.Px(1f), UiPalette.AccentAt(0.45f * appear));
@@ -183,33 +262,54 @@ internal sealed class ServerRow : Control
             painter.StrokeRect(bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
         }
 
+        painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.07f * appear));
         if (Compact)
         {
             DrawCompact(painter);
             return;
         }
 
-        painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.05f * appear));
 
-        float inset = context.Px(ServerColumns.Inset);
-        float[] lefts = ServerColumns.Lefts(bounds.Width - (inset * 2f));
-        float Left(int column) => bounds.X + inset + lefts[column];
-        float Room(int column) => (column + 1 < lefts.Length ? Left(column + 1) : bounds.Right - inset) - Left(column) - context.Px(14f);
+        ServerColumnPlaces at = ServerColumns.Lay(context, bounds, Wide);
+
         // A line that cannot be joined is quieter, not gone: it has to be read to see why.
-        Bgra32 Ink(Bgra32 colour) => UiPalette.Fade(Unjoinable ? Theme.TextMuted : colour, appear);
+        Bgra32 Ink(Bgra32 colour) => UiPalette.Fade(Unjoinable ? Theme.TextSecondary : colour, appear);
 
-        DrawBadge(painter, new UiRect(Left(0), mid - context.Px(15f), MathF.Min(Room(0), context.Px(64f)), context.Px(30f)), Ink(ModeLook.Colour(_line.ModeId)));
-        DrawName(painter, Left(1), Room(1), Ink);
-
-        float mapSize = context.Px(15f);
-        painter.DrawText(Theme.Body, Fit(_line.Map, Theme.Body, mapSize, Room(2)), new UiVec2(Left(2), UiRowStyle.CenterY(Theme.Body, mapSize, bounds)), mapSize, Ink(Selected ? Theme.Text : Theme.TextSecondary));
-
-        DrawPlayers(painter, Left(3), MathF.Min(Room(3), context.Px(104f)), mid, Ink);
-        DrawPing(painter, Left(4), mid, Ink);
-
-        if (Selected || hot > 0.5f)
+        var star = new UiVec2(at.Star + (context.Px(ServerColumns.StarWidth) / 2f), mid);
+        if (Saved)
         {
-            painter.DrawChevron(new UiVec2(bounds.Right - inset + context.Px(4f), mid), context.Px(10f), UiDirection.Right, context.Px(1.5f), Ink(Selected ? Theme.Accent : Theme.TextMuted));
+            FillStar(painter, star, context.Px(18f), UiPalette.Fade(Theme.Accent, appear));
+        }
+        else
+        {
+            OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Star, star, context.Px(18f), UiPalette.Fade(Theme.TextMuted, appear));
+        }
+
+        DrawName(painter, at.Name, at.NameWidth, Ink);
+        DrawBadge(painter, at.Mode, mid, UiPalette.Fade(ModeLook.Colour(_line.ModeId), appear));
+
+        float mapSize = context.Px(17f);
+        painter.DrawText(Theme.Body, Fit(_line.Map, Theme.Body, mapSize, at.MapWidth), new UiVec2(at.Map, UiRowStyle.CenterY(Theme.Body, mapSize, bounds)), mapSize, Ink(Theme.Text));
+
+        DrawPlayers(painter, at.Players, mid, Ink);
+        DrawPing(painter, at.PingRight, mid, Ink);
+    }
+
+    // A star filled: a fan of triangles about its middle, since its outline is not convex.
+    private static void FillStar(UiPainter painter, UiVec2 centre, float size, Bgra32 colour)
+    {
+        float outer = size * 0.5f;
+        Span<UiVec2> points = stackalloc UiVec2[10];
+        for (int i = 0; i < 10; i++)
+        {
+            float radius = i % 2 == 0 ? outer : outer * 0.4f;
+            (float sin, float cos) = MathF.SinCos((i * MathF.PI / 5f) - (MathF.PI * 0.5f));
+            points[i] = new UiVec2(centre.X + (cos * radius), centre.Y + (sin * radius));
+        }
+
+        for (int i = 0; i < 10; i++)
+        {
+            painter.FillTriangle(centre, points[i], points[(i + 1) % 10], colour);
         }
     }
 
@@ -231,7 +331,7 @@ internal sealed class ServerRow : Control
         painter.DrawText(Theme.Mono, ping, new UiVec2(right - pingWidth, UiRowStyle.CenterY(Theme.Mono, pingSize, bounds)), pingSize, UiPalette.Fade(Unjoinable ? Theme.TextMuted : Theme.Text, appear));
         right -= pingWidth + context.Px(8f);
         float[] heights = [4f, 7f, 10f, 14f];
-        Bgra32 strength = _line.Bars switch { >= 3 => Theme.Success, 2 => Theme.Warning, _ => Theme.Danger };
+        Bgra32 strength = Unjoinable ? Theme.TextSecondary : Theme.Text;
         float barX = right - context.Px(18f);
         for (int i = 0; i < heights.Length; i++)
         {
@@ -240,143 +340,134 @@ internal sealed class ServerRow : Control
         }
 
         right = barX - context.Px(12f);
-        float x = bounds.X + pad;
+        float x = bounds.X + pad + (Selected ? context.Px(4f) : 0f);
         float nameSize = context.Px(17f);
         float underSize = context.Px(14f);
         float gap = context.Px(2f);
-        float block = Theme.Body.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
+        float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
-        float marks = (Locked ? context.Px(20f) : 0f) + (Saved ? context.Px(18f) : 0f);
-        string name = Fit(_line.Name, Theme.Body, nameSize, right - x - marks);
-        painter.DrawText(Theme.Body, name, new UiVec2(x, top), nameSize, UiPalette.Fade(Unjoinable ? Theme.TextMuted : Theme.Text, appear));
-        float markX = x + Theme.Body.MeasureWidth(name, nameSize) + context.Px(10f);
-        float markY = top + (Theme.Body.LineHeight(nameSize) / 2f);
+        float marks = (Locked ? context.Px(22f) : 0f) + (Saved ? context.Px(22f) : 0f);
+        string name = Fit(_line.Name, Theme.BodyStrong, nameSize, right - x - marks);
+        painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, UiPalette.Fade(Unjoinable ? Theme.TextSecondary : Theme.Text, appear));
+        float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(10f);
+        float markY = top + (Theme.BodyStrong.LineHeight(nameSize) / 2f);
         if (Locked)
         {
             OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Lock, new UiVec2(markX + context.Px(6f), markY), context.Px(14f), UiPalette.Fade(Theme.TextSecondary, appear));
-            markX += context.Px(20f);
+            markX += context.Px(22f);
         }
 
         if (Saved)
         {
-            painter.FillDiamond(new UiVec2(markX + context.Px(4f), markY), context.Px(9f), UiPalette.Fade(Theme.Accent, appear));
+            FillStar(painter, new UiVec2(markX + context.Px(7f), markY), context.Px(15f), UiPalette.Fade(Theme.Accent, appear));
         }
 
-        float underY = top + Theme.Body.LineHeight(nameSize) + gap;
-        if (Reason.Length > 0 && Unjoinable)
+        float underY = top + Theme.BodyStrong.LineHeight(nameSize) + gap;
+        if (Reason.Length > 0 && (Unjoinable || _line.Full))
         {
-            painter.DrawLabel(Theme.Heading, Reason, new UiVec2(x, underY + context.Px(2f)), context.Px(13f), UiPalette.Fade(Theme.Warning, appear), 0.08f);
+            Bgra32 why = UiPalette.Fade(ReasonIsFailure ? Theme.Danger : Theme.Warning, appear);
+            float reasonSize = context.Px(14f);
+            var line = new UiRect(x, underY, right - x, Theme.Body.LineHeight(underSize));
+            OpenIGI.UI.Kit.KitIcons.Draw(painter, ReasonIsFailure ? OpenIGI.UI.Kit.KitIcon.Close : OpenIGI.UI.Kit.KitIcon.Warning, new UiVec2(x + context.Px(8f), line.Center.Y), context.Px(14f), why);
+            painter.DrawLabel(Theme.Heading, Fit(Reason, Theme.Heading, reasonSize, line.Width - context.Px(22f)), new UiVec2(x + context.Px(22f), UiRowStyle.CapsCenterY(Theme.Heading, reasonSize, line)), reasonSize, why, 0.08f);
             return;
         }
 
-        string code = ModeLook.Code(_line.ModeId);
-        UiVec2 end = painter.DrawText(Theme.Body, code, new UiVec2(x, underY), underSize, UiPalette.Fade(ModeLook.Colour(_line.ModeId), appear));
-        string rest = string.Create(System.Globalization.CultureInfo.InvariantCulture, $" · {_line.Map} · {_line.Players}/{_line.MaxPlayers}");
-        painter.DrawText(Theme.Body, Fit(rest, Theme.Body, underSize, right - end.X), new UiVec2(end.X, underY), underSize, UiPalette.Fade(_line.Full ? Theme.Danger : Theme.TextSecondary, appear));
+        string under = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{ModeLook.Code(_line.ModeId)} · {_line.Map} · {_line.Players}/{_line.MaxPlayers}");
+        painter.DrawText(Theme.Body, Fit(under, Theme.Body, underSize, right - x), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
     }
 
-    // The mode: its code on a tint of its colour, the colour down the leading edge.
-    private void DrawBadge(UiPainter painter, UiRect box, Bgra32 colour)
+    // The mode: its code in its colour, in a box outlined in it.
+    private void DrawBadge(UiPainter painter, float x, float mid, Bgra32 colour)
     {
         LayoutContext context = painter.Context;
-        painter.FillRect(box, colour.WithAlpha((byte)(colour.A * 0.14f)));
-        painter.FillRect(new UiRect(box.X, box.Y, context.Px(3f), box.Height), colour);
-        float size = context.Px(14f);
+        float size = context.Px(13f);
         string code = ModeLook.Code(_line.ModeId);
-        float width = UiPainter.MeasureLabel(Theme.Heading, code, size, 0.1f);
-        painter.DrawLabel(Theme.Heading, code, new UiVec2(box.X + context.Px(3f) + ((box.Width - context.Px(3f) - width) / 2f), UiRowStyle.CapsCenterY(Theme.Heading, size, box)), size, colour, 0.1f);
+        float width = UiPainter.MeasureLabel(Theme.Heading, code, size, 0.08f);
+        var box = new UiRect(x, mid - context.Px(12f), width + context.Px(16f), context.Px(24f));
+        painter.FillRect(box, Bgra32.FromRgba(10, 12, 13, (byte)(89f * Visual.Appear)));
+        painter.StrokeRect(box, context.Px(1f), colour);
+        painter.DrawLabel(Theme.Heading, code, new UiVec2(box.X + context.Px(8f), UiRowStyle.CapsCenterY(Theme.Heading, size, box)), size, colour, 0.08f);
     }
 
-    // The name, a padlock when it asks for a password and a mark when saved; under it, its kind and where it is.
+    // The name, a padlock after it when it asks for a password; under it, its kind and where it is, or why it cannot be joined.
     private void DrawName(UiPainter painter, float x, float room, Func<Bgra32, Bgra32> ink)
     {
         LayoutContext context = painter.Context;
         UiRect bounds = Bounds;
+        float appear = Visual.Appear;
         float nameSize = context.Px(18f);
-        float underSize = context.Px(13f);
+        float underSize = context.Px(15f);
         float gap = context.Px(3f);
-        float block = Theme.Body.LineHeight(nameSize) + gap + Theme.Heading.LineHeight(underSize);
+        float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
-        float marks = (Locked ? context.Px(21f) : 0f) + (Saved ? context.Px(20f) : 0f);
-        string name = Fit(_line.Name, Theme.Body, nameSize, room - marks);
-        painter.DrawText(Theme.Body, name, new UiVec2(x, top), nameSize, ink(Selected ? Theme.TextBright : Theme.Text));
-
-        float markX = x + Theme.Body.MeasureWidth(name, nameSize) + context.Px(12f);
-        float markY = top + (Theme.Body.LineHeight(nameSize) / 2f);
+        float marks = Locked ? context.Px(24f) : 0f;
+        string name = Fit(_line.Name, Theme.BodyStrong, nameSize, room - marks);
+        painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, ink(Theme.Text));
         if (Locked)
         {
-            // A padlock: the shackle, and the body over its feet.
-            float bodyWidth = context.Px(9f);
-            Bgra32 lockInk = ink(Theme.TextMuted);
-            painter.StrokeRect(new UiRect(markX + context.Px(2f), markY - context.Px(6f), bodyWidth - context.Px(4f), context.Px(8f)), context.Px(1.5f), lockInk);
-            painter.FillRect(new UiRect(markX, markY - context.Px(1f), bodyWidth, context.Px(7f)), lockInk);
-            markX += bodyWidth + context.Px(12f);
+            float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(8f);
+            OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Lock, new UiVec2(markX + context.Px(8f), top + (Theme.BodyStrong.LineHeight(nameSize) / 2f)), context.Px(16f), ink(Theme.TextSecondary));
         }
 
-        if (Saved)
+        float underY = top + Theme.BodyStrong.LineHeight(nameSize) + gap;
+        if (Reason.Length == 0)
         {
-            painter.FillDiamond(new UiVec2(markX + context.Px(4f), markY + context.Px(1f)), context.Px(9f), ink(Theme.Accent));
+            painter.DrawText(Theme.Body, Fit(_under, Theme.Body, underSize, room), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
+            return;
         }
 
-        bool why = Reason.Length > 0;
-        painter.DrawLabel(
-            Theme.Heading,
-            why ? Reason : _under,
-            new UiVec2(x, top + Theme.Body.LineHeight(nameSize) + gap),
-            underSize,
-            UiPalette.Fade(why ? Theme.Warning : Theme.TextSecondary, Visual.Appear),
-            0.08f);
+        // Why it cannot be joined, in the colour of how bad that is, behind a mark.
+        Bgra32 why = UiPalette.Fade(ReasonIsFailure ? Theme.Danger : Theme.Warning, appear);
+        float reasonSize = context.Px(14f);
+        var line = new UiRect(x, underY, room, Theme.Body.LineHeight(underSize));
+        OpenIGI.UI.Kit.KitIcons.Draw(painter, ReasonIsFailure ? OpenIGI.UI.Kit.KitIcon.Close : _line.Full ? OpenIGI.UI.Kit.KitIcon.People : OpenIGI.UI.Kit.KitIcon.Warning, new UiVec2(x + context.Px(8f), line.Center.Y), context.Px(14f), why);
+        painter.DrawLabel(Theme.Heading, Fit(Reason, Theme.Heading, reasonSize, room - context.Px(22f)), new UiVec2(x + context.Px(22f), UiRowStyle.CapsCenterY(Theme.Heading, reasonSize, line)), reasonSize, why, 0.08f);
     }
 
-    // The players over a bar of places, one for each the game takes up to sixteen, filled as it fills; red when full.
-    private void DrawPlayers(UiPainter painter, float x, float track, float mid, Func<Bgra32, Bgra32> ink)
+    // The players over a bar of places, one for each the game takes up to sixteen, filled as it fills; the count warns when full.
+    private void DrawPlayers(UiPainter painter, float x, float mid, Func<Bgra32, Bgra32> ink)
     {
         LayoutContext context = painter.Context;
-        float size = context.Px(14f);
-        Bgra32 colour = _line.Full ? Theme.Danger : Theme.Text;
-        string count = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{_line.Players}");
-        UiVec2 end = painter.DrawText(Theme.Mono, count, new UiVec2(x, mid - context.Px(5f) - Theme.Mono.LineHeight(size)), size, ink(colour));
-        painter.DrawText(Theme.Mono, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"/{_line.MaxPlayers}"), end, size, ink(_line.Full ? Theme.Danger : Theme.TextMuted));
+        float size = context.Px(15f);
+        float bar = context.Px(6f);
+        float between = context.Px(6f);
+        float block = Theme.Mono.LineHeight(size) + between + bar;
+        float top = mid - (block / 2f);
+        string count = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{_line.Players} / {_line.MaxPlayers}");
+        painter.DrawText(Theme.Mono, count, new UiVec2(x, top), size, _line.Full ? UiPalette.Fade(Theme.Warning, Visual.Appear) : ink(Theme.Text));
 
         int places = Math.Clamp(_line.MaxPlayers, 1, 16);
         int taken = _line.MaxPlayers <= 0 ? 0 : Math.Clamp((int)MathF.Ceiling(_line.Players * places / (float)_line.MaxPlayers), 0, places);
         float gap = context.Px(2f);
+        float track = context.Px(114f);
         float width = (track - (gap * (places - 1))) / places;
+        float barY = top + Theme.Mono.LineHeight(size) + between;
         for (int i = 0; i < places; i++)
         {
-            painter.FillRect(new UiRect(x + (i * (width + gap)), mid + context.Px(5f), width, context.Px(5f)), ink(i < taken ? colour : UiPalette.White(0.12f)));
+            painter.FillRect(new UiRect(x + (i * (width + gap)), barY, width, bar), i < taken ? ink(Theme.Text) : UiPalette.White(0.16f * Visual.Appear));
         }
     }
 
-    // The ping: four bars rising, lit by strength and coloured by it -- good, middling, poor -- then the milliseconds.
-    private void DrawPing(UiPainter painter, float x, float mid, Func<Bgra32, Bgra32> ink)
+    // The ping, against the row's right edge: four bars rising, lit by strength, then the milliseconds.
+    private void DrawPing(UiPainter painter, float right, float mid, Func<Bgra32, Bgra32> ink)
     {
         LayoutContext context = painter.Context;
-        float[] heights = [4f, 7f, 10f, 14f];
-        Bgra32 strength = _line.Bars switch
-        {
-            >= 3 => Theme.Success,
-            2 => Theme.Warning,
-            _ => Theme.Danger,
-        };
+        float size = context.Px(15f);
+        string text = _line.Ping is { } ms ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{ms} ms") : "—";
+        Bgra32 colour = _line.Ping is null && ReasonIsFailure ? UiPalette.Fade(Theme.Danger, Visual.Appear) : ink(Theme.Text);
+        float width = Theme.Mono.MeasureWidth(text, size);
+        float x = right - width;
+        painter.DrawText(Theme.Mono, text, new UiVec2(x, UiRowStyle.CenterY(Theme.Mono, size, Bounds)), size, colour);
+
+        float[] heights = [4f, 7f, 10f, 13f];
+        float barX = x - context.Px(8f) - context.Px((heights.Length * 3f) + ((heights.Length - 1) * 2f));
         for (int i = 0; i < heights.Length; i++)
         {
             float h = context.Px(heights[i]);
-            painter.FillRect(new UiRect(x, mid + context.Px(7f) - h, context.Px(3f), h), ink(i < _line.Bars ? strength : UiPalette.White(0.15f)));
-            x += context.Px(5f);
+            painter.FillRect(new UiRect(barX, mid + context.Px(6.5f) - h, context.Px(3f), h), i < _line.Bars ? ink(Theme.Text) : UiPalette.White(0.18f * Visual.Appear));
+            barX += context.Px(5f);
         }
-
-        float size = context.Px(14f);
-        float y = UiRowStyle.CenterY(Theme.Mono, size, Bounds);
-        if (_line.Ping is not { } ms)
-        {
-            painter.DrawText(Theme.Mono, "—", new UiVec2(x + context.Px(8f), y), size, ink(Theme.TextMuted));
-            return;
-        }
-
-        UiVec2 end = painter.DrawText(Theme.Mono, ms.ToString(System.Globalization.CultureInfo.InvariantCulture), new UiVec2(x + context.Px(8f), y), size, ink(Selected ? Theme.TextBright : Theme.Text));
-        float small = context.Px(10f);
-        painter.DrawText(Theme.Mono, "MS", new UiVec2(end.X + context.Px(4f), y + Theme.Mono.Ascent(size) - Theme.Mono.Ascent(small)), small, ink(Theme.TextMuted));
     }
 
     /// <summary>Cuts text to the room it has, with an ellipsis.</summary>
@@ -443,10 +534,7 @@ internal sealed class ServerRowSkeleton : UiElement
         float fade = 1f - (0.75f * _index / _count);
         painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.05f * fade));
 
-        float inset = context.Px(ServerColumns.Inset);
-        float[] lefts = ServerColumns.Lefts(bounds.Width - (inset * 2f));
-        float Left(int column) => bounds.X + inset + lefts[column];
-        float Room(int column) => (column + 1 < lefts.Length ? Left(column + 1) : bounds.Right - inset) - Left(column) - context.Px(14f);
+        ServerColumnPlaces at = ServerColumns.Lay(context, bounds, wide: true);
 
         // A block, lit by where the passing light is: it crosses the row from the left about once every two seconds,
         // each row a little behind the one above.
@@ -468,13 +556,13 @@ internal sealed class ServerRowSkeleton : UiElement
         }
 
         // Names of different lengths, so the rows do not read as a ruled table.
-        float name = Room(1) * (0.34f + (0.22f * ((_index * 7 % 5) / 4f)));
-        Block(Left(0), mid - context.Px(15f), MathF.Min(Room(0), context.Px(64f)), context.Px(30f));
-        Block(Left(1), mid - context.Px(15f), name, context.Px(14f));
-        Block(Left(1), mid + context.Px(7f), context.Px(96f), context.Px(8f));
-        Block(Left(2), mid - context.Px(6f), MathF.Min(Room(2), context.Px(120f)), context.Px(12f));
-        Block(Left(3), mid - context.Px(14f), context.Px(40f), context.Px(10f));
-        Block(Left(3), mid + context.Px(5f), MathF.Min(Room(3), context.Px(104f)), context.Px(5f));
-        Block(Left(4), mid - context.Px(6f), context.Px(64f), context.Px(12f));
+        float name = at.NameWidth * (0.34f + (0.22f * ((_index * 7 % 5) / 4f)));
+        Block(at.Name, mid - context.Px(15f), name, context.Px(14f));
+        Block(at.Name, mid + context.Px(7f), context.Px(96f), context.Px(8f));
+        Block(at.Mode, mid - context.Px(12f), context.Px(52f), context.Px(24f));
+        Block(at.Map, mid - context.Px(6f), MathF.Min(at.MapWidth, context.Px(120f)), context.Px(12f));
+        Block(at.Players, mid - context.Px(14f), context.Px(48f), context.Px(10f));
+        Block(at.Players, mid + context.Px(5f), context.Px(114f), context.Px(6f));
+        Block(at.PingRight - context.Px(64f), mid - context.Px(6f), context.Px(64f), context.Px(12f));
     }
 }

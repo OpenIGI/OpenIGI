@@ -36,6 +36,9 @@ public sealed class IgiTypography : IDisposable
     /// <summary>The body face.</summary>
     public const string BodyFile = "Barlow-Regular.ttf";
 
+    /// <summary>The body face a weight up: row captions and names.</summary>
+    public const string BodyStrongFile = "Barlow-Medium.ttf";
+
     /// <summary>The label face: tabs, buttons, values.</summary>
     public const string HeadingFile = "BarlowCondensed-SemiBold.ttf";
 
@@ -47,9 +50,10 @@ public sealed class IgiTypography : IDisposable
 
     private readonly bool _ownsFonts;
 
-    private IgiTypography(UiFont body, UiFont heading, UiFont display, UiFont mono, bool ownsFonts)
+    private IgiTypography(UiFont body, UiFont heading, UiFont display, UiFont mono, UiFont bodyStrong, bool ownsFonts)
     {
         Body = body;
+        BodyStrong = bodyStrong;
         Heading = heading;
         Display = display;
         Mono = mono;
@@ -58,6 +62,9 @@ public sealed class IgiTypography : IDisposable
 
     /// <summary>Gets the request for the body face.</summary>
     public static IgiFontRequest BodyRequest => new(BodyFile, 48f, FontAtlasKind.Coverage);
+
+    /// <summary>Gets the request for the stronger body face.</summary>
+    public static IgiFontRequest BodyStrongRequest => new(BodyStrongFile, 48f, FontAtlasKind.Coverage);
 
     /// <summary>Gets the request for the label face.</summary>
     public static IgiFontRequest HeadingRequest => new(HeadingFile, 64f, FontAtlasKind.SignedDistanceField);
@@ -69,10 +76,13 @@ public sealed class IgiTypography : IDisposable
     public static IgiFontRequest MonoRequest => new(MonoFile, 32f, FontAtlasKind.Coverage);
 
     /// <summary>Gets every face the design asks for.</summary>
-    public static IReadOnlyList<IgiFontRequest> Requests { get; } = [BodyRequest, HeadingRequest, DisplayRequest, MonoRequest];
+    public static IReadOnlyList<IgiFontRequest> Requests { get; } = [BodyRequest, HeadingRequest, DisplayRequest, MonoRequest, BodyStrongRequest];
 
     /// <summary>Gets the body face.</summary>
     public UiFont Body { get; }
+
+    /// <summary>Gets the body face a weight up.</summary>
+    public UiFont BodyStrong { get; }
 
     /// <summary>Gets the condensed label face.</summary>
     public UiFont Heading { get; }
@@ -90,7 +100,7 @@ public sealed class IgiTypography : IDisposable
     public static IgiTypography Load(Func<IgiFontRequest, UiFont> load)
     {
         ArgumentNullException.ThrowIfNull(load);
-        return new IgiTypography(load(BodyRequest), load(HeadingRequest), load(DisplayRequest), load(MonoRequest), ownsFonts: true);
+        return new IgiTypography(load(BodyRequest), load(HeadingRequest), load(DisplayRequest), load(MonoRequest), load(BodyStrongRequest), ownsFonts: true);
     }
 
     /// <summary>Wraps faces loaded elsewhere, which the typography does not dispose.</summary>
@@ -104,12 +114,12 @@ public sealed class IgiTypography : IDisposable
     {
         ArgumentNullException.ThrowIfNull(body);
         UiFont label = heading ?? body;
-        return new IgiTypography(body, label, display ?? label, mono ?? body, ownsFonts: false);
+        return new IgiTypography(body, label, display ?? label, mono ?? body, body, ownsFonts: false);
     }
 
     /// <summary>Builds a theme over these faces with the design's palette and metrics.</summary>
     /// <returns>The theme.</returns>
-    public UiTheme CreateTheme() => new(Body, Heading, Mono, Display);
+    public UiTheme CreateTheme() => new(Body, Heading, Mono, Display, BodyStrong);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -120,6 +130,11 @@ public sealed class IgiTypography : IDisposable
         }
 
         Body.Dispose();
+        if (!ReferenceEquals(BodyStrong, Body))
+        {
+            BodyStrong.Dispose();
+        }
+
         Heading.Dispose();
         Display.Dispose();
         Mono.Dispose();

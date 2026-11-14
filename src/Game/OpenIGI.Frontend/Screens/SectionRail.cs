@@ -125,7 +125,7 @@ internal sealed class SectionRail : Panel
             var at = new UiVec2(Bounds.Center.X, top + (icon * 0.5f));
             if (_icon == KitIcon.None)
             {
-                painter.FillDiamond(at, context.Px(16f), UiPalette.Fade(ink, appear));
+                painter.FillDiamond(at, context.Px(16f), UiPalette.Fade(Theme.Accent, appear));
             }
             else
             {
