@@ -184,7 +184,7 @@
     },
 
     "$glass": [
-      "THE TEN THAT REALLY ARE GLASS, named individually as the note above asks for.",
+      "THE ONES THAT REALLY ARE GLASS, named individually as the note above asks for.",
       "",
       "Found by a metric the perimeter ranking could not supply. Perimeter per unit of solid area",
       "finds surfaces with a lot of CUT-OUT edge, which is the right question for wire and foliage and",
@@ -199,14 +199,19 @@
       "intermediate alpha because a cut-out is a binary stencil.",
       "",
       "Seven are architectural glazing and each is majority pane by area, so the frame in the same",
-      "texture is the minority the per-texture material has to lose. Three are plain translucent",
-      "sheets with no structure at all, which is what a pane fill looks like at 8x8.",
+      "texture is the minority the per-texture material has to lose. Two are plain translucent",
+      "sheets with no structure at all, which is what a pane fill looks like at 32x32.",
       "",
       "DELIBERATELY LEFT OUT, all of them translucent and none of them glass: 433_01_1 (water),",
       "121_03_1 (a curtain), 1010_anim000-002 (smoke), 1118_08_1 and 600_35_1 (glows), 472_02_1 (a",
       "map display), 301_02_1 (a sign), 344_01_1 (a flat red tint that may be a lamp lens or may be",
-      "an additive glow -- it is 16x16 and there is no way to tell from the texture), 700_28_1 (a",
-      "64x8 alpha gradient, which reads as a soft edge rather than a pane) and 009_09_1.",
+      "an additive glow -- it is 16x16 and there is no way to tell from the texture), 009_09_1, and",
+      "the two ROTOR BLADES: 716_01_1 (8x8, alpha 72 throughout) and 700_28_1 (a 64x8 streak, alpha 14",
+      "to 127). Both read as a pane fill from the texels alone and were once listed below as one, the",
+      "second as a helicopter's canopy. Every model that draws either is a Rotor in the game's object",
+      "table -- the Bell's 711_02 and 712_01, the Mil's 700_02 and 700_04 -- and the original draws",
+      "each several times a frame at stepped phases, blended, as the smear of a spinning blade",
+      "(0x42C630). As glass each copy was a solid mirrored sheet, and the disc a fan of dark panes.",
       "",
       "castsOcclusion is repeated on every entry and that is not redundant: an exact name BEATS the",
       "suffix rule rather than extending it, and an entry that omits the flag takes the file default,",
@@ -239,13 +244,9 @@
     "426_01_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
 
     "$glass-panes": [
-      "Plain sheets: uniform partial alpha, no structure. 716_01_1 is 8x8 and every texel of it is",
-      "alpha 72, which is a pane fill and cannot be anything else. 700_28_1_argb8888 (alpha 67 throughout)",
-      "is the same fill on the mission 6 helicopter's canopy."
+      "Plain sheets: uniform partial alpha, no structure."
     ],
     "600_30_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "716_01_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "402_10_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "700_28_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true }
+    "402_10_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true }
   }
 }

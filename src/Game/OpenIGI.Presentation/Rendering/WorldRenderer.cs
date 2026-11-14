@@ -607,7 +607,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     }
                 }
 
-                _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material);
+                // A rotor is the smear of a blade whatever its texture is listed as: the original blends every copy of it
+                // (0x42C630), and a blade drawn as a pane is a fan of solid mirrored sheets.
+                SurfaceMaterial material = subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material;
+                _device.SetMaterialOverride(rotorsOnly && material.Glass ? material with { Glass = false } : material);
 
                 // A bake is multiplied by the title's gain on top of whatever headroom it was encoded
                 // with; a sub-mesh with none is drawn at the headroom alone and lit -- if the title
