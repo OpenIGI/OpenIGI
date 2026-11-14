@@ -1,5 +1,7 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Formats;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Player;
 
@@ -34,7 +36,9 @@ public sealed record Igi1PlayerAnimations(BoneAnimationSet? Body, BoneAnimationS
         {
             if (File.Exists(path))
             {
-                return BoneAnimationSet.Read(File.ReadAllBytes(path));
+                // With what the game adds to its sets (the bomb's clips), as a pack's sets have them: these two are read
+                // from the install, outside any pack.
+                return AnimationSetExtensions.Read(AssetFormatProfile.Igi1, File.ReadAllBytes(path));
             }
 
             logger.Warning("Player", $"No animation set at {path}; {consequence}.");
