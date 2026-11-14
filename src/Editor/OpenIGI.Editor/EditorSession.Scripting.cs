@@ -150,6 +150,24 @@ internal sealed partial class EditorSession
             return saving ? "Keeping the selection once the mission is open." : "Placing the prefab once the mission is open.";
         }
 
+        // editor fencerun <east> <north>: the selected fence run on that far, in metres.
+        if (arguments is [string fenceVerb, string fenceX, string fenceY] && fenceVerb.Equals("fencerun", StringComparison.OrdinalIgnoreCase)
+            && double.TryParse(fenceX, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double toX)
+            && double.TryParse(fenceY, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double toY))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                RunFence(new Vector3d(toX, toY, 0));
+                return true;
+            });
+            return "Running the fence once the mission is open.";
+        }
+
         // editor live on|off: the sequencer's Live.
         if (arguments is [string liveVerb, string liveState] && liveVerb.Equals("live", StringComparison.OrdinalIgnoreCase))
         {
@@ -574,6 +592,16 @@ internal sealed partial class EditorSession
         if (_workspace.Document is not { } document)
         {
             return false;
+        }
+
+        // 'first <Type>' is the first task of a type, for a task with neither label nor id.
+        if (name.StartsWith("first ", StringComparison.OrdinalIgnoreCase)
+            && document.EnumerateTasks().FirstOrDefault(t => t.TypeName.Equals(name[6..].Trim(), StringComparison.OrdinalIgnoreCase)) is { } firstOfType)
+        {
+            _workspace.Selection.Set(adding ? [.. _workspace.Selection.Items.Where(t => !ReferenceEquals(t, firstOfType)), firstOfType] : [firstOfType]);
+            _viewport.Frame(firstOfType);
+            _host.Logger.Information("Editor", $"Selected {TaskPresentation.Name(firstOfType)}.");
+            return true;
         }
 
         // '#12' is the task with id 12, for tasks with no label such as AI graphs.

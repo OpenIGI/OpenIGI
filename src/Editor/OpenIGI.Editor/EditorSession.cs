@@ -540,6 +540,7 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterPatrolActions(actions);
         RegisterReinforcementActions(actions);
         RegisterPrefabActions(actions);
+        RegisterFenceActions(actions);
         StartAutosave();
         RegisterMissionActions(actions);
         RegisterShellActions(actions);
@@ -627,6 +628,7 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["ai.addguard"]),
                 MenuItem.For(actions["ai.patrolround"]),
                 MenuItem.For(actions["ai.reinforcement"]),
+                MenuItem.For(actions["tools.fencerun"]),
                 MenuItem.Separator,
                 MenuItem.For(actions["tools.saveprefab"]),
                 MenuItem.For(actions["tools.placeprefab"]),
