@@ -700,7 +700,8 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         return Type switch
         {
             InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
-            InteractionActivateType.PlaceExplosive => inFront > 0.0,
+
+            // A PlaceExplosiveTBA (0x4389E0) reads the view alone, never its own facing: see the registry's scan.
             _ => true,
         };
     }

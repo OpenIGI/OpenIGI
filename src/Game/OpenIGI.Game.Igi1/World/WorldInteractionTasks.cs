@@ -158,6 +158,11 @@ public sealed class PlaceExplosiveTbaTask : TimedActionTask
 
     /// <summary>Gets the id of the task the plant puts in place ("Task ID to place"), or -1 for none.</summary>
     public int TaskIdToPlace => DeclaredTaskValues.IntTruncating(this, "Task ID to place", -1);
+
+    /// <summary>Gets how far from the eye the spot is offered, in metres ("Activate radius (meters)").</summary>
+    /// <remarks>The constructor (<c>0x4389A0</c>) leaves it at 0.75 for a task that names none.</remarks>
+    public float ActivateRadiusMetres => DeclaredTaskValues.RealFromNumber(
+        this, "Activate radius (meters)", DeclaredTaskValues.RealFromNumber(this, "Activate radius(meters)", 0.75f));
 }
 
 /// <summary>A fence (<c>Fence</c>): its own update, then its children.</summary>

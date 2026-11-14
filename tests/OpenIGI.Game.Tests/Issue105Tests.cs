@@ -90,6 +90,19 @@ public sealed class Issue105Tests
             float pitch = (float)Math.Atan2(aim.Z, Math.Sqrt((aim.X * aim.X) + (aim.Y * aim.Y)));
             Assert.Same(tank, interactions.Resolve(eye, yaw, pitch));
 
+            // 0x4389E0 reads the view and the authored 6.8 m, not the task's facing: the spot is offered from every
+            // side of the tank, six metres out, and from none at seven or with the view turned a quarter-turn off it.
+            foreach ((double x, double y) in new[] { (0.0, 1.0), (1.0, 0.0), (-1.0, 0.0), (0.0, -1.0) })
+            {
+                Vector3d level = new(tank.Anchor.X, tank.Anchor.Y, tank.Anchor.Z);
+                Vector3d near = level + new Vector3d(x * 6.0 * WorldScene.UnitsPerMetre, y * 6.0 * WorldScene.UnitsPerMetre, 0.0);
+                Vector3d far = level + new Vector3d(x * 7.0 * WorldScene.UnitsPerMetre, y * 7.0 * WorldScene.UnitsPerMetre, 0.0);
+                float toward = (float)Math.Atan2(-x, -y);
+                Assert.Same(tank, interactions.Resolve(near, toward, 0f));
+                Assert.Null(interactions.Resolve(far, toward, 0f));
+                Assert.Null(interactions.Resolve(near, toward + (MathF.PI / 3f), 0f));
+            }
+
             Assert.True(tank.BeginUse());
             tank.CompleteUse();
             interactions.Tick();

@@ -433,14 +433,23 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
                 continue;
             }
 
-            double radius = item.Type == InteractionActivateType.PlaceExplosive
-                ? Math.Max(
-                    ActivateRadius,
-                    DeclaredTaskValues.RealFromNumber(
-                        item.Task,
-                        "Activate radius (meters)",
-                        DeclaredTaskValues.RealFromNumber(item.Task, "Activate radius(meters)", 2f)) * WorldScene.UnitsPerMetre)
-                : ActivateRadius;
+            if (item.Type == InteractionActivateType.PlaceExplosive)
+            {
+                // PlaceExplosiveTBA's own scan (0x4389E0): the spot is measured against its authored radius rather
+                // than the scan's two metres, from the eye, and asked only to lie within the view's quarter-turn to
+                // either side and up or down. The task's own facing is not read, so a tank takes its charge from
+                // any side the player walks up to.
+                Vector3d spot = item.CandidatePoint(eye);
+                if (IsInChargeView(spot - eye))
+                {
+                    double reach = ((item.Task as PlaceExplosiveTbaTask)?.ActivateRadiusMetres ?? 0.75f) * WorldScene.UnitsPerMetre;
+                    Consider(item, spot, reach);
+                }
+
+                continue;
+            }
+
+            const double radius = ActivateRadius;
             Consider(item, item.CandidatePoint(eye), radius);
             if (item.Type == InteractionActivateType.Door)
             {
@@ -450,6 +459,23 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
 
         resolvedAngle = bestAngle;
         return best;
+
+        // The offset in the view's frame, ahead of it and inside a player's scan limits (0x460EE0 starts both at a
+        // quarter-pi): the angle in the forward/up plane (0x4148F0) and the one in the forward/side plane (0x414950).
+        bool IsInChargeView(Vector3d delta)
+        {
+            Vector3d side = new(Math.Cos(yaw), -Math.Sin(yaw), 0.0);
+            Vector3d up = new(-Math.Sin(yaw) * Math.Sin(pitch), -Math.Cos(yaw) * Math.Sin(pitch), Math.Cos(pitch));
+            double ahead = Vector3d.Dot(delta, look);
+            if (!(ahead > 0.0))
+            {
+                return false;
+            }
+
+            const double Limit = MathF.PI / 4f;
+            return Math.Abs(Math.Atan2(Vector3d.Dot(delta, up), ahead)) < Limit
+                && Math.Abs(Math.Atan2(Vector3d.Dot(delta, side), ahead)) < Limit;
+        }
 
         void Consider(WorldInteraction item, Vector3d point, double radius)
         {
