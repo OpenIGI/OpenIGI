@@ -55,9 +55,16 @@ internal sealed partial class EditorSession
             return $"Opening the {graphName} graph once the mission is open.";
         }
 
-        // editor rules: the Rules panel in front, once the mission is open.
-        if (arguments is [string rulesVerb] && rulesVerb.Equals("rules", StringComparison.OrdinalIgnoreCase))
+        // editor rules / editor map / editor show <panel>: a panel in front, once the mission is open.
+        if (arguments is [string panelVerb, ..] && (panelVerb.Equals("rules", StringComparison.OrdinalIgnoreCase) || panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase)
+            || (panelVerb.Equals("show", StringComparison.OrdinalIgnoreCase) && arguments.Count == 2)))
         {
+            string panel = (arguments.Count == 2 ? arguments[1] : panelVerb).ToLowerInvariant();
+            if (!_dock.Panels.ContainsKey(panel))
+            {
+                return $"No panel '{panel}'.";
+            }
+
             _pendingSteps.Enqueue(() =>
             {
                 if (_workspace.Document is null || _host.IsWarmingUp)
@@ -65,10 +72,10 @@ internal sealed partial class EditorSession
                     return false;
                 }
 
-                _dock.Show("rules");
+                _dock.Show(panel);
                 return true;
             });
-            return "Showing the rules once the mission is open.";
+            return $"Showing {panel} once the mission is open.";
         }
 
         // editor rule <when> then wait 2 then call Game_X() then do StatusMessage_40.Send: a rule made from one line, in the Rules panel.

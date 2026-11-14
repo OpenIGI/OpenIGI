@@ -296,6 +296,14 @@ public sealed class SpriteBatch
         _inBatch = false;
     }
 
+    /// <summary>Closes the batch without drawing what is queued, after a drawer failed partway: its quads are dropped.</summary>
+    /// <remarks>A batch that is not open is left as it is.</remarks>
+    public void Abandon()
+    {
+        _quadCount = 0;
+        _inBatch = false;
+    }
+
     private void Flush()
     {
         if (_quadCount == 0)

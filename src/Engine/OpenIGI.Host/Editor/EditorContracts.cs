@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Vfs;
@@ -64,6 +65,36 @@ public interface IEditorSession : IDisposable
 /// <param name="Width">The window width the transform maps to.</param>
 /// <param name="Height">The window height.</param>
 public readonly record struct EditorView(Vector3d Eye, Matrix4f ViewProjection, float Width, float Height);
+
+/// <summary>The loaded level seen from straight above, as a picture and the world square it covers.</summary>
+/// <param name="Width">The picture's width in pixels.</param>
+/// <param name="Height">The picture's height in pixels.</param>
+/// <param name="Pixels">The picture, row by row from its north edge: ground green by height, buildings stone grey, edged.</param>
+/// <param name="WestMetres">The world X of its left edge, in metres.</param>
+/// <param name="NorthMetres">The world Y of its top edge, in metres.</param>
+/// <param name="MetresPerPixel">How much of the world a pixel covers.</param>
+public sealed record OverheadMap(int Width, int Height, Bgra32[] Pixels, double WestMetres, double NorthMetres, double MetresPerPixel)
+{
+    /// <summary>Gets the height under each pixel in metres, roofs included; NaN where nothing is.</summary>
+    public float[] HeightsMetres { get; init; } = [];
+
+    /// <summary>Gets the height of the first surface under a point, in metres, or null off the map.</summary>
+    /// <param name="xMetres">East.</param>
+    /// <param name="yMetres">North.</param>
+    /// <returns>The height.</returns>
+    public double? HeightAt(double xMetres, double yMetres)
+    {
+        int column = (int)Math.Floor((xMetres - WestMetres) / MetresPerPixel);
+        int row = (int)Math.Floor((NorthMetres - yMetres) / MetresPerPixel);
+        if ((uint)column >= (uint)Width || (uint)row >= (uint)Height || HeightsMetres.Length != Width * Height)
+        {
+            return null;
+        }
+
+        float h = HeightsMetres[(row * Width) + column];
+        return float.IsNaN(h) ? null : h;
+    }
+}
 
 /// <summary>What an editor session may ask of the host.</summary>
 public interface IEditorHost
@@ -178,6 +209,11 @@ public interface IEditorHost
 
     /// <summary>Gets the open mission's ground as height grids, when it is one the editor can change.</summary>
     Game.World.IEditableTerrain? Terrain { get; }
+
+    /// <summary>Draws the loaded level from straight above, a ray cast down for each pixel: slow, so asked for once a level.</summary>
+    /// <param name="maxPixels">The most pixels a side.</param>
+    /// <returns>The map, or null when no level is up.</returns>
+    OverheadMap? MakeOverheadMap(int maxPixels) => null;
 
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }

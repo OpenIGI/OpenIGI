@@ -360,13 +360,16 @@ public sealed partial class GameHost
         try
         {
             editor.Draw(painter);
+            state.Batch.End();
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
+            // What the editor queued before it failed is dropped, not flushed: a frame that overflowed the 2D buffer would
+            // only overflow it again, and the game must outlive its editor.
+            state.Batch.Abandon();
             EditorFailed(error);
         }
 
-        state.Batch.End();
         _device.EndStageTiming();
     }
 
@@ -566,6 +569,8 @@ public sealed partial class GameHost
         public Game.World.IEditableTerrain? Terrain => host._terrain?.Editable;
 
         public EditorView View => host._editorView;
+
+        public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);
 
         public IWorldInspector Inspector => host._inspector;
 
