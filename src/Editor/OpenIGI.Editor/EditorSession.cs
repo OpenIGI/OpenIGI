@@ -523,6 +523,7 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterNavGraphActions(actions);
         RegisterPatrolActions(actions);
         RegisterReinforcementActions(actions);
+        RegisterPrefabActions(actions);
         RegisterMissionActions(actions);
         RegisterShellActions(actions);
         actions.Add(new EditorAction("view.light", "Light Theme", () => EditorCVars.LightTheme.Value = !EditorCVars.LightTheme.Value)

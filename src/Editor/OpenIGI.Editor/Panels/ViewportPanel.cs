@@ -218,6 +218,10 @@ internal sealed partial class ViewportPanel : EditorElement
         }
     }
 
+    /// <summary>What is under the middle of the view, or a point in front of the camera; never below the ground.</summary>
+    /// <returns>The point, in world metres; null with no world shown.</returns>
+    public Vector3d? PointAtCentre() => ShowsWorld ? DropPoint(WorldRect.Center) ?? PlacementPoint() : null;
+
     /// <summary>Picks what is under the middle of the view, as a click there would.</summary>
     public void PickAtCentre() => Pick(WorldRect.Center, toggle: false);
 

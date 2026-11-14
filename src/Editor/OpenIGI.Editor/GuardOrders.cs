@@ -19,6 +19,10 @@ internal sealed class GuardOrders
     private readonly MissionWorkspace _workspace;
     private readonly Dictionary<int, AiGuardOrders> _read = [];
     private readonly Dictionary<int, AiGuardOrders> _pending = [];
+
+    // Scripts given to minds placed in the editor (a prefab's guards), by mind id: read as theirs until the mission is saved,
+    // then written for each mind still in it.
+    private readonly Dictionary<int, byte[]> _adopted = [];
     private int? _readFor;
 
     /// <summary>Initializes a new instance of the <see cref="GuardOrders"/> class.</summary>
@@ -60,6 +64,7 @@ internal sealed class GuardOrders
             _readFor = _workspace.Mission?.Id;
             _read.Clear();
             _pending.Clear();
+            _adopted.Clear();
         }
 
         if (!_read.TryGetValue(ai.Id, out AiGuardOrders? orders))
@@ -151,9 +156,27 @@ internal sealed class GuardOrders
             });
     }
 
+    /// <summary>Gives a mind placed in the editor its script, written with the mission when it is saved and the mind is still in it.</summary>
+    /// <param name="aiId">The mind's id.</param>
+    /// <param name="script">The script's bytes.</param>
+    public void Adopt(int aiId, byte[] script)
+    {
+        _adopted[aiId] = script;
+        _read.Remove(aiId);
+    }
+
+    /// <summary>A mind's script as it will be saved: with the orders changed since if any, else as the game finds it.</summary>
+    /// <param name="aiId">The mind's id.</param>
+    /// <returns>The script's bytes; null when it has none, or its changed orders cannot be written into it.</returns>
+    public byte[]? Current(int aiId) =>
+        _pending.TryGetValue(aiId, out AiGuardOrders? orders)
+            ? Script(aiId) is { } existing ? Write(existing, orders) : AiGuardScript.NewGuard(orders, Squads)
+            : Script(aiId)?.ToArray();
+
     // A mind's script as the game finds it, or null when it has none.
     private ReadOnlyMemory<byte>? Script(int aiId) =>
-        _workspace.Mission is { } mission && _host.TryReadFile("LOCAL:" + MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), out ReadOnlyMemory<byte> bytes)
+        _adopted.TryGetValue(aiId, out byte[]? adopted) ? adopted
+        : _workspace.Mission is { } mission && _host.TryReadFile("LOCAL:" + MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), out ReadOnlyMemory<byte> bytes)
             ? bytes
             : null;
 
@@ -212,6 +235,17 @@ internal sealed class GuardOrders
             _read[aiId] = orders;
         }
 
+        // Placed minds whose orders were not changed since, as they came, where the mind is still in the mission.
+        HashSet<int> minds = [.. _workspace.Document?.EnumerateTasks().Where(static t => t.TypeName == Core.Prefabs.Prefab.MindType).Select(static t => t.Id) ?? []];
+        foreach ((int aiId, byte[] script) in _adopted)
+        {
+            if (!_pending.ContainsKey(aiId) && minds.Contains(aiId))
+            {
+                _workspace.WriteToProject(MissionWorkspace.GamePath(mission, MissionValidator.AiScriptPath(aiId)), script);
+            }
+        }
+
         _pending.Clear();
+        _adopted.Clear();
     }
 }
