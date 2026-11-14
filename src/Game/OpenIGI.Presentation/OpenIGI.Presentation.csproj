@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <!-- The touch controls' icons, baked from assets/touch-icons by tools/OpenIGI.Tools.IconAtlas (TouchIconAtlas reads it). -->
+    <PackageReference Include="NLayer" />
     <EmbeddedResource Include="Hud/Remastered/Touch/touch-icons.bin" LogicalName="OpenIGI.Presentation.touch-icons.bin" />
   </ItemGroup>
 
