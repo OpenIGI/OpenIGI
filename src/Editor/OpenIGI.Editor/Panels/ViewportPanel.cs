@@ -207,6 +207,17 @@ internal sealed partial class ViewportPanel : EditorElement
         _camera.Place(camera, player - (along * 14.0) + new Vector3d(0.0, 0.0, 7.0), target);
     }
 
+    /// <summary>Puts the camera at a point looking at another at once, ending any glide under way so it stays there.</summary>
+    /// <param name="eye">Where the camera goes, in world metres.</param>
+    /// <param name="target">What it looks at, which it then orbits round.</param>
+    public void PlaceCamera(Vector3d eye, Vector3d target)
+    {
+        if (_host.Camera is { } camera)
+        {
+            _camera.Place(camera, eye, target);
+        }
+    }
+
     /// <summary>Picks what is under the middle of the view, as a click there would.</summary>
     public void PickAtCentre() => Pick(WorldRect.Center, toggle: false);
 
@@ -728,6 +739,7 @@ internal sealed partial class ViewportPanel : EditorElement
         }
 
         DrawPatrol(painter);
+        DrawCameraPath(painter);
 
         if (SelectedBox is { } box && _graph.PickedNode is null)
         {

@@ -160,7 +160,8 @@ internal sealed partial class EditorSession : IEditorSession
             _viewport.Frame(task);
         };
         _dock.Register(new DockPanel("map", "Map", _map) { Icon = KitIcon.Search });
-        _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play, Notify = (message, isError) => Notify(message, isError) };
+        _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play, PlaceCamera = _viewport.PlaceCamera, Notify = (message, isError) => Notify(message, isError) };
+        _viewport.CameraPath = () => _dock.IsInFront("sequencer") ? _sequencer.Path() : null;
         _dock.Register(new DockPanel("sequencer", "Sequencer", _sequencer) { Icon = KitIcon.Play });
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });

@@ -123,8 +123,9 @@ internal sealed partial class EditorSession
             return "Adding the move once the mission is open.";
         }
 
-        // editor seek <seconds>: the sequencer's playhead in the scene it has open.
-        if (arguments is [string seekVerb, string seekText] && seekVerb.Equals("seek", StringComparison.OrdinalIgnoreCase)
+        // editor seek <seconds> [outside]: the sequencer's playhead in the scene it has open; outside, the viewport stands back
+        // to show the whole camera path rather than looking through it.
+        if (arguments is [string seekVerb, string seekText, ..] && arguments.Count <= 3 && seekVerb.Equals("seek", StringComparison.OrdinalIgnoreCase)
             && double.TryParse(seekText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seekTo))
         {
             _pendingSteps.Enqueue(() =>
@@ -135,6 +136,11 @@ internal sealed partial class EditorSession
                 }
 
                 _sequencer.Seek(seekTo);
+                if (arguments.Count == 3)
+                {
+                    _sequencer.ViewPath();
+                }
+
                 return true;
             });
             return "Seeking once the mission is open.";

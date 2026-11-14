@@ -6,7 +6,7 @@ namespace OpenIGI.Editor.Panels;
 /// <summary>A ready-made camera move: the shots a cinematographer would set for it, each a place and what it looks at.</summary>
 internal enum CameraMove
 {
-    /// <summary>Round the subject, a quarter turn a shot.</summary>
+    /// <summary>Round the subject, an eighth of a turn a shot, so the spline through them runs nearly round.</summary>
     Orbit,
 
     /// <summary>From well back straight in towards the subject.</summary>
@@ -47,7 +47,7 @@ internal static class CameraMoves
 
         Vector3d[] places = move switch
         {
-            CameraMove.Orbit => [.. Enumerable.Range(0, 5).Select(i => Around(heading + (i * Math.PI / 2), distance, distance * 0.35))],
+            CameraMove.Orbit => [.. Enumerable.Range(0, 9).Select(i => Around(heading + (i * Math.PI / 4), distance, distance * 0.35))],
             CameraMove.PushIn => [Around(heading, distance * 1.6, distance * 0.4), Around(heading, distance * 0.45, distance * 0.15)],
             CameraMove.FlyOver => [Around(heading, distance * 2.5, distance * 1.4), Around(heading + 0.6, distance * 1.2, distance * 0.6), Around(heading + 1.0, distance * 0.6, distance * 0.15)],
             CameraMove.CraneUp => [Around(heading, distance, 1.8), Around(heading, distance * 0.8, distance * 1.2)],

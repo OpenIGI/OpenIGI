@@ -102,6 +102,9 @@ internal sealed class SequencerPanel : EditorElement
         workspace.Changed += () => _stale = true;
     }
 
+    /// <summary>Gets or sets what puts the viewport's camera at a point looking at another, in world metres.</summary>
+    public Action<Vector3d, Vector3d>? PlaceCamera { get; set; }
+
     /// <summary>Gets or sets what shows a message: the text, and whether it is an error.</summary>
     public Action<string, bool>? Notify { get; set; }
 
@@ -576,6 +579,28 @@ internal sealed class SequencerPanel : EditorElement
         }
     }
 
+    /// <summary>Stops looking through the scene's camera and stands the viewport back and above, where the whole path shows.</summary>
+    public void ViewPath()
+    {
+        _preview.IsChecked = false;
+        if (Path() is not { Line.Count: > 0 } path || _host.Camera is not { } view)
+        {
+            return;
+        }
+
+        Vector3d low = path.Line[0], high = path.Line[0];
+        foreach (Vector3d p in path.Line)
+        {
+            low = new Vector3d(Math.Min(low.X, p.X), Math.Min(low.Y, p.Y), Math.Min(low.Z, p.Z));
+            high = new Vector3d(Math.Max(high.X, p.X), Math.Max(high.Y, p.Y), Math.Max(high.Z, p.Z));
+        }
+
+        Vector3d centre = (low + high) * 0.5;
+        double reach = Math.Max(20, (high - low).Length);
+        Vector3d eye = centre + new Vector3d(0, -reach * 0.9, reach * 0.7);
+        Place(view, eye, centre);
+    }
+
     /// <summary>Makes a new scene, as New Cutscene does.</summary>
     public void MakeScene() => NewScene();
 
@@ -712,7 +737,67 @@ internal sealed class SequencerPanel : EditorElement
         }
 
         Vector3f forward = CutsceneCameraMath.ToCameraOrientation(orientation).Row3;
-        view.MoveTo(point.Position / WorldUnits.PerMetre, MathF.Atan2(forward.X, forward.Y), MathF.Asin(Math.Clamp(forward.Z, -1f, 1f)));
+        Vector3d eye = point.Position / WorldUnits.PerMetre;
+        Place(view, eye, eye + (new Vector3d(forward.X, forward.Y, forward.Z) * 20.0));
+    }
+
+    /// <summary>The open scene's camera for the viewport to draw: its path on the engine's own curve, its shots, the playhead.</summary>
+    /// <returns>The path; null with no scene open or no shot in it.</returns>
+    public CameraPathView? Path()
+    {
+        if (_scene is not { } scene)
+        {
+            return null;
+        }
+
+        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
+        if (shots.Count == 0)
+        {
+            return null;
+        }
+
+        CutsceneKey[] keys = [.. shots.Select(static s => KeyOf(s.Camera))];
+        float scale = (float)CutsceneModel.TimeScale(scene);
+        double length = CutsceneModel.Length(scene);
+        int samples = Math.Clamp((int)(length * 12), 2, 600);
+        Vector3d[] line = new Vector3d[samples + 1];
+        for (int i = 0; i <= samples; i++)
+        {
+            line[i] = CutsceneCameraMath.Evaluate(keys, scale, length * i / samples, -1f).Position / WorldUnits.PerMetre;
+        }
+
+        (Vector3d, Vector3d)[] marks = new (Vector3d, Vector3d)[keys.Length];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            Vector3f forward = CutsceneCameraMath.ToCameraOrientation(Matrix3f.FromEngineEulerAngles(keys[i].Alpha, keys[i].Beta, keys[i].Gamma)).Row3;
+            marks[i] = (keys[i].Position / WorldUnits.PerMetre, new Vector3d(forward.X, forward.Y, forward.Z));
+        }
+
+        MissionTask? selected = SelectedShot()?.Camera;
+        int chosen = -1;
+        for (int i = 0; i < shots.Count && chosen < 0; i++)
+        {
+            if (ReferenceEquals(shots[i].Camera, selected))
+            {
+                chosen = i;
+            }
+        }
+
+        Vector3d head = CutsceneCameraMath.Evaluate(keys, scale, _time, -1f).Position / WorldUnits.PerMetre;
+        return new CameraPathView(line, marks, head, chosen);
+    }
+
+    // The viewport's own placing, which ends a glide that would otherwise carry the view off again.
+    private void Place(OpenIGI.Presentation.Cameras.FreeCamera view, Vector3d eye, Vector3d target)
+    {
+        if (PlaceCamera is { } place)
+        {
+            place(eye, target);
+            return;
+        }
+
+        Vector3d look = target - eye;
+        view.MoveTo(eye, (float)Math.Atan2(look.X, look.Y), (float)Math.Asin(Math.Clamp(look.Z / look.Length, -1, 1)));
     }
 
     private static CutsceneKey KeyOf(MissionTask camera)
