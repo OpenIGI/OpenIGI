@@ -40,7 +40,9 @@ public sealed class CutscenePreviewTests : IDisposable
         IEditorCutscenePreview preview = host.CutscenePreviewForTesting!;
         IMissionCutscenePreview game = host.Gameplay().CutscenePreview!;
 
+        // Begun as the level comes up: the scene starts once it is in.
         Assert.True(preview.Begin(1200));
+        Settle(host, preview);
         Assert.False(preview.WasForced);
         List<Vector3d> played = [];
         for (int tick = 1; tick <= 150; tick++)
