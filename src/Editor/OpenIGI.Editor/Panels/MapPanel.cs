@@ -854,6 +854,7 @@ internal sealed partial class MapPanel : EditorElement
             (Bgra32 colour, float radius) = task.TypeName switch
             {
                 "HumanPlayer" => (Bgra32.FromRgb(0x4F, 0xA8, 0xFF), 6.5f),
+                _ when task.Parent?.TypeName == "GuardGenerator" => (Bgra32.FromRgb(0xB0, 0x7C, 0xF2), 5f),
                 _ when task.TypeName.StartsWith("HumanSoldier", StringComparison.Ordinal) => (Bgra32.FromRgb(0xE5, 0x48, 0x3E), 5f),
                 _ when task.TypeName.EndsWith("Pickup", StringComparison.Ordinal) => (Bgra32.FromRgb(0xF2, 0xC9, 0x4C), 4f),
                 "AreaActivate" or "AmbientArea" => (Bgra32.FromRgb(0x5C, 0xC8, 0x8A), 3.5f),

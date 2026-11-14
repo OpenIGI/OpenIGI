@@ -141,6 +141,23 @@ public sealed class MissionValidatorTests : IDisposable
         Assert.DoesNotContain(issues, static i => i.Task?.Label == "fine");
     }
 
+    /// <summary>A condition reading a soldier a generator holds is found: he is not there to be read.</summary>
+    [Fact]
+    public void Reading_a_generated_soldier_is_found()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_DeclareParameters("StatusMessage", "Send", "VarString");
+            Task_New(-1, "Container", "Root",
+                Task_New(1, "GuardGenerator", "gen", Task_New(6, "HumanSoldier", "s")),
+                Task_New(7, "HumanSoldier", "here"),
+                Task_New(8, "StatusMessage", "reads him", "HumanSoldier_6.isDead"),
+                Task_New(9, "StatusMessage", "reads another", "HumanSoldier_7.isDead"));
+            """, QvmProgram.IgiVersion));
+
+        MissionIssue issue = Assert.Single(MissionValidator.Validate(document), static i => i.Check == "References");
+        Assert.Equal("reads him", issue.Task!.Label);
+    }
+
     /// <summary>A soldier's mind with no script of its id in the mission's folder is found; one with its script is not.</summary>
     [Fact]
     public void A_mind_without_its_script_is_found()

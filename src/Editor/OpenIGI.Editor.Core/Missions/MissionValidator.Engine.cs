@@ -92,6 +92,40 @@ public static partial class MissionValidator
         }
     }
 
+    // A condition naming a task a guard generator holds: the generator makes the task only when it sends the guard in
+    // (GuardTemplate_Spawn, 0x488040), long after the level's conditions were read and bound, so the name finds nothing.
+    private static void CheckGeneratedReads(MissionDocument document, List<MissionIssue> issues)
+    {
+        Dictionary<string, MissionTask> generated = new(StringComparer.Ordinal);
+        foreach (MissionTask generator in document.EnumerateTasks().Where(static t => t.TypeName == GeneratorType))
+        {
+            foreach (MissionTask inside in generator.Children.SelectMany(static c => c.SelfAndSubtree()).Where(static t => t.Id >= 0))
+            {
+                generated[string.Create(CultureInfo.InvariantCulture, $"{inside.TypeName}_{inside.Id}.")] = inside;
+            }
+        }
+
+        if (generated.Count == 0)
+        {
+            return;
+        }
+
+        foreach (MissionTask task in document.EnumerateTasks())
+        {
+            foreach (MissionParameter parameter in task.Parameters.Where(static p => p.Declaration.Type == Engine.Tasks.ScriptParamType.VarString))
+            {
+                if (parameter.Arguments is [Scripting.Qsc.QscStringLiteral { Value: { Length: > 0 } text }]
+                    && generated.Keys.FirstOrDefault(name => text.Contains(name, StringComparison.Ordinal)) is { } named)
+                {
+                    issues.Add(new MissionIssue(IssueSeverity.Warning, task, $"Its {parameter.Name} reads {named.TrimEnd('.')}, which only exists once its guard generator sends him in: that read finds nothing.")
+                    {
+                        Check = ReferenceCheck,
+                    });
+                }
+            }
+        }
+    }
+
     // What the level's own tasks take for granted: a player to run the level for, and guard generators made the one way
     // the game reads them.
     private static void CheckStructure(MissionDocument document, List<MissionIssue> issues)
@@ -105,6 +139,7 @@ public static partial class MissionValidator
             });
         }
 
+        CheckGeneratedReads(document, issues);
         foreach (MissionTask generator in document.EnumerateTasks().Where(static t => t.TypeName == GeneratorType))
         {
             // GuardGenerator_Run (0x487EE0) asks its first child whether it is a dead human, and spawns copies of that one

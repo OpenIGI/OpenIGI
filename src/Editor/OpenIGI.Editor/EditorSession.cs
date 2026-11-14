@@ -518,6 +518,7 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterTerrainActions(actions);
         RegisterNavGraphActions(actions);
         RegisterPatrolActions(actions);
+        RegisterReinforcementActions(actions);
         RegisterMissionActions(actions);
         RegisterShellActions(actions);
         actions.Add(new EditorAction("view.light", "Light Theme", () => EditorCVars.LightTheme.Value = !EditorCVars.LightTheme.Value)
@@ -599,6 +600,8 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["tool.rotate"]),
                 MenuItem.For(actions["tool.scale"]),
                 MenuItem.For(actions["tool.terrain"]),
+                MenuItem.For(actions["ai.addguard"]),
+                MenuItem.For(actions["ai.reinforcement"]),
             ])
             .Add("View", [
                 MenuItem.For(actions["view.palette"]),
