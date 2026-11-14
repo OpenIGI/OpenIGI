@@ -432,6 +432,16 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     public CutSceneTask? ActiveScene => _scenes.LastOrDefault(
         static state => state.Task.IsRun && ConditionalContainerGate.IsTaskActive(state.Task))?.Task;
 
+    /// <summary>
+    /// Gets or sets the scene an editor's preview plays: it runs from wherever its clock stands, whatever its Run says, until it
+    /// is finished, and every other scene stays out of it. Null for the level's own scenes as its scripts run them.
+    /// </summary>
+    /// <remarks>Not retail: the original has no editor.</remarks>
+    public CutSceneTask? Previewed { get; set; }
+
+    /// <summary>Gets whether the break key is queued for the next tick (<see cref="RequestBreak"/>).</summary>
+    public bool IsBreakRequested => _breakRequested;
+
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     /// <remarks>A co-op client's scenes are its server's to break: it asks nothing of its own.</remarks>
     public void RequestBreak() => _breakRequested = !Mirrored;
@@ -581,6 +591,12 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             {
                 scene.IsFinished = true;
             }
+        }
+        else if (Previewed is { } previewed)
+        {
+            // An editor's preview: its scene plays from its start whatever its Run says, until it is finished, and no other
+            // scene takes the camera from it.
+            scene.IsRun = ReferenceEquals(scene, previewed) && !scene.IsFinished;
         }
         else
         {

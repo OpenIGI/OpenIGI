@@ -48,6 +48,9 @@ public interface IHostedMission : IMissionGameplay, ITitleGameplay
     /// <summary>Gets the save games of the mission that is up, or <see langword="null"/> when it keeps none.</summary>
     ITitleSaveGames? SaveGames => null;
 
+    /// <summary>Gets what an editor previews the mission's cutscenes with on the level itself, or <see langword="null"/> where it has none.</summary>
+    IMissionCutscenePreview? CutscenePreview => null;
+
     /// <summary>
     /// Starts reading, on a worker, what every mission of the game stands its player with -- the animation sets under its
     /// installation's common data -- so the first mission does not wait on it.

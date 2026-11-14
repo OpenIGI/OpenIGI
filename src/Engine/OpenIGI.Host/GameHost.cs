@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -783,9 +783,11 @@ public sealed partial class GameHost : IDisposable
             // its patrols and its scripted clocks all start from the frame the player first SEES, not
             // from the frame the load finished -- a cut-scene that played out behind the loading screen
             // is one the player never gets to watch.
+            // The editor's cutscene preview takes up a level loaded afresh, and stops its scene at its end, before the hold is decided.
+            _cutscenePreview?.AfterFrame();
             if (_session.LevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel;
+                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel || CutscenePreviewHoldsLevel;
             }
 
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
@@ -818,7 +820,7 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel || CutscenePreviewHoldsLevel))
             {
                 // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
                 if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)

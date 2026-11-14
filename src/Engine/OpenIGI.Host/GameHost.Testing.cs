@@ -30,6 +30,9 @@ public sealed partial class GameHost
     /// <summary>Gets the title's gameplay, which the suites cast to the title's own type.</summary>
     internal OpenIGI.Game.Hosting.IHostedMission HostedForTesting => _hosted;
 
+    /// <summary>Gets the editor's cutscene preview, as the editor would have it.</summary>
+    internal Editor.IEditorCutscenePreview? CutscenePreviewForTesting => CutscenePreview;
+
     /// <summary>Gets the title's event bus, which reports a mission's end, or <see langword="null"/> before a title has one.</summary>
     internal OpenIGI.Engine.Events.GameEvents? EventsForTesting =>
         _title is { } title && title.Services.TryGet(out OpenIGI.Engine.Events.GameEvents? events) ? events : null;

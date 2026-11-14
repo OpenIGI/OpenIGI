@@ -49,10 +49,13 @@ public sealed partial class GameHost
     public bool IsEditorOpen => _editor is not null;
 
     /// <summary>Gets whether the editor is holding the level still for editing.</summary>
-    private bool EditorHoldsLevel => _editor is { IsPlaying: false };
+    private bool EditorHoldsLevel => _editor is { IsPlaying: false } && !CutscenePreviewRuns;
 
     /// <summary>Gets the cut-scene frame the player is shown: none while the editor holds the level, whose view is its own.</summary>
-    private CutsceneFrame? CutsceneFrameShown => EditorHoldsLevel ? null : _mission.CutsceneFrameShown;
+    /// <remarks>While the editor edits, only a cutscene it previews through the scene's own camera.</remarks>
+    private CutsceneFrame? CutsceneFrameShown => _editor is { IsPlaying: false }
+        ? _cutscenePreview is { Scene: not null, ShowsCamera: true } ? _mission.CutsceneFrameShown : null
+        : _mission.CutsceneFrameShown;
 
     /// <summary>Asks for the editor to open at the next frame boundary.</summary>
     /// <returns><see langword="false"/> when this build has no editor.</returns>
@@ -569,6 +572,8 @@ public sealed partial class GameHost
         public Game.World.IEditableTerrain? Terrain => host._terrain?.Editable;
 
         public EditorView View => host._editorView;
+
+        public IEditorCutscenePreview? CutscenePreview => host.CutscenePreview;
 
         public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);
 

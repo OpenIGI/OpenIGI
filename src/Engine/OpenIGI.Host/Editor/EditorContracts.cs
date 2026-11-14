@@ -218,6 +218,9 @@ public interface IEditorHost
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }
 
+    /// <summary>Gets what plays the mission's cutscenes on the level itself, or <see langword="null"/> where the game has nothing to.</summary>
+    IEditorCutscenePreview? CutscenePreview => null;
+
     /// <summary>Gets the world inspector: entities, their positions and screen projections.</summary>
     IWorldInspector Inspector { get; }
 
@@ -301,4 +304,55 @@ public interface IEditorHost
 
     /// <summary>Closes the editor and returns to the main menu. Runs between frames.</summary>
     void Close();
+}
+
+/// <summary>
+/// A cutscene played on the level itself, by the game's own code, while the editor holds everything else still: its vehicles
+/// drive, its soldiers move, its sounds play and its camera rides, in real time or at any moment of the scene.
+/// </summary>
+/// <remarks>
+/// The level is loaded afresh when the preview ends, so nothing the scene does stays behind. A scene
+/// whose story starts it of itself from where the level stands (an intro, or a scene that follows one) is reached as the game
+/// reaches it; any other is made to play from its start, the containers it stands in let in.
+/// </remarks>
+public interface IEditorCutscenePreview
+{
+    /// <summary>Gets the scene being previewed, by task id, or null when none is.</summary>
+    int? Scene { get; }
+
+    /// <summary>Gets or sets whether the scene plays on in real time.</summary>
+    bool IsPlaying { get; set; }
+
+    /// <summary>Gets or sets whether the frame is drawn through the scene's own camera, as the player would see it.</summary>
+    bool ShowsCamera { get; set; }
+
+    /// <summary>Gets where the scene stands, in seconds of its clock.</summary>
+    double Seconds { get; }
+
+    /// <summary>Gets whether the scene has played to its end.</summary>
+    bool IsFinished { get; }
+
+    /// <summary>
+    /// Gets whether the level is being loaded afresh to play the scene again up to a moment behind the one shown: a moment is
+    /// always the one play reaches, so going back means playing again. <see cref="Seconds"/> is the moment asked for meanwhile.
+    /// </summary>
+    bool IsPreparing { get; }
+
+    /// <summary>Gets how the scene was reached: false when the level reached it of itself, true when it was made to play.</summary>
+    bool WasForced { get; }
+
+    /// <summary>Gets the share of the picture's height the scene leaves between its letterbox bars, one for none.</summary>
+    float ViewportHeight { get; }
+
+    /// <summary>Starts previewing a scene at its start, ending any other preview first.</summary>
+    /// <param name="sceneId">The scene's task id.</param>
+    /// <returns>Whether it could be: false when the level has no such scene.</returns>
+    bool Begin(int sceneId);
+
+    /// <summary>Puts the level where it stands at a moment of the scene, backwards or forwards.</summary>
+    /// <param name="seconds">Seconds of the scene's clock.</param>
+    void Seek(double seconds);
+
+    /// <summary>Ends the preview; a level it ran is loaded afresh, so the editor goes on with one nothing has run.</summary>
+    void Finish();
 }
