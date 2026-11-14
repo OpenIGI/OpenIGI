@@ -180,8 +180,11 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
                 RealStrict(camera, "Alpha"), RealStrict(camera, "Beta"), RealStrict(camera, "Gamma"),
                 Math.Clamp(RealStrict(camera, "FOV", 1f), 0.001f, 3f), RealStrict(camera, "Duration"),
                 link, BoolStrict(camera, "Update link continously"), target, BoolStrict(camera, "Update target continously"),
-                BoolStrict(camera, "Smooth to next"), RealStrict(camera, "Time of day", -1f),
-                TextOrEmpty(camera, "FILTER"), RealStrict(camera, "Noise"), Vector32(camera, "Filter color RGB"),
+                // The names the levels declare (Task_DeclareParameters("EditCamera", ...)): the original reads both by their
+                // place in its table (editcamera.c), so a name that matches nothing here read the shot's hour and colour as
+                // nought -- every band and line filter of every level came out black instead of the colour it was given.
+                BoolStrict(camera, "Smooth to next"), RealStrict(camera, "Time of day (-1 means use default)", -1f),
+                TextOrEmpty(camera, "FILTER"), RealStrict(camera, "Noise"), Vector32(camera, "Filter color"),
                 RealStrict(camera, "Camera shake"), linkOrigin, linkOrientation));
         }
         return shots;
