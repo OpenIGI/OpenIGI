@@ -117,7 +117,6 @@ public sealed class TouchIconAtlas : IDisposable
         _columns = (int)MathF.Ceiling(MathF.Sqrt(count));
         _rows = (count + _columns - 1) / _columns;
         int width = _columns * _tile, height = _rows * _tile;
-        Bgra32[] pixels = new Bgra32[width * height];
         byte[] coverage = reader.ReadBytes(count * _tile * _tile);
         if (coverage.Length != count * _tile * _tile)
         {
@@ -125,21 +124,36 @@ public sealed class TouchIconAtlas : IDisposable
             return;
         }
 
+        // The pixels are made in methods of their own. The browser build runs this one in its interpreter, and a call
+        // from there to a compiled method that returns a colour trapped with a signature mismatch: the game stopped
+        // the first time a touch screen drew its buttons. Nothing here may call anything that returns a Bgra32.
+        Bgra32[] pixels = Tiles(coverage, count, _tile, _columns, width, height);
+        _full = _images.CreateImage(width, height, pixels);
+        _half = _images.CreateImage(width / 2, height / 2, Halved(pixels, width, height));
+    }
+
+    // Each tile's coverage as white at that alpha, the tiles laid out in a grid.
+    private static Bgra32[] Tiles(byte[] coverage, int count, int tile, int columns, int width, int height)
+    {
+        Bgra32[] pixels = new Bgra32[width * height];
         for (int i = 0; i < count; i++)
         {
-            int left = (i % _columns) * _tile, top = (i / _columns) * _tile;
-            for (int y = 0; y < _tile; y++)
+            int left = (i % columns) * tile, top = (i / columns) * tile;
+            for (int y = 0; y < tile; y++)
             {
-                for (int x = 0; x < _tile; x++)
+                for (int x = 0; x < tile; x++)
                 {
-                    pixels[((top + y) * width) + left + x] = Bgra32.FromRgba(255, 255, 255, coverage[(((i * _tile) + y) * _tile) + x]);
+                    pixels[((top + y) * width) + left + x] = Bgra32.FromRgba(255, 255, 255, coverage[(((i * tile) + y) * tile) + x]);
                 }
             }
         }
 
-        _full = _images.CreateImage(width, height, pixels);
+        return pixels;
+    }
 
-        // The same at half the size, each pixel the mean of the four it stands for.
+    // The same at half the size, each pixel the mean of the four it stands for.
+    private static Bgra32[] Halved(Bgra32[] pixels, int width, int height)
+    {
         int halfWidth = width / 2, halfHeight = height / 2;
         Bgra32[] half = new Bgra32[halfWidth * halfHeight];
         for (int y = 0; y < halfHeight; y++)
@@ -152,6 +166,6 @@ public sealed class TouchIconAtlas : IDisposable
             }
         }
 
-        _half = _images.CreateImage(halfWidth, halfHeight, half);
+        return half;
     }
 }
