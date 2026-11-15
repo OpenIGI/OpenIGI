@@ -11,10 +11,12 @@
 
 import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
 import { handleParties } from "./parties.js";
+import { handleMaps } from "./maps.js";
 
 export { Room } from "./rooms.js";
 export { Party } from "./parties.js";
 export { Relays } from "./relays.js";
+export { Maps } from "./maps.js";
 
 const ENTRY_TTL_MS = 90_000;
 
@@ -81,6 +83,11 @@ async function route(request, env, ctx) {
 
     if (url.pathname.startsWith("/v1/admin/")) {
       return cors(await admin(request, env, url));
+    }
+
+    // Community maps: published, listed, downloaded, rated and reported (maps.js).
+    if (url.pathname === "/v1/maps" || url.pathname.startsWith("/v1/maps/")) {
+      return cors(await handleMaps(request, env));
     }
 
     if (url.pathname === "/v1/parties" || url.pathname.startsWith("/v1/parties/")) {

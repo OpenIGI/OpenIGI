@@ -41,6 +41,11 @@ class_name = "Party"
 name = "RELAYS"
 class_name = "Relays"
 
+# The community maps (maps.js): every version's package kept in its storage.
+[[durable_objects.bindings]]
+name = "MAPS"
+class_name = "Maps"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
@@ -52,3 +57,7 @@ new_sqlite_classes = ["Relays"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["Party"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["Maps"]
