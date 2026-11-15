@@ -167,4 +167,6 @@ public static class MapPackage
 [JsonSerializable(typeof(MapManifest))]
 [JsonSerializable(typeof(MapListing))]
 [JsonSerializable(typeof(IReadOnlyList<MapListing>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(JsonElement))]
 internal sealed partial class MapJsonContext : JsonSerializerContext;
