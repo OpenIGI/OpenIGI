@@ -46,7 +46,12 @@ internal sealed partial class SequencerPanel : EditorElement
         ("Animation", static t => t.TypeName is "AnimTask" or "AnimRigidDynCubeObj"),
         ("Sound", static t => t.TypeName is "ConditionalSound" or "SoundDefSound"),
         ("Other", static _ => true),
+
+        // Not cued off the scene's clock: what waits for its end, and what goes by whether it plays (CutsceneModel.Links).
+        (LinksLane, static _ => false),
     ];
+
+    private const string LinksLane = "Links";
 
     private readonly IEditorHost _host;
     private readonly MissionWorkspace _workspace;
@@ -367,7 +372,7 @@ internal sealed partial class SequencerPanel : EditorElement
         // A cue's diamond takes hold of the cue.
         foreach ((string title, _) in CueLanes)
         {
-            CutsceneCue[] mine = [.. CutsceneModel.Cues(document, scene).Where(c => LaneOf(c) == title && (title != "Animation" || animations.Count == 0))];
+            CutsceneCue[] mine = LaneCues(document, scene, CutsceneModel.Cues(document, scene), animations, title);
             if (mine.Length == 0)
             {
                 continue;
@@ -385,7 +390,13 @@ internal sealed partial class SequencerPanel : EditorElement
                     _markClicked = (first, picked);
                     CutsceneCue cue = ordered[mark.First + picked];
                     _workspace.Selection.Set(cue.Task);
-                    _moving = (cue, cue.Seconds);
+
+                    // A link has no moment of its own to move: it is selected, so the Inspector shows what it waits for.
+                    if (title != LinksLane)
+                    {
+                        _moving = (cue, cue.Seconds);
+                    }
+
                     return true;
                 }
             }

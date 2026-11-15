@@ -262,5 +262,42 @@ public sealed class CutsceneModelTests
         Assert.False(CutsceneModel.IsDialogue(cues.First(static c => c.Task.Id == 1006).Task), "anya typing is a sound, not dialogue");
     }
 
+    /// <summary>
+    /// Every retail scene shows everything the mission says of it: each task naming a scene is cued off its clock, animated by it,
+    /// or linked to it (what waits for its end -- the next scene, the mission's completion -- and what goes by whether it plays);
+    /// mission 2's intro has its container switched off at its end.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void Every_mention_of_a_retail_scene_is_shown()
+    {
+        int scenes = 0;
+        for (int level = 1; level <= 14; level++)
+        {
+            MissionDocument document = MissionDocument.Read(File.ReadAllBytes(GameData.Resolve($"missions/location0/level{level}/objects.qvm")));
+            foreach (MissionTask scene in CutsceneModel.Scenes(document).Where(static s => s.Id >= 0))
+            {
+                scenes++;
+                HashSet<(MissionTask, string)> shown = [.. CutsceneModel.Cues(document, scene).Concat(CutsceneModel.Links(document, scene)).Select(static c => (c.Task, c.Parameter))];
+                HashSet<MissionTask> animated = [.. CutsceneModel.Animations(document, scene).Select(static a => a.Task)];
+                System.Text.RegularExpressions.Regex named = new($@"CutScene_{scene.Id}\b");
+                foreach (MissionTask task in document.EnumerateTasks().Where(t => !ReferenceEquals(t, scene) && !animated.Contains(t)))
+                {
+                    foreach (MissionParameter parameter in task.Parameters)
+                    {
+                        if (parameter.Arguments is [QscStringLiteral { Value: { } text }] && named.IsMatch(text))
+                        {
+                            Assert.True(shown.Contains((task, parameter.Name)), $"mission {level}: {task.TypeName} {task.Id} '{parameter.Name}' = {text} is not shown on scene {scene.Id}");
+                        }
+                    }
+                }
+            }
+        }
+
+        Assert.True(scenes >= 40, $"{scenes} scenes");
+        MissionDocument two = MissionDocument.Read(File.ReadAllBytes(GameData.Resolve("missions/location0/level2/objects.qvm")));
+        MissionTask intro = two.EnumerateTasks().First(static t => t.Id == 666);
+        IReadOnlyList<CutsceneCue> links = CutsceneModel.Links(two, intro);
+        Assert.Contains(links, l => l.Task.Id == 4000 && l.Seconds == CutsceneModel.Length(intro));
+    }
     private static MissionDocument Document() => MissionDocument.Read(QscParser.ParseScript(Level, QvmProgram.IgiVersion));
 }

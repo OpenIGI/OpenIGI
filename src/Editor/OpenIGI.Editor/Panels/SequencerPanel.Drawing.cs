@@ -100,7 +100,7 @@ internal sealed partial class SequencerPanel
         UiVec2 hoveredAt = default;
         foreach ((string title, Func<MissionTask, bool> holds) in CueLanes)
         {
-            CutsceneCue[] mine = [.. cues.Where(c => LaneOf(c) == title && (title != "Animation" || animations.Count == 0))];
+            CutsceneCue[] mine = LaneCues(document, scene, cues, animations, title);
             if (mine.Length == 0)
             {
                 continue;
@@ -231,11 +231,28 @@ internal sealed partial class SequencerPanel
             return words.Length > 40 ? $"“{words[..40]}…”" : $"“{words}”";
         }
 
+        // What a link does, said plainly: the mission's end, the next scene played.
+        if (cue.Task.TypeName == "LevelFlow" && cue.Parameter == "Complete")
+        {
+            return "Mission complete";
+        }
+
+        if (cue.Task.TypeName == CutsceneModel.SceneType && cue.Parameter == "Run")
+        {
+            return $"Plays {Title(cue.Task)}";
+        }
+
         // An unnamed sound by what it plays (dialogue's _cut02_03), anything else unnamed by its type and id.
         return cue.Task.Label.Length > 0 ? cue.Task.Label
             : CutsceneModel.SoundOf(cue.Task) is { } sound ? sound
             : string.Create(CultureInfo.InvariantCulture, $"{cue.Task.TypeName} {cue.Task.Id}");
     }
+
+    // A lane's cues: the scene's links for the Links lane, else the cues it holds -- animation cues only where no clip shows them.
+    private static CutsceneCue[] LaneCues(MissionDocument document, MissionTask scene, IReadOnlyList<CutsceneCue> cues, IReadOnlyList<CutsceneAnimation> animations, string title) =>
+        title == LinksLane
+            ? [.. CutsceneModel.Links(document, scene)]
+            : [.. cues.Where(c => LaneOf(c) == title && (title != "Animation" || animations.Count == 0))];
 
     private static string LaneOf(CutsceneCue cue)
     {

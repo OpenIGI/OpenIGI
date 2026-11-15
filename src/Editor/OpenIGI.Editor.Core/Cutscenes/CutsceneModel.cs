@@ -407,6 +407,48 @@ public static partial class CutsceneModel
         string.Create(CultureInfo.InvariantCulture, $@"CutScene_{id}\.nTick\s*(>=|>|==)\s*(?<n>\d+(\.\d+)?)(?<sec>\s*\*\s*GAME_FREQUENCY)?"),
         RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// What the rest of the mission does about a scene, apart from what is cued off its clock: what waits for it to end (the next
+    /// scene, the mission's completion, what is switched on after it) at the scene's end, and what goes by whether it is playing
+    /// (the containers it stands in, the skip) at its start.
+    /// </summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="scene">The scene, which must have an id for anything to name it.</param>
+    /// <returns>The links, as cues at the moment each acts: the scene's end, or its start.</returns>
+    public static IReadOnlyList<CutsceneCue> Links(MissionDocument document, MissionTask scene)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(scene);
+        if (scene.Id < 0)
+        {
+            return [];
+        }
+
+        HashSet<(MissionTask, string)> cued = [.. Cues(document, scene).Select(static c => (c.Task, c.Parameter))];
+        HashSet<MissionTask> animated = [.. Animations(document, scene).Select(static a => a.Task)];
+        Regex named = new(string.Create(CultureInfo.InvariantCulture, $@"CutScene_{scene.Id}\b"), RegexOptions.CultureInvariant);
+        string finished = string.Create(CultureInfo.InvariantCulture, $"CutScene_{scene.Id}.isFinished");
+        double end = Length(scene);
+        List<CutsceneCue> links = [];
+        foreach (MissionTask task in document.EnumerateTasks())
+        {
+            if (ReferenceEquals(task, scene) || animated.Contains(task))
+            {
+                continue;
+            }
+
+            foreach (MissionParameter parameter in task.Parameters)
+            {
+                if (parameter.Arguments is [QscStringLiteral { Value: { } text }] && named.IsMatch(text) && !cued.Contains((task, parameter.Name)))
+                {
+                    links.Add(new CutsceneCue(task, parameter.Name, text.Contains(finished, StringComparison.Ordinal) ? end : 0, InSeconds: false));
+                }
+            }
+        }
+
+        return links;
+    }
+
     // CutScene_<id>.isRun, or CutScene_<id>.nTick below a number with no lower bound: what starts with the scene.
     private static Regex FromStartOf(int id) => new(
         string.Create(CultureInfo.InvariantCulture, $@"CutScene_{id}\.(isRun\b|nTick\s*<)"),
