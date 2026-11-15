@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Vfs;
@@ -48,6 +49,11 @@ public interface IEditorSession : IDisposable
     /// <summary>Ends play and goes back to editing; the host calls it when the player presses Escape.</summary>
     void StopPlaying();
 
+    /// <summary>Takes a frame of play: the game has the window and the input, and the session only runs what waits on playing.</summary>
+    void WhilePlaying()
+    {
+    }
+
     /// <summary>Lays out the interface and handles the frame's input.</summary>
     /// <param name="elapsedSeconds">The real time since the last frame.</param>
     /// <param name="hasInput">Whether the session may read input this frame; false while the console has it.</param>
@@ -64,6 +70,59 @@ public interface IEditorSession : IDisposable
 /// <param name="Width">The window width the transform maps to.</param>
 /// <param name="Height">The window height.</param>
 public readonly record struct EditorView(Vector3d Eye, Matrix4f ViewProjection, float Width, float Height);
+
+/// <summary>A play-test's controls as they stand, while a mission is played from the editor.</summary>
+/// <param name="Paused">Whether the level is held still (F6; F7 steps it a tick).</param>
+/// <param name="Speed">How fast it runs: 1 is the game's own pace (F8 faster, Shift+F8 slower).</param>
+/// <param name="God">Whether nothing hurts the player (F2).</param>
+/// <param name="Unseen">Whether guards and cameras do not see the player (F3).</param>
+/// <param name="HasCamera">Whether there is an editor camera to stand the player at (F4).</param>
+public readonly record struct EditorPlaytest(bool Paused, float Speed, bool God, bool Unseen, bool HasCamera)
+{
+    /// <summary>Gets whether the guards' minds are drawn over the game: their sight, what each does, where each goes (F10).</summary>
+    public bool Overlay { get; init; }
+
+    /// <summary>Gets the play-test's recording: being made, or played back (F9).</summary>
+    public EditorPlaytestTape? Tape { get; init; }
+}
+
+/// <summary>A play-test's recording, for the scrubber.</summary>
+/// <param name="Recording">Whether it is being made now.</param>
+/// <param name="Replaying">Whether it is being played back.</param>
+/// <param name="Seconds">Where playback is; while recording, how long it is.</param>
+/// <param name="Length">How long it is, in seconds.</param>
+/// <param name="Marks">What happened in it and when: a guard first seeing the player, a play-test command.</param>
+public sealed record EditorPlaytestTape(bool Recording, bool Replaying, double Seconds, double Length, IReadOnlyList<(double Seconds, string Text)> Marks);
+
+/// <summary>The loaded level seen from straight above, as a picture and the world square it covers.</summary>
+/// <param name="Width">The picture's width in pixels.</param>
+/// <param name="Height">The picture's height in pixels.</param>
+/// <param name="Pixels">The picture, row by row from its north edge: ground green by height, buildings stone grey, edged.</param>
+/// <param name="WestMetres">The world X of its left edge, in metres.</param>
+/// <param name="NorthMetres">The world Y of its top edge, in metres.</param>
+/// <param name="MetresPerPixel">How much of the world a pixel covers.</param>
+public sealed record OverheadMap(int Width, int Height, Bgra32[] Pixels, double WestMetres, double NorthMetres, double MetresPerPixel)
+{
+    /// <summary>Gets the height under each pixel in metres, roofs included; NaN where nothing is.</summary>
+    public float[] HeightsMetres { get; init; } = [];
+
+    /// <summary>Gets the height of the first surface under a point, in metres, or null off the map.</summary>
+    /// <param name="xMetres">East.</param>
+    /// <param name="yMetres">North.</param>
+    /// <returns>The height.</returns>
+    public double? HeightAt(double xMetres, double yMetres)
+    {
+        int column = (int)Math.Floor((xMetres - WestMetres) / MetresPerPixel);
+        int row = (int)Math.Floor((NorthMetres - yMetres) / MetresPerPixel);
+        if ((uint)column >= (uint)Width || (uint)row >= (uint)Height || HeightsMetres.Length != Width * Height)
+        {
+            return null;
+        }
+
+        float h = HeightsMetres[(row * Width) + column];
+        return float.IsNaN(h) ? null : h;
+    }
+}
 
 /// <summary>What an editor session may ask of the host.</summary>
 public interface IEditorHost
@@ -179,8 +238,74 @@ public interface IEditorHost
     /// <summary>Gets the open mission's ground as height grids, when it is one the editor can change.</summary>
     Game.World.IEditableTerrain? Terrain { get; }
 
+    /// <summary>Draws the loaded level from straight above, a ray cast down for each pixel: slow, so asked for once a level.</summary>
+    /// <param name="maxPixels">The most pixels a side.</param>
+    /// <returns>The map, or null when no level is up.</returns>
+    OverheadMap? MakeOverheadMap(int maxPixels) => null;
+
+    /// <summary>The loaded level as it looks from straight above: its ground, its models' faces and its collision, to be drawn at any zoom and floor.</summary>
+    /// <returns>The scene to come, or null when no level is up.</returns>
+    /// <remarks>
+    /// Gathered from the level as it is loaded, on the calling (frame's) thread -- the ground, the placements, the collision and
+    /// the texture files -- and finished off it: the textures decoded and every face's ground found.
+    /// </remarks>
+    Task<OverheadScene>? MakeOverheadScene() => null;
+
+    /// <summary>Gets the play-test's controls as they stand.</summary>
+    EditorPlaytest Playtest => default;
+
+    /// <summary>Applies a play-test command: pause, run, step [n], speed &lt;x&gt;, god, unseen, camera.</summary>
+    /// <param name="command">The command.</param>
+    /// <returns>What happened, to say.</returns>
+    string PlaytestCommand(string command) => "Play-testing is not offered here.";
+
+    /// <summary>Marks the play-test's recording where it has got to, for its scrubber: a rule run, say.</summary>
+    /// <param name="text">What the mark says.</param>
+    void MarkPlaytest(string text)
+    {
+    }
+
+    /// <summary>Copies every soldier of the running level as it stands: where, and what its mind is doing.</summary>
+    /// <param name="into">The list to fill, cleared first.</param>
+    void SnapshotSoldiers(List<Game.Ai.SoldierSnapshot> into) => into?.Clear();
+
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }
+
+    /// <summary>Gets how many times a level has been loaded: a save made since the last load is not yet in the level that is up.</summary>
+    int LevelLoads => 0;
+
+    /// <summary>Gets what plays the mission's cutscenes on the level itself, or <see langword="null"/> where the game has nothing to.</summary>
+    IEditorCutscenePreview? CutscenePreview => null;
+
+    /// <summary>
+    /// Gets or sets the lens the viewport is drawn with, as a cutscene key's FOV (the horizontal half-angle tangent, 1 for the game's
+    /// ninety degrees): a key's own while it is piloted; null for the viewport's.
+    /// </summary>
+    float? LensTangent { get => null; set { } }
+
+    /// <summary>
+    /// Gives a task of the running level new parameters, as a load of the mission with them would, and keeps them there through
+    /// every rewind; a scene being previewed is played again from before where the change can act.
+    /// </summary>
+    /// <param name="path">Where the task is: each step an index under the level (then under that child) and the type there.</param>
+    /// <param name="values">The task's own <c>Task_New</c> call, compiled, without its children.</param>
+    /// <param name="fromSceneSeconds">When in the previewed scene the change can first act: positive infinity for one only
+    /// the camera shows, null for one that can act from the level's start.</param>
+    /// <returns>Null when the level took it; otherwise why not, and the level has to be loaded again to take it.</returns>
+    string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
+        "This game cannot take changes in a running level.";
+
+    /// <summary>
+    /// Gives a task of the running level the children the editor now has under it -- kept ones matched in order by type, new ones
+    /// made from their compiled calls, gone ones let go -- and keeps that order through every rewind.
+    /// </summary>
+    /// <param name="path">Where the task is, as <see cref="ApplyLiveEdit"/> takes it.</param>
+    /// <param name="children">Its children in order: each one's type, and for one to make anew its compiled <c>Task_New</c>.</param>
+    /// <param name="fromSceneSeconds">When in the previewed scene the change can first act, as <see cref="ApplyLiveEdit"/> takes it.</param>
+    /// <returns>Null when the level took it; otherwise why not.</returns>
+    string? ApplyLiveChildren(IReadOnlyList<(int Index, string Type)> path, IReadOnlyList<(string Type, ReadOnlyMemory<byte>? Values)> children, double? fromSceneSeconds) =>
+        "This game cannot take changes in a running level.";
 
     /// <summary>Gets the world inspector: entities, their positions and screen projections.</summary>
     IWorldInspector Inspector { get; }
@@ -202,6 +327,21 @@ public interface IEditorHost
     /// <param name="data">Receives the bytes.</param>
     /// <returns><see langword="false"/> when neither the project nor the installation has the file.</returns>
     bool TryReadShippedFile(string path, out ReadOnlyMemory<byte> data);
+
+    /// <summary>Lists the installation's own files under a folder, and under its folders, without the editor's project or any overlay.</summary>
+    /// <param name="folder">The folder from the game's root, such as <c>missions</c>.</param>
+    /// <returns>Each file's path from the game's root, with forward slashes.</returns>
+    IEnumerable<string> GameFiles(string folder) => [];
+
+    /// <summary>Reads one of the installation's own files, without the editor's project or any overlay.</summary>
+    /// <param name="path">The path from the game's root.</param>
+    /// <param name="data">Receives the bytes.</param>
+    /// <returns><see langword="false"/> when the installation has no such file.</returns>
+    bool TryReadGameFile(string path, out ReadOnlyMemory<byte> data)
+    {
+        data = default;
+        return false;
+    }
 
     /// <summary>Puts a folder on top of the content layers, so what is saved into it is what the game loads.</summary>
     /// <param name="id">The layer's id; mounting the same id again rescans it.</param>
@@ -265,4 +405,69 @@ public interface IEditorHost
 
     /// <summary>Closes the editor and returns to the main menu. Runs between frames.</summary>
     void Close();
+}
+
+/// <summary>
+/// A cutscene played on the level itself, by the game's own code, while the editor holds everything else still: its vehicles
+/// drive, its soldiers move, its sounds play and its camera rides, in real time or at any moment of the scene.
+/// </summary>
+/// <remarks>
+/// The level is loaded afresh when the preview ends, so nothing the scene does stays behind. A scene
+/// whose story starts it of itself from where the level stands (an intro, or a scene that follows one) is reached as the game
+/// reaches it; any other is made to play from its start, the containers it stands in let in.
+/// </remarks>
+public interface IEditorCutscenePreview
+{
+    /// <summary>Gets the scene being previewed, by task id, or null when none is.</summary>
+    int? Scene { get; }
+
+    /// <summary>Gets or sets whether the scene plays on in real time.</summary>
+    bool IsPlaying { get; set; }
+
+    /// <summary>Gets or sets whether the frame is drawn through the scene's own camera, as the player would see it.</summary>
+    bool ShowsCamera { get; set; }
+
+    /// <summary>Gets where the scene stands, in seconds of its clock.</summary>
+    double Seconds { get; }
+
+    /// <summary>Gets whether the scene has played to its end.</summary>
+    bool IsFinished { get; }
+
+    /// <summary>
+    /// Gets whether the level is being loaded afresh before the scene can be shown: only when it came up for something else, or the
+    /// mission was changed under it. Going back is not that: the level is put back from memory where it stood.
+    /// <see cref="Seconds"/> is the moment asked for meanwhile.
+    /// </summary>
+    bool IsPreparing { get; }
+
+    /// <summary>Gets how the scene was reached: false when the level reached it of itself, true when it was made to play.</summary>
+    bool WasForced { get; }
+
+    /// <summary>Gets the share of the picture's height the scene leaves between its letterbox bars, one for none.</summary>
+    float ViewportHeight { get; }
+
+    /// <summary>
+    /// Gets the key the shown frame is on and the space it was carried to the world through: a view written into that key goes
+    /// back through it (a riding key is relative to where its ride stood as the level loaded). Null before a frame is shown.
+    /// </summary>
+    (int Key, OpenIGI.Game.World.CutsceneShotSpace Space)? ShotSpace => null;
+
+    /// <summary>Gets the camera the shown frame is seen through, in world metres; null before a frame is shown.</summary>
+    OpenIGI.Core.Graphics.Camera3D? CameraShown => null;
+
+    /// <summary>Starts previewing a scene at its start, ending any other preview first.</summary>
+    /// <param name="sceneId">The scene's task id.</param>
+    /// <returns>Whether it could be: false when the level has no such scene.</returns>
+    bool Begin(int sceneId);
+
+    /// <summary>Puts the level where it stands at a moment of the scene, backwards or forwards.</summary>
+    /// <param name="seconds">Seconds of the scene's clock.</param>
+    void Seek(double seconds);
+
+    /// <summary>Ends the preview; a level it ran is put back as it stood before, so the editor goes on with one nothing has run.</summary>
+    void Finish() => Finish(reload: false);
+
+    /// <summary>Ends the preview.</summary>
+    /// <param name="reload">Whether the level is loaded afresh rather than put back: for a mission saved with changes in it.</param>
+    void Finish(bool reload);
 }

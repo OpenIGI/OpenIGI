@@ -60,6 +60,10 @@ public sealed class PropertyGrid : EditorElement
     /// <param name="title">The section title.</param>
     public void Section(string title) => _entries.Add(new Entry(title, null, null, IsSection: true));
 
+    /// <summary>Adds a line of text across the panel, wrapped to its width: what the rows below are about.</summary>
+    /// <param name="text">The text.</param>
+    public void Note(string text) => _entries.Add(new Entry(text, null, null, IsSection: false) { IsNote = true });
+
     /// <summary>Adds a text row.</summary>
     /// <param name="label">The label.</param>
     /// <param name="get">Reads the value.</param>
@@ -369,6 +373,19 @@ public sealed class PropertyGrid : EditorElement
                 continue;
             }
 
+            if (entry.IsNote)
+            {
+                float lineHeight = Theme.SmallFont.LineHeight(Theme.SmallTextSize);
+                float lineY = y + Theme.Px(3f);
+                foreach (string line in Wrap(entry.Label))
+                {
+                    painter.DrawText(Theme.SmallFont, line, new UiVec2(Bounds.X + Theme.Px(14f), lineY), Theme.SmallTextSize, Theme.TextMuted);
+                    lineY += lineHeight;
+                }
+
+                continue;
+            }
+
             if (entry.IsSection)
             {
                 bool collapsed = _collapsed.Contains(entry.Label);
@@ -454,8 +471,38 @@ public sealed class PropertyGrid : EditorElement
 
     private float ContentHeight() => Walk(0f).Where(static row => !row.Hidden).Sum(row => RowHeightOf(row.Entry));
 
-    // A row's height: one row, or the lines an editor asked for.
-    private float RowHeightOf(Entry entry) => entry.Lines > 1 ? Row * (entry.Lines + 1) : Row;
+    // A row's height: a note's lines, one row, or the lines an editor asked for.
+    private float RowHeightOf(Entry entry) =>
+        entry.IsNote ? (Wrap(entry.Label).Count * Theme.SmallFont.LineHeight(Theme.SmallTextSize)) + Theme.Px(8f)
+        : entry.Lines > 1 ? Row * (entry.Lines + 1) : Row;
+
+    // A note's text broken into lines at spaces to fit the panel's width.
+    private List<string> Wrap(string text)
+    {
+        float width = MathF.Max(Theme.Px(60f), Bounds.Width - Theme.Px(28f));
+        List<string> lines = [];
+        string line = string.Empty;
+        foreach (string word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string longer = line.Length == 0 ? word : line + " " + word;
+            if (line.Length > 0 && Theme.SmallFont.MeasureWidth(longer, Theme.SmallTextSize) > width)
+            {
+                lines.Add(line);
+                line = word;
+            }
+            else
+            {
+                line = longer;
+            }
+        }
+
+        if (line.Length > 0)
+        {
+            lines.Add(line);
+        }
+
+        return lines;
+    }
 
     private string? SectionAt(UiVec2 point)
     {
@@ -507,5 +554,7 @@ public sealed class PropertyGrid : EditorElement
         public Func<bool>? IsMixed { get; set; }
 
         public int Lines { get; init; } = 1;
+
+        public bool IsNote { get; init; }
     }
 }

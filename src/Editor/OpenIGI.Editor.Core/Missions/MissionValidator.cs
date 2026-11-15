@@ -48,6 +48,11 @@ public interface IMissionFacts
     /// <returns>The height, in world metres.</returns>
     double? GroundUnder(Vector3d pointMetres);
 
+    /// <summary>Gets whether the mission's folder has a file, as the game would find it, or null when that cannot be told.</summary>
+    /// <param name="path">The file's path under the mission's folder, such as <c>ai/412.qvm</c>.</param>
+    /// <returns>Whether it is there.</returns>
+    bool? HasMissionFile(string path) => null;
+
     /// <summary>Gets the title's script vocabulary, which the graph check reads expressions against, or null without one.</summary>
     Scripting.Vocabulary.ScriptVocabulary? Vocabulary => null;
 
@@ -76,6 +81,8 @@ public static partial class MissionValidator
     /// <summary>Gets every check, in the order they report.</summary>
     public static IReadOnlyList<MissionCheck> Checks { get; } =
     [
+        new(LimitsCheck, "More of a kind of object than the game's fixed list for it holds: the game stops as the level loads."),
+        new(StructureCheck, "A level without a player, or a guard generator not made of one soldier: the game reads what is not there."),
         new(IdsCheck, "An id past the game's 4096-slot table, or used twice: the game makes the task but nothing can find it by id."),
         new(DeclarationCheck, "Values that do not match the task type's declaration: kept as written, but they cannot be edited."),
         new(ReferenceCheck, "A condition, a field read or a reference naming a task the mission does not have, or the wrong kind: it reads 0, or drives nothing."),
@@ -101,8 +108,11 @@ public static partial class MissionValidator
         CheckIds(document, issues);
         CheckDeclarations(document, issues);
         CheckGraph(document, facts, issues);
+        CheckStructure(document, issues);
         if (facts is not null)
         {
+            CheckLimits(document, facts, issues);
+            CheckAiScripts(document, facts, issues);
             CheckModels(document, facts, issues);
             CheckGround(document, facts, issues);
         }

@@ -449,6 +449,14 @@ public abstract class GameTask
         FirstChild = child;
     }
 
+    /// <summary>Forgets this task's parent and siblings without touching their lists: for links known to be stale.</summary>
+    internal void ClearLinks()
+    {
+        Parent = null;
+        NextSibling = null;
+        PreviousSibling = null;
+    }
+
     /// <summary>Detaches this task from its parent's child list.</summary>
     internal void Unlink()
     {

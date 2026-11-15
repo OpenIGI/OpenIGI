@@ -1,3 +1,4 @@
+using OpenIGI.Releases.Maps;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Editor.Core.Missions;
@@ -53,6 +54,338 @@ internal sealed partial class EditorSession
                 return true;
             });
             return $"Opening the {graphName} graph once the mission is open.";
+        }
+
+        // editor rules / editor map [guards | floor <n> | zoom <metres a pixel>] / editor show <panel>: a panel in front, once
+        // the mission is open.
+        if (arguments is [string panelVerb, ..] && (panelVerb.Equals("rules", StringComparison.OrdinalIgnoreCase) || panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase)
+            || (panelVerb.Equals("show", StringComparison.OrdinalIgnoreCase) && arguments.Count == 2)))
+        {
+            bool isMap = panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase);
+            bool allGuards = arguments is [_, string option] && isMap && option.Equals("guards", StringComparison.OrdinalIgnoreCase);
+            int? floor = isMap && arguments is [_, string floorWord, string floorNumber] && floorWord.Equals("floor", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(floorNumber, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int f) ? f : null;
+            double? zoom = isMap && arguments is [_, string zoomWord, string zoomNumber] && zoomWord.Equals("zoom", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(zoomNumber, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double z) && z > 0 ? z : null;
+            string panel = (arguments.Count == 2 && !allGuards && !isMap ? arguments[1] : panelVerb).ToLowerInvariant();
+            if (!_dock.Panels.ContainsKey(panel))
+            {
+                return $"No panel '{panel}'.";
+            }
+
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show(panel);
+                if (allGuards)
+                {
+                    _map.ShowAllGuards();
+                }
+
+                if (floor is { } storey)
+                {
+                    _map.ShowFloor(storey);
+                }
+
+                if (zoom is { } metresPerPixel)
+                {
+                    _map.ZoomOnSelection(metresPerPixel);
+                }
+
+                return true;
+            });
+            return $"Showing {panel} once the mission is open.";
+        }
+
+        // editor scene new: a new cutscene; editor move <orbit|pushin|flyover|craneup|pan> #<id>: a move round an object.
+        if (arguments is [string newVerb, string newWhat] && newVerb.Equals("scene", StringComparison.OrdinalIgnoreCase) && newWhat.Equals("new", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("sequencer");
+                _dock.Show("viewport");
+                _sequencer.MakeScene();
+                return true;
+            });
+            return "Making a cutscene once the mission is open.";
+        }
+
+        if (arguments is [string moveVerb, string moveName, string subjectId] && moveVerb.Equals("move", StringComparison.OrdinalIgnoreCase)
+            && Enum.TryParse(moveName, ignoreCase: true, out Panels.CameraMove cameraMove))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is not { } document || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                if (int.TryParse(subjectId.TrimStart('#'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id)
+                    && document.EnumerateTasks().FirstOrDefault(t => t.Id == id) is { } subject)
+                {
+                    _sequencer.Move(cameraMove, subject);
+                }
+
+                return true;
+            });
+            return "Adding the move once the mission is open.";
+        }
+
+        // editor prefab save <name...>: the selection kept as a prefab; editor prefab place <name...>: one placed where the view looks.
+        if (arguments is [string prefabVerb, string prefabWhat, _, ..] && prefabVerb.Equals("prefab", StringComparison.OrdinalIgnoreCase)
+            && (prefabWhat.Equals("save", StringComparison.OrdinalIgnoreCase) || prefabWhat.Equals("place", StringComparison.OrdinalIgnoreCase)))
+        {
+            string prefabName = string.Join(' ', arguments.Skip(2));
+            bool saving = prefabWhat.Equals("save", StringComparison.OrdinalIgnoreCase);
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                if (saving)
+                {
+                    KeepPrefab(prefabName);
+                }
+                else if (Prefabs.List(_host.Title.Id).FirstOrDefault(p => p.Name.Equals(prefabName, StringComparison.OrdinalIgnoreCase)) is { } chosen)
+                {
+                    PlacePrefab(chosen);
+                }
+
+                return true;
+            });
+            return saving ? "Keeping the selection once the mission is open." : "Placing the prefab once the mission is open.";
+        }
+
+        // editor fencerun <east> <north>: the selected fence run on that far, in metres.
+        if (arguments is [string fenceVerb, string fenceX, string fenceY] && fenceVerb.Equals("fencerun", StringComparison.OrdinalIgnoreCase)
+            && double.TryParse(fenceX, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double toX)
+            && double.TryParse(fenceY, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double toY))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                RunFence(new Vector3d(toX, toY, 0));
+                return true;
+            });
+            return "Running the fence once the mission is open.";
+        }
+
+        // editor live on|off: the sequencer's Live.
+        if (arguments is [string liveVerb, string liveState] && liveVerb.Equals("live", StringComparison.OrdinalIgnoreCase))
+        {
+            bool on = liveState.Equals("on", StringComparison.OrdinalIgnoreCase);
+            _pendingSteps.Enqueue(() =>
+            {
+                _sequencer.SetLive(on);
+                return true;
+            });
+            return on ? "Scenes play live." : "Scenes show the shots' path.";
+        }
+
+        // editor wait <frames>: the commands after it wait that many frames, for a scripted run to let something play out.
+        if (arguments is [string waitVerb, string framesText] && waitVerb.Equals("wait", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(framesText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int frames))
+        {
+            int left = frames;
+            _pendingSteps.Enqueue(() => --left <= 0);
+            return $"Waiting {frames} frames.";
+        }
+
+        // editor playtest <pause|run|step [n]|speed x|god|unseen|camera>: the play-test's controls, once playing.
+        if (arguments is [string testVerb, _, ..] && testVerb.Equals("playtest", StringComparison.OrdinalIgnoreCase))
+        {
+            string command = string.Join(' ', arguments.Skip(1));
+            _pendingSteps.Enqueue(() =>
+            {
+                if (!IsPlaying || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _host.Logger.Information("Editor", $"editor playtest {command}: {_host.PlaytestCommand(command)}");
+                return true;
+            });
+            return $"Play-test '{command}' once playing.";
+        }
+
+        // editor play: the sequencer's Play (Space), live where the game can play scenes on the level.
+        if (arguments is [string playVerb] && playVerb.Equals("play", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.PlayOrPause();
+                return true;
+            });
+            return "Playing the scene once the mission is open.";
+        }
+
+        // editor shot <n>: the menu of the open scene's nth shot.
+        if (arguments is [string shotVerb, string shotNumber] && shotVerb.Equals("shot", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(shotNumber, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int shotIndex))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.ShotMenu(shotIndex);
+                return true;
+            });
+            return "Opening the shot's menu once the mission is open.";
+        }
+
+        // editor seek <seconds> [outside]: the sequencer's playhead in the scene it has open; outside, the viewport stands back
+        // to show the whole camera path rather than looking through it.
+        if (arguments is [string seekVerb, string seekText, ..] && arguments.Count <= 3 && seekVerb.Equals("seek", StringComparison.OrdinalIgnoreCase)
+            && double.TryParse(seekText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seekTo))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.Seek(seekTo);
+                if (arguments.Count == 3)
+                {
+                    _sequencer.ViewPath();
+                }
+
+                return true;
+            });
+            return "Seeking once the mission is open.";
+        }
+
+        if (RunCameraCommand(arguments) is { } cameraSaid)
+        {
+            return cameraSaid;
+        }
+
+        // editor pilot [<n>]: pilots the open scene's nth key (or the selected one), or stops; editor fly <right> <forward> <up>
+        // [<yaw degrees>]: the viewport's camera moved by so many metres along its own axes and turned, as flying it does.
+        if (arguments is [string pilotVerb, ..] && pilotVerb.Equals("pilot", StringComparison.OrdinalIgnoreCase) && arguments.Count <= 2)
+        {
+            int? keyNumber = arguments.Count == 2 && int.TryParse(arguments[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n) ? n : null;
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.PilotKey(keyNumber);
+                _host.Logger.Information("Editor", _sequencer.PilotBanner ?? "Not piloting.");
+                return true;
+            });
+            return "Piloting once the mission is open.";
+        }
+
+        if (arguments is [string flyVerb, string rightText, string forwardText, string upText, ..] && flyVerb.Equals("fly", StringComparison.OrdinalIgnoreCase)
+            && double.TryParse(rightText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double right)
+            && double.TryParse(forwardText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double forward)
+            && double.TryParse(upText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double up))
+        {
+            double yawDegrees = arguments.Count > 4 && double.TryParse(arguments[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y) ? y : 0;
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_host.Camera is not { } view)
+                {
+                    return false;
+                }
+
+                Matrix3f axes = view.Camera.Orientation;
+                static Vector3d Along(Vector3f axis) => new(axis.X, axis.Y, axis.Z);
+                Vector3d to = view.Position + (Along(axes.Row1) * right) + (Along(axes.Row3) * forward) + (Vector3d.UnitZ * up);
+                view.MoveTo(to, view.Yaw + (float)(yawDegrees * Math.PI / 180), view.Pitch);
+                return true;
+            });
+            return "Flying the viewport.";
+        }
+
+        // editor scene <#id|name> [seconds]: the sequencer on a cutscene, its playhead at a moment.
+        if (arguments is [string sceneVerb, string scene, ..] && sceneVerb.Equals("scene", StringComparison.OrdinalIgnoreCase))
+        {
+            double at = arguments.Count > 2 && double.TryParse(arguments[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double s) ? s : 0;
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("sequencer");
+                _dock.Show("viewport");
+                _host.Logger.Information("Editor", _sequencer.Open(scene) ? $"Opened the scene {scene}." : $"No scene {scene}.");
+                _sequencer.Seek(at);
+                return true;
+            });
+            return "Opening the scene once the mission is open.";
+        }
+
+        // editor link #<id> #<id>: the ways the first object can be wired to the second, as a Ctrl-drag on the map offers them.
+        if (arguments is [string linkVerb, string fromId, string toId] && linkVerb.Equals("link", StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is not { } document || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                MissionTask? Find(string id) => int.TryParse(id.TrimStart('#'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int value)
+                    ? document.EnumerateTasks().FirstOrDefault(t => t.Id == value)
+                    : null;
+                if (Find(fromId) is { } from && Find(toId) is { } to)
+                {
+                    _dock.Show("map");
+                    _workspace.Selection.Set([from, to]);
+                    _map.OfferLinks(from, to);
+                }
+
+                return true;
+            });
+            return "Offering the links once the mission is open.";
+        }
+
+        // editor rule <when> then wait 2 then call Game_X() then do StatusMessage_40.Send: a rule made from one line, in the Rules panel.
+        if (arguments is [string ruleVerb, _, ..] && ruleVerb.Equals("rule", StringComparison.OrdinalIgnoreCase))
+        {
+            string line = string.Join(' ', arguments.Skip(1));
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _dock.Show("rules");
+                _host.Logger.Information("Editor", _rules.AddFromLine(line) ? $"Made the rule: {line}" : $"Not a rule: {line}");
+                return true;
+            });
+            return "Making the rule once the mission is open.";
         }
 
         if (arguments is [string find, ..] && find.Equals("find", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)
@@ -213,6 +546,37 @@ internal sealed partial class EditorSession
             return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Selecting near ({nx}, {ny}) once the mission is open.");
         }
 
+        // editor publishmap <id> <author> <name...>: the open mission published as Publish Map does, for scripted checks.
+        if (arguments is [string publishVerb, string mapId, string author, _, ..] && publishVerb.Equals("publishmap", StringComparison.OrdinalIgnoreCase))
+        {
+            string title = string.Join(' ', arguments.Skip(3));
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                if (MapFolder() is not { } folder || _workspace.Mission is not { } mission)
+                {
+                    _host.Logger.Warning("Editor", "editor publishmap: the open mission is not one the editor made.");
+                    return true;
+                }
+
+                (MapManifest manifest, Dictionary<string, byte[]> bytes, IReadOnlyList<string> problems) =
+                    PackMap(new MapManifest(MapManifest.CurrentSchema, mapId, title, "Published from a scripted check.", _host.Title.Id, author, mission.Id, folder, []));
+                int named = manifest.Files.Count(static f => f.Origin is not null);
+                _host.Logger.Information("Editor", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"editor publishmap: {manifest.Files.Count} files, {named} named from the game, {manifest.EmbeddedSize} bytes carried; problems: {(problems.Count == 0 ? "none" : string.Join(" | ", problems))}"));
+                if (problems.Count == 0)
+                {
+                    StartPublishing(manifest, bytes);
+                }
+
+                return true;
+            });
+            return $"Publishing the open mission as '{title}' once it is open.";
+        }
+
         if (arguments is [string make, string from, _, ..] && make.Equals("newmission", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(from, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int baseId))
         {
@@ -269,8 +633,10 @@ internal sealed partial class EditorSession
             return null;
         }
 
-        string name = string.Join(' ', arguments.Skip(1));
-        _pendingSteps.Enqueue(() => SelectNamed(name));
+        // editor select also <name>: added to the selection rather than replacing it.
+        bool also = arguments.Count > 2 && arguments[1].Equals("also", StringComparison.OrdinalIgnoreCase);
+        string name = string.Join(' ', arguments.Skip(also ? 2 : 1));
+        _pendingSteps.Enqueue(() => SelectNamed(name, also));
         return $"Selecting '{name}' once the mission is open.";
     }
 
@@ -341,11 +707,21 @@ internal sealed partial class EditorSession
     }
 
     // The object a script names, selected and framed; in turn with the other scripted steps.
-    private bool SelectNamed(string name)
+    private bool SelectNamed(string name, bool adding = false)
     {
         if (_workspace.Document is not { } document)
         {
             return false;
+        }
+
+        // 'first <Type>' is the first task of a type, for a task with neither label nor id.
+        if (name.StartsWith("first ", StringComparison.OrdinalIgnoreCase)
+            && document.EnumerateTasks().FirstOrDefault(t => t.TypeName.Equals(name[6..].Trim(), StringComparison.OrdinalIgnoreCase)) is { } firstOfType)
+        {
+            _workspace.Selection.Set(adding ? [.. _workspace.Selection.Items.Where(t => !ReferenceEquals(t, firstOfType)), firstOfType] : [firstOfType]);
+            _viewport.Frame(firstOfType);
+            _host.Logger.Information("Editor", $"Selected {TaskPresentation.Name(firstOfType)}.");
+            return true;
         }
 
         // '#12' is the task with id 12, for tasks with no label such as AI graphs.
@@ -361,7 +737,7 @@ internal sealed partial class EditorSession
             return true;
         }
 
-        _workspace.Selection.Set(task);
+        _workspace.Selection.Set(adding ? [.. _workspace.Selection.Items.Where(t => !ReferenceEquals(t, task)), task] : [task]);
         _viewport.Frame(task);
         _host.Logger.Information("Editor", $"Selected {TaskPresentation.Name(task)}.");
         return true;

@@ -40,6 +40,9 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
 
+    /// <inheritdoc/>
+    public IMissionCutscenePreview? CutscenePreview => field ??= new Igi1CutscenePreview(this);
+
     /// <summary>Gets what hurts a player of the mission -- its own or a co-op partner -- and how it dies.</summary>
     public Igi1PlayerHarm Harm { get; }
 

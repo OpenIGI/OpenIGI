@@ -1,7 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Vocabulary;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -66,21 +68,29 @@ public static class Igi2AreaCriteria
     /// <returns>Its bit, <c>Human_abAreaActivateCriteriaHuman[team]</c>.</returns>
     public static int Team(int team) => (uint)team < Teams ? FirstTeam << team : 0;
 
+    /// <summary>Gets the criteria in the order they are registered, each with what it counts.</summary>
+    public static IReadOnlyList<AreaCriterion> All { get; } =
+    [
+        new("CRITERIA_VEHICLE", Vehicle, "every vehicle"),
+        new("CRITERIA_CAMERA", Camera, "the camera"),
+        new("CRITERIA_HUMAN", Human, "every active human"),
+        .. Enumerable.Range(0, Teams).Select(static team => new AreaCriterion("CRITERIA_HUMAN" + team, Team(team), AreaCriteriaFamily.TeamNote(team))),
+        new("CRITERIA_HUMANPLAYER", HumanPlayer, "the player alone"),
+        new("CRITERIA_HUMANAI_SIDEKICK", SideKick, "the side-kicks"),
+    ];
+
+    /// <summary>Gets the criteria as a constant family, for the title's script vocabulary.</summary>
+    public static ConstantFamily Family { get; } = AreaCriteriaFamily.Build(Igi1AreaCriteria.FamilyName, All);
+
     /// <summary>Registers the criteria's names as the constants a level's criteria are written in.</summary>
     /// <param name="natives">The namespace.</param>
     public static void Register(NativeRegistry natives)
     {
         ArgumentNullException.ThrowIfNull(natives);
-        natives.RegisterConstant("CRITERIA_VEHICLE", Vehicle);
-        natives.RegisterConstant("CRITERIA_CAMERA", Camera);
-        natives.RegisterConstant("CRITERIA_HUMAN", Human);
-        for (int team = 0; team < Teams; team++)
+        foreach (AreaCriterion criterion in All)
         {
-            natives.RegisterConstant("CRITERIA_HUMAN" + team, Team(team));
+            natives.RegisterConstant(criterion.Name, criterion.Bit);
         }
-
-        natives.RegisterConstant("CRITERIA_HUMANPLAYER", HumanPlayer);
-        natives.RegisterConstant("CRITERIA_HUMANAI_SIDEKICK", SideKick);
     }
 }
 

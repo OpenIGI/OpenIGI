@@ -72,6 +72,11 @@ public static class PlayerCheatCVars
         "g_cheat_no_recoil", false, CheatFlags,
         "Disable weapon recoil (cheat).");
 
+    /// <summary>Keeps the player out of every guard's and camera's sight; what they hear still reaches them.</summary>
+    public static readonly BoolCVar Unseen = CVar.Bool(
+        "g_cheat_unseen", false, CheatFlags,
+        "Guards and cameras do not see the player (cheat); they still hear him.");
+
     /// <summary>Refills the magazine from the reserve each tick, so a reload is never needed until it runs dry.</summary>
     public static readonly BoolCVar NoReload = CVar.Bool(
         "g_cheat_no_reload", false, CheatFlags,

@@ -18,6 +18,9 @@ internal sealed record CutsceneAnimationState(
     /// <summary>Gets or sets the initial run byte; settable so a suite can make every AnimTask run.</summary>
     public bool InitialRun { get; set; } = InitialRun;
 
+    /// <summary>Gets or sets the programme; an editor's change to the keys of a level that is running gives it a new one.</summary>
+    public AnimDataProgram Program { get; set; } = Program;
+
     /// <summary>Running-tick counter exported as <c>AnimTask+&lt;id&gt;.nTick</c> (retail AnimTask state var).</summary>
     public int Tick { get; set; }
 
@@ -38,6 +41,14 @@ internal sealed record CutsceneSoundState(
     bool OneShot,
     bool RelativeToMicrophone)
 {
+    // Settable, each read from the task again when an editor changes it in a level that is running.
+    public string Condition { get; set; } = Condition;
+    public string Sound { get; set; } = Sound;
+    public Vector3d Position { get; set; } = Position;
+    public bool Simple { get; set; } = Simple;
+    public bool OneShot { get; set; } = OneShot;
+    public bool RelativeToMicrophone { get; set; } = RelativeToMicrophone;
+
     public bool IsRun { get; set; }
     public bool HasPlayed { get; set; }
 }

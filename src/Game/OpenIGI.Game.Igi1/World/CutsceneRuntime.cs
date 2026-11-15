@@ -243,6 +243,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         // UpdateInternalData.  Build those keys only after all task transforms exist: Train tasks do
         // not author a world Position at all, and their initial frame must first be evaluated from the
         // railroad.  Reading the keys inline above silently cached (0,0,0)/identity for linked cars.
+        _camera.RememberInitialPoses();
         foreach (CutSceneTask cutscene in cutscenes)
         {
             CutsceneSceneState scene = new(cutscene, _camera.ReadShots(cutscene));
@@ -293,6 +294,86 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             _packets.Apply(animation.TargetId, animation.Order, animation.Program);
         }
         UpdateFrame();
+    }
+
+    /// <summary>
+    /// The key a scene's shown frame is on, and the space that key was carried to the world through: what an edit of the view is
+    /// written back through.
+    /// </summary>
+    /// <param name="scene">The scene.</param>
+    /// <returns>The key's index among the scene's knots and its space; null before the scene has shown a frame.</returns>
+    public (int Key, CutsceneShotSpace Space)? ShotSpace(CutSceneTask scene) =>
+        _scenes.Find(s => ReferenceEquals(s.Task, scene)) is { LastShotIndex: >= 0, ShotSpace: { } space } state
+            ? (state.LastShotIndex, space)
+            : null;
+
+    /// <summary>
+    /// Reads a task again after an editor changed its parameters in a level that is running: what this runtime made from it at
+    /// load is made again from what it now says -- a scene's shots (its own, or a camera's in it), an animation's run and keys, a
+    /// sound's condition and what it plays -- changed in place, so what holds them (variables, the walk) still holds them.
+    /// </summary>
+    /// <param name="task">The task.</param>
+    /// <returns>Whether it is one this runtime reads.</returns>
+    /// <remarks>
+    /// An animation's new programme is played on to where the old one had got to. The editor puts the level back to before the
+    /// animation started first whenever its keys change, so that is where a level loaded with them stands.
+    /// </remarks>
+    public bool Reread(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        if (task is AnimTaskTask animated && _animations.Find(a => ReferenceEquals(a.Task, task)) is { } animation)
+        {
+            animation.Run = animated.RunExpression;
+            animation.InitialRun = animated.InitialRun;
+            if (animated.AnimData is { } entries)
+            {
+                AnimDataProgram program = new(entries);
+                if (animation.Program.Tick >= 0)
+                {
+                    program.SeekTo(animation.Program.Tick);
+                }
+
+                animation.Program = program;
+            }
+
+            return true;
+        }
+
+        if (task is ConditionalSoundTask sounding && _sounds.Find(s => ReferenceEquals(s.Task, task)) is { } sound)
+        {
+            sound.Condition = sounding.Condition;
+            sound.Sound = sounding.Sound;
+            sound.Position = sounding.Position;
+            sound.Simple = sounding.IsSimple;
+            sound.OneShot = sounding.IsOneShot;
+            sound.RelativeToMicrophone = sounding.IsRelativeToMicrophone;
+            return true;
+        }
+
+        // A scene, or a camera somewhere in one: the scene's shots read again, and the level's tasks numbered again in the order
+        // the walk meets them, as the load numbered them -- a shot added or taken out moves every task after it.
+        for (GameTask? at = task; at is not null; at = at.Parent)
+        {
+            if (at is CutSceneTask scene && _scenes.Find(s => ReferenceEquals(s.Task, scene)) is { } state)
+            {
+                state.ReplaceShots(_camera.ReadShots(scene));
+
+                // Only what the load would have met: the tasks it numbered and the scene's own (a shot new to it), not those the game
+                // has made since.
+                HashSet<GameTask> met = new(_context.TaskOrder.Keys, ReferenceEqualityComparer.Instance);
+                met.UnionWith(scene.Descendants());
+                _context.TaskOrder.Clear();
+                int order = 0;
+                foreach (GameTask placed in _context.Root.Descendants().Where(met.Contains))
+                {
+                    _context.TaskOrder[placed] = order++;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Gets the number of <see cref="Tick"/> calls applied since construction.</summary>
@@ -431,6 +512,16 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// <summary>Gets the currently running scene, if any.</summary>
     public CutSceneTask? ActiveScene => _scenes.LastOrDefault(
         static state => state.Task.IsRun && ConditionalContainerGate.IsTaskActive(state.Task))?.Task;
+
+    /// <summary>
+    /// Gets or sets the scene an editor's preview plays: it runs from wherever its clock stands, whatever its Run says, until it
+    /// is finished, and every other scene stays out of it. Null for the level's own scenes as its scripts run them.
+    /// </summary>
+    /// <remarks>Not retail: the original has no editor.</remarks>
+    public CutSceneTask? Previewed { get; set; }
+
+    /// <summary>Gets whether the break key is queued for the next tick (<see cref="RequestBreak"/>).</summary>
+    public bool IsBreakRequested => _breakRequested;
 
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     /// <remarks>A co-op client's scenes are its server's to break: it asks nothing of its own.</remarks>
@@ -581,6 +672,12 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             {
                 scene.IsFinished = true;
             }
+        }
+        else if (Previewed is { } previewed)
+        {
+            // An editor's preview: its scene plays from its start whatever its Run says, until it is finished, and no other
+            // scene takes the camera from it.
+            scene.IsRun = ReferenceEquals(scene, previewed) && !scene.IsFinished;
         }
         else
         {

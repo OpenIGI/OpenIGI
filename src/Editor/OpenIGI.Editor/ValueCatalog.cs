@@ -41,12 +41,6 @@ internal sealed class ValueCatalog(IEditorHost host)
     // The shared folders whose archives hold what every mission can use.
     private static readonly string[] Shared = ["common", "weapons", "ammo", "humanplayer", "magicobj"];
 
-    // IGI 1's area criteria, read as text by AreaActivate rather than registered as constants.
-    private static readonly ComboItem[] Criteria =
-    [
-        new("CRITERIA_HUMAN0", "the player"), new("CRITERIA_HUMAN1", "any human"), new("CRITERIA_VEHICLE", "a vehicle"),
-    ];
-
     private int? _mission;
     private Dictionary<string, List<ComboItem>>? _byExtension;
     private List<ComboItem>? _keys;
@@ -70,26 +64,33 @@ internal sealed class ValueCatalog(IEditorHost host)
             ValueKind.Texture => [.. Files(".tex"), .. Files(".tga"), .. Files(".bmp")],
             ValueKind.TextKey => Keys(),
             ValueKind.BracketedTextKey => [.. Keys().Select(static k => k with { Value = $"<{k.Value}>" })],
-            ValueKind.Constant when prefix == "CRITERIA_" => Criteria,
             ValueKind.Constant when prefix is { Length: > 0 } => Constants(prefix),
             _ => [],
         };
     }
 
+    // The constants of a prefix: the title's own families first, in the order and with the words the title gives them (its
+    // area criteria, which the first game reads as text and never registers), then whatever else the running game knows.
     private List<ComboItem> Constants(string prefix)
     {
+        List<ComboItem> items = [];
         HashSet<string> names = new(StringComparer.Ordinal);
-        foreach (string name in host.ScriptNames.Where(n => n.StartsWith(prefix, StringComparison.Ordinal)))
+        foreach (Scripting.Vocabulary.ConstantFamily family in host.Vocabulary.Families.Values)
         {
-            names.Add(name);
+            foreach (string name in family.Values.Select(static c => c.Key).Where(n => n.StartsWith(prefix, StringComparison.Ordinal)))
+            {
+                if (names.Add(name))
+                {
+                    items.Add(new ComboItem(name, family.Notes.GetValueOrDefault(name)));
+                }
+            }
         }
 
-        foreach (string name in host.Vocabulary.Families.Values.SelectMany(static f => f.Values).Select(static c => c.Key).Where(n => n.StartsWith(prefix, StringComparison.Ordinal)))
-        {
-            names.Add(name);
-        }
+        bool described = items.Exists(static i => i.Detail is not null);
+        items.AddRange(host.ScriptNames.Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && names.Add(n)).Select(static n => new ComboItem(n)));
 
-        return [.. names.Order(StringComparer.Ordinal).Select(static n => new ComboItem(n))];
+        // A family that says what its constants mean keeps the title's order; a bare list of names reads best sorted.
+        return described ? items : [.. items.OrderBy(static i => i.Value, StringComparer.Ordinal)];
     }
 
     // Every file of an extension in the mission's folder and the shared ones, loose or inside an archive, by bare name.

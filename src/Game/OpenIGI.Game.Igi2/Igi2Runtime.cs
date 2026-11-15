@@ -35,5 +35,9 @@ public sealed class Igi2Runtime : IGameTitleRuntime
         .Add(TitleScriptVocabulary.RecordTaskFields(Modules))
         .Add(Flow.Igi2TaskFields.Fields)
         .Add(Flow.Igi2MissionScriptVocabulary.Families)
+        .Add(Flow.Igi2AreaCriteria.Family)
+        .AddHelp(OpenIGI.Game.GeneratedTaskDocs.All)
+        .AddHelp(GeneratedTaskDocs.All)
+        .AddStates(MissionWording.States)
         .AddGlobals(Flow.Igi2MissionScriptVocabulary.Globals);
 }

@@ -101,7 +101,7 @@ internal sealed partial class EditorSession
                     ? (f.RelativePath, (ReadOnlyMemory<byte>)BlankMission.Make(f.Bytes).ToImage())
                     : f)
                 : LevelFiles(folder);
-            IReadOnlyList<(string GamePath, byte[] Bytes)> files = NewMission.Build(from.MissionDirectory, script, level, id, name, previous);
+            IReadOnlyList<(string GamePath, byte[] Bytes)> files = NewMission.Build(from.MissionDirectory, script, level, id, name, previous, MissionTexts());
             foreach ((string path, byte[] bytes) in files)
             {
                 _workspace.Project.Write(path, bytes);
@@ -114,6 +114,10 @@ internal sealed partial class EditorSession
             if (request.Blank)
             {
                 ShapeBlankGround(id, request.Ground, request.Seed);
+
+                // A blank mission is a first mission's start: the guide takes it from there.
+                _guide.HasPlayed = false;
+                _dock.Show("guide", beside: "inspector");
             }
             else
             {
@@ -196,6 +200,31 @@ internal sealed partial class EditorSession
         return player is not null && TaskPresentation.PositionMetres(player) is { } start
             ? exit is not null && TaskPresentation.PositionMetres(exit) is { } end ? (start + end) * 0.5 : start
             : null;
+    }
+
+    // Every language's archive of mission names and descriptions, as the original game would read it, with its path
+    // relative to the installation: a new mission's name goes into each, or the original's menus show its key.
+    private IEnumerable<(string GamePath, ReadOnlyMemory<byte> Bytes)> MissionTexts()
+    {
+        const string languages = GameDevice + "language";
+        string[] folders;
+        try
+        {
+            folders = [.. _host.Files.EnumerateDirectories(languages)];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            yield break;
+        }
+
+        foreach (string folder in folders)
+        {
+            string path = $"{folder.Replace('\\', '/').TrimEnd('/')}/missions.res";
+            if (_host.TryReadShippedFile(path, out ReadOnlyMemory<byte> bytes))
+            {
+                yield return (path[GameDevice.Length..], bytes);
+            }
+        }
     }
 
     // The campaign's last mission: the end of the chain from its first.

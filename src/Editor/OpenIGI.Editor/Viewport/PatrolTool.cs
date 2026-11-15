@@ -39,7 +39,7 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
 
     private int? _dragged;
     private int? _lookFrom;
-    private (GraphDocument Graph, GraphFile File)? _routes;
+    private readonly PatrolPaths _paths = new(workspace);
 
     /// <summary>Gets the soldier whose patrol is edited, or null.</summary>
     public MissionTask? Soldier { get; private set; }
@@ -50,7 +50,7 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
     /// <summary>Whether a task is a soldier with AI, whose patrol this tool edits.</summary>
     /// <param name="task">The task.</param>
     /// <returns>Whether it is.</returns>
-    public static bool IsSoldier(MissionTask? task) => task is { TypeName: "HumanSoldier" } && task.Children.Any(static c => c.TypeName == "HumanAI");
+    public static bool IsSoldier(MissionTask? task) => PatrolPaths.IsSoldier(task);
 
     /// <summary>Starts editing a soldier's patrol, giving it an AI graph first when it has none.</summary>
     /// <param name="soldier">The soldier.</param>
@@ -73,6 +73,42 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
         }
 
         return GraphTask() is not null;
+    }
+
+    /// <summary>
+    /// Lays the soldier's patrol as a ring round a point: waypoints on the ground, each on the graph's node there or a new
+    /// one as a click there would make, walked in turn and round again; one undo step.
+    /// </summary>
+    /// <param name="centre">What the ring goes round, in world metres.</param>
+    /// <param name="radius">How far out, in metres.</param>
+    /// <param name="stops">How many waypoints.</param>
+    /// <returns>Whether the patrol was laid.</returns>
+    public bool Circle(Vector3d centre, double radius, int stops = 8)
+    {
+        if (Soldier is null || GraphTask() is not { } graphTask)
+        {
+            return false;
+        }
+
+        using (workspace.History.BeginTransaction("Patrol Round"))
+        {
+            List<PatrolWaypoint> waypoints = [];
+            for (int i = 0; i < stops; i++)
+            {
+                double angle = i * Math.Tau / stops;
+                double x = centre.X + (Math.Cos(angle) * radius), y = centre.Y + (Math.Sin(angle) * radius);
+                Vector3d at = new(x, y, Height(x, y) ?? centre.Z);
+                int? node = (Graph() is { } graph ? NodeNear(graphTask, graph, at) : null) ?? AddNode(graphTask, at);
+                if (node is { } id)
+                {
+                    waypoints.Add(PatrolWaypoint.WalkTo(id));
+                }
+            }
+
+            Edit(Route with { Waypoints = waypoints }, "Patrol Round");
+        }
+
+        return true;
     }
 
     /// <summary>Stops editing.</summary>
@@ -218,82 +254,42 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
     /// <param name="painter">The painter.</param>
     /// <param name="theme">The theme.</param>
     /// <param name="projector">The view.</param>
-    public void Draw(UiPainter painter, EditorTheme theme, ViewportProjector projector)
+public void Draw(UiPainter painter, EditorTheme theme, ViewportProjector projector)
     {
-        if (Soldier is null || GraphTask() is not { } graphTask || Graph() is not { } graph)
+        if (Soldier is not { } soldier || _paths.Walk(soldier) is not { } walk)
         {
             return;
         }
 
-        PatrolRoute route = Route;
-        Dictionary<int, Vector3d> nodes = graph.Nodes.Where(static n => n.PositionRecord >= 0).ToDictionary(static n => n.Id, n => MissionGraphs.ToWorldMetres(graphTask, n.Position));
-        Bgra32 walk = theme.Accent, run = Bgra32.FromRgb(0xE8, 0x8A, 0x2E);
+        Bgra32 walking = theme.Accent, run = Bgra32.FromRgb(0xE8, 0x8A, 0x2E);
         static Vector3d Up(Vector3d p) => p + new Vector3d(0, 0, 0.15);
 
-        // From the soldier to the first waypoint, then each leg along the graph's routes, as the soldier will walk it.
-        Vector3d? last = TaskPresentation.PositionMetres(Soldier);
-        int? lastNode = null;
-        for (int i = 0; i < route.Waypoints.Count; i++)
+        // The way the soldier walks it, and round again to the first waypoint faintly unless the route stops at its end.
+        foreach (PatrolLeg leg in walk.Legs)
         {
-            PatrolWaypoint stop = route.Waypoints[i];
-            if (!nodes.TryGetValue(stop.Node, out Vector3d at))
+            Line(painter, projector, Up(leg.From), Up(leg.To), leg.IsWayBack ? walking.WithAlpha(90) : leg.Run ? run : walking, theme.Px(leg.IsWayBack ? 1.6f : leg.Run ? 3f : 2.4f));
+        }
+
+        foreach ((Vector3d from, Vector3d to) in walk.Looks)
+        {
+            Line(painter, projector, Up(from), Up(to), Bgra32.FromRgb(0xC8, 0xC8, 0x60).WithAlpha(200), theme.Px(1.4f));
+        }
+
+        foreach (PatrolStop stop in walk.Stops)
+        {
+            if (!projector.TryProject(Up(stop.At), out UiVec2 screen))
             {
                 continue;
             }
 
-            IEnumerable<Vector3d> leg = lastNode is { } from ? Leg(graph, nodes, from, stop.Node) : [at];
-            foreach (Vector3d step in leg)
-            {
-                if (last is { } previous)
-                {
-                    Line(painter, projector, Up(previous), Up(step), stop.Run ? run : walk, theme.Px(stop.Run ? 3f : 2.4f));
-                }
-
-                last = step;
-            }
-
-            lastNode = stop.Node;
-        }
-
-        // Round again to the first waypoint, faintly, unless the route stops at its end.
-        if (!route.Stops && route.Waypoints.Count > 1 && lastNode is { } end && nodes.ContainsKey(route.Waypoints[0].Node))
-        {
-            Vector3d? back = null;
-            foreach (Vector3d step in Leg(graph, nodes, end, route.Waypoints[0].Node))
-            {
-                if (back is { } previous)
-                {
-                    Line(painter, projector, Up(previous), Up(step), walk.WithAlpha(90), theme.Px(1.6f));
-                }
-
-                back = step;
-            }
-        }
-
-        for (int i = 0; i < route.Waypoints.Count; i++)
-        {
-            PatrolWaypoint stop = route.Waypoints[i];
-            if (!nodes.TryGetValue(stop.Node, out Vector3d at) || !projector.TryProject(Up(at), out UiVec2 screen))
-            {
-                continue;
-            }
-
-            foreach (PatrolAction look in stop.Actions.Where(static a => a.Kind == PatrolPause.LookAt))
-            {
-                if (nodes.TryGetValue((int)look.Value, out Vector3d target))
-                {
-                    Line(painter, projector, Up(at), Up(target), Bgra32.FromRgb(0xC8, 0xC8, 0x60).WithAlpha(200), theme.Px(1.4f));
-                }
-            }
-
-            bool selected = i == Selected;
+            bool selected = stop.Index == Selected;
             float radius = theme.Px(selected ? 10f : 8.5f);
             painter.FillDot(screen, radius + theme.Px(1.5f), theme.Background);
-            painter.FillDot(screen, radius, stop.Run ? run : walk);
-            string number = (i + 1).ToString(CultureInfo.InvariantCulture);
+            painter.FillDot(screen, radius, stop.Stop.Run ? run : walking);
+            string number = (stop.Index + 1).ToString(CultureInfo.InvariantCulture);
             float width = theme.SmallFont.MeasureWidth(number, theme.SmallTextSize);
             painter.DrawText(theme.SmallFont, number, new UiVec2(screen.X - (width / 2), screen.Y - (theme.SmallTextSize * 0.62f)), theme.SmallTextSize, Bgra32.White);
-            string notes = string.Join("  ", stop.Actions.Select(Note).Where(static n => n.Length > 0));
+            string notes = string.Join("  ", stop.Stop.Actions.Select(Note).Where(static n => n.Length > 0));
             if (notes.Length > 0)
             {
                 painter.DrawText(theme.SmallFont, notes, new UiVec2(screen.X + radius + theme.Px(5f), screen.Y - theme.Px(7f)), theme.SmallTextSize, theme.Text);
@@ -364,48 +360,14 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
         workspace.Execute(new CompositeCommand(name, steps));
     }
 
-    private MissionTask? Ai() => Soldier?.Children.FirstOrDefault(static c => c.TypeName == "HumanAI");
+    private MissionTask? Ai() => Soldier is { } soldier ? PatrolPaths.Ai(soldier) : null;
 
-    private MissionTask? Path() => Soldier?.Children.FirstOrDefault(static c => c.TypeName == PatrolRoute.PathType);
+    private MissionTask? Path() => Soldier is { } soldier ? PatrolPaths.Path(soldier) : null;
 
-    // The AIGraph task the soldier's HumanAI names.
-    private MissionTask? GraphTask()
-    {
-        if (Ai()?.FindParameter("Graph ID") is not { } parameter || !parameter.TryGetNumbers(out double[] value) || workspace.Document is not { } document)
-        {
-            return null;
-        }
+// The AIGraph task the soldier's HumanAI names.
+    private MissionTask? GraphTask() => Soldier is { } soldier ? _paths.GraphTask(soldier) : null;
 
-        int id = (int)value[0];
-        return document.EnumerateTasks().FirstOrDefault(t => MissionGraphs.IsGraph(t) && t.Id == id);
-    }
-
-    private GraphDocument? Graph() =>
-        GraphTask() is { } task && workspace.Mission is { } mission ? workspace.Graphs.Get(mission, task) : null;
-
-    // The graph's route between two nodes, as world points from the first to the second; a straight hop without one.
-    private IEnumerable<Vector3d> Leg(GraphDocument graph, Dictionary<int, Vector3d> nodes, int from, int to)
-    {
-        if (_routes is not { } cached || !ReferenceEquals(cached.Graph, graph))
-        {
-            _routes = (graph, GraphFile.Read(graph.Write()));
-        }
-
-        IReadOnlyList<int> steps = _routes.Value.File.RouteTable is { } table && table.MaxNodes > Math.Max(from, to) ? table.EnumerateRoute(from, to) : [];
-        if (steps.Count == 0)
-        {
-            steps = [to];
-        }
-
-        yield return nodes[from];
-        foreach (int step in steps)
-        {
-            if (nodes.TryGetValue(step, out Vector3d at))
-            {
-                yield return at;
-            }
-        }
-    }
+    private GraphDocument? Graph() => Soldier is { } soldier ? _paths.Graph(soldier) : null;
 
     private static int? NodeNear(MissionTask graphTask, GraphDocument graph, Vector3d at)
     {
@@ -430,7 +392,7 @@ internal sealed class PatrolTool(MissionWorkspace workspace, IEditorHost host, F
         }
 
         workspace.Execute(add);
-        _routes = null;
+        _paths.Forget();
         return id;
     }
 

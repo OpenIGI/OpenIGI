@@ -118,6 +118,9 @@ internal sealed class FakeHost : IShellHost
     /// <summary>The party the multiplayer page shows, or null for none.</summary>
     public IPartyPanel? Party { get; set; }
 
+    /// <summary>The community maps the Maps page shows, or null for a build without them.</summary>
+    public IShellMaps? Maps { get; set; }
+
     /// <summary>The missions' pictures, by mission, or null for none.</summary>
     public Func<int, MissionPicture?>? Pictures { get; set; }
 

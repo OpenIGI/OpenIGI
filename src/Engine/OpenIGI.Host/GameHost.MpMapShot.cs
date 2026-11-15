@@ -83,30 +83,65 @@ public sealed partial class GameHost
         }
     }
 
-    // The picture and its box; a problem, or null once written.
-    private string? WriteMpMapShot(string path)
+    /// <summary>The loaded level from straight above: its picture, the heights under it, and the world box it covers.</summary>
+    /// <param name="Width">The picture's width in pixels.</param>
+    /// <param name="Height">The picture's height in pixels.</param>
+    /// <param name="Pixels">The picture, row by row from the north edge.</param>
+    /// <param name="Heights">The surface's height under each pixel, roofs included, in world units; NaN where nothing is.</param>
+    /// <param name="Ground">The bare ground's height under each pixel, in world units.</param>
+    /// <param name="MinX">The west edge, in world units.</param>
+    /// <param name="MaxY">The north edge, in world units.</param>
+    /// <param name="UnitsPerPixel">How much of the world a pixel covers.</param>
+    /// <param name="Top">The highest point the casts started from.</param>
+    /// <param name="Bottom">The lowest they reached.</param>
+    private sealed record Overhead(int Width, int Height, Bgra32[] Pixels, double[] Heights, double[] Ground, double MinX, double MaxY, double UnitsPerPixel, double Top, double Bottom)
     {
-        if (_scene is not { } scene || _mission.EffectWalls is not { } walls)
+        public double MaxX => MinX + (Width * UnitsPerPixel);
+
+        public double MinY => MaxY - (Height * UnitsPerPixel);
+
+        public double Low { get; init; }
+
+        public double High { get; init; }
+    }
+
+    /// <summary>The loaded level from above, for the editor's map; null when no level is up.</summary>
+    /// <param name="maxPixels">The most pixels a side.</param>
+    /// <returns>The map.</returns>
+    internal Editor.OverheadMap? EditorOverheadMap(int maxPixels)
+    {
+        System.Diagnostics.Stopwatch took = System.Diagnostics.Stopwatch.StartNew();
+        if (MakeOverhead(maxPixels, out _, roofs: false) is not { } overhead)
         {
-            return "No level is loaded.";
+            return null;
         }
 
-        // The level's extent: its objects, the odd far-flung one left out, and a margin round them.
-        Vector3d[] at = [.. scene.Placements.Select(static p => WorldScene.ToUnits(p.Position))];
-        if (at.Length == 0)
+        _logger.Information("Editor", string.Create(CultureInfo.InvariantCulture, $"The map took {took.ElapsedMilliseconds} ms."));
+        double perMetre = WorldUnits.PerMetre;
+        return new Editor.OverheadMap(overhead.Width, overhead.Height, overhead.Pixels, overhead.MinX / perMetre, overhead.MaxY / perMetre, overhead.UnitsPerPixel / perMetre)
         {
-            return "The level has no objects to frame.";
+            HeightsMetres = [.. overhead.Heights.Select(h => (float)(h / perMetre))],
+        };
+    }
+
+    // The level seen from above at no more than a number of pixels a side; null and the problem when there is no level.
+    // The roofs are cast against everything built, which is most of the time a map takes; without them the ground is cast alone.
+    private Overhead? MakeOverhead(int maxPixels, out string? problem, bool roofs = true)
+    {
+        if (_mission.EffectWalls is not { } walls)
+        {
+            problem = "No level is loaded.";
+            return null;
         }
 
-        double margin = MapShotMarginMetres * WorldUnits.PerMetre;
-        double minX = Percentile(at.Select(static p => p.X), 0.01) - margin;
-        double maxX = Percentile(at.Select(static p => p.X), 0.99) + margin;
-        double minY = Percentile(at.Select(static p => p.Y), 0.01) - margin;
-        double maxY = Percentile(at.Select(static p => p.Y), 0.99) + margin;
-        double top = at.Max(static p => p.Z) + (300 * WorldUnits.PerMetre);
-        double bottom = at.Min(static p => p.Z) - (600 * WorldUnits.PerMetre);
+        if (OverheadBox(out problem) is not { } box)
+        {
+            return null;
+        }
 
-        double perPixel = Math.Max(MapShotFinestMetres * WorldUnits.PerMetre, Math.Max(maxX - minX, maxY - minY) / MapShotMaxPixels);
+        (double minX, double maxX, double minY, double maxY, double top, double bottom) = box;
+
+        double perPixel = Math.Max(MapShotFinestMetres * WorldUnits.PerMetre, Math.Max(maxX - minX, maxY - minY) / maxPixels);
         int width = Math.Max(1, (int)Math.Ceiling((maxX - minX) / perPixel));
         int height = Math.Max(1, (int)Math.Ceiling((maxY - minY) / perPixel));
 
@@ -116,19 +151,38 @@ public sealed partial class GameHost
         double[] heights = new double[width * height];
         double[] ground = new double[width * height];
         float[] bare = new float[width * height];
-        for (int row = 0; row < height; row++)
+        void Row(int row)
         {
             double y = maxY - ((row + 0.5) * perPixel);
             for (int column = 0; column < width; column++)
             {
                 double x = minX + ((column + 0.5) * perPixel);
                 int i = (row * width) + column;
-                heights[i] = walls(new Vector3d(x, y, top), new Vector3d(x, y, bottom), out WorldRayHit hit) ? hit.Position.Z : double.NaN;
+                heights[i] = roofs && walls(new Vector3d(x, y, top), new Vector3d(x, y, bottom), out WorldRayHit hit) ? hit.Position.Z : double.NaN;
                 ground[i] = land is not null && land(new Vector3d(x, y, top), new Vector3d(x, y, bottom), out WorldRayHit under)
                     ? under.Position.Z
                     : heights[i];
+                if (!roofs)
+                {
+                    heights[i] = ground[i];
+                }
+
                 bare[i] = -1f;
             }
+        }
+
+        // The terrain cast reads the terrain and keeps nothing (TerrainRayTrace.TryTrace), so rows of it run side by side; the
+        // walls' cast goes through the scene's collision, which is only ever asked from one thread, so it keeps to this one.
+        if (roofs)
+        {
+            for (int row = 0; row < height; row++)
+            {
+                Row(row);
+            }
+        }
+        else
+        {
+            Parallel.For(0, height, Row);
         }
 
         double[] known = [.. ground.Where(static h => !double.IsNaN(h))];
@@ -144,6 +198,19 @@ public sealed partial class GameHost
             }
         }
 
+        return new Overhead(width, height, pixels, heights, ground, minX, maxY, perPixel, top, bottom) { Low = low, High = high };
+    }
+
+    // The picture and its box; a problem, or null once written.
+    private string? WriteMpMapShot(string path)
+    {
+        if (MakeOverhead(MapShotMaxPixels, out string? made) is not { } overhead)
+        {
+            return made;
+        }
+
+        (int width, int height, Bgra32[] pixels, double[] heights, double[] ground, double minX, double maxY, double perPixel, double top, double bottom) = overhead;
+        (double maxX, double minY, double low, double high) = (overhead.MaxX, overhead.MinY, overhead.Low, overhead.High);
         string directory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
         Directory.CreateDirectory(directory);
         BitmapWriter.Write($"{path}.bmp", width, height, pixels);
@@ -167,7 +234,7 @@ public sealed partial class GameHost
                 WriteCorner(raw, t.C);
             }
         }
-        if (WriteMapMesh(path, minX, maxX, minY, maxY, ground, width, height, perPixel) is { } meshProblem)
+        if (WriteMapMesh(path, OverheadSceneNow(minX, maxX, minY, maxY, bottom, top)) is { } meshProblem)
         {
             return meshProblem;
         }

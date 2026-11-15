@@ -15,13 +15,14 @@ namespace OpenIGI.Editor.Panels;
 /// The selected task's identity and parameters as a property grid. Every edit goes through the history; a scrub
 /// is one undo step however many frames it takes.
 /// </summary>
-internal sealed class InspectorPanel : EditorElement
+internal sealed partial class InspectorPanel : EditorElement
 {
     private static readonly string[] ColorLabels = ["R", "G", "B"];
 
     private readonly MissionWorkspace _workspace;
     private readonly IEditorHost _host;
     private readonly PropertyGrid _grid;
+    private readonly GuardOrders? _guards;
     private MissionTask? _shown;
     private int _shownRevision = -1;
     private string? _shownDetails;
@@ -30,11 +31,18 @@ internal sealed class InspectorPanel : EditorElement
     /// <param name="theme">The theme.</param>
     /// <param name="workspace">The open mission and its selection.</param>
     /// <param name="host">The running game, for what conditions read in it.</param>
-    public InspectorPanel(EditorTheme theme, MissionWorkspace workspace, IEditorHost host)
+    /// <param name="guards">The guards' orders, for a soldier's behaviour; none to leave it out.</param>
+    public InspectorPanel(EditorTheme theme, MissionWorkspace workspace, IEditorHost host, GuardOrders? guards = null)
         : base(theme)
     {
         _workspace = workspace;
         _host = host;
+        _guards = guards;
+        if (guards is not null)
+        {
+            guards.Changed += () => _shownRevision = -1;
+        }
+
         _grid = new PropertyGrid(theme);
         AddChild(_grid);
     }
@@ -139,6 +147,7 @@ internal sealed class InspectorPanel : EditorElement
             }
 
             _grid.Section($"{selected.Count} × {task.TypeName}");
+            AddAbout(task.TypeName);
             foreach (MissionParameter parameter in task.Parameters.Where(static p => p.Declaration.Type != ScriptParamType.ObjectPos))
             {
                 AddParameter(document, selected, parameter);
@@ -148,6 +157,7 @@ internal sealed class InspectorPanel : EditorElement
         }
 
         _grid.Section(task.TypeName);
+        AddAbout(task.TypeName);
         _grid.Text("Name", () => task.Label, label => _workspace.Execute(new SetIdentityCommand(document, task, label, task.Id)));
         NumberField id = _grid.Number("Id", () => task.Id, (value, final) =>
         {
@@ -168,6 +178,7 @@ internal sealed class InspectorPanel : EditorElement
             return;
         }
 
+        AddCameraSection(document, task);
         if (task.Parameters.Count > 0)
         {
             _grid.Section("Parameters");
@@ -179,6 +190,16 @@ internal sealed class InspectorPanel : EditorElement
         }
 
         _grid.RevertAll = () => Revert(document, task, [.. _workspace.Baseline.ModifiedParameters(task)]);
+        AddGuardSection(document, task);
+    }
+
+    // What the type is, in the words of the game's own class for it, under its header.
+    private void AddAbout(string type)
+    {
+        if (_host.Vocabulary.HelpOf(type) is { } about)
+        {
+            _grid.Note(about);
+        }
     }
 
     // Puts parameters back to their saved values, as one undo step.
@@ -227,7 +248,16 @@ internal sealed class InspectorPanel : EditorElement
     private void AddParameterRow(MissionDocument document, IReadOnlyList<MissionTask> tasks, MissionParameter parameter)
     {
         string name = parameter.Name;
-        string tooltip = $"{parameter.Declaration.TypeName} parameter '{name}'";
+        // What the game's own class says the parameter is, and what making it hold does where the title has words for it.
+        string? help = _host.Vocabulary.HelpOf(tasks[0].TypeName, name);
+        string? does = _host.Vocabulary.ActionOf(tasks[0].TypeName, name);
+        string tooltip = help ?? $"{parameter.Declaration.TypeName} parameter '{name}'";
+        if (does is not null)
+        {
+            tooltip = $"{does} while it holds. {tooltip}";
+        }
+
+        string With(string what) => help is null ? $"{tooltip}: {what}" : tooltip;
         ScriptParamType? type = parameter.Declaration.Type;
         ScriptParamType? baseType = type is { } t ? ScriptParamTypeInfo.GetBaseType(t) : null;
 
@@ -319,7 +349,7 @@ internal sealed class InspectorPanel : EditorElement
                     text => Execute(tasks, each => new SetParameterCommand(document, each, name, [new QscStringLiteral(text)])),
                     SelectByScriptName,
                     () => _shownRevision = int.MinValue);
-                _grid.Add(name, condition, condition.Refresh, tooltip + ": what must hold for it to run", condition.Lines);
+                _grid.Add(name, condition, condition.Refresh, With("what must hold for it to run"), condition.Lines);
                 break;
             }
 
@@ -330,7 +360,7 @@ internal sealed class InspectorPanel : EditorElement
                     Theme,
                     () => parameter.Arguments[0] is QscStringLiteral text ? text.Value : string.Empty,
                     text => Execute(tasks, each => new SetParameterCommand(document, each, name, [new QscStringLiteral(text)])));
-                _grid.Add(name, field, field.Refresh, tooltip + ": script run by the task", field.Lines);
+                _grid.Add(name, field, field.Refresh, With("script run by the task"), field.Lines);
                 break;
             }
 
@@ -374,7 +404,7 @@ internal sealed class InspectorPanel : EditorElement
                     arguments => Execute(tasks, each => new SetParameterCommand(document, each, name, arguments)),
                     () => TargetType(document, task),
                     () => _shownRevision = int.MinValue);
-                _grid.Add("Keys", animation, animation.Refresh, tooltip + ": values set on the target's channels over time", animation.Lines);
+                _grid.Add("Keys", animation, animation.Refresh, With("values set on the target's channels over time"), animation.Lines);
                 break;
             }
 

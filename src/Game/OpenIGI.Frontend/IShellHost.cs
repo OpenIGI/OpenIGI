@@ -120,6 +120,9 @@ public interface IShellHost
     /// <summary>Gets parties (friends who follow their leader from game to game), where this build can play them; <see langword="null"/> where it can't.</summary>
     IPartyPanel? Party => null;
 
+    /// <summary>Gets community maps, where this build can fetch and play them; <see langword="null"/> where it can't.</summary>
+    IShellMaps? Maps => null;
+
     /// <summary>A mission's picture, taken beforehand: what a page shows of a map whose level is not behind the menu.</summary>
     /// <param name="missionId">The mission.</param>
     /// <returns>The picture, or <see langword="null"/> where the host has none of it.</returns>

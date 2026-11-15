@@ -44,6 +44,45 @@ public static class AiGuardScript
         return recorder.Orders;
     }
 
+    /// <summary>
+    /// Gets Project I.G.I.'s own guard script, the one its levels give a guard that stands (level 1's <c>ai/2226.qvm</c>, byte
+    /// for byte): the default handler on creation and in combat, its idle and alarm events left empty for orders.
+    /// </summary>
+    public static ReadOnlyMemory<byte> Igi1Guard { get; } = QscCompiler.Compile(QscParser.ParseScript("""
+        if (AIFunction_GetCurrentEventType() == AIEVENT_CREATE)
+        {
+        	AIFunction_DefaultHandler();
+        }
+        else if (AIFunction_GetCurrentEventType() == AIEVENT_IDLE)
+        {
+        }
+        else if (AIFunction_GetCurrentEventType() == AIEVENT_ALARMON)
+        {
+        }
+        else if (AIFunction_GetCurrentEventType() == AIEVENT_COMBAT)
+        {
+        	AIFunction_DefaultHandler();
+        }
+        else
+        {
+        	AIFunction_DefaultHandler();
+        }
+        """, QvmProgram.IgiVersion));
+
+    /// <summary>A new guard's script: in Project I.G.I., the levels' own guard script with the orders put in where its guards' are; in I.G.I. 2, one built in its squads' shape.</summary>
+    /// <param name="orders">The guard's orders.</param>
+    /// <param name="squads">Whether the guard is I.G.I. 2's, in a squad.</param>
+    /// <returns>The compiled script.</returns>
+    /// <remarks>
+    /// A Project I.G.I. guard given a patrol so is the levels' own patrolling soldier (level 1's <c>ai/2203.qvm</c>, byte
+    /// for byte, for its path).
+    /// </remarks>
+    public static byte[] NewGuard(AiGuardOrders orders, bool squads)
+    {
+        ArgumentNullException.ThrowIfNull(orders);
+        return squads ? Build(orders, squads: true) : AiGuardScriptEdit.Apply(Igi1Guard, orders, squads: false) ?? Build(orders, squads: false);
+    }
+
     /// <summary>Writes a guard's script from its orders, as the game's own guards' are laid out.</summary>
     /// <param name="orders">The guard's orders.</param>
     /// <param name="squads">

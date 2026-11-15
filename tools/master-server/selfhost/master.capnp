@@ -26,6 +26,7 @@ const master :Workerd.Worker = (
     (name = "parties.js", esModule = embed "../src/parties.js"),
     (name = "relays.js", esModule = embed "../src/relays.js"),
     (name = "stun.js", esModule = embed "../src/stun.js"),
+    (name = "maps.js", esModule = embed "../src/maps.js"),
   ],
   compatibilityDate = "2026-10-01",
   globalOutbound = "internet",
@@ -35,6 +36,7 @@ const master :Workerd.Worker = (
     (className = "Room", uniqueKey = "openigi-master-Room", enableSql = true),
     (className = "Party", uniqueKey = "openigi-master-Party", enableSql = true),
     (className = "Relays", uniqueKey = "openigi-master-Relays", enableSql = true),
+    (className = "Maps", uniqueKey = "openigi-master-Maps", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "storage"),
 
@@ -43,6 +45,8 @@ const master :Workerd.Worker = (
     (name = "ROOMS", durableObjectNamespace = "Room"),
     (name = "PARTIES", durableObjectNamespace = "Party"),
     (name = "RELAYS", durableObjectNamespace = "Relays"),
+    # The community maps, every version's package kept in its storage.
+    (name = "MAPS", durableObjectNamespace = "Maps"),
 
     (name = "TURN_HOST", text = "turn.openigi.com"),
     (name = "TURN_REGION", text = "Europe"),

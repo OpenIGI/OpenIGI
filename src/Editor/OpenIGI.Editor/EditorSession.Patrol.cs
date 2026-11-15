@@ -25,7 +25,18 @@ internal sealed partial class EditorSession
             CanExecute = () => _host.Title.Id == "igi1" && PatrolTool.IsSoldier(_workspace.Selection.Primary),
             DynamicTitle = () => PatrolTool.IsSoldier(_workspace.Selection.Primary) ? "Patrol Tool" : "Patrol Tool (select a soldier first)",
         });
-        actions.Add(new EditorAction("ai.addguard", "Add Guard Here", AddGuard)
+        actions.Add(new EditorAction("ai.patrolround", "Patrol Round Selection", PatrolRound)
+        {
+            Category = "Tools",
+            CanExecute = () => _host.Title.Id == "igi1" && _workspace.Selection.Items.Any(PatrolTool.IsSoldier),
+        });
+        actions.Add(new EditorAction("ai.guardbuilding", "Guard This Building", GuardBuilding)
+        {
+            Category = "Tools",
+            CanExecute = () => _host.Title.Id == "igi1" && _workspace.Selection.Primary is { } picked && !PatrolTool.IsSoldier(picked)
+                && TaskPresentation.PositionMetres(picked) is not null && _workspace.Document?.Declarations.ContainsKey("HumanSoldier") == true,
+        });
+        actions.Add(new EditorAction("ai.addguard", "Add Guard Here", () => AddGuard(null))
         {
             Category = "Tools",
             CanExecute = () => _host.Title.Id == "igi1" && _workspace.Document?.Declarations.ContainsKey("HumanSoldier") == true && _host.Terrain is not null,
@@ -64,12 +75,56 @@ internal sealed partial class EditorSession
         }
     }
 
-    // A guard in the middle of the view, on the AI graph there (built when there is none), selected with its patrol tool on.
-    private void AddGuard()
+    // The selected soldier's patrol laid as a ring round the other thing selected (a building, a tower), far enough out to
+    // walk round it; with only the soldier selected, round where he stands.
+    private void PatrolRound()
     {
-        if (_workspace.Document is not { } document || _viewport.PlacementPoint() is not { } at || _host.Terrain is not { } terrain)
+        if (_viewport.Patrol is not { } tool || _workspace.Selection.Items.FirstOrDefault(PatrolTool.IsSoldier) is not { } soldier)
         {
             return;
+        }
+
+        MissionTask? subject = _workspace.Selection.Items.FirstOrDefault(t => !ReferenceEquals(t, soldier) && TaskPresentation.PositionMetres(t) is not null);
+        if ((subject ?? soldier) is not { } centreTask || TaskPresentation.PositionMetres(centreTask) is not { } centre || !tool.Begin(soldier))
+        {
+            return;
+        }
+
+        double radius = subject is null ? 10.0 : (_live.RadiusMetres(subject) ?? 4.0) + 4.0;
+        tool.Circle(centre, Math.Clamp(radius, 4.0, 80.0));
+        _workspace.Selection.Set([soldier]);
+        _viewport.Tool = ViewportTool.Patrol;
+        Notify(subject is null
+            ? "Laid a patrol round where the soldier stands; drag its waypoints to shape it."
+            : $"Laid a patrol round {TaskPresentation.Name(subject)}; drag its waypoints to shape it.");
+    }
+
+    // A guard by the selected building, walking a patrol round it: Add Guard at its side, then Patrol Round Selection.
+    private void GuardBuilding()
+    {
+        if (_workspace.Selection.Primary is not { } building || TaskPresentation.PositionMetres(building) is not { } centre)
+        {
+            return;
+        }
+
+        double reach = (_live.RadiusMetres(building) ?? 4.0) + 4.0;
+        if (AddGuard(centre + new Vector3d(reach, 0, 0)) is not { } guard)
+        {
+            return;
+        }
+
+        _workspace.Selection.Set([guard, building]);
+        PatrolRound();
+        Notify($"A guard now walks round {TaskPresentation.Name(building)}. Drag his waypoints to shape the patrol; the Inspector sets what he does when he sees you.");
+    }
+
+    // A guard at a point, or in the middle of the view, on the AI graph there (built when there is none), selected with its
+    // patrol tool on; the guard, or null when none could be added.
+    private MissionTask? AddGuard(Vector3d? standing)
+    {
+        if (_workspace.Document is not { } document || (standing ?? _viewport.PlacementPoint()) is not { } at || _host.Terrain is not { } terrain)
+        {
+            return null;
         }
 
         if (terrain.TryGetHeight(at.X, at.Y, out double z))
@@ -81,7 +136,7 @@ internal sealed partial class EditorSession
         if (missing.Length > 0)
         {
             Notify($"This level does not declare {string.Join(", ", missing)}, which a guard needs.", isError: true);
-            return;
+            return null;
         }
 
         MissionTask? graph = NearestGraph(document, at) ?? BuildNavGraph(at, announce: false);
@@ -120,6 +175,7 @@ internal sealed partial class EditorSession
 
         StartPatrol();
         Notify("Added a guard. Click the ground to give it a patrol, or leave it to stand guard.");
+        return soldier;
     }
 
     // The AIGraph whose nodes come nearest a point, within a hundred metres.
@@ -147,48 +203,28 @@ internal sealed partial class EditorSession
     }
 
     // Before the mission is written: every soldier's AI script, which the original loads from MISSION:AI/<HumanAI id> and
-    // without which the soldier does nothing. Written where the soldier has none, or still has one this editor wrote (kept
-    // in step with its patrol); a script of the level's own is left alone, with a word when it never starts the patrol.
+    // without which the soldier does nothing. A soldier with none is given the levels' own guard script; one whose patrol
+    // was laid in the editor has it started on its idle event, and one whose patrol was taken away has it stopped -- in
+    // its own script, changed only there (GuardOrders, AiGuardScriptEdit).
     private void WriteSoldierScripts()
     {
-        if (_workspace.Document is not { } document || _workspace.Mission is not { } mission || _host.Title.Id != "igi1")
+        if (_workspace.Document is not { } document || _host.Title.Id != "igi1")
         {
             return;
         }
 
         foreach (MissionTask soldier in document.EnumerateTasks().Where(PatrolTool.IsSoldier))
         {
-            MissionTask ai = soldier.Children.First(static c => c.TypeName == "HumanAI");
-            if (ai.Id < 0)
+            Game.Ai.AiGuardOrders orders = _guards.Of(soldier);
+            MissionTask? path = PatrolPaths.Path(soldier);
+            bool patrols = path is { Id: >= 0 } && PatrolRoute.Read(path).Waypoints.Count > 0;
+            Game.Ai.AiGuardOrders wanted = patrols
+                ? orders with { PatrolPathId = path!.Id }
+                : path is not null && orders.PatrolPathId == path.Id ? orders with { PatrolPathId = null } : orders;
+            if (_guards.Require(soldier, wanted) is { } problem)
             {
-                continue;
+                Notify(problem, isError: true);
             }
-
-            MissionTask? path = soldier.Children.FirstOrDefault(static c => c.TypeName == PatrolRoute.PathType);
-            bool patrols = path is not null && path.Id >= 0 && PatrolRoute.Read(path).Waypoints.Count > 0;
-            byte[] wanted = SoldierScripts.Compile(patrols ? SoldierScripts.Patroller(path!.Id) : SoldierScripts.Guard);
-            string gamePath = MissionWorkspace.GamePath(mission, string.Create(CultureInfo.InvariantCulture, $"ai/{ai.Id}.qvm"));
-            if (_host.TryReadFile("LOCAL:" + gamePath, out ReadOnlyMemory<byte> existing))
-            {
-                if (existing.Span.SequenceEqual(wanted))
-                {
-                    continue;
-                }
-
-                bool ours = existing.Span.SequenceEqual(SoldierScripts.Compile(SoldierScripts.Guard))
-                    || (path is not null && existing.Span.SequenceEqual(SoldierScripts.Compile(SoldierScripts.Patroller(path.Id))));
-                if (!ours)
-                {
-                    if (patrols && !QscPrinter.Print(QscDecompiler.Decompile(existing)).Contains("AIAction_Patrol", StringComparison.Ordinal))
-                    {
-                        Notify($"{TaskPresentation.Name(soldier)} runs the level's own AI script, which never starts a patrol: its patrol will not run.", isError: true);
-                    }
-
-                    continue;
-                }
-            }
-
-            _workspace.WriteToProject(gamePath, wanted);
         }
     }
 

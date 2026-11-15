@@ -19,7 +19,9 @@ public sealed partial class GameHost
         ulong pressed = TitleInputBindings.Sample(_configuration.Active, ViewInput, SaveBindings, pressed: true);
         // Not under a menu -- but the quick load does answer the failed page, where it is what a dead player reaches for.
         bool save = (pressed & QuickSaveBit) != 0;
-        if (pressed != 0 && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
+
+        // Not in a play-test from the editor, which is recorded from the level's start and plays its recording back on F9.
+        if (pressed != 0 && _editor is not { IsPlaying: true } && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
         {
             QuickSaveOrLoad(save);
         }

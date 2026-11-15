@@ -896,6 +896,19 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
     }
 
+    /// <summary>
+    /// The player's place in the walk counted again after the level's tasks were changed in place (an editor's live edit adding or
+    /// taking out tasks before it), as the load would have counted it: the rounds marched before and after the player follow it.
+    /// </summary>
+    /// <remarks>Not retail: the original's task tree never changes shape under a running level.</remarks>
+    public void RecountPlayerOrder()
+    {
+        if (_playerAnchor is not null && PlayerSpawn.FindGameplayTask(_playerAnchor) is { } stood)
+        {
+            _playerOrder = SoldierSimulation.OrderUnder(_playerAnchor, stood);
+        }
+    }
+
     /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
     /// <remarks>
     /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in

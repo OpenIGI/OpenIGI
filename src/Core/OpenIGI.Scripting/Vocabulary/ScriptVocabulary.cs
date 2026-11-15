@@ -6,7 +6,13 @@ namespace OpenIGI.Scripting.Vocabulary;
 /// <summary>A family of named integer constants, such as every <c>AIEVENT_*</c>.</summary>
 /// <param name="Name">The family's name.</param>
 /// <param name="Values">Each constant's name and value, in the order they are offered.</param>
-public sealed record ConstantFamily(string Name, IReadOnlyList<KeyValuePair<string, int>> Values);
+public sealed record ConstantFamily(string Name, IReadOnlyList<KeyValuePair<string, int>> Values)
+{
+    /// <summary>Gets what each constant means, by its name, for the ones worth a word; an editor shows it beside the name.</summary>
+    public IReadOnlyDictionary<string, string> Notes { get; init; } = NoNotes;
+
+    private static IReadOnlyDictionary<string, string> NoNotes { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+}
 
 /// <summary>Everything a title's scripts can name: natives with their signatures, and constants grouped into families.</summary>
 /// <remarks>
@@ -22,6 +28,20 @@ public sealed class ScriptVocabulary
     private readonly Dictionary<string, IReadOnlyList<NativeParameter>> _taskFields = new(StringComparer.Ordinal);
     private readonly Dictionary<string, NativeParameter> _globals = new(StringComparer.Ordinal);
     private readonly HashSet<string> _openIgiOnly = new(StringComparer.Ordinal);
+    private readonly List<TaskListLimit> _taskLists = [];
+
+    /// <summary>Gets the fixed-size lists the game keeps tasks in, each with the types that fill it.</summary>
+    public IReadOnlyList<TaskListLimit> TaskLists => _taskLists;
+
+    /// <summary>Adds fixed-size task lists.</summary>
+    /// <param name="lists">The lists.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary Add(IEnumerable<TaskListLimit> lists)
+    {
+        ArgumentNullException.ThrowIfNull(lists);
+        _taskLists.AddRange(lists);
+        return this;
+    }
 
     /// <summary>Gets the natives, by name.</summary>
     public IReadOnlyDictionary<string, NativeSignature> Natives => _natives;
@@ -35,6 +55,80 @@ public sealed class ScriptVocabulary
 
     /// <summary>Gets the global variables level expressions can read, such as I.G.I. 2's <c>NetMission_eCurrentObjective</c>.</summary>
     public IReadOnlyDictionary<string, NativeParameter> Globals => _globals;
+
+    private readonly Dictionary<(string TaskType, string Pin), TaskAction> _actions = [];
+    private readonly Dictionary<string, string> _states = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Type, string Parameter), string> _help = [];
+
+    /// <summary>Gets what making a task's condition hold does, in plain words, for every condition the title has words for.</summary>
+    public IReadOnlyCollection<TaskAction> Actions => _actions.Values;
+
+    /// <summary>Adds what making tasks' conditions hold does.</summary>
+    /// <param name="actions">The actions; a later one for the same type and parameter replaces an earlier.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary Add(IEnumerable<TaskAction> actions)
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+        foreach (TaskAction action in actions)
+        {
+            _actions[(action.TaskType, action.Parameter)] = action;
+        }
+
+        return this;
+    }
+
+    /// <summary>What making a task's condition hold does, in plain words.</summary>
+    /// <param name="taskType">The task type.</param>
+    /// <param name="parameter">The condition parameter.</param>
+    /// <returns>The words (<c>Show the message</c>), or <see langword="null"/> when the title has none for it.</returns>
+    public string? ActionOf(string taskType, string parameter) =>
+        _actions.TryGetValue((taskType, parameter), out TaskAction? action) ? action.Verb : null;
+
+    /// <summary>Adds what task types and their parameters are, in a line each, from the game's own task classes.</summary>
+    /// <param name="rows">The type, the parameter as the levels declare it (empty for the type itself), and the text; a later
+    /// row for the same type and parameter replaces an earlier, so a title's own class speaks over a shared one.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary AddHelp(IEnumerable<(string Type, string Parameter, string Text)> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        foreach ((string type, string parameter, string text) in rows)
+        {
+            _help[(type, parameter)] = text;
+        }
+
+        return this;
+    }
+
+    /// <summary>What a task type, or one of its parameters, is.</summary>
+    /// <param name="taskType">The task type.</param>
+    /// <param name="parameter">The parameter as the levels declare it, or empty for the type itself.</param>
+    /// <returns>The line, or <see langword="null"/> when the game's code says nothing about it.</returns>
+    public string? HelpOf(string taskType, string parameter = "") => _help.GetValueOrDefault((taskType, parameter));
+
+    /// <summary>What making a task's condition hold does, with how it ends.</summary>
+    /// <param name="taskType">The task type.</param>
+    /// <param name="parameter">The condition parameter.</param>
+    /// <returns>The action, or <see langword="null"/> when the title has none for it.</returns>
+    public TaskAction? Action(string taskType, string parameter) => _actions.GetValueOrDefault((taskType, parameter));
+
+    /// <summary>Adds what exported fields say about their task, in plain words, by field name.</summary>
+    /// <param name="states">Each field's name and its words (<c>isHacked</c>, <c>is hacked</c>).</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary AddStates(IEnumerable<KeyValuePair<string, string>> states)
+    {
+        ArgumentNullException.ThrowIfNull(states);
+        foreach ((string field, string words) in states)
+        {
+            _states[field] = words;
+        }
+
+        return this;
+    }
+
+    /// <summary>What an exported field says about its task, in plain words.</summary>
+    /// <param name="field">The field's name.</param>
+    /// <returns>The words (<c>is hacked</c>), or <see langword="null"/> when the title has none for it.</returns>
+    public string? StateOf(string field) => _states.GetValueOrDefault(field);
 
     /// <summary>Adds the fields a task type exports.</summary>
     /// <param name="taskType">The task type's name.</param>

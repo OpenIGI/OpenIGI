@@ -21,6 +21,9 @@ public readonly record struct PlayerCheatOptions(
     bool NoRecoil,
     bool NoReload)
 {
+    /// <summary>Gets a value indicating whether guards and cameras do not see the player.</summary>
+    public bool Unseen { get; init; }
+
     /// <summary>Gets the set with every cheat off: the unmodified game.</summary>
     public static PlayerCheatOptions Retail { get; } = new(
         SpeedMultiplier: 1f,
@@ -47,7 +50,10 @@ public readonly record struct PlayerCheatOptions(
             PlayerCheatCVars.AllWeapons.Value,
             PlayerCheatCVars.UnlockAllLevels.Value,
             PlayerCheatCVars.NoRecoil.Value,
-            PlayerCheatCVars.NoReload.Value),
+            PlayerCheatCVars.NoReload.Value)
+        {
+            Unseen = PlayerCheatCVars.Unseen.Value,
+        },
         PlayerCheatCVars.CheatsEnabled.Value && !PlayerCheatLock.IsHeld);
 
     /// <summary>Applies the session's gate to a configured set.</summary>

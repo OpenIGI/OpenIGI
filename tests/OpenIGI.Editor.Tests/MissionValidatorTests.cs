@@ -104,6 +104,91 @@ public sealed class MissionValidatorTests : IDisposable
         }
     }
 
+    /// <summary>More of a kind than the game's list for it holds is an error; nearly full is a warning; with room, nothing.</summary>
+    [Fact]
+    public void A_full_task_list_is_an_error()
+    {
+        string doors = string.Join(",\n", Enumerable.Range(1, 5).Select(static i => $"Task_New({i}, \"Door\", \"d{i}\")"));
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript($"Task_New(-1, \"Container\", \"Root\",\n{doors});", QvmProgram.IgiVersion));
+
+        MissionIssue over = Assert.Single(MissionValidator.Validate(document, new Facts(0.0) { Lists = [new("doors", 6, ["Door"]) { Reserve = 2 }] }));
+        Assert.Equal(IssueSeverity.Error, over.Severity);
+        Assert.Contains("5 doors", over.Message, StringComparison.Ordinal);
+
+        MissionIssue near = Assert.Single(MissionValidator.Validate(document, new Facts(0.0) { Lists = [new("doors", 5, ["Door"])] }));
+        Assert.Equal(IssueSeverity.Warning, near.Severity);
+        Assert.Empty(MissionValidator.Validate(document, new Facts(0.0) { Lists = [new("doors", 64, ["Door"])] }));
+    }
+
+    /// <summary>A level with no player, and a guard generator that is not one soldier, are found.</summary>
+    [Fact]
+    public void A_level_the_game_cannot_read_is_found()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_DeclareParameters("HumanPlayer", "Position", "ObjectPos");
+            Task_New(-1, "Container", "Root",
+                Task_New(1, "GuardGenerator", "empty"),
+                Task_New(2, "GuardGenerator", "path first",
+                    Task_New(3, "PatrolPath", "p"),
+                    Task_New(4, "HumanSoldier", "s")),
+                Task_New(5, "GuardGenerator", "fine",
+                    Task_New(6, "HumanSoldier", "s")));
+            """, QvmProgram.IgiVersion));
+
+        IReadOnlyList<MissionIssue> issues = MissionValidator.Validate(document);
+        Assert.Contains(issues, static i => i.Task is null && i.Severity == IssueSeverity.Error && i.Message.Contains("no player", StringComparison.Ordinal));
+        Assert.Equal(["empty", "path first"], issues.Where(static i => i is { Severity: IssueSeverity.Error, Task: not null }).Select(static i => i.Task!.Label).Order());
+        Assert.DoesNotContain(issues, static i => i.Task?.Label == "fine");
+    }
+
+    /// <summary>A condition reading a soldier a generator holds is found: he is not there to be read.</summary>
+    [Fact]
+    public void Reading_a_generated_soldier_is_found()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_DeclareParameters("StatusMessage", "Send", "VarString");
+            Task_New(-1, "Container", "Root",
+                Task_New(1, "GuardGenerator", "gen", Task_New(6, "HumanSoldier", "s")),
+                Task_New(7, "HumanSoldier", "here"),
+                Task_New(8, "StatusMessage", "reads him", "HumanSoldier_6.isDead"),
+                Task_New(9, "StatusMessage", "reads another", "HumanSoldier_7.isDead"));
+            """, QvmProgram.IgiVersion));
+
+        MissionIssue issue = Assert.Single(MissionValidator.Validate(document), static i => i.Check == "References");
+        Assert.Equal("reads him", issue.Task!.Label);
+    }
+
+    /// <summary>A soldier's mind with no script of its id in the mission's folder is found; one with its script is not.</summary>
+    [Fact]
+    public void A_mind_without_its_script_is_found()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_New(-1, "Container", "Root",
+                Task_New(10, "HumanSoldier", "a", Task_New(11, "HumanAI", "scripted")),
+                Task_New(12, "HumanSoldier", "b", Task_New(13, "HumanAI", "bare")));
+            """, QvmProgram.IgiVersion));
+
+        MissionIssue issue = Assert.Single(MissionValidator.Validate(document, new Facts(0.0) { Files = ["ai/11.qvm"] }));
+        Assert.Equal("bare", issue.Task!.Label);
+        Assert.Contains("ai/13.qvm", issue.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Every retail level fits the lists the title names, with the reserve kept: the table counts what the game counts.</summary>
+    [RequiresTitleDataFact("igi1")]
+    public void Retail_missions_fit_the_games_lists()
+    {
+        OpenIGI.Scripting.Vocabulary.ScriptVocabulary vocabulary = new OpenIGI.Game.Igi1.Igi1Runtime().CreateScriptVocabulary();
+        Assert.NotEmpty(vocabulary.TaskLists);
+        foreach (string path in GameDataSource.Igi1.EnumerateFiles("objects.qvm"))
+        {
+            MissionDocument document = MissionDocument.Read(File.ReadAllBytes(path));
+            foreach ((OpenIGI.Scripting.Vocabulary.TaskListLimit list, int used) in MissionValidator.ListUsage(document, vocabulary))
+            {
+                Assert.True(used <= list.Room, $"{path}: {used} {list.Name}, room for {list.Room}");
+            }
+        }
+    }
+
     /// <summary>An export mirrors the project's files and replaces an earlier one.</summary>
     [Fact]
     public void An_export_mirrors_the_project()
@@ -130,6 +215,14 @@ public sealed class MissionValidatorTests : IDisposable
         public bool? HasModel(string model) => true;
 
         public double? GroundUnder(Vector3d pointMetres) => groundMetres;
+
+        public IReadOnlyList<OpenIGI.Scripting.Vocabulary.TaskListLimit> Lists { get; init; } = [];
+
+        public IReadOnlyList<string>? Files { get; init; }
+
+        public bool? HasMissionFile(string path) => Files?.Contains(path);
+
+        public OpenIGI.Scripting.Vocabulary.ScriptVocabulary? Vocabulary => Lists.Count == 0 ? null : new OpenIGI.Scripting.Vocabulary.ScriptVocabulary().Add(Lists);
 
         public IEditorCommand? MakeOpenIgiOnly() => new DelegateCommand("OpenIGI", () => Target = MissionTarget.OpenIgi, () => Target = MissionTarget.Retail);
     }

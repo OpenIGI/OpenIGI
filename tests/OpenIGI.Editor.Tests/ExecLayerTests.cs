@@ -211,6 +211,30 @@ public sealed class ExecLayerTests
         Assert.Equal(written.CallsOf("Alpha"), macroed.CallsOf("Alpha"));
     }
 
+    /// <summary>
+    /// A drive of a condition the title says ends of itself is held only until the task is done, as retail scenes run on
+    /// <c>(start) &amp;&amp; !CutScene_N.isFinished</c>; without the title's word it is the stage alone.
+    /// </summary>
+    [Fact]
+    public void A_drive_that_ends_of_itself_is_written_as_the_levels_write_it()
+    {
+        ExecLayer layer = new();
+        layer.Nodes.AddRange(
+        [
+            new ExecNode("hacked", ExecNodeKind.OnBecomesTrue) { Condition = "Terminal_10.isHacked" },
+            new ExecNode("say", ExecNodeKind.Drive) { Target = new GraphNodeKey("t40"), TargetPin = "Send" },
+        ]);
+        layer.Wires.Add(new ExecWire("hacked", ExecNode.Then, "say"));
+        MissionDocument document = Document();
+        ScriptVocabulary vocabulary = new ScriptVocabulary().Add([new TaskAction("StatusMessage", "Send", "Show the message") { Until = "isDone" }]);
+
+        string held = Assert.Single(ExecLayerCompiler.Lower(layer, document, Graph(document), vocabulary).Drives.Values);
+        string plain = Assert.Single(ExecLayerCompiler.Lower(layer, document, Graph(document)).Drives.Values);
+
+        Assert.Equal($"({plain}) && !StatusMessage_40.isDone", held);
+        Assert.DoesNotContain("isDone", plain, StringComparison.Ordinal);
+    }
+
     private static MissionDocument Document() => MissionDocument.Read(QscParser.ParseScript(Level, QvmProgram.IgiVersion));
 
     private static Core.Commands.IEditorCommand Compile(ExecLayer layer, MissionDocument document)
@@ -225,7 +249,7 @@ public sealed class ExecLayerTests
         return MissionGraph.Build(document, TaskCatalogue.Build(document.Declarations.Values, vocabulary), vocabulary, LevelExpressionDialect.Igi1);
     }
 
-    private static Simulation Lower(ExecLayer layer, out MissionDocument document)
+    internal static Simulation Lower(ExecLayer layer, out MissionDocument document)
     {
         document = Document();
         Compile(layer, document).Apply();
@@ -233,7 +257,7 @@ public sealed class ExecLayerTests
     }
 
     /// <summary>The game's tick for the four task types lowering uses, over the game's own expression evaluator.</summary>
-    private sealed class Simulation(MissionDocument document) : IScriptExpressionContext
+    internal sealed class Simulation(MissionDocument document) : IScriptExpressionContext
     {
         private readonly Dictionary<string, double> _values = new(StringComparer.Ordinal);
         private readonly List<(string Name, int Value, int From)> _inputs = [];

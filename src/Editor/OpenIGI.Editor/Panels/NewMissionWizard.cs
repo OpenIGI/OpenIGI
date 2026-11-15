@@ -108,7 +108,7 @@ internal static class NewMissionWizard
         OptionCards grounds = new(theme);
         NumberField seedField = new(theme) { Decimals = 0, Minimum = 0, Maximum = int.MaxValue, Step = 1 };
         seedField.Value = Random.Shared.Next(1, 1_000_000);
-        Form seedForm = new(theme, [("Seed", seedField)]);
+        WizardForm seedForm = new(theme, [("Seed", seedField)]);
         Stack groundStep = new(theme, [("Ground", grounds, 0), ("Seed", seedForm, 1)]);
         bool Blank() => starts.SelectedIndex == 1;
         BlankGround Ground() => !Blank() ? BlankGround.Keep : grounds.SelectedIndex switch
@@ -140,10 +140,10 @@ internal static class NewMissionWizard
         NumberField number = new(theme) { Decimals = 0, Minimum = 1, Maximum = 999, Step = 1 };
         number.Value = nextId;
         CheckBox campaign = new(theme, "Play it after the campaign's last mission (it joins the mission menu)") { IsChecked = true };
-        Form details = new(theme, [("Name", nameField), ("Number", number), (string.Empty, campaign)]);
+        WizardForm details = new(theme, [("Name", nameField), ("Number", number), (string.Empty, campaign)]);
 
         // 4. Review.
-        Review review = new(theme);
+        WizardReview review = new(theme);
 
         GameTitle Game() => titles[Math.Clamp(games.SelectedIndex, 0, titles.Count - 1)];
         MissionTarget Target() => targets.SelectedIndex == 1 ? MissionTarget.OpenIgi : MissionTarget.Retail;
@@ -292,65 +292,6 @@ internal static class NewMissionWizard
             foreach ((string label, EditorElement element, _) in _sections.Where(static s => s.Element.Visibility != Visibility.Collapsed))
             {
                 EditorDraw.Label(painter, Theme, label.ToUpperInvariant(), new UiRect(element.Bounds.X, element.Bounds.Y - LabelHeight, element.Bounds.Width, Theme.RowHeight), Theme.TextDisabled, strong: true);
-            }
-        }
-    }
-
-    // Fields with their labels.
-    private sealed class Form : EditorElement
-    {
-        private readonly (string Label, EditorElement Field)[] _rows;
-
-        public Form(EditorTheme theme, (string Label, EditorElement Field)[] rows)
-            : base(theme)
-        {
-            _rows = rows;
-            foreach ((_, EditorElement field) in rows)
-            {
-                AddChild(field);
-            }
-        }
-
-        private float LabelWidth => Theme.Px(110f);
-
-        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => available;
-
-        protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
-        {
-            float y = contentRect.Y + Theme.Px(6f);
-            foreach ((_, EditorElement field) in _rows)
-            {
-                field.Place(context, new UiRect(contentRect.X + LabelWidth, y, MathF.Min(Theme.Px(420f), contentRect.Width - LabelWidth), Theme.ControlHeight));
-                y += Theme.ControlHeight + Theme.Px(10f);
-            }
-        }
-
-        protected override void OnDraw(UiPainter painter)
-        {
-            foreach ((string label, EditorElement field) in _rows)
-            {
-                EditorDraw.Label(painter, Theme, label, new UiRect(Bounds.X, field.Bounds.Y, LabelWidth, Theme.ControlHeight), Theme.TextMuted);
-            }
-        }
-    }
-
-    // The summary of what will be made, a line per fact, warnings marked.
-    private sealed class Review(EditorTheme theme) : EditorElement(theme)
-    {
-        public IReadOnlyList<(string Label, string Value, bool Warning)> Lines { get; set; } = [];
-
-        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => available;
-
-        protected override void OnDraw(UiPainter painter)
-        {
-            EditorDraw.Frame(painter, Theme, Bounds, Theme.Input, Theme.Border);
-            float pad = Theme.Px(12f);
-            float y = Bounds.Y + pad;
-            foreach ((string label, string value, bool warning) in Lines)
-            {
-                EditorDraw.Label(painter, Theme, label, new UiRect(Bounds.X + pad, y, Theme.Px(100f), Theme.RowHeight), Theme.TextMuted);
-                EditorDraw.Label(painter, Theme, value, new UiRect(Bounds.X + pad + Theme.Px(100f), y, Bounds.Width - (pad * 2f) - Theme.Px(100f), Theme.RowHeight), warning ? Theme.Warning : Theme.Text);
-                y += Theme.RowHeight + Theme.Px(6f);
             }
         }
     }

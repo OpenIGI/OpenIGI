@@ -49,10 +49,13 @@ public sealed partial class GameHost
     public bool IsEditorOpen => _editor is not null;
 
     /// <summary>Gets whether the editor is holding the level still for editing.</summary>
-    private bool EditorHoldsLevel => _editor is { IsPlaying: false };
+    private bool EditorHoldsLevel => _editor is { IsPlaying: false } && !CutscenePreviewRuns;
 
     /// <summary>Gets the cut-scene frame the player is shown: none while the editor holds the level, whose view is its own.</summary>
-    private CutsceneFrame? CutsceneFrameShown => EditorHoldsLevel ? null : _mission.CutsceneFrameShown;
+    /// <remarks>While the editor edits, only a cutscene it previews through the scene's own camera.</remarks>
+    private CutsceneFrame? CutsceneFrameShown => _editor is { IsPlaying: false }
+        ? _cutscenePreview is { Scene: not null, ShowsCamera: true } ? _mission.CutsceneFrameShown : null
+        : _mission.CutsceneFrameShown;
 
     /// <summary>Asks for the editor to open at the next frame boundary.</summary>
     /// <returns><see langword="false"/> when this build has no editor.</returns>
@@ -164,6 +167,12 @@ public sealed partial class GameHost
             bool play = _editorPlayWanted;
             _editorPlayWanted = false;
             StartMission(id);
+
+            // Every play-test is recorded from the level loaded for it, for F9 to play back.
+            if (play)
+            {
+                BeginRecording(ofLevelJustLoaded: true);
+            }
 
             // Play stands the player up where the mission starts and hands over the window, as a played mission
             // does; editing keeps the free camera and the pointer.
@@ -281,6 +290,7 @@ public sealed partial class GameHost
     /// <returns>Whether the editor is open.</returns>
     private bool UpdateEditor(FrameLoopState state)
     {
+        TrackPlaytest();
         if (_editor is not { } editor)
         {
             return false;
@@ -288,10 +298,13 @@ public sealed partial class GameHost
 
         // Playing: the game has the frame. Escape is the way back, taken before the game's own Escape could open the
         // pause menu over a level the editor is about to reload. Not while a cutscene plays: there Escape is held to skip
-        // it, as it opens no pause menu either, and the press that starts the hold must not end the test.
+        // it, as it opens no pause menu either, and the press that starts the hold must not end the test -- only a scene the
+        // player can skip, though, and never in a replay, whose skips are the recording's: there Escape has nothing else to do.
         if (editor.IsPlaying)
         {
-            bool cutscene = _mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true };
+            bool cutscene = !Replaying
+                && (_mission.Scenes is { IsPlaying: true } scenes && (scenes.CanBreak || _cutsceneSkip.Breaking)
+                    || TitlePlayer is { IsCutscenePlaying: true });
             if (!state.Console.IsOpen && !cutscene && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
                 editor.StopPlaying();
@@ -299,6 +312,12 @@ public sealed partial class GameHost
                 return true;
             }
 
+            if (!state.Console.IsOpen)
+            {
+                HandlePlaytestKeys();
+            }
+
+            editor.WhilePlaying();
             return false;
         }
 
@@ -360,13 +379,16 @@ public sealed partial class GameHost
         try
         {
             editor.Draw(painter);
+            state.Batch.End();
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
+            // What the editor queued before it failed is dropped, not flushed: a frame that overflowed the 2D buffer would
+            // only overflow it again, and the game must outlive its editor.
+            state.Batch.Abandon();
             EditorFailed(error);
         }
 
-        state.Batch.End();
         _device.EndStageTiming();
     }
 
@@ -376,7 +398,14 @@ public sealed partial class GameHost
         _editorCloseWanted = true;
     }
 
-    /// <summary>Narrows the frame's lens to the editor viewport's shape, so the world is not stretched into it.</summary>
+    // The lens the editor's viewport is drawn with while a cutscene key is piloted: that key's (EditCamera.FOV, a horizontal
+    // tangent); null for the viewport's own.
+    private float? _editorLensTangent;
+
+    /// <summary>
+    /// Narrows the frame's lens to the editor viewport's shape, so the world is not stretched into it: a cutscene's frame (or a key
+    /// being piloted) keeps its own lens, framed as the game frames a scene's; anything else the viewport's.
+    /// </summary>
     /// <param name="aspectRatio">The aspect the frame would use; replaced by the viewport's.</param>
     /// <param name="verticalFieldOfView">The vertical field of view; replaced to keep the horizontal one.</param>
     private void ApplyEditorLens(ref float aspectRatio, ref float verticalFieldOfView)
@@ -387,7 +416,12 @@ public sealed partial class GameHost
         }
 
         aspectRatio = port.Width / port.Height;
-        verticalFieldOfView = VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, aspectRatio));
+        float? scene = CutsceneFrameShown is { FieldOfView: > 0f } shown ? shown.FieldOfView : _editorLensTangent;
+        verticalFieldOfView = scene is { } tangent
+            ? WidescreenLens.HorPlus
+                ? VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(tangent, aspectRatio))
+                : CutsceneVerticalFieldOfView(tangent)
+            : VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, aspectRatio));
     }
 
     /// <summary>
@@ -567,6 +601,45 @@ public sealed partial class GameHost
 
         public EditorView View => host._editorView;
 
+        public IEditorCutscenePreview? CutscenePreview => host.CutscenePreview;
+
+        public float? LensTangent
+        {
+            get => host._editorLensTangent;
+            set => host._editorLensTangent = value;
+        }
+
+        public string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
+            host.ApplyLiveEdit(path, values, fromSceneSeconds);
+
+        public string? ApplyLiveChildren(IReadOnlyList<(int Index, string Type)> path, IReadOnlyList<(string Type, ReadOnlyMemory<byte>? Values)> children, double? fromSceneSeconds) =>
+            host.ApplyLiveChildren(path, children, fromSceneSeconds);
+
+        public int LevelLoads => host._levelLoads;
+
+        public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);
+
+        public Task<OverheadScene>? MakeOverheadScene() => host.EditorOverheadScene();
+
+        public EditorPlaytest Playtest => host.Playtest;
+
+        public string PlaytestCommand(string command) => host.PlaytestCommand(command);
+
+        public void MarkPlaytest(string text) => host.MarkTape(text);
+
+        public void SnapshotSoldiers(List<Game.Ai.SoldierSnapshot> into)
+        {
+            ArgumentNullException.ThrowIfNull(into);
+            if (host._soldiers is { } soldiers)
+            {
+                soldiers.Snapshot(into);
+            }
+            else
+            {
+                into.Clear();
+            }
+        }
+
         public IWorldInspector Inspector => host._inspector;
 
         public IOpenIgiLogger Logger => host._logger;
@@ -575,7 +648,13 @@ public sealed partial class GameHost
 
         public void CloseMission() => host._editorMissionCloseWanted = true;
 
-        public void RescanMissions() => host._missions.Scan(host._fileSystem, host._resources, host._loop.Natives);
+        public void RescanMissions()
+        {
+            host._missions.Scan(host._fileSystem, host._resources, host._loop.Natives);
+
+            // A mission made in the editor brings its name in the language archives: read again between frames.
+            host._languageChanged = true;
+        }
 
         public bool TryReadFile(string path, out ReadOnlyMemory<byte> data) => host._resources.TryLoad(path, out data);
 
@@ -604,6 +683,20 @@ public sealed partial class GameHost
                 data = copy.ToArray();
                 return true;
             }
+        }
+
+        public IEnumerable<string> GameFiles(string folder) => host.GameFiles(folder);
+
+        public bool TryReadGameFile(string path, out ReadOnlyMemory<byte> data)
+        {
+            if (host.ReadGameFile(path) is { } read)
+            {
+                data = read;
+                return true;
+            }
+
+            data = default;
+            return false;
         }
 
         public void MountContent(string id, string name, string root)

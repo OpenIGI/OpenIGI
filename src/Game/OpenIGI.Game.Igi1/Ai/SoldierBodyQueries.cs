@@ -67,6 +67,11 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
     {
         ArgumentNullException.ThrowIfNull(into);
         into.Clear();
+        Dictionary<SoldierView, Igi1HumanAi> minds = new(ReferenceEqualityComparer.Instance);
+        foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains)
+        {
+            minds[view] = brain;
+        }
 
         foreach (SoldierModelGroup group in _context.Roster)
         {
@@ -74,14 +79,31 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
             {
                 SoldierView view = member.View;
                 bool dead = view.IsDead || (view.Health is { } health && health.IsDead);
-
-                into.Add(new SoldierSnapshot(
+                SoldierSnapshot snapshot = new(
                     view.Soldier.Name ?? string.Empty,
                     view.Position / WorldScene.UnitsPerMetre,
                     dead,
                     view.CurrentAnimation,
                     view.Health is { } hp ? hp.RemainingFraction : -1f,
-                    member.IsCutsceneActor));
+                    member.IsCutsceneActor);
+                if (minds.TryGetValue(view, out Igi1HumanAi? mind))
+                {
+                    AiViewCone cone = mind.Vision.Primary;
+                    string? running = mind.RunningActionName?.Replace("AIAction_", string.Empty, StringComparison.Ordinal);
+                    snapshot = snapshot with
+                    {
+                        HasMind = true,
+                        Facing = mind.Facing,
+                        Alerted = mind.Alerted,
+                        SeesTarget = mind.SeesTarget,
+                        SightMetres = cone.RangeAt(mind.Alerted) / AiViewCone.UnitsPerMetre,
+                        SightHalfAngle = cone.Gamma,
+                        Doing = running is null ? mind.Activity.ToString() : $"{mind.Activity} - {running}",
+                        RouteMetres = [.. mind.RoutePoints.Select(static p => p / WorldScene.UnitsPerMetre)],
+                    };
+                }
+
+                into.Add(snapshot);
             }
         }
     }

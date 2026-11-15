@@ -11,12 +11,12 @@ namespace OpenIGI.Editor.Viewport;
 /// <para>
 /// Trigger and play areas (<c>AreaActivate</c>, I.G.I. 2's <c>SpawnArea</c> and <c>C4BombArea</c>) keep their full size along
 /// each axis in world units, a <c>Real32x3</c> called <c>Dimensions</c> (<c>Dimentions</c> on <c>SpawnArea</c>, as retail spells
-/// it); <c>AreaActivation</c> and <c>Igi2OrientedBox</c> halve it. An <c>AmbientArea</c> keeps half its size in metres, a
-/// <c>Real64x3</c> called <c>Size</c>.
+/// it); the games' own area tasks (<c>AreaActivateTask</c>, <c>Igi2OrientedBox</c>) halve it. An <c>AmbientArea</c> keeps
+/// half its size in metres, a <c>Real64x3</c> called <c>Size</c>.
 /// </para>
 /// <para>
 /// The box is centred on the task's position and turned by its orientation, a local corner standing at the transpose of
-/// the orientation applied to it, as <c>AreaActivation</c> builds its corners.
+/// the orientation applied to it, as <c>AreaActivateTask</c> builds its corners.
 /// </para>
 /// </remarks>
 internal readonly record struct TaskVolume(MissionParameter Parameter, bool StoresHalf, double MetresPerStored)
