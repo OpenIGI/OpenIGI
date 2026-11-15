@@ -52,7 +52,8 @@ public sealed partial class GameHost
         BeginMissionWarmUp(chosen);
         PresentLoadingFrame();
 
-        ReleasePlayedMission();
+        // A community map being played stays laid over the game for its own mission started again.
+        ReleasePlayedMission(keepMap: true);
 
         _logger.Information("Mission", $"Starting {chosen}.");
         _levelLoads++;
@@ -510,9 +511,14 @@ public sealed partial class GameHost
         return true;
     }
 
-    private void ReleasePlayedMission()
+    /// <param name="keepMap">Whether a community map being played stays laid over the game: a mission starting, not the game left.</param>
+    private void ReleasePlayedMission(bool keepMap = false)
     {
         ReleaseTaskPresenters();
+        if (!keepMap)
+        {
+            LeaveMap(rescan: true);
+        }
 
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred

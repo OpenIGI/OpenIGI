@@ -1,3 +1,4 @@
+using OpenIGI.Releases.Maps;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Editor.Core.Missions;
@@ -497,6 +498,37 @@ internal sealed partial class EditorSession
                 : 0.0;
             _pendingSteps.Enqueue(() => SelectNear(nx, ny, radius));
             return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Selecting near ({nx}, {ny}) once the mission is open.");
+        }
+
+        // editor publishmap <id> <author> <name...>: the open mission published as Publish Map does, for scripted checks.
+        if (arguments is [string publishVerb, string mapId, string author, _, ..] && publishVerb.Equals("publishmap", StringComparison.OrdinalIgnoreCase))
+        {
+            string title = string.Join(' ', arguments.Skip(3));
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                if (MapFolder() is not { } folder || _workspace.Mission is not { } mission)
+                {
+                    _host.Logger.Warning("Editor", "editor publishmap: the open mission is not one the editor made.");
+                    return true;
+                }
+
+                (MapManifest manifest, Dictionary<string, byte[]> bytes, IReadOnlyList<string> problems) =
+                    PackMap(new MapManifest(MapManifest.CurrentSchema, mapId, title, "Published from a scripted check.", _host.Title.Id, author, mission.Id, folder, []));
+                int named = manifest.Files.Count(static f => f.Origin is not null);
+                _host.Logger.Information("Editor", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"editor publishmap: {manifest.Files.Count} files, {named} named from the game, {manifest.EmbeddedSize} bytes carried; problems: {(problems.Count == 0 ? "none" : string.Join(" | ", problems))}"));
+                if (problems.Count == 0)
+                {
+                    StartPublishing(manifest, bytes);
+                }
+
+                return true;
+            });
+            return $"Publishing the open mission as '{title}' once it is open.";
         }
 
         if (arguments is [string make, string from, _, ..] && make.Equals("newmission", StringComparison.OrdinalIgnoreCase)

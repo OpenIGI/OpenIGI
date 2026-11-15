@@ -557,6 +557,7 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterPatrolActions(actions);
         RegisterReinforcementActions(actions);
         RegisterPrefabActions(actions);
+        RegisterPublishActions(actions);
         RegisterFenceActions(actions);
         StartAutosave();
         RegisterMissionActions(actions);

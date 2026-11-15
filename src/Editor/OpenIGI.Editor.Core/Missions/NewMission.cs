@@ -120,6 +120,37 @@ public static class NewMission
         return files;
     }
 
+    /// <summary>
+    /// A mission's script with its name and description written in as they read, not as keys into the language archives: for a
+    /// mission that travels without those archives (a community map), which would otherwise show its keys.
+    /// </summary>
+    /// <param name="script">The mission's <c>mission.qvm</c>.</param>
+    /// <param name="name">Its name, cut to the <see cref="MaximumNameLength"/> the original keeps.</param>
+    /// <param name="description">What it is.</param>
+    /// <returns>The script, or <see langword="null"/> when it is not one this game's <c>DefineMission</c> call.</returns>
+    public static byte[]? Named(ReadOnlyMemory<byte> script, string name, string description)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(description);
+        try
+        {
+            if (Arguments(script) is null)
+            {
+                return null;
+            }
+        }
+        catch (OpenIGI.Scripting.Qvm.QvmFormatException)
+        {
+            return null;
+        }
+
+        return Rewrite(script, arguments =>
+        {
+            arguments[NameArgument] = new QscStringLiteral(name.Length > MaximumNameLength ? name[..MaximumNameLength] : name);
+            arguments[DescriptionArgument] = new QscStringLiteral(description);
+        });
+    }
+
     /// <summary>Gets the key a mission's name or description is kept under, made from the base's by putting the new id for its own.</summary>
     /// <param name="baseKey">The base mission's key, such as <c>Mission 1 Name</c>.</param>
     /// <param name="baseId">The base mission's id.</param>

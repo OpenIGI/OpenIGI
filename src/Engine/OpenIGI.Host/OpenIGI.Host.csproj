@@ -15,6 +15,7 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\..\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
     <ProjectReference Include="..\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\Core\OpenIGI.Releases\OpenIGI.Releases.csproj" />
     <ProjectReference Include="..\..\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\..\Game\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\..\UI\OpenIGI.UI\OpenIGI.UI.csproj" />

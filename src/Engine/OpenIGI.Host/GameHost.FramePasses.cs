@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Time;
 using OpenIGI.Frontend;
@@ -692,6 +692,7 @@ public sealed partial class GameHost
         AdvanceRendererSwitch();
         AdvanceMapShot(state);
         AdvanceOverheadGathering();
+        AdvanceMaps(state);
 
         if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
         {

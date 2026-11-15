@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
@@ -65,6 +65,7 @@ public sealed partial class GameHost
         _lamps.RegisterCommands(state.Console.System);
         RegisterCoopTalk(state.Console.System);
         RegisterMpMapShot(state.Console.System);
+        RegisterMapCommands(state.Console.System);
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);

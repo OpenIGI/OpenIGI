@@ -658,6 +658,20 @@ public sealed partial class GameHost
             }
         }
 
+        public IEnumerable<string> GameFiles(string folder) => host.GameFiles(folder);
+
+        public bool TryReadGameFile(string path, out ReadOnlyMemory<byte> data)
+        {
+            if (host.ReadGameFile(path) is { } read)
+            {
+                data = read;
+                return true;
+            }
+
+            data = default;
+            return false;
+        }
+
         public void MountContent(string id, string name, string root)
         {
             host._overrides.Mount(new Engine.Resources.OverrideLayer(id, $"{name} (editor)", root));

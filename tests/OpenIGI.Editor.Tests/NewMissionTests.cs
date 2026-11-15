@@ -90,6 +90,22 @@ public sealed class NewMissionTests
         Assert.True(before.Entries.Zip(after.Entries).All(static p => p.First.Data.Span.SequenceEqual(p.Second.Data.Span)));
     }
 
+    /// <summary>
+    /// A mission going out as a community map has its name and description written in as they read, everything else of its
+    /// definition kept; a name longer than the original keeps is cut to it.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_missions_name_is_written_in_for_a_community_map()
+    {
+        byte[] script = File.ReadAllBytes(GameData.Resolve("missions/location0/level1/mission.qvm"));
+        byte[]? named = NewMission.Named(script, "A Long Night Raid on the Trainyard Base", "The trainyard by night.");
+        Assert.NotNull(named);
+        Assert.Equal(
+            "DefineMission(1, \"A Long Night Raid on the Trainy\", \"The trainyard by night.\", \"\", 2, \"missions/location0/level1\", \"missions/location0/common\", \"missions/location0/level1\", \"location0\", \"level1\", \"mission1.spr\");",
+            QscPrinter.Print(QscDecompiler.Decompile(named)).Trim());
+        Assert.Null(NewMission.Named(new byte[] { 1, 2, 3 }, "x", "y"));
+    }
+
     /// <summary>A name the original's record cannot hold is refused.</summary>
     [RequiresGameDataFact]
     public void A_name_longer_than_the_original_keeps_is_refused()

@@ -299,6 +299,21 @@ public interface IEditorHost
     /// <returns><see langword="false"/> when neither the project nor the installation has the file.</returns>
     bool TryReadShippedFile(string path, out ReadOnlyMemory<byte> data);
 
+    /// <summary>Lists the installation's own files under a folder, and under its folders, without the editor's project or any overlay.</summary>
+    /// <param name="folder">The folder from the game's root, such as <c>missions</c>.</param>
+    /// <returns>Each file's path from the game's root, with forward slashes.</returns>
+    IEnumerable<string> GameFiles(string folder) => [];
+
+    /// <summary>Reads one of the installation's own files, without the editor's project or any overlay.</summary>
+    /// <param name="path">The path from the game's root.</param>
+    /// <param name="data">Receives the bytes.</param>
+    /// <returns><see langword="false"/> when the installation has no such file.</returns>
+    bool TryReadGameFile(string path, out ReadOnlyMemory<byte> data)
+    {
+        data = default;
+        return false;
+    }
+
     /// <summary>Puts a folder on top of the content layers, so what is saved into it is what the game loads.</summary>
     /// <param name="id">The layer's id; mounting the same id again rescans it.</param>
     /// <param name="name">The name the <c>content</c> command lists it under.</param>
