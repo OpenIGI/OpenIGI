@@ -638,11 +638,13 @@ public sealed partial class ServerSession : IModeHost
         _clients[slot] = new ClientState(name, entity.Value, playerId);
         if (!Match.Players.ContainsKey(slot))
         {
-            int team = Mode.TeamFor(this, slot);
-            Match.Join(slot, name, team);
-            _world.SetTeam(slot, team);
+            Match.Join(slot, name, Mode.TeamFor(this, slot));
         }
 
+        // The world's side always the match's: one coming back has the side it was parked with, and the half's swap, a
+        // scramble or a new mode while it was away moved its match standing on without it -- the rounds that hurt by the
+        // world's side then let its enemies' through and stopped its team mates'.
+        _world.SetTeam(slot, Match.Players[slot].Team);
         Match.Players[slot].Skin = skin;
         _world.SetSkin(slot, skin);
         Welcome(slot, entity.Value);

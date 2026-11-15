@@ -78,6 +78,13 @@ public sealed partial class ServerSession
             return;
         }
 
+        // A scramble deals two teams: in a mode without them it would split a free-for-all into sides.
+        if (words is ["scramble"] && !Mode.IsTeamMode)
+        {
+            Tell(slot, "This mode has no teams.");
+            return;
+        }
+
         (VoteResult Vote, string Question)? asked = words switch
         {
             ["kick", .. var who] when who.Length > 0 => PlayerNamed(string.Join(' ', who)) is { } target

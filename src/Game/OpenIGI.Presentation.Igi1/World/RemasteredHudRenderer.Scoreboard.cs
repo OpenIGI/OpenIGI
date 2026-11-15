@@ -87,10 +87,11 @@ internal sealed partial class RemasteredHudRenderer
         var painter = UiPainter.Create(batch, context);
         float Px(float units) => context.Px(units);
 
-        // A team mode is split by team, as a tactical shooter's board is, even while a team stands empty; a co-op squad that has
-        // players on both sides (a host's test) is split too.
-        bool teamed = (Game.Multiplayer.Modes.GameModes.IsVersus(mode) && Game.Multiplayer.Modes.GameModes.HasTeams(mode))
-            || board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
+        // A team mode is split by team, as a tactical shooter's board is, even while a team stands empty; a free-for-all never is,
+        // whatever team its lines carry; a co-op squad that has players on both sides (a host's test) is split too.
+        bool teamed = Game.Multiplayer.Modes.GameModes.IsVersus(mode)
+            ? Game.Multiplayer.Modes.GameModes.HasTeams(mode)
+            : board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
         ScoreboardLine[] lines = [.. board.Lines.OrderBy(static l => l.Team).ThenByDescending(static l => l.Kills).ThenBy(static l => l.Deaths)];
         int[] sides = teamed ? [.. new[] { TeamRoster.Good, TeamRoster.Bad }.Union(lines.Select(static l => l.Team))] : [];
         int empties = sides.Count(side => !lines.Any(l => l.Team == side));

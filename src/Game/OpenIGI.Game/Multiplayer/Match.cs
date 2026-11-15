@@ -277,14 +277,20 @@ public sealed class Match
         {
             // The second half's economy starts over, as the first's did.
             player.Money = Math.Min(Rules.MoneyStart, Rules.MoneyCap);
-            player.Team = player.Team switch
-            {
-                TeamRoster.Good => TeamRoster.Bad,
-                TeamRoster.Bad => TeamRoster.Good,
-                _ => player.Team,
-            };
+            player.Team = Other(player.Team);
+
+            // A move asked for before the half goes with the swap: left as it was, it took the player back to the side it left.
+            player.NextTeam = player.NextTeam is { } next ? Other(next) : null;
         }
     }
+
+    // The other side of a team, or the same value for no side.
+    private static int Other(int team) => team switch
+    {
+        TeamRoster.Good => TeamRoster.Bad,
+        TeamRoster.Bad => TeamRoster.Good,
+        _ => team,
+    };
 
     /// <summary>Adds to a team's score, never below nothing: a kill in team deathmatch, a point held.</summary>
     /// <param name="team">The team.</param>

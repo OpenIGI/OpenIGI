@@ -68,6 +68,30 @@ public static class GameModes
         return roster.FairTeam();
     }
 
+    /// <summary>Deals the players into two sides when a team mode begins with every one of them on the same side.</summary>
+    /// <param name="host">The session.</param>
+    /// <remarks>
+    /// The sides a match was played with are kept (a team mode after another keeps its teams); only a match carried over from
+    /// a free-for-all, which puts everyone on the one side, is dealt again, alternately in slot order. Left so, a team mode had
+    /// no enemy side: its rounds could only run out, and in search and destroy, with nobody attacking, nobody had the bomb.
+    /// </remarks>
+    public static void DealSidesIfOne(IModeHost host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        MatchPlayer[] playing = [.. host.Match.Players.Values.Where(static p => p.Slot >= 0).OrderBy(static p => p.Slot)];
+        if (playing.Length < 2 || playing.Select(static p => p.NextTeam ?? p.Team).Distinct().Count() > 1)
+        {
+            return;
+        }
+
+        for (int i = 0; i < playing.Length; i++)
+        {
+            playing[i].Team = i % 2 == 0 ? TeamRoster.Good : TeamRoster.Bad;
+            playing[i].NextTeam = null;
+            host.World.SetTeam(playing[i].Slot, playing[i].Team);
+        }
+    }
+
     /// <summary>Makes the mode a server was asked for.</summary>
     /// <param name="id">The mode's id, or <see langword="null"/> or unknown for the world's own.</param>
     /// <param name="world">The world it runs in.</param>

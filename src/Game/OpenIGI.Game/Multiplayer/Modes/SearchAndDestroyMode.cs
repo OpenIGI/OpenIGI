@@ -569,7 +569,9 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     // The attacker the bomb goes to next: the first standing after the one it went to last, round the team in slot order.
     private int NextCarrier(IModeHost host)
     {
-        int[] attackers = [.. host.Match.Players.Where(p => p.Value.Team == Attackers && p.Value.IsAlive).Select(p => p.Key).Order()];
+        // Only those in the level: one whose line dropped is kept under a negative slot, standing and on its side, and the bomb
+        // handed to it went nowhere -- a round with no one carrying it.
+        int[] attackers = [.. host.Match.Players.Where(p => p.Key >= 0 && p.Value.Team == Attackers && p.Value.IsAlive).Select(p => p.Key).Order()];
         if (attackers.Length == 0)
         {
             return -1;
