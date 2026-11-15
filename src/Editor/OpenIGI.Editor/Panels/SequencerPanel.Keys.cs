@@ -4,8 +4,10 @@ using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Cutscenes;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.UI;
-using OpenIGI.UI.Layout;
 using OpenIGI.UI.Editor.Theme;
+using OpenIGI.UI.Editor.Widgets;
+using OpenIGI.UI.Kit;
+using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Editor.Panels;
 
@@ -80,13 +82,20 @@ internal sealed partial class SequencerPanel
 
             MissionTask lead = move.Keys[0].Camera;
             string rides = Number(lead, "Link task ID", -1) >= 0 ? "  (rides)" : Number(lead, "Target task ID", -1) >= 0 ? "  (watches)" : string.Empty;
-            string count = move.Keys.Count > 1 ? string.Create(CultureInfo.InvariantCulture, $"  ·  {move.Keys.Count} keys") : string.Empty;
+            int own = move.Keys.Count(static k => !CutsceneEasing.IsHelper(k.Camera));
+            string count = own > 1 ? string.Create(CultureInfo.InvariantCulture, $"  ·  {own} keys") : string.Empty;
             string name = string.Create(CultureInfo.InvariantCulture, $"{first + 1}. {(lead.Label.Length > 0 ? lead.Label : "Shot")}  {end - start:0.#}s{count}{rides}");
             EditorDraw.Label(painter, Theme, EditorDraw.Fit(Theme.Font, name, Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f), Height = clip.Height - Theme.Px(7f) }, Bgra32.White);
 
             // The keys along the clip's foot: where each starts, the last of a move that ends on a glide's last key at its moment.
             for (int i = first; i <= last; i++)
             {
+                if (CutsceneEasing.IsHelper(keys[i].Key.Camera))
+                {
+                    continue;
+                }
+
+                DrawEase(painter, scene, keys, i, clip.Bottom - Theme.Px(5f));
                 bool isSelected = ReferenceEquals(keys[i].Key.Camera, selected);
                 UiVec2 at = new(X(keys[i].Start), clip.Bottom - Theme.Px(5f));
                 painter.FillDiamond(at, Theme.Px(isSelected ? 6f : 4.5f), Theme.Background);
@@ -104,6 +113,11 @@ internal sealed partial class SequencerPanel
         float closest = Theme.Px(KeyReach);
         for (int i = 0; i < keys.Count; i++)
         {
+            if (CutsceneEasing.IsHelper(keys[i].Key.Camera))
+            {
+                continue;
+            }
+
             float distance = MathF.Abs(X(keys[i].Start) - pointer.X);
             if (distance <= closest)
             {
@@ -136,7 +150,7 @@ internal sealed partial class SequencerPanel
         double at = Seconds(pointer.X);
         if (keys.LastOrDefault(k => k.Start <= at && at < k.Start + Math.Max(k.Length, 1e-3)) is { Key: { } inside })
         {
-            _workspace.Selection.Set(inside.Camera);
+            _workspace.Selection.Set(CutsceneEasing.OwnerOf(scene, inside.Camera));
             Seek(at);
             return true;
         }
@@ -281,6 +295,70 @@ internal sealed partial class SequencerPanel
         {
             double[] at = key.FindParameter("Position") is { } position && position.TryGetNumbers(out double[] values) && values.Length == 3 ? values : [0, 0, 0];
             return new CutsceneKeyValues(at[0], at[1], at[2], Number(key, "Alpha", 0), Number(key, "Beta", 0), Number(key, "Gamma", 0));
+        }
+    }
+
+    // A key's ease, from it to the next key of its own: a band along the clip's foot with its name, the helpers it stands for not drawn.
+    private void DrawEase(UiPainter painter, MissionTask scene, List<(CutsceneShot Key, double Start, double Length)> keys, int index, float y)
+    {
+        if (CutsceneEasing.Of(scene, keys[index].Key.Camera) is not (var ease and not CutsceneEase.None))
+        {
+            return;
+        }
+
+        int next = index + 1;
+        while (next < keys.Count && CutsceneEasing.IsHelper(keys[next].Key.Camera))
+        {
+            next++;
+        }
+
+        double end = next < keys.Count ? keys[next].Start : keys[^1].Start + keys[^1].Length;
+        float from = X(keys[index].Start), to = X(end);
+        painter.FillRect(new UiRect(from, y - Theme.Px(1f), MathF.Max(0, to - from), Theme.Px(2f)), Bgra32.FromRgb(0xE8, 0xB0, 0x30).WithAlpha(200));
+        string name = ease switch { CutsceneEase.In => "ease in", CutsceneEase.Out => "ease out", CutsceneEase.InOut => "ease in-out", _ => "even" };
+        float width = Theme.SmallFont.MeasureWidth(name, Theme.SmallTextSize);
+        if (to - from > width + Theme.Px(16f))
+        {
+            painter.DrawText(Theme.SmallFont, name, new UiVec2(((from + to) / 2) - (width / 2), y - Theme.SmallTextSize - Theme.Px(2f)), Theme.SmallTextSize, Bgra32.FromRgb(0xF0, 0xD0, 0x80));
+        }
+    }
+
+    // The menu's ease entries for a key that glides on.
+    private List<PaletteEntry> EaseEntries(MissionDocument document, MissionTask scene, MissionTask key)
+    {
+        if (!CutsceneMoves.Glides(key))
+        {
+            return [];
+        }
+
+        CutsceneEase now = CutsceneEasing.Of(scene, key);
+        List<PaletteEntry> entries = [];
+        foreach ((CutsceneEase ease, string name, string detail) in ((CutsceneEase, string, string)[])[
+            (CutsceneEase.Out, "Ease Out", "slow into the next key, coming to rest there"),
+            (CutsceneEase.In, "Ease In", "start from rest, gathering speed"),
+            (CutsceneEase.InOut, "Ease In and Out", "start from rest and slow into the next key"),
+            (CutsceneEase.Even, "Even Speed", "the same way at one speed throughout"),
+            (CutsceneEase.None, "Remove Ease", "the game's own curve again, the key as it was written"),
+        ])
+        {
+            if (ease != now && (ease != CutsceneEase.None || now != CutsceneEase.None))
+            {
+                entries.Add(new PaletteEntry(name, () => SetEase(document, scene, key, ease)) { Detail = detail + " (baked into keys the game reads)" });
+            }
+        }
+
+        return entries;
+    }
+
+    private void SetEase(MissionDocument document, MissionTask scene, MissionTask key, CutsceneEase ease)
+    {
+        if (CutsceneEasing.Set(document, scene, key, ease) is { } step)
+        {
+            _workspace.Execute(step);
+        }
+        else
+        {
+            Notify?.Invoke("That key has no next key to ease into", true);
         }
     }
 }

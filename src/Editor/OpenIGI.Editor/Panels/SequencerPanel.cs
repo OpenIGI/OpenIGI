@@ -702,7 +702,7 @@ internal sealed partial class SequencerPanel : EditorElement
             return;
         }
 
-        MissionTask camera = shot.Camera;
+        MissionTask camera = CutsceneEasing.OwnerOf(_scene!, shot.Camera);
         _workspace.Selection.Set(camera);
         int watching = (int)Number(camera, "Target task ID", -1), riding = (int)Number(camera, "Link task ID", -1);
         bool smooth = Flag(camera, "Smooth to next");
@@ -719,6 +719,7 @@ internal sealed partial class SequencerPanel : EditorElement
             new("Watch an Object…", () => PickObject("What the shot watches", id => _workspace.Execute(CutsceneModel.Watch(document, camera, id)))) { Detail = "turn to follow it wherever it goes" },
             new("Ride an Object…", () => PickObject("What the shot rides", id => _workspace.Execute(CutsceneModel.Ride(document, camera, id)))) { Detail = "go where it goes, as from a car or a helicopter" },
         ];
+        entries.AddRange(EaseEntries(document, _scene!, camera));
         if (watching >= 0)
         {
             entries.Add(new PaletteEntry(string.Create(CultureInfo.InvariantCulture, $"Stop Watching #{watching}"), () => _workspace.Execute(CutsceneModel.Watch(document, camera, -1))));

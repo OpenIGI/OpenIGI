@@ -61,15 +61,16 @@ internal sealed partial class SequencerPanel
         }
 
         List<CameraKeyGlyph> glyphs = new(keys.Length);
+        int numbered = 0;
         for (int i = 0; i < keys.Length; i++)
         {
             (Vector3d at, Matrix3f turn) = PoseOf(keys[i], riding is { } r && links[i] == r.Ride ? r.Space : CutsceneShotSpace.World);
             int target = (int)Number(shots[i].Camera, "Target task ID", -1);
             Vector3d? watching = target >= 0 && document.EnumerateTasks().FirstOrDefault(t => t.Id == target) is { } watched ? TaskPresentation.PositionMetres(watched) : null;
-            glyphs.Add(new CameraKeyGlyph(at / WorldUnits.PerMetre, CutsceneCameraMath.ToCameraOrientation(turn), keys[i].FieldOfView, links[i] >= 0, watching));
+            glyphs.Add(new CameraKeyGlyph(at / WorldUnits.PerMetre, CutsceneCameraMath.ToCameraOrientation(turn), keys[i].FieldOfView, links[i] >= 0, watching, CutsceneEasing.IsHelper(shots[i].Camera) ? 0 : ++numbered));
         }
 
-        int chosen = SelectedShot() is { } selected ? IndexOfShot(shots, selected.Camera) : -1;
+        int chosen = SelectedShot() is { } selected ? IndexOfShot(shots, CutsceneEasing.OwnerOf(scene, selected.Camera)) : -1;
         CutscenePathPoint head = CutsceneCameraMath.Evaluate(keys, scale, _time, -1f);
         string? note = riding is { } shown
             ? string.Create(CultureInfo.InvariantCulture, $"Teal: relative to {Named(document, shown.Ride)} where it is now")

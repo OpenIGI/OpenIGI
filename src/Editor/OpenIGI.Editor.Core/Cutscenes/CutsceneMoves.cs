@@ -132,15 +132,7 @@ public static class CutsceneMoves
         double unit = scale > 0 ? scale : 1;
         seconds = split.Start + (Math.Round((seconds - split.Start) / unit, 3) * unit);
         CutsceneKey[] keys = [.. shots.Select(static s => KeyOf(s.Camera))];
-        CutscenePathPoint point = CutsceneCameraMath.Evaluate(keys, (float)scale, seconds, -1f);
-        Vector3fLike angles = AnglesAt(keys, (float)scale, seconds);
-        MissionTask added = split.Camera.Clone();
-        added.Label = split.Camera.Label;
-        added.FindParameter("Position")?.SetNumbers([point.Position.X, point.Position.Y, point.Position.Z]);
-        added.FindParameter("Alpha")?.SetNumbers([angles.X]);
-        added.FindParameter("Beta")?.SetNumbers([angles.Y]);
-        added.FindParameter("Gamma")?.SetNumbers([angles.Z]);
-        added.FindParameter("FOV")?.SetNumbers([point.FieldOfView]);
+        MissionTask added = KeyAt(split.Camera, keys, (float)scale, seconds);
         TaskLocation at = document.Locate(split.Camera) with { Index = document.Locate(split.Camera).Index + 1 };
         IEditorCommand step = new CompositeCommand("Add Key", [
             CutsceneModel.SetLength(document, scene, split.Camera, seconds - split.Start),
@@ -172,6 +164,27 @@ public static class CutsceneMoves
 
         steps.Add(new RemoveTaskCommand(document, key));
         return new CompositeCommand("Remove Key", steps);
+    }
+
+    /// <summary>A new key like another (everything else of it kept), standing where a path is at a moment: its values as the path holds them.</summary>
+    /// <param name="like">The key whose other values it takes.</param>
+    /// <param name="path">The scene's keys as the path reads them.</param>
+    /// <param name="scale">The scene's time scale.</param>
+    /// <param name="seconds">The moment, in scene seconds.</param>
+    /// <returns>The key, not yet in the document.</returns>
+    public static MissionTask KeyAt(MissionTask like, CutsceneKey[] path, float scale, double seconds)
+    {
+        ArgumentNullException.ThrowIfNull(like);
+        CutscenePathPoint point = CutsceneCameraMath.Evaluate(path, scale, seconds, -1f);
+        Vector3fLike angles = AnglesAt(path, scale, seconds);
+        MissionTask added = like.Clone();
+        added.Label = like.Label;
+        added.FindParameter("Position")?.SetNumbers([point.Position.X, point.Position.Y, point.Position.Z]);
+        added.FindParameter("Alpha")?.SetNumbers([angles.X]);
+        added.FindParameter("Beta")?.SetNumbers([angles.Y]);
+        added.FindParameter("Gamma")?.SetNumbers([angles.Z]);
+        added.FindParameter("FOV")?.SetNumbers([point.FieldOfView]);
+        return added;
     }
 
     /// <summary>The scene's keys as the game's camera path reads them, their values as written.</summary>

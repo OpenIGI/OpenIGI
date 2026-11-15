@@ -81,6 +81,23 @@ internal sealed partial class InspectorPanel
         _grid.Bool("Glides on", () => CutsceneMoves.Glides(camera), value => _workspace.Execute(CutsceneModel.SetSmooth(document, camera, value)),
             "Whether the camera flies on into the next key, or holds and cuts to it.");
 
+        if (CutsceneMoves.Glides(camera))
+        {
+            CutsceneEase[] eases = [CutsceneEase.None, CutsceneEase.In, CutsceneEase.Out, CutsceneEase.InOut, CutsceneEase.Even];
+            _grid.Choice(
+                "Ease",
+                ["Game's curve", "Ease in", "Ease out", "Ease in and out", "Even speed"],
+                () => Array.IndexOf(eases, CutsceneEasing.Of(scene, camera)),
+                index =>
+                {
+                    if (CutsceneEasing.Set(document, scene, camera, eases[index]) is { } step)
+                    {
+                        _workspace.Execute(step);
+                    }
+                },
+                "How the camera runs to the next key, baked into helper keys the game reads (the path kept, its timing changed); the game's own curve takes them out again.");
+        }
+
         Button pilot = new(Theme, "Pilot") { Tooltip = "Fly this key with the viewport; every move is written into it, as seen (Shift+P)" };
         pilot.Clicked += () => PilotKey?.Invoke(camera);
         _grid.Add(string.Empty, pilot);

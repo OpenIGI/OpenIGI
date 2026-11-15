@@ -13,7 +13,8 @@ namespace OpenIGI.Editor.Panels;
 /// <param name="Lens">Its lens: the horizontal half-angle tangent.</param>
 /// <param name="Rides">Whether it rides a task.</param>
 /// <param name="Watching">Where what it watches stands, in world metres; null for none.</param>
-internal sealed record CameraKeyGlyph(Vector3d At, Matrix3f View, float Lens, bool Rides, Vector3d? Watching);
+/// <param name="Number">Its number among the scene's keys of their own; 0 for an ease's helper, which is not drawn.</param>
+internal sealed record CameraKeyGlyph(Vector3d At, Matrix3f View, float Lens, bool Rides, Vector3d? Watching, int Number);
 
 /// <summary>A cutscene's camera rig as the viewport draws it, in world metres.</summary>
 /// <param name="Line">Points along the path the camera flies, in order, each with whether it is drawn relative to a ride.</param>
@@ -119,6 +120,11 @@ internal sealed partial class ViewportPanel
         for (int i = 0; i < path.Keys.Count; i++)
         {
             CameraKeyGlyph key = path.Keys[i];
+            if (key.Number == 0)
+            {
+                continue;
+            }
+
             bool selected = i == path.Selected;
             Bgra32 ink = selected ? Theme.Accent : key.Rides ? riding : colour;
             if (key.Watching is { } target && Projector.TryProject(key.At, out UiVec2 eye) && Projector.TryProject(target, out UiVec2 there))
@@ -135,7 +141,7 @@ internal sealed partial class ViewportPanel
             float radius = Theme.Px(selected ? 9f : 7.5f);
             painter.FillDot(screen, radius + Theme.Px(1.5f), Theme.Background);
             painter.FillDot(screen, radius, ink);
-            string number = (i + 1).ToString(CultureInfo.InvariantCulture);
+            string number = key.Number.ToString(CultureInfo.InvariantCulture);
             float width = Theme.SmallFont.MeasureWidth(number, Theme.SmallTextSize);
             painter.DrawText(Theme.SmallFont, number, new UiVec2(screen.X - (width / 2), screen.Y - (Theme.SmallTextSize * 0.62f)), Theme.SmallTextSize, Bgra32.Black);
         }
@@ -196,7 +202,7 @@ internal sealed partial class ViewportPanel
         float closest = Theme.Px(11f);
         for (int i = 0; i < path.Keys.Count; i++)
         {
-            if (Projector.TryProject(path.Keys[i].At, out UiVec2 at))
+            if (path.Keys[i].Number > 0 && Projector.TryProject(path.Keys[i].At, out UiVec2 at))
             {
                 float distance = MathF.Sqrt(((at.X - point.X) * (at.X - point.X)) + ((at.Y - point.Y) * (at.Y - point.Y)));
                 if (distance <= closest)
