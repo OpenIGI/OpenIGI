@@ -102,16 +102,27 @@ public static partial class CutsceneModel
         }
 
         Regex tick = TickOf(scene.Id);
+        Regex fromStart = FromStartOf(scene.Id);
         List<CutsceneCue> cues = [];
         foreach (MissionTask task in document.EnumerateTasks())
         {
             foreach (MissionParameter parameter in task.Parameters)
             {
-                if (parameter.Arguments is [QscStringLiteral { Value: { } text }] && tick.Match(text) is { Success: true } match
+                if (parameter.Arguments is not [QscStringLiteral { Value: { } text }])
+                {
+                    continue;
+                }
+
+                if (tick.Match(text) is { Success: true } match
                     && double.TryParse(match.Groups["n"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
                 {
                     bool seconds = match.Groups["sec"].Success;
                     cues.Add(new CutsceneCue(task, parameter.Name, seconds ? value : value / TicksPerSecond, seconds));
+                }
+                else if (fromStart.IsMatch(text))
+                {
+                    // Cued from the scene's start: while it runs (the first line of dialogue), or until a moment of it.
+                    cues.Add(new CutsceneCue(task, parameter.Name, 0, InSeconds: false));
                 }
             }
         }
@@ -395,6 +406,31 @@ public static partial class CutsceneModel
     private static Regex TickOf(int id) => new(
         string.Create(CultureInfo.InvariantCulture, $@"CutScene_{id}\.nTick\s*(>=|>|==)\s*(?<n>\d+(\.\d+)?)(?<sec>\s*\*\s*GAME_FREQUENCY)?"),
         RegexOptions.CultureInvariant);
+
+    // CutScene_<id>.isRun, or CutScene_<id>.nTick below a number with no lower bound: what starts with the scene.
+    private static Regex FromStartOf(int id) => new(
+        string.Create(CultureInfo.InvariantCulture, $@"CutScene_{id}\.(isRun\b|nTick\s*<)"),
+        RegexOptions.CultureInvariant);
+
+    /// <summary>Gets whether a task is a line of a scene's dialogue: a sound of the game's cutscene speech (its <c>_cut</c> sounds), or one the level keeps among its voice-overs.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> for dialogue.</returns>
+    public static bool IsDialogue(MissionTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return task.TypeName is "ConditionalSound" or "SoundDefSound"
+            && (SoundOf(task)?.StartsWith("_cut", StringComparison.OrdinalIgnoreCase) == true
+                || task.Parent?.Label.Contains("voice", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    /// <summary>Gets the sound a sound task plays, by its definition's name, or null.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The name.</returns>
+    public static string? SoundOf(MissionTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return (task.FindParameter("SoundDef") ?? task.FindParameter("Sound")) is { Arguments: [QscStringLiteral { Value: { Length: > 0 } name }] } ? name : null;
+    }
 
     // A parameter's first number, or null where it has none.
     private static double? Number(MissionTask task, string parameter) =>

@@ -98,7 +98,7 @@ internal sealed partial class SequencerPanel
 
         CutsceneCue[]? hovered = null;
         UiVec2 hoveredAt = default;
-        foreach ((string title, Func<string, bool> holds) in CueLanes)
+        foreach ((string title, Func<MissionTask, bool> holds) in CueLanes)
         {
             CutsceneCue[] mine = [.. cues.Where(c => LaneOf(c) == title && (title != "Animation" || animations.Count == 0))];
             if (mine.Length == 0)
@@ -231,14 +231,17 @@ internal sealed partial class SequencerPanel
             return words.Length > 40 ? $"“{words[..40]}…”" : $"“{words}”";
         }
 
-        return cue.Task.Label.Length > 0 ? cue.Task.Label : string.Create(CultureInfo.InvariantCulture, $"{cue.Task.TypeName} {cue.Task.Id}");
+        // An unnamed sound by what it plays (dialogue's _cut02_03), anything else unnamed by its type and id.
+        return cue.Task.Label.Length > 0 ? cue.Task.Label
+            : CutsceneModel.SoundOf(cue.Task) is { } sound ? sound
+            : string.Create(CultureInfo.InvariantCulture, $"{cue.Task.TypeName} {cue.Task.Id}");
     }
 
     private static string LaneOf(CutsceneCue cue)
     {
-        foreach ((string title, Func<string, bool> holds) in CueLanes)
+        foreach ((string title, Func<MissionTask, bool> holds) in CueLanes)
         {
-            if (holds(cue.Task.TypeName))
+            if (holds(cue.Task))
             {
                 return title;
             }

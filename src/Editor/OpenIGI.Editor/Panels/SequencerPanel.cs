@@ -38,11 +38,13 @@ internal sealed partial class SequencerPanel : EditorElement
     private const float CueReach = 8f;
 
     // The lanes under the camera: what a cue's task is, by its type.
-    private static readonly (string Title, Func<string, bool> Holds)[] CueLanes =
+    // The lanes cues are laid in, the first that holds a cue's task taking it: dialogue apart from the other sounds.
+    private static readonly (string Title, Func<MissionTask, bool> Holds)[] CueLanes =
     [
-        ("Messages", static t => t is "StatusMessage"),
-        ("Animation", static t => t is "AnimTask" or "AnimRigidDynCubeObj"),
-        ("Sound", static t => t is "ConditionalSound" or "SoundDefSound"),
+        ("Messages", static t => t.TypeName is "StatusMessage"),
+        ("Voice", CutsceneModel.IsDialogue),
+        ("Animation", static t => t.TypeName is "AnimTask" or "AnimRigidDynCubeObj"),
+        ("Sound", static t => t.TypeName is "ConditionalSound" or "SoundDefSound"),
         ("Other", static _ => true),
     ];
 

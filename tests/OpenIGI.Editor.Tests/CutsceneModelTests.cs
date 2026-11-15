@@ -242,5 +242,25 @@ public sealed class CutsceneModelTests
         Assert.True(cues > 50, $"{cues} cues");
     }
 
+    /// <summary>
+    /// Mission 2's intro as the sequencer shows it: its five lines of dialogue (the first begun with the scene, its condition only
+    /// isRun) as dialogue, named by the speech they play; the container shown until 7.8 s cued from the start. The game has no
+    /// subtitles here -- nothing puts a message up during the scene -- so the dialogue is the sounds.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void Mission_2s_intro_shows_its_dialogue_and_what_starts_with_it()
+    {
+        MissionDocument document = MissionDocument.Read(File.ReadAllBytes(GameData.Resolve("missions/location0/level2/objects.qvm")));
+        MissionTask scene = document.EnumerateTasks().First(static t => t.Id == 666);
+        IReadOnlyList<CutsceneCue> cues = CutsceneModel.Cues(document, scene);
+
+        CutsceneCue[] dialogue = [.. cues.Where(static c => CutsceneModel.IsDialogue(c.Task))];
+        Assert.Equal(["_cut02_01", "_cut02_02", "_cut02_03", "_cut02_04", "_cut02_05"], dialogue.Select(static c => CutsceneModel.SoundOf(c.Task)));
+        Assert.Equal([0, 3.9, 7.3, 25, 26.5], dialogue.Select(static c => Math.Round(c.Seconds, 2)));
+        Assert.Contains(cues, static c => c.Task.Id == 4003 && c.Seconds == 0);
+        Assert.DoesNotContain(cues, static c => c.Task.TypeName == "StatusMessage");
+        Assert.False(CutsceneModel.IsDialogue(cues.First(static c => c.Task.Id == 1006).Task), "anya typing is a sound, not dialogue");
+    }
+
     private static MissionDocument Document() => MissionDocument.Read(QscParser.ParseScript(Level, QvmProgram.IgiVersion));
 }
