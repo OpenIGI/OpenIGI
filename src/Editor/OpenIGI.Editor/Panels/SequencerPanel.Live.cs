@@ -7,8 +7,7 @@ namespace OpenIGI.Editor.Panels;
 /// <summary>
 /// The sequencer played live: the scene run on the level itself by the game's own code (<see cref="IEditorCutscenePreview"/>),
 /// its vehicles, soldiers and sounds with it, the viewport drawn through its camera. Playing and scrubbing forward run the level
-/// on; going back loads it afresh and plays up to the moment, which takes a moment, so a drag behind the live moment shows the
-/// camera's path until it is let go.
+/// on; going back puts it back from memory where it stood and plays on to the moment, at once, so the playhead is followed either way.
 /// </summary>
 internal sealed partial class SequencerPanel
 {
@@ -18,9 +17,6 @@ internal sealed partial class SequencerPanel
     // The last step in the history when the live scene began: an edit since makes the level the scene plays on out of date.
     private IEditorCommand? _lastEditAtBegin;
     private int _editsAtBegin = -1;
-
-    // A scrub behind the live moment: the camera's path is shown until it is let go, then the level is played up to it.
-    private bool _draggingBack;
 
     /// <summary>
     /// Gets or sets what makes the level match the mission before it plays live: saved and loaded afresh when it has changes
@@ -49,7 +45,6 @@ internal sealed partial class SequencerPanel
         {
             _host.CutscenePreview?.Finish();
             _wantPlay = false;
-            _draggingBack = false;
         }
     }
 
@@ -96,7 +91,6 @@ internal sealed partial class SequencerPanel
         }
 
         _wantPlay = false;
-        _draggingBack = false;
         _editsAtBegin = -1;
     }
 
@@ -130,7 +124,7 @@ internal sealed partial class SequencerPanel
         _wantPlay = true;
     }
 
-    // The playhead dragged: forward runs the level on at once; back shows the camera's path until let go.
+    // The playhead dragged: the level follows it either way at once -- on by playing, back by putting it back from memory.
     private void ScrubTo(double seconds)
     {
         _time = Math.Max(0, seconds);
@@ -149,26 +143,10 @@ internal sealed partial class SequencerPanel
         IEditorCutscenePreview live = Live!;
         live.IsPlaying = false;
         _wantPlay = false;
-        if (!live.IsPreparing && _time >= live.Seconds - 1e-6)
+        if (!live.IsPreparing)
         {
-            _draggingBack = false;
             live.Seek(_time);
-            return;
         }
-
-        _draggingBack = true;
-        Look();
-    }
-
-    // The drag let go: a moment behind the live one is played up to now.
-    private void EndScrub()
-    {
-        if (_draggingBack && LiveActive)
-        {
-            Live!.Seek(_time);
-        }
-
-        _draggingBack = false;
     }
 
     /// <summary>Each frame: the playhead and the play button follow the live scene.</summary>
@@ -197,7 +175,6 @@ internal sealed partial class SequencerPanel
         {
             // The level the scene plays on is not the mission any more: saved, and loaded afresh with the change in it.
             _wantPlay = false;
-            _draggingBack = false;
             _editsAtBegin = -1;
             if (LiveInterrupted is { } interrupted)
             {
@@ -212,11 +189,8 @@ internal sealed partial class SequencerPanel
             return false;
         }
 
-        live.ShowsCamera = _preview.IsChecked && !_draggingBack;
-        if (!_draggingBack)
-        {
-            _time = live.Seconds;
-        }
+        live.ShowsCamera = _preview.IsChecked;
+        _time = live.Seconds;
 
         if (_wantPlay && !live.IsPreparing)
         {
@@ -225,7 +199,7 @@ internal sealed partial class SequencerPanel
         }
 
         _playing = live.IsPlaying || _wantPlay;
-        if (live.IsPreparing || _draggingBack)
+        if (live.IsPreparing)
         {
             Look();
         }
@@ -237,8 +211,7 @@ internal sealed partial class SequencerPanel
     private string LiveStatus() =>
         Live is null ? "Camera only: the shots' path, not the level"
         : !LiveActive ? "Live: Play or scrub to run the scene on the level"
-        : Live.IsPreparing ? "Loading the level to play it again up to here…"
-        : _draggingBack ? "Let go to play the level up to here"
+        : Live.IsPreparing ? "Loading the level with the mission's changes…"
         : Live.WasForced ? "Live, made to play: the level's story does not start it from here"
         : "Live: the game's own result";
 }

@@ -94,7 +94,6 @@ internal sealed partial class SequencerPanel : EditorElement
             {
                 _host.CutscenePreview?.Finish();
                 _wantPlay = false;
-                _draggingBack = false;
             }
         };
         _addShot = new Button(theme, "Add Shot from View", KitIcon.Plus) { Style = ButtonStyle.Flat, Tooltip = "Put the viewport's camera in as a new shot after the one at the playhead" };
@@ -169,11 +168,7 @@ internal sealed partial class SequencerPanel : EditorElement
 
     /// <summary>Puts the playhead at a moment of the scene, as a scrub does.</summary>
     /// <param name="seconds">The moment.</param>
-    public void Seek(double seconds)
-    {
-        ScrubTo(seconds);
-        EndScrub();
-    }
+    public void Seek(double seconds) => ScrubTo(seconds);
 
     /// <summary>Plays or pauses the scene, as Play does.</summary>
     public void PlayOrPause() => TogglePlay();
@@ -581,11 +576,6 @@ internal sealed partial class SequencerPanel : EditorElement
             {
                 _workspace.Execute(retime);
             }
-        }
-
-        if (_scrubbing)
-        {
-            EndScrub();
         }
 
         _scrubbing = false;

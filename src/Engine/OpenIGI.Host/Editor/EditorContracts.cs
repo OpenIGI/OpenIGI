@@ -405,8 +405,9 @@ public interface IEditorCutscenePreview
     bool IsFinished { get; }
 
     /// <summary>
-    /// Gets whether the level is being loaded afresh to play the scene again up to a moment behind the one shown: a moment is
-    /// always the one play reaches, so going back means playing again. <see cref="Seconds"/> is the moment asked for meanwhile.
+    /// Gets whether the level is being loaded afresh before the scene can be shown: only when it came up for something else, or the
+    /// mission was changed under it. Going back is not that: the level is put back from memory where it stood.
+    /// <see cref="Seconds"/> is the moment asked for meanwhile.
     /// </summary>
     bool IsPreparing { get; }
 
@@ -425,6 +426,10 @@ public interface IEditorCutscenePreview
     /// <param name="seconds">Seconds of the scene's clock.</param>
     void Seek(double seconds);
 
-    /// <summary>Ends the preview; a level it ran is loaded afresh, so the editor goes on with one nothing has run.</summary>
-    void Finish();
+    /// <summary>Ends the preview; a level it ran is put back as it stood before, so the editor goes on with one nothing has run.</summary>
+    void Finish() => Finish(reload: false);
+
+    /// <summary>Ends the preview.</summary>
+    /// <param name="reload">Whether the level is loaded afresh rather than put back: for a mission saved with changes in it.</param>
+    void Finish(bool reload);
 }

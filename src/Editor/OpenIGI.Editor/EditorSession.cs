@@ -174,7 +174,7 @@ internal sealed partial class EditorSession : IEditorSession
         _sequencer.LiveInterrupted = () =>
         {
             Save();
-            host.CutscenePreview?.Finish();
+            host.CutscenePreview?.Finish(reload: true);
         };
         _dock.Register(new DockPanel("sequencer", "Sequencer", _sequencer) { Icon = KitIcon.Play });
         _guide = new GuidePanel(_theme, _workspace, Core.Missions.MissionGuide.Igi1) { Show = ShowGuideStep };

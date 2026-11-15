@@ -5,9 +5,11 @@ using OpenIGI.Host.Editor;
 namespace OpenIGI.Host;
 
 /// <summary>
-/// The editor's cutscene preview: a scene played on the level itself by the game's own tick. A moment ahead is played on to;
-/// a moment behind is reached by loading the level afresh and playing the scene again up to it, so every moment shown is the
-/// one play reaches -- nothing is put back from a copy, which would leave behind whatever the copy does not hold.
+/// The editor's cutscene preview: a scene played on the level itself by the game's own tick. A moment ahead is played on to; a
+/// moment behind is reached by putting the level back from memory where it stood a little before (a checkpoint every second
+/// of the scene, <see cref="LevelCheckpoint"/>) and playing on to it, so every moment shown is the one play reaches -- the
+/// checkpoints hold the whole level, field for field, which a save never did. Ending the preview, or turning to another
+/// scene, puts back the level as it stood before any was played. Nothing is loaded again but for a mission saved with changes.
 /// </summary>
 public sealed partial class GameHost
 {
@@ -65,18 +67,29 @@ public sealed partial class GameHost
         // How far ahead the level is run looking for a scene to start of itself, in ticks, before it is made to play.
         private const int LongestLeadIn = 60 * Frequency;
 
+        // How often, in ticks of the scene, the level is held as it plays: a seek back plays on at most this far.
+        private const int CheckpointEvery = Frequency;
+
+        // What the checkpoints of one scene may hold of their own before every other one is let go.
+        private const long CheckpointBudgetBytes = 512L * 1024 * 1024;
+
         // For each scene, how many ticks from the level's start it starts in of itself; -1 for one that has to be made to play.
         private readonly Dictionary<int, int> _leadIns = [];
 
-        // The level the preview plays on, and whether it has run it: a level run is loaded afresh before it is edited again.
+        // The scene's checkpoints, by its clock.
+        private readonly SortedList<int, LevelCheckpoint> _checkpoints = [];
+
+        // The level the preview plays on, and whether it has run it since it was last as the editor had it.
         private LevelTask? _level;
         private bool _ran;
+
+        // The level as the editor had it before any scene played: what ending the preview, or another scene, starts from.
+        private LevelCheckpoint? _pristine;
 
         // The level being loaded afresh (the one it replaces), and the moment to play the scene up to once it is in.
         private LevelTask? _replaced;
         private bool _reloading;
         private int? _target;
-        private Action? _restoreSkip;
 
         public int? Scene { get; private set; }
 
@@ -92,7 +105,6 @@ public sealed partial class GameHost
 
         public bool ShowsCamera { get; set; } = true;
 
-        /// <summary>Gets whether the level is being loaded afresh to play the scene up to a moment behind the one shown.</summary>
         public bool IsPreparing => _reloading;
 
         public double Seconds => _target is { } target ? target / (double)Frequency
@@ -107,6 +119,9 @@ public sealed partial class GameHost
 
         private IMissionCutscenePreview? Game => host._hosted.CutscenePreview;
 
+        // The level as the editor had it, while it is still the one up.
+        private LevelCheckpoint? Pristine => _pristine is { } held && ReferenceEquals(held.Level, host._session.LevelRoot) ? held : null;
+
         public bool Begin(int sceneId)
         {
             Finish();
@@ -116,25 +131,17 @@ public sealed partial class GameHost
             }
 
             Scene = sceneId;
-            if (host.PresentationHoldsLevel && !_reloading)
+            if (_reloading || host.PresentationHoldsLevel)
             {
                 // The level is still coming up: the scene starts on it once it is in.
                 _reloading = true;
-                _replaced = null;
-                _target = 0;
-                return true;
-            }
-
-            if (_reloading)
-            {
-                // The level the last preview ran is being loaded afresh already: the scene starts on it.
                 _target = 0;
                 return true;
             }
 
             if (_ran)
             {
-                // The level has been run since it was loaded: the scene starts on one loaded afresh.
+                // The level has been run and cannot be put back: the scene starts on one loaded afresh.
                 Reload(0);
                 return true;
             }
@@ -157,37 +164,48 @@ public sealed partial class GameHost
                 return;
             }
 
-            // A moment behind: the level loaded afresh and the scene played again up to it.
             if (game.SceneTicks(id) > target)
             {
-                Reload(target);
-                return;
+                // A moment behind: the level put back where the scene last stood at or before it, and played on.
+                if (!Rewind(target))
+                {
+                    return;
+                }
             }
 
             PlayTo(id, target);
         }
 
-        public void Finish()
+        public void Finish() => Finish(reload: false);
+
+        public void Finish(bool reload)
         {
             IsPlaying = false;
             Game?.Force(null);
-            if (_ran && !_reloading)
+            if (reload && !_reloading)
             {
-                // Whatever the scene did stays in the level that played it: the editor goes on with one loaded afresh.
+                // The mission was saved with changes: the level loaded afresh holds them, which no checkpoint does.
                 Reload(null);
             }
-            else if (!_ran)
+            else if (!_reloading && Pristine is { } pristine && (_ran || Scene is not null))
             {
-                _restoreSkip?.Invoke();
+                // Whatever the scene did is put back, the scenes' skip as the level had it too: the editor goes on with the level
+                // as it had it.
+                host.RestoreLevel(pristine);
+                _ran = false;
+            }
+            else if (_ran && !_reloading)
+            {
+                Reload(null);
             }
 
-            _restoreSkip = null;
+            _checkpoints.Clear();
             Scene = null;
             _target = null;
             host._cutsceneSounds.StopAll();
         }
 
-        /// <summary>Each frame, before the level's hold is decided: a level loaded afresh taken up, and the scene stopped at its end.</summary>
+        /// <summary>Each frame, before the level's hold is decided: a level loaded afresh taken up, the scene held each second it plays, and stopped at its end.</summary>
         public void AfterFrame()
         {
             if (_reloading)
@@ -197,7 +215,8 @@ public sealed partial class GameHost
                     _reloading = false;
                     _replaced = null;
                     _ran = false;
-                    _level = fresh;
+                    _pristine = null;
+                    _checkpoints.Clear();
                     int? target = _target;
                     _target = null;
                     if (Scene is not null)
@@ -209,7 +228,7 @@ public sealed partial class GameHost
                 return;
             }
 
-            if (Scene is null)
+            if (Scene is not { } id)
             {
                 return;
             }
@@ -221,7 +240,14 @@ public sealed partial class GameHost
                 Game?.Force(null);
                 Scene = null;
                 _ran = false;
+                _pristine = null;
+                _checkpoints.Clear();
                 return;
+            }
+
+            if (IsPlaying)
+            {
+                Hold(id);
             }
 
             if (IsFinished)
@@ -230,8 +256,8 @@ public sealed partial class GameHost
             }
         }
 
-        // The scene started on the level as it stands, never run: by the level's own ticks when its story starts it, made to play
-        // otherwise; then played up to a moment.
+        // The scene started on the level as the editor has it: by the level's own ticks when its story starts it, made to play
+        // otherwise; then played up to a moment. The level is held first, to be put back when the preview ends.
         private void Start(int target)
         {
             if (Scene is not { } id || Game is not { } game)
@@ -240,7 +266,12 @@ public sealed partial class GameHost
             }
 
             _level = host._session.LevelRoot;
-            _restoreSkip = game.AllowScenes();
+            if (Pristine is null && host.CanCheckpointLevel)
+            {
+                _pristine = host.CaptureLevel(0);
+            }
+
+            _ = game.AllowScenes();
             if (!_leadIns.TryGetValue(id, out int lead))
             {
                 // Found once a scene: the level's ticks until its story starts it, the scenes before it moving what they move.
@@ -254,9 +285,19 @@ public sealed partial class GameHost
 
                 if (!game.IsPlaying(id))
                 {
-                    // Waiting on something only play brings about: made to play from a level loaded afresh.
+                    // Waiting on something only play brings about: made to play, from the level as the editor had it.
                     _leadIns[id] = -1;
-                    Reload(target);
+                    if (Pristine is { } pristine)
+                    {
+                        host.RestoreLevel(pristine);
+                        _ran = false;
+                        Start(target);
+                    }
+                    else
+                    {
+                        Reload(target);
+                    }
+
                     return;
                 }
 
@@ -280,10 +321,42 @@ public sealed partial class GameHost
                 }
             }
 
+            _checkpoints.Clear();
+            Hold(id);
             PlayTo(id, target);
         }
 
-        // The level run on until the scene's clock reaches a moment, or it ends.
+        // The level put back at the scene's last checkpoint at or before a moment, to be played on to it (true); or, with none,
+        // as the editor had it and the scene started again up to the moment (false: nothing left to play).
+        private bool Rewind(int target)
+        {
+            LevelCheckpoint? at = null;
+            for (int i = _checkpoints.Count - 1; i >= 0; i--)
+            {
+                if (_checkpoints.Keys[i] <= target)
+                {
+                    at = _checkpoints.Values[i];
+                    break;
+                }
+            }
+
+            if (at is not null && host.RestoreLevel(at))
+            {
+                return true;
+            }
+
+            if (Pristine is { } pristine && host.RestoreLevel(pristine))
+            {
+                _ran = false;
+                Start(target);
+                return false;
+            }
+
+            Reload(target);
+            return false;
+        }
+
+        // The level run on until the scene's clock reaches a moment, or it ends, held each second on the way.
         private void PlayTo(int id, int target)
         {
             if (Game is not { } game)
@@ -296,10 +369,43 @@ public sealed partial class GameHost
             {
                 host.StepLevelTick();
                 _ran = true;
+                Hold(id);
             }
 
             // What the run up to the moment set sounding is not heard all at once: the scene's sounds start again as it plays on.
             host._cutsceneSounds.StopAll();
+        }
+
+        // A checkpoint where the scene's clock is on a second it has none for; the oldest half let go past the budget.
+        private void Hold(int id)
+        {
+            if (Game is not { } game || !game.IsPlaying(id) || !host.CanCheckpointLevel)
+            {
+                return;
+            }
+
+            int ticks = game.SceneTicks(id);
+            int key = ticks / CheckpointEvery * CheckpointEvery;
+            if (ticks != key || _checkpoints.ContainsKey(key))
+            {
+                return;
+            }
+
+            LevelCheckpoint? previous = _checkpoints.Count > 0 ? _checkpoints.Values[^1] : Pristine;
+            if (host.CaptureLevel(key, previous) is not { } held)
+            {
+                return;
+            }
+
+            _checkpoints[key] = held;
+            if (_checkpoints.Values.Sum(static c => c.State.OwnBytes) > CheckpointBudgetBytes)
+            {
+                // Every other one let go: seeks back then play on two seconds at most rather than one.
+                for (int i = _checkpoints.Count - 2; i > 0; i -= 2)
+                {
+                    _checkpoints.RemoveAt(i);
+                }
+            }
         }
 
         // The mission loaded afresh; the scene, if one is previewed, played up to a moment once it is in.
@@ -310,6 +416,8 @@ public sealed partial class GameHost
             _replaced = host._session.LevelRoot;
             _reloading = true;
             _target = target;
+            _pristine = null;
+            _checkpoints.Clear();
             host.ReloadLevelInPlace();
         }
     }

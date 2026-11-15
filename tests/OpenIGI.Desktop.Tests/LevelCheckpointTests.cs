@@ -63,7 +63,9 @@ public sealed class LevelCheckpointTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(differences);
 
         // The same checkpoint again: it was never written into, so a third run is the first again too.
+        watch.Restart();
         Assert.True(host.RestoreLevel(start));
+        output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"restore again: {watch.Elapsed.TotalMilliseconds:0.0} ms"));
         (_, LevelCheckpoint third) = Play(host, start);
         Assert.Empty(end.State.Differences(third.State));
 

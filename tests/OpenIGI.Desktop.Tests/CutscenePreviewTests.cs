@@ -10,7 +10,8 @@ namespace OpenIGI.Desktop.Tests;
 
 /// <summary>
 /// The editor's cutscene preview on a real level: a scene played by the game's own tick, any moment of it the one play reaches
-/// whether it is played up to, jumped to or gone back to, and the level loaded afresh once the preview ends.
+/// whether it is played up to, jumped to or gone back to -- back at once, from memory, never by loading -- and the level put back
+/// as it was once the preview ends.
 /// </summary>
 [Collection(AiScenarioSupport.CollectionName)]
 public sealed class CutscenePreviewTests : IDisposable
@@ -22,7 +23,7 @@ public sealed class CutscenePreviewTests : IDisposable
 
     /// <summary>
     /// Mission 1's insertion scene, begun on the level before its first tick as the editor holds it: its camera at any moment is
-    /// the same however the moment is reached; it plays to its end; the preview leaves a level loaded afresh. The
+    /// the same however the moment is reached, in any order; it plays to its end; the preview leaves the level as it was. The
     /// outro, which only the mission's end starts, is made to play.
     /// </summary>
     [RequiresGameDataFact]
@@ -52,37 +53,42 @@ public sealed class CutscenePreviewTests : IDisposable
         }
 
         Assert.InRange(preview.Seconds, 4.96, 5.04);
+        OpenIGI.Engine.Tasks.LevelTask level = host.Mission().LevelRoot!;
 
-        // Back: the level loaded afresh and played again up to the moment.
+        // Back, at once: the level put back from memory and played on to the moment -- nothing loaded, the same camera.
         preview.Seek(2);
-        Assert.True(preview.IsPreparing);
-        Settle(host, preview);
+        Assert.False(preview.IsPreparing);
         Assert.InRange(preview.Seconds, 1.96, 2.04);
         Assert.Equal(played[59], Camera(host));
-        preview.Seek(5);
-        Assert.Equal(played[149], Camera(host));
+        foreach (int tick in (int[])[120, 15, 149, 1, 88, 30, 31])
+        {
+            preview.Seek((tick + 1) / 30.0);
+            Assert.Equal(played[tick], Camera(host));
+        }
+
+        Assert.Same(level, host.Mission().LevelRoot);
 
         preview.Seek(60);
         Assert.True(preview.IsFinished);
-        OpenIGI.Engine.Tasks.LevelTask ran = host.Mission().LevelRoot!;
         preview.Finish();
-        Settle(host, preview);
+        Assert.False(preview.IsPreparing);
         Assert.Null(preview.Scene);
 
-        // Loaded afresh: not the level the scene ran in. (Out of the editor nothing holds it still, so it is not compared as it
-        // loads: this host plays it on at once.)
-        Assert.NotSame(ran, host.Mission().LevelRoot);
+        // Put back as it was before the scene played: the same level, nothing of the scene run.
+        Assert.Same(level, host.Mission().LevelRoot);
+        Assert.Equal(0, game.SceneTicks(1200));
 
+        // Another scene, made to play, from the level as it was; and back from it too.
         Assert.True(preview.Begin(1204));
         Settle(host, preview);
         Assert.True(preview.WasForced);
         preview.Seek(3);
         Assert.True(game.IsPlaying(1204));
         Assert.InRange(preview.Seconds, 2.96, 3.04);
-        ran = host.Mission().LevelRoot!;
+        preview.Seek(1);
+        Assert.InRange(preview.Seconds, 0.96, 1.04);
         preview.Finish();
-        Settle(host, preview);
-        Assert.NotSame(ran, host.Mission().LevelRoot);
+        Assert.Same(level, host.Mission().LevelRoot);
     }
 
     private static Vector3d Camera(GameHost host) => host.Mission().CutsceneFrameShown!.Camera.Position;
