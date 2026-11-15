@@ -777,6 +777,7 @@ public sealed partial class GameHost
                 playedMods: () => _titleRuntime.Mods,
                 coop: _coop,
                 party: _coop is null ? null : new PartyPanel(this),
+                maps: OperatingSystem.IsBrowser() ? null : new ShellMaps(this),
                 missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(_device)).Get(_titleRuntime.Title.Id, mission),
                 touchScreen: () => _window.Input.Touch.InUse,
                 editTouchLayout: () =>

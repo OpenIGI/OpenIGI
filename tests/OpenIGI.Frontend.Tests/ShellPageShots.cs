@@ -45,6 +45,7 @@ public sealed class ShellPageShots
         ("10-profile", static context => new ProfilesScreen(context), false),
         ("11-extras", static context => new ExtrasScreen(context), false),
         ("12-pause", static context => new PauseScreen(context), true),
+        ("13-maps", static context => new MapsScreen(context), false),
     ];
 
     [Fact]
@@ -81,6 +82,7 @@ public sealed class ShellPageShots
                     Coop = new MultiplayerScreenshots.FakeRooms { Listing = MultiplayerScreenshots.Games() },
                     Party = new MultiplayerScreenshots.FakeParty { Party = MultiplayerScreenshots.Squad() },
                     Pictures = mission => MultiplayerScreenshots.Picture(images, pictures, mission),
+                    Maps = new FakeMaps(),
                 };
                 GameConfig config = GameConfig.CreateDefault();
                 if (config.Active is { } active)
@@ -162,5 +164,33 @@ public sealed class ShellPageShots
             "Re-Supply", "Missile Trainyard", "Defend Priboi", "Eagle's Nest I", "Eagle's Nest II", "Nuclear Infiltration", "Finding the Bomb",
         ];
         return [.. names.Select(static (name, index) => new MissionInfo(index + 1, index + 1, name, "Get in unseen, find what was taken, and get out again.", $"mission{index + 1}.spr"))];
+    }
+
+    /// <summary>A handful of community maps, one installed and one with a newer version out, for the Maps page's picture.</summary>
+    private sealed class FakeMaps : IShellMaps
+    {
+        public IReadOnlyList<ShellMap> Maps() =>
+        [
+            new("night-raid", "Night Raid", "The trainyard by night: the train is in, the guards are tired, and the warhead is in the office.", "Kestrel", 3, 4.6, 41, 1280, 2_025_116, 3, Online: true),
+            new("sam-sweep", "SAM Sweep", "Every launcher on the ridge, before the convoy comes through at dawn.", "Volkov", 2, 4.1, 17, 640, 5_400_000, 1, Online: true),
+            new("airbase-silent", "Silent Airbase", "No alarms. Not one. The hangar codes are with the duty officer.", "Ana", 1, 3.8, 9, 312, 3_100_000, null, Online: true),
+            new("border-run", "Border Run", "Two guard posts, one road, no night vision.", "Teo", 1, 0, 0, 44, 1_900_000, null, Online: true),
+        ];
+
+        public Task<string?> RefreshAsync() => Task.FromResult<string?>(null);
+
+        public Task<string?> InstallAsync(string id) => Task.FromResult<string?>(null);
+
+        public void Play(string id, int difficulty)
+        {
+        }
+
+        public void Remove(string id)
+        {
+        }
+
+        public Task<string?> RateAsync(string id, int stars) => Task.FromResult<string?>(null);
+
+        public Task<string?> ReportAsync(string id, string reason) => Task.FromResult<string?>(null);
     }
 }

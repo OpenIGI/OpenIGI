@@ -19,6 +19,7 @@ public sealed partial class GameHost
 
     // A map asked to be played, started between frames; and the downloads going on.
     private string? _mapPlayWanted;
+    private int? _mapPlayDifficulty;
     private readonly List<Task> _mapDownloads = [];
 
     private void RegisterMapCommands(ConsoleSystem console)
@@ -94,6 +95,92 @@ public sealed partial class GameHost
             "<id>");
     }
 
+    /// <summary>
+    /// The shell's Maps page's side of the host: what is installed and published, merged; downloads, ratings and reports off
+    /// the frame; a map played as <c>map_play</c> plays one, at the difficulty the page chose.
+    /// </summary>
+    private sealed class ShellMaps(GameHost host) : Frontend.IShellMaps
+    {
+        private IReadOnlyList<MapListing> _online = [];
+
+        public IReadOnlyList<Frontend.ShellMap> Maps()
+        {
+            IReadOnlyList<MapListing> installed = GameHost.Maps.Installed();
+            Dictionary<string, MapListing> online = _online.ToDictionary(static m => m.Id, StringComparer.Ordinal);
+            List<Frontend.ShellMap> maps = [];
+            foreach (MapListing mine in installed.Where(m => string.Equals(m.Game, host._titleRuntime.Title.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                MapListing shown = online.GetValueOrDefault(mine.Id) ?? mine;
+                maps.Add(Shown(shown, mine.Version, online.ContainsKey(mine.Id)));
+            }
+
+            HashSet<string> had = [.. maps.Select(static m => m.Id)];
+            maps.AddRange(_online.Where(m => !had.Contains(m.Id)).Select(static m => Shown(m, null, online: true)));
+            return maps;
+        }
+
+        public async Task<string?> RefreshAsync()
+        {
+            try
+            {
+                using HttpClient http = new();
+                _online = await new MapService(http, MapService.Master).ListAsync(host._titleRuntime.Title.Id).ConfigureAwait(false);
+                return null;
+            }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or MapRefusedException or System.Text.Json.JsonException)
+            {
+                return $"The maps could not be fetched: {error.Message}";
+            }
+        }
+
+        public async Task<string?> InstallAsync(string id)
+        {
+            try
+            {
+                MapListing listing = await InstallMapAsync(id).ConfigureAwait(false);
+                return $"{listing.Title} is installed: play it.";
+            }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or MapRefusedException or InvalidDataException or IOException)
+            {
+                return $"Not installed: {error.Message}";
+            }
+        }
+
+        public void Play(string id, int difficulty)
+        {
+            host._mapPlayDifficulty = difficulty;
+            host._mapPlayWanted = id;
+        }
+
+        public void Remove(string id) => GameHost.Maps.Remove(id);
+
+        public Task<string?> RateAsync(string id, int stars) =>
+            Signed(async (service, identity) => _online = Replace(await service.RateAsync(id, stars, identity).ConfigureAwait(false)), "Rated.");
+
+        public Task<string?> ReportAsync(string id, string reason) =>
+            Signed((service, identity) => service.ReportAsync(id, reason, identity), "Reported: thank you. We will look at it.");
+
+        private static async Task<string?> Signed(Func<MapService, MapIdentity, Task> send, string done)
+        {
+            try
+            {
+                using HttpClient http = new();
+                using MapIdentity identity = MapIdentity();
+                await send(new MapService(http, MapService.Master), identity).ConfigureAwait(false);
+                return done;
+            }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or MapRefusedException)
+            {
+                return error.Message;
+            }
+        }
+
+        private IReadOnlyList<MapListing> Replace(MapListing changed) => [.. _online.Select(m => m.Id == changed.Id ? changed : m)];
+
+        private static Frontend.ShellMap Shown(MapListing map, int? installed, bool online) =>
+            new(map.Id, map.Title, map.Summary, map.Author, map.Version, map.Rating, map.Ratings, map.Downloads, map.Size, installed, online);
+    }
+
     /// <summary>Downloads a published map and installs it.</summary>
     /// <param name="id">The map.</param>
     /// <param name="cancel">Stops it.</param>
@@ -120,7 +207,7 @@ public sealed partial class GameHost
         _mapPlayWanted = null;
         // From the menu the menu's own way in, as Play on a mission there is; else straight in.
         Action<int> start = _menuFlow.MenuMode && state.ShellHost is { } shell
-            ? mission => shell.StartMission(mission, _configuration.Active?.Difficulty ?? (int)Game.Ai.AiDifficulty.Normal)
+            ? mission => shell.StartMission(mission, _mapPlayDifficulty ?? _configuration.Active?.Difficulty ?? (int)Game.Ai.AiDifficulty.Normal)
             : StartMission;
         if (PlayMap(id, start) is { } problem)
         {
