@@ -9,9 +9,10 @@ namespace OpenIGI.Host;
 /// A play-test recorded and played back. The level runs the same from the same start given the same input a tick, so a
 /// recording is only that: the input the player was given each tick of the level, the ticks the cutscene was being broken,
 /// and the play-test's own commands that change the game (god, unseen, standing the player somewhere) with the tick each came
-/// before. Played back, the level is loaded afresh and given it all again; a moment is reached by running the level to it --
-/// fast forward, or, to go back, the level loaded afresh and run up to it. Marks note where a guard first saw the player and
-/// where a command was given, for the scrubber.
+/// before. Played back, the level is put back as the recording began it and given it all again; a moment is reached by running the
+/// level to it -- fast forward, or, to go back, the level put back from memory where it stood a little before (a checkpoint every
+/// two seconds of the recording) and run up to it. Marks note where a guard first saw the player and where a command was given,
+/// for the scrubber.
 /// </content>
 /// <remarks>
 /// Not recorded, so not played back: the remaster's weapon wheel and the computer's screens, which take the mouse outside a tick.
@@ -26,6 +27,12 @@ public sealed partial class GameHost
 
     // Seconds a seek with the arrow keys goes.
     private const double ReplayStepSeconds = 5;
+
+    // How often the level is held along a recording, in ticks: going back plays on at most this far.
+    private const int TapeCheckpointEvery = 60;
+
+    // The level as the recording began it, and held along it since.
+    private readonly CheckpointRing _tapeCheckpoints = new(512L * 1024 * 1024);
 
     private readonly List<Game.Ai.SoldierSnapshot> _tapeSoldiers = [];
     private readonly HashSet<string> _tapeSeeing = new(StringComparer.Ordinal);
@@ -133,6 +140,7 @@ public sealed partial class GameHost
     private void PlaytestTickStarting()
     {
         int tick = TickOfLevel;
+        HoldTape(tick);
         if (Replaying)
         {
             PlaytestTape tape = _replay!;
@@ -285,15 +293,59 @@ public sealed partial class GameHost
         return string.Create(CultureInfo.InvariantCulture, $"Playing back {tape.Length / 30.0:0.#} s.");
     }
 
-    // The level loaded afresh for the recording, and run on to a tick when one is given.
+    // The level put back where the recording last held it at or before a tick (its start, with none given), and run on to the tick;
+    // loaded afresh where the recording holds nothing of it.
     private void ReplayFromStart(int? target)
     {
+        int to = target is > 0 ? target.Value : 0;
+        if (_tapeCheckpoints.AtOrBefore(to) is { } held && RestoreLevel(held))
+        {
+            (_ticksLoad, _ticksOfLoad) = (_levelLoads, held.Tick);
+            _replayCommandsGiven = (-1, -1);
+            PlaytestCheatsAt(held.Tick);
+            _replayLoad = _levelLoads;
+            _replayTarget = to > held.Tick ? to : null;
+            return;
+        }
+
         PlaytestCheatsAsAtStart();
         ReloadLevelInPlace();
+        _tapeCheckpoints.Clear();
         _replayLoad = _levelLoads;
         _replayTarget = target is > 0 ? target : null;
     }
 
+    // A checkpoint of the level at a tick of the recording being made or played, every two seconds, before the tick runs.
+    private void HoldTape(int tick)
+    {
+        if (tick % TapeCheckpointEvery != 0 || _tapeCheckpoints.Has(tick) || !(Replaying || TapeTakes) || !CanCheckpointLevel)
+        {
+            return;
+        }
+
+        if (CaptureLevel(tick, _tapeCheckpoints.Last) is { } held)
+        {
+            _tapeCheckpoints.Add(held);
+        }
+    }
+
+    // The cheats as the recording had them at a tick: as it began, then each god or unseen it was given before the tick.
+    private void PlaytestCheatsAt(int tick)
+    {
+        PlaytestCheatsAsAtStart();
+        if (_replay is not { } tape)
+        {
+            return;
+        }
+
+        foreach (string command in tape.CommandsBefore(tick))
+        {
+            if (command.StartsWith("god ", StringComparison.Ordinal) || command.StartsWith("unseen ", StringComparison.Ordinal))
+            {
+                ApplyRecordedCommand(command);
+            }
+        }
+    }
     // The cheats as the recording began with them: off, as every play-test begins.
     private void PlaytestCheatsAsAtStart()
     {
@@ -342,16 +394,27 @@ public sealed partial class GameHost
         _ => null,
     };
 
-    // A recording begun again, on the level loaded afresh.
+    // A recording begun again from the level's start: put back as the last recording began it (what it held after that belonged
+    // to the old recording), or loaded afresh.
     private string Record()
     {
         _replay = null;
-        BeginRecording();
         PlaytestCheatsAsAtStart();
+        if (_tapeCheckpoints.AtOrBefore(0) is { Tick: 0 } start && RestoreLevel(start))
+        {
+            _tapeCheckpoints.Clear();
+            _tapeCheckpoints.Add(start);
+            BeginRecording(ofLevelJustLoaded: true);
+            _tapeLoad = _levelLoads;
+            (_ticksLoad, _ticksOfLoad) = (_levelLoads, 0);
+            return "Recording from the start of the level.";
+        }
+
+        _tapeCheckpoints.Clear();
+        BeginRecording();
         ReloadLevelInPlace();
         return "Recording from the start of the level.";
     }
-
     /// <summary>The recording's state, for the editor's scrubber.</summary>
     private Editor.EditorPlaytestTape TapeState()
     {
@@ -399,6 +462,8 @@ public sealed partial class GameHost
         public bool BreaksAt(int tick) => tick >= 0 && tick < _breaks.Count && _breaks[tick];
 
         public IEnumerable<string> CommandsAt(int tick) => _commands.Where(c => c.Tick == tick).Select(static c => c.Command);
+
+        public IEnumerable<string> CommandsBefore(int tick) => _commands.Where(c => c.Tick < tick).Select(static c => c.Command);
 
         private void Grow(int tick)
         {

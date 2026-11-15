@@ -54,6 +54,7 @@ public sealed class PlaytestReplayTests : IDisposable
         Assert.True(Vector3d.Distance(played[Midway].Player, played[30].Player) > 1.0, "the player walked");
 
         host.TitleHeldForTesting = default;
+        OpenIGI.Engine.Tasks.LevelTask recorded = host.Mission().LevelRoot!;
         Assert.StartsWith("Playing back", host.PlaytestCommand("replay"), StringComparison.Ordinal);
         Dictionary<int, (Vector3d Player, Vector3d[] Soldiers)> replayed = [];
         RunUntil(host, () =>
@@ -88,6 +89,11 @@ public sealed class PlaytestReplayTests : IDisposable
         Assert.StartsWith("The end", host.PlaytestCommand("step"), StringComparison.Ordinal);
         Assert.StartsWith("Playing back", host.PlaytestCommand("run"), StringComparison.Ordinal);
         Assert.True(host.TickOfLevel < Midway, "run at the end starts the recording again");
+
+        // None of it loaded the level again: the replay, the seeks and a new recording put it back from memory.
+        Assert.StartsWith("Recording", host.PlaytestCommand("record"), StringComparison.Ordinal);
+        Assert.Equal(0, host.TickOfLevel);
+        Assert.Same(recorded, host.Mission().LevelRoot);
     }
 
     // What stands where at the tick the level has run to, once a tick.

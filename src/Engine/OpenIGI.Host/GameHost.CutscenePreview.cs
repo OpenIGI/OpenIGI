@@ -77,7 +77,7 @@ public sealed partial class GameHost
         private readonly Dictionary<int, int> _leadIns = [];
 
         // The scene's checkpoints, by its clock.
-        private readonly SortedList<int, LevelCheckpoint> _checkpoints = [];
+        private readonly CheckpointRing _checkpoints = new(CheckpointBudgetBytes);
 
         // The level the preview plays on, and whether it has run it since it was last as the editor had it.
         private LevelTask? _level;
@@ -340,11 +340,7 @@ public sealed partial class GameHost
 
             if (fromSceneSeconds is not { } from || !double.IsPositiveInfinity(from))
             {
-                int first = fromSceneSeconds is { } at ? Math.Max(0, (int)Math.Floor(at * Frequency)) : 0;
-                for (int i = _checkpoints.Count - 1; i >= 0 && _checkpoints.Keys[i] >= first; i--)
-                {
-                    _checkpoints.RemoveAt(i);
-                }
+                _checkpoints.DropFrom(fromSceneSeconds is { } at ? Math.Max(0, (int)Math.Floor(at * Frequency)) : 0);
             }
 
             bool playing = IsPlaying;
@@ -361,16 +357,7 @@ public sealed partial class GameHost
         // to it (true); or, with none, as the editor had it and the scene started again up to the moment (false: nothing to play).
         private bool Rewind(int target, bool before = false)
         {
-            LevelCheckpoint? at = null;
-            for (int i = _checkpoints.Count - 1; i >= 0; i--)
-            {
-                if (before ? _checkpoints.Keys[i] < target : _checkpoints.Keys[i] <= target)
-                {
-                    at = _checkpoints.Values[i];
-                    break;
-                }
-            }
-
+            LevelCheckpoint? at = _checkpoints.AtOrBefore(target, before);
             if (at is not null && host.RestoreLevel(at))
             {
                 return true;
@@ -407,7 +394,7 @@ public sealed partial class GameHost
             host._cutsceneSounds.StopAll();
         }
 
-        // A checkpoint where the scene's clock is on a second it has none for; the oldest half let go past the budget.
+        // A checkpoint where the scene's clock is on a second it has none for.
         private void Hold(int id)
         {
             if (Game is not { } game || !game.IsPlaying(id) || !host.CanCheckpointLevel)
@@ -417,26 +404,18 @@ public sealed partial class GameHost
 
             int ticks = game.SceneTicks(id);
             int key = ticks / CheckpointEvery * CheckpointEvery;
-            if (ticks != key || _checkpoints.ContainsKey(key))
+            if (ticks != key || _checkpoints.Has(key))
             {
                 return;
             }
 
-            LevelCheckpoint? previous = _checkpoints.Count > 0 ? _checkpoints.Values[^1] : Pristine;
+            LevelCheckpoint? previous = _checkpoints.Last ?? Pristine;
             if (host.CaptureLevel(key, previous) is not { } held)
             {
                 return;
             }
 
-            _checkpoints[key] = held;
-            if (_checkpoints.Values.Sum(static c => c.State.OwnBytes) > CheckpointBudgetBytes)
-            {
-                // Every other one let go: seeks back then play on two seconds at most rather than one.
-                for (int i = _checkpoints.Count - 2; i > 0; i -= 2)
-                {
-                    _checkpoints.RemoveAt(i);
-                }
-            }
+            _checkpoints.Add(held);
         }
 
         // The mission loaded afresh; the scene, if one is previewed, played up to a moment once it is in.

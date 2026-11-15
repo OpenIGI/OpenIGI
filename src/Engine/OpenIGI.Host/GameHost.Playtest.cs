@@ -96,6 +96,7 @@ public sealed partial class GameHost
         _recording = false;
         _replay = null;
         _replayTarget = null;
+        _tapeCheckpoints.Clear();
         if (_playtestCheatsBefore is { } before)
         {
             PlayerCheatCVars.InfiniteHealth.Value = before.Health;
