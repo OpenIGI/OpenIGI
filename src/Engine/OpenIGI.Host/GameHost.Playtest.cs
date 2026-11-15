@@ -58,8 +58,8 @@ public sealed partial class GameHost
     /// <returns>Whether the play-test takes it.</returns>
     private bool PlaytestOwns(KeyCode key) => _editor is { IsPlaying: true } && Array.IndexOf(PlaytestKeys, key) >= 0;
 
-    /// <summary>Gets whether the play-test holds the level still: paused, and no step asked for.</summary>
-    private bool PlaytestHoldsLevel => _editor is { IsPlaying: true } && _playtestPaused && _playtestSteps == 0;
+    /// <summary>Gets whether the play-test holds the level still: paused with no step asked for, or a replay at its end.</summary>
+    private bool PlaytestHoldsLevel => _editor is { IsPlaying: true } && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd);
 
     /// <summary>Gets how fast the play-test runs the level's clock: 1 outside one, or under lockstep (whose clock is the frames').</summary>
     /// <remarks>A replay's seek runs as fast as the frames let ticks through.</remarks>
@@ -176,9 +176,15 @@ public sealed partial class GameHost
                 _playtestPaused = true;
                 _playtestSteps = 0;
                 return "Paused.";
+            // A replay at its end has nothing further to run: run plays it again from the start, and a step goes nowhere.
+            case ["run"] when ReplayAtEnd:
+                return StartReplay();
             case ["run"]:
                 _playtestPaused = false;
                 return "Running.";
+            case ["step", ..] when ReplayAtEnd:
+                _playtestPaused = true;
+                return "The end of the recording: F6 plays it from the start.";
             case ["step", ..]:
                 _playtestPaused = true;
                 _playtestSteps += words.Length > 1 && int.TryParse(words[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? Math.Max(1, n) : 1;

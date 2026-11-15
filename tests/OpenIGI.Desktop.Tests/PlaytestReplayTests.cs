@@ -79,6 +79,15 @@ public sealed class PlaytestReplayTests : IDisposable
 
         Assert.Equal(played[Midway].Player, again[Midway].Player);
         Assert.Equal(played[Midway].Soldiers, again[Midway].Soldiers);
+
+        // At the end there is nothing further: a step goes nowhere, and run plays it again from the start (it used to let one
+        // tick through and stop, running the clock past the recording's end a press at a time).
+        host.PlaytestCommand(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"seek {Length / 30.0}"));
+        RunUntil(host, () => host.TickOfLevel >= Length);
+        Assert.Equal(Length / 30.0, host.Playtest.Tape!.Length);
+        Assert.StartsWith("The end", host.PlaytestCommand("step"), StringComparison.Ordinal);
+        Assert.StartsWith("Playing back", host.PlaytestCommand("run"), StringComparison.Ordinal);
+        Assert.True(host.TickOfLevel < Midway, "run at the end starts the recording again");
     }
 
     // What stands where at the tick the level has run to, once a tick.

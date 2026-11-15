@@ -67,6 +67,9 @@ public sealed partial class GameHost
     /// <summary>Gets whether a recording is being played back on the level now loaded.</summary>
     private bool Replaying => _replay is not null && _replayLoad == _levelLoads;
 
+    /// <summary>Gets whether the replay has run all the recording: the level is held there, past it is no input to give.</summary>
+    private bool ReplayAtEnd => Replaying && _replayTarget is null && TickOfLevel >= _replay!.Length;
+
     // Whether the recording takes this level's ticks: begun, and this the first level to come up since.
     private bool TapeTakes
     {
@@ -185,7 +188,12 @@ public sealed partial class GameHost
     /// <summary>After a tick of the level: counted, a step taken, and a seek or the recording's end met.</summary>
     private void PlaytestTicked()
     {
-        _ = TickOfLevel;
+        int tick = TickOfLevel;
+        if (TapeTakes)
+        {
+            _tape!.Ran(tick);
+        }
+
         _ticksOfLoad++;
         if (_playtestSteps > 0)
         {
@@ -203,10 +211,11 @@ public sealed partial class GameHost
             _playtestPaused = true;
         }
 
-        if (_ticksOfLoad >= _replay!.Length && !_playtestPaused)
+        if (_ticksOfLoad == _replay!.Length)
         {
             _playtestPaused = true;
-            Said("The end of the recording.");
+            _playtestSteps = 0;
+            Said("The end of the recording: F6 plays it again.");
         }
     }
 
@@ -362,8 +371,12 @@ public sealed partial class GameHost
 
         public List<(int Tick, string Text)> Marks { get; } = [];
 
-        /// <summary>Gets how many ticks it covers.</summary>
+        /// <summary>Gets how many ticks it covers: the ticks the level ran while it recorded, not frames that only looked at one.</summary>
         public int Length { get; private set; }
+
+        /// <summary>Notes a tick the level ran.</summary>
+        /// <param name="tick">The tick.</param>
+        public void Ran(int tick) => Length = Math.Max(Length, tick + 1);
 
         public void SetInput(int tick, TitlePlayerInput input)
         {
@@ -394,8 +407,6 @@ public sealed partial class GameHost
                 _inputs.Add(null);
                 _breaks.Add(false);
             }
-
-            Length = Math.Max(Length, tick + 1);
         }
     }
 }

@@ -30,9 +30,12 @@ internal static class PlaytestBanner
     {
         EditorPlaytestTape? tape = test.Tape;
         bool replaying = tape is { Replaying: true };
+
+        // At the recording's end the level is held there: F6 plays it again from the start, a step goes nowhere.
+        bool ended = replaying && tape!.Seconds >= tape.Length;
         List<(string Text, Bgra32 Colour)> parts =
         [
-            (replaying ? "Replay" : test.Paused ? "Paused" : "Playing", test.Paused || replaying ? theme.Accent : theme.Text),
+            (ended ? "Replay ended" : replaying ? "Replay" : test.Paused ? "Paused" : "Playing", test.Paused || replaying ? theme.Accent : theme.Text),
         ];
         if (tape is { Recording: true })
         {
@@ -40,8 +43,12 @@ internal static class PlaytestBanner
         }
 
         parts.Add(("Esc editor", theme.Text));
-        parts.Add((test.Paused ? "F6 run" : "F6 pause", theme.Text));
-        parts.Add(("F7 step", theme.Text));
+        parts.Add((ended ? "F6 from start" : test.Paused ? "F6 run" : "F6 pause", theme.Text));
+        if (!ended)
+        {
+            parts.Add(("F7 step", theme.Text));
+        }
+
         parts.Add((string.Create(CultureInfo.InvariantCulture, $"F8 speed {test.Speed:0.##}x"), test.Speed != 1f ? theme.Accent : theme.Text));
         if (!replaying)
         {
@@ -54,7 +61,7 @@ internal static class PlaytestBanner
         }
 
         parts.Add(("F10 minds", test.Overlay ? theme.Accent : theme.Text));
-        parts.Add((replaying ? "F9 play again" : "F9 replay", theme.Text));
+        parts.Add((replaying ? "F9 play live" : "F9 replay", theme.Text));
 
         float gap = theme.Px(16f);
         float width = parts.Sum(p => theme.Font.MeasureWidth(p.Text, theme.TextSize)) + (gap * (parts.Count - 1)) + theme.Px(28f);

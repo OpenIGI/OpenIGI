@@ -298,10 +298,13 @@ public sealed partial class GameHost
 
         // Playing: the game has the frame. Escape is the way back, taken before the game's own Escape could open the
         // pause menu over a level the editor is about to reload. Not while a cutscene plays: there Escape is held to skip
-        // it, as it opens no pause menu either, and the press that starts the hold must not end the test.
+        // it, as it opens no pause menu either, and the press that starts the hold must not end the test -- only a scene the
+        // player can skip, though, and never in a replay, whose skips are the recording's: there Escape has nothing else to do.
         if (editor.IsPlaying)
         {
-            bool cutscene = _mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true };
+            bool cutscene = !Replaying
+                && (_mission.Scenes is { IsPlaying: true } scenes && (scenes.CanBreak || _cutsceneSkip.Breaking)
+                    || TitlePlayer is { IsCutscenePlaying: true });
             if (!state.Console.IsOpen && !cutscene && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
                 editor.StopPlaying();
