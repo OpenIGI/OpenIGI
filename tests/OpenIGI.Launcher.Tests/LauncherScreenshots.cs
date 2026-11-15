@@ -23,7 +23,7 @@ namespace OpenIGI.Launcher.Tests;
 /// </remarks>
 public sealed class LauncherScreenshots
 {
-    private static readonly string[] Sections = ["home", "content", "mods", "logs", "settings"];
+    private static readonly string[] Sections = ["home", "content", "mods", "maps", "servers", "logs", "settings"];
 
     // The minimum window, a small laptop, the design size, a large monitor, and a narrow tall window.
     private static readonly (int Width, int Height)[] Sizes = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (1280, 1000)];
@@ -153,7 +153,7 @@ public sealed class LauncherScreenshots
 
             // Drawn once on Home first, as the window would have: the underline glides from where it was drawn.
             Save(stack, context, 1600, 900, images, fonts, Path.Combine(folder, "switch-before.png"));
-            screen.ShowSection(4, refocus: false);
+            screen.ShowSection(6, refocus: false);
             for (int frame = 0; frame <= 24; frame++)
             {
                 stack.Update(context, input, 1f / 60f);
