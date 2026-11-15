@@ -178,6 +178,7 @@ internal sealed partial class InspectorPanel : EditorElement
             return;
         }
 
+        AddCameraSection(document, task);
         if (task.Parameters.Count > 0)
         {
             _grid.Section("Parameters");

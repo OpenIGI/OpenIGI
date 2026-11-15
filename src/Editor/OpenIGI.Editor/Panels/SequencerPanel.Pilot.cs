@@ -26,7 +26,7 @@ internal sealed partial class SequencerPanel
     private const double PilotLookAhead = 20.0;
     private const double LensStep = 0.04;
 
-    private Pilot? _pilot;
+    private PilotState? _pilot;
 
     /// <summary>Gets whether a key is being piloted.</summary>
     public bool Piloting => _pilot is not null;
@@ -86,6 +86,35 @@ internal sealed partial class SequencerPanel
 
         StopPilot();
         MissionTask? camera = number is { } n && _scene is { } scene ? CutsceneModel.Shots(scene).ElementAtOrDefault(n - 1)?.Camera : SelectedShot()?.Camera;
+        StartPilot(camera);
+    }
+
+    /// <summary>Pilots a key of any scene: the scene opened first when it is not the one open.</summary>
+    /// <param name="camera">The key's <c>EditCamera</c>.</param>
+    public void Pilot(MissionTask camera)
+    {
+        ArgumentNullException.ThrowIfNull(camera);
+        StopPilot();
+        MissionTask? scene = camera.Parent;
+        while (scene is not null && scene.TypeName != CutsceneModel.SceneType)
+        {
+            scene = scene.Parent;
+        }
+
+        if (scene is not null && !ReferenceEquals(scene, _scene))
+        {
+            Refresh();
+            int index = IndexOf(_sceneList, scene);
+            if (index < 0)
+            {
+                return;
+            }
+
+            EndLive();
+            _scenes.SelectedIndex = index;
+            _scene = scene;
+        }
+
         StartPilot(camera);
     }
 
@@ -188,7 +217,7 @@ internal sealed partial class SequencerPanel
 
         _workspace.History.BreakMerge();
         _host.LensTangent = key.FieldOfView;
-        _pilot = new Pilot(shot.Camera, space, CameraAngles.Roll(seen, view.Camera.Orientation), view.Position, view.Camera.Orientation);
+        _pilot = new PilotState(shot.Camera, space, CameraAngles.Roll(seen, view.Camera.Orientation), view.Position, view.Camera.Orientation);
     }
 
     // Each frame of a pilot: the viewport, when it moved, written into the key.
@@ -232,5 +261,5 @@ internal sealed partial class SequencerPanel
     }
 
     // A key being piloted: the space it is written back through, the roll it keeps, and the view last written.
-    private sealed record Pilot(MissionTask Camera, CutsceneShotSpace Space, float Roll, Vector3d Eye, Matrix3f Turn);
+    private sealed record PilotState(MissionTask Camera, CutsceneShotSpace Space, float Roll, Vector3d Eye, Matrix3f Turn);
 }

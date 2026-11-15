@@ -75,7 +75,6 @@ internal sealed partial class SequencerPanel : EditorElement
 
     // What a drag holds: the clock, a shot's end, or a cue.
     private bool _scrubbing;
-    private (CutsceneShot Shot, double Length)? _resizing;
     private (CutsceneCue Cue, double Seconds)? _moving;
     private UiVec2? _panFrom;
 
@@ -118,7 +117,7 @@ internal sealed partial class SequencerPanel : EditorElement
         };
         _addShot = new Button(theme, "Add Shot from View", KitIcon.Plus) { Style = ButtonStyle.Flat, Tooltip = "Put the viewport's camera in as a new shot after the one at the playhead" };
         _addShot.Clicked += AddShotFromView;
-        _deleteShot = new Button(theme, "Delete Shot", KitIcon.Close) { Style = ButtonStyle.Flat, Tooltip = "Delete the selected shot" };
+        _deleteShot = new Button(theme, "Delete Key", KitIcon.Close) { Style = ButtonStyle.Flat, Tooltip = "Delete the selected key: the key before takes its time, so the keys after keep theirs" };
         _deleteShot.Clicked += DeleteShot;
         _playInGame = new Button(theme, "Play in Game", KitIcon.Play) { Style = ButtonStyle.Flat, Tooltip = "Save and play the mission, to see its scenes as the game plays them, vehicles and all" };
         _playInGame.Clicked += () => PlayInGame?.Invoke();
@@ -288,18 +287,6 @@ internal sealed partial class SequencerPanel : EditorElement
         return scene.Id >= 0 ? string.Create(CultureInfo.InvariantCulture, $"{name} ({scene.Id})") : name;
     }
 
-    // Where a shot starts, with a shot before it being dragged longer or shorter.
-    private double StartOf(IReadOnlyList<CutsceneShot> shots, int index)
-    {
-        double at = 0;
-        for (int i = 0; i < index; i++)
-        {
-            at += _resizing is { } r && ReferenceEquals(r.Shot.Camera, shots[i].Camera) ? r.Length : shots[i].Length;
-        }
-
-        return at;
-    }
-
     private static CutsceneShot? ShotAt(IReadOnlyList<CutsceneShot> shots, double time) => shots.LastOrDefault(s => s.Start <= time) ?? (shots.Count > 0 ? shots[0] : null);
 
     private float X(double seconds) => (float)(Timeline.X + ((seconds - _scroll) * _pixelsPerSecond));
@@ -334,25 +321,9 @@ internal sealed partial class SequencerPanel : EditorElement
 
         float rulerBottom = Timeline.Y + Theme.Px(RulerHeight);
         float laneY = rulerBottom + Theme.Px(4f);
-        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
-        if (e.Position.Y >= laneY && e.Position.Y < laneY + Theme.Px(LaneHeight))
+        if (e.Position.Y >= laneY && e.Position.Y < laneY + Theme.Px(LaneHeight) && PressCameraLane(scene, e.Position, e.Shift))
         {
-            for (int i = 0; i < shots.Count; i++)
-            {
-                float start = X(shots[i].Start), end = X(shots[i].Start + shots[i].Length);
-                if (MathF.Abs(e.Position.X - end) <= Theme.Px(EdgeGrip))
-                {
-                    _resizing = (shots[i], shots[i].Length);
-                    return true;
-                }
-
-                if (e.Position.X >= start && e.Position.X < end)
-                {
-                    _workspace.Selection.Set(shots[i].Camera);
-                    Seek(shots[i].Start);
-                    return true;
-                }
-            }
+            return true;
         }
 
         // An animation's clip: selected, so the Inspector edits its keys; one started by a cue is dragged along the clock by it.
@@ -429,9 +400,8 @@ internal sealed partial class SequencerPanel : EditorElement
         {
             ScrubTo(Seconds(e.Position.X));
         }
-        else if (_resizing is { } resize)
+        else if (DragCameraLane(e.Position.X, e.Shift))
         {
-            _resizing = (resize.Shot, Snap(Seconds(e.Position.X) - resize.Shot.Start, e.Shift));
         }
         else if (_moving is { } move)
         {
@@ -444,11 +414,8 @@ internal sealed partial class SequencerPanel : EditorElement
     {
         if (_scene is { } scene && _workspace.Document is { } document)
         {
-            if (_resizing is { } resize && Math.Abs(resize.Length - resize.Shot.Length) > 1e-6)
-            {
-                _workspace.Execute(CutsceneModel.SetLength(document, scene, resize.Shot.Camera, resize.Length));
-            }
-            else if (_moving is { } move && Math.Abs(move.Seconds - move.Cue.Seconds) > 1e-6
+            ReleaseCameraLane(document, scene);
+            if (_moving is { } move && Math.Abs(move.Seconds - move.Cue.Seconds) > 1e-6
                 && CutsceneModel.Retime(document, scene, move.Cue, move.Seconds) is { } retime)
             {
                 _workspace.Execute(retime);
@@ -456,7 +423,6 @@ internal sealed partial class SequencerPanel : EditorElement
         }
 
         _scrubbing = false;
-        _resizing = null;
         _moving = null;
         _panFrom = null;
     }
@@ -465,7 +431,6 @@ internal sealed partial class SequencerPanel : EditorElement
     protected override void OnCaptureLost()
     {
         _scrubbing = false;
-        _resizing = null;
         _moving = null;
         _panFrom = null;
     }
@@ -527,15 +492,6 @@ internal sealed partial class SequencerPanel : EditorElement
         _scene is { } scene && _workspace.Selection.Primary is { TypeName: CutsceneModel.CameraType } camera
             ? CutsceneModel.Shots(scene).FirstOrDefault(s => ReferenceEquals(s.Camera, camera))
             : null;
-
-    private void DeleteShot()
-    {
-        if (SelectedShot() is { } shot && _workspace.Document is { } document)
-        {
-            _workspace.Execute(new RemoveTaskCommand(document, shot.Camera));
-            _workspace.Selection.Clear();
-        }
-    }
 
     /// <summary>Stops looking through the scene's camera and stands the viewport back and above, where the whole path shows.</summary>
     public void ViewPath()
@@ -754,6 +710,9 @@ internal sealed partial class SequencerPanel : EditorElement
         [
             new("Pilot", () => { StopPilot(); StartPilot(camera); }) { Detail = "fly the viewport to it; every move is written into it, as seen", Icon = KitIcon.Camera },
             new("Set to View", SetShotToView) { Detail = "stand where the viewport's camera is, looking the same way", Icon = KitIcon.Camera },
+            new("Add Key at the Playhead", AddKeyAtPlayhead) { Detail = "a key where the camera's path is now, splitting the key it falls in (Shift+K)", Icon = KitIcon.Plus },
+            new("Duplicate Key", () => DuplicateKey(document, _scene!, shot)) { Detail = "a copy after it, taking half its time" },
+            new("Copy View", () => CopyView(camera)) { Detail = "where it stands, how it is turned and its lens, to paste into another key" },
             smooth
                 ? new("Cut to the Next Shot", () => _workspace.Execute(CutsceneModel.SetSmooth(document, camera, false))) { Detail = "jump to the next shot rather than glide into it" }
                 : new("Glide into the Next Shot", () => _workspace.Execute(CutsceneModel.SetSmooth(document, camera, true))) { Detail = "fly on into the next shot rather than cut" },
@@ -770,7 +729,12 @@ internal sealed partial class SequencerPanel : EditorElement
             entries.Add(new PaletteEntry(string.Create(CultureInfo.InvariantCulture, $"Stop Riding #{riding}"), () => _workspace.Execute(CutsceneModel.Ride(document, camera, -1))));
         }
 
-        entries.Add(new PaletteEntry("Delete Shot", DeleteShot) { Icon = KitIcon.Close });
+        if (_copiedView is not null)
+        {
+            entries.Add(new PaletteEntry("Paste View", () => PasteView(document, camera)) { Detail = "the view copied from another key" });
+        }
+
+        entries.Add(new PaletteEntry("Delete Key", DeleteShot) { Detail = "the key before takes its time, so the keys after keep theirs", Icon = KitIcon.Close });
         CommandPalette.Open(root, entries, string.Create(CultureInfo.InvariantCulture, $"Shot at {shot.Start:0.##} s"));
     }
 

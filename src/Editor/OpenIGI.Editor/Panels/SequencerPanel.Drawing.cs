@@ -62,19 +62,7 @@ internal sealed partial class SequencerPanel
         DrawLaneLabel(painter, "Camera", laneY);
         MissionTask? selected = _workspace.Selection.Primary;
         painter.PushClip(line);
-        for (int i = 0; i < shots.Count; i++)
-        {
-            CutsceneShot shot = shots[i];
-            double clipLength = _resizing is { } r && ReferenceEquals(r.Shot.Camera, shot.Camera) ? r.Length : shot.Length;
-            double start = StartOf(shots, i);
-            UiRect clip = new(X(start) + 1f, laneY + 2f, MathF.Max(Theme.Px(4f), (float)(clipLength * _pixelsPerSecond) - 2f), Theme.Px(LaneHeight) - 4f);
-            bool isSelected = ReferenceEquals(shot.Camera, selected);
-            EditorDraw.Frame(painter, Theme, clip, (isSelected ? Theme.Accent : Bgra32.FromRgb(0x3E, 0x6E, 0xA8)).WithAlpha(isSelected ? (byte)200 : (byte)170), isSelected ? Theme.Accent : Theme.Border);
-            string rides = Number(shot.Camera, "Link task ID", -1) >= 0 ? "  (rides)" : Number(shot.Camera, "Target task ID", -1) >= 0 ? "  (watches)" : string.Empty;
-            string name = string.Create(CultureInfo.InvariantCulture, $"{i + 1}. {(shot.Camera.Label.Length > 0 ? shot.Camera.Label : "Shot")}  {clipLength:0.#}s{rides}");
-            EditorDraw.Label(painter, Theme, EditorDraw.Fit(Theme.Font, name, Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f) }, Bgra32.White);
-        }
-
+        DrawCameraLane(painter, scene, laneY, selected);
         painter.PopClip();
         laneY += Theme.Px(LaneHeight);
 

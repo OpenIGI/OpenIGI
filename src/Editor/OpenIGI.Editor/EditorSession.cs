@@ -114,7 +114,12 @@ internal sealed partial class EditorSession : IEditorSession
         _dock.Register(new DockPanel("viewport", "Viewport", _viewport) { Icon = KitIcon.Camera, CanClose = false, IsTransparent = true });
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
         _guards = new GuardOrders(host, _workspace);
-        InspectorPanel inspector = new(_theme, _workspace, host, _guards) { EditPatrol = soldier => { _workspace.Selection.Set(soldier); StartPatrol(); }, Notify = (message, isError) => Notify(message, isError) };
+        InspectorPanel inspector = new(_theme, _workspace, host, _guards)
+        {
+            EditPatrol = soldier => { _workspace.Selection.Set(soldier); StartPatrol(); },
+            Notify = (message, isError) => Notify(message, isError),
+            PilotKey = camera => { _dock.Show("sequencer"); _sequencer?.Pilot(camera); },
+        };
         _dock.Register(new DockPanel("inspector", "Inspector", inspector) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
         ScriptPanel script = new(_theme, host, _workspace);

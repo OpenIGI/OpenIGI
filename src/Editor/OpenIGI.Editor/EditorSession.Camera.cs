@@ -36,6 +36,12 @@ internal sealed partial class EditorSession
             Shortcut = KeyChord.Parse("RightBracket"),
             CanExecute = () => _sequencer.Piloting,
         });
+        actions.Add(new EditorAction("sequencer.add-key", "Add Camera Key at the Playhead", _sequencer.AddKeyAtPlayhead)
+        {
+            Category = "Cutscene",
+            Shortcut = KeyChord.Parse("Shift+K"),
+            CanExecute = () => _sequencer.CanPilot,
+        });
         actions.Add(new EditorAction("sequencer.key-from-view", "Key Camera from View", _sequencer.KeyFromView)
         {
             Category = "Cutscene",
