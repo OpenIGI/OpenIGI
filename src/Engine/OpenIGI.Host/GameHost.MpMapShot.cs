@@ -128,28 +128,18 @@ public sealed partial class GameHost
     // The roofs are cast against everything built, which is most of the time a map takes; without them the ground is cast alone.
     private Overhead? MakeOverhead(int maxPixels, out string? problem, bool roofs = true)
     {
-        problem = null;
-        if (_scene is not { } scene || _mission.EffectWalls is not { } walls)
+        if (_mission.EffectWalls is not { } walls)
         {
             problem = "No level is loaded.";
             return null;
         }
 
-        // The level's extent: its objects, the odd far-flung one left out, and a margin round them.
-        Vector3d[] at = [.. scene.Placements.Select(static p => WorldScene.ToUnits(p.Position))];
-        if (at.Length == 0)
+        if (OverheadBox(out problem) is not { } box)
         {
-            problem = "The level has no objects to frame.";
             return null;
         }
 
-        double margin = MapShotMarginMetres * WorldUnits.PerMetre;
-        double minX = Percentile(at.Select(static p => p.X), 0.01) - margin;
-        double maxX = Percentile(at.Select(static p => p.X), 0.99) + margin;
-        double minY = Percentile(at.Select(static p => p.Y), 0.01) - margin;
-        double maxY = Percentile(at.Select(static p => p.Y), 0.99) + margin;
-        double top = at.Max(static p => p.Z) + (300 * WorldUnits.PerMetre);
-        double bottom = at.Min(static p => p.Z) - (600 * WorldUnits.PerMetre);
+        (double minX, double maxX, double minY, double maxY, double top, double bottom) = box;
 
         double perPixel = Math.Max(MapShotFinestMetres * WorldUnits.PerMetre, Math.Max(maxX - minX, maxY - minY) / maxPixels);
         int width = Math.Max(1, (int)Math.Ceiling((maxX - minX) / perPixel));
@@ -244,7 +234,7 @@ public sealed partial class GameHost
                 WriteCorner(raw, t.C);
             }
         }
-        if (WriteMapMesh(path, minX, maxX, minY, maxY, ground, width, height, perPixel) is { } meshProblem)
+        if (WriteMapMesh(path, BuildOverheadScene(minX, maxX, minY, maxY, bottom, top, int.MaxValue)) is { } meshProblem)
         {
             return meshProblem;
         }

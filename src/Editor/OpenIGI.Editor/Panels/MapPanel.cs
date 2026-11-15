@@ -19,13 +19,14 @@ using OpenIGI.UI.Rhi;
 namespace OpenIGI.Editor.Panels;
 
 /// <summary>
-/// The mission from straight above: the level as the game's own collision sees it, every object of the mission on it as a
-/// mark, the areas as the boxes they are. Click to select, drag to move (an object keeps its height over whatever it stands
-/// on), wheel to zoom, right or middle drag to pan, double-click to look at it in the viewport.
+/// The mission from straight above: the level textured as it looks, cut at a storey to look into its buildings, every object
+/// of the mission on it as a mark (faint when it stands on another storey), the areas as the boxes they are. Click to select,
+/// drag to move (onto the storey shown, as high over it as it stood), wheel to zoom, right or middle drag to pan, double-click
+/// to look at it in the viewport; [ and ] step through the storeys, T shows the plan's walls, M measures.
 /// </summary>
 /// <remarks>
-/// The picture is made once a mission, a ray cast down for every pixel (<see cref="IEditorHost.MakeOverheadMap"/>), so it is
-/// the level as it was loaded; Redraw makes it again. The marks are the document's, so they move as the mission is edited.
+/// The level is gathered once a mission (<see cref="IEditorHost.MakeOverheadScene"/>), so it is the level as it was loaded;
+/// Redraw gathers it again. The marks are the document's, so they move as the mission is edited.
 /// </remarks>
 internal sealed partial class MapPanel : EditorElement
 {
@@ -54,6 +55,9 @@ internal sealed partial class MapPanel : EditorElement
     private readonly Button _labels;
     private readonly Button _props;
     private readonly Button _guardsShown;
+    private readonly Button[] _floorButtons;
+    private readonly Button _planShown;
+    private readonly Button _measure;
     private readonly GuardOrders _guards;
     private readonly PatrolPaths _paths;
     private OverheadMap? _map;
@@ -100,7 +104,16 @@ internal sealed partial class MapPanel : EditorElement
             _props.IsChecked = !_props.IsChecked;
             _marks = null;
         };
-        foreach (Button button in (Button[])[_redraw, _frame, _labels, _props])
+        _floorButtons = MakeFloorButtons();
+        _planShown = new Button(theme, "Plan") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = true, Tooltip = "Draw the walls as a plan over a storey: thin under the cut, thick black where the cut passes through (T)" };
+        _planShown.Clicked += () => _planShown.IsChecked = !_planShown.IsChecked;
+        _measure = new Button(theme, "Measure") { Style = ButtonStyle.Flat, IsToggle = true, IsChecked = false, Tooltip = "Drag on the map to measure a distance, and how long it takes to run (M)" };
+        _measure.Clicked += () =>
+        {
+            _measure.IsChecked = !_measure.IsChecked;
+            _measured = null;
+        };
+        foreach (Button button in (Button[])[_redraw, _frame, _labels, _props, .. _floorButtons, _planShown, _measure])
         {
             AddChild(button);
         }
@@ -126,13 +139,6 @@ internal sealed partial class MapPanel : EditorElement
     /// <summary>Draws every guard's sight and patrol, as the Guards button does.</summary>
     public void ShowAllGuards() => _guardsShown.IsChecked = true;
 
-    /// <summary>Releases the picture.</summary>
-    public void Release()
-    {
-        _images.DestroyImage(_image);
-        _image = UiImage.None;
-    }
-
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => available;
 
@@ -140,35 +146,20 @@ internal sealed partial class MapPanel : EditorElement
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
         float x = contentRect.X + Theme.Px(6f);
-        foreach (Button button in (Button[])[_redraw, _frame, _labels, _props, _guardsShown])
+        foreach (Button button in (Button[])[_redraw, _frame, _labels, _props, _guardsShown, .. _floorButtons, _planShown, _measure])
         {
+            // A gap between the view's buttons, the storeys, and the tools.
+            if (ReferenceEquals(button, _floorButtons[0]) || ReferenceEquals(button, _planShown))
+            {
+                x += Theme.Px(10f);
+            }
+
             float width = Theme.Font.MeasureWidth(button.Text, Theme.TextSize) + Theme.Px(button.Icon == KitIcon.None ? 24f : 44f);
             button.Place(context, new UiRect(x, contentRect.Y + Theme.Px(5f), width, Theme.ControlHeight));
             x += width + Theme.Px(4f);
         }
 
         EnsureMap();
-    }
-
-    // The picture, made once the mission is up and again after Redraw or for another mission.
-    private void EnsureMap()
-    {
-        int? mission = _workspace.Mission?.Id;
-        if (mission == _mapFor || mission is null || _host.IsWarmingUp)
-        {
-            return;
-        }
-
-        _mapFor = mission;
-        Release();
-        _map = _host.MakeOverheadMap(MapPixels);
-        if (_map is { } map)
-        {
-            _image = _images.CreateImage(map.Width, map.Height, map.Pixels);
-            _host.Logger.Information("Editor", string.Create(CultureInfo.InvariantCulture, $"Drew the map: {map.Width}x{map.Height}, {map.MetresPerPixel:0.##} m a pixel."));
-        }
-
-        _framed = false;
     }
 
     /// <inheritdoc/>
@@ -189,22 +180,27 @@ internal sealed partial class MapPanel : EditorElement
             FramePlay();
         }
 
+        ApplyWantedZoom();
+        AdvancePictures(area);
         painter.PushClip(area);
-        if (_map is { } map && _image.IsValid)
+        DrawPicture(painter);
+
+        // The models' boxes stand in for the level only where the title could not hand its faces over.
+        if (_scene is null)
         {
-            UiVec2 topLeft = ToScreen(new Vector3d(map.WestMetres, map.NorthMetres, 0));
-            float size = (float)(map.MetresPerPixel * _scale);
-            painter.DrawSprite(_image, new UiRect(topLeft.X, topLeft.Y, map.Width * size, map.Height * size), new UiRect(0f, 0f, 1f, 1f), Bgra32.White);
+            DrawFootprints(painter, area);
         }
 
-        DrawFootprints(painter, area);
         Vector3d offset = _drag is { Moved: true } drag ? drag.Offset : default;
         HashSet<MissionTask> selected = [.. _workspace.Selection.Items];
         foreach (Mark mark in Marks())
         {
             bool isSelected = selected.Contains(mark.Task);
             Vector3d at = isSelected ? mark.At + offset : mark.At;
-            DrawVolume(painter, mark, at, isSelected);
+            if (isSelected || OnShownFloor(mark.At))
+            {
+                DrawVolume(painter, mark, at, isSelected);
+            }
         }
 
         DrawGuards(painter, selected, offset);
@@ -220,20 +216,22 @@ internal sealed partial class MapPanel : EditorElement
                 continue;
             }
 
-            // People round, everything else a square: a level has a thousand marks, and a square is one quad.
+            // People round, everything else a square: a level has a thousand marks, and a square is one quad. What stands on
+            // another storey than the one shown is faint.
             float r = Theme.Px(mark.Radius);
             if (isSelected)
             {
                 painter.FillRect(new UiRect(p.X - r - Theme.Px(3f), p.Y - r - Theme.Px(3f), (r + Theme.Px(3f)) * 2f, (r + Theme.Px(3f)) * 2f), Theme.Accent);
             }
 
+            Bgra32 colour = isSelected || OnShownFloor(mark.At) ? mark.Colour : mark.Colour.WithAlpha(70);
             if (mark.IsPerson)
             {
-                painter.FillDot(p, r, mark.Colour);
+                painter.FillDot(p, r, colour);
             }
             else
             {
-                painter.FillRect(new UiRect(p.X - r, p.Y - r, r * 2f, r * 2f), mark.Colour);
+                painter.FillRect(new UiRect(p.X - r, p.Y - r, r * 2f, r * 2f), colour);
             }
             if (isSelected || ReferenceEquals(mark, _hover) || _labels.IsChecked)
             {
@@ -247,8 +245,10 @@ internal sealed partial class MapPanel : EditorElement
             painter.StrokeLine(ToScreen(linking.From.At), linking.To, Theme.Px(2f), Theme.Accent);
         }
 
-        painter.PopClip();
+        DrawMeasure(painter);
         DrawScale(painter, area);
+        DrawStatus(painter, area);
+        painter.PopClip();
     }
 
     // The guards: which way each faces; for the selected ones (every one with Guards on) how far and wide it sees, from
@@ -558,12 +558,14 @@ internal sealed partial class MapPanel : EditorElement
         painter.StrokePolygon(corners, Theme.Px(1.5f), colour.WithAlpha(200));
     }
 
-    // A bar of a round number of metres in the corner.
+    // A bar of a round number of metres in the corner: 1, 2 or 5 of a power of ten, as long as fits.
     private void DrawScale(UiPainter painter, UiRect area)
     {
-        double metres = Math.Pow(10, Math.Floor(Math.Log10(Theme.Px(120f) / _scale)));
+        double most = Theme.Px(120f) / _scale;
+        double power = Math.Pow(10, Math.Floor(Math.Log10(most)));
+        double metres = most >= 5 * power ? 5 * power : most >= 2 * power ? 2 * power : power;
         float length = (float)(metres * _scale);
-        UiVec2 from = new(area.X + Theme.Px(14f), area.Bottom - Theme.Px(16f));
+        UiVec2 from = new(area.X + Theme.Px(14f), area.Bottom - Theme.RowHeight - Theme.Px(12f));
         painter.StrokeLine(from, from + new UiVec2(length, 0f), Theme.Px(2f), Theme.Text);
         string text = metres >= 1000 ? string.Create(CultureInfo.InvariantCulture, $"{metres / 1000:0.#} km") : string.Create(CultureInfo.InvariantCulture, $"{metres:0} m");
         EditorDraw.Label(painter, Theme, text, new UiRect(from.X, from.Y - Theme.RowHeight - Theme.Px(2f), Theme.Px(80f), Theme.RowHeight), Theme.Text);
@@ -597,6 +599,14 @@ internal sealed partial class MapPanel : EditorElement
         if (e.Button != MouseButton.Left)
         {
             return false;
+        }
+
+        if (_measure.IsChecked)
+        {
+            Vector3d at = ToWorld(e.Position);
+            _measured = (at, at);
+            _measuringLine = true;
+            return true;
         }
 
         Mark? hit = Pick(e.Position);
@@ -638,6 +648,13 @@ internal sealed partial class MapPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnPointerMove(in PointerEvent e)
     {
+        _pointerWorld = MapRect.Contains(e.Position) ? ToWorld(e.Position) : null;
+        if (_measuringLine && _measured is { } line)
+        {
+            _measured = (line.From, ToWorld(e.Position));
+            return;
+        }
+
         if (_panFrom is { } from)
         {
             UiVec2 d = e.Position - from;
@@ -668,6 +685,7 @@ internal sealed partial class MapPanel : EditorElement
     protected override void OnPointerUp(in PointerEvent e)
     {
         _panFrom = null;
+        _measuringLine = false;
         if (_linkFrom is { } link)
         {
             _linkFrom = null;
@@ -693,6 +711,7 @@ internal sealed partial class MapPanel : EditorElement
         _panFrom = null;
         _linkFrom = null;
         _drag = null;
+        _measuringLine = false;
     }
 
     /// <inheritdoc/>
@@ -712,10 +731,32 @@ internal sealed partial class MapPanel : EditorElement
             return true;
         }
 
-        return false;
+        switch (e.Key)
+        {
+            case KeyCode.RightBracket or KeyCode.PageUp:
+                ShowFloor(_floor + 1);
+                return true;
+            case KeyCode.LeftBracket or KeyCode.PageDown:
+                ShowFloor(_floor - 1);
+                return true;
+            case KeyCode.T:
+                _planShown.IsChecked = !_planShown.IsChecked;
+                return true;
+            case KeyCode.M:
+                _measure.IsChecked = !_measure.IsChecked;
+                _measured = null;
+                return true;
+            case KeyCode.Escape when _measured is not null || _measure.IsChecked:
+                _measure.IsChecked = false;
+                _measured = null;
+                return true;
+            default:
+                return false;
+        }
     }
 
-    // The selected objects moved over the ground, as one step: each keeps its height over whatever it stood on.
+    // The selected objects moved over the map, as one step: each set on the storey shown (looking at the roofs, on the
+    // floor it stood on), as high over it as it stood.
     private void Move(Vector3d offset)
     {
         if (_workspace.Document is not { } document)
@@ -732,9 +773,9 @@ internal sealed partial class MapPanel : EditorElement
             }
 
             Vector3d to = at + offset;
-            if (_map?.HeightAt(at.X, at.Y) is { } before && _map.HeightAt(to.X, to.Y) is { } after)
+            if (HeightMovedTo(at, to) is { } z)
             {
-                to = new Vector3d(to.X, to.Y, at.Z + (after - before));
+                to = new Vector3d(to.X, to.Y, z);
             }
 
             steps.Add(SetParameterCommand.Numbers(document, task, position.Name, [WorldUnits.FromMetres(to.X), WorldUnits.FromMetres(to.Y), WorldUnits.FromMetres(to.Z)]));
@@ -800,12 +841,20 @@ internal sealed partial class MapPanel : EditorElement
         _scale = Math.Clamp(Math.Min(area.Width / Math.Max(20.0, (maxX - minX) * 1.15), area.Height / Math.Max(20.0, (maxY - minY) * 1.15)), 0.02, 40.0);
     }
 
-    private Mark? Pick(UiVec2 at)
+    // The mark under a point: one on the storey shown before any on another.
+    private Mark? Pick(UiVec2 at) => Pick(at, onFloorOnly: true) ?? Pick(at, onFloorOnly: false);
+
+    private Mark? Pick(UiVec2 at, bool onFloorOnly)
     {
         Mark? best = null;
         float bestDistance = Theme.Px(PickRadius);
         foreach (Mark mark in Marks())
         {
+            if (onFloorOnly && !OnShownFloor(mark.At))
+            {
+                continue;
+            }
+
             float distance = UiVec2.Distance(ToScreen(mark.At), at);
             if (distance < bestDistance || (distance <= bestDistance && best is not null && mark.Radius > best.Radius))
             {

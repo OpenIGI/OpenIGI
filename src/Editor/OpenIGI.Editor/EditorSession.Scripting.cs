@@ -55,12 +55,18 @@ internal sealed partial class EditorSession
             return $"Opening the {graphName} graph once the mission is open.";
         }
 
-        // editor rules / editor map / editor show <panel>: a panel in front, once the mission is open.
+        // editor rules / editor map [guards | floor <n> | zoom <metres a pixel>] / editor show <panel>: a panel in front, once
+        // the mission is open.
         if (arguments is [string panelVerb, ..] && (panelVerb.Equals("rules", StringComparison.OrdinalIgnoreCase) || panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase)
             || (panelVerb.Equals("show", StringComparison.OrdinalIgnoreCase) && arguments.Count == 2)))
         {
-            bool allGuards = arguments is [_, string option] && panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase) && option.Equals("guards", StringComparison.OrdinalIgnoreCase);
-            string panel = (arguments.Count == 2 && !allGuards ? arguments[1] : panelVerb).ToLowerInvariant();
+            bool isMap = panelVerb.Equals("map", StringComparison.OrdinalIgnoreCase);
+            bool allGuards = arguments is [_, string option] && isMap && option.Equals("guards", StringComparison.OrdinalIgnoreCase);
+            int? floor = isMap && arguments is [_, string floorWord, string floorNumber] && floorWord.Equals("floor", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(floorNumber, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int f) ? f : null;
+            double? zoom = isMap && arguments is [_, string zoomWord, string zoomNumber] && zoomWord.Equals("zoom", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(zoomNumber, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double z) && z > 0 ? z : null;
+            string panel = (arguments.Count == 2 && !allGuards && !isMap ? arguments[1] : panelVerb).ToLowerInvariant();
             if (!_dock.Panels.ContainsKey(panel))
             {
                 return $"No panel '{panel}'.";
@@ -77,6 +83,16 @@ internal sealed partial class EditorSession
                 if (allGuards)
                 {
                     _map.ShowAllGuards();
+                }
+
+                if (floor is { } storey)
+                {
+                    _map.ShowFloor(storey);
+                }
+
+                if (zoom is { } metresPerPixel)
+                {
+                    _map.ZoomOnSelection(metresPerPixel);
                 }
 
                 return true;
