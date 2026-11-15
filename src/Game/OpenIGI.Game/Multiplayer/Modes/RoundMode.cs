@@ -217,6 +217,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     {
         ArgumentNullException.ThrowIfNull(host);
         host.Match.IsFreeForAll = false;
+        GameModes.DealSidesIfOne(host);
         host.Match.NewMap();
         host.World.BeginMatch();
         RoundsPlayed = 0;

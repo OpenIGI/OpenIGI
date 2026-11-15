@@ -107,6 +107,25 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
     {
         ArgumentNullException.ThrowIfNull(host);
         host.Match.IsFreeForAll = !teams;
+        if (teams)
+        {
+            GameModes.DealSidesIfOne(host);
+        }
+        else
+        {
+            // Everyone on the one side, as a newcomer is: a match carried over from a team mode (a map vote's new mode, an
+            // admin's) kept each player's old team, and the scoreboard split the free-for-all into I.G.I. and the Conspiracy.
+            foreach (MatchPlayer player in host.Match.Players.Values)
+            {
+                player.Team = TeamRoster.Good;
+                player.NextTeam = null;
+                if (player.Slot >= 0)
+                {
+                    host.World.SetTeam(player.Slot, TeamRoster.Good);
+                }
+            }
+        }
+
         if (Settings.WarmupSeconds > 0)
         {
             Flow.Enter(MatchPhase.Warmup, tick, Settings.WarmupSeconds);
