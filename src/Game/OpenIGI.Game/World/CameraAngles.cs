@@ -45,6 +45,33 @@ public static class CameraAngles
         return best;
     }
 
+    /// <summary>
+    /// How far a view is rolled about the way it looks, from a view looking the same way with no roll: what a key keeps of its
+    /// own while a camera that cannot roll (the editor's) is flown in its place.
+    /// </summary>
+    /// <param name="view">The view, as a camera takes it (rows right, up, forward).</param>
+    /// <param name="level">A view looking the same way, unrolled.</param>
+    /// <returns>The roll, in radians.</returns>
+    public static float Roll(Matrix3f view, Matrix3f level)
+    {
+        Vector3f forward = level.Row3;
+        Vector3f across = Vector3f.Cross(forward, level.Row2);
+        return MathF.Atan2(Vector3f.Dot(across, view.Row2), Vector3f.Dot(level.Row2, view.Row2));
+    }
+
+    /// <summary>An unrolled view rolled about the way it looks: <see cref="Roll"/> put back.</summary>
+    /// <param name="level">The view, unrolled (rows right, up, forward).</param>
+    /// <param name="roll">The roll, in radians.</param>
+    /// <returns>The rolled view.</returns>
+    public static Matrix3f WithRoll(Matrix3f level, float roll)
+    {
+        Vector3f forward = level.Row3;
+        (float sin, float cos) = MathF.SinCos(roll);
+        Vector3f up = (level.Row2 * cos) + (Vector3f.Cross(forward, level.Row2) * sin);
+        Vector3f right = (level.Row1 * cos) + (Vector3f.Cross(forward, level.Row1) * sin);
+        return Matrix3f.FromRows(right, up, forward);
+    }
+
     // Each angle moved by whole turns to lie within half a turn of the one to stay near.
     private static Vector3f Wound(Vector3f angles, Vector3f near) =>
         new(Wind(angles.X, near.X), Wind(angles.Y, near.Y), Wind(angles.Z, near.Z));

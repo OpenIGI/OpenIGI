@@ -279,6 +279,47 @@ internal sealed partial class EditorSession
             return "Seeking once the mission is open.";
         }
 
+        // editor pilot [<n>]: pilots the open scene's nth key (or the selected one), or stops; editor fly <right> <forward> <up>
+        // [<yaw degrees>]: the viewport's camera moved by so many metres along its own axes and turned, as flying it does.
+        if (arguments is [string pilotVerb, ..] && pilotVerb.Equals("pilot", StringComparison.OrdinalIgnoreCase) && arguments.Count <= 2)
+        {
+            int? keyNumber = arguments.Count == 2 && int.TryParse(arguments[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n) ? n : null;
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_workspace.Document is null || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _sequencer.PilotKey(keyNumber);
+                _host.Logger.Information("Editor", _sequencer.PilotBanner ?? "Not piloting.");
+                return true;
+            });
+            return "Piloting once the mission is open.";
+        }
+
+        if (arguments is [string flyVerb, string rightText, string forwardText, string upText, ..] && flyVerb.Equals("fly", StringComparison.OrdinalIgnoreCase)
+            && double.TryParse(rightText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double right)
+            && double.TryParse(forwardText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double forward)
+            && double.TryParse(upText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double up))
+        {
+            double yawDegrees = arguments.Count > 4 && double.TryParse(arguments[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y) ? y : 0;
+            _pendingSteps.Enqueue(() =>
+            {
+                if (_host.Camera is not { } view)
+                {
+                    return false;
+                }
+
+                Matrix3f axes = view.Camera.Orientation;
+                static Vector3d Along(Vector3f axis) => new(axis.X, axis.Y, axis.Z);
+                Vector3d to = view.Position + (Along(axes.Row1) * right) + (Along(axes.Row3) * forward) + (Vector3d.UnitZ * up);
+                view.MoveTo(to, view.Yaw + (float)(yawDegrees * Math.PI / 180), view.Pitch);
+                return true;
+            });
+            return "Flying the viewport.";
+        }
+
         // editor scene <#id|name> [seconds]: the sequencer on a cutscene, its playhead at a moment.
         if (arguments is [string sceneVerb, string scene, ..] && sceneVerb.Equals("scene", StringComparison.OrdinalIgnoreCase))
         {

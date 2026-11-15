@@ -64,6 +64,7 @@ internal sealed partial class SequencerPanel : EditorElement
     private readonly Button _playInGame;
     private readonly Button _newScene;
     private readonly Button _addMove;
+    private readonly Button _pilotButton;
     private IReadOnlyList<MissionTask> _sceneList = [];
     private MissionTask? _scene;
     private double _time;
@@ -98,6 +99,7 @@ internal sealed partial class SequencerPanel : EditorElement
             _time = 0;
             _playing = false;
             _scroll = 0;
+            StopPilot();
             EndLive();
         };
         _play = new Button(theme, "Play", KitIcon.Play) { Style = ButtonStyle.Flat, Tooltip = "Play the scene from the playhead (Space)" };
@@ -124,7 +126,9 @@ internal sealed partial class SequencerPanel : EditorElement
         _newScene.Clicked += NewScene;
         _addMove = new Button(theme, "Add Move…") { Style = ButtonStyle.Flat, Tooltip = "Add a ready-made camera move round the selected object: orbit, push in, fly-over, crane up, pan" };
         _addMove.Clicked += OfferMoves;
-        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _live, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
+        _pilotButton = new Button(theme, "Pilot", KitIcon.Camera) { Style = ButtonStyle.Flat, IsToggle = true, Tooltip = "Fly the selected key with the viewport: every move is written into it, as seen (Shift+P; Esc stops, [ ] go to the key before or after, Alt+wheel changes its lens)" };
+        _pilotButton.Clicked += TogglePilot;
+        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _live, _pilotButton, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
         {
             AddChild(child);
         }
@@ -202,7 +206,7 @@ internal sealed partial class SequencerPanel : EditorElement
         float y = contentRect.Y + Theme.Px(5f);
         _scenes.Place(context, new UiRect(x, y, Theme.Px(220f), Theme.ControlHeight));
         x += Theme.Px(228f);
-        foreach (Button button in (Button[])[_play, _preview, _live, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
+        foreach (Button button in (Button[])[_play, _preview, _live, _pilotButton, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
         {
             float width = Theme.Font.MeasureWidth(button.Text, Theme.TextSize) + Theme.Px(button.Icon == KitIcon.None ? 24f : 44f);
             button.Place(context, new UiRect(x, y, width, Theme.ControlHeight));
@@ -212,6 +216,8 @@ internal sealed partial class SequencerPanel : EditorElement
         _play.Text = _playing ? "Pause" : "Play";
         _play.Icon = _playing ? KitIcon.Pause : KitIcon.Play;
         _addShot.IsEnabled = _scene is not null && _host.Camera is not null;
+        _pilotButton.IsChecked = Piloting;
+        _pilotButton.IsEnabled = Piloting || (_scene is not null && _host.Camera is not null && CutsceneModel.Shots(_scene).Count > 0);
         _deleteShot.IsEnabled = SelectedShot() is not null;
         _addMove.IsEnabled = _scene is not null && Subject() is not null;
         _newScene.IsEnabled = _workspace.Document?.Declarations.ContainsKey(CutsceneModel.SceneType) == true;
@@ -220,6 +226,7 @@ internal sealed partial class SequencerPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
+        TickPilot();
         if (UpdateLive())
         {
             return;
@@ -745,6 +752,7 @@ internal sealed partial class SequencerPanel : EditorElement
         bool smooth = Flag(camera, "Smooth to next");
         List<PaletteEntry> entries =
         [
+            new("Pilot", () => { StopPilot(); StartPilot(camera); }) { Detail = "fly the viewport to it; every move is written into it, as seen", Icon = KitIcon.Camera },
             new("Set to View", SetShotToView) { Detail = "stand where the viewport's camera is, looking the same way", Icon = KitIcon.Camera },
             smooth
                 ? new("Cut to the Next Shot", () => _workspace.Execute(CutsceneModel.SetSmooth(document, camera, false))) { Detail = "jump to the next shot rather than glide into it" }
@@ -846,7 +854,7 @@ internal sealed partial class SequencerPanel : EditorElement
     // watches a target turned to it where the target stands in the mission.
     private void Look()
     {
-        if (!_preview.IsChecked || _scene is not { } scene || _host.Camera is not { } view || _workspace.Document is not { } document)
+        if (Piloting || !_preview.IsChecked || _scene is not { } scene || _host.Camera is not { } view || _workspace.Document is not { } document)
         {
             return;
         }

@@ -663,6 +663,12 @@ internal sealed partial class ViewportPanel : EditorElement
             return false;
         }
 
+        // Alt+wheel while a cutscene key is piloted changes its lens.
+        if ((modifiers & KeyModifiers.Alt) != 0 && PilotWheel?.Invoke(notches) == true)
+        {
+            return true;
+        }
+
         // While flying the wheel sets the speed; otherwise it dollies toward what is in the middle of the view.
         if (_camera.Drag == CameraDrag.Look)
         {
@@ -745,6 +751,7 @@ internal sealed partial class ViewportPanel : EditorElement
         DrawPatrol(painter);
         DrawCameraPath(painter);
         DrawLetterbox(painter);
+        DrawPilotBanner(painter);
 
         if (SelectedBox is { } box && _graph.PickedNode is null)
         {

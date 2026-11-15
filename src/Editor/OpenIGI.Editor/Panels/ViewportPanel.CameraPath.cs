@@ -25,6 +25,30 @@ internal sealed partial class ViewportPanel
     /// </summary>
     public Func<float?>? Letterbox { get; set; }
 
+    /// <summary>Gets or sets what the banner over the view says while a cutscene key is piloted, or null for none.</summary>
+    public Func<string?>? PilotBanner { get; set; }
+
+    /// <summary>Gets or sets what Alt+wheel does while a key is piloted: true when it took the notches.</summary>
+    public Func<float, bool>? PilotWheel { get; set; }
+
+    // The piloting banner, along the view's top, accent-edged so the view plainly belongs to the key.
+    private void DrawPilotBanner(UiPainter painter)
+    {
+        if (PilotBanner?.Invoke() is not { Length: > 0 } text)
+        {
+            return;
+        }
+
+        UiRect world = WorldRect;
+        float width = MathF.Min(world.Width - Theme.Px(16f), Theme.Font.MeasureWidth(text, Theme.TextSize) + Theme.Px(20f));
+        UiRect box = new(world.X + ((world.Width - width) * 0.5f), world.Y + Theme.Px(8f), width, Theme.RowHeight + Theme.Px(6f));
+        painter.FillRect(box, Theme.Chrome.WithAlpha(230));
+        painter.FillRect(new UiRect(box.X, box.Bottom - Theme.Px(2f), box.Width, Theme.Px(2f)), Theme.Accent);
+        painter.PushClip(box);
+        painter.DrawText(Theme.Font, text, new UiVec2(box.X + Theme.Px(10f), box.Y + Theme.Px(3f)), Theme.TextSize, Theme.Text);
+        painter.PopClip();
+    }
+
     // A scene's letterbox, over the view as the player sees it over the screen.
     private void DrawLetterbox(UiPainter painter)
     {

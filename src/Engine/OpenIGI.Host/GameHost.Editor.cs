@@ -398,7 +398,14 @@ public sealed partial class GameHost
         _editorCloseWanted = true;
     }
 
-    /// <summary>Narrows the frame's lens to the editor viewport's shape, so the world is not stretched into it.</summary>
+    // The lens the editor's viewport is drawn with while a cutscene key is piloted: that key's (EditCamera.FOV, a horizontal
+    // tangent); null for the viewport's own.
+    private float? _editorLensTangent;
+
+    /// <summary>
+    /// Narrows the frame's lens to the editor viewport's shape, so the world is not stretched into it: a cutscene's frame (or a key
+    /// being piloted) keeps its own lens, framed as the game frames a scene's; anything else the viewport's.
+    /// </summary>
     /// <param name="aspectRatio">The aspect the frame would use; replaced by the viewport's.</param>
     /// <param name="verticalFieldOfView">The vertical field of view; replaced to keep the horizontal one.</param>
     private void ApplyEditorLens(ref float aspectRatio, ref float verticalFieldOfView)
@@ -409,7 +416,12 @@ public sealed partial class GameHost
         }
 
         aspectRatio = port.Width / port.Height;
-        verticalFieldOfView = VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, aspectRatio));
+        float? scene = CutsceneFrameShown is { FieldOfView: > 0f } shown ? shown.FieldOfView : _editorLensTangent;
+        verticalFieldOfView = scene is { } tangent
+            ? WidescreenLens.HorPlus
+                ? VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(tangent, aspectRatio))
+                : CutsceneVerticalFieldOfView(tangent)
+            : VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, aspectRatio));
     }
 
     /// <summary>
@@ -590,6 +602,12 @@ public sealed partial class GameHost
         public EditorView View => host._editorView;
 
         public IEditorCutscenePreview? CutscenePreview => host.CutscenePreview;
+
+        public float? LensTangent
+        {
+            get => host._editorLensTangent;
+            set => host._editorLensTangent = value;
+        }
 
         public string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
             host.ApplyLiveEdit(path, values, fromSceneSeconds);

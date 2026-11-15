@@ -279,6 +279,12 @@ public interface IEditorHost
     IEditorCutscenePreview? CutscenePreview => null;
 
     /// <summary>
+    /// Gets or sets the lens the viewport is drawn with, as a cutscene key's FOV (the horizontal half-angle tangent, 1 for the game's
+    /// ninety degrees): a key's own while it is piloted; null for the viewport's.
+    /// </summary>
+    float? LensTangent { get => null; set { } }
+
+    /// <summary>
     /// Gives a task of the running level new parameters, as a load of the mission with them would, and keeps them there through
     /// every rewind; a scene being previewed is played again from before where the change can act.
     /// </summary>

@@ -176,7 +176,7 @@ internal sealed partial class SequencerPanel
 
         // What was changed since the last frame goes into the running level; what it cannot take saves the mission and loads it.
         WatchDocument();
-        if (!ApplyChanges())
+        if (!Piloting && !ApplyChanges())
         {
             _wantPlay = false;
             if (LiveInterrupted is { } interrupted)
@@ -191,7 +191,8 @@ internal sealed partial class SequencerPanel
             Notify?.Invoke("The change could not go into the running level: the mission is saved and the level loaded with it.", false);
             return false;
         }
-        live.ShowsCamera = _preview.IsChecked;
+        // While a key is piloted the viewport is the editor's camera flying it, not the scene's.
+        live.ShowsCamera = _preview.IsChecked && !Piloting;
         _time = live.Seconds;
 
         if (_wantPlay && !live.IsPreparing)

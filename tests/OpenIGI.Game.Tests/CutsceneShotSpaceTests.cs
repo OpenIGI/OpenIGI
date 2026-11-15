@@ -57,6 +57,22 @@ public sealed class CutsceneShotSpaceTests
         Assert.InRange(angles.Z, -1.2f + 12.566f - 0.01f, -1.2f + 12.567f + 0.01f);
     }
 
+    [Theory]
+    [InlineData(0.3f)]
+    [InlineData(-1.2f)]
+    [InlineData(2.9f)]
+    public void A_keys_roll_is_kept_while_an_unrolled_camera_flies_it(float roll)
+    {
+        // An unrolled view looking up and off to one side, as the editor's camera makes them; the key rolled about it.
+        Matrix3f level = CutsceneCameraMath.ToCameraOrientation(Matrix3f.FromEngineEulerAngles(-0.4f, 0f, 1.1f));
+        Matrix3f rolled = CameraAngles.WithRoll(level, roll);
+
+        Assert.True(MathF.Abs(CameraAngles.Roll(rolled, level) - roll) < 1e-4f);
+        Assert.True((rolled.Row3 - level.Row3).Length < 1e-5f, "the roll keeps the way it looks");
+        Assert.True(MathF.Abs(Vector3f.Dot(rolled.Row1, rolled.Row2)) < 1e-5f);
+        AssertSameTurn(level, CameraAngles.WithRoll(level, 0f));
+    }
+
     private static void AssertSameTurn(Matrix3f expected, Matrix3f actual)
     {
         foreach ((Vector3f e, Vector3f a) in new[] { (expected.Row1, actual.Row1), (expected.Row2, actual.Row2), (expected.Row3, actual.Row3) })
