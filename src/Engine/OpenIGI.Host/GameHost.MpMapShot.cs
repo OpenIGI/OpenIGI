@@ -234,7 +234,7 @@ public sealed partial class GameHost
                 WriteCorner(raw, t.C);
             }
         }
-        if (WriteMapMesh(path, BuildOverheadScene(minX, maxX, minY, maxY, bottom, top, int.MaxValue)) is { } meshProblem)
+        if (WriteMapMesh(path, OverheadSceneNow(minX, maxX, minY, maxY, bottom, top)) is { } meshProblem)
         {
             return meshProblem;
         }

@@ -88,17 +88,18 @@ public interface ITerrainPresenter : IDisposable
     /// <param name="into">Receives the lines, already formatted.</param>
     void Describe(ICollection<string> into);
 
-    /// <summary>Hands the ground inside a box to a sink at its finest detail, texture by texture and pass by pass.</summary>
+    /// <summary>Hands the ground inside a box to a sink at its finest detail, a patch at a time, pass by pass.</summary>
     /// <param name="min">The box's low corner, in world units.</param>
-    /// <param name="max">The box's high corner.</param>
-    /// <param name="tiles">The ground's texture atlas, read afresh: the one drawn from has given its texels to the device.</param>
+    /// <param name="max">The box's high corner; the ground need only lie under its top.</param>
     /// <param name="sink">What takes it.</param>
-    /// <returns>Whether there was a ground to hand over.</returns>
-    /// <remarks>Defaulted to nothing, for a ground that cannot be handed over.</remarks>
-    bool ExportOverhead(Vector3d min, Vector3d max, TexAtlasFile? tiles, IOverheadSink sink)
+    /// <returns>
+    /// The walk, one step a patch handed over (its number counting from one), run as far as it is taken: the frame's thread
+    /// can spread it over frames, since it reads the ground the frame draws. Nothing for a ground that cannot be handed over.
+    /// </returns>
+    IEnumerable<int> ExportOverhead(Vector3d min, Vector3d max, IOverheadSink sink)
     {
-        _ = (min, max, tiles, sink);
-        return false;
+        _ = (min, max, sink);
+        return [];
     }
 
     /// <summary>Gets the ground as height grids an editor can change while it is drawn, or nothing when it cannot be.</summary>

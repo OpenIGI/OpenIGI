@@ -691,6 +691,7 @@ public sealed partial class GameHost
 
         AdvanceRendererSwitch();
         AdvanceMapShot(state);
+        AdvanceOverheadGathering();
 
         if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
         {

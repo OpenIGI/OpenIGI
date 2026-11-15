@@ -579,7 +579,7 @@ public sealed partial class GameHost
 
         public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);
 
-        public OverheadScene? MakeOverheadScene() => host.EditorOverheadScene();
+        public Task<OverheadScene>? MakeOverheadScene() => host.EditorOverheadScene();
 
         public IWorldInspector Inspector => host._inspector;
 

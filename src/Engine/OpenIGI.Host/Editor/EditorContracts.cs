@@ -216,9 +216,12 @@ public interface IEditorHost
     OverheadMap? MakeOverheadMap(int maxPixels) => null;
 
     /// <summary>The loaded level as it looks from straight above: its ground, its models' faces and its collision, to be drawn at any zoom and floor.</summary>
-    /// <returns>The scene, or null when no level is up.</returns>
-    /// <remarks>Gathered from the level as it is loaded, reading every texture it shows: a second or so, asked for once a level.</remarks>
-    OverheadScene? MakeOverheadScene() => null;
+    /// <returns>The scene to come, or null when no level is up.</returns>
+    /// <remarks>
+    /// Gathered from the level as it is loaded, on the calling (frame's) thread -- the ground, the placements, the collision and
+    /// the texture files -- and finished off it: the textures decoded and every face's ground found.
+    /// </remarks>
+    Task<OverheadScene>? MakeOverheadScene() => null;
 
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }

@@ -29,7 +29,7 @@ internal sealed partial class MapPanel
     private OverheadScene? _scene;
     private FloorPlan? _plan;
     private OverheadRaster? _raster;
-    private Task<(OverheadRaster Raster, FloorPlan Plan)>? _preparing;
+    private Task<(OverheadScene Scene, OverheadRaster Raster, FloorPlan Plan)>? _preparing;
     private Task<(OverheadView View, Bgra32[] Pixels, bool Whole)>? _rendering;
     private Picture? _overview;
     private Picture? _detail;
@@ -90,8 +90,8 @@ internal sealed partial class MapPanel
             return button;
         })];
 
-    // The level from above, gathered once the mission is up (and again after Redraw or for another mission); readied for
-    // drawing off the frame. A title whose ground cannot be handed over has the ground cast instead.
+    // The level from above, gathered once the mission is up (and again after Redraw or for another mission), then finished and
+    // readied for drawing off the frame; the models' boxes stand in meanwhile.
     private void EnsureMap()
     {
         int? mission = _workspace.Mission?.Id;
@@ -102,26 +102,31 @@ internal sealed partial class MapPanel
 
         _mapFor = mission;
         Release();
-        _scene = _host.MakeOverheadScene();
-        if (_scene is not { HasGround: true })
+        if (_host.MakeOverheadScene() is { } making)
         {
-            _map = _host.MakeOverheadMap(MapPixels);
-            if (_map is { } map)
+            _preparing = Task.Run(async () =>
             {
-                _image = _images.CreateImage(map.Width, map.Height, map.Pixels);
-            }
-        }
-
-        if (_scene is { } scene)
-        {
-            _preparing = Task.Run(() =>
-            {
+                OverheadScene scene = await making.ConfigureAwait(false);
                 FloorPlan plan = new(scene);
-                return (new OverheadRaster(scene, plan), plan);
+                return (scene, new OverheadRaster(scene, plan), plan);
             });
+        }
+        else
+        {
+            CastGround();
         }
 
         _framed = false;
+    }
+
+    // The ground cast from above, for a title that cannot hand its own over.
+    private void CastGround()
+    {
+        _map = _host.MakeOverheadMap(MapPixels);
+        if (_map is { } map)
+        {
+            _image = _images.CreateImage(map.Width, map.Height, map.Pixels);
+        }
     }
 
     /// <summary>Releases the pictures and stops any drawing.</summary>
@@ -155,7 +160,11 @@ internal sealed partial class MapPanel
             _preparing = null;
             if (preparing.IsCompletedSuccessfully)
             {
-                (_raster, _plan) = preparing.Result;
+                (_scene, _raster, _plan) = preparing.Result;
+                if (!_scene.HasGround)
+                {
+                    CastGround();
+                }
             }
             else
             {
