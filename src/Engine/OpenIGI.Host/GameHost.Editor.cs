@@ -598,6 +598,8 @@ public sealed partial class GameHost
 
         public string PlaytestCommand(string command) => host.PlaytestCommand(command);
 
+        public void MarkPlaytest(string text) => host.MarkTape(text);
+
         public void SnapshotSoldiers(List<Game.Ai.SoldierSnapshot> into)
         {
             ArgumentNullException.ThrowIfNull(into);

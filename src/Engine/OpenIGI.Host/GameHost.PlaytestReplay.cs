@@ -222,6 +222,16 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>Marks the recording being made where it has got to.</summary>
+    /// <param name="text">What the mark says.</param>
+    private void MarkTape(string text)
+    {
+        if (TapeTakes)
+        {
+            _tape!.Mark(TickOfLevel, text);
+        }
+    }
+
     // A recorded command, given again: the cheats as they were set, the player stood where he was stood.
     private void ApplyRecordedCommand(string command)
     {

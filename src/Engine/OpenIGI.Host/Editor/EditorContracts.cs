@@ -259,6 +259,12 @@ public interface IEditorHost
     /// <returns>What happened, to say.</returns>
     string PlaytestCommand(string command) => "Play-testing is not offered here.";
 
+    /// <summary>Marks the play-test's recording where it has got to, for its scrubber: a rule run, say.</summary>
+    /// <param name="text">What the mark says.</param>
+    void MarkPlaytest(string text)
+    {
+    }
+
     /// <summary>Copies every soldier of the running level as it stands: where, and what its mind is doing.</summary>
     /// <param name="into">The list to fill, cleared first.</param>
     void SnapshotSoldiers(List<Game.Ai.SoldierSnapshot> into) => into?.Clear();

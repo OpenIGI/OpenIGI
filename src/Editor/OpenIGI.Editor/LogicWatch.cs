@@ -54,6 +54,17 @@ internal sealed class LogicWatch(IEditorHost host, MissionWorkspace workspace)
         Tick();
         ExecLayer layer = workspace.Logic.Layout.Actions;
         IReadOnlyList<Rule> rules = RuleBook.Read(layer);
+
+        // Every rule watched, shown or not: the play-test's recording marks the moment each first runs.
+        foreach (Rule rule in rules.Where(static r => r.IsEnabled))
+        {
+            if (!_ranAt.ContainsKey(rule.Id) && Ran(layer, rule))
+            {
+                _ranAt[rule.Id] = _playSeconds;
+                host.MarkPlaytest($"rule: {Title(rule)}");
+            }
+        }
+
         if (!EditorCVars.LogicWatch.Value || rules.Count == 0)
         {
             return;
@@ -62,16 +73,11 @@ internal sealed class LogicWatch(IEditorHost host, MissionWorkspace workspace)
         List<(string Text, bool Ran)> lines = [];
         foreach (Rule rule in rules.Take(MostShown))
         {
-            string title = rule.Name.Length > 0 ? rule.Name : rule.When;
+            string title = Title(rule);
             if (!rule.IsEnabled)
             {
                 lines.Add(($"–  {title}  (off)", false));
                 continue;
-            }
-
-            if (Ran(layer, rule) && !_ranAt.ContainsKey(rule.Id))
-            {
-                _ranAt[rule.Id] = _playSeconds;
             }
 
             lines.Add(_ranAt.TryGetValue(rule.Id, out double at)
@@ -98,6 +104,8 @@ internal sealed class LogicWatch(IEditorHost host, MissionWorkspace workspace)
             EditorDraw.Label(painter, theme, text, new UiRect(box.X + pad, y, width - (pad * 2f), theme.RowHeight), ran ? theme.Accent : theme.Text);
         }
     }
+
+    private static string Title(Rule rule) => rule.Name.Length > 0 ? rule.Name : rule.When;
 
     // Whether a rule's latch has counted: the first task its event was compiled to.
     private bool Ran(ExecLayer layer, Rule rule) =>
