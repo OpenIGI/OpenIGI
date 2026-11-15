@@ -326,14 +326,45 @@ public sealed partial class GameHost
             PlayTo(id, target);
         }
 
-        // The level put back at the scene's last checkpoint at or before a moment, to be played on to it (true); or, with none,
-        // as the editor had it and the scene started again up to the moment (false: nothing left to play).
-        private bool Rewind(int target)
+        /// <summary>
+        /// An editor's change came into the level: the checkpoints from the moment it can act are let go, and the moment shown is
+        /// played again from before it, so it shows the change.
+        /// </summary>
+        /// <param name="fromSceneSeconds">When the change can first act in the scene: infinity for the camera only, null for any time.</param>
+        public void Edited(double? fromSceneSeconds)
+        {
+            if (Scene is not { } id || _reloading || Game is not { } game)
+            {
+                return;
+            }
+
+            if (fromSceneSeconds is not { } from || !double.IsPositiveInfinity(from))
+            {
+                int first = fromSceneSeconds is { } at ? Math.Max(0, (int)Math.Floor(at * Frequency)) : 0;
+                for (int i = _checkpoints.Count - 1; i >= 0 && _checkpoints.Keys[i] >= first; i--)
+                {
+                    _checkpoints.RemoveAt(i);
+                }
+            }
+
+            bool playing = IsPlaying;
+            int now = Math.Max(0, game.SceneTicks(id));
+            if (Rewind(now, before: true))
+            {
+                PlayTo(id, now);
+            }
+
+            IsPlaying = playing;
+        }
+
+        // The level put back at the scene's last checkpoint at or before a moment (strictly before it, when asked), to be played on
+        // to it (true); or, with none, as the editor had it and the scene started again up to the moment (false: nothing to play).
+        private bool Rewind(int target, bool before = false)
         {
             LevelCheckpoint? at = null;
             for (int i = _checkpoints.Count - 1; i >= 0; i--)
             {
-                if (_checkpoints.Keys[i] <= target)
+                if (before ? _checkpoints.Keys[i] < target : _checkpoints.Keys[i] <= target)
                 {
                     at = _checkpoints.Values[i];
                     break;

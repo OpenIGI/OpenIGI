@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Engine.Tasks;
@@ -34,6 +35,8 @@ public sealed class TaskScriptCommands
     private readonly ScriptVarRegistry _variables;
     private readonly IOpenIgiLogger _logger;
     private QvmSymbol? _taskNewSymbol;
+    private NativeRegistry? _symbols;
+    private Rebinding? _rebinding;
 
     /// <summary>Initializes a new instance of the <see cref="TaskScriptCommands"/> class.</summary>
     /// <param name="tree">The tree tasks are created in.</param>
@@ -67,6 +70,7 @@ public sealed class TaskScriptCommands
     {
         ArgumentNullException.ThrowIfNull(symbols);
 
+        _symbols = symbols;
         _taskNewSymbol = symbols.RegisterFunction(
             TaskNew,
             OnTaskNew,
@@ -114,6 +118,98 @@ public sealed class TaskScriptCommands
         _taskNewSymbol.Context = parent;
     }
 
+    /// <summary>
+    /// Gives a task already in the level the values a compiled <c>Task_New</c> call of its type gives: read exactly as a load reads
+    /// them (the same VM, the same parameter readers), onto a task made apart from the tree, then moved onto the live one by
+    /// name. The live task keeps its place, its id, its variables and everything it has done; only its parameters change.
+    /// </summary>
+    /// <param name="live">The task in the level.</param>
+    /// <param name="call">A compiled script whose one statement is a <c>Task_New</c> of the task's type (children, if any, are
+    /// not made).</param>
+    /// <returns>Null when the values were read and given; otherwise why not (a script that faults, or names another type).</returns>
+    /// <remarks>Not retail: an editor's change to a level that is running. A type an adapter reads is given them through it.</remarks>
+    public string? Rebind(GameTask live, ReadOnlyMemory<byte> call)
+    {
+        ArgumentNullException.ThrowIfNull(live);
+        if (_symbols is null)
+        {
+            return $"{nameof(Register)} has not been called.";
+        }
+
+        // Run in the level's own namespace (its constants -- TRUE, GAME_FREQUENCY -- are what the values are spelt with), Task_New
+        // read rather than obeyed while it does.
+        Rebinding done = new(live);
+        _rebinding = done;
+        try
+        {
+            QvmInterpreter interpreter = new(QvmProgram.Read(call), _symbols);
+            if (interpreter.Run() is var error and not QvmError.None)
+            {
+                return $"The script faulted with {error}: {interpreter.ErrorMessage}";
+            }
+        }
+        finally
+        {
+            _rebinding = null;
+        }
+
+        if (done.LevelValues is { } values)
+        {
+            live.Type.ParameterAdapter!.Apply(values, live);
+            return null;
+        }
+
+        if (done.Made is not { } made)
+        {
+            return $"The script made no {live.Type.Name}.";
+        }
+
+        foreach (TaskParameter parameter in made.GetDeclaredScriptParameters())
+        {
+            if (made.TryGetScriptValue(parameter.Name, out object? value))
+            {
+                live.TrySetScriptValue(parameter.Name, value);
+            }
+        }
+
+        return null;
+    }
+
+    // A Task_New met while a task is being given new values: read onto a task apart from the tree, or in the level's terms for a
+    // type an adapter reads.
+    private QvmValue ReadForRebind(QvmCallContext call, Rebinding rebinding)
+    {
+        GameTask live = rebinding.Live;
+        if (rebinding.Made is not null || rebinding.LevelValues is not null || call.ArgumentCount < 3
+            || !ReferenceEquals(_tree.Types.Get(call.GetString(1)), live.Type))
+        {
+            return QvmValue.Zero;
+        }
+
+        ScriptArgumentReader reader = new(call, ScriptArgumentReader.FirstParameterArgument);
+        if (live.Type.ParameterAdapter is not null)
+        {
+            rebinding.LevelValues = TaskParameterValues.Read(reader, live.Type.Parameters);
+        }
+        else
+        {
+            GameTask made = live.Type.CreateInstance();
+            made.InvokeBindScriptParameters(reader);
+            rebinding.Made = made;
+        }
+
+        return QvmValue.Zero;
+    }
+
+    // What a rebind has read so far.
+    private sealed class Rebinding(GameTask live)
+    {
+        public GameTask Live { get; } = live;
+
+        public GameTask? Made { get; set; }
+
+        public TaskParameterValues? LevelValues { get; set; }
+    }
     private QvmValue OnDeclareParameters(QvmCallContext call)
     {
         if (call.ArgumentCount < 1)
@@ -146,6 +242,11 @@ public sealed class TaskScriptCommands
 
     private QvmValue OnTaskNew(QvmCallContext call)
     {
+        if (_rebinding is { } rebinding)
+        {
+            return ReadForRebind(call, rebinding);
+        }
+
         if (call.ArgumentCount < 3)
         {
             throw new EngineFatalException(

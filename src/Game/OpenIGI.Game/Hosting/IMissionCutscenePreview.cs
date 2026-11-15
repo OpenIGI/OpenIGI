@@ -5,13 +5,12 @@ namespace OpenIGI.Game.Hosting;
 /// its start whatever its own scripts say.
 /// </summary>
 /// <remarks>
-/// The level is stepped by its host, a tick at a time, as it is in play, and loaded afresh to go back: this only says how a scene
-/// stands and starts one, so what the preview shows is the game's own result -- the vehicles driving, the soldiers moving, the
-/// camera riding.
+/// The level is stepped by its host, a tick at a time, as it is in play, and put back from memory to go back: this only says how a
+/// scene stands and starts one, and reads a task an editor changed again, so what the preview shows is the game's own result --
+/// the vehicles driving, the soldiers moving, the camera riding.
 /// </remarks>
 public interface IMissionCutscenePreview
 {
-
     /// <summary>Gets whether a scene is the one playing.</summary>
     /// <param name="sceneId">The scene's task id.</param>
     /// <returns>Whether it runs.</returns>
@@ -38,4 +37,12 @@ public interface IMissionCutscenePreview
     /// <summary>Lets the level's scenes play rather than be skipped: no break queued, the intro not waiting to be skipped.</summary>
     /// <returns>What puts the skip back as it was, for when the preview ends.</returns>
     Action AllowScenes();
+
+    /// <summary>
+    /// Reads a task again after an editor gave it new parameters in the level that is running: what the game made from it as the
+    /// level loaded (a scene's shots, an animation's keys, a sound's condition) is made again from what it now says.
+    /// </summary>
+    /// <param name="task">The task.</param>
+    /// <returns>Whether the game reads such a task this way; false for one whose parameters it reads afresh as it runs.</returns>
+    bool Reread(OpenIGI.Engine.Tasks.GameTask task) => false;
 }

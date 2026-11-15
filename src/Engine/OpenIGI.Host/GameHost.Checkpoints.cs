@@ -38,7 +38,10 @@ public sealed partial class GameHost
         return new LevelCheckpoint(level, tick, state);
     }
 
-    /// <summary>Puts the level back as a checkpoint holds it, and silences what was sounding since.</summary>
+    /// <summary>
+    /// Puts the level back as a checkpoint holds it, with the editor's changes made since laid on it again, and silences what was
+    /// sounding since.
+    /// </summary>
     /// <param name="checkpoint">The checkpoint.</param>
     /// <returns>Whether it was put back: false when another level is up.</returns>
     internal bool RestoreLevel(LevelCheckpoint checkpoint)
@@ -49,6 +52,10 @@ public sealed partial class GameHost
         }
 
         checkpoint.State.Restore();
+
+        // What claims a drawn placement may have changed with it: what the renderer cached of that is asked again.
+        _loop.Tasks.PlacementsChanged();
+        ReapplyLiveEdits();
         _cutsceneSounds.StopAll();
         _vehicleSounds?.StopAll();
         _hosted.Audio.ResetForMission();

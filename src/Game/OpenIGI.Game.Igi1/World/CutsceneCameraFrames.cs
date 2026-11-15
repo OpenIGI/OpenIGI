@@ -190,8 +190,27 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
         return shots;
     }
 
+    /// <summary>
+    /// Keeps every task's pose as the level built it, before anything moves: what a shot's link starts from when an editor
+    /// changes the shot -- or links it to another task -- in a level that has run since.
+    /// </summary>
+    public void RememberInitialPoses()
+    {
+        foreach ((GameTask task, TaskTransformState transform) in _context.TaskTransforms)
+        {
+            _initialPoses[task] = (transform.Position, transform.Orientation);
+        }
+    }
+
+    private readonly Dictionary<GameTask, (Vector3d Position, Matrix3f Orientation)> _initialPoses = [];
+
     private (Vector3d Position, Matrix3f Orientation) InitialPose(GameTask? task)
     {
+        if (task is not null && _initialPoses.TryGetValue(task, out (Vector3d Position, Matrix3f Orientation) built))
+        {
+            return built;
+        }
+
         if (task is not null && _context.TaskTransforms.TryGetValue(task, out TaskTransformState? transform))
         {
             return (transform.Position, transform.Orientation);

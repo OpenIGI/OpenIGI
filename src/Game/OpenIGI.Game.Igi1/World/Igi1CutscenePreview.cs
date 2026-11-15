@@ -86,5 +86,8 @@ public sealed class Igi1CutscenePreview(Igi1Gameplay game) : IMissionCutscenePre
         };
     }
 
+    /// <inheritdoc/>
+    public bool Reread(GameTask task) => World.Cutscenes?.Reread(task) == true;
+
     private CutSceneTask? Scene(int id) => World.LevelRoot?.Descendants().OfType<CutSceneTask>().FirstOrDefault(s => s.Id == id);
 }

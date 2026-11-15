@@ -245,6 +245,24 @@ public sealed class StateCheckpoint
 
             object copyA = _entries[_index[a]].Copy;
             object copyB = other._entries[other._index[b]].Copy;
+            if (HashEntries(copyA) is { } entriesA && other.HashEntries(copyB) is { } entriesB)
+            {
+                // A hash table's slots are filled in the order of its history (freed ones reused), which two loads need not share:
+                // its entries are compared as a set, each side in the order of what its keys are.
+                if (entriesA.Count != entriesB.Count)
+                {
+                    found.Add(string.Create(CultureInfo.InvariantCulture, $"{path}: {entriesA.Count} entries vs {entriesB.Count}"));
+                    continue;
+                }
+
+                for (int i = 0; i < entriesA.Count; i++)
+                {
+                    CompareValue(entriesA[i].Entry, entriesB[i].Entry, $"{path}{{{entriesA[i].Key}}}", other, pending, found);
+                }
+
+                continue;
+            }
+
             if (copyA is Array arrayA)
             {
                 Array arrayB = (Array)copyB;
@@ -268,7 +286,10 @@ public sealed class StateCheckpoint
 
             foreach (FieldInfo field in StateTypePlan.For(a.GetType()).Restored)
             {
-                CompareValue(field.GetValue(copyA), field.GetValue(copyB), $"{path}.{field.Name}", other, pending, found);
+                if (!IsBookkeeping(field))
+                {
+                    CompareValue(field.GetValue(copyA), field.GetValue(copyB), $"{path}.{field.Name}", other, pending, found);
+                }
             }
         }
 
@@ -298,7 +319,10 @@ public sealed class StateCheckpoint
         {
             foreach (FieldInfo field in StateTypePlan.InstanceFields(type))
             {
-                CompareValue(field.GetValue(a), field.GetValue(b), $"{path}.{field.Name}", other, pending, found);
+                if (!IsBookkeeping(field))
+                {
+                    CompareValue(field.GetValue(a), field.GetValue(b), $"{path}.{field.Name}", other, pending, found);
+                }
             }
 
             return;
@@ -332,6 +356,80 @@ public sealed class StateCheckpoint
         {
             pending.Enqueue((a, b, path));
         }
+    }
+
+    // What two loads of the same state legitimately differ in, inside the BCL's collections: how often each was changed, and where
+    // a hash table filed its entries (identity hash codes differ between objects). Its entries -- keys and values, in the order
+    // they were added -- are still compared.
+    private static bool IsBookkeeping(FieldInfo field)
+    {
+        if (field.IsDefined(typeof(DerivedStateAttribute)))
+        {
+            return true;
+        }
+
+        Type owner = field.DeclaringType!;
+        string space = owner.Namespace ?? string.Empty;
+        if (!space.StartsWith("System.Collections", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return field.Name is "_version" or "_buckets" or "_fastModMultiplier" or "_freeList" or "_freeCount" or "_count"
+            || (owner.IsNested && owner.IsValueType && field.Name.ToUpperInvariant() is "HASHCODE" or "NEXT");
+    }
+
+    // A Dictionary's or HashSet's entries as recorded, the free slots left out, ordered by a description of each key; null for
+    // anything else.
+    private List<(string Key, object Entry)>? HashEntries(object copy)
+    {
+        Type type = copy.GetType();
+        if (type.Namespace != "System.Collections.Generic" || !type.IsGenericType
+            || type.GetField("_entries", BindingFlags.Instance | BindingFlags.NonPublic) is not { } entriesField
+            || type.GetField("_count", BindingFlags.Instance | BindingFlags.NonPublic) is not { } countField
+            || type.GetField("_buckets", BindingFlags.Instance | BindingFlags.NonPublic) is null)
+        {
+            return null;
+        }
+
+        int count = (int)countField.GetValue(copy)!;
+        List<(string, object)> live = [];
+        if (entriesField.GetValue(copy) is not Array original || CopyOf(original) is not Array entries)
+        {
+            return live;
+        }
+
+        for (int i = 0; i < Math.Min(count, entries.Length); i++)
+        {
+            object entry = entries.GetValue(i)!;
+            FieldInfo[] fields = entry.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            FieldInfo next = fields.First(static f => f.Name.Equals("next", StringComparison.OrdinalIgnoreCase));
+            if ((int)next.GetValue(entry)! < -1)
+            {
+                continue; // a freed slot
+            }
+
+            FieldInfo key = fields.FirstOrDefault(static f => f.Name == "key") ?? fields.First(static f => f.Name == "Value");
+            live.Add((KeyText(key.GetValue(entry)), entry));
+        }
+
+        live.Sort(static (x, y) => string.CompareOrdinal(x.Item1, y.Item1));
+        return live;
+    }
+
+    // What a key is, to order a hash table's entries by: its value, or a recorded object's type and plain fields.
+    private string KeyText(object? key)
+    {
+        if (key is null || key.GetType().IsPrimitive || key is string or Enum)
+        {
+            return Describe(key);
+        }
+
+        object shown = CopyOf(key) ?? key;
+        IEnumerable<string> plain = StateTypePlan.For(shown.GetType()).Fields
+            .Where(static f => f.FieldType.IsPrimitive || f.FieldType == typeof(string) || f.FieldType.IsEnum)
+            .Select(f => Describe(f.GetValue(shown)));
+        return $"{Name(key.GetType())}({string.Join(",", plain)})";
     }
 
     private static string Describe(object? value) => value switch

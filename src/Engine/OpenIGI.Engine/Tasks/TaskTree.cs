@@ -19,6 +19,9 @@ namespace OpenIGI.Engine.Tasks;
 /// </remarks>
 public sealed class TaskTree : ILevelTaskTable
 {
+    // Only ever moves on, a level checkpoint's restore included (which moves it on again itself): a count put back would let a
+    // cache taken since look current.
+    [Core.Simulation.NotSimulationState]
     private int _placementEpoch;
 
     /// <summary>
@@ -44,6 +47,8 @@ public sealed class TaskTree : ILevelTaskTable
     public const int IdCapacity = 4096;
 
     private readonly GameTask?[] _idTable = new GameTask?[IdCapacity];
+    // The id table read backwards: an index over it, which two loads may fill in another order.
+    [Core.Simulation.DerivedState]
     private readonly Dictionary<GameTask, int> _idsByTask = [];
     private readonly IOpenIgiLogger _logger;
 
