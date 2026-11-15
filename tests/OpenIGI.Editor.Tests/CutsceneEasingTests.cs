@@ -53,5 +53,36 @@ public sealed class CutsceneEasingTests(ITestOutputHelper output)
         Assert.Equal(before, document.ToImage());
     }
 
+    [RequiresGameDataFact]
+    public void An_eased_spans_helpers_follow_the_key_it_runs_to_when_that_key_moves()
+    {
+        MissionDocument document = MissionDocument.Read(File.ReadAllBytes(GameData.Resolve("missions/location0/level1/objects.qvm")));
+        (MissionTask scene, CutsceneShot span, MissionTask next) = CutsceneModel.Scenes(document)
+            .SelectMany(static s => CutsceneModel.Shots(s).Select((k, i) => (s, k, i, all: CutsceneModel.Shots(s))))
+            .Where(static c => c.i + 1 < c.all.Count && c.k.Length >= 3 && CutsceneMoves.Glides(c.k.Camera))
+            .Select(static c => (c.s, c.k, c.all[c.i + 1].Camera))
+            .First();
+        CutsceneEasing.Set(document, scene, span.Camera, CutsceneEase.Out)!.Apply();
+
+        double before = CutsceneModel.Shots(scene).Last(static s => CutsceneEasing.IsHelper(s.Camera)).Camera is var last ? CutsceneMoves.KeyOf(last).Position.Z : 0;
+
+        // The key it runs to lifted ten metres, the ease following.
+        double[] at = [.. CutsceneMoves.KeyOf(next).Position is var p ? new[] { p.X, p.Y, p.Z + (10 * 4096) } : []];
+        CutsceneEasing.WithFollow(document, scene, next, SetParameterCommand.Numbers(document, next, "Position", at)).Apply();
+        Assert.Equal(CutsceneEase.Out, CutsceneEasing.Of(scene, span.Camera));
+
+        // A fresh bake on the moved path puts its helpers where the followed ones are.
+        double[] followed = [.. CutsceneModel.Shots(scene).Where(static s => CutsceneEasing.IsHelper(s.Camera)).Select(static s => CutsceneMoves.KeyOf(s.Camera).Position.Z)];
+        CutsceneEasing.Set(document, scene, span.Camera, CutsceneEase.Out)!.Apply();
+        double[] fresh = [.. CutsceneModel.Shots(scene).Where(static s => CutsceneEasing.IsHelper(s.Camera)).Select(static s => CutsceneMoves.KeyOf(s.Camera).Position.Z)];
+        Assert.Equal(fresh.Length, followed.Length);
+        for (int i = 0; i < fresh.Length; i++)
+        {
+            Assert.Equal(fresh[i], followed[i], 3);
+        }
+
+        Assert.True(followed[^1] - before > 5 * 4096, "the helper next to the key rose with it");
+    }
+
     private static CutsceneKey[] Keys(MissionTask scene) => [.. CutsceneModel.Shots(scene).Select(static s => CutsceneMoves.KeyOf(s.Camera))];
 }

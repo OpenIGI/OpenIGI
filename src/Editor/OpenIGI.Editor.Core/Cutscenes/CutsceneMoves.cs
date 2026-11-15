@@ -176,13 +176,13 @@ public static class CutsceneMoves
     {
         ArgumentNullException.ThrowIfNull(like);
         CutscenePathPoint point = CutsceneCameraMath.Evaluate(path, scale, seconds, -1f);
-        Vector3fLike angles = AnglesAt(path, scale, seconds);
+        Angles angles = AnglesAt(path, scale, seconds);
         MissionTask added = like.Clone();
         added.Label = like.Label;
         added.FindParameter("Position")?.SetNumbers([point.Position.X, point.Position.Y, point.Position.Z]);
-        added.FindParameter("Alpha")?.SetNumbers([angles.X]);
-        added.FindParameter("Beta")?.SetNumbers([angles.Y]);
-        added.FindParameter("Gamma")?.SetNumbers([angles.Z]);
+        added.FindParameter("Alpha")?.SetNumbers([angles.Alpha]);
+        added.FindParameter("Beta")?.SetNumbers([angles.Beta]);
+        added.FindParameter("Gamma")?.SetNumbers([angles.Gamma]);
         added.FindParameter("FOV")?.SetNumbers([point.FieldOfView]);
         return added;
     }
@@ -205,13 +205,17 @@ public static class CutsceneMoves
             (float)Number(camera, "Camera shake", 0));
     }
 
-    // The path's angles at a moment, channel by channel as the game blends them (the path point's matrix would lose the winding).
-    private static Vector3fLike AnglesAt(CutsceneKey[] keys, float scale, double seconds)
+    /// <summary>The path's angles at a moment, channel by channel as the game blends them (the path point's matrix would lose the winding).</summary>
+    /// <param name="keys">The scene's keys as the path reads them.</param>
+    /// <param name="scale">The scene's time scale.</param>
+    /// <param name="seconds">The moment, in scene seconds.</param>
+    /// <returns>Alpha, Beta and Gamma, in radians.</returns>
+    public static Angles AnglesAt(CutsceneKey[] keys, float scale, double seconds)
     {
         CutsceneKey[] alpha = [.. keys.Select(static k => k with { Position = new(k.Alpha, 0, 0) })];
         CutsceneKey[] beta = [.. keys.Select(static k => k with { Position = new(k.Beta, 0, 0) })];
         CutsceneKey[] gamma = [.. keys.Select(static k => k with { Position = new(k.Gamma, 0, 0) })];
-        return new Vector3fLike(
+        return new Angles(
             CutsceneCameraMath.Evaluate(alpha, scale, seconds, -1f).Position.X,
             CutsceneCameraMath.Evaluate(beta, scale, seconds, -1f).Position.X,
             CutsceneCameraMath.Evaluate(gamma, scale, seconds, -1f).Position.X);
@@ -233,5 +237,9 @@ public static class CutsceneMoves
     private static double Number(MissionTask task, string parameter, double fallback) =>
         task.FindParameter(parameter) is { } found && found.TryGetNumbers(out double[] values) && values.Length > 0 ? values[0] : fallback;
 
-    private readonly record struct Vector3fLike(double X, double Y, double Z);
+    /// <summary>A camera's three angles, in radians.</summary>
+    /// <param name="Alpha">About X.</param>
+    /// <param name="Beta">About Y.</param>
+    /// <param name="Gamma">About the up axis.</param>
+    public readonly record struct Angles(double Alpha, double Beta, double Gamma);
 }

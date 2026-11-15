@@ -65,6 +65,7 @@ internal sealed partial class SequencerPanel : EditorElement
     private readonly Button _newScene;
     private readonly Button _addMove;
     private readonly Button _pilotButton;
+    private readonly Button _curves;
     private IReadOnlyList<MissionTask> _sceneList = [];
     private MissionTask? _scene;
     private double _time;
@@ -127,7 +128,9 @@ internal sealed partial class SequencerPanel : EditorElement
         _addMove.Clicked += OfferMoves;
         _pilotButton = new Button(theme, "Pilot", KitIcon.Camera) { Style = ButtonStyle.Flat, IsToggle = true, Tooltip = "Fly the selected key with the viewport: every move is written into it, as seen (Shift+P; Esc stops, [ ] go to the key before or after, Alt+wheel changes its lens)" };
         _pilotButton.Clicked += TogglePilot;
-        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _live, _pilotButton, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
+        _curves = new Button(theme, "Curves") { Style = ButtonStyle.Flat, IsToggle = true, Tooltip = "Show the camera's curves under its lane: its speed, its turn rate, or a value it blends; drag a key's dot to change it" };
+        _curves.Clicked += () => _curves.IsChecked = !_curves.IsChecked;
+        foreach (UiElement child in (UiElement[])[_scenes, _play, _preview, _live, _pilotButton, _curves, _addShot, _deleteShot, _playInGame, _newScene, _addMove])
         {
             AddChild(child);
         }
@@ -205,7 +208,7 @@ internal sealed partial class SequencerPanel : EditorElement
         float y = contentRect.Y + Theme.Px(5f);
         _scenes.Place(context, new UiRect(x, y, Theme.Px(220f), Theme.ControlHeight));
         x += Theme.Px(228f);
-        foreach (Button button in (Button[])[_play, _preview, _live, _pilotButton, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
+        foreach (Button button in (Button[])[_play, _preview, _live, _pilotButton, _curves, _addShot, _addMove, _deleteShot, _newScene, _playInGame])
         {
             float width = Theme.Font.MeasureWidth(button.Text, Theme.TextSize) + Theme.Px(button.Icon == KitIcon.None ? 24f : 44f);
             button.Place(context, new UiRect(x, y, width, Theme.ControlHeight));
@@ -327,8 +330,13 @@ internal sealed partial class SequencerPanel : EditorElement
         }
 
         // An animation's clip: selected, so the Inspector edits its keys; one started by a cue is dragged along the clock by it.
+        if (PressCurves(scene, e.Position, laneY + Theme.Px(LaneHeight)))
+        {
+            return true;
+        }
+
         UiVec2 pointer = e.Position;
-        float y = laneY + Theme.Px(LaneHeight);
+        float y = laneY + Theme.Px(LaneHeight) + CurvesHeight;
         IReadOnlyList<CutsceneAnimation> animations = CutsceneModel.Animations(document, scene);
         foreach (CutsceneAnimation hit in animations)
         {
@@ -400,7 +408,7 @@ internal sealed partial class SequencerPanel : EditorElement
         {
             ScrubTo(Seconds(e.Position.X));
         }
-        else if (DragCameraLane(e.Position.X, e.Shift))
+        else if (DragCameraLane(e.Position.X, e.Shift) || DragCurves(e.Position.Y, Timeline.Y + Theme.Px(RulerHeight + 4f + LaneHeight)))
         {
         }
         else if (_moving is { } move)
@@ -415,6 +423,7 @@ internal sealed partial class SequencerPanel : EditorElement
         if (_scene is { } scene && _workspace.Document is { } document)
         {
             ReleaseCameraLane(document, scene);
+            ReleaseCurves(document);
             if (_moving is { } move && Math.Abs(move.Seconds - move.Cue.Seconds) > 1e-6
                 && CutsceneModel.Retime(document, scene, move.Cue, move.Seconds) is { } retime)
             {

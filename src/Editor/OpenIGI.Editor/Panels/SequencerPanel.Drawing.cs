@@ -65,6 +65,8 @@ internal sealed partial class SequencerPanel
         DrawCameraLane(painter, scene, laneY, selected);
         painter.PopClip();
         laneY += Theme.Px(LaneHeight);
+        DrawCurves(painter, scene, laneY);
+        laneY += CurvesHeight;
 
         // What the scene animates, a row each, a clip for as long as its keys run, named by what it moves.
         IReadOnlyList<CutsceneAnimation> animations = CutsceneModel.Animations(document, scene);

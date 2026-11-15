@@ -133,6 +133,35 @@ public static class CutsceneEasing
         return steps;
     }
 
+    /// <summary>
+    /// A key's edit with the eases next to it baked again after it, as one step: the helpers keep to the path as the edit leaves it.
+    /// </summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="scene">The scene.</param>
+    /// <param name="key">The key the edit changes.</param>
+    /// <param name="edit">The edit, not yet applied.</param>
+    /// <returns>The edit alone where no ease is next to the key, else the edit and the eases baked again.</returns>
+    public static IEditorCommand WithFollow(MissionDocument document, MissionTask scene, MissionTask key, IEditorCommand edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        edit.Apply();
+        IEditorCommand? follow = Following(document, scene, key);
+        edit.Undo();
+        return follow is null ? edit : new CompositeCommand("Edit Key", [edit, follow]);
+    }
+
+    /// <summary>The step that bakes again the eases next to a key, so they keep to the path as it now is.</summary>
+    /// <param name="document">The mission.</param>
+    /// <param name="scene">The scene.</param>
+    /// <param name="key">The key.</param>
+    /// <returns>The step, not applied; null where no ease is next to it.</returns>
+    public static IEditorCommand? Following(MissionDocument document, MissionTask scene, MissionTask key)
+    {
+        List<IEditorCommand> steps = [.. Follow(document, scene, key)];
+        Undo(steps);
+        return steps.Count == 0 ? null : new CompositeCommand("Follow Eases", steps);
+    }
+
     // The helpers right after a key, in order.
     private static List<MissionTask> Helpers(MissionTask scene, MissionTask key)
     {

@@ -121,7 +121,7 @@ internal sealed partial class SequencerPanel
     /// <summary>Stops piloting.</summary>
     public void StopPilot()
     {
-        if (_pilot is null)
+        if (_pilot is not { } pilot)
         {
             return;
         }
@@ -129,6 +129,13 @@ internal sealed partial class SequencerPanel
         _pilot = null;
         _host.LensTangent = null;
         _workspace.History.BreakMerge();
+
+        // The eases next to the key follow where it was flown to, once, as the pilot ends.
+        if (_scene is { } scene && _workspace.Document is { } document && document.Contains(pilot.Camera)
+            && CutsceneEasing.Following(document, scene, pilot.Camera) is { } follow)
+        {
+            _workspace.Execute(follow);
+        }
     }
 
     /// <summary>Pilots the key before or after the one piloted.</summary>

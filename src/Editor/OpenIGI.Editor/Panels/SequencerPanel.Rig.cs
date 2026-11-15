@@ -112,7 +112,7 @@ internal sealed partial class SequencerPanel
         CutsceneShotSpace space = SpaceOf(CutsceneModel.Shots(scene), key);
         (Vector3d at, Matrix3f written) = space.ToAuthored((positionMetres ?? pose.PositionMetres) * WorldUnits.PerMetre, orientation ?? pose.Orientation);
         Vector3f angles = CameraAngles.Closest(written, AnglesOf(key));
-        _workspace.Execute(CutsceneModel.SetView(document, key, (at.X, at.Y, at.Z), (angles.X, angles.Y, angles.Z)));
+        _workspace.Execute(CutsceneEasing.WithFollow(document, scene, key, CutsceneModel.SetView(document, key, (at.X, at.Y, at.Z), (angles.X, angles.Y, angles.Z))));
     }
 
     /// <summary>Selects the open scene's nth key (from nought) and puts the playhead at its start, as a click on it in the viewport does.</summary>

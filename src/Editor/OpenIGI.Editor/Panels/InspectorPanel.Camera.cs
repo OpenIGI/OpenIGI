@@ -36,7 +36,7 @@ internal sealed partial class InspectorPanel
             {
                 if (final)
                 {
-                    _workspace.Execute(SetParameterCommand.Numbers(document, camera, "FOV", [Math.Round(Math.Tan(value * Degree / 2), 4)]));
+                    _workspace.Execute(CutsceneEasing.WithFollow(document, scene, camera, SetParameterCommand.Numbers(document, camera, "FOV", [Math.Round(Math.Tan(value * Degree / 2), 4)])));
                 }
             },
             "How wide it sees, across the picture: the game's own is 90°. Written as the FOV parameter, the tangent of half of it.");
@@ -57,7 +57,7 @@ internal sealed partial class InspectorPanel
                 {
                     if (final)
                     {
-                        _workspace.Execute(SetParameterCommand.Numbers(document, camera, parameter, [Math.Round(value * Degree, 6)]));
+                        _workspace.Execute(CutsceneEasing.WithFollow(document, scene, camera, SetParameterCommand.Numbers(document, camera, parameter, [Math.Round(value * Degree, 6)])));
                     }
                 },
                 about + " The game blends each angle on its own, so a key turned the long way round turns that way.");
