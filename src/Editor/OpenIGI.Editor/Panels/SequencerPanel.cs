@@ -502,8 +502,8 @@ internal sealed partial class SequencerPanel : EditorElement
             return;
         }
 
-        Vector3d low = path.Line[0], high = path.Line[0];
-        foreach (Vector3d p in path.Line)
+        Vector3d low = path.Line[0].At, high = path.Line[0].At;
+        foreach ((Vector3d p, _) in path.Line)
         {
             low = new Vector3d(Math.Min(low.X, p.X), Math.Min(low.Y, p.Y), Math.Min(low.Z, p.Z));
             high = new Vector3d(Math.Max(high.X, p.X), Math.Max(high.Y, p.Y), Math.Max(high.Z, p.Z));
@@ -829,7 +829,7 @@ internal sealed partial class SequencerPanel : EditorElement
             return;
         }
 
-        CutsceneKey[] keys = [.. shots.Select(static s => KeyOf(s.Camera))];
+        CutsceneKey[] keys = [.. shots.Select(static s => CutsceneMoves.KeyOf(s.Camera))];
         CutscenePathPoint point = CutsceneCameraMath.Evaluate(keys, (float)CutsceneModel.TimeScale(scene), _time, -1f);
         Matrix3f orientation = point.Orientation;
         int target = (int)Number(shots[point.Current].Camera, "Target task ID", -1);
@@ -843,52 +843,6 @@ internal sealed partial class SequencerPanel : EditorElement
         Place(view, eye, eye + (new Vector3d(forward.X, forward.Y, forward.Z) * 20.0));
     }
 
-    /// <summary>The open scene's camera for the viewport to draw: its path on the engine's own curve, its shots, the playhead.</summary>
-    /// <returns>The path; null with no scene open or no shot in it.</returns>
-    public CameraPathView? Path()
-    {
-        if (_scene is not { } scene)
-        {
-            return null;
-        }
-
-        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
-        if (shots.Count == 0)
-        {
-            return null;
-        }
-
-        CutsceneKey[] keys = [.. shots.Select(static s => KeyOf(s.Camera))];
-        float scale = (float)CutsceneModel.TimeScale(scene);
-        double length = CutsceneModel.Length(scene);
-        int samples = Math.Clamp((int)(length * 12), 2, 600);
-        Vector3d[] line = new Vector3d[samples + 1];
-        for (int i = 0; i <= samples; i++)
-        {
-            line[i] = CutsceneCameraMath.Evaluate(keys, scale, length * i / samples, -1f).Position / WorldUnits.PerMetre;
-        }
-
-        (Vector3d, Vector3d)[] marks = new (Vector3d, Vector3d)[keys.Length];
-        for (int i = 0; i < keys.Length; i++)
-        {
-            Vector3f forward = CutsceneCameraMath.ToCameraOrientation(Matrix3f.FromEngineEulerAngles(keys[i].Alpha, keys[i].Beta, keys[i].Gamma)).Row3;
-            marks[i] = (keys[i].Position / WorldUnits.PerMetre, new Vector3d(forward.X, forward.Y, forward.Z));
-        }
-
-        MissionTask? selected = SelectedShot()?.Camera;
-        int chosen = -1;
-        for (int i = 0; i < shots.Count && chosen < 0; i++)
-        {
-            if (ReferenceEquals(shots[i].Camera, selected))
-            {
-                chosen = i;
-            }
-        }
-
-        Vector3d head = CutsceneCameraMath.Evaluate(keys, scale, _time, -1f).Position / WorldUnits.PerMetre;
-        return new CameraPathView(line, marks, head, chosen);
-    }
-
     // The viewport's own placing, which ends a glide that would otherwise carry the view off again.
     private void Place(OpenIGI.Presentation.Cameras.FreeCamera view, Vector3d eye, Vector3d target)
     {
@@ -900,22 +854,6 @@ internal sealed partial class SequencerPanel : EditorElement
 
         Vector3d look = target - eye;
         view.MoveTo(eye, (float)Math.Atan2(look.X, look.Y), (float)Math.Asin(Math.Clamp(look.Z / look.Length, -1, 1)));
-    }
-
-    private static CutsceneKey KeyOf(MissionTask camera)
-    {
-        Vector3d position = TaskPresentation.PositionMetres(camera) is { } metres ? metres * WorldUnits.PerMetre : Vector3d.Zero;
-        return new CutsceneKey(
-            position,
-            (float)Number(camera, "Alpha", 0),
-            (float)Number(camera, "Beta", 0),
-            (float)Number(camera, "Gamma", 0),
-            (float)Math.Clamp(Number(camera, "FOV", 1), 0.001, 3),
-            (float)Number(camera, "Duration", 0),
-            Flag(camera, "Smooth to next"),
-            (float)(camera.Parameters.FirstOrDefault(static p => p.Name.StartsWith("Time of day", StringComparison.Ordinal)) is { } hour && hour.TryGetNumbers(out double[] h) && h.Length > 0 ? h[0] : -1),
-            (float)Number(camera, "Noise", 0),
-            (float)Number(camera, "Camera shake", 0));
     }
 
     // A flag as the levels spell it, TRUE or FALSE, or as a number.

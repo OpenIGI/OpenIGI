@@ -208,7 +208,7 @@ internal sealed partial class SequencerPanel
             }
         }
 
-        CutsceneKey key = KeyOf(shot.Camera);
+        CutsceneKey key = CutsceneMoves.KeyOf(shot.Camera);
         (Vector3d at, Matrix3f turn) = space.ToWorld(key.Position, Matrix3f.FromEngineEulerAngles(key.Alpha, key.Beta, key.Gamma));
         Matrix3f seen = CutsceneCameraMath.ToCameraOrientation(turn);
         Vector3d eye = at / WorldUnits.PerMetre;

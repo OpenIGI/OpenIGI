@@ -174,6 +174,9 @@ internal sealed partial class EditorSession : IEditorSession
         _viewport.CameraPath = () => _dock.IsInFront("sequencer") && host.CutscenePreview is not { Scene: not null, ShowsCamera: true } ? _sequencer.Path() : null;
         _viewport.Letterbox = () => host.CutscenePreview is { Scene: not null, ShowsCamera: true, IsPreparing: false } live ? live.ViewportHeight : _sequencer.PilotLetterbox;
         _viewport.PilotBanner = () => _sequencer.PilotBanner;
+        _viewport.CameraKeyPose = key => _dock.IsInFront("sequencer") ? _sequencer.KeyPose(key) : null;
+        _viewport.MoveCameraKey = _sequencer.MoveKey;
+        _viewport.CameraKeyPicked = _sequencer.PickKey;
         _viewport.PilotWheel = _sequencer.PilotLens;
         _sequencer.PrepareLive = PrepareLive;
 

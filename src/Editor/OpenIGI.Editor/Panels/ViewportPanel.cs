@@ -141,6 +141,7 @@ internal sealed partial class ViewportPanel : EditorElement
         ShownGraph is { } shown && _graph.PickedPosition(shown.Task, shown.Graph) is { } node
             ? node
             : _workspace.Selection.Primary is not { } task ? null
+            : CameraKeyPose?.Invoke(task) is { } key ? key.PositionMetres
             : MissionGraphs.IsGraph(task) && TaskPresentation.PositionMetres(task) is not null ? MissionGraphs.OriginMetres(task)
             : TaskPresentation.PositionMetres(task);
 
@@ -446,7 +447,7 @@ internal sealed partial class ViewportPanel : EditorElement
         ApplySnapSettings();
         if (ShowGizmos && _workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin && !Resizing
             && (Rotating
-                ? _rotate.Begin(Projector, origin, GizmoFrame, TaskPresentation.OrientationMatrix(selected), e.Position)
+                ? _rotate.Begin(Projector, origin, GizmoFrame, CameraKeyPose?.Invoke(selected)?.Orientation ?? TaskPresentation.OrientationMatrix(selected), e.Position)
                 : _gizmo.Begin(Projector, origin, GizmoFrame, e.Position, _graph.PickedNode is null ? point => SurfaceUnder(point, selected) : null)))
         {
             // Shift on a move handle duplicates first and drags the copies, which stand where the originals did.
@@ -502,6 +503,11 @@ internal sealed partial class ViewportPanel : EditorElement
             }
         }
 
+        if (PickCameraKey(e.Position))
+        {
+            return true;
+        }
+
         Pick(e.Position, e.Control);
         return true;
     }
@@ -549,6 +555,21 @@ internal sealed partial class ViewportPanel : EditorElement
             if (_workspace.Graphs.MoveNode(shown.Task, nodeId, MissionGraphs.ToLocalUnits(shown.Task, to)) is { } move)
             {
                 _workspace.Execute(move);
+            }
+
+            return;
+        }
+
+        // A cutscene camera key: moved and turned where it is seen, written back through the space it is seen in.
+        if ((_rotate.IsDragging || _gizmo.IsDragging) && _graph.PickedNode is null && MoveCameraKey is { } moveKey && CameraKeyPose?.Invoke(selected) is not null)
+        {
+            if (_rotate.IsDragging)
+            {
+                moveKey(selected, null, _rotate.Drag(e.Position));
+            }
+            else
+            {
+                moveKey(selected, _gizmo.Drag(Projector, e.Position, e.Control), null);
             }
 
             return;
