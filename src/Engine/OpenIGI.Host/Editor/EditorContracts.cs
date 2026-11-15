@@ -278,6 +278,18 @@ public interface IEditorHost
     /// <summary>Gets what plays the mission's cutscenes on the level itself, or <see langword="null"/> where the game has nothing to.</summary>
     IEditorCutscenePreview? CutscenePreview => null;
 
+    /// <summary>
+    /// Gives a task of the running level new parameters, as a load of the mission with them would, and keeps them there through
+    /// every rewind; a scene being previewed is played again from before where the change can act.
+    /// </summary>
+    /// <param name="path">Where the task is: each step an index under the level (then under that child) and the type there.</param>
+    /// <param name="values">The task's own <c>Task_New</c> call, compiled, without its children.</param>
+    /// <param name="fromSceneSeconds">When in the previewed scene the change can first act: positive infinity for one only
+    /// the camera shows, null for one that can act from the level's start.</param>
+    /// <returns>Null when the level took it; otherwise why not, and the level has to be loaded again to take it.</returns>
+    string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
+        "This game cannot take changes in a running level.";
+
     /// <summary>Gets the world inspector: entities, their positions and screen projections.</summary>
     IWorldInspector Inspector { get; }
 

@@ -14,10 +14,6 @@ internal sealed partial class SequencerPanel
     // Play as soon as the level is ready: asked for while it was being loaded or made ready.
     private bool _wantPlay;
 
-    // The last step in the history when the live scene began: an edit since makes the level the scene plays on out of date.
-    private IEditorCommand? _lastEditAtBegin;
-    private int _editsAtBegin = -1;
-
     /// <summary>
     /// Gets or sets what makes the level match the mission before it plays live: saved and loaded afresh when it has changes
     /// not yet saved, then the action given.
@@ -68,9 +64,16 @@ internal sealed partial class SequencerPanel
                 return;
             }
 
+            // Begun on a level that holds the mission as it is now: changes from here go into it as they are made.
+            WatchDocument();
+            _changes.Clear();
+            MarkInStep();
+            if (_workspace.Document is { } document)
+            {
+                NoteTimes(document, scene);
+            }
+
             live.Seek(at);
-            _editsAtBegin = _workspace.History.Done.Count;
-            _lastEditAtBegin = _workspace.History.Done.Count > 0 ? _workspace.History.Done[^1] : null;
         }
 
         if (PrepareLive is { } prepare)
@@ -91,7 +94,6 @@ internal sealed partial class SequencerPanel
         }
 
         _wantPlay = false;
-        _editsAtBegin = -1;
     }
 
     private void LiveTogglePlay()
@@ -167,15 +169,16 @@ internal sealed partial class SequencerPanel
 
         if (!LiveActive)
         {
+            // Not live: what is changed now reaches the level as the mission is saved and loaded for the next scene.
+            _changes.Clear();
             return false;
         }
 
-        IEditorCommand? last = _workspace.History.Done.Count > 0 ? _workspace.History.Done[^1] : null;
-        if (_workspace.History.Done.Count != _editsAtBegin || !ReferenceEquals(last, _lastEditAtBegin))
+        // What was changed since the last frame goes into the running level; what it cannot take saves the mission and loads it.
+        WatchDocument();
+        if (!ApplyChanges())
         {
-            // The level the scene plays on is not the mission any more: saved, and loaded afresh with the change in it.
             _wantPlay = false;
-            _editsAtBegin = -1;
             if (LiveInterrupted is { } interrupted)
             {
                 interrupted();
@@ -185,10 +188,9 @@ internal sealed partial class SequencerPanel
                 live.Finish();
             }
 
-            Notify?.Invoke("The live scene stopped as the mission changed: it is saved, and Play shows the scene again with the change.", false);
+            Notify?.Invoke("The change could not go into the running level: the mission is saved and the level loaded with it.", false);
             return false;
         }
-
         live.ShowsCamera = _preview.IsChecked;
         _time = live.Seconds;
 

@@ -46,7 +46,8 @@ public static partial class CutsceneModel
     /// <summary>The game's ticks a second (<c>GAME_FREQUENCY</c>).</summary>
     public const double TicksPerSecond = 30;
 
-    private const string DurationParameter = "Duration";
+    /// <summary>The camera's parameter that says how long its shot holds.</summary>
+    public const string DurationParameter = "Duration";
     private const string TimeScaleParameter = "Time scale";
 
     /// <summary>The mission's cutscenes, in mission order.</summary>

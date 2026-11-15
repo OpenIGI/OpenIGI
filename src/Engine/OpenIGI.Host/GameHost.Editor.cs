@@ -591,6 +591,9 @@ public sealed partial class GameHost
 
         public IEditorCutscenePreview? CutscenePreview => host.CutscenePreview;
 
+        public string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
+            host.ApplyLiveEdit(path, values, fromSceneSeconds);
+
         public int LevelLoads => host._levelLoads;
 
         public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);

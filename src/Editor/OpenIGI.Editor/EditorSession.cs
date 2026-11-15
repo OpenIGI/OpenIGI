@@ -834,8 +834,9 @@ internal sealed partial class EditorSession : IEditorSession
     // not yet saved, then the scene begun once the level is up.
     private void PrepareLive(Action begin)
     {
-        // The level plays the mission as its files hold it: changes not saved, or saved since the level was loaded, are not in it.
-        bool behind = _workspace.History.IsDirty || _savedInLevelLoad == _host.LevelLoads;
+        // The level plays the mission as its files hold it: changes not saved, or saved since the level was loaded, are not in it --
+        // unless they went into it as they were made, while a scene played live.
+        bool behind = !_sequencer.LevelHoldsDocument && (_workspace.History.IsDirty || _savedInLevelLoad == _host.LevelLoads);
         if (!behind)
         {
             begin();
