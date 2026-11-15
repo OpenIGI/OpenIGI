@@ -434,7 +434,7 @@ internal sealed partial class ViewportPanel : EditorElement
             return _terrain.Begin(Projector, e.Position, e.Shift);
         }
 
-        if (PatrolPress(e))
+        if (RailPress(e) || PatrolPress(e))
         {
             return true;
         }
@@ -713,7 +713,7 @@ internal sealed partial class ViewportPanel : EditorElement
             return true;
         }
 
-        if (PatrolKey(e))
+        if (RailKey(e) || PatrolKey(e))
         {
             return true;
         }
@@ -770,6 +770,7 @@ internal sealed partial class ViewportPanel : EditorElement
         }
 
         DrawPatrol(painter);
+        DrawRail(painter);
         DrawCameraPath(painter);
         DrawLetterbox(painter);
         DrawPilotBanner(painter);

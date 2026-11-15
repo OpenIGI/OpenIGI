@@ -1,10 +1,34 @@
+using OpenIGI.Editor.Panels;
+using OpenIGI.Host.Editor;
 using OpenIGI.UI.Editor.Actions;
 
 namespace OpenIGI.Editor;
 
-/// <summary>The cutscene camera's keys: piloting one with the viewport, and keying the view, from anywhere in the editor.</summary>
+/// <summary>The cutscene camera's keys: drawn and handled in the viewport, piloted, keyed, railed and rigged, from anywhere in the editor.</summary>
 internal sealed partial class EditorSession
 {
+    // The viewport and the Inspector given the sequencer's camera: its rig drawn, its keys moved, piloted, railed and rigged.
+    private void WireCutsceneCamera(IEditorHost host, InspectorPanel inspector)
+    {
+        _viewport.CameraPath = () => _dock.IsInFront("sequencer") && host.CutscenePreview is not { Scene: not null, ShowsCamera: true } ? _sequencer.Path() : null;
+        _viewport.Letterbox = () => host.CutscenePreview is { Scene: not null, ShowsCamera: true, IsPreparing: false } live ? live.ViewportHeight : _sequencer.PilotLetterbox;
+        _viewport.PilotBanner = () => _sequencer.PilotBanner;
+        _viewport.CameraKeyPose = key => _dock.IsInFront("sequencer") ? _sequencer.KeyPose(key) : null;
+        _viewport.MoveCameraKey = _sequencer.MoveKey;
+        _viewport.CameraKeyPicked = _sequencer.PickKey;
+        _viewport.RailDraft = () => _sequencer.RailDraft;
+        _viewport.RailHint = () => _sequencer.RailHint;
+        _viewport.RailPoint = _sequencer.AddRailPoint;
+        _viewport.RailBack = _sequencer.UndoRailPoint;
+        _viewport.RailEnd = _sequencer.EndRail;
+        CutsceneRigStore rigs = new(_workspace, host);
+        _sequencer.Rigs = rigs;
+        inspector.Rigs = rigs;
+        inspector.RemakeRig = _sequencer.Remake;
+        inspector.Unrig = _sequencer.Unrig;
+        _viewport.PilotWheel = _sequencer.PilotLens;
+    }
+
     private void RegisterCameraActions(ActionTable actions)
     {
         actions.Add(new EditorAction("sequencer.pilot", "Pilot Camera Key", () =>
@@ -23,6 +47,24 @@ internal sealed partial class EditorSession
             Category = "Cutscene",
             Shortcut = KeyChord.Parse("Esc"),
             CanExecute = () => _sequencer.Piloting,
+        });
+        actions.Add(new EditorAction("sequencer.rail-make", "Make the Rail", () => _sequencer.EndRail(true))
+        {
+            Category = "Cutscene",
+            Shortcut = KeyChord.Parse("Return"),
+            CanExecute = () => _sequencer.RailDraft is not null,
+        });
+        actions.Add(new EditorAction("sequencer.rail-stop", "Stop Laying the Rail", () => _sequencer.EndRail(false))
+        {
+            Category = "Cutscene",
+            Shortcut = KeyChord.Parse("Esc"),
+            CanExecute = () => _sequencer.RailDraft is not null,
+        });
+        actions.Add(new EditorAction("sequencer.rail-back", "Take the Rail's Last Point", _sequencer.UndoRailPoint)
+        {
+            Category = "Cutscene",
+            Shortcut = KeyChord.Parse("Backspace"),
+            CanExecute = () => _sequencer.RailDraft is not null,
         });
         actions.Add(new EditorAction("sequencer.pilot-previous", "Pilot the Key Before", () => _sequencer.PilotNext(-1))
         {

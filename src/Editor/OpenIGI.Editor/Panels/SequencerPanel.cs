@@ -124,7 +124,7 @@ internal sealed partial class SequencerPanel : EditorElement
         _playInGame.Clicked += () => PlayInGame?.Invoke();
         _newScene = new Button(theme, "New Cutscene", KitIcon.Plus) { Style = ButtonStyle.Flat, Tooltip = "Make a cutscene of the mission's own, its first shot the viewport's camera; a rule plays it" };
         _newScene.Clicked += NewScene;
-        _addMove = new Button(theme, "Add Move…") { Style = ButtonStyle.Flat, Tooltip = "Add a ready-made camera move round the selected object: orbit, push in, fly-over, crane up, pan" };
+        _addMove = new Button(theme, "Add Move…") { Style = ButtonStyle.Flat, Tooltip = "Add a camera rig -- a rail clicked out on the ground, a crane or an orbit round the selected object -- or a ready-made move round it: push in, fly-over, pan" };
         _addMove.Clicked += OfferMoves;
         _pilotButton = new Button(theme, "Pilot", KitIcon.Camera) { Style = ButtonStyle.Flat, IsToggle = true, Tooltip = "Fly the selected key with the viewport: every move is written into it, as seen (Shift+P; Esc stops, [ ] go to the key before or after, Alt+wheel changes its lens)" };
         _pilotButton.Clicked += TogglePilot;
@@ -221,7 +221,7 @@ internal sealed partial class SequencerPanel : EditorElement
         _pilotButton.IsChecked = Piloting;
         _pilotButton.IsEnabled = Piloting || (_scene is not null && _host.Camera is not null && CutsceneModel.Shots(_scene).Count > 0);
         _deleteShot.IsEnabled = SelectedShot() is not null;
-        _addMove.IsEnabled = _scene is not null && Subject() is not null;
+        _addMove.IsEnabled = _scene is not null;
         _newScene.IsEnabled = _workspace.Document?.Declarations.ContainsKey(CutsceneModel.SceneType) == true;
     }
 
@@ -640,20 +640,35 @@ internal sealed partial class SequencerPanel : EditorElement
 
     private void OfferMoves()
     {
-        if (Root is not { } root || Subject() is not { } subject)
+        if (Root is not { } root || _scene is null)
         {
             return;
         }
 
-        (CameraMove Move, string Title, string Detail)[] moves =
+        MissionTask? subject = Subject();
+        List<PaletteEntry> entries =
         [
-            (CameraMove.Orbit, "Orbit", "a full turn round it"),
-            (CameraMove.PushIn, "Push In", "from well back straight in"),
-            (CameraMove.FlyOver, "Fly-Over", "comes in high and settles in front"),
-            (CameraMove.CraneUp, "Crane Up", "rises to look down on it"),
-            (CameraMove.Pan, "Pan", "turns across it from where the camera stands"),
+            new(subject is null ? "Rail…" : $"Rail Watching {TaskPresentation.Name(subject)}…", StartRail)
+            {
+                Detail = "a dolly track clicked out on the ground in the viewport, flown at one speed" + (subject is null ? ", looking along the way" : ", the camera kept on it") + " (a rig: change it later)",
+                Icon = KitIcon.Play,
+            },
         ];
-        CommandPalette.Open(root, [.. moves.Select(m => new PaletteEntry(m.Title, () => AddMove(m.Move, subject)) { Detail = m.Detail, Icon = KitIcon.Play })], $"A camera move round {TaskPresentation.Name(subject)}");
+        if (subject is not null)
+        {
+            entries.Add(new PaletteEntry("Crane", () => AddSwing(CutsceneRigKind.Crane)) { Detail = "an arm swung a quarter round it, rising, watching it (a rig: change it later)", Icon = KitIcon.Play });
+            entries.Add(new PaletteEntry("Orbit", () => AddSwing(CutsceneRigKind.Orbit)) { Detail = "a full turn round it at one height (a rig: change it later)", Icon = KitIcon.Play });
+            foreach ((CameraMove move, string title, string detail) in ((CameraMove, string, string)[])[
+                (CameraMove.PushIn, "Push In", "from well back straight in"),
+                (CameraMove.FlyOver, "Fly-Over", "comes in high and settles in front"),
+                (CameraMove.Pan, "Pan", "turns across it from where the camera stands"),
+            ])
+            {
+                entries.Add(new PaletteEntry(title, () => AddMove(move, subject)) { Detail = detail, Icon = KitIcon.Play });
+            }
+        }
+
+        CommandPalette.Open(root, entries, subject is null ? "A camera move (select an object for more)" : $"A camera move round {TaskPresentation.Name(subject)}");
     }
 
     // A move's shots, after the one at the playhead, from the side the viewport's camera is on, six seconds long.

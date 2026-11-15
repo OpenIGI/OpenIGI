@@ -171,13 +171,7 @@ internal sealed partial class EditorSession : IEditorSession
         };
         _dock.Register(new DockPanel("map", "Map", _map) { Icon = KitIcon.Search });
         _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play, PlaceCamera = _viewport.PlaceCamera, Notify = (message, isError) => Notify(message, isError) };
-        _viewport.CameraPath = () => _dock.IsInFront("sequencer") && host.CutscenePreview is not { Scene: not null, ShowsCamera: true } ? _sequencer.Path() : null;
-        _viewport.Letterbox = () => host.CutscenePreview is { Scene: not null, ShowsCamera: true, IsPreparing: false } live ? live.ViewportHeight : _sequencer.PilotLetterbox;
-        _viewport.PilotBanner = () => _sequencer.PilotBanner;
-        _viewport.CameraKeyPose = key => _dock.IsInFront("sequencer") ? _sequencer.KeyPose(key) : null;
-        _viewport.MoveCameraKey = _sequencer.MoveKey;
-        _viewport.CameraKeyPicked = _sequencer.PickKey;
-        _viewport.PilotWheel = _sequencer.PilotLens;
+        WireCutsceneCamera(host, inspector);
         _sequencer.PrepareLive = PrepareLive;
 
         // An edit during a live scene ends it as Play would: the mission saved, the level loaded afresh with the edit in it.

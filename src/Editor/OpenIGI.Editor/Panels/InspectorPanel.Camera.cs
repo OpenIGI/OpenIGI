@@ -14,6 +14,15 @@ internal sealed partial class InspectorPanel
 {
     private const double Degree = Math.PI / 180;
 
+    /// <summary>Gets or sets the open mission's camera rigs.</summary>
+    public CutsceneRigStore? Rigs { get; set; }
+
+    /// <summary>Gets or sets what makes a rig's keys again from changed settings: its scene, its new settings.</summary>
+    public Action<MissionTask, CutsceneRig>? RemakeRig { get; set; }
+
+    /// <summary>Gets or sets what lets a rig's keys go as plain keys.</summary>
+    public Action<CutsceneRig>? Unrig { get; set; }
+
     /// <summary>Gets or sets what pilots a camera key with the viewport, for the Pilot button.</summary>
     public Action<MissionTask>? PilotKey { get; set; }
 
@@ -98,9 +107,74 @@ internal sealed partial class InspectorPanel
                 "How the camera runs to the next key, baked into helper keys the game reads (the path kept, its timing changed); the game's own curve takes them out again.");
         }
 
+        AddRigSection(document, scene, camera);
+
         Button pilot = new(Theme, "Pilot") { Tooltip = "Fly this key with the viewport; every move is written into it, as seen (Shift+P)" };
         pilot.Clicked += () => PilotKey?.Invoke(camera);
         _grid.Add(string.Empty, pilot);
+    }
+
+    // The rig a key belongs to: what it is, its settings (each change makes its keys again), and letting it go as plain keys.
+    private void AddRigSection(MissionDocument document, MissionTask scene, MissionTask camera)
+    {
+        if (Rigs?.Of(scene, camera) is not { } rig)
+        {
+            return;
+        }
+
+        _grid.Section("Rig: " + rig.Name);
+        string subject = rig.SubjectId >= 0 ? Seen(document, camera) is var _ && document.EnumerateTasks().FirstOrDefault(t => t.Id == rig.SubjectId) is { } s ? TaskPresentation.Name(s) : $"#{rig.SubjectId}" : string.Empty;
+        string what = rig.Kind switch
+        {
+            CutsceneRigKind.Rail => string.Create(CultureInfo.InvariantCulture, $"A rail through {rig.Points.Count} points{(subject.Length > 0 ? ", watching " + subject : ", looking along the way")}"),
+            CutsceneRigKind.Crane => "A crane swung round " + subject,
+            _ => "An orbit round " + subject,
+        };
+        _grid.Text("Rig", () => what, null, "Its keys are plain keys the game reads; its settings are the editor's own, kept beside the mission, so it can be changed and its keys made again.");
+        bool intact = CutsceneRigs.IsIntact(scene, rig);
+        if (!intact)
+        {
+            _grid.Text("Edited", () => "Its keys were changed by hand", null, "Changing a setting makes its keys again from the rig, losing what was changed by hand; Plain Keys keeps them and forgets the rig.");
+        }
+
+        void Number(string label, double value, Func<double, CutsceneRig> with, string about, double low, double high)
+        {
+            NumberField field = _grid.Number(label, () => value, (v, final) =>
+            {
+                if (final && Math.Abs(v - value) > 1e-9)
+                {
+                    RemakeRig?.Invoke(scene, with(v));
+                }
+            }, about);
+            field.Minimum = low;
+            field.Maximum = high;
+            field.Decimals = 1;
+        }
+
+        Number("Length (s)", rig.Seconds, v => rig with { Seconds = v }, "How long the whole rig runs.", 0.5, 600);
+        switch (rig.Kind)
+        {
+            case CutsceneRigKind.Rail:
+                Number("Height (m)", rig.Height, v => rig with { Height = v }, "How high over the clicked ground the camera rides.", 0, 500);
+                break;
+            default:
+                Number(rig.Kind == CutsceneRigKind.Crane ? "Reach (m)" : "Distance (m)", rig.Radius, v => rig with { Radius = v }, "How far out from its subject.", 1, 1000);
+                Number(rig.Kind == CutsceneRigKind.Crane ? "Rise (m)" : "Height (m)", rig.Height, v => rig with { Height = v }, rig.Kind == CutsceneRigKind.Crane ? "How far the arm rises as it swings." : "How high over its subject.", -100, 1000);
+                Number("Swing (°)", rig.Sweep, v => rig with { Sweep = v }, "How far round it goes; less than nought the other way.", -720, 720);
+                Number("Start (°)", rig.Heading, v => rig with { Heading = v }, "Where round its subject it starts, from +X.", -360, 360);
+                break;
+        }
+
+        if (!intact)
+        {
+            Button again = new(Theme, "Make Again from the Rig") { Tooltip = "Its keys made again from its settings: the hand edits lost" };
+            again.Clicked += () => RemakeRig?.Invoke(scene, rig);
+            _grid.Add(string.Empty, again);
+        }
+
+        Button plain = new(Theme, "Plain Keys") { Tooltip = "Keep its keys as they are and forget the rig" };
+        plain.Clicked += () => Unrig?.Invoke(rig);
+        _grid.Add(string.Empty, plain);
     }
 
     // The nearest task of a type above another.
