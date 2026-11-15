@@ -290,6 +290,17 @@ public interface IEditorHost
     string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
         "This game cannot take changes in a running level.";
 
+    /// <summary>
+    /// Gives a task of the running level the children the editor now has under it -- kept ones matched in order by type, new ones
+    /// made from their compiled calls, gone ones let go -- and keeps that order through every rewind.
+    /// </summary>
+    /// <param name="path">Where the task is, as <see cref="ApplyLiveEdit"/> takes it.</param>
+    /// <param name="children">Its children in order: each one's type, and for one to make anew its compiled <c>Task_New</c>.</param>
+    /// <param name="fromSceneSeconds">When in the previewed scene the change can first act, as <see cref="ApplyLiveEdit"/> takes it.</param>
+    /// <returns>Null when the level took it; otherwise why not.</returns>
+    string? ApplyLiveChildren(IReadOnlyList<(int Index, string Type)> path, IReadOnlyList<(string Type, ReadOnlyMemory<byte>? Values)> children, double? fromSceneSeconds) =>
+        "This game cannot take changes in a running level.";
+
     /// <summary>Gets the world inspector: entities, their positions and screen projections.</summary>
     IWorldInspector Inspector { get; }
 

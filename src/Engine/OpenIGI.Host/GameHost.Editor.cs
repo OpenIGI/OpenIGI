@@ -594,6 +594,9 @@ public sealed partial class GameHost
         public string? ApplyLiveEdit(IReadOnlyList<(int Index, string Type)> path, ReadOnlyMemory<byte> values, double? fromSceneSeconds) =>
             host.ApplyLiveEdit(path, values, fromSceneSeconds);
 
+        public string? ApplyLiveChildren(IReadOnlyList<(int Index, string Type)> path, IReadOnlyList<(string Type, ReadOnlyMemory<byte>? Values)> children, double? fromSceneSeconds) =>
+            host.ApplyLiveChildren(path, children, fromSceneSeconds);
+
         public int LevelLoads => host._levelLoads;
 
         public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);

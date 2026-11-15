@@ -339,12 +339,25 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
             return true;
         }
 
-        // A scene, or a camera somewhere in one: the scene's shots read again.
+        // A scene, or a camera somewhere in one: the scene's shots read again, and the level's tasks numbered again in the order
+        // the walk meets them, as the load numbered them -- a shot added or taken out moves every task after it.
         for (GameTask? at = task; at is not null; at = at.Parent)
         {
             if (at is CutSceneTask scene && _scenes.Find(s => ReferenceEquals(s.Task, scene)) is { } state)
             {
                 state.ReplaceShots(_camera.ReadShots(scene));
+
+                // Only what the load would have met: the tasks it numbered and the scene's own (a shot new to it), not those the game
+                // has made since.
+                HashSet<GameTask> met = new(_context.TaskOrder.Keys, ReferenceEqualityComparer.Instance);
+                met.UnionWith(scene.Descendants());
+                _context.TaskOrder.Clear();
+                int order = 0;
+                foreach (GameTask placed in _context.Root.Descendants().Where(met.Contains))
+                {
+                    _context.TaskOrder[placed] = order++;
+                }
+
                 return true;
             }
         }

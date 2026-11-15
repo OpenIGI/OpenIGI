@@ -13,8 +13,8 @@ namespace OpenIGI.Desktop.Tests;
 
 /// <summary>
 /// An editor's changes made in the level while a scene plays live are the changes a saved and loaded mission has: mission 1's
-/// intro, a shot's camera moved and a cue moved later, made at 10 s, gone back to 5 s and played to 16 s -- and the level then
-/// is, field for field, the one the same mission saved with those changes and loaded afresh reaches at 16 s.
+/// intro, changed at 10 s, gone back to 5 s and played to 16 s -- and the level then is, field for field, the one the same mission
+/// saved with those changes and loaded afresh reaches at 16 s.
 /// </summary>
 [Collection(AiScenarioSupport.CollectionName)]
 public sealed class CutsceneLiveEditTests(ITestOutputHelper output) : IDisposable
@@ -34,8 +34,42 @@ public sealed class CutsceneLiveEditTests(ITestOutputHelper output) : IDisposabl
         }
     }
 
+    /// <summary>A shot's camera moved (the view only) and a cue moved later (what happens).</summary>
     [RequiresGameDataFact]
-    public void Changes_made_live_are_the_changes_a_saved_mission_loads_with()
+    public void Changes_made_live_are_the_changes_a_saved_mission_loads_with() => Compare((host, document, scene) =>
+    {
+        MissionTask camera = CutsceneModel.Shots(scene)[1].Camera;
+        CutsceneCue cue = CutsceneModel.Cues(document, scene).First(static c => c.Seconds is > 6 and < 18);
+        output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"camera: {camera.Label}; cue: {cue.Task.TypeName} {cue.Task.Id} '{cue.Parameter}' at {cue.Seconds:0.##} s"));
+
+        double[] position = Numbers(camera, "Position");
+        SetParameterCommand.Numbers(document, camera, "Position", [position[0] + 2000, position[1], position[2] + 400]).Apply();
+        Assert.Null(host.ApplyLiveEdit(document.LevelPath(camera), document.CompileTaskValues(camera), double.PositiveInfinity));
+        double was = cue.Seconds;
+        CutsceneModel.Retime(document, scene, cue, was + 1.5)!.Apply();
+        Assert.Null(host.ApplyLiveEdit(document.LevelPath(cue.Task), document.CompileTaskValues(cue.Task), was));
+    });
+
+    /// <summary>A shot added after the first and another taken out: the scene's shots, and so its length, changed.</summary>
+    [RequiresGameDataFact]
+    public void Shots_added_and_taken_out_live_are_those_a_saved_mission_loads_with() => Compare((host, document, scene) =>
+    {
+        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
+        MissionTask first = shots[0].Camera;
+        double[] at = Numbers(first, "Position");
+        (Editor.Core.Commands.IEditorCommand add, MissionTask added) = CutsceneModel.AddShot(document, scene, first, (at[0] + 1500, at[1] - 800, at[2] + 600), (0.1, 0.2, 1.3), 2.5)!.Value;
+        add.Apply();
+        new RemoveTaskCommand(document, shots[2].Camera).Apply();
+        output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"added '{added.Label}' after '{first.Label}'; took out '{shots[2].Camera.Label}' (from {shots[1].Start:0.##} s)"));
+
+        List<(string, ReadOnlyMemory<byte>?)> children = [.. scene.Children.Select(child =>
+            (child.TypeName, child.TypeName == CutsceneModel.CameraType ? (ReadOnlyMemory<byte>?)document.CompileTaskValues(child) : null))];
+        Assert.Null(host.ApplyLiveChildren(document.LevelPath(scene), children, shots[1].Start));
+    });
+
+    // The scene begun live, changed at 10 s by the edit given, taken back to 5 s and played to 16 s; then the mission saved with the
+    // edit, loaded afresh and played to 16 s: the two levels and their cameras the same.
+    private void Compare(Action<GameHost, MissionDocument, MissionTask> edit)
     {
         using RecordingGraphicsDevice device = new();
         GameHost host = _support.Host(device, "-mission", "1", "-lockstep", "-frames", "1000000");
@@ -48,30 +82,18 @@ public sealed class CutsceneLiveEditTests(ITestOutputHelper output) : IDisposabl
         string path = host.ObjectsPathForTesting!;
         MissionDocument document = MissionDocument.Read(host.ReadGameFile(path)!.Value);
         MissionTask scene = document.EnumerateTasks().First(static t => t.Id == Scene);
-        MissionTask camera = CutsceneModel.Shots(scene)[1].Camera;
-        CutsceneCue cue = CutsceneModel.Cues(document, scene).First(static c => c.Seconds is > 6 and < 18);
-        output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"camera: {camera.Label}; cue: {cue.Task.TypeName} {cue.Task.Id} '{cue.Parameter}' at {cue.Seconds:0.##} s"));
 
         IEditorCutscenePreview preview = host.CutscenePreviewForTesting!;
         Assert.True(preview.Begin(Scene));
         Settle(host, preview);
         preview.Seek(10);
-
-        // The edits, made in the document as the editor makes them and given to the running level.
-        double[] position = Numbers(camera, "Position");
-        SetParameterCommand.Numbers(document, camera, "Position", [position[0] + 2000, position[1], position[2] + 400]).Apply();
-        Assert.Null(host.ApplyLiveEdit(document.LevelPath(camera), document.CompileTaskValues(camera), double.PositiveInfinity));
-        double was = cue.Seconds;
-        CutsceneModel.Retime(document, scene, cue, was + 1.5)!.Apply();
-        Assert.Null(host.ApplyLiveEdit(document.LevelPath(cue.Task), document.CompileTaskValues(cue.Task), was));
-
+        edit(host, document, scene);
         preview.Seek(5);
         preview.Seek(16);
         Assert.InRange(preview.Seconds, 15.96, 16.04);
         Vector3d liveCamera = host.Mission().CutsceneFrameShown!.Camera.Position;
         LevelCheckpoint live = host.CaptureLevel(480)!;
 
-        // The same mission saved with the changes and loaded afresh, the scene played to the same moment.
         string file = Path.Combine(_folder, path.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllBytes(file, document.ToImage());

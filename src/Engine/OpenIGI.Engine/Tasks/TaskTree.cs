@@ -212,6 +212,44 @@ public sealed class TaskTree : ILevelTaskTable
         }
     }
 
+    /// <summary>
+    /// Gives a task exactly these children, in this order: those it has and is not given are let go (detached, not destroyed:
+    /// they may be given back), the others are taken from wherever they are.
+    /// </summary>
+    /// <param name="parent">The task.</param>
+    /// <param name="children">Its children, in order.</param>
+    /// <remarks>Not retail: an editor's change to the order of a running level's tasks, and that order laid on again after a rewind.</remarks>
+    public void SetChildren(GameTask parent, IReadOnlyList<GameTask> children)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        ArgumentNullException.ThrowIfNull(children);
+        if (!ReferenceEquals(parent.Tree, this) || children.Any(c => !ReferenceEquals(c.Tree, this)))
+        {
+            throw new ArgumentException("The tasks are not this tree's.", nameof(children));
+        }
+
+        while (parent.FirstChild is { } first)
+        {
+            first.Unlink();
+        }
+
+        foreach (GameTask child in children)
+        {
+            // One still naming this parent after its children were let go names it from before a level checkpoint was put back,
+            // which this child was not in: its links are stale, and are cleared rather than followed into the parent's list.
+            if (ReferenceEquals(child.Parent, parent))
+            {
+                child.ClearLinks();
+            }
+            else
+            {
+                child.Unlink();
+            }
+
+            parent.AppendChild(child);
+        }
+    }
+
     /// <summary>Broadcasts a message to a task and everything beneath it.</summary>
     /// <param name="task">The subtree root.</param>
     /// <param name="message">The message.</param>

@@ -175,6 +175,51 @@ public sealed class TaskScriptCommands
         return null;
     }
 
+    /// <summary>
+    /// Makes a task, and any it holds, under a parent of the level that is running, from a compiled <c>Task_New</c> call: made exactly
+    /// as a load makes it (its id bound, its values read, its variables exported, told it was parsed), then told the level has loaded.
+    /// </summary>
+    /// <param name="parent">The parent it is made under, at the end of its children.</param>
+    /// <param name="call">A compiled script whose one statement is the task's <c>Task_New</c>.</param>
+    /// <param name="made">Receives the task made, or null.</param>
+    /// <returns>Null when it was made; otherwise why not.</returns>
+    /// <remarks>Not retail: an editor's addition to a level that is running.</remarks>
+    public string? NewUnder(GameTask parent, ReadOnlyMemory<byte> call, out GameTask? made)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        made = null;
+        if (_symbols is null || _taskNewSymbol is null)
+        {
+            return $"{nameof(Register)} has not been called.";
+        }
+
+        object? context = _taskNewSymbol.Context;
+        _taskNewSymbol.Context = parent;
+        BeginLoad();
+        try
+        {
+            QvmInterpreter interpreter = new(QvmProgram.Read(call), _symbols);
+            if (interpreter.Run() is var error and not QvmError.None)
+            {
+                return $"The script faulted with {error}: {interpreter.ErrorMessage}";
+            }
+        }
+        finally
+        {
+            _taskNewSymbol.Context = context;
+        }
+
+        made = FirstCreatedTask;
+        FirstCreatedTask = null;
+        if (made is null)
+        {
+            return "The script made no task.";
+        }
+
+        _tree.Send(made, TaskMessage.PostLoad);
+        return null;
+    }
+
     // A Task_New met while a task is being given new values: read onto a task apart from the tree, or in the level's terms for a
     // type an adapter reads.
     private QvmValue ReadForRebind(QvmCallContext call, Rebinding rebinding)
