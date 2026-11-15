@@ -184,6 +184,8 @@ public sealed record WorldPlacement(
     public bool HasLightmap => LightmapEntry.Length > 0 || (LightmapIndex >= 0 && LightmapSet.Length > 0);
 
     /// <summary>The cached result of <see cref="LightmapEntryName"/>; the inputs are init-only.</summary>
+    /// <remarks>Filled when it is drawn, not by play: a checkpoint leaves it as it is.</remarks>
+    [OpenIGI.Core.Simulation.NotSimulationState]
     private string? _lightmapEntryName;
 
     /// <summary>Gets the archive entry name holding this object's bake.</summary>

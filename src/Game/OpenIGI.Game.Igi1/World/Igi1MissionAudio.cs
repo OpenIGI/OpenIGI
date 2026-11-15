@@ -14,9 +14,13 @@ namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Project I.G.I.'s mission heard: the player's weapon and body, the soldiers' guns and feet, the doors and lifts,
 /// the sirens and cameras, and the level's ambience.</summary>
-/// <remarks>Every voice the mission holds is held here, so the host only opens the device and places the ear.</remarks>
+/// <remarks>
+/// Every voice the mission holds is held here, so the host only opens the device and places the ear. Voices, not play: a
+/// level checkpoint leaves it out (its draws are the mission's stream, which is recorded).
+/// </remarks>
 /// <param name="mission">The mission whose things make the sounds, and whose stream picks among them.</param>
 /// <param name="host">Where they play.</param>
+[OpenIGI.Core.Simulation.NotSimulationState]
 public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
     /// <summary>The cue a gun the player picks up plays, at the listener, wherever the player stands.</summary>
