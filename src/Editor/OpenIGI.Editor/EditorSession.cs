@@ -64,6 +64,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly RulesPanel _rules;
     private readonly LogicWatch _logicWatch;
     private readonly MapPanel _map;
+    private readonly PlaytestOverlay _playtestOverlay = new();
     private readonly SequencerPanel _sequencer;
     private readonly GuidePanel _guide;
 
@@ -309,7 +310,14 @@ internal sealed partial class EditorSession : IEditorSession
     {
         if (IsPlaying)
         {
+            // The banner before the guards' minds: text drawn after another run of text and the banner's shadow lost its
+            // first glyphs (seen on the D3D12 path, cause not found), and the minds keep clear of the banner anyway.
             DrawPlayingBanner(painter);
+            if (_host.Playtest.Overlay)
+            {
+                _playtestOverlay.Draw(painter, _theme, _host);
+            }
+
             _logicWatch.Draw(painter, _theme);
             return;
         }
@@ -896,6 +904,7 @@ internal sealed partial class EditorSession : IEditorSession
             (string.Create(System.Globalization.CultureInfo.InvariantCulture, $"F8 speed {test.Speed:0.##}x"), test.Speed != 1f),
             ("F2 god", test.God),
             ("F3 unseen", test.Unseen),
+            ("F10 minds", test.Overlay),
             .. test.HasCamera ? (ReadOnlySpan<(string, bool)>)[("F4 to camera", false)] : [],
         ];
         float gap = _theme.Px(16f);

@@ -40,6 +40,12 @@ public sealed partial class Igi1HumanAi
     /// <summary>Diagnostic: the current route's first waypoint, in engine units.</summary>
     public Vector3d? DebugWaypoint => _route.Count > 0 ? _route[0].Point : null;
 
+    /// <summary>Gets the waypoints the current route has still to walk, in engine units, for the editor's play-test overlay.</summary>
+    public IEnumerable<Vector3d> RoutePoints => _route.Select(static w => w.Point);
+
+    /// <summary>Gets whether the human he watches is in his sight, as his sweep last found it.</summary>
+    public bool SeesTarget => TargetSlot.IsVisible;
+
     /// <summary>One line of combat-decision state, for diffing the port against the retail probe log.</summary>
     /// <returns>The formatted line.</returns>
     public string DescribeCombat()

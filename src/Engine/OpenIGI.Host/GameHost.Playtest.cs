@@ -19,6 +19,14 @@ namespace OpenIGI.Host;
 public sealed partial class GameHost
 {
     private static readonly float[] PlaytestSpeeds = [0.25f, 0.5f, 1f, 2f, 4f];
+
+    // The keys a play-test takes: their binds (the developer's renderer toggles, co-op's calls) do not run while it does.
+    private static readonly KeyCode[] PlaytestKeys = [KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F6, KeyCode.F7, KeyCode.F8, KeyCode.F10];
+
+    private bool _playtestOverlay;
+
+    // A play-test's skip of the cutscene playing, held as the skip key is until the scene ends.
+    private bool _playtestSkipping;
     private const int PlaytestNormalSpeed = 2;
 
     private bool _playtestPaused;
@@ -26,6 +34,9 @@ public sealed partial class GameHost
     private int _playtestSpeed = PlaytestNormalSpeed;
     private bool _playtestWasPlaying;
     private Vector3d? _playtestCamera;
+
+    // Which way the editor's camera looked across the ground, as the player's heading: forward is (sin, cos).
+    private float _playtestCameraHeading;
 
     // The cheats as they were before the play-test opened the gate; null while it has not.
     private (bool Enabled, bool Health, bool Unseen)? _playtestCheatsBefore;
@@ -36,7 +47,15 @@ public sealed partial class GameHost
         PlaytestSpeeds[_playtestSpeed],
         PlayerCheatOptions.Current.InfiniteHealth,
         PlayerCheatOptions.Current.Unseen,
-        _playtestCamera is not null);
+        _playtestCamera is not null)
+    {
+        Overlay = _playtestOverlay,
+    };
+
+    /// <summary>Gets whether a key is the play-test's while one runs, so its bind is passed over.</summary>
+    /// <param name="key">The key pressed.</param>
+    /// <returns>Whether the play-test takes it.</returns>
+    private bool PlaytestOwns(KeyCode key) => _editor is { IsPlaying: true } && Array.IndexOf(PlaytestKeys, key) >= 0;
 
     /// <summary>Gets whether the play-test holds the level still: paused, and no step asked for.</summary>
     private bool PlaytestHoldsLevel => _editor is { IsPlaying: true } && _playtestPaused && _playtestSteps == 0;
@@ -59,8 +78,13 @@ public sealed partial class GameHost
         _playtestSpeed = PlaytestNormalSpeed;
         if (playing)
         {
-            // The editor's last view is its camera's, until the game draws its own.
+            // The editor's last view is its camera's, until the game draws its own: where it stood, and which way it looked
+            // across the ground (the line through the middle of the view runs along both clip planes of x = 0 and y = 0).
             _playtestCamera = _editorView.Width > 0f ? _editorView.Eye : null;
+            Matrix4f m = _editorView.ViewProjection;
+            Vector3d along = Vector3d.Cross(new Vector3d(m.M11, m.M12, m.M13), new Vector3d(m.M21, m.M22, m.M23));
+            along = (m.M41 * along.X) + (m.M42 * along.Y) + (m.M43 * along.Z) < 0 ? -along : along;
+            _playtestCameraHeading = (float)Math.Atan2(along.X, along.Y);
             return;
         }
 
@@ -89,6 +113,7 @@ public sealed partial class GameHost
             _ when keys.WasPressed(KeyCode.F2) => "god",
             _ when keys.WasPressed(KeyCode.F3) => "unseen",
             _ when keys.WasPressed(KeyCode.F4) => "camera",
+            _ when keys.WasPressed(KeyCode.F10) => "overlay",
             _ => null,
         };
         if (command is not null)
@@ -101,12 +126,12 @@ public sealed partial class GameHost
     /// <returns>What happened, to say.</returns>
     internal string PlaytestToCamera()
     {
-        if (_playtestCamera is not { } eye || TitlePlayer is not { } player || _titleFeatures?.Placement is not { } placement)
+        if (_playtestCamera is not { } eye || TitlePlayer is null || _titleFeatures?.Placement is not { } placement)
         {
             return "No editor camera to go to.";
         }
 
-        return placement.TryPlace(eye * Game.World.WorldScene.UnitsPerMetre, player.Heading ?? 0f)
+        return placement.TryPlace(eye * Game.World.WorldScene.UnitsPerMetre, _playtestCameraHeading)
             ? string.Create(CultureInfo.InvariantCulture, $"Stood where the editor's camera was ({eye.X:0.#}, {eye.Y:0.#}).")
             : "Nothing to stand on under the editor's camera.";
     }
@@ -143,8 +168,14 @@ public sealed partial class GameHost
                 return PlayerCheatCVars.Unseen.Value ? "Unseen on." : "Unseen off.";
             case ["camera"]:
                 return PlaytestToCamera();
+            case ["skip"]:
+                _playtestSkipping = true;
+                return "Skipping the cutscene, if one is playing that the level lets be skipped.";
+            case ["overlay"]:
+                _playtestOverlay = !_playtestOverlay;
+                return _playtestOverlay ? "Guards' minds shown: sight, what each does, where each goes." : "Guards' minds hidden.";
             default:
-                return "Play-test commands: pause, run, step [n], speed <x>, god, unseen, camera.";
+                return "Play-test commands: pause, run, step [n], speed <x>, god, unseen, camera, overlay, skip.";
         }
     }
 

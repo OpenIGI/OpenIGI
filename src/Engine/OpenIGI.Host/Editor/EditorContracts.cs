@@ -77,7 +77,11 @@ public readonly record struct EditorView(Vector3d Eye, Matrix4f ViewProjection, 
 /// <param name="God">Whether nothing hurts the player (F2).</param>
 /// <param name="Unseen">Whether guards and cameras do not see the player (F3).</param>
 /// <param name="HasCamera">Whether there is an editor camera to stand the player at (F4).</param>
-public readonly record struct EditorPlaytest(bool Paused, float Speed, bool God, bool Unseen, bool HasCamera);
+public readonly record struct EditorPlaytest(bool Paused, float Speed, bool God, bool Unseen, bool HasCamera)
+{
+    /// <summary>Gets whether the guards' minds are drawn over the game: their sight, what each does, where each goes (F10).</summary>
+    public bool Overlay { get; init; }
+}
 
 /// <summary>The loaded level seen from straight above, as a picture and the world square it covers.</summary>
 /// <param name="Width">The picture's width in pixels.</param>
@@ -243,6 +247,10 @@ public interface IEditorHost
     /// <param name="command">The command.</param>
     /// <returns>What happened, to say.</returns>
     string PlaytestCommand(string command) => "Play-testing is not offered here.";
+
+    /// <summary>Copies every soldier of the running level as it stands: where, and what its mind is doing.</summary>
+    /// <param name="into">The list to fill, cleared first.</param>
+    void SnapshotSoldiers(List<Game.Ai.SoldierSnapshot> into) => into?.Clear();
 
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }

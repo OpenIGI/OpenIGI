@@ -920,7 +920,7 @@ public sealed partial class GameHost : IDisposable
         {
             while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode key))
             {
-                if (executeBinds)
+                if (executeBinds && !PlaytestOwns(key))
                 {
                     state.Console.System.ExecuteBind(BindKeyNames.NameOf(key));
                 }

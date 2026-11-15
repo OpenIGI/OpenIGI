@@ -36,7 +36,9 @@ public sealed partial class GameHost
             && TickObserver is not Multiplayer.ISessionFollower;
         bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true };
         // On a touch screen the whole screen is the key: a finger held anywhere fills the ring.
-        bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown;
+        // And a play-test's skip holds it for the player, until the scene is over.
+        _playtestSkipping &= hostCutscene || titleCutscene;
+        bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown || _playtestSkipping;
 
         // A scene the host ended -- skipped, often -- is cut here as the host's skip cut it there.
         bool followed = TickObserver is Multiplayer.ISessionFollower && _mission.Scenes?.IsPlaying == true;

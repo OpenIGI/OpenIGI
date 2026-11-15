@@ -22,4 +22,29 @@ public readonly record struct SoldierSnapshot(
     bool IsDead,
     int Animation,
     float HealthFraction,
-    bool IsCutsceneActor);
+    bool IsCutsceneActor)
+{
+    /// <summary>Gets whether a mind runs the soldier, so the fields of its mind below mean something.</summary>
+    public bool HasMind { get; init; }
+
+    /// <summary>Gets which way it faces, in radians about the up axis: forward is <c>(-sin, cos)</c> across the ground.</summary>
+    public float Facing { get; init; }
+
+    /// <summary>Gets whether it is alerted, which widens how far it sees.</summary>
+    public bool Alerted { get; init; }
+
+    /// <summary>Gets whether the one it is watching -- the player, mostly -- is in its sight now.</summary>
+    public bool SeesTarget { get; init; }
+
+    /// <summary>Gets how far it sees as it stands, in metres.</summary>
+    public double SightMetres { get; init; }
+
+    /// <summary>Gets half the width of what it sees, in radians either side of where it faces.</summary>
+    public double SightHalfAngle { get; init; }
+
+    /// <summary>Gets what it is doing, in a word or two: its activity and the script action it runs.</summary>
+    public string Doing { get; init; } = string.Empty;
+
+    /// <summary>Gets the waypoints it has still to walk, in metres.</summary>
+    public IReadOnlyList<Vector3d> RouteMetres { get; init; } = [];
+}

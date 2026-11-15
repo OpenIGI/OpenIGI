@@ -592,6 +592,19 @@ public sealed partial class GameHost
 
         public string PlaytestCommand(string command) => host.PlaytestCommand(command);
 
+        public void SnapshotSoldiers(List<Game.Ai.SoldierSnapshot> into)
+        {
+            ArgumentNullException.ThrowIfNull(into);
+            if (host._soldiers is { } soldiers)
+            {
+                soldiers.Snapshot(into);
+            }
+            else
+            {
+                into.Clear();
+            }
+        }
+
         public IWorldInspector Inspector => host._inspector;
 
         public IOpenIgiLogger Logger => host._logger;
