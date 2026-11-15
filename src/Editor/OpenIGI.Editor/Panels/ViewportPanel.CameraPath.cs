@@ -17,14 +17,14 @@ namespace OpenIGI.Editor.Panels;
 internal sealed record CameraKeyGlyph(Vector3d At, Matrix3f View, float Lens, bool Rides, Vector3d? Watching, int Number);
 
 /// <summary>A cutscene's camera rig as the viewport draws it, in world metres.</summary>
-/// <param name="Line">Points along the path the camera flies, in order, each with whether it is drawn relative to a ride.</param>
+/// <param name="Line">Points along the path the camera flies, in order, each with whether it is drawn relative to a ride and whether it is flown to from the point before (false across a cut).</param>
 /// <param name="Ticks">Where the camera is every half second, for its speed.</param>
 /// <param name="Keys">Each key.</param>
 /// <param name="Playhead">Where the camera is at the playhead.</param>
 /// <param name="Selected">The key selected, or -1.</param>
 /// <param name="Note">What the drawing of riding keys means, or null.</param>
 internal sealed record CameraPathView(
-    IReadOnlyList<(Vector3d At, bool Riding)> Line,
+    IReadOnlyList<(Vector3d At, bool Riding, bool Joined)> Line,
     IReadOnlyList<Vector3d> Ticks,
     IReadOnlyList<CameraKeyGlyph> Keys,
     Vector3d Playhead,
@@ -68,7 +68,9 @@ internal sealed partial class ViewportPanel
 
         UiRect world = WorldRect;
         float width = MathF.Min(world.Width - Theme.Px(16f), Theme.Font.MeasureWidth(text, Theme.TextSize) + Theme.Px(20f));
-        UiRect box = new(world.X + ((world.Width - width) * 0.5f), world.Y + Theme.Px(8f), width, Theme.RowHeight + Theme.Px(6f));
+        // Under the view's own chips (the mission's name, the camera's speed), never over them.
+        UiRect box = new(world.X + ((world.Width - width) * 0.5f), world.Y + Theme.Px(16f) + Theme.ControlHeight, width, Theme.RowHeight + Theme.Px(6f));
+        text = UI.Editor.Theme.EditorDraw.Fit(Theme.Font, text, Theme.TextSize, width - Theme.Px(20f));
         painter.FillRect(box, Theme.Chrome.WithAlpha(230));
         painter.FillRect(new UiRect(box.X, box.Bottom - Theme.Px(2f), box.Width, Theme.Px(2f)), Theme.Accent);
         painter.PushClip(box);
@@ -103,7 +105,7 @@ internal sealed partial class ViewportPanel
         Bgra32 riding = Bgra32.FromRgb(0x3C, 0xC8, 0xC0);
         for (int i = 1; i < path.Line.Count; i++)
         {
-            if (Projector.TryProject(path.Line[i - 1].At, out UiVec2 from) && Projector.TryProject(path.Line[i].At, out UiVec2 to))
+            if (path.Line[i].Joined && Projector.TryProject(path.Line[i - 1].At, out UiVec2 from) && Projector.TryProject(path.Line[i].At, out UiVec2 to))
             {
                 painter.StrokeSoft(from, to, Theme.Px(2f), (path.Line[i].Riding ? riding : colour).WithAlpha(210));
             }
@@ -117,7 +119,11 @@ internal sealed partial class ViewportPanel
             }
         }
 
-        for (int i = 0; i < path.Keys.Count; i++)
+        // Numbered dots never drawn over each other: one that would cover another already drawn is a small plain dot (the selected
+        // key is drawn first, so it always keeps its number).
+        List<UiVec2> numbered = [];
+        IEnumerable<int> order = path.Selected >= 0 ? [path.Selected, .. Enumerable.Range(0, path.Keys.Count).Where(i => i != path.Selected)] : Enumerable.Range(0, path.Keys.Count);
+        foreach (int i in order)
         {
             CameraKeyGlyph key = path.Keys[i];
             if (key.Number == 0)
@@ -139,6 +145,13 @@ internal sealed partial class ViewportPanel
             }
 
             float radius = Theme.Px(selected ? 9f : 7.5f);
+            if (numbered.Any(n => MathF.Abs(n.X - screen.X) < radius * 2 && MathF.Abs(n.Y - screen.Y) < radius * 2))
+            {
+                painter.FillDot(screen, Theme.Px(3f), ink);
+                continue;
+            }
+
+            numbered.Add(screen);
             painter.FillDot(screen, radius + Theme.Px(1.5f), Theme.Background);
             painter.FillDot(screen, radius, ink);
             string number = key.Number.ToString(CultureInfo.InvariantCulture);
@@ -154,8 +167,12 @@ internal sealed partial class ViewportPanel
 
         if (path.Note is { Length: > 0 } note)
         {
+            // On a chip, as the view's other notes are, so it reads over any ground.
             UiRect world = WorldRect;
-            painter.DrawText(Theme.SmallFont, note, new UiVec2(world.X + Theme.Px(10f), world.Bottom - Theme.RowHeight), Theme.SmallTextSize, riding);
+            float width = Theme.SmallFont.MeasureWidth(note, Theme.SmallTextSize) + Theme.Px(16f);
+            UiRect chip = new(world.X + Theme.Px(10f), world.Bottom - Theme.ControlHeight - Theme.Px(10f), width, Theme.ControlHeight);
+            UI.Editor.Theme.EditorDraw.Fill(painter, Theme, chip, Theme.Background.WithAlpha(200));
+            painter.DrawText(Theme.SmallFont, note, new UiVec2(chip.X + Theme.Px(8f), MathF.Round(chip.Y + ((chip.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f))), Theme.SmallTextSize, riding);
         }
     }
 

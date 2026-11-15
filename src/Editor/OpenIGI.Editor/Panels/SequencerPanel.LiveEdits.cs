@@ -120,6 +120,7 @@ internal sealed partial class SequencerPanel
         {
             if (!document.Contains(task.Key))
             {
+                _host.Logger.Information("Editor", $"The scene is loaded again for the change: {task.Key.TypeName} '{task.Key.Label}' is no longer in the mission.");
                 return false;
             }
 
@@ -144,15 +145,21 @@ internal sealed partial class SequencerPanel
         static bool Shot(MissionTask task) => task.TypeName == CutsceneModel.CameraType && task.Children.Count == 0;
         foreach (MissionChange change in structural)
         {
-            bool ours = change.Kind == MissionChangeKind.Removed ? _shotStarts.ContainsKey(change.Task) : ReferenceEquals(change.Task.Parent, scene);
+            // A shot taken out is ours when the level had it, or when it was put in since (a step made by trying its parts first
+            // puts its new shots in, takes them out and puts them in again).
+            bool ours = change.Kind == MissionChangeKind.Removed
+                ? _shotStarts.ContainsKey(change.Task) || structural.Any(c => c.Kind == MissionChangeKind.Added && ReferenceEquals(c.Task, change.Task))
+                : ReferenceEquals(change.Task.Parent, scene);
             if (change.Kind == MissionChangeKind.Identity || !Shot(change.Task) || !ours)
             {
+                _host.Logger.Information("Editor", $"The scene is loaded again for the change: {change.Kind} {change.Task.TypeName} '{change.Task.Label}' is not a shot of its own changed in place.");
                 return false;
             }
         }
 
         if (scene.SelfAndSubtree().Any(t => t.TypeName == CutsceneModel.CameraType && !ReferenceEquals(t.Parent, scene)))
         {
+            _host.Logger.Information("Editor", "The scene is loaded again for the change: it has shots nested under other tasks.");
             return false;
         }
 

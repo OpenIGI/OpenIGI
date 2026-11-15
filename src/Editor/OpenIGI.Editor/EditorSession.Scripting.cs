@@ -279,6 +279,11 @@ internal sealed partial class EditorSession
             return "Seeking once the mission is open.";
         }
 
+        if (RunCameraCommand(arguments) is { } cameraSaid)
+        {
+            return cameraSaid;
+        }
+
         // editor pilot [<n>]: pilots the open scene's nth key (or the selected one), or stops; editor fly <right> <forward> <up>
         // [<yaw degrees>]: the viewport's camera moved by so many metres along its own axes and turned, as flying it does.
         if (arguments is [string pilotVerb, ..] && pilotVerb.Equals("pilot", StringComparison.OrdinalIgnoreCase) && arguments.Count <= 2)

@@ -46,7 +46,7 @@ public sealed class CutsceneEasingTests(ITestOutputHelper output)
         double last = (CutsceneCameraMath.Evaluate(eased, scale, end, -1f).Position - CutsceneCameraMath.Evaluate(eased, scale, end - (1 / 30.0), -1f).Position).Length * 30;
         output.WriteLine($"{span.Camera.Label} {start:0.##}-{end:0.##} s: off the way at most {off / 4096:0.###} m; arriving at {100 * last / mean:0.#}% of its mean speed");
         Assert.True(off < 0.25 * 4096, $"{off / 4096} m off the way");
-        Assert.True(last < 0.025 * mean, $"arriving at {last / mean:P1} of its mean speed");
+        Assert.True(last < 0.02 * mean, $"arriving at {last / mean:P1} of its mean speed");
 
         CutsceneEasing.Set(document, scene, span.Camera, CutsceneEase.None)!.Apply();
         Assert.Equal(CutsceneEase.None, CutsceneEasing.Of(scene, span.Camera));
@@ -82,6 +82,42 @@ public sealed class CutsceneEasingTests(ITestOutputHelper output)
         }
 
         Assert.True(followed[^1] - before > 5 * 4096, "the helper next to the key rose with it");
+    }
+
+    /// <summary>
+    /// The speeding train's half turn round the train (a span that already speeds up, ending on a cut) eased in and out: the same
+    /// way in the same time, from rest to rest, at most half again its mean pace -- the ease's own shape, not the curve's times it.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void An_ease_in_and_out_shapes_the_way_covered_whatever_the_curve_did_there()
+    {
+        MissionDocument document = MissionDocument.Read(File.ReadAllBytes(GameData.Resolve("missions/location0/level1/objects.qvm")));
+        MissionTask scene = CutsceneModel.Scenes(document).First(static s => s.Id == 1202);
+        CutsceneShot span = CutsceneModel.Shots(scene).First(static s => s.Camera.Label == "Train total" && s.Length > 1);
+        float scale = (float)CutsceneModel.TimeScale(scene);
+        (double way, double peak) Run(CutsceneKey[] path)
+        {
+            double covered = 0, fastest = 0;
+            Vector3d last = CutsceneCameraMath.Evaluate(path, scale, span.Start, -1f).Position;
+            for (int i = 1; i <= 400; i++)
+            {
+                Vector3d at = CutsceneCameraMath.Evaluate(path, scale, span.Start + Math.Min(span.Length * i / 400, span.Length - 1e-4), -1f).Position;
+                double step = (at - last).Length / 4096;
+                covered += step;
+                fastest = Math.Max(fastest, step / (span.Length / 400));
+                last = at;
+            }
+
+            return (covered, fastest);
+        }
+
+        (double wasWay, double wasPeak) = Run(Keys(scene));
+        CutsceneEasing.Set(document, scene, span.Camera, CutsceneEase.InOut)!.Apply();
+        (double way, double peak) = Run(Keys(scene));
+        double mean = way / span.Length;
+        output.WriteLine($"{span.Length:0.#} s: way {wasWay:0.0} -> {way:0.0} m; peak {wasPeak:0.0} -> {peak:0.0} m/s, mean {mean:0.0} ({peak / mean:0.00}x)");
+        Assert.Equal(wasWay, way, wasWay * 0.02);
+        Assert.InRange(peak / mean, 1.3, 1.75);
     }
 
     private static CutsceneKey[] Keys(MissionTask scene) => [.. CutsceneModel.Shots(scene).Select(static s => CutsceneMoves.KeyOf(s.Camera))];

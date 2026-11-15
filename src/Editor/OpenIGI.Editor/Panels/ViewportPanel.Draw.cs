@@ -71,7 +71,8 @@ internal sealed partial class ViewportPanel
 
             // Something with no model of its own (a patrol point, a trigger, a graph) is marked where it is, with its name, so
             // what the gizmo moves can be seen.
-            if (!drawn && TaskPresentation.PositionMetres(task) is { } at && projector.TryProject(at, out UiVec2 spot))
+            // (A cutscene key the rig draws is left to it: where it is written is not where it is seen.)
+            if (!drawn && CameraKeyPose?.Invoke(task) is null && TaskPresentation.PositionMetres(task) is { } at && projector.TryProject(at, out UiVec2 spot))
             {
                 painter.FillDiamond(spot, Theme.Px(12f), Theme.Accent);
                 painter.FillDiamond(spot, Theme.Px(6f), Bgra32.White);

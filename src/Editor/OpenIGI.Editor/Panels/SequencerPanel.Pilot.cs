@@ -9,7 +9,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Editor.Panels;
 
 /// <summary>
-/// Piloting a camera key, as Unreal pilots an actor: the viewport goes to the key -- where it is seen, its lens, at the moment it
+/// Piloting a camera key, as Unreal pilots an actor: the viewport goes to the key -- where it is seen, its lens, a moment after it
 /// starts -- and flying the viewport flies the key, every move written back into it through the space it is seen in
 /// (<see cref="CutsceneShotSpace"/>: a riding key relative to where its ride stood as the level loaded), its angles the nearest
 /// to its own (<see cref="CameraAngles"/>) and its roll kept, the editor's camera having none.
@@ -25,6 +25,7 @@ internal sealed partial class SequencerPanel
 {
     private const double PilotLookAhead = 20.0;
     private const double LensStep = 0.04;
+    private const double PilotInto = 0.05;
 
     private PilotState? _pilot;
 
@@ -44,7 +45,7 @@ internal sealed partial class SequencerPanel
                 return null;
             }
 
-            IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
+            IReadOnlyList<CutsceneShot> shots = CutsceneEasing.OwnKeys(scene);
             int index = IndexOfShot(shots, pilot.Camera);
             int link = (int)Number(pilot.Camera, "Link task ID", -1);
             int target = (int)Number(pilot.Camera, "Target task ID", -1);
@@ -85,7 +86,7 @@ internal sealed partial class SequencerPanel
         }
 
         StopPilot();
-        MissionTask? camera = number is { } n && _scene is { } scene ? CutsceneModel.Shots(scene).ElementAtOrDefault(n - 1)?.Camera : SelectedShot()?.Camera;
+        MissionTask? camera = number is { } n && _scene is { } scene ? CutsceneEasing.OwnKeys(scene).ElementAtOrDefault(n - 1)?.Camera : SelectedShot()?.Camera;
         StartPilot(camera);
     }
 
@@ -147,7 +148,7 @@ internal sealed partial class SequencerPanel
             return;
         }
 
-        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
+        IReadOnlyList<CutsceneShot> shots = CutsceneEasing.OwnKeys(scene);
         int index = IndexOfShot(shots, pilot.Camera) + step;
         if (index >= 0 && index < shots.Count)
         {
@@ -202,13 +203,14 @@ internal sealed partial class SequencerPanel
 
         int index = IndexOfShot(shots, shot.Camera);
         _workspace.Selection.Set(shot.Camera);
-        _time = shot.Start;
+        // A moment into the key: at its very start the game's frame is still the key before's.
+        _time = Into(shot.Start, shot.Length);
         CutsceneShotSpace space = CutsceneShotSpace.World;
         if (LiveActive)
         {
             Live!.IsPlaying = false;
             _wantPlay = false;
-            Live.Seek(shot.Start);
+            Live.Seek(_time);
             if (Live.ShotSpace is { } shown && shown.Key == index)
             {
                 space = shown.Space;
@@ -220,11 +222,19 @@ internal sealed partial class SequencerPanel
         Matrix3f seen = CutsceneCameraMath.ToCameraOrientation(turn);
         Vector3d eye = at / WorldUnits.PerMetre;
         Vector3f forward = seen.Row3;
-        Place(view, eye, eye + (new Vector3d(forward.X, forward.Y, forward.Z) * PilotLookAhead));
+
+        // A key that watches is turned to its target whatever its own turn says: the view looks where the game looks -- live, from
+        // the frame shown once it is on the key; else at the target where it is written.
+        int target = (int)Number(shot.Camera, "Target task ID", -1);
+        bool aimed = target < 0 || !LiveActive;
+        Vector3d look = target >= 0 && !LiveActive && _workspace.Document!.EnumerateTasks().FirstOrDefault(t => t.Id == target) is { } watched && TaskPresentation.PositionMetres(watched) is { } there
+            ? there
+            : eye + (new Vector3d(forward.X, forward.Y, forward.Z) * PilotLookAhead);
+        Place(view, eye, look);
 
         _workspace.History.BreakMerge();
         _host.LensTangent = key.FieldOfView;
-        _pilot = new PilotState(shot.Camera, space, CameraAngles.Roll(seen, view.Camera.Orientation), view.Position, view.Camera.Orientation);
+        _pilot = new PilotState(shot.Camera, space, CameraAngles.Roll(seen, view.Camera.Orientation), view.Position, view.Camera.Orientation, aimed);
     }
 
     // Each frame of a pilot: the viewport, when it moved, written into the key.
@@ -241,6 +251,20 @@ internal sealed partial class SequencerPanel
             return;
         }
 
+        // A watching key, live: the view put where the game's frame stands once the scene is on the key, nothing written till then.
+        if (!pilot.Aimed)
+        {
+            if (LiveActive && !Live!.IsPreparing && Live.ShotSpace is { } shown && _scene is { } scene && shown.Key == IndexOfShot(CutsceneModel.Shots(scene), pilot.Camera)
+                && Live.CameraShown is { } frame)
+            {
+                Vector3f ahead = frame.Orientation.Row3;
+                Place(view, frame.Position, frame.Position + (new Vector3d(ahead.X, ahead.Y, ahead.Z) * PilotLookAhead));
+                _pilot = pilot with { Eye = view.Position, Turn = view.Camera.Orientation, Aimed = true };
+            }
+
+            return;
+        }
+
         Matrix3f level = view.Camera.Orientation;
         if (view.Position == pilot.Eye && level.Row1 == pilot.Turn.Row1 && level.Row2 == pilot.Turn.Row2 && level.Row3 == pilot.Turn.Row3)
         {
@@ -253,6 +277,21 @@ internal sealed partial class SequencerPanel
         _workspace.Execute(CutsceneModel.SetView(document, pilot.Camera, (at.X, at.Y, at.Z), (angles.X, angles.Y, angles.Z)));
         _pilot = pilot with { Eye = view.Position, Turn = level };
     }
+
+    /// <summary>The viewport's camera, the frame the live scene shows and the key it is on, for a scripted check.</summary>
+    /// <returns>A line of text.</returns>
+    public string CameraReport()
+    {
+        string view = _host.Camera is { } camera ? string.Create(CultureInfo.InvariantCulture, $"view {camera.Position} looking {camera.Camera.Orientation.Row3}") : "no view";
+        string shown = LiveActive && Live!.CameraShown is { } frame
+            ? string.Create(CultureInfo.InvariantCulture, $"frame {frame.Position} looking {frame.Orientation.Row3} on key {Live.ShotSpace?.Key}, preparing {Live.IsPreparing}, at {Live.Seconds:0.##} s")
+            : "no frame shown";
+        string pilot = _pilot is { } p ? $"piloting {p.Camera.Label}, aimed {p.Aimed}" : "not piloting";
+        return $"{view}; {shown}; {pilot}";
+    }
+
+    // A moment just into a key, where the game's frame is the key's own (at its very start it is still the key before's).
+    private static double Into(double start, double length) => start + Math.Min(PilotInto, Math.Max(0, length) / 2);
 
     private static int IndexOfShot(IReadOnlyList<CutsceneShot> shots, MissionTask camera)
     {
@@ -268,5 +307,5 @@ internal sealed partial class SequencerPanel
     }
 
     // A key being piloted: the space it is written back through, the roll it keeps, and the view last written.
-    private sealed record PilotState(MissionTask Camera, CutsceneShotSpace Space, float Roll, Vector3d Eye, Matrix3f Turn);
+    private sealed record PilotState(MissionTask Camera, CutsceneShotSpace Space, float Roll, Vector3d Eye, Matrix3f Turn, bool Aimed);
 }

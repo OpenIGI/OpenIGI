@@ -67,6 +67,11 @@ public sealed class CutsceneRigsTests(ITestOutputHelper output)
         Assert.Same(CutsceneModel.Shots(scene)[1].Camera, CutsceneRigs.KeysOf(scene, rig.Name)[0]);
         Assert.True(CutsceneRigs.IsIntact(scene, placed));
 
+        // A shot of its own: cut to from the key before, cutting out at its end -- one move of its keys alone.
+        Assert.False(CutsceneMoves.Glides(first));
+        Assert.False(CutsceneMoves.Glides(CutsceneRigs.KeysOf(scene, rig.Name)[^1]));
+        Assert.Contains(CutsceneMoves.Of(scene), m => m.Keys.Select(static k => k.Camera).SequenceEqual(CutsceneRigs.KeysOf(scene, rig.Name)));
+
         // Longer and higher: the same place in the scene, its keys made again.
         (var remake, CutsceneRig longer) = CutsceneRigs.Place(document, scene, placed with { Seconds = 12, Height = 5 }, null, null)!.Value;
         remake.Apply();

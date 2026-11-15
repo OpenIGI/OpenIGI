@@ -45,12 +45,16 @@ internal sealed partial class SequencerPanel
         float scale = (float)CutsceneModel.TimeScale(scene);
         double length = CutsceneModel.Length(scene);
         int samples = Math.Clamp((int)(length * 12), 2, 600);
-        List<(Vector3d, bool)> line = new(samples + 1);
+        // A cut is a jump, not a flight: the line is broken where the key before it does not glide on.
+        List<(Vector3d, bool, bool)> line = new(samples + 1);
+        int last = -1;
         for (int i = 0; i <= samples; i++)
         {
             CutscenePathPoint point = CutsceneCameraMath.Evaluate(keys, scale, length * i / samples, -1f);
             bool rides = riding is { } r && links[point.Current] == r.Ride;
-            line.Add((Seen(point.Current, point.Position) / WorldUnits.PerMetre, rides));
+            bool joined = last < 0 || Enumerable.Range(last, point.Current - last).All(k => CutsceneMoves.Glides(shots[k].Camera));
+            line.Add((Seen(point.Current, point.Position) / WorldUnits.PerMetre, rides, joined));
+            last = point.Current;
         }
 
         List<Vector3d> ticks = [];
@@ -67,6 +71,12 @@ internal sealed partial class SequencerPanel
             (Vector3d at, Matrix3f turn) = PoseOf(keys[i], riding is { } r && links[i] == r.Ride ? r.Space : CutsceneShotSpace.World);
             int target = (int)Number(shots[i].Camera, "Target task ID", -1);
             Vector3d? watching = target >= 0 && document.EnumerateTasks().FirstOrDefault(t => t.Id == target) is { } watched ? TaskPresentation.PositionMetres(watched) : null;
+
+            // What the shown key rides, watched: where the ride stands now, as the shown frame took it.
+            if (riding is { } carried && target == carried.Ride)
+            {
+                watching = carried.Space.LinkPosition / WorldUnits.PerMetre;
+            }
             glyphs.Add(new CameraKeyGlyph(at / WorldUnits.PerMetre, CutsceneCameraMath.ToCameraOrientation(turn), keys[i].FieldOfView, links[i] >= 0, watching, CutsceneEasing.IsHelper(shots[i].Camera) ? 0 : ++numbered));
         }
 
@@ -122,7 +132,18 @@ internal sealed partial class SequencerPanel
         if (_scene is { } scene && CutsceneModel.Shots(scene).ElementAtOrDefault(index) is { } shot)
         {
             _workspace.Selection.Set(shot.Camera);
-            Seek(shot.Start);
+            Seek(Into(shot.Start, shot.Length));
+        }
+    }
+
+    /// <summary>Selects the open scene's nth key of its own (from nought), as numbered on the lane, and puts the playhead just into it.</summary>
+    /// <param name="index">The key's index among the keys of their own.</param>
+    public void PickOwnKey(int index)
+    {
+        if (_scene is { } scene && CutsceneEasing.OwnKeys(scene).ElementAtOrDefault(index) is { } shot)
+        {
+            _workspace.Selection.Set(shot.Camera);
+            Seek(Into(shot.Start, shot.Length));
         }
     }
 

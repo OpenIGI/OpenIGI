@@ -168,7 +168,7 @@ public static class CutsceneRigs
 
     /// <summary>
     /// The step that puts a rig's keys in the scene: its old keys taken out, the new ones where they were (or after a key, or last),
-    /// each labelled with its name; and the rig as it then stands, its fingerprint the new keys'.
+    /// each labelled with its name, a shot of its own (cut to and cutting out); and the rig as it then stands, its fingerprint the new keys'.
     /// </summary>
     /// <param name="document">The mission, which must declare <c>EditCamera</c>.</param>
     /// <param name="scene">The scene.</param>
@@ -207,6 +207,7 @@ public static class CutsceneRigs
         }
 
         bool atStart = old.Count > 0 && after is null;
+        MissionTask? after0 = after;
         List<MissionTask> keys = [];
         foreach (CutsceneRigKey key in made)
         {
@@ -225,6 +226,14 @@ public static class CutsceneRigs
             after = added.Camera;
         }
 
+        // A rig is a shot of its own, as a camera cut is: cut to from the key before it (a new one; one made again keeps what was
+        // chosen), and cutting to whatever follows.
+        if (old.Count == 0 && after0 is { } before && CutsceneMoves.Glides(before))
+        {
+            Apply(CutsceneModel.SetSmooth(document, before, false));
+        }
+
+        Apply(CutsceneModel.SetSmooth(document, keys[^1], false));
         CutsceneRig placed = rig with { Fingerprint = FingerprintOf(keys) };
         Undo(steps);
         return (new CompositeCommand(old.Count > 0 ? "Remake " + rig.Name : "Add " + rig.Name, steps), placed);

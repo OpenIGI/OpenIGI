@@ -25,6 +25,14 @@ internal sealed partial class SequencerPanel
 
     private float CurvesHeight => _curves.IsChecked ? Theme.Px(CurvesRows * 15f) + Theme.Px(10f) : 0f;
 
+    /// <summary>Shows the curves view on a channel, or hides it, as the Curves button and a click on a channel's name do.</summary>
+    /// <param name="channel">The channel; null to hide the view.</param>
+    public void ShowCurves(CutsceneChannel? channel)
+    {
+        _curves.IsChecked = channel is not null;
+        _channel = channel ?? _channel;
+    }
+
     // The channels' names, down the label column.
     private static string ChannelName(CutsceneChannel channel) => channel switch
     {
@@ -137,13 +145,9 @@ internal sealed partial class SequencerPanel
             }
         }
 
-        if (!CutsceneCurves.IsValue(_channel))
-        {
-            low = Math.Min(low, 0);
-        }
-
-        double room = Math.Max((high - low) * 0.08, 0.5);
-        return (low - room, high + room);
+        // A rate from nought up: it is never less.
+        double room = Math.Max((high - Math.Min(low, 0)) * 0.08, 0.5);
+        return CutsceneCurves.IsValue(_channel) ? (low - room, high + room) : (0, high + room);
     }
 
     // A press on the curves view: a channel's name shows it; a key's dot is taken hold of. True when the press was the view's.

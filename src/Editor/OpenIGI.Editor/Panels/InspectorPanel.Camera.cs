@@ -193,10 +193,9 @@ internal sealed partial class InspectorPanel
 
     private static string Where(MissionTask scene, MissionTask camera)
     {
-        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
+        IReadOnlyList<CutsceneShot> shots = CutsceneEasing.OwnKeys(scene);
         int index = shots.Select((s, i) => (s, i)).FirstOrDefault(p => ReferenceEquals(p.s.Camera, camera)).i;
-        string name = scene.Label.Length > 0 ? scene.Label : "CutScene";
-        return string.Create(CultureInfo.InvariantCulture, $"{index + 1} of {shots.Count} in {name} ({scene.Id}), at {shots[index].Start:0.##} s");
+        return string.Create(CultureInfo.InvariantCulture, $"{index + 1} of {shots.Count}, from {shots[index].Start:0.##} s");
     }
 
     private static string Seen(MissionDocument document, MissionTask camera)
@@ -204,10 +203,11 @@ internal sealed partial class InspectorPanel
         int link = (int)Number(camera, "Link task ID", -1);
         int target = (int)Number(camera, "Target task ID", -1);
         string Named(int id) => document.EnumerateTasks().FirstOrDefault(t => t.Id == id) is { } task
-            ? string.Create(CultureInfo.InvariantCulture, $"{(task.Label.Length > 0 ? task.Label : task.TypeName)} ({task.TypeName} {id})")
+            ? string.Create(CultureInfo.InvariantCulture, $"{(task.Label.Length > 0 ? task.Label : task.TypeName)} #{id}")
             : string.Create(CultureInfo.InvariantCulture, $"#{id}");
         return (link, target) switch
         {
+            ( >= 0, >= 0) when link == target => $"Rides and watches {Named(link)}",
             ( >= 0, >= 0) => $"Rides {Named(link)}, watching {Named(target)}",
             ( >= 0, _) => $"Rides {Named(link)}: relative to where it stood as the level loaded",
             (_, >= 0) => $"Watches {Named(target)}: turned to it",

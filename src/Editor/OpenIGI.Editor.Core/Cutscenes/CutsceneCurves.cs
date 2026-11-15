@@ -76,15 +76,13 @@ public static class CutsceneCurves
         {
             case CutsceneChannel.Speed:
             {
-                double from = Math.Max(0, seconds - Step);
-                double to = seconds + Step;
+                (double from, double to) = Window(path, scale, seconds);
                 return (CutsceneCameraMath.Evaluate(path, scale, to, -1f).Position - CutsceneCameraMath.Evaluate(path, scale, from, -1f).Position).Length / WorldUnits.PerMetre / (to - from);
             }
 
             case CutsceneChannel.TurnRate:
             {
-                double from = Math.Max(0, seconds - Step);
-                double to = seconds + Step;
+                (double from, double to) = Window(path, scale, seconds);
                 CutsceneMoves.Angles a = CutsceneMoves.AnglesAt(path, scale, from), b = CutsceneMoves.AnglesAt(path, scale, to);
                 double turned = Math.Sqrt(Math.Pow(b.Alpha - a.Alpha, 2) + Math.Pow(b.Beta - a.Beta, 2) + Math.Pow(b.Gamma - a.Gamma, 2));
                 return turned / Degree / (to - from);
@@ -105,6 +103,18 @@ public static class CutsceneCurves
                 return (channel == CutsceneChannel.TurnX ? angles.Alpha : channel == CutsceneChannel.TurnY ? angles.Beta : angles.Gamma) / Degree;
             }
         }
+    }
+
+    // The moments a rate is measured between: either side of the moment, but only the side flown to it -- across a cut the camera
+    // jumps, which is no speed.
+    private static (double From, double To) Window(CutsceneKey[] path, float scale, double seconds)
+    {
+        int at = CutsceneCameraMath.Evaluate(path, scale, seconds, -1f).Current;
+        double before = Math.Max(0, seconds - Step), after = seconds + Step;
+        bool Flown(int a, int b) => Enumerable.Range(Math.Min(a, b), Math.Abs(b - a)).All(k => path[k].SmoothToNext);
+        bool backward = Flown(CutsceneCameraMath.Evaluate(path, scale, before, -1f).Current, at);
+        bool forward = Flown(at, CutsceneCameraMath.Evaluate(path, scale, after, -1f).Current);
+        return (backward ? before : seconds, forward ? after : seconds) is var (from, to) && to > from ? (from, to) : (seconds, seconds + 1e-3);
     }
 
     /// <summary>A key's own value on a channel, as written.</summary>

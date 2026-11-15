@@ -99,7 +99,8 @@ internal sealed partial class ViewportPanel
         string hint = RailHint?.Invoke() ?? string.Empty;
         UiRect world = WorldRect;
         float width = Theme.SmallFont.MeasureWidth(hint, Theme.SmallTextSize) + Theme.Px(20f);
-        UiRect box = new(world.X + ((world.Width - width) / 2), world.Bottom - Theme.Px(44f), width, Theme.Px(24f));
+        // Above the row of notes along the view's foot (the rig's own note sits there), never over it.
+        UiRect box = new(world.X + ((world.Width - width) / 2), world.Bottom - Theme.ControlHeight - Theme.Px(48f), width, Theme.Px(24f));
         UI.Editor.Theme.EditorDraw.Fill(painter, Theme, box, Theme.Panel.WithAlpha(225), Theme.Px(4f));
         painter.DrawText(Theme.SmallFont, hint, new UiVec2(box.X + Theme.Px(10f), box.Y + Theme.Px(5f)), Theme.SmallTextSize, Theme.Text);
     }

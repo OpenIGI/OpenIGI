@@ -156,7 +156,8 @@ internal sealed partial class ViewportPanel : EditorElement
     /// <param name="task">The task.</param>
     public void Frame(MissionTask task)
     {
-        if (_host.Camera is not { } camera || TaskPresentation.PositionMetres(task) is not { } target)
+        // A cutscene key is framed where it is seen, through its shot space, not where it is written.
+        if (_host.Camera is not { } camera || (CameraKeyPose?.Invoke(task)?.PositionMetres ?? TaskPresentation.PositionMetres(task)) is not { } target)
         {
             return;
         }

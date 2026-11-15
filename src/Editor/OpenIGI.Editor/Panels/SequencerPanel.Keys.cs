@@ -84,7 +84,9 @@ internal sealed partial class SequencerPanel
             string rides = Number(lead, "Link task ID", -1) >= 0 ? "  (rides)" : Number(lead, "Target task ID", -1) >= 0 ? "  (watches)" : string.Empty;
             int own = move.Keys.Count(static k => !CutsceneEasing.IsHelper(k.Camera));
             string count = own > 1 ? string.Create(CultureInfo.InvariantCulture, $"  ·  {own} keys") : string.Empty;
-            string name = string.Create(CultureInfo.InvariantCulture, $"{first + 1}. {(lead.Label.Length > 0 ? lead.Label : "Shot")}  {end - start:0.#}s{count}{rides}");
+            int number = 1 + keys.Take(first).Count(static k => !CutsceneEasing.IsHelper(k.Key.Camera));
+            string eased = move.Keys.Select(k => CutsceneEasing.Of(scene, k.Camera)).FirstOrDefault(static e => e != CutsceneEase.None) is var e and not CutsceneEase.None ? "  ·  " + EaseName(e) : string.Empty;
+            string name = string.Create(CultureInfo.InvariantCulture, $"{number}. {(lead.Label.Length > 0 ? lead.Label : "Shot")}  {end - start:0.#}s{count}{rides}{eased}");
             EditorDraw.Label(painter, Theme, EditorDraw.Fit(Theme.Font, name, Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f), Height = clip.Height - Theme.Px(7f) }, Bgra32.White);
 
             // The keys along the clip's foot: where each starts, the last of a move that ends on a glide's last key at its moment.
@@ -138,7 +140,7 @@ internal sealed partial class SequencerPanel
         {
             MissionTask key = keys[nearest].Key.Camera;
             _workspace.Selection.Set(key);
-            Seek(keys[nearest].Start);
+            Seek(Into(keys[nearest].Start, keys[nearest].Length));
             if (nearest > 0)
             {
                 _keyDrag = (key, keys[nearest].Start, shift);
@@ -298,10 +300,10 @@ internal sealed partial class SequencerPanel
         }
     }
 
-    // A key's ease, from it to the next key of its own: a band along the clip's foot with its name, the helpers it stands for not drawn.
+    // A key's ease, from it to the next key of its own: a band along the clip's foot (its name is in the clip's), the helpers it stands for not drawn.
     private void DrawEase(UiPainter painter, MissionTask scene, List<(CutsceneShot Key, double Start, double Length)> keys, int index, float y)
     {
-        if (CutsceneEasing.Of(scene, keys[index].Key.Camera) is not (var ease and not CutsceneEase.None))
+        if (CutsceneEasing.Of(scene, keys[index].Key.Camera) == CutsceneEase.None)
         {
             return;
         }
@@ -315,13 +317,9 @@ internal sealed partial class SequencerPanel
         double end = next < keys.Count ? keys[next].Start : keys[^1].Start + keys[^1].Length;
         float from = X(keys[index].Start), to = X(end);
         painter.FillRect(new UiRect(from, y - Theme.Px(1f), MathF.Max(0, to - from), Theme.Px(2f)), Bgra32.FromRgb(0xE8, 0xB0, 0x30).WithAlpha(200));
-        string name = ease switch { CutsceneEase.In => "ease in", CutsceneEase.Out => "ease out", CutsceneEase.InOut => "ease in-out", _ => "even" };
-        float width = Theme.SmallFont.MeasureWidth(name, Theme.SmallTextSize);
-        if (to - from > width + Theme.Px(16f))
-        {
-            painter.DrawText(Theme.SmallFont, name, new UiVec2(((from + to) / 2) - (width / 2), y - Theme.SmallTextSize - Theme.Px(2f)), Theme.SmallTextSize, Bgra32.FromRgb(0xF0, 0xD0, 0x80));
-        }
     }
+
+    private static string EaseName(CutsceneEase ease) => ease switch { CutsceneEase.In => "ease in", CutsceneEase.Out => "ease out", CutsceneEase.InOut => "ease in-out", _ => "even speed" };
 
     // The menu's ease entries for a key that glides on.
     private List<PaletteEntry> EaseEntries(MissionDocument document, MissionTask scene, MissionTask key)
@@ -348,6 +346,19 @@ internal sealed partial class SequencerPanel
         }
 
         return entries;
+    }
+
+    /// <summary>Eases the open scene's nth key of its own (from nought), as its menu's Ease entries do.</summary>
+    /// <param name="index">The key's index among the keys of their own.</param>
+    /// <param name="ease">The ease.</param>
+    public void EaseKey(int index, CutsceneEase ease)
+    {
+        if (_scene is { } scene && _workspace.Document is { } document
+            && CutsceneEasing.OwnKeys(scene).ElementAtOrDefault(index)?.Camera is { } key)
+        {
+            _workspace.Selection.Set(key);
+            SetEase(document, scene, key, ease);
+        }
     }
 
     private void SetEase(MissionDocument document, MissionTask scene, MissionTask key, CutsceneEase ease)

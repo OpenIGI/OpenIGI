@@ -452,6 +452,9 @@ public interface IEditorCutscenePreview
     /// </summary>
     (int Key, OpenIGI.Game.World.CutsceneShotSpace Space)? ShotSpace => null;
 
+    /// <summary>Gets the camera the shown frame is seen through, in world metres; null before a frame is shown.</summary>
+    OpenIGI.Core.Graphics.Camera3D? CameraShown => null;
+
     /// <summary>Starts previewing a scene at its start, ending any other preview first.</summary>
     /// <param name="sceneId">The scene's task id.</param>
     /// <returns>Whether it could be: false when the level has no such scene.</returns>

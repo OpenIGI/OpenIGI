@@ -512,7 +512,7 @@ internal sealed partial class SequencerPanel : EditorElement
         }
 
         Vector3d low = path.Line[0].At, high = path.Line[0].At;
-        foreach ((Vector3d p, _) in path.Line)
+        foreach ((Vector3d p, _, _) in path.Line)
         {
             low = new Vector3d(Math.Min(low.X, p.X), Math.Min(low.Y, p.Y), Math.Min(low.Z, p.Z));
             high = new Vector3d(Math.Max(high.X, p.X), Math.Max(high.Y, p.Y), Math.Max(high.Z, p.Z));

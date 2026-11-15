@@ -38,7 +38,7 @@ public enum CutsceneEase
 /// a key's helpers as its ease, not as keys of their own.
 /// </para>
 /// <para>
-/// A cubic ease over eight steps leaves the camera at about two in a hundred of its mean speed where it eases. The speed at a key a
+/// An ease over twelve steps leaves the camera at about two in a hundred of its mean speed where it eases. The speed at a key a
 /// move goes on through is the next span's, as with any automatic curve: an ease slows the camera into a key it holds at or cuts
 /// from, or out of one it starts from.
 /// </para>
@@ -48,7 +48,7 @@ public static class CutsceneEasing
     /// <summary>What a helper key's label starts with.</summary>
     public const string HelperMark = "·ease";
 
-    private const int Steps = 8;
+    private const int Steps = 12;
     private const double Tick = 0.04;
 
     /// <summary>Gets whether a knot is an ease's helper rather than a key of its own.</summary>
@@ -59,6 +59,11 @@ public static class CutsceneEasing
         ArgumentNullException.ThrowIfNull(camera);
         return camera.Label.StartsWith(HelperMark, StringComparison.Ordinal);
     }
+
+    /// <summary>A scene's keys of their own, an ease's helpers left out: the keys as the editor numbers them.</summary>
+    /// <param name="scene">The scene.</param>
+    /// <returns>The keys' shots, in order.</returns>
+    public static IReadOnlyList<CutsceneShot> OwnKeys(MissionTask scene) => [.. CutsceneModel.Shots(scene).Where(static s => !IsHelper(s.Camera))];
 
     /// <summary>The key whose ease a knot is a helper of; the knot itself when it is a key of its own.</summary>
     /// <param name="scene">The scene.</param>
@@ -231,7 +236,13 @@ public static class CutsceneEasing
         double start = shots[index].Start;
         double span = shots[index].Length;
         List<double> shares = Shares(ease, span);
-        Apply(CutsceneModel.SetLength(document, scene, key, shares[0] * span), steps);
+
+        // Each helper's moment on the scene's millisecond grid (lengths are kept to the millisecond before the time scale), so their
+        // lengths add up to the span exactly: a span ended early by rounding showed the far side of a cut after it.
+        double unit = scale > 0 ? scale : 1;
+        double[] moments = [.. shares.Select(s => start + (Math.Round(s * span / unit, 3) * unit))];
+        double Length(int i) => (i + 1 < moments.Length ? moments[i + 1] : start + span) - moments[i];
+        Apply(CutsceneModel.SetLength(document, scene, key, moments[0] - start), steps);
 
         MissionTask after = key;
         for (int i = 0; i < shares.Count; i++)
@@ -241,8 +252,8 @@ public static class CutsceneEasing
             helper.Label = i == 0
                 ? string.Create(CultureInfo.InvariantCulture, $"{HelperMark} {ease} {QscPrinter.Print(written)}")
                 : HelperMark;
-            double next = i + 1 < shares.Count ? shares[i + 1] : 1;
-            Apply(CutsceneModel.SetLength(document, scene, helper, (next - shares[i]) * span), steps);
+            Apply(CutsceneModel.SetLength(document, scene, helper, Length(i)), steps);
+
             TaskLocation at = document.Locate(after) with { Index = document.Locate(after).Index + 1 };
             Apply(new InsertTaskCommand(document, helper, at), steps);
             after = helper;
@@ -256,27 +267,37 @@ public static class CutsceneEasing
     // all but stops the camera there whatever the span on the key's other side.
     private static List<double> Shares(CutsceneEase ease, double span)
     {
-        List<double> shares = [.. Enumerable.Range(1, Steps - 1).Select(static i => i / (double)Steps)];
+        SortedSet<double> shares = [.. Enumerable.Range(1, Steps - 1).Select(static i => i / (double)Steps)];
         double tick = Math.Min(Tick, span / (Steps * 2)) / span;
-        if (ease is CutsceneEase.In or CutsceneEase.InOut)
+        foreach (double near in (double[])[tick, tick * 3, tick * 9])
         {
-            shares.Insert(0, tick);
+            // Closer and closer to the key it rests at, inside the first or last step: the speed falls away in steps, not at once.
+            if (near < 1.0 / Steps)
+            {
+                if (ease is CutsceneEase.In or CutsceneEase.InOut)
+                {
+                    shares.Add(near);
+                }
+
+                if (ease is CutsceneEase.Out or CutsceneEase.InOut)
+                {
+                    shares.Add(1 - near);
+                }
+            }
         }
 
-        if (ease is CutsceneEase.Out or CutsceneEase.InOut)
-        {
-            shares.Add(1 - tick);
-        }
-
-        return shares;
+        return [.. shares];
     }
 
-    // Where along the original span (0..1 of its time) the camera is at a share of the eased span's time.
+    // Where along the original span (0..1 of its time) the camera is at a share of the eased span's time: the ease shapes the share of
+    // the WAY covered, as a dolly is driven -- by the curves of a flat key tangent (Unreal's ease: smoothstep in and out, at most half
+    // again the mean pace; a quadratic for one end, at most twice) -- so it is the ease's own whatever speed the game's curve had there (shaping its time
+    // instead multiplied the two, a span that already sped up overshooting to more than twice its pace).
     private static double Shape(CutsceneEase ease, double share, CutsceneKey[] path, float scale, double start, double span) => ease switch
     {
-        CutsceneEase.In => share * share * share,
-        CutsceneEase.Out => 1 - Math.Pow(1 - share, 3),
-        CutsceneEase.InOut => share < 0.5 ? 4 * share * share * share : 1 - (Math.Pow((-2 * share) + 2, 3) / 2),
+        CutsceneEase.In => EvenAt(share * share, path, scale, start, span),
+        CutsceneEase.Out => EvenAt(1 - ((1 - share) * (1 - share)), path, scale, start, span),
+        CutsceneEase.InOut => EvenAt(share * share * (3 - (2 * share)), path, scale, start, span),
         CutsceneEase.Even => EvenAt(share, path, scale, start, span),
         _ => share,
     };
@@ -289,7 +310,8 @@ public static class CutsceneEasing
         OpenIGI.Core.Numerics.Vector3d last = CutsceneCameraMath.Evaluate(path, scale, start, -1f).Position;
         for (int i = 1; i <= Samples; i++)
         {
-            OpenIGI.Core.Numerics.Vector3d at = CutsceneCameraMath.Evaluate(path, scale, start + (span * i / Samples), -1f).Position;
+            // Short of the span's very end, which is the next key's moment: past a cut that is somewhere else.
+            OpenIGI.Core.Numerics.Vector3d at = CutsceneCameraMath.Evaluate(path, scale, start + (Math.Min(span * i / Samples, span - 1e-4)), -1f).Position;
             covered[i] = covered[i - 1] + (at - last).Length;
             last = at;
         }
