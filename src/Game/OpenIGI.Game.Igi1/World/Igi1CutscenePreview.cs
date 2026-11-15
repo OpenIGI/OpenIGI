@@ -87,7 +87,17 @@ public sealed class Igi1CutscenePreview(Igi1Gameplay game) : IMissionCutscenePre
     }
 
     /// <inheritdoc/>
-    public bool Reread(GameTask task) => World.Cutscenes?.Reread(task) == true;
+    public bool Reread(GameTask task)
+    {
+        if (World.Cutscenes?.Reread(task) != true)
+        {
+            return false;
+        }
+
+        // A shot added or taken out moves every task after it in the walk, the player among them.
+        game.Tick.RecountPlayerOrder();
+        return true;
+    }
 
     /// <inheritdoc/>
     public (int Key, CutsceneShotSpace Space)? ShotSpace(int sceneId) =>

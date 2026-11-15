@@ -67,6 +67,20 @@ public sealed class CutsceneLiveEditTests(ITestOutputHelper output) : IDisposabl
         Assert.Null(host.ApplyLiveChildren(document.LevelPath(scene), children, shots[1].Start));
     });
 
+    /// <summary>A key eased out live (helper keys baked in after it) plays as the mission saved with the ease loads.</summary>
+    [RequiresGameDataFact]
+    public void An_ease_baked_live_is_the_ease_a_saved_mission_loads_with() => Compare((host, document, scene) =>
+    {
+        IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
+        CutsceneShot eased = shots.Take(shots.Count - 1).First(static s => s.Length >= 1 && s.Start + s.Length > 5 && s.Start < 16 && CutsceneMoves.Glides(s.Camera));
+        CutsceneEasing.Set(document, scene, eased.Camera, CutsceneEase.InOut)!.Apply();
+        output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"eased '{eased.Camera.Label}' {eased.Start:0.##}-{eased.Start + eased.Length:0.##} s: {CutsceneModel.Shots(scene).Count - shots.Count} helper keys"));
+
+        List<(string, ReadOnlyMemory<byte>?)> children = [.. scene.Children.Select(child =>
+            (child.TypeName, child.TypeName == CutsceneModel.CameraType ? (ReadOnlyMemory<byte>?)document.CompileTaskValues(child) : null))];
+        Assert.Null(host.ApplyLiveChildren(document.LevelPath(scene), children, eased.Start));
+    });
+
     // The scene begun live, changed at 10 s by the edit given, taken back to 5 s and played to 16 s; then the mission saved with the
     // edit, loaded afresh and played to 16 s: the two levels and their cameras the same.
     private void Compare(Action<GameHost, MissionDocument, MissionTask> edit)
