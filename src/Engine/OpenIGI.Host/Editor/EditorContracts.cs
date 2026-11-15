@@ -49,6 +49,11 @@ public interface IEditorSession : IDisposable
     /// <summary>Ends play and goes back to editing; the host calls it when the player presses Escape.</summary>
     void StopPlaying();
 
+    /// <summary>Takes a frame of play: the game has the window and the input, and the session only runs what waits on playing.</summary>
+    void WhilePlaying()
+    {
+    }
+
     /// <summary>Lays out the interface and handles the frame's input.</summary>
     /// <param name="elapsedSeconds">The real time since the last frame.</param>
     /// <param name="hasInput">Whether the session may read input this frame; false while the console has it.</param>
@@ -65,6 +70,14 @@ public interface IEditorSession : IDisposable
 /// <param name="Width">The window width the transform maps to.</param>
 /// <param name="Height">The window height.</param>
 public readonly record struct EditorView(Vector3d Eye, Matrix4f ViewProjection, float Width, float Height);
+
+/// <summary>A play-test's controls as they stand, while a mission is played from the editor.</summary>
+/// <param name="Paused">Whether the level is held still (F6; F7 steps it a tick).</param>
+/// <param name="Speed">How fast it runs: 1 is the game's own pace (F8 faster, Shift+F8 slower).</param>
+/// <param name="God">Whether nothing hurts the player (F2).</param>
+/// <param name="Unseen">Whether guards and cameras do not see the player (F3).</param>
+/// <param name="HasCamera">Whether there is an editor camera to stand the player at (F4).</param>
+public readonly record struct EditorPlaytest(bool Paused, float Speed, bool God, bool Unseen, bool HasCamera);
 
 /// <summary>The loaded level seen from straight above, as a picture and the world square it covers.</summary>
 /// <param name="Width">The picture's width in pixels.</param>
@@ -222,6 +235,14 @@ public interface IEditorHost
     /// the texture files -- and finished off it: the textures decoded and every face's ground found.
     /// </remarks>
     Task<OverheadScene>? MakeOverheadScene() => null;
+
+    /// <summary>Gets the play-test's controls as they stand.</summary>
+    EditorPlaytest Playtest => default;
+
+    /// <summary>Applies a play-test command: pause, run, step [n], speed &lt;x&gt;, god, unseen, camera.</summary>
+    /// <param name="command">The command.</param>
+    /// <returns>What happened, to say.</returns>
+    string PlaytestCommand(string command) => "Play-testing is not offered here.";
 
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }

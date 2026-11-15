@@ -498,13 +498,16 @@ public sealed class SecurityCamera : Saves.IExchangedState
         SecurityCameraSubject? target = null;
         bool bodyTarget = false;
         AiEyeSnapshot eye = new(sightOrigin, sightOrientation, _viewCone, default, secondaryEnabled: false);
+
+        // The unseen cheat (a play-test's) keeps the player's side out of the lens: its living are the player and his own.
+        bool unseen = Player.PlayerCheatOptions.Current.Unseen;
         foreach (bool fallenList in (ReadOnlySpan<bool>)[true, false])
         {
             foreach (SecurityCameraSubject subject in subjects)
             {
                 bool registered = fallenList
                     ? subject.CamerasSide && !subject.Alive
-                    : !subject.CamerasSide && subject.Alive;
+                    : !subject.CamerasSide && subject.Alive && !unseen;
                 if (registered
                     && !ReferenceEquals(subject.Task, Task)
                     && eye.IsVisible(subject.Mark)

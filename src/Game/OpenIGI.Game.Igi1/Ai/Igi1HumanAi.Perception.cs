@@ -896,9 +896,11 @@ public sealed partial class Igi1HumanAi
                 human.Slot.IsVisible = human.SweepVisible;
             }
 
+            // The unseen cheat (a play-test's) keeps the player out of every cone; what he hears is left to him.
+            bool unseen = human.Candidate.IsPlayer && Game.Player.PlayerCheatOptions.Current.Unseen;
             bool rayRan = _schedule.Sweep(
                 human.Slot,
-                () => snapshot.IsVisible(mark),
+                () => !unseen && snapshot.IsVisible(mark),
                 () =>
                 {
                     SightCast?.Invoke(eye, mark, looked);

@@ -284,6 +284,7 @@ public sealed partial class GameHost
     /// <returns>Whether the editor is open.</returns>
     private bool UpdateEditor(FrameLoopState state)
     {
+        TrackPlaytest();
         if (_editor is not { } editor)
         {
             return false;
@@ -302,6 +303,12 @@ public sealed partial class GameHost
                 return true;
             }
 
+            if (!state.Console.IsOpen)
+            {
+                HandlePlaytestKeys();
+            }
+
+            editor.WhilePlaying();
             return false;
         }
 
@@ -580,6 +587,10 @@ public sealed partial class GameHost
         public OverheadMap? MakeOverheadMap(int maxPixels) => host.EditorOverheadMap(maxPixels);
 
         public Task<OverheadScene>? MakeOverheadScene() => host.EditorOverheadScene();
+
+        public EditorPlaytest Playtest => host.Playtest;
+
+        public string PlaytestCommand(string command) => host.PlaytestCommand(command);
 
         public IWorldInspector Inspector => host._inspector;
 

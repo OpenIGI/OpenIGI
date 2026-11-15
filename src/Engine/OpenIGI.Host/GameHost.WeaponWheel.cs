@@ -103,10 +103,11 @@ public sealed partial class GameHost
         _wheelSteered = false;
         wheel?.Animate(elapsed);
         float openness = _options.Lockstep ? 0f : wheel?.Openness ?? 0f;
-        float scale = 1f + ((WheelTimeScale - 1f) * openness);
+        // A play-test run slower or faster from the editor scales the clock the same way.
+        float scale = (1f + ((WheelTimeScale - 1f) * openness)) * PlaytestTimeScale;
         float stretch = (elapsed * 1000f * (1f - scale)) + _wheelTimeCarry;
         int whole = (int)stretch;
-        _wheelTimeCarry = openness > 0f ? stretch - whole : 0f;
+        _wheelTimeCarry = scale != 1f ? stretch - whole : 0f;
         _loop.Clock.TimeAdjustMilliseconds = whole;
 
         // And the world is heard slowed: every voice and the music pitched down and muffled as the wheel opens. The bomb's

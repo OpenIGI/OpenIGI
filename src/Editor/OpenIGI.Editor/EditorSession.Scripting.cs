@@ -196,6 +196,23 @@ internal sealed partial class EditorSession
             return on ? "Scenes play live." : "Scenes show the shots' path.";
         }
 
+        // editor playtest <pause|run|step [n]|speed x|god|unseen|camera>: the play-test's controls, once playing.
+        if (arguments is [string testVerb, _, ..] && testVerb.Equals("playtest", StringComparison.OrdinalIgnoreCase))
+        {
+            string command = string.Join(' ', arguments.Skip(1));
+            _pendingSteps.Enqueue(() =>
+            {
+                if (!IsPlaying || _host.IsWarmingUp)
+                {
+                    return false;
+                }
+
+                _host.Logger.Information("Editor", $"editor playtest {command}: {_host.PlaytestCommand(command)}");
+                return true;
+            });
+            return $"Play-test '{command}' once playing.";
+        }
+
         // editor play: the sequencer's Play (Space), live where the game can play scenes on the level.
         if (arguments is [string playVerb] && playVerb.Equals("play", StringComparison.OrdinalIgnoreCase))
         {
