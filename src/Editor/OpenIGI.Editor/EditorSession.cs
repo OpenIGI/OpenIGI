@@ -312,10 +312,10 @@ internal sealed partial class EditorSession : IEditorSession
         {
             // The banner before the guards' minds: text drawn after another run of text and the banner's shadow lost its
             // first glyphs (seen on the D3D12 path, cause not found), and the minds keep clear of the banner anyway.
-            DrawPlayingBanner(painter);
+            float underBanner = DrawPlayingBanner(painter);
             if (_host.Playtest.Overlay)
             {
-                _playtestOverlay.Draw(painter, _theme, _host);
+                _playtestOverlay.Draw(painter, _theme, _host, underBanner);
             }
 
             _logicWatch.Draw(painter, _theme);
@@ -892,34 +892,7 @@ internal sealed partial class EditorSession : IEditorSession
     }
 
     // The banner over a play-test: the way back, and the play-test's keys, those in force lit.
-    private void DrawPlayingBanner(UiPainter painter)
-    {
-        EditorPlaytest test = _host.Playtest;
-        (string Text, bool On)[] parts =
-        [
-            (test.Paused ? "Paused" : "Playing", test.Paused),
-            ("Esc editor", false),
-            (test.Paused ? "F6 run" : "F6 pause", false),
-            ("F7 step", false),
-            (string.Create(System.Globalization.CultureInfo.InvariantCulture, $"F8 speed {test.Speed:0.##}x"), test.Speed != 1f),
-            ("F2 god", test.God),
-            ("F3 unseen", test.Unseen),
-            ("F10 minds", test.Overlay),
-            .. test.HasCamera ? (ReadOnlySpan<(string, bool)>)[("F4 to camera", false)] : [],
-        ];
-        float gap = _theme.Px(16f);
-        float width = parts.Sum(p => _theme.Font.MeasureWidth(p.Text, _theme.TextSize)) + (gap * (parts.Length - 1)) + _theme.Px(28f);
-        UiRect banner = new(MathF.Round((_host.Width - width) * 0.5f), _theme.Px(14f), width, _theme.ControlHeight + _theme.Px(4f));
-        EditorDraw.Shadow(painter, _theme, banner);
-        EditorDraw.Frame(painter, _theme, banner, _theme.Popup.WithAlpha(230), _theme.Accent);
-        float x = banner.X + _theme.Px(14f);
-        foreach ((string text, bool on) in parts)
-        {
-            float w = _theme.Font.MeasureWidth(text, _theme.TextSize);
-            EditorDraw.Label(painter, _theme, text, new UiRect(x, banner.Y, w + _theme.Px(2f), banner.Height), on ? _theme.Accent : _theme.Text);
-            x += w + gap;
-        }
-    }
+    private float DrawPlayingBanner(UiPainter painter) => PlaytestBanner.Draw(painter, _theme, _host.Playtest, _host.Width);
 
     // Does something that leaves the open mission, asking first whether to save it when it has changes.
     private void AfterSaving(Action leave)

@@ -793,6 +793,9 @@ public sealed partial class GameHost : IDisposable
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
             TickObserver?.Poll();
 
+            // A play-test's recording notes, and its replay gives, what comes before the level's next tick.
+            PlaytestTickStarting();
+
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
             state.LastOutcome = outcome;

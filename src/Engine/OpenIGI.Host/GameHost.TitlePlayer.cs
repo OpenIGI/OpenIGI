@@ -264,7 +264,8 @@ public sealed partial class GameHost
         // inside: a session seen here as well would read and send twice a tick.
         IHostTickObserver? observer = _hosted is Game.Multiplayer.IReplicatedTitle ? null : TickObserver;
         observer?.BeforeTitleTick(player);
-        player.Tick(new TitlePlayerInput(
+        // Recorded for a play-test's replay, or replaced by the recording being played back.
+        player.Tick(PlaytestInput(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
             held & ~replaced,
@@ -275,7 +276,7 @@ public sealed partial class GameHost
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
             TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, TitleInput, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
-            Raw: SampleRawKeys()));
+            Raw: SampleRawKeys())));
         observer?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;

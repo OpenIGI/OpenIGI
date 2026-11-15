@@ -81,7 +81,18 @@ public readonly record struct EditorPlaytest(bool Paused, float Speed, bool God,
 {
     /// <summary>Gets whether the guards' minds are drawn over the game: their sight, what each does, where each goes (F10).</summary>
     public bool Overlay { get; init; }
+
+    /// <summary>Gets the play-test's recording: being made, or played back (F9).</summary>
+    public EditorPlaytestTape? Tape { get; init; }
 }
+
+/// <summary>A play-test's recording, for the scrubber.</summary>
+/// <param name="Recording">Whether it is being made now.</param>
+/// <param name="Replaying">Whether it is being played back.</param>
+/// <param name="Seconds">Where playback is; while recording, how long it is.</param>
+/// <param name="Length">How long it is, in seconds.</param>
+/// <param name="Marks">What happened in it and when: a guard first seeing the player, a play-test command.</param>
+public sealed record EditorPlaytestTape(bool Recording, bool Replaying, double Seconds, double Length, IReadOnlyList<(double Seconds, string Text)> Marks);
 
 /// <summary>The loaded level seen from straight above, as a picture and the world square it covers.</summary>
 /// <param name="Width">The picture's width in pixels.</param>

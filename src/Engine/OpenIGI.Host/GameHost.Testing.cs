@@ -40,4 +40,13 @@ public sealed partial class GameHost
     /// <summary>Whether the level lets the player read the map computer's map right now, as the host decides it.</summary>
     /// <returns><see langword="true"/> when the map is there.</returns>
     internal bool MapComputerAvailableForTesting() => MapComputerAvailable();
+
+    /// <summary>Gets the title's own player, or <see langword="null"/> before one is up.</summary>
+    internal OpenIGI.Game.Player.ITitlePlayer? TitlePlayerForTesting => TitlePlayer;
+
+    /// <summary>Sets what the title's player is held to, as <c>title_hold</c> does.</summary>
+    internal OpenIGI.Game.Player.PlayerAction TitleHeldForTesting
+    {
+        set => _titleScriptHeld = value;
+    }
 }

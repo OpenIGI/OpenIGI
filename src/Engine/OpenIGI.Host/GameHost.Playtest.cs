@@ -21,7 +21,7 @@ public sealed partial class GameHost
     private static readonly float[] PlaytestSpeeds = [0.25f, 0.5f, 1f, 2f, 4f];
 
     // The keys a play-test takes: their binds (the developer's renderer toggles, co-op's calls) do not run while it does.
-    private static readonly KeyCode[] PlaytestKeys = [KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F6, KeyCode.F7, KeyCode.F8, KeyCode.F10];
+    private static readonly KeyCode[] PlaytestKeys = [KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F6, KeyCode.F7, KeyCode.F8, KeyCode.F9, KeyCode.F10];
 
     private bool _playtestOverlay;
 
@@ -50,6 +50,7 @@ public sealed partial class GameHost
         _playtestCamera is not null)
     {
         Overlay = _playtestOverlay,
+        Tape = TapeState(),
     };
 
     /// <summary>Gets whether a key is the play-test's while one runs, so its bind is passed over.</summary>
@@ -61,7 +62,10 @@ public sealed partial class GameHost
     private bool PlaytestHoldsLevel => _editor is { IsPlaying: true } && _playtestPaused && _playtestSteps == 0;
 
     /// <summary>Gets how fast the play-test runs the level's clock: 1 outside one, or under lockstep (whose clock is the frames').</summary>
-    private float PlaytestTimeScale => _editor is { IsPlaying: true } && !_options.Lockstep ? PlaytestSpeeds[_playtestSpeed] : 1f;
+    /// <remarks>A replay's seek runs as fast as the frames let ticks through.</remarks>
+    private float PlaytestTimeScale => _editor is { IsPlaying: true } && !_options.Lockstep
+        ? _replayTarget is not null && Replaying ? ReplaySeekSpeed : PlaytestSpeeds[_playtestSpeed]
+        : 1f;
 
     /// <summary>Notes the start and end of a play-test: where the editor's camera was, and, at its end, everything put back.</summary>
     private void TrackPlaytest()
@@ -89,6 +93,9 @@ public sealed partial class GameHost
         }
 
         _playtestCamera = null;
+        _recording = false;
+        _replay = null;
+        _replayTarget = null;
         if (_playtestCheatsBefore is { } before)
         {
             PlayerCheatCVars.InfiniteHealth.Value = before.Health;
@@ -114,6 +121,12 @@ public sealed partial class GameHost
             _ when keys.WasPressed(KeyCode.F3) => "unseen",
             _ when keys.WasPressed(KeyCode.F4) => "camera",
             _ when keys.WasPressed(KeyCode.F10) => "overlay",
+            _ when keys.WasPressed(KeyCode.F9) => Replaying ? "record" : "replay",
+
+            // Played back, the arrows go back and on through it and Home to its start: the player's own keys do nothing then.
+            _ when Replaying && keys.WasPressed(KeyCode.Left) => "back",
+            _ when Replaying && keys.WasPressed(KeyCode.Right) => "on",
+            _ when Replaying && keys.WasPressed(KeyCode.Home) => "seek 0",
             _ => null,
         };
         if (command is not null)
@@ -131,9 +144,13 @@ public sealed partial class GameHost
             return "No editor camera to go to.";
         }
 
-        return placement.TryPlace(eye * Game.World.WorldScene.UnitsPerMetre, _playtestCameraHeading)
-            ? string.Create(CultureInfo.InvariantCulture, $"Stood where the editor's camera was ({eye.X:0.#}, {eye.Y:0.#}).")
-            : "Nothing to stand on under the editor's camera.";
+        if (!placement.TryPlace(eye * Game.World.WorldScene.UnitsPerMetre, _playtestCameraHeading))
+        {
+            return "Nothing to stand on under the editor's camera.";
+        }
+
+        RecordCommand(string.Create(CultureInfo.InvariantCulture, $"place {eye.X:R} {eye.Y:R} {eye.Z:R} {_playtestCameraHeading:R}"), "to the camera");
+        return string.Create(CultureInfo.InvariantCulture, $"Stood where the editor's camera was ({eye.X:0.#}, {eye.Y:0.#}).");
     }
 
     /// <summary>Applies the play-test's commands from the editor: pause, step, speed and the cheats.</summary>
@@ -142,6 +159,17 @@ public sealed partial class GameHost
     internal string PlaytestCommand(string command)
     {
         string[] words = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (ReplayCommand(words) is { } replayed)
+        {
+            return replayed;
+        }
+
+        // What a recording plays back is the game as it was played: nothing changes it but going back to playing.
+        if (Replaying && words is ["god"] or ["unseen"] or ["camera"] or ["skip"])
+        {
+            return "Playing back a recording: record again (or Esc) to play.";
+        }
+
         switch (words)
         {
             case ["pause"]:
@@ -161,10 +189,12 @@ public sealed partial class GameHost
             case ["god"]:
                 OpenPlaytestCheats();
                 PlayerCheatCVars.InfiniteHealth.Value = !PlayerCheatCVars.InfiniteHealth.Value;
+                RecordCommand($"god {(PlayerCheatCVars.InfiniteHealth.Value ? 1 : 0)}", PlayerCheatCVars.InfiniteHealth.Value ? "god on" : "god off");
                 return PlayerCheatCVars.InfiniteHealth.Value ? "God mode on." : "God mode off.";
             case ["unseen"]:
                 OpenPlaytestCheats();
                 PlayerCheatCVars.Unseen.Value = !PlayerCheatCVars.Unseen.Value;
+                RecordCommand($"unseen {(PlayerCheatCVars.Unseen.Value ? 1 : 0)}", PlayerCheatCVars.Unseen.Value ? "unseen on" : "unseen off");
                 return PlayerCheatCVars.Unseen.Value ? "Unseen on." : "Unseen off.";
             case ["camera"]:
                 return PlaytestToCamera();
@@ -175,16 +205,7 @@ public sealed partial class GameHost
                 _playtestOverlay = !_playtestOverlay;
                 return _playtestOverlay ? "Guards' minds shown: sight, what each does, where each goes." : "Guards' minds hidden.";
             default:
-                return "Play-test commands: pause, run, step [n], speed <x>, god, unseen, camera, overlay, skip.";
-        }
-    }
-
-    // A step asked for has run: one tick fewer to let through.
-    private void PlaytestTicked()
-    {
-        if (_playtestSteps > 0)
-        {
-            _playtestSteps--;
+                return "Play-test commands: pause, run, step [n], speed <x>, god, unseen, camera, overlay, skip, replay, seek <s>, back, on, record.";
         }
     }
 

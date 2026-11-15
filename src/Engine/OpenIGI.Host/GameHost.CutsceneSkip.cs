@@ -22,6 +22,12 @@ public sealed partial class GameHost
     /// <param name="state">The frame loop's state.</param>
     private void UpdateCutsceneSkip(FrameLoopState state)
     {
+        // A play-test played back breaks its scenes on the ticks the recording broke them (PlaytestTickStarting).
+        if (Replaying)
+        {
+            return;
+        }
+
         int now = _loop.TimeSource.Milliseconds;
         float seconds = Math.Clamp((now - _lastCutsceneSkipMilliseconds) / 1000f, 0f, 0.1f);
         _lastCutsceneSkipMilliseconds = now;

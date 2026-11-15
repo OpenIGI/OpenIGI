@@ -196,6 +196,15 @@ internal sealed partial class EditorSession
             return on ? "Scenes play live." : "Scenes show the shots' path.";
         }
 
+        // editor wait <frames>: the commands after it wait that many frames, for a scripted run to let something play out.
+        if (arguments is [string waitVerb, string framesText] && waitVerb.Equals("wait", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(framesText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int frames))
+        {
+            int left = frames;
+            _pendingSteps.Enqueue(() => --left <= 0);
+            return $"Waiting {frames} frames.";
+        }
+
         // editor playtest <pause|run|step [n]|speed x|god|unseen|camera>: the play-test's controls, once playing.
         if (arguments is [string testVerb, _, ..] && testVerb.Equals("playtest", StringComparison.OrdinalIgnoreCase))
         {

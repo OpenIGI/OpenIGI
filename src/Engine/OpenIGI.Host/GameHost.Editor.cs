@@ -168,6 +168,12 @@ public sealed partial class GameHost
             _editorPlayWanted = false;
             StartMission(id);
 
+            // Every play-test is recorded from the level loaded for it, for F9 to play back.
+            if (play)
+            {
+                BeginRecording(ofLevelJustLoaded: true);
+            }
+
             // Play stands the player up where the mission starts and hands over the window, as a played mission
             // does; editing keeps the free camera and the pointer.
             _playerMode = play;

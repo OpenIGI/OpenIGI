@@ -34,7 +34,8 @@ internal sealed class PlaytestOverlay
     /// <param name="painter">The painter, over the frame at one unit a pixel.</param>
     /// <param name="theme">The theme, for the labels.</param>
     /// <param name="host">The host, for the soldiers and the view.</param>
-    public void Draw(UiPainter painter, EditorTheme theme, IEditorHost host)
+    /// <param name="keepClearAbove">The bottom of the banner, which no tag covers.</param>
+    public void Draw(UiPainter painter, EditorTheme theme, IEditorHost host, float keepClearAbove)
     {
         ViewportProjector view = new(host.View);
         if (!view.IsValid)
@@ -47,8 +48,7 @@ internal sealed class PlaytestOverlay
         int named = 0;
         _tags.Clear();
 
-        // The play-test's banner sits along the top.
-        float keepClearBelow = theme.Px(14f) + theme.ControlHeight + theme.Px(10f);
+        float keepClearBelow = keepClearAbove + theme.Px(6f);
         foreach (SoldierSnapshot soldier in _soldiers.Where(s => s is { HasMind: true, IsDead: false, IsCutsceneActor: false }).OrderBy(s => (s.Position - view.Eye).Length))
         {
             if ((soldier.Position - view.Eye).Length > ReachMetres)
