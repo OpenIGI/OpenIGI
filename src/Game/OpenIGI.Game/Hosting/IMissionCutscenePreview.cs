@@ -45,4 +45,12 @@ public interface IMissionCutscenePreview
     /// <param name="task">The task.</param>
     /// <returns>Whether the game reads such a task this way; false for one whose parameters it reads afresh as it runs.</returns>
     bool Reread(OpenIGI.Engine.Tasks.GameTask task) => false;
+
+    /// <summary>
+    /// The key a scene's shown frame is on, and the space it was carried to the world through (<see cref="World.CutsceneShotSpace"/>):
+    /// a riding key is written relative to where its ride stood as the level loaded, and an edit of the view goes back through this.
+    /// </summary>
+    /// <param name="sceneId">The scene's task id.</param>
+    /// <returns>The key's index among the scene's knots and its space; null before the scene has shown a frame.</returns>
+    (int Key, World.CutsceneShotSpace Space)? ShotSpace(int sceneId) => null;
 }

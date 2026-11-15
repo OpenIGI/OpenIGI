@@ -440,6 +440,12 @@ public interface IEditorCutscenePreview
     /// <summary>Gets the share of the picture's height the scene leaves between its letterbox bars, one for none.</summary>
     float ViewportHeight { get; }
 
+    /// <summary>
+    /// Gets the key the shown frame is on and the space it was carried to the world through: a view written into that key goes
+    /// back through it (a riding key is relative to where its ride stood as the level loaded). Null before a frame is shown.
+    /// </summary>
+    (int Key, OpenIGI.Game.World.CutsceneShotSpace Space)? ShotSpace => null;
+
     /// <summary>Starts previewing a scene at its start, ending any other preview first.</summary>
     /// <param name="sceneId">The scene's task id.</param>
     /// <returns>Whether it could be: false when the level has no such scene.</returns>

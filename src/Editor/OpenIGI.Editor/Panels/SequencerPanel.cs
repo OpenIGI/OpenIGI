@@ -791,10 +791,31 @@ internal sealed partial class SequencerPanel : EditorElement
             return;
         }
 
-        Vector3f angles = CutsceneCameraMath.FromCameraOrientation(view.Camera.Orientation).ToEngineEulerAngles();
-        Vector3d at = view.Position * WorldUnits.PerMetre;
+        (Vector3d at, Vector3f angles) = ViewAsKey(view, shot.Camera, AnglesOf(shot.Camera));
         _workspace.Execute(CutsceneModel.SetView(document, shot.Camera, (at.X, at.Y, at.Z), (angles.X, angles.Y, angles.Z)));
     }
+
+    // The viewport's camera as a key has to be written to be seen there: through the space the shown frame carried that key in
+    // (a riding key is written relative to where its ride stood as the level loaded), its angles the ones nearest those given, so
+    // the game's blend between keys does not turn the long way round. Not live, a key is drawn as written, so it is written as seen.
+    private (Vector3d Units, Vector3f Angles) ViewAsKey(OpenIGI.Presentation.Cameras.FreeCamera view, MissionTask camera, Vector3f near)
+    {
+        Vector3d world = view.Position * WorldUnits.PerMetre;
+        Matrix3f turn = CutsceneCameraMath.FromCameraOrientation(view.Camera.Orientation);
+        CutsceneShotSpace space = CutsceneShotSpace.World;
+        if (LiveActive && Live!.ShotSpace is { } shown && _scene is { } scene
+            && CutsceneModel.Shots(scene).ElementAtOrDefault(shown.Key) is { } current && ReferenceEquals(current.Camera, camera))
+        {
+            space = shown.Space;
+        }
+
+        (Vector3d at, Matrix3f written) = space.ToAuthored(world, turn);
+        return (at, CameraAngles.Closest(written, near));
+    }
+
+    // A key's angles as written: alpha, beta, gamma.
+    private static Vector3f AnglesOf(MissionTask camera) =>
+        new((float)Number(camera, "Alpha", 0), (float)Number(camera, "Beta", 0), (float)Number(camera, "Gamma", 0));
 
     // The viewport's camera as a new shot, after the one at the playhead (or last), held three seconds.
     private void AddShotFromView()
@@ -806,8 +827,12 @@ internal sealed partial class SequencerPanel : EditorElement
 
         IReadOnlyList<CutsceneShot> shots = CutsceneModel.Shots(scene);
         MissionTask? after = shots.LastOrDefault(s => s.Start <= _time)?.Camera;
-        Vector3f angles = CutsceneCameraMath.FromCameraOrientation(view.Camera.Orientation).ToEngineEulerAngles();
+
+        // A new key rides nothing: written as seen, its angles nearest the key it follows so the blend into it is the short way.
         Vector3d at = view.Position * WorldUnits.PerMetre;
+        Vector3f angles = CameraAngles.Closest(
+            CutsceneCameraMath.FromCameraOrientation(view.Camera.Orientation),
+            after is not null ? AnglesOf(after) : Vector3f.Zero);
         if (CutsceneModel.AddShot(document, scene, after, (at.X, at.Y, at.Z), (angles.X, angles.Y, angles.Z), 3) is not { } added)
         {
             return;

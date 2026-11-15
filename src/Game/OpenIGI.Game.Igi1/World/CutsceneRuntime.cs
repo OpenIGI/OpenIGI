@@ -297,6 +297,17 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     }
 
     /// <summary>
+    /// The key a scene's shown frame is on, and the space that key was carried to the world through: what an edit of the view is
+    /// written back through.
+    /// </summary>
+    /// <param name="scene">The scene.</param>
+    /// <returns>The key's index among the scene's knots and its space; null before the scene has shown a frame.</returns>
+    public (int Key, CutsceneShotSpace Space)? ShotSpace(CutSceneTask scene) =>
+        _scenes.Find(s => ReferenceEquals(s.Task, scene)) is { LastShotIndex: >= 0, ShotSpace: { } space } state
+            ? (state.LastShotIndex, space)
+            : null;
+
+    /// <summary>
     /// Reads a task again after an editor changed its parameters in a level that is running: what this runtime made from it at
     /// load is made again from what it now says -- a scene's shots (its own, or a camera's in it), an animation's run and keys, a
     /// sound's condition and what it plays -- changed in place, so what holds them (variables, the walk) still holds them.

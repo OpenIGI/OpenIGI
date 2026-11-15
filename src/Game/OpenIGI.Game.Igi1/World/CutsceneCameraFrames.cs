@@ -43,17 +43,21 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
 
         EditCameraShot active = timed[current].Shot;
         bool shotChanged = state.LastShotIndex != current;
+        if (shotChanged || active.LinkTaskId < 0)
+        {
+            state.ShotSpace = active.LinkTaskId < 0 ? CutsceneShotSpace.World : null;
+        }
+
         if (active.LinkTaskId >= 0 && TryPose(active.LinkTaskId, out TaskTransformState? link))
         {
             if (shotChanged || active.UpdateLink || state.LinkedPosition is null)
             {
-                // Retail sub_508940 first maps the authored world offset through the cached link
-                // orientation, then maps that local offset through the transpose of the live link.
-                // Matrix3f.Transform is the engine's row-vector multiply, so both transposes here are
-                // significant. Reversing them makes a linked cinematic camera orbit on the wrong axes.
-                Vector3d relative = active.LinkOriginOrientation.Transform(position - active.LinkOrigin);
-                position = link!.Position + link.Orientation.Transposed().Transform(relative);
-                orientation = link.Orientation * active.LinkOriginOrientation.Transposed() * orientation;
+                // Retail sub_508940: the authored offset through the link's pose as loaded, then through its live pose
+                // (CutsceneShotSpace, which the editor writes a view back through). The space is kept with the frame, so an
+                // edit made on a shot that took its link once is written through the pose it took.
+                CutsceneShotSpace space = new(active.LinkOrigin, active.LinkOriginOrientation, link!.Position, link.Orientation);
+                (position, orientation) = space.ToWorld(position, orientation);
+                state.ShotSpace = space;
                 state.LinkedPosition = position;
                 state.LinkedOrientation = orientation;
             }

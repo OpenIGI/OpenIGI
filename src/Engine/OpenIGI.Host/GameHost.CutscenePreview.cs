@@ -117,6 +117,9 @@ public sealed partial class GameHost
         public float ViewportHeight =>
             Scene is not null && !_reloading && host._mission.CutsceneFrameShown is { } frame ? Math.Clamp(frame.ViewportHeightFactor, 0f, 1f) : 1f;
 
+        public (int Key, OpenIGI.Game.World.CutsceneShotSpace Space)? ShotSpace =>
+            Scene is { } id && !_reloading ? Game?.ShotSpace(id) : null;
+
         private IMissionCutscenePreview? Game => host._hosted.CutscenePreview;
 
         // The level as the editor had it, while it is still the one up.
