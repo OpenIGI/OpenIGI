@@ -288,14 +288,14 @@ jobs:
           gh release download "$TAG" --pattern "openigi-server-$VERSION-linux-x64.tar.gz" --dir artifacts/server
           tar -C artifacts/server -xzf "artifacts/server/openigi-server-$VERSION-linux-x64.tar.gz"
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         if: vars.PUBLISH_SERVER_IMAGE == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: tools/server/Dockerfile
