@@ -55,6 +55,25 @@ async function enterDiscord() {
   const sdk = new DiscordSDK(DISCORD_APP);
   await sdk.ready();
   const instance = sdk.instanceId;
+
+  // Who is playing: Discord asks once to share the player's name, then never again. They play under it; without it, as
+  // the game's own name.
+  try {
+    const { code } = await sdk.commands.authorize({ client_id: DISCORD_APP, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
+    const traded = await fetch('https://master.openigi.com/v1/auth/discord/activity', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (traded.ok) {
+      const { access_token: accessToken, account } = await traded.json();
+      await sdk.commands.authenticate({ access_token: accessToken });
+      if (!args.includes('-name') && account?.name) args.push('-name', account.name);
+    }
+  } catch (error) {
+    console.warn('Discord sign-in', error);
+  }
+
   const reply = await fetch(`https://master.openigi.com/v1/rooms/instance/${encodeURIComponent(instance)}`);
   const room = reply.ok ? await reply.json() : null;
   if (args.includes('-join') || args.includes('-host')) return;

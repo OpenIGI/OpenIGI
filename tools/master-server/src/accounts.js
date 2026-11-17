@@ -88,6 +88,10 @@ export class Accounts {
         return await this.linkState(request, url, body, parts[2]);
       }
 
+      if (parts[1] === "auth" && parts[2] === "discord" && parts[3] === "activity" && request.method === "POST") {
+        return await this.fromActivity(body);
+      }
+
       if (parts[1] === "auth" && parts[2] === "discord" && parts[3] === "verify" && request.method === "GET") {
         return await this.toDiscordFromDiscord();
       }
@@ -251,6 +255,31 @@ export class Accounts {
     await this.storage.put(`link:${pending.code}`, { ...link, account: account.id });
     await this.storage.delete(`pending:${link.player}`);
     return page(200, `Linked to ${account.name}. You can go back to the game.`);
+  }
+
+  // Inside a Discord Activity the SDK's authorize hands the page a code with no redirect: traded here for the access token
+  // the page gives back to the SDK (authenticate), with who the player is. The account is made or found on the way.
+  async fromActivity(body) {
+    if (!this.env.DISCORD_CLIENT_ID || !this.env.DISCORD_CLIENT_SECRET) {
+      throw new Refusal(503, "Signing in with Discord isn't set up on this server yet.");
+    }
+
+    const code = cleanText(parseJson(body).code, 256);
+    const form = new URLSearchParams({
+      client_id: this.env.DISCORD_CLIENT_ID,
+      client_secret: this.env.DISCORD_CLIENT_SECRET,
+      grant_type: "authorization_code",
+      code,
+    });
+    const answer = code ? await fetch(`${DISCORD_API}/oauth2/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form }) : null;
+    const grant = answer?.ok ? await answer.json() : null;
+    const user = grant?.access_token ? await discordUser(grant.access_token) : null;
+    if (!user) {
+      throw new Refusal(401, "Discord didn't say who you are.");
+    }
+
+    const account = await this.upsertAccount(user);
+    return json({ access_token: grant.access_token, account: present(account) });
   }
 
   // Back from Discord for Linked Roles: the account made or found, its token kept, its standing told.

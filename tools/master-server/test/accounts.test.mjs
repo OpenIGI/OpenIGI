@@ -235,6 +235,16 @@ assert.equal(storage.store.has("token:111111111111111111"), false);
 assert.equal(storage.store.has("profile:111111111111111111"), false);
 assert.equal(storage.store.has(`key:${desk.id}`), false);
 
+// Inside an Activity: the SDK's code traded for its token, and who the player is.
+{
+  const traded = await accounts.fetch(new Request("https://master/v1/auth/discord/activity", { method: "POST", body: JSON.stringify({ code: "code-ana" }) }));
+  assert.equal(traded.status, 200);
+  const said = await traded.json();
+  assert.equal(said.access_token, "token-code-ana");
+  assert.equal(said.account.name, "Ana");
+  assert.equal((await accounts.fetch(new Request("https://master/v1/auth/discord/activity", { method: "POST", body: JSON.stringify({ code: "nonsense" }) }))).status, 401);
+}
+
 // Starting from Discord's Linked Roles: an account with no game yet, and its standing told.
 {
   const to = await accounts.fetch(new Request("https://master/v1/auth/discord/verify"));
