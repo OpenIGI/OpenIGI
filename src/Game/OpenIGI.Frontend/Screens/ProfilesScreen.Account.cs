@@ -1,3 +1,4 @@
+using System.Globalization;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
@@ -24,7 +25,7 @@ public sealed partial class ProfilesScreen
     private IAccountPanel? Accounts => Context.Host.Account;
 
     private string AccountKey => Accounts is { } accounts
-        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{_confirmingDelete}|{_copiedLink}"
+        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{accounts.Record}|{_confirmingDelete}|{_copiedLink}"
         : string.Empty;
 
     // The account's panel: what it is for while signed out, the sign-in while it waits, and the account once signed in.
@@ -107,28 +108,48 @@ public sealed partial class ProfilesScreen
         return panel;
     }
 
-    // The online record: the official servers' count of the player's matches, or what it takes to start one.
+    // The online record: this season's counts on the official servers, all time's under them; what it takes to start one.
     private GlassPanel BuildRecord(UiTheme theme)
     {
         bool compact = Size == ShellSize.Compact;
         GlassPanel panel = DetailPanel(theme);
         var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 8f : 12f };
-        column.AddChild(new Eyebrow(theme, "Online record") { TextSize = compact ? 12f : 14f });
+        AccountRecord? record = Accounts?.Record;
+        column.AddChild(new Eyebrow(theme, record is null ? "Online record" : $"Online record · {SeasonName(record.Season)}") { TextSize = compact ? 12f : 14f });
 
         var stats = new FlexPanel { Orientation = Orientation.Horizontal, Gap = compact ? 18f : 30f };
         float size = compact ? 18f : 24f;
-        foreach (string caption in (string[])["Matches", "Wins", "Kills", "K/D", "Headshots"])
+        RecordTotals? season = record?.ThisSeason;
+        (string Caption, string Value)[] figures =
+        [
+            ("Matches", Figure(season?.Matches)),
+            ("Wins", Figure(season?.Wins)),
+            ("Kills", Figure(season?.Kills)),
+            ("K/D", season is null ? "—" : season.Kd.ToString("0.00", CultureInfo.InvariantCulture)),
+            ("Score", Figure(season?.Score)),
+        ];
+        foreach ((string caption, string value) in figures)
         {
-            stats.Add(new Stat(theme, caption) { Value = "—", ValueSize = size, ValueColor = theme.TextMuted });
+            stats.Add(new Stat(theme, caption) { Value = value, ValueSize = size, ValueColor = record is null ? theme.TextMuted : theme.TextBright });
         }
 
         column.AddChild(stats);
-        column.AddChild(Note(theme, Accounts?.Status == AccountStatus.SignedIn
-            ? "Matches on the official servers are counted here from your next one on."
-            : "Sign in and play on the official servers to start your record."));
+        column.AddChild(Note(theme, record is { } known
+            ? string.Create(CultureInfo.InvariantCulture, $"This season. All time: {known.AllTime.Matches} matches, {known.AllTime.Wins} wins, {known.AllTime.Kills} kills.")
+            : Accounts?.Status == AccountStatus.SignedIn
+                ? "Matches on the official servers are counted here from your next one on."
+                : "Sign in and play on the official servers to start your record."));
         panel.AddChild(column);
         return panel;
     }
+
+    private static string Figure(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "—";
+
+    // "2026-11" as "November 2026".
+    private static string SeasonName(string season) =>
+        DateTime.TryParseExact(season, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime month)
+            ? month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)
+            : season;
 
     // Under the name: who the player is to everyone else.
     private string IdentityNote() => Accounts switch

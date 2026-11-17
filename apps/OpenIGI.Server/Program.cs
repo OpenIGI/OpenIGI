@@ -15,11 +15,13 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Host;
+using OpenIGI.Host.Accounts;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Dedicated;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Net;
+using OpenIGI.Net.Identity;
 using OpenIGI.Net.Rooms;
 using OpenIGI.Net.Udp;
 using OpenIGI.Net.WebRtc;
@@ -162,6 +164,10 @@ if (bans.Load() is { } banProblem)
 }
 
 MasterHeartbeat? heartbeat = config.Public ? new MasterHeartbeat(config.Master, logger) : null;
+
+// The server's own key, which its match results are signed with: the master counts them once this key is listed there.
+using EcdsaPlayerIdentity statsKey = EcdsaPlayerIdentity.LoadOrCreate(config.StatsKeyFile);
+logger.Information(LogCategory, $"Stats key {PlayerIdentities.IdOf(statsKey.PublicKey)}: {Convert.ToBase64String(statsKey.PublicKey)}");
 using DedicatedServer dedicated = new(
     server,
     config,
@@ -174,6 +180,7 @@ using DedicatedServer dedicated = new(
     () => host.MissionList)
 {
     Arenas = host.HasArena,
+    Reporter = config.Public ? new MatchReporter(server, config.Master, new PlayerRequestSigner(statsKey), logger) : null,
 };
 if (GameModes.IsVersus(mode) && !host.HasArena(mission))
 {

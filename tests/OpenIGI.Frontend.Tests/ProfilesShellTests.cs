@@ -157,6 +157,27 @@ public sealed class ProfilesShellTests : ShellTestHarness
         }
     }
 
+    /// <summary>Signed in with a record, this season's counts and all time's are shown; without one, dashes and how to start.</summary>
+    [Fact]
+    public void The_online_record_shows_the_seasons_counts()
+    {
+        string dir = NewDirectory();
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            host.Account = new FakeAccount().SignedInAs("Sh");
+            ProfilesScreen screen = Open(shell);
+
+            Assert.NotNull(Find<Label>(screen, label => label.Text == "This season. All time: 30 matches, 16 wins, 210 kills."));
+            Assert.NotNull(Find<OpenIGI.UI.Kit.Widgets.Stat>(screen, stat => stat.Value == "2.34"));
+            Assert.NotNull(Find<OpenIGI.UI.Kit.Widgets.Eyebrow>(screen, eyebrow => eyebrow.Text == "ONLINE RECORD · NOVEMBER 2026"));
+        }
+        finally
+        {
+            Remove(dir);
+        }
+    }
+
     /// <summary>DELETE ACCOUNT asks first; CANCEL keeps it, DELETE PERMANENTLY deletes it.</summary>
     [Fact]
     public void Deleting_the_account_asks_first()

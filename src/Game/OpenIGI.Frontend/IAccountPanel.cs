@@ -28,6 +28,21 @@ public enum AccountStatus
 /// <param name="AvatarUrl">Their avatar's address.</param>
 public sealed record AccountSummary(string Id, string Name, string AvatarUrl);
 
+/// <summary>A player's totals on the official servers over a period.</summary>
+/// <param name="Matches">The matches played.</param>
+/// <param name="Wins">The matches won.</param>
+/// <param name="Kills">The kills.</param>
+/// <param name="Deaths">The deaths.</param>
+/// <param name="Kd">Kills a death.</param>
+/// <param name="Score">The points.</param>
+public sealed record RecordTotals(int Matches, int Wins, int Kills, int Deaths, double Kd, int Score);
+
+/// <summary>The player's record on the official servers.</summary>
+/// <param name="Season">The season now, as <c>yyyy-MM</c>.</param>
+/// <param name="ThisSeason">This season's totals.</param>
+/// <param name="AllTime">All time's.</param>
+public sealed record AccountRecord(string Season, RecordTotals ThisSeason, RecordTotals AllTime);
+
 /// <summary>
 /// The player's online account: optional, and signed into with Discord. Signing in names the player by their Discord name
 /// in multiplayer, keeps their profile in step between their computers and the browser, and counts their stats. The host
@@ -49,6 +64,9 @@ public interface IAccountPanel
 
     /// <summary>Gets how the profile stands with the account, for the player, or <see langword="null"/> while signed out.</summary>
     string? SyncNote => null;
+
+    /// <summary>Gets the player's record on the official servers, once read; <see langword="null"/> while signed out or not yet read.</summary>
+    AccountRecord? Record => null;
 
     /// <summary>Gets whether a request is on its way, for buttons to wait.</summary>
     bool IsBusy { get; }

@@ -18,6 +18,10 @@ public sealed partial class GameHost
 
     private AccountLink? _account;
     private ProfileSync? _profileSync;
+    private StatsService? _stats;
+    private Task<PlayerRecord>? _recordAsked;
+    private (string Account, PlayerRecord Record, DateTimeOffset At)? _record;
+    private DateTimeOffset _recordAskedAt = DateTimeOffset.MinValue;
 
     // Whether the profile page has looked at the account: until it has, nothing is asked of the servers.
     private bool _accountSeen;
@@ -36,6 +40,7 @@ public sealed partial class GameHost
         {
             _account?.Update();
             _profileSync?.Update();
+            UpdateRecord();
         }
     }
 
@@ -56,6 +61,7 @@ public sealed partial class GameHost
                 url => OpenLink?.Invoke(url),
                 // What the account lists this install as; never the computer's own name, which is the player's business.
                 OperatingSystem.IsBrowser() ? "Browser" : "Desktop");
+            _stats = new StatsService(AccountHttp, MapService.Master);
             _profileSync = new ProfileSync(service, PlayerSigner, new SyncedProfile(this), SettingsPaths.GetFilePath("account-sync.json"));
             _account.AccountChanged += account =>
             {
@@ -74,6 +80,31 @@ public sealed partial class GameHost
         }
 
         return new AccountPanel(_account, this);
+    }
+
+    // The record on the official servers: read once signed in, and again every two minutes while the page looks.
+    private void UpdateRecord()
+    {
+        if (_recordAsked is { IsCompleted: true } asked)
+        {
+            _recordAsked = null;
+            if (asked.IsCompletedSuccessfully && _account?.Account is { } account)
+            {
+                _record = (account.Id, asked.Result, DateTimeOffset.UtcNow);
+            }
+        }
+
+        if (_recordAsked is not null || _stats is null || _account is not { State: AccountLinkState.Linked, Account: { } signedIn })
+        {
+            return;
+        }
+
+        bool stale = _record is not { } kept || kept.Account != signedIn.Id;
+        if (stale || DateTimeOffset.UtcNow - _recordAskedAt > TimeSpan.FromMinutes(2))
+        {
+            _recordAskedAt = DateTimeOffset.UtcNow;
+            _recordAsked = _stats.RecordAsync(signedIn.Id);
+        }
     }
 
     private static PlayerRequestSigner? PlayerSigner() =>
@@ -134,6 +165,10 @@ public sealed partial class GameHost
 
         public string? Problem => link.Error;
 
+        public AccountRecord? Record => host._record is { } kept && link.Account?.Id == kept.Account
+            ? new AccountRecord(kept.Record.Season, Totals(kept.Record.SeasonTotals), Totals(kept.Record.AllTime))
+            : null;
+
         public string? SyncNote => host._profileSync?.State switch
         {
             ProfileSyncState.Syncing => "Syncing your profile…",
@@ -143,6 +178,9 @@ public sealed partial class GameHost
         };
 
         public bool IsBusy => link.IsBusy;
+
+        private static RecordTotals Totals(StatTotals totals) =>
+            new(totals.Matches, totals.Wins, totals.Kills, totals.Deaths, totals.Kd, totals.Score);
 
         public bool CanOpenLinks => host.OpenLink is not null;
 

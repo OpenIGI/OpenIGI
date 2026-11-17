@@ -97,6 +97,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         _nextMap.Tick();
 
         Greet();
+        Reporter?.Tick(now);
         if (_heartbeat is not null && _beat is not null)
         {
             _heartbeat.Tick(now, _beat);
@@ -142,6 +143,9 @@ public sealed class DedicatedServer : IServerControl, IDisposable
 
     /// <summary>Gets which missions' maps can be played as arenas (laid out for multiplayer); every one when unset.</summary>
     public Func<int, bool>? Arenas { get; init; }
+
+    /// <summary>Gets what reports each decided match to the master, or <see langword="null"/> for a server that reports none.</summary>
+    public MatchReporter? Reporter { get; init; }
 
     // The missions a mode can be played on: every one for co-op, the laid-out ones for a versus mode.
     private IReadOnlyList<(int Id, string Name)> MissionsFor(string mode) =>

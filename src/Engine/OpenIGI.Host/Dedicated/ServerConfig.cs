@@ -79,6 +79,12 @@ public sealed record ServerConfig
     /// <summary>Gets the ban list's file, beside the server unless rooted.</summary>
     public string BansFile { get; init; } = "bans.json";
 
+    /// <summary>
+    /// Gets the server's own key's file (<c>stats_key</c>), beside the server unless rooted: what its match results are signed
+    /// with. Made on first start; the master counts its matches once its public key is listed there.
+    /// </summary>
+    public string StatsKeyFile { get; init; } = "stats.key";
+
     /// <summary>Gets the log file, or empty for the console alone.</summary>
     public string LogFile { get; init; } = "server.log";
 
@@ -172,6 +178,9 @@ public sealed record ServerConfig
                     break;
                 case "log":
                     config = config with { LogFile = value };
+                    break;
+                case "stats_key":
+                    config = config with { StatsKeyFile = value };
                     break;
                 case "map":
                     ok = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) && mission > 0
