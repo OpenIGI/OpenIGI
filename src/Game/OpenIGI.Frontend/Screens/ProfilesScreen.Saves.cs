@@ -63,7 +63,7 @@ public sealed partial class ProfilesScreen
         var save = new Button(theme, compact ? "Save" : "Save here")
         {
             Accent = ButtonAccent.Ghost,
-            LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.Save, centre, size, ink),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Save),
             GlyphSize = 16f,
             TextSize = compact ? 15f : 17f,
             Tracking = 0.12f,
@@ -85,7 +85,7 @@ public sealed partial class ProfilesScreen
         var delete = new Button(theme, compact ? "Delete" : "Delete save")
         {
             Accent = ButtonAccent.Destructive,
-            LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.Trash, centre, size, ink),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Trash),
             GlyphSize = 16f,
             TextSize = compact ? 15f : 17f,
             Tracking = 0.12f,

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Input;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit.Widgets;
@@ -198,7 +199,7 @@ public sealed class SettingsScreen : ShellScreen
             var reset = new Button(theme, "Reset")
             {
                 Accent = ButtonAccent.Text,
-                LeadingGlyph = static (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.History, centre, size, ink),
+                LeadingGlyph = KitIcons.Glyph(KitIcon.History),
                 GlyphSize = 16f,
                 TextSize = 16f,
                 Tracking = 0.12f,

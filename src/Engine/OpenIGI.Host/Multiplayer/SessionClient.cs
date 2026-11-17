@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
 using OpenIGI.Net.Rooms;
@@ -500,7 +501,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
             ? Game.Multiplayer.Modes.Spectating.Pick(
                 session.Scoreboard,
                 own,
-                Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+                MatchModes.HasTeams(Mode),
                 entity => latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
                     ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
                     : null,

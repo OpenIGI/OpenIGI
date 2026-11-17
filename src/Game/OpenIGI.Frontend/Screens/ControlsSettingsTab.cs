@@ -1,3 +1,4 @@
+using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
@@ -208,7 +209,7 @@ internal static class ControlsSettingsTab
             Width = compact ? float.NaN : 420f,
             Height = 44f,
             VerticalAlignment = VerticalAlignment.Center,
-            LeadingGlyph = static (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Search, centre, size, ink),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Search),
             Tooltip = "Show only the actions whose name or key has this in it.",
         };
         search.TextChanged += text =>
@@ -226,7 +227,7 @@ internal static class ControlsSettingsTab
         var resetButton = new Button(theme, "RESET BINDINGS")
         {
             Accent = ButtonAccent.Ghost,
-            LeadingGlyph = static (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.History, centre, size, ink),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.History),
             GlyphSize = 18f,
             TextSize = 17f,
             Tracking = 0.12f,

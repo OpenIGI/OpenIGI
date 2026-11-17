@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
@@ -110,9 +111,9 @@ public sealed partial class ServerSession
             return;
         }
 
-        if (call.Vote.Kind == VoteKind.Map && call.Vote.Mode.Length > 0 && !GameModes.All.Contains(call.Vote.Mode))
+        if (call.Vote.Kind == VoteKind.Map && call.Vote.Mode.Length > 0 && !MatchModes.All.Contains(call.Vote.Mode))
         {
-            Tell(slot, $"'{call.Vote.Mode}' is not a mode: {string.Join(", ", GameModes.All)}.");
+            Tell(slot, $"'{call.Vote.Mode}' is not a mode: {string.Join(", ", MatchModes.All)}.");
             return;
         }
 

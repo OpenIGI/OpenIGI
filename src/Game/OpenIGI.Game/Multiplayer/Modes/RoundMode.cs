@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>How a round-based match is played: rounds to win, how long a round lasts, and the pauses between.</summary>
@@ -470,7 +471,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 public sealed class EliminationMode(int tickRate, RoundSettings? settings = null) : RoundMode(tickRate, settings)
 {
     /// <inheritdoc/>
-    public override string Id => GameModes.Elimination;
+    public override string Id => MatchModes.Elimination;
 
     /// <inheritdoc/>
     /// <remarks>Its rounds are bought for as search and destroy's are: the freeze time, the buy time, and the round's money.</remarks>

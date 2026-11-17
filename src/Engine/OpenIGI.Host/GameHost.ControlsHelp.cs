@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Config;
@@ -143,7 +144,7 @@ public sealed partial class GameHost
             Add(match, Bound(PlayerAction.DropWeapon, "X"), "Drop weapon / bomb");
         }
 
-        if (hud is { Teams: not null } || (versus && GameModes.HasTeams(mode)))
+        if (hud is { Teams: not null } || (versus && MatchModes.HasTeams(mode)))
         {
             Add(match, KeyLabel(TeamMenuCVars.Key.Value), "Team menu");
         }
@@ -169,7 +170,7 @@ public sealed partial class GameHost
         return new ControlsHelp(
             [new ControlsSection("MOVEMENT", move), new ControlsSection("COMBAT", combat), new ControlsSection("MATCH", match)],
             holdKey,
-            mode.Length > 0 ? GameModes.Title(mode) : string.Empty);
+            mode.Length > 0 ? MatchModes.Title(mode) : string.Empty);
 
         static void Add(List<ControlsLine> lines, string? key, string action)
         {

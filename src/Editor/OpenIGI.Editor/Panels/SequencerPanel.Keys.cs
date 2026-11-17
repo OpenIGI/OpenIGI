@@ -87,7 +87,7 @@ internal sealed partial class SequencerPanel
             int number = 1 + keys.Take(first).Count(static k => !CutsceneEasing.IsHelper(k.Key.Camera));
             string eased = move.Keys.Select(k => CutsceneEasing.Of(scene, k.Camera)).FirstOrDefault(static e => e != CutsceneEase.None) is var e and not CutsceneEase.None ? "  ·  " + EaseName(e) : string.Empty;
             string name = string.Create(CultureInfo.InvariantCulture, $"{number}. {(lead.Label.Length > 0 ? lead.Label : "Shot")}  {end - start:0.#}s{count}{rides}{eased}");
-            EditorDraw.Label(painter, Theme, EditorDraw.Fit(Theme.Font, name, Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f), Height = clip.Height - Theme.Px(7f) }, Bgra32.White);
+            EditorDraw.Label(painter, Theme, Theme.Font.Fit(name, Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f), Height = clip.Height - Theme.Px(7f) }, Bgra32.White);
 
             // The keys along the clip's foot: where each starts, the last of a move that ends on a glide's last key at its moment.
             for (int i = first; i <= last; i++)

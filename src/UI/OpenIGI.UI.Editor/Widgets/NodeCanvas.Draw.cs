@@ -597,7 +597,7 @@ public sealed partial class NodeCanvas
         }
 
         UiFont font = Theme.Fonts.Font(strong ? EditorFontFace.InterfaceStrong : EditorFontFace.Interface, px);
-        string shown = EditorDraw.Fit(font, text, px, box.Width);
+        string shown = font.Fit(text, px, box.Width);
         float width = font.MeasureWidth(shown, px);
         float x = alignRight ? box.Right - width : box.X;
         float y = box.Y + ((box.Height - font.LineHeight(px)) * 0.5f);

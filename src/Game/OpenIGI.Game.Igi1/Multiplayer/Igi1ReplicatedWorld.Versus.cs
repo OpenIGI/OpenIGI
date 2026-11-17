@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Multiplayer;
@@ -159,9 +160,9 @@ public sealed partial class Igi1ReplicatedWorld
     // The mode the players' sides follow: co-op until a versus game is played.
     private string VersusMode => _versus switch
     {
-        Versus.Teams => Game.Multiplayer.Modes.GameModes.TeamDeathmatch,
-        Versus.Everyone => Game.Multiplayer.Modes.GameModes.FreeForAll,
-        _ => Game.Multiplayer.Modes.GameModes.Coop,
+        Versus.Teams => MatchModes.TeamDeathmatch,
+        Versus.Everyone => MatchModes.FreeForAll,
+        _ => MatchModes.Coop,
     };
 
     /// <inheritdoc/>

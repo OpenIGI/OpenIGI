@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Multiplayer;
@@ -15,8 +16,8 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_team_deathmatch_makes_the_level_an_arena_on_both_games_and_puts_the_players_on_two_teams()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
-        Assert.Equal(GameModes.TeamDeathmatch, pair.Session.Session!.Mode.Id);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
+        Assert.Equal(MatchModes.TeamDeathmatch, pair.Session.Session!.Mode.Id);
 
         // Nobody of the level's own on either game.
         Assert.Empty(pair.Host!.World.Soldiers?.SoldierViews ?? []);
@@ -54,7 +55,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_player_killed_in_a_deathmatch_is_counted_and_put_back_by_itself_rather_than_held_down()
     {
-        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         Game.Igi1.World.IHarmedPlayer harmed = pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player));
         harmed.Health.Apply(0, 100000f);
@@ -74,7 +75,7 @@ public sealed class Igi1VersusTests
         // respawn re-arms both, but the server on its tick and the player's game when the kit reaches it, a round trip of the
         // player's commands later; a switch key between the two lands on a fresh kit on one and the old weapon on the other,
         // and every switch after it -- each a step from what is in hand -- kept the two a weapon apart for the round.
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         pair.JoinerLink.Send.Latency = 0.06;
         pair.JoinerLink.Receive.Latency = 0.06;
         IGameMode mode = pair.Session.Session!.Mode;
@@ -127,7 +128,7 @@ public sealed class Igi1VersusTests
         // Live S&D: the kill for leaving the match's bounds runs the death without spending the health, and the snapshot called
         // a player alive by its health alone -- so the player played on, on its own game, a body the server held dead: its
         // switches ran there and not here, and it came out of the round holding another weapon than the server's copy.
-        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         int slot = pair.Session.Session!.Match.Players.Values.Single(p => p.Name == "Anya").Slot;
         ((IModeHost)pair.Session.Session).World.KillPlayer(slot);
@@ -138,7 +139,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_restarted_match_puts_the_wounded_back_whole_and_everyone_carries_only_its_sides_knife_and_pistol()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         Landed(pair);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
 
@@ -178,7 +179,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_player_is_met_in_its_own_stance_whatever_the_hosts_body_is_doing()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
         Landed(pair);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
 
@@ -200,7 +201,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_player_carries_one_gun_in_each_place_a_bought_one_throwing_down_what_it_replaces_and_one_walked_over_left()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         Landed(pair);
         IModeHost host = pair.Session.Session!;
         int joinerSlot = pair.Session.Session!.Match.Players.Single(p => p.Value.Name == "Anya").Key;
@@ -235,7 +236,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_player_put_back_in_a_laid_out_map_starts_at_the_spawn_farthest_from_the_others()
     {
-        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         // The host's feet once it has come down from the level's start, so the spawns stand on its ground.
         Core.Numerics.Vector3d host = default;
@@ -264,7 +265,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_joiner_put_down_in_a_laid_out_arena_lands_on_its_feet_and_lives()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         Core.Numerics.Vector3d first = partner.Player.Body.Position;
         double lowest = first.Z;
@@ -279,7 +280,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_spawn_with_no_ground_under_it_is_passed_over_for_one_that_has()
     {
-        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         Core.Numerics.Vector3d host = Landed(pair);
 
@@ -302,9 +303,9 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void An_elimination_round_ends_when_a_side_falls_and_everyone_stands_again_for_the_next()
     {
-        using Igi1CoopPair pair = Joined(GameModes.Elimination);
+        using Igi1CoopPair pair = Joined(MatchModes.Elimination);
         IGameMode mode = pair.Session.Session!.Mode;
-        Assert.Equal(GameModes.Elimination, mode.Id);
+        Assert.Equal(MatchModes.Elimination, mode.Id);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         int hostTeam = pair.Session.Session.Match.Players[ServerSession.HostSlot].Team;
 
@@ -320,7 +321,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_new_round_puts_the_level_back_on_the_server_and_the_joiner_with_no_load()
     {
-        using Igi1CoopPair pair = Joined(GameModes.Elimination);
+        using Igi1CoopPair pair = Joined(MatchModes.Elimination);
         ServerSession session = pair.Session.Session!;
         IGameMode mode = session.Mode;
         Igi1Gameplay server = pair.Host!;
@@ -379,7 +380,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void An_attacker_with_the_bomb_in_hand_holding_use_at_a_site_plants_it_and_its_blast_wins_the_round()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         ServerSession session = pair.Session.Session!;
         SearchAndDestroyMode mode = Assert.IsType<SearchAndDestroyMode>(session.Mode);
         Landed(pair);
@@ -445,7 +446,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
     {
-        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);
         ((IModeHost)pair.Session.Session!).World.KillPlayer(ServerSession.HostSlot);
         Assert.True(pair.RunUntil(() => pair.Host!.World.IsPlayerDead, 300) >= 0, "the host never fell");
         Assert.True(pair.RunUntil(() => !pair.Host!.World.IsPlayerDead, 30 * 8) >= 0, "the host was never put back");
@@ -455,7 +456,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_player_put_back_in_a_deathmatch_has_its_ammunition_filled_again()
     {
-        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
         Game.Player.PlayerWeapons weapons = partner.Player.Weapons!;
         (int ammo, int full) = weapons.Ammunition.Contents.First(c => c.Value > 0);
@@ -472,9 +473,9 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_joiner_that_brought_the_level_up_for_co_op_loads_it_again_as_the_servers_arena()
     {
-        using Igi1CoopPair pair = new(GameModes.FreeForAll, mission: 1, joinerMode: GameModes.Coop);
+        using Igi1CoopPair pair = new(MatchModes.FreeForAll, mission: 1, joinerMode: MatchModes.Coop);
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
-        Assert.Equal(GameModes.FreeForAll, pair.Client.Mode);
+        Assert.Equal(MatchModes.FreeForAll, pair.Client.Mode);
         Assert.True(pair.RunUntil(() => pair.Joiner?.World.Soldiers?.SoldierViews is { } views && !views.Any(), 3000) >= 0,
             "the joiner still has the level's soldiers");
 
@@ -514,7 +515,7 @@ public sealed class Igi1VersusTests
     {
         // A player's game plays cutscenes; held in an arena, mission 1's intro must still count as over, or the level never
         // hands either player its controls (seen live, 2026-11-06).
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy, hostSkipsIntro: false);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy, hostSkipsIntro: false);
         pair.RunUntil(() => false, 90 + FreezeTicks);
         Core.Numerics.Vector3d hostFrom = pair.Host!.World.Player!.Body.Position;
         Core.Numerics.Vector3d joinerFrom = pair.Joiner!.World.Player!.Body.Position;
@@ -533,7 +534,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_joiner_dropping_its_gun_throws_it_as_igi2_does_and_both_games_fly_it_to_the_same_rest()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
         Landed(pair);
         Igi1NetworkPlayer joiner = Assert.Single(pair.Host!.World.NetworkPlayers);
         OpenIGI.Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
@@ -585,7 +586,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_carrier_dropping_the_bomb_throws_it_as_a_gun_is_thrown_and_only_takes_it_back_once_away()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         SearchAndDestroyMode mode = Assert.IsType<SearchAndDestroyMode>(pair.Session.Session!.Mode);
         Landed(pair);
         pair.RunUntil(() => false, FreezeTicks);
@@ -631,24 +632,24 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_match_switched_to_search_and_destroy_in_place_is_search_and_destroy_on_the_joiner_with_its_bomb_sites()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
         Landed(pair);
-        Assert.Equal(GameModes.TeamDeathmatch, pair.Client.Mode);
+        Assert.Equal(MatchModes.TeamDeathmatch, pair.Client.Mode);
 
         // The same map under another mode, as an admin's "map 1 sd" or the vote asks: it starts over where it stands.
-        Assert.True(pair.Session.UseMode(GameModes.SearchAndDestroy));
+        Assert.True(pair.Session.UseMode(MatchModes.SearchAndDestroy));
         pair.Session.PlayAgain();
-        Assert.True(pair.RunUntil(() => pair.Session.Mode == GameModes.SearchAndDestroy, 30 * 3) >= 0, "the server never played search and destroy");
+        Assert.True(pair.RunUntil(() => pair.Session.Mode == MatchModes.SearchAndDestroy, 30 * 3) >= 0, "the server never played search and destroy");
 
         // The joiner plays it too -- the mode its bomb sites are drawn for -- and has the sites to draw.
-        Assert.True(pair.RunUntil(() => pair.Client.Mode == GameModes.SearchAndDestroy, 30 * 5) >= 0, $"the joiner still plays {pair.Client.Mode}");
+        Assert.True(pair.RunUntil(() => pair.Client.Mode == MatchModes.SearchAndDestroy, 30 * 5) >= 0, $"the joiner still plays {pair.Client.Mode}");
         Assert.Contains(pair.Client.Layout!.Points, p => p.Kind == MpPointKind.BombSite);
     }
 
     [RequiresGameDataFact]
     public void In_the_buy_time_the_host_and_the_joiner_each_buy_a_gun_and_carry_it()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         static bool Carries(Game.Igi1.Player.PlayerCamera rig, string weapon) =>
             rig.Weapons?.Carried.Any(c => c.Weapon.ScriptId == weapon) == true;
 
@@ -666,7 +667,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_versus_match_lays_none_of_the_levels_pickups_on_the_host_or_the_joiner_and_a_new_round_brings_none_back()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         static int Lying(Igi1Gameplay game) =>
             (game.World.GenericPickups?.Items.Count(p => !p.IsCollected) ?? 0) + (game.World.GunPickups?.Items.Count(p => !p.IsCollected) ?? 0);
         pair.RunUntil(() => false, 30);
@@ -687,7 +688,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_gun_bought_is_taken_in_hand_and_a_rifle_bought_over_another_too_by_the_host_and_by_the_joiner()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         Match match = pair.Session.Session!.Match;
         foreach (int slot in match.Players.Keys)
         {
@@ -713,7 +714,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_player_killed_after_buying_starts_the_next_round_with_the_spawn_kit_and_the_survivor_keeps_its_gun()
     {
-        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
         static bool Carries(Game.Igi1.Player.PlayerCamera rig, string weapon) =>
             rig.Weapons?.Carried.Any(c => c.Weapon.ScriptId == weapon) == true;
         static string[] Kit(Game.Igi1.Player.PlayerCamera rig) =>
@@ -742,7 +743,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_joiner_on_a_slow_line_hits_a_host_running_across_where_its_own_game_shows_the_host()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
         pair.Ping(0.2);
         pair.RunUntil(() => false, 60);
         Game.Igi1.Player.PlayerCamera host = pair.Host!.World.Player!;
@@ -814,7 +815,7 @@ public sealed class Igi1VersusTests
     [RequiresGameDataFact]
     public void A_hosted_match_is_saved_as_a_demo_that_plays_back_with_both_players_in_it()
     {
-        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        using Igi1CoopPair pair = Joined(MatchModes.TeamDeathmatch);
         pair.RunUntil(() => false, 150);
         string path = Path.Combine(Path.GetTempPath(), $"openigi-host-{Guid.NewGuid():N}.oidemo");
         try
@@ -827,7 +828,7 @@ public sealed class Igi1VersusTests
                 (header, messages) = DemoFile.Read(file);
             }
 
-            Assert.Equal(("igi1", GameModes.TeamDeathmatch), (header.Title, header.Mode));
+            Assert.Equal(("igi1", MatchModes.TeamDeathmatch), (header.Title, header.Mode));
             Assert.True(messages.Count > 30, $"only {messages.Count} messages were recorded");
 
             // Played back to an ordinary client: welcomed as nobody, and sent the host and the joiner as they played.

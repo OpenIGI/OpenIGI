@@ -26,7 +26,7 @@ internal sealed class AccountMenu : Control
     private static readonly TimeSpan ConfirmFor = TimeSpan.FromSeconds(4);
 
     private readonly LauncherModel _model;
-    private readonly Func<string, BackdropPicture?> _pictures;
+    private readonly Func<string, UiPicture?> _pictures;
     private readonly Tween _open = new(0f, duration: 0.18f, Ease.OutCubic);
     private readonly List<(UiRect Box, MenuRow Row)> _rowBoxes = [];
     private UiRect _panel = UiRect.Empty;
@@ -37,7 +37,7 @@ internal sealed class AccountMenu : Control
     /// <param name="theme">The theme.</param>
     /// <param name="model">The launcher's model, whose account it shows.</param>
     /// <param name="pictures">Loads a picture file, for the avatar.</param>
-    public AccountMenu(UiTheme theme, LauncherModel model, Func<string, BackdropPicture?> pictures)
+    public AccountMenu(UiTheme theme, LauncherModel model, Func<string, UiPicture?> pictures)
         : base(theme)
     {
         _model = model;
@@ -373,7 +373,7 @@ internal sealed class AccountMenu : Control
 
     private void DrawAvatar(UiPainter painter, UiRect box, PlayerAccount account, float appear)
     {
-        (UiImage Image, float Aspect)? avatar = _model.AvatarFile is { } file && _pictures(file) is { } picture ? (picture.Image, picture.Aspect) : null;
+        UiPicture? avatar = _model.AvatarFile is { } file ? _pictures(file) : null;
         KitDraw.PlayerMark(painter, Theme, box, account.Name, avatar, signedIn: Account.State == AccountLinkState.Linked, appear);
     }
 

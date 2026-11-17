@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using Xunit;
@@ -56,15 +57,15 @@ public sealed class MpLayoutTests
             }
             """, out _)!;
 
-        Assert.All(layout.ForMode(GameModes.TeamDeathmatch).Spawns, s => Assert.True(s.Position[0] >= 2));
-        Assert.Equal(2, layout.ForMode(GameModes.FreeForAll).Spawns.Length);
-        Assert.Equal(2, layout.ForMode(GameModes.TeamDeathmatch).SpawnsFor(1).Count());
-        Assert.All(layout.ForMode(GameModes.SearchAndDestroy).Spawns, s => Assert.Null(s.Modes));
-        Assert.Equal(2, layout.ForMode(GameModes.Elimination).Spawns.Length);
+        Assert.All(layout.ForMode(MatchModes.TeamDeathmatch).Spawns, s => Assert.True(s.Position[0] >= 2));
+        Assert.Equal(2, layout.ForMode(MatchModes.FreeForAll).Spawns.Length);
+        Assert.Equal(2, layout.ForMode(MatchModes.TeamDeathmatch).SpawnsFor(1).Count());
+        Assert.All(layout.ForMode(MatchModes.SearchAndDestroy).Spawns, s => Assert.Null(s.Modes));
+        Assert.Equal(2, layout.ForMode(MatchModes.Elimination).Spawns.Length);
 
         // A map that names no mode on its spawns plays every mode on all of them, as before.
         MpLayout plain = MpLayout.Parse(Arena, out _)!;
-        Assert.Same(plain, plain.ForMode(GameModes.TeamDeathmatch));
+        Assert.Same(plain, plain.ForMode(MatchModes.TeamDeathmatch));
     }
 
     [Fact]

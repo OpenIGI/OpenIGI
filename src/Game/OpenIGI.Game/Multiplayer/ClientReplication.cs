@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer;
 
 /// <summary>Each tick of a client: its own command sent up, and every other player shown where the snapshots put it.</summary>
@@ -99,7 +100,7 @@ public static class ClientReplication
 
             // The sides, which say whose names and revive marks this player is shown: the server's mode, the board's teams.
             int? ownTeam = session.EntityId is { } ownEntity ? TeamOf(board, ownEntity) : null;
-            world.Sides(session.MatchState?.Mode ?? Modes.GameModes.Coop, entity => TeamOf(board, entity), ownTeam);
+            world.Sides(session.MatchState?.Mode ?? MatchModes.Coop, entity => TeamOf(board, entity), ownTeam);
         }
 
         // The server level's running state, taken each time a new one comes.

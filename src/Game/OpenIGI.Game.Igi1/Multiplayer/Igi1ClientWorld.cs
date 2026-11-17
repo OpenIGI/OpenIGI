@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
@@ -467,20 +468,20 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         (_mode, _teamOf, _ownTeam) = (mode, teamOf, ownTeam);
 
         // A versus match shows no scene, and a joiner's own copy of the level must not say the intro's lines either.
-        if (Game.Multiplayer.Modes.GameModes.IsVersus(mode) && _game.World.Cutscenes is { Held: false } scenes)
+        if (MatchModes.IsVersus(mode) && _game.World.Cutscenes is { Held: false } scenes)
         {
             scenes.Held = true;
         }
 
         // Nor any of the level's own pickups, as on the server: none to draw, none to walk over.
-        if (Game.Multiplayer.Modes.GameModes.IsVersus(mode))
+        if (MatchModes.IsVersus(mode))
         {
             _game.World.GunPickups?.LevelCleared = true;
             _game.World.GenericPickups?.LevelCleared = true;
         }
     }
 
-    private string _mode = Game.Multiplayer.Modes.GameModes.Coop;
+    private string _mode = MatchModes.Coop;
     private Func<int, int?> _teamOf = static _ => null;
     private int? _ownTeam;
 

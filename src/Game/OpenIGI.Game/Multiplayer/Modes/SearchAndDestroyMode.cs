@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -80,7 +81,7 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     private static readonly TimeSpan WaveBudget = TimeSpan.FromMilliseconds(2.0);
 
     /// <inheritdoc/>
-    public override string Id => GameModes.SearchAndDestroy;
+    public override string Id => MatchModes.SearchAndDestroy;
 
     /// <inheritdoc/>
     protected override bool SidesDiffer => true;

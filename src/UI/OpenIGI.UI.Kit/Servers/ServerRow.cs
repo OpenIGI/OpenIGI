@@ -5,14 +5,14 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Frontend.Screens;
+namespace OpenIGI.UI.Kit.Servers;
 
 /// <summary>The server browser's columns, shared by its header and its rows so the two line up.</summary>
 /// <remarks>
 /// As the design draws them: a mark for a saved game, the name taking what room is left, then the mode, the map, the
 /// players and the ping, each a fixed width, the ping set against the row's right edge.
 /// </remarks>
-internal static class ServerColumns
+public static class ServerColumns
 {
     /// <summary>The columns the list can be ordered by, as its ordering numbers them.</summary>
     public static readonly string[] Headings = ["MODE", "NAME", "MAP", "PLAYERS", "PING"];
@@ -74,6 +74,65 @@ internal static class ServerColumns
         _ => 0f,
     };
 
+    /// <summary>
+    /// The columns' headings over the list, lined up with its rows: each orders the list by its column when pressed (again,
+    /// the other way); the one the list is ordered by is brighter, marked with the way it runs.
+    /// </summary>
+    /// <param name="theme">The theme.</param>
+    /// <param name="sortBy">The column the list is ordered by.</param>
+    /// <param name="descending">Whether it runs highest first.</param>
+    /// <param name="wide">Whether the page is the wide one.</param>
+    /// <param name="sort">Told the column pressed and the way it now runs (descending when pressed again).</param>
+    /// <returns>The headings.</returns>
+    public static Grid Header(UiTheme theme, int sortBy, bool descending, bool wide, Action<int, bool> sort)
+    {
+        ArgumentNullException.ThrowIfNull(sort);
+        var header = new Grid { ColumnSpacing = Gap, Margin = new Thickness(PadLeft, 0f, PadRight, 0f) };
+        header.RowDefinitions.Add(GridLength.Auto);
+        header.ColumnDefinitions.Add(GridLength.Absolute(StarWidth));
+        for (int place = 0; place < Across.Length; place++)
+        {
+            int column = Across[place];
+            float width = Width(column, wide);
+            header.ColumnDefinitions.Add(width > 0f ? GridLength.Absolute(width) : GridLength.Star);
+            bool sorted = column == sortBy;
+            bool last = column == Ping;
+            var heading = new SortHeading(theme, Headings[column])
+            {
+                Order = !sorted ? 0 : descending ? -1 : 1,
+                AlignRight = last,
+                HorizontalAlignment = last ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
+                Tooltip = sorted ? (descending ? "Ordered by this, highest first: press for lowest first." : "Ordered by this, lowest first: press for highest first.") : "Order the list by this.",
+            };
+            heading.Activated += _ => sort(column, sortBy == column && !descending);
+            header.Add(heading, 0, place + 1);
+        }
+
+        return header;
+    }
+
+    /// <summary>Orders a list by a column, either way; lines alike in it by their names.</summary>
+    /// <typeparam name="T">What the list holds.</typeparam>
+    /// <param name="items">The list.</param>
+    /// <param name="line">What each shows as a line.</param>
+    /// <param name="sortBy">The column, as <see cref="Headings"/> numbers it.</param>
+    /// <param name="descending">Whether highest first.</param>
+    /// <returns>The list, ordered.</returns>
+    public static List<T> Order<T>(IEnumerable<T> items, Func<T, ServerLine> line, int sortBy, bool descending)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        Func<T, IComparable> key = sortBy switch
+        {
+            Mode => item => line(item).Mode,
+            Map => item => line(item).MapNumber,
+            Players => item => line(item).Players,
+            Ping => item => line(item).Ping ?? int.MaxValue,
+            _ => item => line(item).Name.ToUpperInvariant(),
+        };
+        IOrderedEnumerable<T> ordered = descending ? items.OrderByDescending(key) : items.OrderBy(key);
+        return [.. ordered.ThenBy(item => line(item).Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
     /// <summary>Where each column stands across a row.</summary>
     /// <param name="context">The layout context.</param>
     /// <param name="bounds">The row.</param>
@@ -104,7 +163,7 @@ internal static class ServerColumns
 /// <param name="Players">The players' left edge.</param>
 /// <param name="Ping">The ping's left edge.</param>
 /// <param name="PingRight">The ping's right edge, which it is set against.</param>
-internal readonly record struct ServerColumnPlaces(float Star, float Name, float NameWidth, float Mode, float Map, float MapWidth, float Players, float Ping, float PingRight);
+public readonly record struct ServerColumnPlaces(float Star, float Name, float NameWidth, float Mode, float Map, float MapWidth, float Players, float Ping, float PingRight);
 
 /// <summary>What one line of the server browser shows.</summary>
 /// <param name="Name">The server's or room's name.</param>
@@ -116,7 +175,8 @@ internal readonly record struct ServerColumnPlaces(float Star, float Name, float
 /// <param name="MaxPlayers">How many it takes.</param>
 /// <param name="Ping">The round trip in milliseconds, or <see langword="null"/> while not known.</param>
 /// <param name="Region">Where it is.</param>
-internal sealed record ServerLine(string Name, string Kind, string ModeId, string Mode, string Map, int Players, int MaxPlayers, int? Ping, string Region)
+/// <param name="MapNumber">The map's mission number, which the map column is ordered by; 0 when not known.</param>
+public sealed record ServerLine(string Name, string Kind, string ModeId, string Mode, string Map, int Players, int MaxPlayers, int? Ping, string Region, int MapNumber = 0)
 {
     /// <summary>Gets a value indicating whether it has no room left.</summary>
     public bool Full => Players >= MaxPlayers;
@@ -136,7 +196,7 @@ internal sealed record ServerLine(string Name, string Kind, string ModeId, strin
 /// A column's heading in the server browser. Pressing it orders the list by its column; the one the list is ordered by is in
 /// the accent, with a mark after it pointing the way: up for lowest first, down for highest first.
 /// </summary>
-internal sealed class SortHeading : Control
+public sealed class SortHeading : Control
 {
     private const float TextSize = 14f;
     private const float Tracking = 0.12f;
@@ -195,10 +255,10 @@ internal sealed class SortHeading : Control
 /// of places filling as it fills, the ping with bars by strength. Clicking picks it; the picked line is washed in the
 /// accent, with the accent down its edge.
 /// </summary>
-internal sealed class ServerRow : Control
+public sealed class ServerRow : Control
 {
-    private readonly ServerLine _line;
-    private readonly string _under;
+    private ServerLine _line;
+    private string _under = string.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="ServerRow"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -207,8 +267,23 @@ internal sealed class ServerRow : Control
         : base(theme)
     {
         _line = line;
-        string kind = line.Kind.Length > 1 && line.Kind != "LAN" ? string.Concat(line.Kind.AsSpan(0, 1), line.Kind.AsSpan(1).ToString().ToLowerInvariant()) : line.Kind;
-        _under = line.Region.Length > 0 && line.Region != line.Kind ? $"{kind} · {line.Region}" : kind;
+        Line = line;
+    }
+
+    /// <summary>
+    /// Gets or sets what the line shows. Set again as the server's players and ping come in, so the line stays on the page
+    /// (and keeps its place, focus and look) rather than being made anew.
+    /// </summary>
+    public ServerLine Line
+    {
+        get => _line;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _line = value;
+            string kind = value.Kind.Length > 1 && value.Kind != "LAN" ? string.Concat(value.Kind.AsSpan(0, 1), value.Kind.AsSpan(1).ToString().ToLowerInvariant()) : value.Kind;
+            _under = value.Region.Length > 0 && value.Region != value.Kind ? $"{kind} · {value.Region}" : kind;
+        }
     }
 
     /// <summary>Gets or sets a value indicating whether it is the line picked.</summary>
@@ -282,14 +357,14 @@ internal sealed class ServerRow : Control
         }
         else
         {
-            OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Star, star, context.Px(18f), UiPalette.Fade(Theme.TextMuted, appear));
+            KitIcons.Draw(painter, KitIcon.Star, star, context.Px(18f), UiPalette.Fade(Theme.TextMuted, appear));
         }
 
         DrawName(painter, at.Name, at.NameWidth, Ink);
-        DrawBadge(painter, at.Mode, mid, UiPalette.Fade(ModeLook.Colour(_line.ModeId), appear));
+        ModeLook.DrawBadge(painter, Theme, new UiVec2(at.Mode, mid - context.Px(12f)), _line.ModeId, appear);
 
         float mapSize = context.Px(17f);
-        painter.DrawText(Theme.Body, Fit(_line.Map, Theme.Body, mapSize, at.MapWidth), new UiVec2(at.Map, UiRowStyle.CenterY(Theme.Body, mapSize, bounds)), mapSize, Ink(Theme.Text));
+        painter.DrawText(Theme.Body, Theme.Body.Fit(_line.Map, mapSize, at.MapWidth), new UiVec2(at.Map, UiRowStyle.CenterY(Theme.Body, mapSize, bounds)), mapSize, Ink(Theme.Text));
 
         DrawPlayers(painter, at.Players, mid, Ink);
         DrawPing(painter, at.PingRight, mid, Ink);
@@ -347,13 +422,13 @@ internal sealed class ServerRow : Control
         float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
         float marks = (Locked ? context.Px(22f) : 0f) + (Saved ? context.Px(22f) : 0f);
-        string name = Fit(_line.Name, Theme.BodyStrong, nameSize, right - x - marks);
+        string name = Theme.BodyStrong.Fit(_line.Name, nameSize, right - x - marks);
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, UiPalette.Fade(Unjoinable ? Theme.TextSecondary : Theme.Text, appear));
         float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(10f);
         float markY = top + (Theme.BodyStrong.LineHeight(nameSize) / 2f);
         if (Locked)
         {
-            OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Lock, new UiVec2(markX + context.Px(6f), markY), context.Px(14f), UiPalette.Fade(Theme.TextSecondary, appear));
+            KitIcons.Draw(painter, KitIcon.Lock, new UiVec2(markX + context.Px(6f), markY), context.Px(14f), UiPalette.Fade(Theme.TextSecondary, appear));
             markX += context.Px(22f);
         }
 
@@ -368,26 +443,13 @@ internal sealed class ServerRow : Control
             Bgra32 why = UiPalette.Fade(ReasonIsFailure ? Theme.Danger : Theme.Warning, appear);
             float reasonSize = context.Px(14f);
             var line = new UiRect(x, underY, right - x, Theme.Body.LineHeight(underSize));
-            OpenIGI.UI.Kit.KitIcons.Draw(painter, ReasonIsFailure ? OpenIGI.UI.Kit.KitIcon.Close : OpenIGI.UI.Kit.KitIcon.Warning, new UiVec2(x + context.Px(8f), line.Center.Y), context.Px(14f), why);
-            painter.DrawLabel(Theme.Heading, Fit(Reason, Theme.Heading, reasonSize, line.Width - context.Px(22f)), new UiVec2(x + context.Px(22f), UiRowStyle.CapsCenterY(Theme.Heading, reasonSize, line)), reasonSize, why, 0.08f);
+            KitIcons.Draw(painter, ReasonIsFailure ? KitIcon.Close : KitIcon.Warning, new UiVec2(x + context.Px(8f), line.Center.Y), context.Px(14f), why);
+            painter.DrawLabel(Theme.Heading, Theme.Heading.Fit(Reason, reasonSize, line.Width - context.Px(22f)), new UiVec2(x + context.Px(22f), UiRowStyle.CapsCenterY(Theme.Heading, reasonSize, line)), reasonSize, why, 0.08f);
             return;
         }
 
         string under = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{ModeLook.Code(_line.ModeId)} · {_line.Map} · {_line.Players}/{_line.MaxPlayers}");
-        painter.DrawText(Theme.Body, Fit(under, Theme.Body, underSize, right - x), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
-    }
-
-    // The mode: its code in its colour, in a box outlined in it.
-    private void DrawBadge(UiPainter painter, float x, float mid, Bgra32 colour)
-    {
-        LayoutContext context = painter.Context;
-        float size = context.Px(13f);
-        string code = ModeLook.Code(_line.ModeId);
-        float width = UiPainter.MeasureLabel(Theme.Heading, code, size, 0.08f);
-        var box = new UiRect(x, mid - context.Px(12f), width + context.Px(16f), context.Px(24f));
-        painter.FillRect(box, Bgra32.FromRgba(10, 12, 13, (byte)(89f * Visual.Appear)));
-        painter.StrokeRect(box, context.Px(1f), colour);
-        painter.DrawLabel(Theme.Heading, code, new UiVec2(box.X + context.Px(8f), UiRowStyle.CapsCenterY(Theme.Heading, size, box)), size, colour, 0.08f);
+        painter.DrawText(Theme.Body, Theme.Body.Fit(under, underSize, right - x), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
     }
 
     // The name, a padlock after it when it asks for a password; under it, its kind and where it is, or why it cannot be joined.
@@ -402,18 +464,18 @@ internal sealed class ServerRow : Control
         float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
         float marks = Locked ? context.Px(24f) : 0f;
-        string name = Fit(_line.Name, Theme.BodyStrong, nameSize, room - marks);
+        string name = Theme.BodyStrong.Fit(_line.Name, nameSize, room - marks);
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, ink(Theme.Text));
         if (Locked)
         {
             float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(8f);
-            OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.Lock, new UiVec2(markX + context.Px(8f), top + (Theme.BodyStrong.LineHeight(nameSize) / 2f)), context.Px(16f), ink(Theme.TextSecondary));
+            KitIcons.Draw(painter, KitIcon.Lock, new UiVec2(markX + context.Px(8f), top + (Theme.BodyStrong.LineHeight(nameSize) / 2f)), context.Px(16f), ink(Theme.TextSecondary));
         }
 
         float underY = top + Theme.BodyStrong.LineHeight(nameSize) + gap;
         if (Reason.Length == 0)
         {
-            painter.DrawText(Theme.Body, Fit(_under, Theme.Body, underSize, room), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
+            painter.DrawText(Theme.Body, Theme.Body.Fit(_under, underSize, room), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
             return;
         }
 
@@ -421,8 +483,8 @@ internal sealed class ServerRow : Control
         Bgra32 why = UiPalette.Fade(ReasonIsFailure ? Theme.Danger : Theme.Warning, appear);
         float reasonSize = context.Px(14f);
         var line = new UiRect(x, underY, room, Theme.Body.LineHeight(underSize));
-        OpenIGI.UI.Kit.KitIcons.Draw(painter, ReasonIsFailure ? OpenIGI.UI.Kit.KitIcon.Close : _line.Full ? OpenIGI.UI.Kit.KitIcon.People : OpenIGI.UI.Kit.KitIcon.Warning, new UiVec2(x + context.Px(8f), line.Center.Y), context.Px(14f), why);
-        painter.DrawLabel(Theme.Heading, Fit(Reason, Theme.Heading, reasonSize, room - context.Px(22f)), new UiVec2(x + context.Px(22f), UiRowStyle.CapsCenterY(Theme.Heading, reasonSize, line)), reasonSize, why, 0.08f);
+        KitIcons.Draw(painter, ReasonIsFailure ? KitIcon.Close : _line.Full ? KitIcon.People : KitIcon.Warning, new UiVec2(x + context.Px(8f), line.Center.Y), context.Px(14f), why);
+        painter.DrawLabel(Theme.Heading, Theme.Heading.Fit(Reason, reasonSize, room - context.Px(22f)), new UiVec2(x + context.Px(22f), UiRowStyle.CapsCenterY(Theme.Heading, reasonSize, line)), reasonSize, why, 0.08f);
     }
 
     // The players over a bar of places, one for each the game takes up to sixteen, filled as it fills; the count warns when full.
@@ -470,30 +532,6 @@ internal sealed class ServerRow : Control
         }
     }
 
-    /// <summary>Cuts text to the room it has, with an ellipsis.</summary>
-    /// <param name="text">The text.</param>
-    /// <param name="font">Its face.</param>
-    /// <param name="size">Its size.</param>
-    /// <param name="width">The room it has.</param>
-    /// <returns>The text, cut when it must be.</returns>
-    internal static string Fit(string text, UiFont font, float size, float width)
-    {
-        if (width <= 0f || font.MeasureWidth(text, size) <= width)
-        {
-            return text;
-        }
-
-        for (int length = text.Length - 1; length > 1; length--)
-        {
-            string cut = string.Concat(text.AsSpan(0, length).TrimEnd(), "…");
-            if (font.MeasureWidth(cut, size) <= width)
-            {
-                return cut;
-            }
-        }
-
-        return "…";
-    }
 }
 
 /// <summary>
@@ -501,7 +539,7 @@ internal sealed class ServerRow : Control
 /// parts will stand -- the badge, the name and what is under it, the map, the players, the ping -- with a soft light passing
 /// along them, and each line fainter than the one above so the list tails off rather than ends.
 /// </summary>
-internal sealed class ServerRowSkeleton : UiElement
+public sealed class ServerRowSkeleton : UiElement
 {
     private readonly int _index;
     private readonly int _count;

@@ -173,6 +173,12 @@ public enum KitIcon
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
 public static partial class KitIcons
 {
+    /// <summary>An icon as a button's or a field's glyph: what <c>LeadingGlyph</c> and <c>TrailingGlyph</c> take.</summary>
+    /// <param name="icon">The icon.</param>
+    /// <returns>The glyph, drawing the icon in the ink it is given.</returns>
+    public static Action<UiPainter, UiVec2, float, Bgra32> Glyph(KitIcon icon) =>
+        (painter, centre, size, ink) => Draw(painter, icon, centre, size, ink);
+
     /// <summary>Draws an icon centred in a box.</summary>
     /// <param name="painter">The painter.</param>
     /// <param name="icon">The icon.</param>

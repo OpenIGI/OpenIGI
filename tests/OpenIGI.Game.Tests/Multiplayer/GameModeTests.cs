@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Game.Multiplayer;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using Xunit;
 
@@ -120,7 +121,7 @@ public sealed class GameModeTests
     public void Co_op_keeps_the_dead_down_until_the_world_says_they_were_revived()
     {
         Host host = new(teams: [0, 0], holdsTheDead: true);
-        IGameMode mode = GameModes.For(GameModes.FreeForAll, host.World, TickRate);
+        IGameMode mode = GameModes.For(MatchModes.FreeForAll, host.World, TickRate);
         Assert.IsType<CoopMode>(mode);
         mode.Start(host, 0);
         mode.Tick(host, 1, [new WorldDeath(Victim: 11, Killer: -1)]);
@@ -164,22 +165,22 @@ public sealed class GameModeTests
         MatchFlow flow = new(TickRate);
         flow.Enter(MatchPhase.RoundOver, 100, 7.5, winner: 1);
         OpenIGI.Net.BitWriter writer = new();
-        flow.Write(writer, GameModes.TeamDeathmatch, 130);
+        flow.Write(writer, MatchModes.TeamDeathmatch, 130);
         OpenIGI.Net.BitReader reader = new(writer.AsSpan());
         MatchState read = MatchFlow.Read(ref reader);
-        Assert.Equal(new MatchState(GameModes.TeamDeathmatch, MatchPhase.RoundOver, 1, 1, 6.5), read);
+        Assert.Equal(new MatchState(MatchModes.TeamDeathmatch, MatchPhase.RoundOver, 1, 1, 6.5), read);
     }
 
     [Fact]
     public void Names_are_shown_over_team_mates_only_and_revive_marks_only_in_co_op()
     {
-        Assert.True(PlayerSides.ShowsName(GameModes.Coop, null, null));
-        Assert.True(PlayerSides.ShowsName(GameModes.TeamDeathmatch, 1, 1));
-        Assert.False(PlayerSides.ShowsName(GameModes.TeamDeathmatch, 1, 2));
-        Assert.False(PlayerSides.ShowsName(GameModes.TeamDeathmatch, null, 1));
-        Assert.False(PlayerSides.ShowsName(GameModes.FreeForAll, 1, 1));
-        Assert.True(PlayerSides.Revivable(GameModes.Coop));
-        Assert.False(PlayerSides.Revivable(GameModes.FreeForAll));
+        Assert.True(PlayerSides.ShowsName(MatchModes.Coop, null, null));
+        Assert.True(PlayerSides.ShowsName(MatchModes.TeamDeathmatch, 1, 1));
+        Assert.False(PlayerSides.ShowsName(MatchModes.TeamDeathmatch, 1, 2));
+        Assert.False(PlayerSides.ShowsName(MatchModes.TeamDeathmatch, null, 1));
+        Assert.False(PlayerSides.ShowsName(MatchModes.FreeForAll, 1, 1));
+        Assert.True(PlayerSides.Revivable(MatchModes.Coop));
+        Assert.False(PlayerSides.Revivable(MatchModes.FreeForAll));
     }
 
     [Fact]
@@ -469,12 +470,12 @@ public sealed class GameModeTests
     [Fact]
     public void The_banner_runs_its_clock_down_and_names_the_winner()
     {
-        MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);
+        MatchState live = new(MatchModes.FreeForAll, MatchPhase.Live, 1, -1, 90);
         Assert.Equal(new MatchBanner("FREE FOR ALL", "1:20", null), live.Banner(10));
-        MatchState over = new(GameModes.TeamDeathmatch, MatchPhase.Intermission, 1, 0, 15, MatchState.TeamName(0));
+        MatchState over = new(MatchModes.TeamDeathmatch, MatchPhase.Intermission, 1, 0, 15, MatchState.TeamName(0));
         Assert.Equal("IGI WINS", over.Banner(0)!.Headline);
         Assert.Equal("DRAW", (over with { Winner = -1 }).Banner(0)!.Headline);
-        Assert.Null(new MatchState(GameModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
+        Assert.Null(new MatchState(MatchModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
     }
 
     [Fact]

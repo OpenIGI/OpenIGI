@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>
@@ -9,7 +10,7 @@ namespace OpenIGI.Game.Multiplayer.Modes;
 public sealed class ObjectiveMode(int tickRate, double respawnDelay = 3) : IGameMode
 {
     /// <inheritdoc/>
-    public string Id => GameModes.Objective;
+    public string Id => MatchModes.Objective;
 
     /// <inheritdoc/>
     public bool IsTeamMode => true;

@@ -7,6 +7,7 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Screens;
@@ -125,9 +126,9 @@ internal sealed class FakeHost : IShellHost
     public IAccountPanel? Account { get; set; }
 
     /// <summary>The missions' pictures, by mission, or null for none.</summary>
-    public Func<int, MenuPicture?>? Pictures { get; set; }
+    public Func<int, UiPicture?>? Pictures { get; set; }
 
-    public MenuPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
+    public UiPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
 
     public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
 

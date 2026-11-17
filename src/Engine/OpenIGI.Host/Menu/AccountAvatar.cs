@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend;
 using OpenIGI.Releases.Accounts;
+using OpenIGI.UI.Kit;
 
 namespace OpenIGI.Host.Menu;
 
@@ -16,7 +17,7 @@ internal sealed class AccountAvatar(MenuPictureLoader pictures, HttpClient http)
     private Task<string?>? _fetch;
 
     /// <summary>Gets the avatar, once it has come down; else <see langword="null"/>.</summary>
-    public MenuPicture? Picture { get; private set; }
+    public UiPicture? Picture { get; private set; }
 
     /// <summary>Follows the account signed in: its avatar fetched and made, or let go. Called every frame.</summary>
     /// <param name="account">The account, or <see langword="null"/> when nobody is signed in.</param>

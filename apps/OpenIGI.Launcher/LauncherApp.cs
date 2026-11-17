@@ -64,7 +64,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly LauncherLog _log = LauncherLog.Start();
     private readonly LauncherModel _model;
     private readonly SkiaImageStore _images = new();
-    private readonly Dictionary<string, BackdropPicture?> _pictures = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, UiPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
     private readonly DesktopNotifier _notifier;
 
@@ -364,13 +364,13 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public Task<string?> PickFolder(string title, string? initial) =>
         FolderPicker.PickAsync(title, initial, _window.Native?.Win32?.Hwnd ?? 0);
 
-    public BackdropPicture? Picture(string path)
+    public UiPicture? Picture(string path)
     {
         // A pack's picture is named by its content, so a path decoded once is that picture for good.
-        if (!_pictures.TryGetValue(path, out BackdropPicture? picture))
+        if (!_pictures.TryGetValue(path, out UiPicture? picture))
         {
             SkiaSharp.SKImage? image = File.Exists(path) ? SkiaSharp.SKImage.FromEncodedData(path) : null;
-            picture = image is null ? null : new BackdropPicture(_images.Add(image), image.Width / (float)image.Height);
+            picture = image is null ? null : new UiPicture(_images.Add(image), image.Width, image.Height);
             _pictures[path] = picture;
         }
 
@@ -414,7 +414,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         (UiTheme theme, UiTheme rows) = CreateThemes(_typography);
         _theme = theme;
 
-        BackdropPicture? picture = LauncherBackdrop.LoadPicture(_images);
+        UiPicture? picture = LauncherBackdrop.LoadPicture(_images);
         _screen = new LauncherScreen(theme, rows, _model, this, picture);
         _stack.Push(_screen, animate: true);
 

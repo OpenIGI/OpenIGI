@@ -40,7 +40,7 @@ public class OperativeBadge : Control
     public Func<string>? NameSource { get; set; }
 
     /// <summary>Gets or sets the avatar drawn in the square in place of the initial, read each frame; <see langword="null"/> for the initial.</summary>
-    public Func<(UiImage Image, float Aspect)?>? Avatar { get; set; }
+    public Func<UiPicture?>? Avatar { get; set; }
 
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)

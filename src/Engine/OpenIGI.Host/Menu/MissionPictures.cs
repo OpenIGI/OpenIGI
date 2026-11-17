@@ -1,4 +1,5 @@
 using OpenIGI.Frontend;
+using OpenIGI.UI.Kit;
 
 namespace OpenIGI.Host.Menu;
 
@@ -13,15 +14,15 @@ namespace OpenIGI.Host.Menu;
 /// </remarks>
 internal sealed class MissionPictures(MenuPictureLoader pictures) : IDisposable
 {
-    private readonly Dictionary<(string Title, int Mission), MenuPicture?> _known = [];
+    private readonly Dictionary<(string Title, int Mission), UiPicture?> _known = [];
 
     /// <summary>The picture of a title's mission.</summary>
     /// <param name="title">The title's id.</param>
     /// <param name="mission">The mission's id.</param>
     /// <returns>The picture, or <see langword="null"/> when none was shipped or it could not be read.</returns>
-    public MenuPicture? Get(string title, int mission)
+    public UiPicture? Get(string title, int mission)
     {
-        if (!_known.TryGetValue((title, mission), out MenuPicture? picture))
+        if (!_known.TryGetValue((title, mission), out UiPicture? picture))
         {
             picture = Load(title, mission);
             _known[(title, mission)] = picture;
@@ -33,7 +34,7 @@ internal sealed class MissionPictures(MenuPictureLoader pictures) : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        foreach (MenuPicture? picture in _known.Values)
+        foreach (UiPicture? picture in _known.Values)
         {
             if (picture is { } made)
             {
@@ -44,7 +45,7 @@ internal sealed class MissionPictures(MenuPictureLoader pictures) : IDisposable
         _known.Clear();
     }
 
-    private MenuPicture? Load(string title, int mission)
+    private UiPicture? Load(string title, int mission)
     {
         string path = Path.Combine(
             AppContext.BaseDirectory,

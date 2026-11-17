@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
 using OpenIGI.Net.Rooms;
@@ -320,7 +321,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
         return Game.Multiplayer.Modes.Spectating.Pick(
             board,
             own,
-            Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+            MatchModes.HasTeams(Mode),
             entity => board.Lines.Where(l => l.Entity == entity).Select(static l => (int?)l.Slot).FirstOrDefault() is { } slot ? world.PositionOf(slot) : null,
             pick,
             _combat.KilledBy is { } killer ? (killer.Entity, now - killer.At) : null,

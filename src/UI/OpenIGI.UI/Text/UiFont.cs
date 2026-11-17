@@ -315,6 +315,41 @@ public sealed class UiFont : IDisposable
         return width;
     }
 
+    /// <summary>Shortens text with a trailing ellipsis until it fits a width: a name in a column, a title on a plate.</summary>
+    /// <param name="text">The text.</param>
+    /// <param name="sizePx">The size in pixels.</param>
+    /// <param name="width">The width available, in pixels.</param>
+    /// <returns>The text, or a shortened copy ending in an ellipsis; empty when not even that fits.</returns>
+    public string Fit(string text, float sizePx, float width)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        // Half a pixel of slack: boxes are sized from the same measurement, and rounding must not ellipsise them.
+        width += 0.5f;
+        if (MeasureWidth(text, sizePx) <= width)
+        {
+            return text;
+        }
+
+        const string ellipsis = "…";
+        int low = 0;
+        int high = text.Length;
+        while (low < high)
+        {
+            int mid = (low + high + 1) / 2;
+            if (MeasureWidth(string.Concat(text.AsSpan(0, mid).TrimEnd(), ellipsis), sizePx) <= width)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return low == 0 ? string.Empty : string.Concat(text.AsSpan(0, low).TrimEnd(), ellipsis);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

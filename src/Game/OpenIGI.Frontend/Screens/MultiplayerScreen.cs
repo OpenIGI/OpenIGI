@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -217,7 +218,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
         {
             Accent = ButtonAccent.Ghost,
             Key = Context.Host.TouchScreen ? string.Empty : "F",
-            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Play),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Play),
             GlyphSize = 16f,
             TextSize = ButtonText,
             Tracking = ButtonTracking,
@@ -233,7 +234,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
             var reconnect = new Button(theme, "RECONNECT")
             {
                 Accent = ButtonAccent.Ghost,
-                LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.History),
+                LeadingGlyph = KitIcons.Glyph(KitIcon.History),
                 GlyphSize = 18f,
                 TextSize = ButtonText,
                 Tracking = ButtonTracking,
@@ -245,7 +246,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
             row.Add(reconnect, 0, 1);
             block.AddChild(row);
             string when = coop.LastPlayedAt is { } at ? $"Reconnect: {last} · {Ago(at)}" : $"Reconnect: {last}";
-            block.AddChild(new Label(theme.Mono, ServerRow.Fit(when, theme.Mono, 13f, SideWidth - 4f), 13f, theme.TextMuted) { Margin = new Thickness(2f, 0f, 0f, 0f) });
+            block.AddChild(new Label(theme.Mono, theme.Mono.Fit(when, 13f, SideWidth - 4f), 13f, theme.TextMuted) { Margin = new Thickness(2f, 0f, 0f, 0f) });
             return block;
         }
 
@@ -254,8 +255,6 @@ public sealed partial class MultiplayerScreen : ShellScreen
     }
 
     // An icon as a button's mark.
-    private static Action<UiPainter, UiVec2, float, Bgra32> Glyph(OpenIGI.UI.Kit.KitIcon icon) =>
-        (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, icon, centre, size, ink);
 
     // Shows the tab picked and hides the other.
     private void ShowContent()
@@ -356,15 +355,7 @@ public sealed partial class MultiplayerScreen : ShellScreen
     private static GlassPanel Panel(UiTheme theme, UiElement content, bool side = false, Thickness? padding = null)
     {
         _ = side;
-        var panel = new GlassPanel(theme)
-        {
-            Padding = padding ?? new Thickness(0f),
-            Tint = Bgra32.FromRgba(12, 14, 15, ShellSizes.IsCompact(theme) ? (byte)235 : (byte)199),
-            Border = UiPalette.White(0.12f),
-            VerticalAlignment = VerticalAlignment.Stretch,
-        };
-        panel.AddChild(content);
-        return panel;
+        return GlassPanel.Card(theme, content, opaque: ShellSizes.IsCompact(theme), padding);
     }
 
     // A group's name inside a panel: small, in the accent, with a hairline running on after it.

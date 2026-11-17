@@ -48,6 +48,13 @@ internal sealed partial class LauncherModel
     /// <summary>Asks again: the master's list, this network, and the saved and recent servers.</summary>
     public void RefreshServers() => Browser()?.Refresh(_serverClock.Elapsed.TotalSeconds);
 
+    /// <summary>Gets the picture of a map of the chosen game, as the installed build ships it; <see langword="null"/> before one is installed.</summary>
+    /// <param name="mission">The map's mission number.</param>
+    /// <returns>The picture's file.</returns>
+    public string? MissionPicturePath(int mission) => _installed is { } build && Current.Retail is { } title
+        ? Path.Combine(build.Folder, "Assets", "missions", title.Id, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{mission}.jpg"))
+        : null;
+
     /// <summary>Starts the game at a server: by address where it has one, else through its room.</summary>
     /// <param name="server">The server.</param>
     /// <param name="password">The password it asks, or empty.</param>

@@ -239,22 +239,6 @@ public static class KitDraw
         return box;
     }
 
-    /// <summary>Draws a picture to fill a box: scaled to cover it and cut to it about its middle, as a photo in a frame is.</summary>
-    /// <param name="painter">The painter.</param>
-    /// <param name="image">The picture.</param>
-    /// <param name="aspect">The picture's width over its height.</param>
-    /// <param name="box">The box, in pixels.</param>
-    /// <param name="opacity">How opaque, 0 to 1.</param>
-    public static void Cover(UiPainter painter, UiImage image, float aspect, UiRect box, float opacity = 1f)
-    {
-        ArgumentNullException.ThrowIfNull(painter);
-        float frame = box.Width / MathF.Max(1f, box.Height);
-        UiRect source = aspect > frame
-            ? new UiRect((1f - (frame / aspect)) * 0.5f, 0f, frame / aspect, 1f)
-            : new UiRect(0f, (1f - (aspect / frame)) * 0.5f, 1f, aspect / frame);
-        painter.DrawSprite(image, box, source, UiPalette.Fade(Bgra32.FromRgb(255, 255, 255), opacity));
-    }
-
     /// <summary>
     /// Draws a player's mark: their avatar, or the initial of their name, in a square outlined in the accent once they are
     /// signed in. The menus' profile, the header's badge and the launcher's account all draw it so.
@@ -263,10 +247,10 @@ public static class KitDraw
     /// <param name="theme">The theme.</param>
     /// <param name="box">The square, in pixels.</param>
     /// <param name="name">The player's name, for the initial.</param>
-    /// <param name="avatar">The avatar and its width over its height, or <see langword="null"/> for the initial.</param>
+    /// <param name="avatar">The avatar, or <see langword="null"/> for the initial.</param>
     /// <param name="signedIn">Whether the player is signed in: the accent, rather than the plain border.</param>
     /// <param name="appear">How far the mark has faded in, 0 to 1.</param>
-    public static void PlayerMark(UiPainter painter, UiTheme theme, UiRect box, string name, (UiImage Image, float Aspect)? avatar, bool signedIn, float appear = 1f)
+    public static void PlayerMark(UiPainter painter, UiTheme theme, UiRect box, string name, UiPicture? avatar, bool signedIn, float appear = 1f)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
@@ -274,7 +258,7 @@ public static class KitDraw
         painter.FillRect(box, signedIn ? UiPalette.AccentAt(0.13f * appear) : UiPalette.InkAt(0.5f * appear));
         if (avatar is { } picture)
         {
-            Cover(painter, picture.Image, picture.Aspect, box, appear);
+            picture.DrawCover(painter, box, appear);
         }
         else
         {

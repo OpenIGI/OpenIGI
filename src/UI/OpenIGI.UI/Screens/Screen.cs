@@ -234,6 +234,24 @@ public abstract class Screen
         }
     }
 
+    /// <summary>
+    /// Plays the screen's entrance on a part of a page built after the page came in -- a list's lines, a side panel made
+    /// again for what was picked: every control in it fades in, one a little after another, as the page's own did.
+    /// </summary>
+    /// <param name="part">The part, newly added.</param>
+    public static void PlayEntrance(UiElement part)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        int index = 0;
+        foreach (UiElement element in part.Descendants())
+        {
+            if (element is Control control)
+            {
+                control.PlayEnter(MathF.Min(index++ * EntranceStagger, MaxEntranceDelay));
+            }
+        }
+    }
+
     /// <summary>Begins the exit transition.</summary>
     public void BeginExit()
     {

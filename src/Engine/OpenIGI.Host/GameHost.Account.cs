@@ -1,3 +1,4 @@
+using OpenIGI.UI.Kit;
 using System.Text.Json;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend;
@@ -177,7 +178,7 @@ public sealed partial class GameHost
 
         public string? SignInUrl => link.LinkUrl;
 
-        public MenuPicture? Avatar => host._avatar?.Picture;
+        public UiPicture? Avatar => host._avatar?.Picture;
 
         public string? Problem => link.Error;
 

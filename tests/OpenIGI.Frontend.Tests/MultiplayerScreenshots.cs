@@ -48,7 +48,7 @@ public sealed class MultiplayerScreenshots
         using IgiTypography typography = IgiTypography.Load(LoadFont);
         using SkiaImageStore images = new();
         using SkiaFontCache fonts = new();
-        Dictionary<int, MenuPicture?> pictures = [];
+        Dictionary<int, UiPicture?> pictures = [];
 
         foreach ((int width, int height, float density) in Sizes)
         {
@@ -168,15 +168,15 @@ public sealed class MultiplayerScreenshots
     }
 
     // A mission's shipped picture, read by the game's own JPEG reader, or none when the mission has no file.
-    internal static MenuPicture? Picture(SkiaImageStore images, Dictionary<int, MenuPicture?> known, int mission)
+    internal static UiPicture? Picture(SkiaImageStore images, Dictionary<int, UiPicture?> known, int mission)
     {
-        if (!known.TryGetValue(mission, out MenuPicture? picture))
+        if (!known.TryGetValue(mission, out UiPicture? picture))
         {
             string path = Path.Combine(AppContext.BaseDirectory, "Assets", "missions", GameTitle.Igi1.Id, $"{mission}.jpg");
             if (File.Exists(path))
             {
                 TextureImage image = JpegImage.Read(File.ReadAllBytes(path));
-                picture = new MenuPicture(images.CreateImage(image.Width, image.Height, image.GetLevel(0)), image.Width, image.Height);
+                picture = new UiPicture(images.CreateImage(image.Width, image.Height, image.GetLevel(0)), image.Width, image.Height);
             }
 
             known[mission] = picture;
@@ -202,16 +202,16 @@ public sealed class MultiplayerScreenshots
 
     internal static List<CoopRoomInfo> Games() =>
     [
-        new("EU1", "OpenIGI Official · Frankfurt #1", 1, 11, 16, false) { Mode = GameModes.TeamDeathmatch, PingMs = 38, Region = "eu", Dedicated = true, Favourite = true },
-        new("EU2", "OpenIGI Official · Frankfurt #2", 3, 16, 16, false) { Mode = GameModes.SearchAndDestroy, PingMs = 41, Region = "eu", Dedicated = true },
-        new("K7QX2M", "Anya's room", 2, 2, 4, false) { Mode = GameModes.Coop, Region = string.Empty },
-        new("IN1", "Mumbai Regulars", 5, 7, 16, true) { Mode = GameModes.FreeForAll, PingMs = 121, Region = "in", Dedicated = true, Recent = true },
-        new("LAN1", "Living room", 1, 1, 4, false) { Mode = GameModes.Coop, PingMs = 2, Lan = true },
-        new("US1", "East Coast Elimination with a very long server name that will not fit", 4, 9, 12, false) { Mode = GameModes.Elimination, PingMs = 164, Region = "us", Dedicated = true },
-        new("OLD1", "Night Shift (old build)", 2, 3, 16, false) { Mode = GameModes.TeamDeathmatch, PingMs = 88, Region = "eu", Dedicated = true, Compatible = false },
-        new("P4T9ZA", "Jones and friends", 3, 3, 4, true) { Mode = GameModes.Coop },
-        new("EU3", "Covert Ops 24/7", 5, 0, 16, false) { Mode = GameModes.SearchAndDestroy, PingMs = 57, Region = "eu", Dedicated = true },
-        new("AS1", "RPi Server", 1, 0, 16, false) { Mode = GameModes.TeamDeathmatch, Region = "as", Dedicated = true, Reachable = false },
+        new("EU1", "OpenIGI Official · Frankfurt #1", 1, 11, 16, false) { Mode = MatchModes.TeamDeathmatch, PingMs = 38, Region = "eu", Dedicated = true, Favourite = true },
+        new("EU2", "OpenIGI Official · Frankfurt #2", 3, 16, 16, false) { Mode = MatchModes.SearchAndDestroy, PingMs = 41, Region = "eu", Dedicated = true },
+        new("K7QX2M", "Anya's room", 2, 2, 4, false) { Mode = MatchModes.Coop, Region = string.Empty },
+        new("IN1", "Mumbai Regulars", 5, 7, 16, true) { Mode = MatchModes.FreeForAll, PingMs = 121, Region = "in", Dedicated = true, Recent = true },
+        new("LAN1", "Living room", 1, 1, 4, false) { Mode = MatchModes.Coop, PingMs = 2, Lan = true },
+        new("US1", "East Coast Elimination with a very long server name that will not fit", 4, 9, 12, false) { Mode = MatchModes.Elimination, PingMs = 164, Region = "us", Dedicated = true },
+        new("OLD1", "Night Shift (old build)", 2, 3, 16, false) { Mode = MatchModes.TeamDeathmatch, PingMs = 88, Region = "eu", Dedicated = true, Compatible = false },
+        new("P4T9ZA", "Jones and friends", 3, 3, 4, true) { Mode = MatchModes.Coop },
+        new("EU3", "Covert Ops 24/7", 5, 0, 16, false) { Mode = MatchModes.SearchAndDestroy, PingMs = 57, Region = "eu", Dedicated = true },
+        new("AS1", "RPi Server", 1, 0, 16, false) { Mode = MatchModes.TeamDeathmatch, Region = "as", Dedicated = true, Reachable = false },
     ];
 
     internal static PartyView Squad() => new(

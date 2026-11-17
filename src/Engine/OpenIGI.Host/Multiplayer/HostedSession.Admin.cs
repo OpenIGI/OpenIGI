@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 
@@ -120,7 +121,7 @@ public sealed partial class HostedSession
     /// <returns><see langword="true"/> when it is a mode this server plays.</returns>
     public bool UseMode(string mode)
     {
-        if (!GameModes.All.Contains(mode, StringComparer.OrdinalIgnoreCase))
+        if (!MatchModes.All.Contains(mode, StringComparer.OrdinalIgnoreCase))
         {
             return false;
         }

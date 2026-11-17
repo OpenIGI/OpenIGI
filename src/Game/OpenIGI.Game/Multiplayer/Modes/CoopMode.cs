@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>Co-op: everyone on one side against the level, a fallen player down until a teammate stands beside it.</summary>
@@ -6,7 +7,7 @@ namespace OpenIGI.Game.Multiplayer.Modes;
 public sealed class CoopMode(int tickRate) : IGameMode
 {
     /// <inheritdoc/>
-    public string Id => GameModes.Coop;
+    public string Id => MatchModes.Coop;
 
     /// <inheritdoc/>
     public bool IsTeamMode => false;

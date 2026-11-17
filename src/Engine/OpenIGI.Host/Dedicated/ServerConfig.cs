@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 
 namespace OpenIGI.Host.Dedicated;
@@ -184,7 +185,7 @@ public sealed record ServerConfig
                     break;
                 case "map":
                     ok = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) && mission > 0
-                        && (words.Length < 3 || Game.Multiplayer.Modes.GameModes.All.Contains(words[2], StringComparer.OrdinalIgnoreCase));
+                        && (words.Length < 3 || MatchModes.All.Contains(words[2], StringComparer.OrdinalIgnoreCase));
                     if (ok)
                     {
                         rotation.Add(new RotationEntry(mission, words.Length > 2 ? words[2].ToLowerInvariant() : string.Empty));

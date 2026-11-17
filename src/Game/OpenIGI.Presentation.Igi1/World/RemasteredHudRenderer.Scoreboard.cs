@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer;
@@ -89,8 +90,8 @@ internal sealed partial class RemasteredHudRenderer
 
         // A team mode is split by team, as a tactical shooter's board is, even while a team stands empty; a free-for-all never is,
         // whatever team its lines carry; a co-op squad that has players on both sides (a host's test) is split too.
-        bool teamed = Game.Multiplayer.Modes.GameModes.IsVersus(mode)
-            ? Game.Multiplayer.Modes.GameModes.HasTeams(mode)
+        bool teamed = MatchModes.IsVersus(mode)
+            ? MatchModes.HasTeams(mode)
             : board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
         ScoreboardLine[] lines = [.. board.Lines.OrderBy(static l => l.Team).ThenByDescending(static l => l.Kills).ThenBy(static l => l.Deaths)];
         int[] sides = teamed ? [.. new[] { TeamRoster.Good, TeamRoster.Bad }.Union(lines.Select(static l => l.Team))] : [];
@@ -121,8 +122,8 @@ internal sealed partial class RemasteredHudRenderer
 
         // The header: the mode, the room, and the numbers that matter on the right.
         var header = new UiRect(x, top, width, Px(BoardHeader));
-        bool versus = Game.Multiplayer.Modes.GameModes.IsVersus(mode) || mode == Game.Multiplayer.Modes.GameModes.Objective;
-        string tag = versus ? Game.Multiplayer.Modes.GameModes.Title(mode) : teamed ? "TEAM" : "CO-OP";
+        bool versus = MatchModes.IsVersus(mode) || mode == MatchModes.Objective;
+        string tag = versus ? MatchModes.Title(mode) : teamed ? "TEAM" : "CO-OP";
         float chipText = Px(LabelText + 2f);
         // Measured as it is drawn, letterspaced, so a long mode's name ("TEAM DEATHMATCH") sits inside its chip.
         float chipWidth = UiPainter.MeasureLabel(type.Heading, tag, chipText, 0.1f) + Px(24f);

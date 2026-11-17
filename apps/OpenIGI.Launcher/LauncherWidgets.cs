@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Drawing;
@@ -213,7 +214,7 @@ internal sealed class OnOffSwitch(UiTheme theme) : Control(theme)
 /// </summary>
 internal sealed class Thumbnail(UiTheme theme) : UiElement
 {
-    public BackdropPicture? Picture { get; set; }
+    public UiPicture? Picture { get; set; }
 
     public string Short { get; set; } = string.Empty;
 

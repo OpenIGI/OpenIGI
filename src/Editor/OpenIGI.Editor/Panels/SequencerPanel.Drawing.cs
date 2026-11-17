@@ -79,7 +79,7 @@ internal sealed partial class SequencerPanel
                 UiRect clip = new(X(start) + 1f, laneY + 2f, MathF.Max(Theme.Px(6f), (float)(animation.Length * _pixelsPerSecond) - 2f), Theme.Px(LaneHeight) - 4f);
                 bool isSelected = ReferenceEquals(animation.Task, selected);
                 EditorDraw.Frame(painter, Theme, clip, (isSelected ? Theme.Accent : Bgra32.FromRgb(0x5E, 0x8C, 0x4A)).WithAlpha(isSelected ? (byte)200 : (byte)170), isSelected ? Theme.Accent : Theme.Border);
-                EditorDraw.Label(painter, Theme, EditorDraw.Fit(Theme.Font, AnimationName(document, animation), Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f) }, Bgra32.White);
+                EditorDraw.Label(painter, Theme, Theme.Font.Fit(AnimationName(document, animation), Theme.TextSize, clip.Width - Theme.Px(8f)), clip with { X = clip.X + Theme.Px(4f), Width = clip.Width - Theme.Px(6f) }, Bgra32.White);
             }
 
             painter.PopClip();
@@ -190,7 +190,7 @@ internal sealed partial class SequencerPanel
         CutsceneCue[] ordered = [.. cues.OrderBy(At)];
         IReadOnlyList<CueLaneLayout.Mark> marks = CueLaneLayout.Lay(
             [.. ordered.Select(c => (X(At(c)), CueName(c)))],
-            (text, room) => EditorDraw.Fit(Theme.Font, text, Theme.TextSize, room),
+            (text, room) => Theme.Font.Fit(text, Theme.TextSize, room),
             Theme.Px(CueMerge),
             Theme.Px(CueLabelGap),
             Theme.Px(CueShortestLabel),

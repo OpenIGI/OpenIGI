@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Input;
@@ -249,7 +250,7 @@ public sealed partial class GameHost
         int? self = board?.LocalEntity;
         ScoreboardLine own = board?.CurrentScoreboard?.Lines.FirstOrDefault(l => l.Entity == self) ?? default;
         int ownTeam = own.Name is { Length: > 0 } ? own.Team : -1;
-        bool teams = Game.Multiplayer.Modes.GameModes.HasTeams(board?.Mode);
+        bool teams = MatchModes.HasTeams(board?.Mode);
         bool open = _chatEntry is not null;
         var shown = new List<HudChatLine>(open ? _coopChat.Count : ChatIdleLines);
         for (int i = open ? 0 : Math.Max(0, _coopChat.Count - ChatIdleLines); i < _coopChat.Count; i++)

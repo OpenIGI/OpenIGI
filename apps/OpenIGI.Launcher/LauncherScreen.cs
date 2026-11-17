@@ -36,7 +36,7 @@ internal interface ILauncherWindow
     /// <summary>Decodes a picture file for drawing, once per file.</summary>
     /// <param name="path">The picture: PNG, JPEG or WebP.</param>
     /// <returns>The picture, or <see langword="null"/> when it is missing or cannot be decoded.</returns>
-    BackdropPicture? Picture(string path);
+    UiPicture? Picture(string path);
 }
 
 /// <summary>
@@ -62,7 +62,7 @@ internal sealed class LauncherScreen : Screen
     private readonly UiTheme _rowTheme;
     private readonly LauncherModel _model;
     private readonly ILauncherWindow _window;
-    private readonly BackdropPicture? _picture;
+    private readonly UiPicture? _picture;
     private readonly Dictionary<LauncherSection, HeaderTab> _tabs = [];
 
     private SectionDeck? _deck;
@@ -81,7 +81,7 @@ internal sealed class LauncherScreen : Screen
     private int _section;
     private int _revision = -1;
 
-    public LauncherScreen(UiTheme theme, UiTheme rowTheme, LauncherModel model, ILauncherWindow window, BackdropPicture? picture)
+    public LauncherScreen(UiTheme theme, UiTheme rowTheme, LauncherModel model, ILauncherWindow window, UiPicture? picture)
     {
         _theme = theme;
         _rowTheme = rowTheme;
@@ -249,7 +249,7 @@ internal sealed class LauncherScreen : Screen
         LauncherSection.Content => (_content = new ContentPage(_rowTheme, _model, _window.Picture)).Root,
         LauncherSection.Mods => (_mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods)).Root,
         LauncherSection.Maps => new MapsPage(_rowTheme, _model).Root,
-        LauncherSection.Servers => (_servers = new ServersPage(_rowTheme, _model)).Root,
+        LauncherSection.Servers => (_servers = new ServersPage(_theme, _rowTheme, _model, _window.Picture)).Root,
         LauncherSection.Logs => (_logs = new LogsPage(_theme, _model, _window)).Root,
         _ => SettingsPage.Build(_rowTheme, _model, _window),
     };
@@ -270,6 +270,14 @@ internal sealed class LauncherScreen : Screen
         {
             ShowAt(index, refocus);
         }
+    }
+
+    /// <summary>Shows the Servers section on its BROWSE (0) or HOST (1) tab.</summary>
+    /// <param name="tab">The tab.</param>
+    internal void ShowServers(int tab)
+    {
+        ShowSection(LauncherSection.Servers, refocus: false);
+        _servers?.SelectTab(tab);
     }
 
     // Shows the section at a place in the tabs.

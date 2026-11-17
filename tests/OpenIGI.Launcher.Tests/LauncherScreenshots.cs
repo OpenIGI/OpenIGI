@@ -46,7 +46,8 @@ public sealed class LauncherScreenshots
 
         foreach ((int width, int height) in Sizes)
         {
-            foreach (LauncherSection section in LauncherScreen.Shown)
+            // Each section, and the Servers section's HOST tab besides.
+            foreach ((LauncherSection section, string name) in LauncherScreen.Shown.Select(static s => (s, s.ToString().ToLowerInvariant())).Append((LauncherSection.Servers, "servers-host")))
             {
                 LauncherScreen screen = new(page, rows, model, window, LauncherBackdrop.LoadPicture(images));
                 ScreenStack stack = new() { PointerSuppressed = true };
@@ -59,7 +60,14 @@ public sealed class LauncherScreenshots
                 {
                     if (frame == 2)
                     {
-                        screen.ShowSection(section, refocus: false);
+                        if (name == "servers-host")
+                        {
+                            screen.ShowServers(1);
+                        }
+                        else
+                        {
+                            screen.ShowSection(section, refocus: false);
+                        }
                     }
 
                     stack.Update(context, input, 1f / 30f);
@@ -76,7 +84,7 @@ public sealed class LauncherScreenshots
 
                 using SKImage image = surface.Snapshot();
                 using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
-                using FileStream file = File.Create(Path.Combine(folder, $"{section.ToString().ToLowerInvariant()}-{width}x{height}.png"));
+                using FileStream file = File.Create(Path.Combine(folder, $"{name}-{width}x{height}.png"));
                 png.SaveTo(file);
             }
         }
@@ -251,7 +259,7 @@ public sealed class LauncherScreenshots
     // Only what the pages ask of the window while they are drawn: pictures. Nothing here is clicked.
     private sealed class PictureWindow(SkiaImageStore images) : ILauncherWindow
     {
-        private readonly Dictionary<string, BackdropPicture?> _pictures = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, UiPicture?> _pictures = new(StringComparer.Ordinal);
 
         public string ClipboardText { get; set; } = string.Empty;
 
@@ -273,12 +281,12 @@ public sealed class LauncherScreenshots
 
         public Task<string?> PickFolder(string title, string? initial) => Task.FromResult<string?>(null);
 
-        public BackdropPicture? Picture(string path)
+        public UiPicture? Picture(string path)
         {
-            if (!_pictures.TryGetValue(path, out BackdropPicture? picture))
+            if (!_pictures.TryGetValue(path, out UiPicture? picture))
             {
                 SKImage? image = File.Exists(path) ? SKImage.FromEncodedData(path) : null;
-                picture = image is null ? null : new BackdropPicture(images.Add(image), image.Width / (float)image.Height);
+                picture = image is null ? null : new UiPicture(images.Add(image), image.Width, image.Height);
                 _pictures[path] = picture;
             }
 

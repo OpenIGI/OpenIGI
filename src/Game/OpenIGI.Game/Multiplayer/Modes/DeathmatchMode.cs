@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>How a deathmatch is played: to how many, for how long, and how quickly the dead come back.</summary>
@@ -34,7 +35,7 @@ public sealed record DeathmatchSettings
 public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings? settings = null) : IGameMode
 {
     /// <inheritdoc/>
-    public string Id => teams ? GameModes.TeamDeathmatch : GameModes.FreeForAll;
+    public string Id => teams ? MatchModes.TeamDeathmatch : MatchModes.FreeForAll;
 
     /// <inheritdoc/>
     public ModeReport Report(long tick) => new() { Target = Settings.ScoreLimit };

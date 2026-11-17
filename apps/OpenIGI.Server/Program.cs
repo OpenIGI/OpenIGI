@@ -181,7 +181,7 @@ using DedicatedServer dedicated = new(
     Arenas = host.HasArena,
     Reporter = config.Public ? new MatchReporter(server, config.Master, new PlayerRequestSigner(statsKey), logger) : null,
 };
-if (GameModes.IsVersus(mode) && !host.HasArena(mission))
+if (MatchModes.IsVersus(mode) && !host.HasArena(mission))
 {
     logger.Warning(LogCategory, $"Mission {map} has no multiplayer layout, so {mode} plays it from the level's own start; the laid-out maps are {string.Join(", ", host.ArenaMissionList.Select(m => m.Id))}.");
 }

@@ -187,7 +187,7 @@ public sealed partial class ProfilesScreen
             Id = "profile-sign-in",
             Accent = ButtonAccent.Solid,
             CutCorner = 10f,
-            LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.People, centre, size, ink),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.People),
             GlyphSize = 18f,
             TextSize = 17f,
             Tracking = 0.12f,

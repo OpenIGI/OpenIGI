@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Diagnostics;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Multiplayer.Modes;
@@ -55,11 +56,11 @@ public sealed partial class GameHost
         (string details, string state, int size, int max, string? join) = TickObserver switch
         {
             HostedSession hosted => (
-                $"{GameModes.Title(hosted.Mode)} · {hosted.Place}",
+                $"{MatchModes.Title(hosted.Mode)} · {hosted.Place}",
                 hosted.RoomCode is null ? "Hosting a game" : "Hosting a room",
                 Players(hosted), hosted.MaxPlayers, hosted.IsListedRoom && hosted.RoomCode is { } code ? RoomTransport.InviteLink(code) : null),
             SessionClient { Playback: null } joined => (
-                $"{GameModes.Title(joined.Mode)} · {joined.Place}",
+                $"{MatchModes.Title(joined.Mode)} · {joined.Place}",
                 "In a multiplayer game",
                 Players(joined), 0, null),
             _ when _session.Mission is { } mission && !_menuFlow.MenuMode => (

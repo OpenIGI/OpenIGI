@@ -70,7 +70,7 @@ internal sealed partial class ViewportPanel
         float width = MathF.Min(world.Width - Theme.Px(16f), Theme.Font.MeasureWidth(text, Theme.TextSize) + Theme.Px(20f));
         // Under the view's own chips (the mission's name, the camera's speed), never over them.
         UiRect box = new(world.X + ((world.Width - width) * 0.5f), world.Y + Theme.Px(16f) + Theme.ControlHeight, width, Theme.RowHeight + Theme.Px(6f));
-        text = UI.Editor.Theme.EditorDraw.Fit(Theme.Font, text, Theme.TextSize, width - Theme.Px(20f));
+        text = Theme.Font.Fit(text, Theme.TextSize, width - Theme.Px(20f));
         painter.FillRect(box, Theme.Chrome.WithAlpha(230));
         painter.FillRect(new UiRect(box.X, box.Bottom - Theme.Px(2f), box.Width, Theme.Px(2f)), Theme.Accent);
         painter.PushClip(box);

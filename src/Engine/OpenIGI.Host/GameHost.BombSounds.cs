@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Audio;
 
@@ -30,7 +31,7 @@ public sealed partial class GameHost
     // Once a frame.
     private void UpdateBombSounds()
     {
-        if (TickObserver is not Multiplayer.ISessionMode { Mode: GameModes.SearchAndDestroy }
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: MatchModes.SearchAndDestroy }
             || TickObserver is not ISessionScoreboard board
             || board.ModeReport is not { } report
             || _audioOut.Sounds is not { } sounds)

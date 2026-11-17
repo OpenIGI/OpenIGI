@@ -163,7 +163,7 @@ public sealed partial class ProfilesScreen : ShellScreen
         row.Add(new PlayerMark(theme, PlayerName)
         {
             SignedIn = account is not null,
-            Avatar = account is not null && Accounts?.Avatar is { } avatar ? (avatar.Image, avatar.Aspect) : null,
+            Avatar = account is not null ? Accounts?.Avatar : null,
             Side = compact ? 56f : 88f,
             VerticalAlignment = VerticalAlignment.Center,
         }, 0, 0);
@@ -179,7 +179,7 @@ public sealed partial class ProfilesScreen : ShellScreen
         var rename = new Button(theme, compact ? string.Empty : "Rename")
         {
             Accent = ButtonAccent.Text,
-            LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.Pencil, centre, size, ink),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Pencil),
             GlyphSize = 16f,
             TextSize = compact ? 15f : 17f,
             Tracking = 0.12f,

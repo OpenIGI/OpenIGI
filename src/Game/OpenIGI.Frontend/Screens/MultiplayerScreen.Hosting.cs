@@ -1,3 +1,5 @@
+using OpenIGI.Core.Titles;
+using OpenIGI.UI.Kit.Servers;
 using System.Globalization;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Multiplayer;
@@ -24,7 +26,7 @@ public sealed partial class MultiplayerScreen
     private static readonly int[] ToughnessChoices = [0, 50, 100, 150];
 
     // The modes a game is hosted in, co-op first.
-    private static readonly string[] HostModes = [GameModes.Coop, GameModes.TeamDeathmatch, GameModes.FreeForAll, GameModes.Elimination, GameModes.SearchAndDestroy];
+    private static readonly string[] HostModes = [MatchModes.Coop, MatchModes.TeamDeathmatch, MatchModes.FreeForAll, MatchModes.Elimination, MatchModes.SearchAndDestroy];
 
     private int _hostMode;
     private int _mission;
@@ -34,7 +36,7 @@ public sealed partial class MultiplayerScreen
 
     private string HostMode => HostModes[Math.Clamp(_hostMode, 0, HostModes.Length - 1)];
 
-    private bool HostingCoop => HostMode == GameModes.Coop;
+    private bool HostingCoop => HostMode == MatchModes.Coop;
 
     private Grid BuildHostTab(UiTheme theme, ICoopRooms coop)
     {
@@ -52,7 +54,7 @@ public sealed partial class MultiplayerScreen
     private GlassPanel BuildGameSettings(UiTheme theme, ICoopRooms coop)
     {
         StackPanel column = FormColumn(theme, "Game");
-        OptionCycler mode = Row(theme, "Mode", [.. HostModes.Select(GameModes.Title)], _hostMode, "Co-op plays the mission against its guards, together. The others play its map as an arena, the guards gone, one side against the other or everyone for themselves.");
+        OptionCycler mode = Row(theme, "Mode", [.. HostModes.Select(MatchModes.Title)], _hostMode, "Co-op plays the mission against its guards, together. The others play its map as an arena, the guards gone, one side against the other or everyone for themselves.");
         mode.SelectionChanged += index =>
         {
             _hostMode = index;
@@ -170,7 +172,7 @@ public sealed partial class MultiplayerScreen
         var rounds = new RoundSettings();
         (string Label, string Value)[] rules = HostMode switch
         {
-            GameModes.TeamDeathmatch or GameModes.FreeForAll =>
+            MatchModes.TeamDeathmatch or MatchModes.FreeForAll =>
             [
                 ("Score limit", string.Create(CultureInfo.InvariantCulture, $"{deathmatch.ScoreLimit} kills")),
                 ("Time limit", string.Create(CultureInfo.InvariantCulture, $"{deathmatch.TimeLimitMinutes:0} min")),
@@ -280,9 +282,9 @@ public sealed partial class MultiplayerScreen
         int most = Coop?.CanHostServer == true && _runsOn == 1 ? 32 : 16;
         return HostMode switch
         {
-            GameModes.TeamDeathmatch => $"Team deathmatch to {new DeathmatchSettings().ScoreLimit} kills or {new DeathmatchSettings().TimeLimitMinutes:0} minutes. {listed}, up to {most} players.",
-            GameModes.FreeForAll => $"Everyone for themselves to {new DeathmatchSettings().ScoreLimit} kills or {new DeathmatchSettings().TimeLimitMinutes:0} minutes. {listed}, up to {most} players.",
-            _ => $"{GameModes.Title(HostMode)}, first to {new RoundSettings().RoundsToWin} rounds, one life a round. {listed}, up to {most} players.",
+            MatchModes.TeamDeathmatch => $"Team deathmatch to {new DeathmatchSettings().ScoreLimit} kills or {new DeathmatchSettings().TimeLimitMinutes:0} minutes. {listed}, up to {most} players.",
+            MatchModes.FreeForAll => $"Everyone for themselves to {new DeathmatchSettings().ScoreLimit} kills or {new DeathmatchSettings().TimeLimitMinutes:0} minutes. {listed}, up to {most} players.",
+            _ => $"{MatchModes.Title(HostMode)}, first to {new RoundSettings().RoundsToWin} rounds, one life a round. {listed}, up to {most} players.",
         };
     }
 

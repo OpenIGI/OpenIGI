@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Multiplayer;
@@ -76,7 +77,7 @@ public sealed class MatchReporter
     {
         ArgumentNullException.ThrowIfNull(server);
         string mode = server.Mode.Id;
-        if (!GameModes.IsVersus(mode))
+        if (!MatchModes.IsVersus(mode))
         {
             return null;
         }

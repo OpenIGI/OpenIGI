@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 
@@ -165,7 +166,7 @@ public sealed record MatchHud
         bool bombInHand = true)
     {
         ArgumentNullException.ThrowIfNull(state);
-        if (state.Mode == GameModes.Coop || string.IsNullOrEmpty(state.Mode))
+        if (state.Mode == MatchModes.Coop || string.IsNullOrEmpty(state.Mode))
         {
             return null;
         }
@@ -173,8 +174,8 @@ public sealed record MatchHud
         ModeReport report = state.Report ?? ModeReport.None;
         ScoreboardLine[] lines = board?.Lines ?? [];
         ScoreboardLine? own = localEntity is { } entity && Array.FindIndex(lines, l => l.Entity == entity) is var at and >= 0 ? lines[at] : null;
-        bool teams = GameModes.HasTeams(state.Mode);
-        bool rounds = state.Mode is GameModes.Elimination or GameModes.SearchAndDestroy;
+        bool teams = MatchModes.HasTeams(state.Mode);
+        bool rounds = state.Mode is MatchModes.Elimination or MatchModes.SearchAndDestroy;
         double? left = state.SecondsLeft is { } s ? Math.Max(0, s - secondsSince) : null;
 
         // The freeze time: its own countdown on the clock, and a word on what it is for.
@@ -187,7 +188,7 @@ public sealed record MatchHud
         MatchHud hud = new()
         {
             Mode = state.Mode,
-            Title = GameModes.Title(state.Mode),
+            Title = MatchModes.Title(state.Mode),
             Phase = state.Phase,
             Round = rounds ? state.Round : 0,
             Target = report.Target,
@@ -269,7 +270,7 @@ public sealed record MatchHud
         {
             Money = rounds ? own?.Money : null,
             BuyClock = buyLeft > 0 && own is { IsAlive: true } ? MatchState.Clock(buyLeft) : null,
-            FreeLoadout = state.Mode is GameModes.TeamDeathmatch or GameModes.FreeForAll
+            FreeLoadout = state.Mode is MatchModes.TeamDeathmatch or MatchModes.FreeForAll
                 && state.Phase is MatchPhase.Live or MatchPhase.Warmup
                 && own is { IsAlive: true },
         };

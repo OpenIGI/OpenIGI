@@ -1,3 +1,4 @@
+using OpenIGI.UI.Kit;
 namespace OpenIGI.Frontend;
 
 /// <summary>Where the player stands with their online account, as the profile page shows it.</summary>
@@ -58,7 +59,7 @@ public interface IAccountPanel
     AccountSummary? Account { get; }
 
     /// <summary>Gets the signed-in player's Discord avatar as a picture, once it has come down; <see langword="null"/> until then.</summary>
-    MenuPicture? Avatar => null;
+    UiPicture? Avatar => null;
 
     /// <summary>Gets the sign-in page while one is waiting, for a player whose browser didn't open.</summary>
     string? SignInUrl { get; }

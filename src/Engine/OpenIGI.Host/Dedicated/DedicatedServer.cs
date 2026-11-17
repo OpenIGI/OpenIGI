@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Multiplayer;
 
@@ -126,7 +127,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     {
         if (mode is not null && !_session.UseMode(mode))
         {
-            return $"'{mode}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}.";
+            return $"'{mode}' is not a mode: {string.Join(", ", MatchModes.All)}.";
         }
 
         if (!_goToMission(mission))
@@ -149,7 +150,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
 
     // The missions a mode can be played on: every one for co-op, the laid-out ones for a versus mode.
     private IReadOnlyList<(int Id, string Name)> MissionsFor(string mode) =>
-        GameModes.IsVersus(mode) && Arenas is { } arenas ? [.. Missions.Where(m => arenas(m.Id))] : Missions;
+        MatchModes.IsVersus(mode) && Arenas is { } arenas ? [.. Missions.Where(m => arenas(m.Id))] : Missions;
 
     // What a decided match offers: the next few of the rotation and this map again; without a rotation, the maps around this one.
     private IReadOnlyList<MapChoice> Offer()
@@ -163,7 +164,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         string NameOf(int number) => Missions.FirstOrDefault(m => m.Id == number).Name ?? string.Empty;
         List<MapChoice> choices = [.. Enumerable.Range(1, Math.Min(NextMapVote.MostChoices - 1, _config.Rotation.Count - 1))
             .Select(step => _config.Rotation[(_rotationAt + step) % _config.Rotation.Count])
-            .Where(r => !GameModes.IsVersus(r.Mode.Length > 0 ? r.Mode : _session.Mode) || Arenas?.Invoke(r.Mission) != false)
+            .Where(r => !MatchModes.IsVersus(r.Mode.Length > 0 ? r.Mode : _session.Mode) || Arenas?.Invoke(r.Mission) != false)
             .Select(r => new MapChoice(r.Mission, r.Mode.Length > 0 ? r.Mode : _session.Mode, NameOf(r.Mission)))];
         choices.Insert(0, new MapChoice(mission, _session.Mode, NameOf(mission), Again: true));
         return choices;

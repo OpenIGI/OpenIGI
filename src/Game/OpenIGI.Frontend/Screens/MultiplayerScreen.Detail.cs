@@ -1,3 +1,5 @@
+using OpenIGI.UI.Kit.Servers;
+using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -54,7 +56,7 @@ public sealed partial class MultiplayerScreen
         var save = new Button(theme, favourite ? "SAVED" : "SAVE")
         {
             Accent = favourite ? ButtonAccent.Link : ButtonAccent.Text,
-            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Star),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Star),
             GlyphSize = 18f,
             TextSize = ButtonText,
             Tracking = ButtonTracking,

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Host.Multiplayer;
 
@@ -142,7 +143,7 @@ public sealed class ServerConsole(IServerControl server)
                 words.Length > 3 && double.TryParse(words[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double metres) ? Math.Clamp(metres, 0.5, 100) : 5)],
             "endmatch" => EndMatch(),
             "next" => server.NextMap() is { } next ? [$"Going on to mission {next.Mission} ({ModeOf(next)})."] : ["There is no rotation; use map <mission> [mode]."],
-            "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}."],
+            "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", MatchModes.All)}."],
             "rotation" => Rotation(),
             "demo_save" => SaveDemo(words.Length > 1 ? words[1] : null),
             "quit" or "exit" or "stop" => Quit(),

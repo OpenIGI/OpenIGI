@@ -1,3 +1,4 @@
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -37,12 +38,12 @@ internal sealed class ContentPage
     private readonly Text _empty;
     private readonly SectionTitle _title;
     private readonly DiskMeter _disk;
-    private readonly Func<string, BackdropPicture?> _pictures;
+    private readonly Func<string, UiPicture?> _pictures;
     private readonly ContentPageKind _kind;
     private readonly OnOffSwitch? _playsMods;
     private readonly UiElement? _modsBar;
 
-    public ContentPage(UiTheme theme, LauncherModel model, Func<string, BackdropPicture?> pictures, ContentPageKind kind = ContentPageKind.Content)
+    public ContentPage(UiTheme theme, LauncherModel model, Func<string, UiPicture?> pictures, ContentPageKind kind = ContentPageKind.Content)
     {
         _theme = theme;
         _model = model;

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Dedicated;
@@ -17,7 +18,7 @@ public sealed class Igi1MatchReportTests
     [RequiresGameDataFact]
     public void A_decided_match_is_reported_with_every_player_under_their_key()
     {
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.05, 0.05);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.05, 0.05);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         ServerSession server = trio.Session.Session!;
         MatchPlayer[] players = [.. server.Match.Players.Values.Where(static p => p.Slot >= 0).OrderBy(static p => p.Slot)];
@@ -36,7 +37,7 @@ public sealed class Igi1MatchReportTests
 
         MatchReport report = MatchReporter.Report(server, trio.Session.Map, 125)!;
         Assert.Equal("igi1", report.Title);
-        Assert.Equal(GameModes.TeamDeathmatch, report.Mode);
+        Assert.Equal(MatchModes.TeamDeathmatch, report.Mode);
         Assert.Equal(125, report.Seconds);
         Assert.Equal(players[0].Team, report.Winner);
 

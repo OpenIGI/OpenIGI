@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -574,7 +575,7 @@ public sealed partial class GameHost
     // found from anywhere: held on the screen's edge when out of view, with their distance.
     private IReadOnlyList<HudMark> ModePointMarks(IReadOnlyList<HudMark> marks)
     {
-        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy, Layout: { } layout })
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: MatchModes.SearchAndDestroy, Layout: { } layout })
         {
             return marks;
         }

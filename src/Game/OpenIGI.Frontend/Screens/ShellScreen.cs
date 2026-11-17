@@ -355,7 +355,7 @@ public abstract class ShellScreen : Screen
         {
             // The account answers after the menu is up: the badge follows it, the Discord name and avatar in as they come.
             NameSource = () => PlayerName,
-            Avatar = () => SignedInAccount is not null && Context.Host.Account?.Avatar is { } avatar ? (avatar.Image, avatar.Aspect) : null,
+            Avatar = () => SignedInAccount is not null ? Context.Host.Account?.Avatar : null,
             Caption = Context.Config.Active is null || total == 0
                 ? string.Empty
                 : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{DifficultyName().ToUpperInvariant()} · {done}/{total}"),
@@ -375,7 +375,7 @@ public abstract class ShellScreen : Screen
         }
 
         Button quit = HeaderButton(theme, "Quit");
-        quit.LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.Power, centre, size, ink);
+        quit.LeadingGlyph = KitIcons.Glyph(KitIcon.Power);
         quit.GlyphSize = 18f;
         quit.Activated += _ => Context.Host.Quit();
         right.Add(quit);

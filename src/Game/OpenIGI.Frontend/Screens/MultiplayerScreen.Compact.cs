@@ -1,3 +1,6 @@
+using OpenIGI.Core.Titles;
+using OpenIGI.UI.Kit.Servers;
+using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
@@ -96,7 +99,7 @@ public sealed partial class MultiplayerScreen
             PartyView? party = parties.Party;
             int members = party?.Members.Count ?? 1;
             Button invite = CompactButton(theme, _copied is null ? string.Create(CultureInfo.InvariantCulture, $"Party {members}/{PartyPlaces}") : "Link copied", ButtonAccent.Ghost);
-            invite.LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.People);
+            invite.LeadingGlyph = KitIcons.Glyph(KitIcon.People);
             invite.Tooltip = party is null ? "Make a party you lead, and copy its invite link for friends." : "Copy a link friends open to join the party.";
             invite.Activated += _ => Invite(parties);
             bar.Add(invite);
@@ -105,7 +108,7 @@ public sealed partial class MultiplayerScreen
         if (coop.LastPlayed is not null)
         {
             Button reconnect = CompactButton(theme, "Reconnect", ButtonAccent.Ghost);
-            reconnect.LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.History);
+            reconnect.LeadingGlyph = KitIcons.Glyph(KitIcon.History);
             reconnect.Activated += _ => coop.Reconnect();
             bar.Add(reconnect);
         }
@@ -113,7 +116,7 @@ public sealed partial class MultiplayerScreen
         if (Parties is { } forCode)
         {
             Button enter = CompactButton(theme, "Enter code", ButtonAccent.Ghost);
-            enter.LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Keyboard);
+            enter.LeadingGlyph = KitIcons.Glyph(KitIcon.Keyboard);
             enter.Selected = _joiningParty;
             enter.Activated += _ =>
             {
@@ -143,7 +146,7 @@ public sealed partial class MultiplayerScreen
             Invalidate();
         };
         filters.Add(kind);
-        string modeName = _modeFilter == 0 ? "Any" : GameModes.Title(FilterModes[_modeFilter]);
+        string modeName = _modeFilter == 0 ? "Any" : MatchModes.Title(FilterModes[_modeFilter]);
         Button mode = CompactButton(theme, $"Mode: {modeName}", ButtonAccent.Ghost);
         mode.TrailingGlyph = ChevronDown;
         mode.GlyphSize = 12f;
@@ -155,7 +158,7 @@ public sealed partial class MultiplayerScreen
         filters.Add(mode);
         if (_searching || _search.Length > 0)
         {
-            var search = new TextBox(theme) { Id = SearchId, Placeholder = "Search", MaxLength = 32, Width = 150f, Height = 44f, VerticalAlignment = VerticalAlignment.Center, LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Search) };
+            var search = new TextBox(theme) { Id = SearchId, Placeholder = "Search", MaxLength = 32, Width = 150f, Height = 44f, VerticalAlignment = VerticalAlignment.Center, LeadingGlyph = KitIcons.Glyph(KitIcon.Search) };
             search.Text = _search;
             search.TextChanged += text =>
             {
@@ -169,7 +172,7 @@ public sealed partial class MultiplayerScreen
         filters.Add(new Panel(), grow: 1f);
         if (!_searching && _search.Length == 0)
         {
-            Button find = CompactIcon(theme, OpenIGI.UI.Kit.KitIcon.Search, "Search the games by name or map.");
+            Button find = CompactIcon(theme, KitIcon.Search, "Search the games by name or map.");
             find.Activated += _ =>
             {
                 _searching = true;
@@ -179,10 +182,10 @@ public sealed partial class MultiplayerScreen
             filters.Add(find);
         }
 
-        Button quick = CompactIcon(theme, OpenIGI.UI.Kit.KitIcon.Play, "Quick play: join the best open game listed.");
+        Button quick = CompactIcon(theme, KitIcon.Play, "Quick play: join the best open game listed.");
         quick.Activated += _ => coop.QuickPlay();
         filters.Add(quick);
-        Button refresh = CompactIcon(theme, OpenIGI.UI.Kit.KitIcon.Refresh, "Ask for the list again.");
+        Button refresh = CompactIcon(theme, KitIcon.Refresh, "Ask for the list again.");
         refresh.Activated += _ => Refresh(coop);
         filters.Add(refresh);
         layout.Add(filters, 1, 0);
@@ -319,10 +322,10 @@ public sealed partial class MultiplayerScreen
 
     // A button a thumb tall, its caption in the page's small label size.
     // A square button that is only its mark, a thumb wide.
-    private static Button CompactIcon(UiTheme theme, OpenIGI.UI.Kit.KitIcon icon, string tooltip) => new(theme, string.Empty)
+    private static Button CompactIcon(UiTheme theme, KitIcon icon, string tooltip) => new(theme, string.Empty)
     {
         Accent = ButtonAccent.Ghost,
-        LeadingGlyph = Glyph(icon),
+        LeadingGlyph = KitIcons.Glyph(icon),
         GlyphSize = 18f,
         Padding = new Thickness(13f, 0f),
         Height = 44f,

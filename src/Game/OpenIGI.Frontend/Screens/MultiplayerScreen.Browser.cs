@@ -1,3 +1,6 @@
+using OpenIGI.Core.Titles;
+using OpenIGI.UI.Kit.Servers;
+using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
@@ -20,7 +23,7 @@ public sealed partial class MultiplayerScreen
     private static readonly string[] Kinds = ["ALL", "SERVERS", "ROOMS", "LAN", "SAVED", "RECENT"];
 
     // Which modes show: any, or one; the ids the lines carry.
-    private static readonly string[] FilterModes = [string.Empty, GameModes.Coop, GameModes.TeamDeathmatch, GameModes.FreeForAll, GameModes.Elimination, GameModes.SearchAndDestroy];
+    private static readonly string[] FilterModes = [string.Empty, MatchModes.Coop, MatchModes.TeamDeathmatch, MatchModes.FreeForAll, MatchModes.Elimination, MatchModes.SearchAndDestroy];
 
     // How many lines' shapes stand in for the list while it has not been heard yet.
     private const int SkeletonRows = 7;
@@ -143,7 +146,7 @@ public sealed partial class MultiplayerScreen
         {
             Accent = ButtonAccent.Ghost,
             Key = Context.Host.TouchScreen ? string.Empty : "R",
-            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Refresh),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Refresh),
             GlyphSize = 18f,
             Padding = new Thickness(12f, 0f),
             Height = 44f,
@@ -175,7 +178,7 @@ public sealed partial class MultiplayerScreen
             tools.AddChild(show);
         }
 
-        var search = new TextBox(theme) { Id = SearchId, Placeholder = wide ? "Search name or map" : "Search", MaxLength = 32, Width = wide ? 250f : 190f, Height = 44f, LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Search), VerticalAlignment = VerticalAlignment.Center, Tooltip = "Show only the games whose name or map has this in it." };
+        var search = new TextBox(theme) { Id = SearchId, Placeholder = wide ? "Search name or map" : "Search", MaxLength = 32, Width = wide ? 250f : 190f, Height = 44f, LeadingGlyph = KitIcons.Glyph(KitIcon.Search), VerticalAlignment = VerticalAlignment.Center, Tooltip = "Show only the games whose name or map has this in it." };
         search.Text = _search;
         search.TextChanged += text =>
         {
@@ -185,7 +188,7 @@ public sealed partial class MultiplayerScreen
         };
         tools.AddChild(search);
 
-        string modeName = _modeFilter == 0 ? "ANY" : GameModes.Title(FilterModes[_modeFilter]).ToUpperInvariant();
+        string modeName = _modeFilter == 0 ? "ANY" : MatchModes.Title(FilterModes[_modeFilter]).ToUpperInvariant();
         var mode = new Button(theme, $"MODE: {modeName}")
         {
             Accent = ButtonAccent.Ghost,
@@ -260,39 +263,13 @@ public sealed partial class MultiplayerScreen
     private static void ChevronDown(UiPainter painter, UiVec2 centre, float size, Bgra32 ink) =>
         painter.DrawChevron(centre, size, OpenIGI.UI.Drawing.UiDirection.Down, MathF.Max(1f, size * 0.16f), ink);
 
-    // The columns' headings, each ordering the list by it (again, the other way); the column ordered by is brighter, marked
-    // with the way it runs.
-    private Grid BuildColumns(UiTheme theme)
+    // The columns' headings, each ordering the list by it (ServerColumns.Header).
+    private Grid BuildColumns(UiTheme theme) => ServerColumns.Header(theme, _sortBy, _descending, Size == ShellSize.Wide, (column, descending) =>
     {
-        bool wide = Size == ShellSize.Wide;
-        var header = new Grid { ColumnSpacing = ServerColumns.Gap, Margin = new Thickness(ServerColumns.PadLeft, 0f, ServerColumns.PadRight, 0f) };
-        header.RowDefinitions.Add(GridLength.Auto);
-        header.ColumnDefinitions.Add(GridLength.Absolute(ServerColumns.StarWidth));
-        for (int place = 0; place < ServerColumns.Across.Length; place++)
-        {
-            int column = ServerColumns.Across[place];
-            float width = ServerColumns.Width(column, wide);
-            header.ColumnDefinitions.Add(width > 0f ? GridLength.Absolute(width) : GridLength.Star);
-            bool sorted = column == _sortBy;
-            bool last = column == ServerColumns.Ping;
-            var heading = new SortHeading(theme, ServerColumns.Headings[column])
-            {
-                Order = !sorted ? 0 : _descending ? -1 : 1,
-                AlignRight = last,
-                HorizontalAlignment = last ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
-                Tooltip = sorted ? (_descending ? "Ordered by this, highest first: press for lowest first." : "Ordered by this, lowest first: press for highest first.") : "Order the list by this.",
-            };
-            heading.Activated += _ =>
-            {
-                _descending = _sortBy == column && !_descending;
-                _sortBy = column;
-                Invalidate();
-            };
-            header.Add(heading, 0, place + 1);
-        }
-
-        return header;
-    }
+        _sortBy = column;
+        _descending = descending;
+        Invalidate();
+    });
 
     // A line: a click picks it, and a second click soon after joins it.
     private ServerRow BuildRow(UiTheme theme, CoopRoomInfo room)
@@ -374,7 +351,7 @@ public sealed partial class MultiplayerScreen
         {
             Accent = ButtonAccent.Ghost,
             Key = Context.Host.TouchScreen ? string.Empty : "Tab",
-            TrailingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.ArrowRight),
+            TrailingGlyph = KitIcons.Glyph(KitIcon.ArrowRight),
             GlyphSize = 16f,
             TextSize = ButtonText,
             Tracking = ButtonTracking,
@@ -393,12 +370,13 @@ public sealed partial class MultiplayerScreen
         room.Name,
         room.Lan ? "LAN" : room.Dedicated ? "SERVER" : "ROOM",
         room.Mode,
-        room.Mode.Length > 0 ? GameModes.Title(room.Mode) : "—",
+        room.Mode.Length > 0 ? MatchModes.Title(room.Mode) : "—",
         MapName(room.MissionId),
         room.Players,
         room.MaxPlayers,
         room.PingMs,
-        room.Region.Length > 0 ? room.Region.ToUpperInvariant() : room.Lan || room.Dedicated ? string.Empty : room.Passworded ? "password" : "P2P");
+        room.Region.Length > 0 ? room.Region.ToUpperInvariant() : room.Lan || room.Dedicated ? string.Empty : room.Passworded ? "password" : "P2P",
+        room.MissionId);
 
     private string MapName(int missionId) => Context.Missions.FirstOrDefault(m => m.Id == missionId) is { } mission
         ? mission.Name
@@ -429,17 +407,5 @@ public sealed partial class MultiplayerScreen
         _modeFilter == 0 || string.Equals(room.Mode, FilterModes[_modeFilter], StringComparison.OrdinalIgnoreCase);
 
     // The lines in the order chosen; ties by name. Lines not yet timed sort after the timed ones by ping.
-    private List<CoopRoomInfo> Order(List<CoopRoomInfo> lines)
-    {
-        Func<CoopRoomInfo, IComparable> key = _sortBy switch
-        {
-            0 => r => GameModes.Title(r.Mode),
-            2 => r => r.MissionId,
-            3 => r => r.Players,
-            ServerColumns.Ping => r => r.PingMs ?? int.MaxValue,
-            _ => r => r.Name.ToUpperInvariant(),
-        };
-        IOrderedEnumerable<CoopRoomInfo> ordered = _descending ? lines.OrderByDescending(key) : lines.OrderBy(key);
-        return [.. ordered.ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)];
-    }
+    private List<CoopRoomInfo> Order(List<CoopRoomInfo> lines) => ServerColumns.Order(lines, LineOf, _sortBy, _descending);
 }

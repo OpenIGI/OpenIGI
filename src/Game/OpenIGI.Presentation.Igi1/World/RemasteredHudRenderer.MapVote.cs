@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
@@ -181,7 +182,7 @@ internal sealed partial class RemasteredHudRenderer
         string name = (choice.Name.Length > 0 ? choice.Name : string.Create(CultureInfo.InvariantCulture, $"Mission {choice.Mission}")).ToUpperInvariant();
         float nameSize = Px(21f);
         painter.DrawLabel(type.Heading, Clip(type.Heading, name, nameSize, textWidth), new UiVec2(textX, plate.Bottom + Px(12f)), nameSize, UiPalette.TextBright, 0.06f);
-        string mode = GameModes.Title(choice.Mode);
+        string mode = MatchModes.Title(choice.Mode);
         painter.DrawLabel(type.Mono, mode, new UiVec2(textX, plate.Bottom + Px(42f)), Px(12f), own ? VoteAccent : UiPalette.TextSecondary, 0.22f);
 
         // The votes: a bar of the share of those who may vote, and the count.

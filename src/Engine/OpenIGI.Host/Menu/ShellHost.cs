@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Kit;
 
 namespace OpenIGI.Host.Menu;
 
@@ -68,7 +69,7 @@ public sealed class ShellHost(
     IPartyPanel? party = null,
     IAccountPanel? account = null,
     IShellMaps? maps = null,
-    Func<int, MenuPicture?>? missionPicture = null) : IShellHost
+    Func<int, UiPicture?>? missionPicture = null) : IShellHost
 {
     /// <inheritdoc/>
     public ICoopRooms? Coop => coop;
@@ -144,7 +145,7 @@ public sealed class ShellHost(
     public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
 
     /// <inheritdoc/>
-    public MenuPicture? MissionPicture(int missionId) => missionPicture?.Invoke(missionId);
+    public UiPicture? MissionPicture(int missionId) => missionPicture?.Invoke(missionId);
 
     /// <inheritdoc/>
     public bool TouchScreen => touchScreen?.Invoke() ?? false;

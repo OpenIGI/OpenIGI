@@ -1,3 +1,4 @@
+using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -79,7 +80,7 @@ public sealed partial class MultiplayerScreen
         var invite = new Button(theme, _copied is null ? "INVITE" : "COPIED")
         {
             Accent = ButtonAccent.Ghost,
-            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.People),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.People),
             GlyphSize = 18f,
             TextSize = ButtonText,
             Tracking = ButtonTracking,
@@ -100,7 +101,7 @@ public sealed partial class MultiplayerScreen
             var enter = new Button(theme, "ENTER CODE")
             {
                 Accent = ButtonAccent.Ghost,
-                LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Keyboard),
+                LeadingGlyph = KitIcons.Glyph(KitIcon.Keyboard),
                 GlyphSize = 18f,
                 TextSize = ButtonText,
                 Tracking = ButtonTracking,

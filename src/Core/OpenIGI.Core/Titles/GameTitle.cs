@@ -48,7 +48,10 @@ public sealed record GameTitle(
         GameAvailability.Available,
         "config.qvm",
         ["missions", "common", "language", "menusystem"],
-        "IGI_GAME_PATH");
+        "IGI_GAME_PATH")
+    {
+        MissionCount = 14,
+    };
 
     /// <summary>Gets I.G.I. 2: Covert Strike (2003).</summary>
     /// <remarks>
@@ -78,7 +81,13 @@ public sealed record GameTitle(
         GameAvailability.Available,
         "igi2.exe",
         ["missions", "common", "language", "menusystem"],
-        "IGI2_GAME_PATH");
+        "IGI2_GAME_PATH")
+    {
+        MissionCount = 19,
+    };
+
+    /// <summary>Gets how many missions the title's campaign has, each a map a server can play.</summary>
+    public int MissionCount { get; init; }
 
     /// <summary>Gets every title the shell knows about, active first.</summary>
     public static IReadOnlyList<GameTitle> All { get; } = [Igi1, Igi2];
