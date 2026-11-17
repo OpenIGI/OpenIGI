@@ -64,6 +64,8 @@ const master :Workerd.Worker = (
     (name = "TURN_SECRET", fromEnvironment = "TURN_SECRET"),
     (name = "ADMIN_TOKEN", fromEnvironment = "ADMIN_TOKEN"),
     (name = "RELAY_KEY", fromEnvironment = "RELAY_KEY"),
+    # The addresses /v1/stats lists every room for, private ones too, apart by commas; unset, nobody's.
+    (name = "OWNER_IPS", fromEnvironment = "OWNER_IPS"),
     # Signing in with Discord (accounts.js); ACCOUNT_KEY seals the refresh tokens kept for Linked Roles.
     (name = "DISCORD_CLIENT_ID", fromEnvironment = "DISCORD_CLIENT_ID"),
     (name = "DISCORD_CLIENT_SECRET", fromEnvironment = "DISCORD_CLIENT_SECRET"),

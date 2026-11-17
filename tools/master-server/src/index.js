@@ -111,12 +111,28 @@ async function route(request, env, ctx) {
       return cors(json({ error: "not found" }, 404));
     }
 
+    // The stats asked from an owner's address (OWNER_IPS, a secret: addresses apart by commas) list every room, private
+    // ones too. Never kept at the edge, where the next asker would be handed them.
+    if (request.method === "GET" && url.pathname === "/v1/stats" && isOwner(request, env)) {
+      const answer = await list.fetch("https://list/stats/owner");
+      const own = new Response(answer.body, answer);
+      own.headers.set("cache-control", "private, no-store");
+      return cors(own);
+    }
+
     const seconds = request.method === "GET" ? EDGE_SECONDS[url.pathname] : undefined;
     if (seconds) {
       return cors(await kept(request, env, ctx, seconds, () => list.fetch(request)));
     }
 
     return cors(await list.fetch(request));
+}
+
+// Whether a request comes from one of the owner's addresses. CF-Connecting-IP is Cloudflare's word for it, and nothing
+// but Cloudflare's edge reaches the master, so a visitor cannot say it for itself.
+export function isOwner(request, env) {
+  const ip = (request.headers.get("CF-Connecting-IP") ?? "").trim().toLowerCase();
+  return ip.length > 0 && String(env.OWNER_IPS ?? "").split(",").some((own) => own.trim().toLowerCase() === ip);
 }
 
 // A GET answered from this location's cache while it is fresh, and otherwise asked and kept. NO_EDGE_CACHE=1 (the tests'
@@ -273,7 +289,10 @@ export class ServerList {
     }
 
     // How busy things are, as counts only: never a private room's code or anyone's address.
-    if (request.method === "GET" && url.pathname === "/v1/stats") {
+    // /stats/owner is the Worker's own asking for an owner's address (OWNER_IPS), never routed from outside: the rooms
+    // listed too.
+    const owner = url.pathname === "/stats/owner";
+    if (request.method === "GET" && (url.pathname === "/v1/stats" || owner)) {
       // The relays' health from the relay list; the counts stand without it if it can't answer.
       let status = [];
       try {
@@ -282,7 +301,7 @@ export class ServerList {
         // Counts only.
       }
 
-      return json(stats(this.servers, this.rooms, status));
+      return json(stats(this.servers, this.rooms, status, owner));
     }
 
     // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers and /v1/stats are).
@@ -475,10 +494,13 @@ function validate(body, ip, now) {
 // master chose, not what ICE ended up using, which only the players' games know.
 // A dedicated server's own room is the server: counted under servers (as the list shows it once), though its relay still
 // counts it. The servers are listed too, as the server browser lists them, by name -- never an address, port or room code.
-export function stats(servers, rooms, relayStatus = []) {
+//
+// For the owner (`rooms.list`, asked for with `detailed`) each hosted room is listed as well, private ones included, by
+// name, map and mode -- still never its code or its host's address, so the list lets nobody in.
+export function stats(servers, rooms, relayStatus = [], detailed = false) {
   const tally = () => ({ open: 0, playing: 0, players: 0 });
   const out = {
-    rooms: { public: tally(), private: tally(), waiting: 0 },
+    rooms: { public: tally(), private: tally(), waiting: 0, ...(detailed ? { list: [] } : {}) },
     servers: { open: 0, playing: 0, players: 0, list: [] },
     byTitle: {},
     relays: {},
@@ -515,7 +537,22 @@ export function stats(servers, rooms, relayStatus = []) {
     if (players > 1) {
       kind.playing++;
     }
+
+    out.rooms.list?.push({
+      name: r.view.name,
+      title: r.view.title,
+      version: r.view.version,
+      mode: r.view.mode,
+      map: r.view.map,
+      players,
+      maxPlayers: r.view.maxPlayers,
+      public: r.public,
+      passworded: r.view.passworded,
+      relay: r.relay,
+    });
   }
+
+  out.rooms.list?.sort((a, b) => b.players - a.players || String(a.name).localeCompare(String(b.name)));
 
   for (const s of servers.values()) {
     const title = (out.byTitle[s.title] ??= { rooms: 0, servers: 0, players: 0 });

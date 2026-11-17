@@ -1,7 +1,7 @@
 // The stats on their own, in Node: `node --import ./test/cf-stub.mjs test/stats.test.mjs`. Dedicated servers are counted
 // and listed by name, their own rooms counted once (as the server), and nothing says where anything is.
 import assert from "node:assert/strict";
-import { stats } from "../src/index.js";
+import { isOwner, stats } from "../src/index.js";
 
 const servers = new Map([
   ["1.2.3.4:26001", { address: "1.2.3.4", port: 26001, wsPort: 0, title: "igi1", name: "Official EU", version: "0.6.7", mode: "sd", map: "1", players: 3, maxPlayers: 16, passworded: false, region: "eu", room: "SERVED" }],
@@ -30,5 +30,26 @@ const text = JSON.stringify(s);
 for (const secret of ["1.2.3.4", "5.6.7.8", "26001", "SERVED", "OPENAA", "SECRET"]) {
   assert.ok(!text.includes(secret), `the stats say ${secret}`);
 }
+
+assert.equal(s.rooms.list, undefined);
+
+// The owner's stats list the rooms, private ones too, the served one left to the servers -- and still no code or address.
+const named = new Map([...rooms].map(([code, r]) => [code, { ...r, ip: "9.9.9.9", view: { ...r.view, name: `${code.toLowerCase()}'s game`, mode: "coop", map: "6", maxPlayers: 4 } }]));
+const own = stats(servers, named, [], true);
+assert.deepEqual(own.rooms.list.map((x) => [x.name, x.mode, x.map, x.players, x.maxPlayers, x.public]), [
+  ["openaa's game", "coop", "6", 2, 4, true],
+  ["secret's game", "coop", "6", 1, 4, false],
+]);
+const ownText = JSON.stringify(own);
+for (const secret of ["9.9.9.9", "SERVED", "OPENAA", "SECRET"]) {
+  assert.ok(!ownText.includes(secret), `the owner's stats say ${secret}`);
+}
+
+// Only an address named in OWNER_IPS is the owner; unset, nobody is.
+const from = (ip) => new Request("https://master/v1/stats", { headers: ip ? { "CF-Connecting-IP": ip } : {} });
+assert.ok(isOwner(from("1.1.1.1"), { OWNER_IPS: "2.2.2.2, 1.1.1.1" }));
+assert.ok(!isOwner(from("1.1.1.2"), { OWNER_IPS: "2.2.2.2, 1.1.1.1" }));
+assert.ok(!isOwner(from("1.1.1.1"), {}));
+assert.ok(!isOwner(from(null), { OWNER_IPS: "" }));
 
 console.log("stats ok");
