@@ -993,8 +993,9 @@ public sealed partial class GameHost : IDisposable
         ReleaseSettingHandlers();
         ReleaseSessionCheatLock();
 
-        // A party is told this member has gone, rather than waiting for it to stop asking.
+        // A party is told this member has gone, rather than waiting for it to stop asking; Discord, that nothing is played.
         LeaveParty();
+        ReleasePresence();
 
         _sky?.Dispose();
         _rain?.Dispose();

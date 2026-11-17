@@ -98,6 +98,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     /// <summary>Gets the room's code, when the session is hosted through one and the room is open.</summary>
     public string? RoomCode => _room?.Code;
 
+    /// <summary>Gets whether the room this game hosts is in the public list, open to anyone: one its code may be shared for.</summary>
+    public bool IsListedRoom => _room?.IsListed == true;
+
     /// <summary>Gets the address the session listens on.</summary>
     public NetAddress LocalAddress => _net.LocalAddress;
 

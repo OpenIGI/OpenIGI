@@ -160,10 +160,13 @@ public sealed class RoomTransport : INetTransport
     public static RoomTransport Host(Uri master, RoomRequest request, IRtcPeerFactory factory, IOpenIgiLogger logger, bool reopens = false)
     {
         ArgumentNullException.ThrowIfNull(request);
-        RoomTransport transport = new(master, factory, logger, hosting: true, reopens);
+        RoomTransport transport = new(master, factory, logger, hosting: true, reopens) { IsListed = request.Public && !request.Passworded };
         transport.Start(transport.HostAsync(request));
         return transport;
     }
+
+    /// <summary>Gets whether this room is one this game hosts in the public list, open to anyone: what may be shared freely.</summary>
+    public bool IsListed { get; private init; }
 
     /// <summary>Joins a room by its code.</summary>
     /// <param name="master">The master server.</param>

@@ -103,6 +103,7 @@ public sealed partial class GameHost
         _coop?.Update();
         UpdateParty();
         UpdateAccount();
+        UpdatePresence();
         FollowSession(state);
 
         // Typing wanted -- a text box with the focus, or a co-op line -- for a touch screen to raise its keyboard.

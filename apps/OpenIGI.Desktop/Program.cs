@@ -561,6 +561,7 @@ try
         game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
         game.OpenUdp = port => UdpTransport.Open(port);
         game.OpenLink = OpenInBrowser;
+        game.ShowsPresence = true;
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;
