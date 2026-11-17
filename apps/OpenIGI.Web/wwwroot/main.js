@@ -257,6 +257,9 @@ async function chooseSource() {
   if (folderMode) offerFolder();
   else offerHosted(hosted);
 
+  // Inside a Discord Activity the voice channel came to play: straight in with the site's files, no Play to press.
+  if (IN_DISCORD && !folderMode) return files.fromHosted(HOSTED_DATA);
+
   return new Promise((settle, fail) => {
     // Once the installation is settled the buttons are the page's again (Play again, Reload).
     const listening = new AbortController();
