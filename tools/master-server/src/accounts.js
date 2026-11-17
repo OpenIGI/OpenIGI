@@ -63,6 +63,17 @@ export class Accounts {
     try {
       const body = request.method === "GET" || request.method === "HEAD" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
 
+      // The accounts' standing for Discord's Linked Roles, from the stats' object alone: { players: [{ account, totals }] }.
+      if (parts[0] === "internal" && parts[1] === "roles" && request.method === "POST") {
+        const asked = JSON.parse(new TextDecoder().decode(body));
+        let updated = 0;
+        for (const { account, totals } of asked.players ?? []) {
+          if (await this.pushRoleConnection(account, totals)) updated++;
+        }
+
+        return json({ updated });
+      }
+
       // The keys an account gathers, for the stats' object alone: the Worker routes nothing outside /v1 here.
       if (parts[0] === "internal" && parts[1] === "keys" && parts.length === 3) {
         const account = await this.storage.get(`account:${parts[2]}`);
@@ -75,6 +86,10 @@ export class Accounts {
 
       if (parts[1] === "link" && parts.length === 3 && request.method === "GET") {
         return await this.linkState(request, url, body, parts[2]);
+      }
+
+      if (parts[1] === "auth" && parts[2] === "discord" && parts[3] === "verify" && request.method === "GET") {
+        return await this.toDiscordFromDiscord();
       }
 
       if (parts[1] === "auth" && parts[2] === "discord" && parts[3] === "start" && request.method === "GET") {
@@ -171,8 +186,23 @@ export class Accounts {
       return page(200, "This game is already linked. You can close this page.");
     }
 
+    return this.authorize({ code, expires: link.expires });
+  }
+
+  // Discord's Linked Roles "verification URL": a player who starts from Discord rather than the game. Signed in, their
+  // account is made (or found) and its standing told to Discord; a game links to it later from its own profile page.
+  async toDiscordFromDiscord() {
+    if (!this.env.DISCORD_CLIENT_ID || !this.env.DISCORD_CLIENT_SECRET) {
+      return page(503, "Signing in with Discord isn't set up on this server yet.");
+    }
+
+    return this.authorize({ verify: true, expires: Date.now() + LINK_SECONDS * 1000 });
+  }
+
+  // Off to Discord, carrying an OAuth state of our own making that names what the sign-in is for.
+  async authorize(pending) {
     const state = randomToken();
-    await this.storage.put(`oauth:${state}`, { code, expires: link.expires });
+    await this.storage.put(`oauth:${state}`, pending);
     const to = new URL(`${DISCORD}/oauth2/authorize`);
     to.searchParams.set("client_id", this.env.DISCORD_CLIENT_ID);
     to.searchParams.set("response_type", "code");
@@ -195,6 +225,10 @@ export class Accounts {
       return page(200, "Linking was cancelled. Nothing was changed.");
     }
 
+    if (pending.verify) {
+      return await this.verified(url.searchParams.get("code") ?? "");
+    }
+
     const link = await this.storage.get(`link:${pending.code}`);
     if (!link || link.expires < Date.now()) {
       return page(410, "This link has expired. Ask the game for a new one.");
@@ -213,9 +247,24 @@ export class Accounts {
     const account = await this.upsertAccount(user);
     await this.attachKey(account, link.player, link.label);
     await this.keepToken(account.id, grant);
+    await this.pushRoleConnection(account.id, null, grant.access_token);
     await this.storage.put(`link:${pending.code}`, { ...link, account: account.id });
     await this.storage.delete(`pending:${link.player}`);
     return page(200, `Linked to ${account.name}. You can go back to the game.`);
+  }
+
+  // Back from Discord for Linked Roles: the account made or found, its token kept, its standing told.
+  async verified(code) {
+    const grant = await this.exchange(code);
+    const user = grant ? await discordUser(grant.access_token) : null;
+    if (!user) {
+      return page(502, "Discord didn't let us in. Try again.");
+    }
+
+    const account = await this.upsertAccount(user);
+    await this.keepToken(account.id, grant);
+    await this.pushRoleConnection(account.id, null, grant.access_token);
+    return page(200, `Connected as ${account.name}. Your roles follow your record once you play on the official servers: sign in from the game's Profile page to link it.`);
   }
 
   // Many players' accounts at once, by key id, for a game server's scoreboard: { <playerId>: account } for those linked.
@@ -369,6 +418,51 @@ export class Accounts {
     if (sealed) {
       await this.storage.put(`token:${id}`, sealed);
     }
+  }
+
+  // The account's standing, told to Discord for its Linked Roles: a signed-in operative, and (once there are totals) how
+  // many matches, wins and kills. The access token is fresh from a sign-in or traded from the kept refresh token, which
+  // Discord replaces each time. Without a kept token nothing is told; a refusal is let go.
+  async pushRoleConnection(accountId, totals, accessToken = null) {
+    if (!this.env.DISCORD_CLIENT_ID) return false;
+    const account = await this.storage.get(`account:${accountId}`);
+    if (!account) return false;
+
+    let token = accessToken;
+    if (!token) {
+      const kept = await this.storage.get(`token:${accountId}`);
+      const sealed = kept ? JSON.parse(await unseal(this.env.ACCOUNT_KEY, kept) ?? "null") : null;
+      if (!sealed?.refresh) return false;
+      const answer = await fetch(`${DISCORD_API}/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: this.env.DISCORD_CLIENT_ID,
+          client_secret: this.env.DISCORD_CLIENT_SECRET,
+          grant_type: "refresh_token",
+          refresh_token: sealed.refresh,
+        }),
+      });
+      if (!answer.ok) return false;
+      const grant = await answer.json();
+      if (!grant?.access_token) return false;
+      await this.keepToken(accountId, grant);
+      token = grant.access_token;
+    }
+
+    const metadata = { operative: 1 };
+    if (totals) {
+      metadata.matches = totals.matches ?? 0;
+      metadata.wins = totals.wins ?? 0;
+      metadata.kills = totals.kills ?? 0;
+    }
+
+    const answer = await fetch(`${DISCORD_API}/users/@me/applications/${this.env.DISCORD_CLIENT_ID}/role-connection`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ platform_name: "OpenIGI", platform_username: account.name, metadata }),
+    });
+    return answer.ok;
   }
 
   // The code Discord handed back, traded for tokens.

@@ -132,6 +132,7 @@ export class Stats {
 
     // A result off the latest list is kept still: a player's own latest may name it.
     await this.storage.put(writes);
+    await this.tellRoles(counted.map((line) => line.player));
 
     this.boards.clear();
     return json({ id, counted: counted.length }, 201);
@@ -201,6 +202,29 @@ export class Stats {
       allTime: finish(allTotal),
       latest: results.map((match) => ({ ...match, you: match.players.filter((line) => keys.includes(line.player)) })),
     };
+  }
+
+  // The linked accounts among some players, their all-time totals told to Discord for its Linked Roles. Never in the way of
+  // a result: a failure here is let go.
+  async tellRoles(players) {
+    try {
+      const accounts = await this.accountsOf(players);
+      const byAccount = new Map();
+      for (const account of Object.values(accounts)) byAccount.set(account.id, account);
+      if (byAccount.size === 0 || !this.env.ACCOUNTS) return;
+      const told = [];
+      for (const id of byAccount.keys()) {
+        const record = await this.record(id);
+        told.push({ account: id, totals: record.allTime });
+      }
+
+      await this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("all")).fetch("https://accounts/internal/roles", {
+        method: "POST",
+        body: JSON.stringify({ players: told }),
+      });
+    } catch {
+      // Discord is told next time.
+    }
   }
 
   async latest(names) {

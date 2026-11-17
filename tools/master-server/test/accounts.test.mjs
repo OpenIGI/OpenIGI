@@ -61,11 +61,13 @@ const users = {
   "code-ana": { id: "111111111111111111", username: "ana", global_name: "Ana", avatar: "abc" },
   "code-bo": { id: "222222222222222222", username: "bo", global_name: null, avatar: null },
 };
-const realFetch = globalThis.fetch;
+const roleConnections = [];
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
   if (url.endsWith("/oauth2/token")) {
-    const code = new URLSearchParams(String(init.body)).get("code");
+    const form = new URLSearchParams(String(init.body));
+    // A refresh grant names the code its refresh token came from.
+    const code = form.get("grant_type") === "refresh_token" ? form.get("refresh_token").replace(/^refresh-/, "") : form.get("code");
     if (!users[code]) return new Response("{}", { status: 400 });
     return Response.json({ access_token: `token-${code}`, refresh_token: `refresh-${code}`, scope: "identify role_connections.write", expires_in: 604800 });
   }
@@ -75,7 +77,12 @@ globalThis.fetch = async (input, init = {}) => {
     return users[code] ? Response.json(users[code]) : new Response("{}", { status: 401 });
   }
 
-  return realFetch(input, init);
+  if (url.includes("/role-connection")) {
+    roleConnections.push({ token: String(init.headers.authorization), body: JSON.parse(init.body) });
+    return Response.json({});
+  }
+
+  throw new Error(`The test reached out to ${url}`);
 };
 
 const accountKey = base64(crypto.getRandomValues(new Uint8Array(32)));
@@ -137,6 +144,17 @@ await link(web, "code-ana", "Browser");
 const own = await (await ask(await signed(web, "GET", "/v1/account"))).json();
 assert.equal(own.linked, true);
 assert.deepEqual(own.keys.map((k) => [k.label, k.current]), [["Desktop", false], ["Browser", true]]);
+
+// Signing in tells Discord's Linked Roles the player is an operative.
+assert.ok(roleConnections.some((told) => told.token === "Bearer token-code-ana" && told.body.metadata.operative === 1 && told.body.platform_name === "OpenIGI"));
+
+// Later, the stats' totals are told through a token traded from the kept refresh token.
+{
+  roleConnections.length = 0;
+  const told = await accounts.fetch(new Request("https://accounts/internal/roles", { method: "POST", body: JSON.stringify({ players: [{ account: "111111111111111111", totals: { matches: 12, wins: 7, kills: 96 } }] }) }));
+  assert.equal((await told.json()).updated, 1);
+  assert.deepEqual(roleConnections[0].body.metadata, { operative: 1, matches: 12, wins: 7, kills: 96 });
+}
 
 // The refresh token is kept, sealed.
 const sealed = storage.store.get("token:111111111111111111");
@@ -216,6 +234,18 @@ assert.equal(storage.store.has("account:111111111111111111"), false);
 assert.equal(storage.store.has("token:111111111111111111"), false);
 assert.equal(storage.store.has("profile:111111111111111111"), false);
 assert.equal(storage.store.has(`key:${desk.id}`), false);
+
+// Starting from Discord's Linked Roles: an account with no game yet, and its standing told.
+{
+  const to = await accounts.fetch(new Request("https://master/v1/auth/discord/verify"));
+  assert.equal(to.status, 302);
+  const state = new URL(to.headers.get("location")).searchParams.get("state");
+  roleConnections.length = 0;
+  const back = await accounts.fetch(new Request(`https://master/v1/auth/discord/callback?code=code-bo&state=${state}`));
+  assert.equal(back.status, 200);
+  assert.equal(roleConnections[0].body.metadata.operative, 1);
+  assert.deepEqual(storage.store.get("account:222222222222222222").keys, []);
+}
 
 // Without the Discord app set up, the start page says so instead of sending anyone off.
 {
