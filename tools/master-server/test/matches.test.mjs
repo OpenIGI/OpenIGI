@@ -136,6 +136,8 @@ now = Date.UTC(2026, 11, 2);
 await ask(await signed(official, tdm([line(BO, "Bo", 0, 9, 0, true), line(CY, "Cy", 1, 0, 9, false)])));
 const december = await get("/v1/leaderboard?metric=kills");
 assert.deepEqual(december.rows.map((row) => [row.name, row.kills]), [["Bo", 9], ["Cy", 0]]);
+const november = await get("/v1/leaderboard?period=2026-11&metric=kills");
+assert.equal(november.rows[0].name, "Cy");
 const allTime = await get("/v1/leaderboard?period=all&metric=kills");
 assert.equal(allTime.rows.find((row) => row.name === "Bo").kills, 18);
 assert.equal(seasonOf(Date.UTC(2027, 0, 1)), "2027-01");

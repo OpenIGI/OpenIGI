@@ -4,7 +4,7 @@
 //
 //   POST /v1/matches                      a server's result of a decided match, signed by its registered key
 //   GET  /v1/matches                      the latest results, newest first
-//   GET  /v1/leaderboard?period=&metric=  the best players: period season (this month, UTC) or all; metric score, kills,
+//   GET  /v1/leaderboard?period=&metric=  the best players: period season (this month, UTC), a month (2026-10) or all; metric score, kills,
 //                                         wins, kd or matches
 //   GET  /v1/players/<id>/stats           one player's record (a key's id or an account's): this season, all time, latest
 //   /v1/admin/stats-servers               the servers whose matches count (admin token): GET lists, POST { key, name } adds,
@@ -110,7 +110,9 @@ export class Stats {
 
     const result = checkResult(parseJson(body));
     const at = this.now();
-    const id = `${at}-${Math.random().toString(36).slice(2, 8)}`;
+    // Ordered by time, then by arrival within the same millisecond, so the newest is always first.
+    this.sequence = ((this.sequence ?? 0) + 1) % 1679616;
+    const id = `${at}-${this.sequence.toString(36).padStart(4, "0")}${Math.random().toString(36).slice(2, 6)}`;
     const kept = { id, at, server: server.name, ...result };
     const recent = [`match:${id}`, ...(await this.storage.get("recent") ?? [])];
     const writes = { [`match:${id}`]: kept, recent: recent.slice(0, RECENT) };
@@ -141,7 +143,8 @@ export class Stats {
       throw new Refusal(400, `A metric is one of ${METRICS.join(", ")}.`);
     }
 
-    const season = period === "all" ? "all" : seasonOf(this.now());
+    // "all", a named month ("2026-10", a season gone by), or this month's season.
+    const season = period === "all" ? "all" : /^\d{4}-\d{2}$/.test(period) ? period : seasonOf(this.now());
     const cacheKey = `${season}/${metric}`;
     const cached = this.boards.get(cacheKey);
     if (cached && cached.until > this.now()) {
@@ -187,7 +190,8 @@ export class Stats {
     }
 
     const latest = [...new Set(keys.flatMap((key) => lasts.get(`last:${key}`) ?? []))]
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      // Fixed-width time and arrival lead every key, so newest first is plain reverse order.
+      .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
       .slice(0, PLAYER_RECENT);
     const results = await this.latest(latest);
     return {
