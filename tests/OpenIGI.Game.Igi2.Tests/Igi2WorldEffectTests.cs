@@ -225,6 +225,28 @@ public sealed class Igi2WorldEffectTests
         Assert.False(screen.IsInfrared);
     }
 
+    /// <summary>
+    /// A flock's birds are drawn as their <c>PolyListDynCubeObj</c> draws them: four triangles a bird, flat, both sides, tested against the
+    /// world's depth and written into none.
+    /// </summary>
+    [Fact]
+    public void A_flocks_birds_are_drawn_flat_and_double_sided()
+    {
+        World.Igi2BirdFlockTask flock = new() { Individuals = 10 };
+        flock.Prepare(new World.Igi2FlockRandom());
+        flock.Run(RainLevel());
+
+        Rendering.Headless.RecordingGraphicsDevice device = new();
+        using Presentation.Rendering.FlatPolygonDrawer drawer = new(device);
+        drawer.Draw([new Game.Player.TitleWorldPolygons(flock.Position, flock.Wings())], default, Core.Numerics.Matrix4f.Identity);
+
+        Rendering.Headless.RecordingGraphicsDevice.MeshDrawCall draw = Assert.Single(device.MeshDraws);
+        Assert.Equal(10 * 4, draw.TriangleCount);
+        Assert.Equal(Rendering.BlendMode.Opaque, draw.Blend);
+        Assert.Equal(Rendering.DepthState.TestOnly, draw.DepthState);
+        Assert.Equal(Rendering.CullMode.None, draw.CullMode);
+    }
+
     /// <summary>A building's lightmap info hands it its indoors ambient light as the level loads.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_buildings_lightmap_info_sets_its_inside_ambient()

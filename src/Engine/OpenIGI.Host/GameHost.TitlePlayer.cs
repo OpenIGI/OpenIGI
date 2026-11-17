@@ -511,6 +511,7 @@ public sealed partial class GameHost
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
             models.DrawGroundDecals(owned.GroundDecals, eye, projection);
+            models.DrawWorldPolygons(owned.WorldPolygons, eye, projection);
         }
     }
 

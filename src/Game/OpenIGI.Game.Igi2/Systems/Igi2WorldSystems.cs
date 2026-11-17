@@ -130,10 +130,15 @@ internal static class Igi2WorldSystems
     {
         if (b.Services.TryGet(out Igi2FlockRandom? flockRandom))
         {
+            List<Igi2BirdFlockTask> flocks = [];
             foreach (Igi2BirdFlockTask flock in b.Root.Descendants().OfType<Igi2BirdFlockTask>())
             {
                 flock.Prepare(flockRandom);
+                flocks.Add(flock);
             }
+
+            // BirdFlock_CreateHandler puts each on the world's redraw list, which the player hands the renderer.
+            b.Player.Flocks = flocks;
         }
     }
 

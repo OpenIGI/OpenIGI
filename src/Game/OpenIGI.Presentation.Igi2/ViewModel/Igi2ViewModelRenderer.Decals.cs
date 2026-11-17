@@ -28,9 +28,28 @@ public sealed partial class Igi2ViewModelRenderer
         _decals.Draw(decals, textures.Resolve, camera, projection);
     }
 
+    private FlatPolygonDrawer? _polygons;
+
+    /// <inheritdoc/>
+    /// <remarks>The birds of the level's flocks, as a flock's <c>PolyListDynCubeObj</c> draws them, flat shaded.</remarks>
+    public void DrawWorldPolygons(IReadOnlyList<TitleWorldPolygons> polygons, in Camera3D camera, in Matrix4f projection)
+    {
+        ArgumentNullException.ThrowIfNull(polygons);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (polygons.Count == 0)
+        {
+            return;
+        }
+
+        _polygons ??= new FlatPolygonDrawer(_device);
+        _polygons.Draw(polygons, camera, projection);
+    }
+
     private void ReleaseDecals()
     {
         _decals?.Dispose();
         _decals = null;
+        _polygons?.Dispose();
+        _polygons = null;
     }
 }

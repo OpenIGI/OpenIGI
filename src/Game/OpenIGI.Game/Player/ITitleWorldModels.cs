@@ -26,6 +26,9 @@ public interface ITitleWorldModels
     /// <summary>Gets the marks lying on the ground as of the last tick: shadows and pools of blood.</summary>
     IReadOnlyList<TitleGroundDecal> GroundDecals => [];
 
+    /// <summary>Gets the untextured triangles drawn flat in the scene's ambient colour as of the last frame: I.G.I. 2's birds.</summary>
+    IReadOnlyList<TitleWorldPolygons> WorldPolygons => [];
+
     /// <summary>Gets the level's 2-D particles -- blood, dust, smoke -- in the engine both titles share; none when it has none.</summary>
     OpenIGI.Game.World.Particles.Particle2DModule? Particles => null;
 
@@ -41,6 +44,14 @@ public interface ITitleWorldModels
 /// <param name="Hover">How far above the ground it is drawn, in world units.</param>
 /// <param name="Colour">The colour its texture is multiplied by; the texture's alpha is multiplied by the colour's.</param>
 public sealed record TitleGroundDecal(string Texture, Vector3d Position, Vector3f Normal, float HalfSize, float Hover, OpenIGI.Core.Graphics.Bgra32 Colour);
+
+/// <summary>
+/// Triangles drawn flat and untextured in the scene's ambient colour, tested against the world's depth and written into none, as
+/// I.G.I. 2's <c>PolyListDynCubeObj</c> draws a flock's birds.
+/// </summary>
+/// <param name="Origin">Where the corners are measured from, in world units.</param>
+/// <param name="Corners">The corners, three to a triangle, in world units from <paramref name="Origin"/>.</param>
+public sealed record TitleWorldPolygons(Vector3d Origin, IReadOnlyList<Vector3f> Corners);
 
 /// <summary>A camera-facing world sprite, with its position and half-size in world units.</summary>
 /// <param name="Sprite">The title's sprite resource name.</param>

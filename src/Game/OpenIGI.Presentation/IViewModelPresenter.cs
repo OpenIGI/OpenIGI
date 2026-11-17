@@ -169,6 +169,12 @@ public interface ITitleWorldModelPresenter
     /// <param name="camera">The world camera.</param>
     /// <param name="projection">The world projection.</param>
     void DrawGroundDecals(IReadOnlyList<TitleGroundDecal> decals, in Camera3D camera, in Matrix4f projection) { }
+
+    /// <summary>Draws untextured triangles flat in the scene's ambient colour, tested against the world's depth.</summary>
+    /// <param name="polygons">The triangle lists.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawWorldPolygons(IReadOnlyList<TitleWorldPolygons> polygons, in Camera3D camera, in Matrix4f projection) { }
 }
 
 /// <summary>Draws the weapon the player is holding.</summary>
