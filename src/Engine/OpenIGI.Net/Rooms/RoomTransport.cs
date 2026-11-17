@@ -17,8 +17,13 @@ namespace OpenIGI.Net.Rooms;
 /// <param name="MaxPlayers">How many may play, the host included.</param>
 /// <param name="Public">Whether it is listed, or reached by its code alone.</param>
 /// <param name="Passworded">Whether joining takes a password.</param>
+/// <param name="Instance">
+/// The Discord Activity instance it is opened for, or <see langword="null"/>: such a room has the instance's own code, and
+/// carries the game itself, as WebRTC is not allowed there.
+/// </param>
 public sealed record RoomRequest(
-    string Title, string Protocol, string Name, string Map, string Mode, string Version, int MaxPlayers, bool Public, bool Passworded);
+    string Title, string Protocol, string Name, string Map, string Mode, string Version, int MaxPlayers, bool Public, bool Passworded,
+    string? Instance = null);
 
 /// <summary>Where a <see cref="RoomTransport"/> is.</summary>
 public enum RoomStatus
@@ -89,6 +94,12 @@ public sealed class RoomTransport : INetTransport
     private readonly CancellationTokenSource _stop = new();
     private readonly ConcurrentQueue<string> _inbox = new();
     private readonly ConcurrentQueue<string> _outbox = new();
+
+    // A relayed room's datagrams: out, framed for the room; in, with the peer they came from, until the network's thread
+    // hands them on.
+    private readonly ConcurrentQueue<byte[]> _datagramsOut = new();
+    private readonly ConcurrentQueue<(int Peer, byte[] Datagram)> _datagramsIn = new();
+    private volatile bool _relayed;
     private readonly SemaphoreSlim _outboxReady = new(0);
     private readonly Dictionary<int, IRtcPeer> _peers = [];
 
@@ -160,10 +171,13 @@ public sealed class RoomTransport : INetTransport
     public static RoomTransport Host(Uri master, RoomRequest request, IRtcPeerFactory factory, IOpenIgiLogger logger, bool reopens = false)
     {
         ArgumentNullException.ThrowIfNull(request);
-        RoomTransport transport = new(master, factory, logger, hosting: true, reopens) { IsListed = request.Public && !request.Passworded };
+        RoomTransport transport = new(master, factory, logger, hosting: true, reopens) { IsListed = request.Public && !request.Passworded, _relayed = request.Instance is not null };
         transport.Start(transport.HostAsync(request));
         return transport;
     }
+
+    /// <summary>Gets whether the room carries the game itself, over its sockets, as it does for a Discord Activity.</summary>
+    public bool RoomRelays => _relayed;
 
     /// <summary>Gets whether this room is one this game hosts in the public list, open to anyone: what may be shared freely.</summary>
     public bool IsListed { get; private init; }
@@ -295,6 +309,15 @@ public sealed class RoomTransport : INetTransport
     // What the room said, and what each connection has to say back, on the network's thread.
     private void Pump()
     {
+        while (_datagramsIn.TryDequeue(out (int Peer, byte[] Datagram) arrived))
+        {
+            int id = _hosting ? arrived.Peer + _peerOffset : 0;
+            if (_peers.TryGetValue(id, out IRtcPeer? from) && from is RelayedPeer relayed)
+            {
+                relayed.Arrived(arrived.Datagram);
+            }
+        }
+
         while (_inbox.TryDequeue(out string? text))
         {
             try
@@ -376,14 +399,18 @@ public sealed class RoomTransport : INetTransport
 
             case "welcome" when !_hosting:
                 _ice = ReadIce(message["ice"] as JsonArray);
-                Add(0, _factory.Create(_ice, offerer: true));
+                _relayed = message["room"] is JsonObject joined && (bool?)joined["relayed"] == true;
+                Add(0, _relayed ? new RelayedPeer(datagram => SendThroughRoom(0, datagram)) : _factory.Create(_ice, offerer: true));
                 _logger.Information(LogCategory, $"In room {_code} as player {(int?)message["peer"]}; reaching its host.");
                 break;
 
             // The master picks a relay for each host and joiner pair and sends this host's logins on it with the join; a
             // master from before that sends none, and the relay the room was made with serves.
             case "join" when _hosting:
-                Add(peer, _factory.Create(message["ice"] is JsonArray pairIce ? ReadIce(pairIce) : _ice, offerer: false));
+                int wire = peer - _peerOffset;
+                Add(peer, _relayed
+                    ? new RelayedPeer(datagram => SendThroughRoom(wire, datagram))
+                    : _factory.Create(message["ice"] is JsonArray pairIce ? ReadIce(pairIce) : _ice, offerer: false));
                 break;
 
             // A joiner's socket to the room closed. One still on its way in is gone; one whose channel is open is playing, and
@@ -391,7 +418,8 @@ public sealed class RoomTransport : INetTransport
             // says so itself when it really goes. Dropped here, every redeploy of the master put every joiner of every room
             // out of its game.
             case "leave" when _hosting:
-                if (!_peers.TryGetValue(peer, out IRtcPeer? leaving) || leaving.State != RtcPeerState.Open)
+                // A relayed player has no channel of its own: its socket gone, it has gone.
+                if (!_peers.TryGetValue(peer, out IRtcPeer? leaving) || leaving.State != RtcPeerState.Open || leaving is RelayedPeer)
                 {
                     Drop(peer);
                 }
@@ -452,6 +480,26 @@ public sealed class RoomTransport : INetTransport
             _status = RoomStatus.Closed;
             _logger.Warning(LogCategory, $"Room {_code ?? "(none)"} closed: {reason}");
         }
+    }
+
+    // A datagram for the room to carry: a host's names the joiner it is for, a joiner's goes to the host.
+    private void SendThroughRoom(int wirePeer, ReadOnlyMemory<byte> datagram)
+    {
+        byte[] framed;
+        if (_hosting)
+        {
+            framed = new byte[datagram.Length + 2];
+            framed[0] = (byte)(wirePeer & 0xff);
+            framed[1] = (byte)((wirePeer >> 8) & 0xff);
+            datagram.Span.CopyTo(framed.AsSpan(2));
+        }
+        else
+        {
+            framed = datagram.ToArray();
+        }
+
+        _datagramsOut.Enqueue(framed);
+        _outboxReady.Release();
     }
 
     private void Post(JsonObject message)
@@ -548,6 +596,11 @@ public sealed class RoomTransport : INetTransport
             ["public"] = request.Public,
             ["passworded"] = request.Passworded,
         };
+        if (request.Instance is { } instance)
+        {
+            body["instance"] = instance;
+        }
+
 
         using HttpClient http = new();
         using StringContent content = new(body.ToJsonString(), Encoding.UTF8, "application/json");
@@ -663,7 +716,15 @@ public sealed class RoomTransport : INetTransport
                 message.Write(buffer, 0, result.Count);
                 if (result.EndOfMessage)
                 {
-                    _inbox.Enqueue(Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length));
+                    if (result.MessageType == WebSocketMessageType.Binary)
+                    {
+                        Carried(message.GetBuffer().AsSpan(0, (int)message.Length));
+                    }
+                    else
+                    {
+                        _inbox.Enqueue(Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length));
+                    }
+
                     message.SetLength(0);
                 }
             }
@@ -697,6 +758,32 @@ public sealed class RoomTransport : INetTransport
             {
                 await socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, _stop.Token).ConfigureAwait(false);
             }
+
+            while (_datagramsOut.TryDequeue(out byte[]? datagram) && socket.State == WebSocketState.Open)
+            {
+                await socket.SendAsync(datagram, WebSocketMessageType.Binary, true, _stop.Token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // A datagram the room carried: to a host, the joiner's peer in front of it; to a joiner, from the host.
+    private void Carried(ReadOnlySpan<byte> frame)
+    {
+        if (!_relayed)
+        {
+            return;
+        }
+
+        if (_hosting)
+        {
+            if (frame.Length > 2)
+            {
+                _datagramsIn.Enqueue((frame[0] | (frame[1] << 8), frame[2..].ToArray()));
+            }
+        }
+        else if (frame.Length > 0)
+        {
+            _datagramsIn.Enqueue((0, frame.ToArray()));
         }
     }
 
