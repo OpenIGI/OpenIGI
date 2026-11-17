@@ -13,7 +13,7 @@ public sealed partial class GameHost
     private static readonly TimeSpan PresenceEvery = TimeSpan.FromSeconds(3);
 
     private readonly Stopwatch _presenceClock = Stopwatch.StartNew();
-    private TimeSpan _presenceAt = TimeSpan.MinValue;
+    private TimeSpan? _presenceAt;
     private DiscordPresence? _presence;
     private string _presencePlace = string.Empty;
     private DateTimeOffset _presenceSince = DateTimeOffset.UtcNow;
@@ -25,7 +25,8 @@ public sealed partial class GameHost
     // it, lets the connection go.
     private void UpdatePresence()
     {
-        if (_presenceClock.Elapsed - _presenceAt < PresenceEvery)
+        // Never yet: at once. (TimeSpan.MinValue here overflowed the subtraction and stopped the game on its first frame.)
+        if (_presenceAt is { } last && _presenceClock.Elapsed - last < PresenceEvery)
         {
             return;
         }
