@@ -30,7 +30,7 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// whether that thrust is over a thousandth; its children run.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IAttachParent, World.IIgi2WorldMember
+public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IAttachParent, World.IIgi2WorldMember, IIgi2MovedTick
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = Igi2Train.TrainType;
@@ -156,6 +156,29 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
 
     /// <inheritdoc/>
     public IReadOnlyList<float> LastOrientation => _lastOrientation;
+
+    /// <inheritdoc/>
+    public int MovedTick => _movedTick;
+
+    /// <summary>
+    /// Holds what the level put beneath each car to it, as the rake now stands: the first valid position's
+    /// <c>ParameterList_eUpdateInternalDataQTaskEvent</c> on a car's children (<c>Train_MoveCarriage</c>), by which each attaches to
+    /// it. A car carries its own; a carriage's are not its locomotive's.
+    /// </summary>
+    /// <param name="carriedParent">Told of each carried object that carries others itself, before they are held to it.</param>
+    public void AttachRiders(Action<IAttachParent>? carriedParent = null)
+    {
+        foreach (Igi2TrainTask car in _rake)
+        {
+            foreach (GameTask child in car.Children)
+            {
+                if (child is not Igi2TrainTask)
+                {
+                    Igi2Attachment.AttachChild(car, child, carriedParent);
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Measures it and the carriages behind it and puts them on their spline, as the level loads: <c>Train_UpdateInternalDataHandler</c>
@@ -345,6 +368,15 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
         if (_solids.Count > 0 && Models is { } models)
         {
             Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_at, facing), Magic);
+        }
+
+        // RigidDynCubeObj_UpdateAttachments: what rides this car follows it. A carriage beneath it moves itself.
+        foreach (GameTask child in Children)
+        {
+            if (child is not Igi2TrainTask)
+            {
+                Igi2Attachment.UpdateChild(child);
+            }
         }
     }
 

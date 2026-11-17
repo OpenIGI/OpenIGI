@@ -419,6 +419,9 @@ internal sealed class Igi2AiGraphGround(Igi2AiGraph graph) : IWorldCollider
     /// <inheritdoc/>
     public object Owner => graph;
 
+    /// <summary>Gets the graph.</summary>
+    public Igi2AiGraph Graph => graph;
+
     /// <inheritdoc/>
     public void NextZ(WorldLineTrace trace)
     {

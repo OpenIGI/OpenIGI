@@ -119,14 +119,22 @@ public sealed class Igi2Attachment
         ArgumentNullException.ThrowIfNull(task);
         foreach (GameTask child in task.Children)
         {
-            if (child is IIgi2Attached attached)
-            {
-                attached.UpdateAttachment();
-            }
-            else
-            {
-                UpdateChildren(child);
-            }
+            UpdateChild(child);
+        }
+    }
+
+    /// <summary>Tells one child of an object that moved to follow it, or, a holder, to pass it on (<see cref="UpdateChildren"/>).</summary>
+    /// <param name="child">The child.</param>
+    public static void UpdateChild(GameTask child)
+    {
+        ArgumentNullException.ThrowIfNull(child);
+        if (child is IIgi2Attached attached)
+        {
+            attached.UpdateAttachment();
+        }
+        else
+        {
+            UpdateChildren(child);
         }
     }
 
@@ -143,23 +151,29 @@ public sealed class Igi2Attachment
         ArgumentNullException.ThrowIfNull(task);
         foreach (GameTask child in task.Children)
         {
-            if (child is IIgi2Carried carried)
-            {
-                if (!carried.AttachTo(parent))
-                {
-                    continue;
-                }
+            AttachChild(parent, child, carriedParent);
+        }
+    }
 
-                if (child is IAttachParent nested)
-                {
-                    carriedParent?.Invoke(nested);
-                    AttachChildren(nested, child, carriedParent);
-                }
-            }
-            else if (child is not IIgi2Attached)
+    /// <summary>Holds one child beneath an object that moves to it, or what a holder holds (<see cref="AttachChildren"/>).</summary>
+    /// <param name="parent">The object that moves.</param>
+    /// <param name="child">The child.</param>
+    /// <param name="carriedParent">Told of each carried object that carries others itself, before they are held to it.</param>
+    public static void AttachChild(IAttachParent parent, GameTask child, Action<IAttachParent>? carriedParent = null)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        ArgumentNullException.ThrowIfNull(child);
+        if (child is IIgi2Carried carried)
+        {
+            if (carried.AttachTo(parent) && child is IAttachParent nested)
             {
-                AttachChildren(parent, child, carriedParent);
+                carriedParent?.Invoke(nested);
+                AttachChildren(nested, child, carriedParent);
             }
+        }
+        else if (child is not IIgi2Attached)
+        {
+            AttachChildren(parent, child, carriedParent);
         }
     }
 }

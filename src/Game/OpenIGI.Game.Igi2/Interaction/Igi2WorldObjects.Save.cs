@@ -27,13 +27,13 @@ public sealed partial class Igi2EditRigidObjTask : ISavedState
     }
 
     /// <inheritdoc/>
-    public void WriteState(StateWriter writer) => Igi2ModelObjState.Write(writer, _position, _orientation);
+    public void WriteState(StateWriter writer) => Igi2ModelObjState.Write(writer, _pose.Position, _pose.Orientation);
 
     /// <inheritdoc/>
     /// <remarks>It is put where it stood, as a guide that rides it would put it.</remarks>
     public void ReadState(StateReader reader)
     {
         (OpenIGI.Core.Numerics.Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
-        Ride(position, orientation, _movedTick);
+        Ride(position, orientation, _pose.MovedTick);
     }
 }

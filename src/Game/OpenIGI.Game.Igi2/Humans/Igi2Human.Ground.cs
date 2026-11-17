@@ -324,8 +324,9 @@ public abstract partial class Igi2Human
 
     /// <summary>Takes hold of what is underfoot: <c>Human_SetGroundTask</c> (<c>igi2 0x502C70</c>).</summary>
     /// <remarks>
-    /// Only a change of ground does anything. The rigid flag is cleared, and set again with both platform flags when
-    /// the new ground is a rigid object. Graph nodes count too, once soldiers stand on them.
+    /// Only a change of ground does anything. The rigid flag is cleared, and set again with both platform flags when the new
+    /// ground is a rigid object or a graph, which a soldier with a mind stands on: a graph hung from something that moves -- the
+    /// one on each of mission 12's guard trains -- carries the soldiers on it (<see cref="Platform"/>).
     /// </remarks>
     private void SetGround(IWorldCollider ground)
     {
@@ -336,13 +337,25 @@ public abstract partial class Igi2Human
 
         GroundCollider = ground;
         IsGroundRigidObject = false;
-        if (ground is Igi2RigidObject)
+        if (ground is Igi2RigidObject or Ai.Igi2AiGraphGround)
         {
             IsGroundRigidObject = true;
             IsUpdatePlatformPos = true;
             IsPlatformMoving = true;
         }
     }
+
+    /// <summary>
+    /// Gets what the body rides as a platform: the rigid object underfoot, or the object the graph underfoot hangs from, whose
+    /// position and frame <c>Human_UpdatePlatformPos</c> (<c>igi2 0x502D00</c>) reads for a graph; a graph that hangs from nothing
+    /// is no platform.
+    /// </summary>
+    private OpenIGI.Game.World.IAttachParent? Platform => GroundCollider switch
+    {
+        Igi2RigidObject solid => solid,
+        Ai.Igi2AiGraphGround { Graph.Parent: { } carrier } => carrier,
+        _ => null,
+    };
 
     /// <summary>Drops hold of the ground, if any is held, and the rigid flag with it.</summary>
     protected void DropGround()

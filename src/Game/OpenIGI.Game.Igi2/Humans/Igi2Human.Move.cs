@@ -261,13 +261,13 @@ public abstract partial class Igi2Human
             return;
         }
 
-        if (!IsGroundRigidObject || GroundCollider is not Igi2RigidObject platform)
+        if (!IsGroundRigidObject || Platform is not { } platform)
         {
             return;
         }
 
-        float[] p = platform.Orientation;
-        Vector3d platformPosition = platform.Position;
+        IReadOnlyList<float> p = platform.AttachOrientation;
+        Vector3d platformPosition = platform.AttachPosition;
         if (updateOrientation)
         {
             float[] r = _groundRelativeOrientation;
@@ -327,7 +327,7 @@ public abstract partial class Igi2Human
             return;
         }
 
-        if (GroundCollider is not Igi2RigidObject platform)
+        if (Platform is not { } platform)
         {
             if (GroundCollider is not null)
             {
@@ -337,8 +337,8 @@ public abstract partial class Igi2Human
             return;
         }
 
-        float[] p = platform.Orientation;
-        Vector3d platformPosition = platform.Position;
+        IReadOnlyList<float> p = platform.AttachOrientation;
+        Vector3d platformPosition = platform.AttachPosition;
         if (IsUpdatePlatformPos || forcePosition)
         {
             Vector3d here = Position;

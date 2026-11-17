@@ -26,19 +26,13 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2EditRigidObjTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IAttachParent, IIgi2PathRider, IIgi2CameraTarget, IIgi2Carried
+    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IAttachParent, IIgi2PathRider, IIgi2CameraTarget, IIgi2Carried, IIgi2MovedTick
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditRigidObj";
 
-    private Vector3d _position;
-    private float[] _orientation = EngineEuler.Rotation(0f, 0f, 0f);
-    private Vector3d _lastPosition;
-    private float[] _lastOrientation = EngineEuler.Rotation(0f, 0f, 0f);
-    private int _movedTick = int.MinValue;
-    private bool _isMoving;
+    private readonly Igi2CarriedPose _pose = new();
     private Igi2Pose? _built;
-    private readonly Igi2Attachment _attachment = new();
     private IReadOnlyList<Igi2RigidObject> _solids = [];
 
     /// <summary>Gets or sets where it is placed.</summary>
@@ -81,29 +75,32 @@ public sealed partial class Igi2EditRigidObjTask
     public Igi2Pose Built => _built ??= Igi2Pose.FromAngles(Position, Orientation);
 
     /// <inheritdoc/>
-    public Vector3d CurrentPosition => _position;
+    public Vector3d CurrentPosition => _pose.Position;
 
     /// <inheritdoc/>
-    public IReadOnlyList<float> CurrentOrientation => _orientation;
+    public IReadOnlyList<float> CurrentOrientation => _pose.Orientation;
 
     /// <inheritdoc/>
-    public Vector3d LastPosition => _lastPosition;
+    public Vector3d LastPosition => _pose.LastPosition;
 
     /// <inheritdoc/>
-    public IReadOnlyList<float> LastOrientation => _lastOrientation;
+    public IReadOnlyList<float> LastOrientation => _pose.LastOrientation;
+
+    /// <inheritdoc/>
+    public int MovedTick => _pose.MovedTick;
 
     /// <inheritdoc/>
     /// <remarks><c>RigidDynCubeObj_GetCameraTargetInfoHandler</c> (<c>igi2 0x58DCE0</c>): where it stands now.</remarks>
-    public Vector3d CameraTargetPosition => _position;
+    public Vector3d CameraTargetPosition => _pose.Position;
 
     /// <inheritdoc/>
-    public IReadOnlyList<float> CameraTargetOrientation => _orientation;
+    public IReadOnlyList<float> CameraTargetOrientation => _pose.Orientation;
 
     /// <inheritdoc/>
-    public Vector3d AttachPosition => _position;
+    public Vector3d AttachPosition => _pose.Position;
 
     /// <inheritdoc/>
-    public IReadOnlyList<float> AttachOrientation => _orientation;
+    public IReadOnlyList<float> AttachOrientation => _pose.Orientation;
 
     /// <summary>Takes the solids the collision world built of it, which it carries from now on.</summary>
     /// <param name="solids">Its solids, as <see cref="Igi2CollisionWorld.SolidsOf"/> gives them.</param>
@@ -114,15 +111,7 @@ public sealed partial class Igi2EditRigidObjTask
     {
         ArgumentNullException.ThrowIfNull(level);
 
-        // A tick nothing moved it in starts where the last one left it: drawn between the two, one that has stopped stands still
-        // rather than being drawn over its last step again every tick.
-        if (_isMoving && level.Ticks != _movedTick)
-        {
-            _isMoving = false;
-            _lastPosition = _position;
-            _lastOrientation = [.. _orientation];
-        }
-
+        _pose.Settle(level.Ticks);
         level.RunChildren(this);
     }
 
@@ -130,21 +119,11 @@ public sealed partial class Igi2EditRigidObjTask
     /// <remarks>Where it stood when first moved in a tick is kept as where it stood at the tick's start, for drawing between.</remarks>
     public void Ride(Vector3d position, IReadOnlyList<float> orientation, int tick)
     {
-        ArgumentNullException.ThrowIfNull(orientation);
-        _isMoving = true;
-        if (tick != _movedTick)
-        {
-            _movedTick = tick;
-            _lastPosition = _position;
-            _lastOrientation = [.. _orientation];
-        }
-
-        _orientation = [.. orientation];
-        _position = position;
+        _pose.Move(position, orientation, tick);
         if (_solids.Count > 0 && Models is { } models)
         {
-            float[] m = _orientation;
-            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])), Magic);
+            IReadOnlyList<float> m = _pose.Orientation;
+            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])), Magic);
         }
 
         // ModelObj_UpdateAttachments: what it carries follows it.
@@ -161,7 +140,7 @@ public sealed partial class Igi2EditRigidObjTask
             return false;
         }
 
-        _attachment.Attach(parent, _position, _orientation);
+        _pose.AttachTo(parent);
         return true;
     }
 
@@ -172,9 +151,9 @@ public sealed partial class Igi2EditRigidObjTask
     /// </remarks>
     public void UpdateAttachment()
     {
-        if (_attachment.TryResolve(out Vector3d position, out float[] frame))
+        if (_pose.TryFollow(out Vector3d position, out float[] frame, out int tick))
         {
-            Ride(position, frame, (_attachment.Parent as Igi2EditRigidObjTask)?._movedTick ?? _movedTick);
+            Ride(position, frame, tick);
         }
     }
 
@@ -201,10 +180,6 @@ public sealed partial class Igi2EditRigidObjTask
     /// <remarks>Its frame taken from its parameters' angles, where it stands until something moves it.</remarks>
     protected override void OnParsed()
     {
-        Vector3f angles = Orientation;
-        _orientation = EngineEuler.Rotation(angles.X, angles.Y, angles.Z);
-        _position = Position;
-        _lastPosition = _position;
-        _lastOrientation = [.. _orientation];
+        _pose.Place(Position, Orientation);
     }
 }

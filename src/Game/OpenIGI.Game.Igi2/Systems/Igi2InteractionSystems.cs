@@ -213,8 +213,10 @@ internal static class Igi2InteractionSystems
         }
     }
 
-    // A prop that moves: its solids go with it, and it is drawn where it stands.
-    private static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
+    /// <summary>A prop that moves: its solids go with it, and it is drawn where it stands.</summary>
+    /// <param name="prop">The prop.</param>
+    /// <param name="b">The level being built.</param>
+    internal static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
     {
         prop.Models = b.Models;
         prop.Magic = b.Magic;

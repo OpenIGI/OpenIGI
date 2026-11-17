@@ -28,7 +28,49 @@ internal static class Igi2VehicleSystems
                 car.Magic = b.Magic;
                 car.Bind(player.CollisionWorld.SolidsOf(Vehicles.Igi2TrainTask.TypeName, car.Id));
                 b.Movers.Add(car);
+                foreach (GameTask rider in Riders(car))
+                {
+                    Ride(rider, b);
+                }
             }
+
+            // What the level put beneath each car rides it: a switch, the props on a wagon. Its soldiers stand on its graph, which
+            // hangs from the car, and ride that.
+            train.AttachRiders();
+        }
+    }
+
+    // What rides a car and moves with it, a carriage behind it apart: everything beneath it down to another train.
+    private static IEnumerable<GameTask> Riders(Vehicles.Igi2TrainTask car)
+    {
+        foreach (GameTask child in car.Children)
+        {
+            if (child is Vehicles.Igi2TrainTask)
+            {
+                continue;
+            }
+
+            yield return child;
+            foreach (GameTask below in child.Descendants())
+            {
+                yield return below;
+            }
+        }
+    }
+
+    // A model object riding a car moves: its solids go with it, and it is drawn where it is carried.
+    private static void Ride(GameTask rider, Igi2LevelBuild b)
+    {
+        switch (rider)
+        {
+            case Interaction.Igi2EditRigidObjTask prop when prop.Guide is null:
+                Igi2InteractionSystems.Move(prop, b);
+                break;
+            case Interaction.Igi2SwitchTask button:
+                button.Magic = b.Magic;
+                button.Bind(b.Player.CollisionWorld.SolidsOf(Interaction.Igi2SwitchTask.TypeName, button.Id));
+                b.Movers.Add(button);
+                break;
         }
     }
 
