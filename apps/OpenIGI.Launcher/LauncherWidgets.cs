@@ -22,29 +22,6 @@ internal sealed class ChromeCaption(UiTheme theme) : UiElement
     }
 }
 
-/// <summary>The header's connection status: a glowing dot and a word.</summary>
-internal sealed class StatusIndicator(UiTheme theme) : UiElement
-{
-    public string Text { get; set; } = "ONLINE";
-
-    public Bgra32 Color { get; set; } = UiPalette.Success;
-
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        new(context.Px(7f + 10f) + UiPainter.MeasureLabel(theme.Mono, Text, context.Px(14f), 0.2f), available.Y);
-
-    protected override void OnDraw(UiPainter painter)
-    {
-        LayoutContext context = painter.Context;
-        var dot = new UiVec2(Bounds.X + context.Px(3.5f), Bounds.Center.Y);
-        Span<UI.Drawing.UiGradientStop> glow = [new(0f, Color.WithAlpha(110)), new(1f, Color.WithAlpha(0))];
-        float reach = context.Px(9f);
-        painter.FillRadialGradient(new UiRect(dot.X - reach, dot.Y - reach, reach * 2f, reach * 2f), dot, new UiVec2(reach, reach), glow);
-        painter.FillDiamond(dot, context.Px(5f), Color);
-        float size = context.Px(14f);
-        painter.DrawLabel(theme.Mono, Text, new UiVec2(Bounds.X + context.Px(17f), UiRowStyle.CenterY(theme.Mono, size, Bounds)), size, theme.TextMuted, 0.2f);
-    }
-}
-
 /// <summary>A bar of glass with a hairline along one edge: the chrome strip, the header, the footer.</summary>
 internal sealed class Bar(UiTheme theme, Bgra32 tint, float blur, bool lineAtBottom) : Panel
 {

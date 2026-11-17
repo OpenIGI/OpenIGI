@@ -74,7 +74,7 @@ internal sealed class LauncherScreen : Screen
     private ServersPage? _servers;
     private LogsPage? _logs;
     private GameSwitcher? _switcher;
-    private AccountChip? _accountChip;
+    private AccountMenu? _account;
     private UiElement? _chrome;
     private FooterBar? _footer;
     private int _section;
@@ -160,11 +160,24 @@ internal sealed class LauncherScreen : Screen
             return false;
         }
 
-        // An open game list takes Back for itself: shutting it is what the player meant.
+        // An open game list or account panel takes Back for itself: shutting it is what the player meant.
         if (nav.Back && _switcher is { IsOpen: true } open)
         {
             open.Close();
             return false;
+        }
+
+        if (nav.Back && _account is { IsOpen: true } account)
+        {
+            account.Close();
+            return false;
+        }
+
+        // A press anywhere outside the open account panel shuts it, as a menu does.
+        if (_account is { IsOpen: true } panel && input.Mouse.WasPressed(MouseButton.Left)
+            && !panel.PointerBounds.Contains(new UiVec2(input.Mouse.X, input.Mouse.Y)))
+        {
+            panel.Close();
         }
 
         // Ctrl+V into a text field: a folder path is far easier pasted than typed.
@@ -213,11 +226,6 @@ internal sealed class LauncherScreen : Screen
             }
 
             // The page's chips and notes were rebuilt after this frame's layout.
-            RequestLayout();
-        }
-
-        if (_accountChip?.Update() == true)
-        {
             RequestLayout();
         }
 
@@ -289,10 +297,6 @@ internal sealed class LauncherScreen : Screen
         row.Add(new ChromeCaption(_theme));
         row.Add(new Panel(), grow: 1f);
 
-        // The account, on the strip that has room for it at every width: the header's tabs fill a small window.
-        _accountChip = new AccountChip(_theme, _model.Account) { Margin = new Thickness(0f, 0f, 16f, 0f) };
-        row.Add(_accountChip);
-
         var minimize = new IconButton(_theme, KitIcon.Minimize) { Tooltip = "Minimise" };
         minimize.Activated += _ => _window.Minimize();
         var maximize = new IconButton(_theme, KitIcon.Maximize) { Tooltip = "Maximise" };
@@ -350,7 +354,10 @@ internal sealed class LauncherScreen : Screen
 
         row.Add(nav);
         row.Add(new Panel(), grow: 1f);
-        row.Add(new StatusIndicator(_theme));
+
+        // Who is signed in, where the bare ONLINE light used to stand: the account says whether the servers answer.
+        _account = new AccountMenu(_theme, _model, _window.Picture);
+        row.Add(_account);
         bar.AddChild(row);
         return bar;
     }

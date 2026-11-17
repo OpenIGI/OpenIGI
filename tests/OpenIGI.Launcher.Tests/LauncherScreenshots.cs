@@ -85,6 +85,74 @@ public sealed class LauncherScreenshots
     }
 
     /// <summary>
+    /// Draws the header's account closed and open, as it stands for the player on this computer (the master is asked for
+    /// real): <c>account-closed-&lt;size&gt;.png</c> and <c>account-open-&lt;size&gt;.png</c>.
+    /// </summary>
+    [Fact]
+    public async Task Draw_the_account_menu()
+    {
+        string? folder = Environment.GetEnvironmentVariable("OPENIGI_LAUNCHER_SHOTS");
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(folder);
+        using LauncherLog log = LauncherLog.Start(Path.Combine(folder, "log"));
+        using LauncherModel model = new(log);
+        using IgiTypography typography = LauncherFonts.Load();
+        using SkiaImageStore images = new();
+        using SkiaFontCache fonts = new();
+        (UiTheme page, UiTheme rows) = LauncherApp.CreateThemes(typography);
+        PictureWindow window = new(images);
+
+        foreach ((int width, int height) in new[] { (1280, 720), (1920, 1080) })
+        {
+            LauncherScreen screen = new(page, rows, model, window, LauncherBackdrop.LoadPicture(images));
+            ScreenStack stack = new() { PointerSuppressed = true };
+            stack.Push(screen, animate: false);
+            LayoutContext context = LauncherApp.Layout(width, height, 1f);
+            InputState input = new();
+
+            // Real time for the master to answer, and for the avatar and record to come down.
+            for (int frame = 0; frame < 120; frame++)
+            {
+                stack.Update(context, input, 1f / 30f);
+                input.BeginFrame();
+                model.Tick(1f / 30f);
+                await Task.Delay(25);
+            }
+
+            Save(stack, context, images, fonts, Path.Combine(folder, $"account-closed-{width}x{height}.png"));
+            AccountMenu menu = screen.Root!.Descendants().OfType<AccountMenu>().Single();
+            menu.ActivateAt(menu.Bounds.Center);
+            for (int frame = 0; frame < 15; frame++)
+            {
+                stack.Update(context, input, 1f / 30f);
+                input.BeginFrame();
+            }
+
+            Save(stack, context, images, fonts, Path.Combine(folder, $"account-open-{width}x{height}.png"));
+        }
+    }
+
+    private static void Save(ScreenStack stack, LayoutContext context, SkiaImageStore images, SkiaFontCache fonts, string path)
+    {
+        using SKSurface surface = SKSurface.Create(new SKImageInfo((int)context.Viewport.X, (int)context.Viewport.Y, SKColorType.Rgba8888, SKAlphaType.Premul));
+        surface.Canvas.Clear(new SKColor(10, 12, 13));
+        using (SkiaUiRenderer renderer = new(surface.Canvas, images, fonts))
+        {
+            stack.Draw(new UiPainter(renderer, context));
+            renderer.Flush();
+        }
+
+        using SKImage image = surface.Snapshot();
+        using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
+        using FileStream file = File.Create(path);
+        png.SaveTo(file);
+    }
+
+    /// <summary>
     /// Draws the first-run guide's two steps over the home page, and a tab switch caught mid-flight, into the same
     /// folder: <c>onboarding-&lt;step&gt;-&lt;size&gt;.png</c> and <c>switch-&lt;frame&gt;.png</c>.
     /// </summary>
