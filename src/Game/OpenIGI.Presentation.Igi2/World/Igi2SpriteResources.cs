@@ -91,12 +91,24 @@ public sealed class Igi2SpriteResources : IDisposable
     }
 
     // An alias names one of the game's folders: WEAPONS:x is LOCAL:weapons/x.
+    // An alias the game registers somewhere other than the folder of its own name: StatusScreen_Open
+    // (File_RegisterAlias("STATUSSCREEN:", "LOCAL:screens/game/status/")). Level data names a GenericTBA's action icon and a
+    // status message's icon by it -- STATUSSCREEN:a_turnwheel.spr -- and looked up as a folder called statusscreen, the wheel
+    // to turn in mission 12 was offered as an empty box.
+    private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["STATUSSCREEN"] = "screens/game/status",
+    };
+
     private static string Qualified(string name, int colon)
     {
         string alias = name[..colon], rest = name[(colon + 1)..].Replace('\\', '/');
-        return alias.Equals("LOCAL", StringComparison.OrdinalIgnoreCase)
-            ? "LOCAL:" + rest
-            : "LOCAL:" + alias.ToLowerInvariant() + "/" + rest;
+        if (alias.Equals("LOCAL", StringComparison.OrdinalIgnoreCase))
+        {
+            return "LOCAL:" + rest;
+        }
+
+        return "LOCAL:" + (Aliases.TryGetValue(alias, out string? folder) ? folder : alias.ToLowerInvariant()) + "/" + rest;
     }
 
     /// <inheritdoc/>

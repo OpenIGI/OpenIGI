@@ -32,6 +32,21 @@ public sealed class Igi2StatusPresentationTests
         Assert.NotNull(assets.Get("visibilityalert.spr"));
     }
 
+    /// <summary>
+    /// The action icons level data names through the status screen's alias -- mission 12's wheel, STATUSSCREEN:a_turnwheel.spr --
+    /// are found where the game registers it, the status folder, and not in a folder called statusscreen.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Status_screen_alias_finds_the_action_icons()
+    {
+        using RecordingGraphicsDevice device = new();
+        using Igi2SpriteResources assets = new(device, Files(), NullLogger.Instance);
+        foreach (string name in (string[])["a_turnwheel", "a_lasercutter", "a_c4", "a_senddata", "a_sabotage", "a_gps", "a_codepad", "ammo"])
+        {
+            Assert.NotNull(assets.Get($"STATUSSCREEN:{name}.spr"));
+        }
+    }
+
     /// <summary>Health, visibility and posture remain the same relative size at 720p and 1440p, including the visibility eye.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Status_art_scales_with_the_viewport()
