@@ -22,10 +22,18 @@ namespace OpenIGI.Game.Igi2.Ai;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget,
-    IHumanAiEventTarget, IHostedHuman
+    IHumanAiEventTarget, IHostedHuman, IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
+
+    /// <inheritdoc/>
+    /// <remarks><c>Human_RemoveDynCubeObjHandler</c>: the body leaves the world.</remarks>
+    public void RemoveFromWorld() => Body?.SetInWorld(false);
+
+    /// <inheritdoc/>
+    /// <remarks><c>Human_RegisterDynCubeObjHandler</c>: the body is back in the world.</remarks>
+    public void PutInWorld() => Body?.SetInWorld(true);
 
     /// <summary>Gets or sets where the soldier stands.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]

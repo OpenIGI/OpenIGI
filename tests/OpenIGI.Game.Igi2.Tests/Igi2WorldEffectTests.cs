@@ -90,6 +90,96 @@ public sealed class Igi2WorldEffectTests
         Assert.Contains(m.Tree.OfType<Igi2EditBoneObjTask>(), static f => f.Clips.Count > 0 && f.Model.Length > 0);
     }
 
+    /// <summary>
+    /// A figure's controllers step themselves, as every new <c>AnimController</c> does (<c>AnimController_CreateHandler</c>): its clip plays,
+    /// and as one ends the next of its list plays (<c>EditBoneObj_RunHandler</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_figure_plays_its_clips_in_turn()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        (List<Game.World.LoadedPack> packs, Engine.Resources.ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
+        Animation.Igi2AnimationLibrary clips = Animation.Igi2AnimationLibrary.Load(packs, resources);
+        Igi2EditBoneObjTask? figure = null;
+        foreach (Igi2EditBoneObjTask candidate in m.Tree.OfType<Igi2EditBoneObjTask>())
+        {
+            if (candidate.Clips.Count < 2 || candidate.Clips[0] == candidate.Clips[1]
+                || m.Level.ModelFor(candidate.Model)?.BoneHierarchy is not { } rig
+                || candidate.Clips.Take(2).Any(c => clips.Find(rig, c) is null))
+            {
+                continue;
+            }
+
+            figure = candidate;
+            break;
+        }
+
+        Assert.NotNull(figure);
+        figure.Prepare(clips, m.Level.ModelFor, figure.Model, new Core.Numerics.IgiRandom());
+        Formats.Animation.Igi2AnimationClip first = figure.Clip!;
+        Assert.Equal(figure.Clips[0], first.Name);
+
+        figure.Run(m.Run);
+        Assert.True(figure.ClipTime > 0, "The figure's clip did not move.");
+
+        int ticks = 0;
+        while (ReferenceEquals(figure.Clip, first) && ticks++ < 100_000)
+        {
+            figure.Run(m.Run);
+        }
+
+        Assert.Equal(figure.Clips[1], figure.Clip!.Name);
+    }
+
+    /// <summary>A spline's waypoint is in the world only while its spline displays its waypoints (<c>SplineObjWaypoint_UpdateInternalDataHandler</c>).</summary>
+    [Fact]
+    public void A_waypoint_is_drawn_only_when_its_spline_displays_waypoints()
+    {
+        foreach (bool display in (bool[])[false, true])
+        {
+            Engine.Tasks.TaskTypeRegistry types = new();
+            Engine.Tasks.TaskTree tree = new(types);
+            Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+            Igi2SplineObjTask spline = (Igi2SplineObjTask)tree.New(root, types.Register<Igi2SplineObjTask>(Igi2SplineObjTask.TypeName));
+            spline.DisplayWaypoints = display;
+            Igi2SplineObjWaypointTask waypoint = (Igi2SplineObjWaypointTask)tree.New(spline, types.Register<Igi2SplineObjWaypointTask>(Igi2SplineObjWaypointTask.TypeName));
+            waypoint.WaypointModel = "400_01_1";
+
+            Igi2WorldScene scene = Igi2WorldScene.Build(root);
+            Assert.Equal(display, scene.Placements.Any(static p => p.TypeName == Igi2SplineObjWaypointTask.TypeName));
+        }
+    }
+
+    /// <summary>
+    /// A container whose condition fails takes a document out of the world and off the pickups' list; once it runs again the document
+    /// comes back, unless it was taken (<c>GenericPickup_RemoveHandler</c>, <c>GenericPickup_RegisterHandler</c>). A container inside it
+    /// goes with it and comes back only while it runs itself.
+    /// </summary>
+    [Fact]
+    public void A_containers_children_leave_the_world_and_come_back_with_it()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        Engine.Tasks.TaskType conditional = types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
+        Engine.Tasks.TaskType pickups = types.Register<Pickups.Igi2GenericPickupTask>(Pickups.Igi2GenericPickupTask.TypeName);
+        Flow.Igi2ConditionalContainerTask outer = (Flow.Igi2ConditionalContainerTask)tree.New(root, conditional);
+        Pickups.Igi2GenericPickupTask document = (Pickups.Igi2GenericPickupTask)tree.New(outer, pickups);
+        Flow.Igi2ConditionalContainerTask inner = (Flow.Igi2ConditionalContainerTask)tree.New(outer, conditional);
+        Pickups.Igi2GenericPickupTask key = (Pickups.Igi2GenericPickupTask)tree.New(inner, pickups);
+
+        Flow.Igi2LevelRun.RemoveFromWorld(outer);
+        Assert.False(document.IsInWorld);
+        Assert.False(key.IsInWorld);
+        Assert.False(inner.IsActive);
+
+        // The inner container does not run (its run byte is nought until its condition holds), so what it holds stays out.
+        Flow.Igi2LevelRun.PutInWorld(outer);
+        Assert.True(document.IsInWorld);
+        Assert.False(inner.IsActive);
+        Assert.False(key.IsInWorld);
+    }
+
     /// <summary>A building's lightmap info hands it its indoors ambient light as the level loads.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_buildings_lightmap_info_sets_its_inside_ambient()

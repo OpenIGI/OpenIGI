@@ -41,6 +41,7 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     private Igi2AnimController? _current;
     private Igi2AnimController? _other;
     private Igi2AnimBlend? _blend;
+    private readonly Igi2AnimController?[] _made = new Igi2AnimController?[2];
     private int _listAt = -1;
     private int _blinkTimer;
     private Igi2BoneBuffer? _bones;
@@ -108,6 +109,9 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     /// <summary>Gets the clip it plays, or <see langword="null"/>.</summary>
     public Igi2AnimationClip? Clip => _current?.Clip;
 
+    /// <summary>Gets the time of the clip it plays, in clip ticks.</summary>
+    public int ClipTime => _current?.Time ?? 0;
+
     /// <summary>Gets the clips of its list, split as the original splits them.</summary>
     public IReadOnlyList<string> Clips => AnimationList.Split(Separators, StringSplitOptions.RemoveEmptyEntries);
 
@@ -135,9 +139,11 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         }
 
         _current = NewController();
+        _made[0] = _current;
         if (TransitionTime > 0f)
         {
             _other = NewController();
+            _made[1] = _other;
             _blend = new Igi2AnimBlend();
             _blend.Create(_current, _other);
         }
@@ -162,8 +168,11 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
+        // The controllers and the blender are the figure's own child tasks, made after the level's children, so they run after them
+        // and in the order they were made: both controllers step, the one blended from as well, then the blend.
         level.RunChildren(this);
-        _current?.AutoStep();
+        _made[0]?.AutoStep();
+        _made[1]?.AutoStep();
         _blend?.Run();
         if (_current is { IsEnded: true } && _listAt >= 0)
         {
@@ -237,10 +246,12 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         }
     }
 
+    // AnimController_CreateHandler (animcontroller.c): a new controller steps itself and has no clip yet.
     private Igi2AnimController NewController()
     {
         Igi2AnimController controller = new()
         {
+            Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip,
             TimeStep = Fpu.ToInt32((Fpu)TimeFactor * (double)Igi2AnimController.TicksPerFrame),
         };
         controller.Flags = SplineInterpolation ? controller.Flags | Igi2AnimControllerBits.Spline : controller.Flags & ~Igi2AnimControllerBits.Spline;
@@ -267,8 +278,10 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
             name = name[..255];
         }
 
+        // EditBoneObj_SetAnimation: a figure's clips fire no anim triggers.
         if (_rig is { } rig && _clips?.Find(rig, name) is { } clip)
         {
+            _current.Flags |= Igi2AnimControllerBits.SuppressTriggers;
             _current.SetAnimationAndTime(clip, 0);
             _current.TimeStep = Fpu.ToInt32((Fpu)TimeFactor * (double)Igi2AnimController.TicksPerFrame);
         }

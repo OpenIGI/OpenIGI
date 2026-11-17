@@ -188,18 +188,21 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
     }
 
     /// <inheritdoc/>
-    /// <remarks>Nothing of the title's world needs telling yet; the container's flag is enough.</remarks>
-    void IConditionalContainerRules.PutChildrenInWorld(ConditionalContainerTask container)
-    {
-    }
+    /// <remarks>Every task under the container is told, in tree order (<see cref="PutInWorld"/>).</remarks>
+    void IConditionalContainerRules.PutChildrenInWorld(ConditionalContainerTask container) => PutInWorld(container);
 
     /// <inheritdoc/>
-    /// <remarks>Every task under the container that is in the world is told, in tree order.</remarks>
+    /// <remarks>Every task under the container that is in the world is told, in tree order (<see cref="RemoveFromWorld"/>).</remarks>
     void IConditionalContainerRules.TakeChildrenOutOfWorld(ConditionalContainerTask container) => RemoveFromWorld(container);
 
-    // Tells every task under a task that it is taken out of the world, in tree order.
-    private static void RemoveFromWorld(GameTask task)
+    /// <summary>
+    /// Tells every task under a task that it is taken out of the world, in tree order. A conditional container among them takes its
+    /// own children out only while they are in, and is then out itself (<c>ConditionalContainer_RemoveHandler</c>).
+    /// </summary>
+    /// <param name="task">The task whose children leave the world.</param>
+    public static void RemoveFromWorld(GameTask task)
     {
+        ArgumentNullException.ThrowIfNull(task);
         foreach (GameTask child in task.Children)
         {
             if (child is World.IIgi2WorldMember member)
@@ -207,7 +210,48 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
                 member.RemoveFromWorld();
             }
 
+            if (child is ConditionalContainerTask nested)
+            {
+                if (nested.IsActive)
+                {
+                    RemoveFromWorld(nested);
+                    nested.IsActive = false;
+                }
+
+                continue;
+            }
+
             RemoveFromWorld(child);
+        }
+    }
+
+    /// <summary>
+    /// Tells every task under a task that it is put back in the world, in tree order. A conditional container among them puts its own
+    /// children back only while it runs and they are out, and is then in itself (<c>ConditionalContainer_RegisterHandler</c>).
+    /// </summary>
+    /// <param name="task">The task whose children return to the world.</param>
+    public static void PutInWorld(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        foreach (GameTask child in task.Children)
+        {
+            if (child is World.IIgi2WorldMember member)
+            {
+                member.PutInWorld();
+            }
+
+            if (child is ConditionalContainerTask nested)
+            {
+                if (nested.IsRun && !nested.IsActive)
+                {
+                    PutInWorld(nested);
+                    nested.IsActive = true;
+                }
+
+                continue;
+            }
+
+            PutInWorld(child);
         }
     }
 

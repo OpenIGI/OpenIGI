@@ -50,7 +50,7 @@ public sealed partial class Igi2GunPickup : ISavedState
     public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        Igi2ModelObjState.Write(writer, Position, Orientation);
+        Igi2ModelObjState.Write(writer, Position, Orientation, IsInWorld);
         writer.Int(AmmoInClip);
         writer.Array((ReadOnlySpan<int>)_ammoForFireType);
         writer.Real64x3(Position);
@@ -90,6 +90,7 @@ public sealed partial class Igi2GunPickup : ISavedState
         IsDelete = saved.IsDelete;
         IsMoving = saved.IsMoving;
         IsLanded = saved.IsLanded;
+        IsInWorld = saved.IsInWorld;
     }
 
     /// <summary>Takes the pickup out of the level, as <c>Game_LoadFromSlot</c> deletes each before a load.</summary>
@@ -105,6 +106,7 @@ public sealed partial class Igi2GunPickup : ISavedState
     /// <param name="IsDelete">Whether it was taken.</param>
     /// <param name="IsMoving">Whether it is falling.</param>
     /// <param name="IsLanded">Whether it has landed.</param>
+    /// <param name="IsInWorld">Whether its model is in the world, <c>isRegisteredInWorldHack</c>.</param>
     public readonly record struct Saved(
         Vector3d Position,
         float[] Orientation,
@@ -114,7 +116,8 @@ public sealed partial class Igi2GunPickup : ISavedState
         string WeaponId,
         bool IsDelete,
         bool IsMoving,
-        bool IsLanded)
+        bool IsLanded,
+        bool IsInWorld = true)
     {
         /// <summary>Reads a pickup's state, in its list's order.</summary>
         /// <param name="reader">The reader.</param>
@@ -122,7 +125,7 @@ public sealed partial class Igi2GunPickup : ISavedState
         public static Saved Read(StateReader reader)
         {
             ArgumentNullException.ThrowIfNull(reader);
-            (Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
+            (Vector3d position, float[] orientation, bool isInWorld) = Igi2ModelObjState.Read(reader);
             int ammoInClip = reader.Int();
             int[] ammo = reader.IntArray();
             reader.Real64x3();
@@ -135,7 +138,7 @@ public sealed partial class Igi2GunPickup : ISavedState
             reader.Int();
             reader.Int();
             bool isDelete = reader.Bool(), isMoving = reader.Bool(), isLanded = reader.Bool();
-            return new Saved(position, orientation, ammoInClip, ammo, speed, weaponId, isDelete, isMoving, isLanded);
+            return new Saved(position, orientation, ammoInClip, ammo, speed, weaponId, isDelete, isMoving, isLanded, isInWorld);
         }
     }
 }

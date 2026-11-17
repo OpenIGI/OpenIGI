@@ -498,7 +498,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     private TitleWorldModel[] Gather(Func<Soldiers.Igi2HumanSoldier, bool>? isDrawn)
     {
         IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
-            ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
+            ? lying.Items.Where(static p => p.IsInWorld).Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
             : [];
         IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
             ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
@@ -510,8 +510,13 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             : [];
         IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
         IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
-        IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
-        IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+        // A container that holds them out of the world holds their models out too, as it does the placements'.
+        IEnumerable<TitleWorldModel> barrels = StationaryGuns
+            .Where(static g => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(g))
+            .Select(static g => g.Barrel()).OfType<TitleWorldModel>();
+        IEnumerable<TitleWorldModel> wrecks = Cars
+            .Where(static c => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(c))
+            .Select(static c => c.Wreck()).OfType<TitleWorldModel>();
         IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
             ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
             : [];

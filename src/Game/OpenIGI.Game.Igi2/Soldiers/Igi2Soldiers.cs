@@ -37,7 +37,8 @@ public sealed class Igi2Soldiers
             _perBody.Clear();
             foreach (Igi2HumanSoldier body in _bodies)
             {
-                if (body.Model is { } model)
+                // A body out of the world (its container's condition failed, Human_RemoveDynCubeObjHandler) is not drawn.
+                if (body.IsActive && body.Model is { } model)
                 {
                     _perBody.Add((body, Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes)));
                 }

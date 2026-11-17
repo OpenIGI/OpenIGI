@@ -150,6 +150,13 @@ public sealed partial class Igi2GunPickup
     /// <summary>Gets or sets a value indicating whether its own run handler runs it, in the level's tree or its dynamic tasks.</summary>
     public bool IsDriven { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether its model is in the world, and so drawn: a container whose condition fails takes it out
+    /// (<c>RigidDynCubeObj_RemoveHandler</c>). It stays on the pickups' list all the same, which only its deletion leaves
+    /// (<c>GunPickup_DeleteHandler</c>), so the player can still take it.
+    /// </summary>
+    public bool IsInWorld { get; set; } = true;
+
     /// <summary>Gets a value indicating whether it is falling, <c>isMoving</c> (<c>+0x1FD</c>): a dropped weapon's.</summary>
     public bool IsMoving { get; private set; }
 

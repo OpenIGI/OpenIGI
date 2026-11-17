@@ -174,13 +174,14 @@ public sealed class Igi2WorldScene
     /// so a waypoint naming a model the installation does not ship is created with none and draws
     /// nothing. 584 of the corpus's 713 name <c>ai-arrow</c>, which is that case — no file of that name
     /// exists anywhere in the retail data, and the level scripts are the only thing that mention it. The
-    /// other 94 name a real model and are drawn. Its <c>Orientation</c> is a <c>Real32x9</c>, which level
+    /// other 94 name a real model, but even those are in the world only when their <c>SplineObj</c>'s
+    /// <c>Display waypoints</c> is set (<see cref="IsHiddenWaypoint"/>). Its <c>Orientation</c> is a <c>Real32x9</c>, which level
     /// data stores as the same three Euler angles every other type's is.
     /// </description></item>
     /// <item><description>
-    /// <c>Lift</c> — the authored start. <c>Lift_SetPositionToFirstFloor</c> (<c>0x46DD50</c>) moves a
-    /// lift onto its first <c>Floor</c> child at load, which this does not do; the eight lifts in the
-    /// corpus stand where the editor left them until it does.
+    /// <c>Lift</c> — the authored start, which is where the scene reads it. <c>Lift_SetPositionToFirstFloor</c>
+    /// (<c>0x46DD50</c>) then moves a lift onto its first <c>Floor</c> at load; the lift's own task does that
+    /// (<see cref="Interaction.Igi2LiftTask"/>).
     /// </description></item>
     /// </list>
     /// <para>
@@ -422,6 +423,25 @@ public sealed class Igi2WorldScene
         return 0;
     }
 
+    /// <summary>The parameter a <c>SplineObj</c> says whether its waypoints are in the world with.</summary>
+    public const string DisplayWaypointsParameter = "Display waypoints";
+
+    /// <summary>
+    /// Whether a task is a spline's waypoint whose own model is out of the world: <c>SplineObjWaypoint_UpdateInternalDataHandler</c>
+    /// (splineobj.c) takes a waypoint out of the world unless its <c>SplineObj</c>'s <c>isDisplayWaypoints</c> is set. Its segment
+    /// is a model of the spline's and stays.
+    /// </summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> for a waypoint that is neither drawn nor collided with.</returns>
+    public static bool IsHiddenWaypoint(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return string.Equals(task.Type.Name, Igi2SplineObject.WaypointType, StringComparison.Ordinal)
+            && task.Parent is { } spline
+            && string.Equals(spline.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
+            && !(TryGetParameter(spline, DisplayWaypointsParameter, out object? raw) && raw is true or (byte)1 or 1);
+    }
+
     /// <summary>A parameter's value by name, from a placeholder or from a typed task that says it is placed.</summary>
     /// <param name="task">The task.</param>
     /// <param name="name">The parameter's name, as level data declares it.</param>
@@ -433,6 +453,10 @@ public sealed class Igi2WorldScene
     private static bool TryReadPlacement(GameTask task, out Igi2Placement placement)
     {
         placement = default;
+        if (IsHiddenWaypoint(task))
+        {
+            return false;
+        }
 
         Igi2PlacementBinding binding = Bindings.TryGetValue(task.Type.Name, out Igi2PlacementBinding bound)
             ? bound

@@ -234,6 +234,48 @@ public sealed class RetailIgi2LevelAiTests
     }
 
     /// <summary>
+    /// While the intro holds mission 1's guards' containers out of the world, their bodies are out too (<c>ConditionalContainer_RemoveChildren</c>,
+    /// <c>Human_RemoveDynCubeObjHandler</c>): not drawn, not among the bodies lines meet, not in the world. Once the intro is skipped
+    /// and the containers run, they are put back (<c>ConditionalContainer_RegisterChildren</c>) and drawn posed.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Guards_held_out_by_their_container_are_out_of_the_world_until_it_runs()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, _, Igi2TitlePlayer player) = Build();
+        for (int tick = 0; tick < 3; tick++)
+        {
+            m.Run.Tick();
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Igi2HumanSoldier[] held = [.. m.Tree.OfType<Igi2HumanSoldierTask>()
+            .Where(static t => !OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(t))
+            .Select(static t => t.Body).OfType<Igi2HumanSoldier>()];
+        Assert.NotEmpty(held);
+        Assert.All(held, body =>
+        {
+            Assert.False(body.IsActive);
+            Assert.DoesNotContain(body.Collider!, m.Collision!.Bodies);
+            Assert.DoesNotContain(soldiers.Models(m.Run.Ticks + 1000), model => ReferenceEquals(model.Instance, body));
+        });
+
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        for (int tick = 0; tick < 30; tick++)
+        {
+            m.Run.Tick();
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Igi2HumanSoldier[] back = [.. held.Where(static b => b.IsActive)];
+        Assert.NotEmpty(back);
+        Assert.All(back, body =>
+        {
+            Assert.Contains(body.Collider!, m.Collision!.Bodies);
+            Assert.Contains(soldiers.Models(m.Run.Ticks + 2000), model => ReferenceEquals(model.Instance, body) && model.Pose is not null);
+        });
+    }
+
+    /// <summary>
     /// With the intro skipped (<c>EditVariable_2112</c>, which ends <c>ConditionalContainer_3532</c> and lets the soldiers' containers
     /// run) and the player fifteen metres in front of soldier 400, his squad lists the player as a target and he fires his
     /// Makarov, reloads from the soldier's unlimited reserve and resumes firing.

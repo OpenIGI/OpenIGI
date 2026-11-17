@@ -118,8 +118,9 @@ public sealed class RetailIgi2ModelTableTests
 
         // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,550
         // placements 9,536 resolve by file name alone and 10,545 through the packs -- the ones the packs
-        // add are the characters and everything else the global pack carries.
-        Assert.Equal(13_044, total);
+        // add are the characters and everything else the global pack carries. 567 fewer than were once placed: the `ai-arrow`
+        // waypoints on splines that do not display them are out of the world (Igi2WorldScene.IsHiddenWaypoint).
+        Assert.Equal(12_477, total);
         Assert.Equal(11_446, byFileName);
         Assert.Equal(12_455, byTable);
     }
@@ -167,9 +168,10 @@ public sealed class RetailIgi2ModelTableTests
         // The editor's waypoint marker. No file of that name is anywhere in the retail installation, and
         // the only thing that mentions it is the level scripts that name it -- which is the case
         // SplineObjWaypoint_CreateHandler (igi2ed 0x641250) handles by asking MTP_GetLODVirModelExists
-        // first and creating the object without a model. So these 584 are placed and draw nothing, which
-        // is what retail does with them too.
-        Assert.Equal(584, unresolved["ai-arrow"]);
+        // first and creating the object without a model. 584 name it; 567 of them sit on splines whose waypoints are not displayed
+        // and are out of the world before that matters (SplineObjWaypoint_UpdateInternalDataHandler). The 17 left are placed and
+        // draw nothing, which is what retail does with them too.
+        Assert.Equal(17, unresolved["ai-arrow"]);
         Assert.Equal(5, unresolved.Count);
     }
 

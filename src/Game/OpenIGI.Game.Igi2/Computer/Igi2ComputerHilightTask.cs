@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Igi2.Computer;
 /// <c>Hilight</c> expression, it is shown as that expression's value; one with none is shown only once an objective sets its sprite
 /// (<c>ComputerHilight_SetSprite</c>).
 /// </para>
-/// <para>The computer screen draws it (<c>ComputerHilight_DrawComputerObjectHandler</c>); that screen is not ported.</para>
+/// <para>The map computer draws it (<c>ComputerHilight_DrawComputerObjectHandler</c>, <see cref="Player.Igi2TitlePlayer"/>'s map marks).</para>
 /// </remarks>
 public sealed partial class Igi2ComputerHilightTask : Igi2Task
 {

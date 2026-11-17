@@ -177,7 +177,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             if (soldier.Body is { } body)
             {
                 pool.Add((squad, body));
-                body.IsActive = false;
+                body.SetInWorld(false);
             }
         }
 
@@ -303,7 +303,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             List<TitleWorldModel> models = [];
             if (Pickups is { } lying)
             {
-                models.AddRange(lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation))));
+                models.AddRange(lying.Items.Where(static p => p.IsInWorld).Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation))));
             }
 
             if (Grenades is { } grenades)
@@ -376,7 +376,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             if (initial || _inWorld.GetValueOrDefault(host) != now)
             {
                 _inWorld[host] = now;
-                body.IsActive = now;
+                body.SetInWorld(now);
             }
         }
     }
@@ -437,7 +437,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
         host.IsDead = false;
         bool now = ConditionalContainerGate.IsTaskActive(host);
         _inWorld[host] = now;
-        body.IsActive = now;
+        body.SetInWorld(now);
         _drawnTick = -1;
     }
 
@@ -456,7 +456,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             // 0x487EE0: the dead life is deleted (0x4015F0) as the next is cloned (0x488000).
             if (_current >= 0)
             {
-                lives[_current].Body.IsActive = false;
+                lives[_current].Body.SetInWorld(false);
             }
 
             if (_current + 1 >= lives.Count)

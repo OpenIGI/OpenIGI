@@ -69,10 +69,12 @@ public sealed class Igi2PlacementBindingTests
         Assert.Equal(8, declared["Lift"]);
         Assert.Equal(713, declared["SplineObjWaypoint"]);
 
-        // A waypoint with an empty Waypoint Model has nothing to place. The rest of the type's tasks
-        // are placed like any other, so the shortfall is exactly those.
-        Assert.Equal(678, placed["SplineObjWaypoint"]);
-        Assert.Equal(35, declared["SplineObjWaypoint"] - placed["SplineObjWaypoint"]);
+        // A waypoint's segment carries its level id, so the id count above cannot tell a waypoint placed from one whose segment
+        // is: they are counted by type. 35 name no Waypoint Model and place nothing; of the 678 that do, the 567 on splines
+        // whose "Display waypoints" is off are out of the world (SplineObjWaypoint_UpdateInternalDataHandler), every one of them
+        // the editor's `ai-arrow`. The 94 naming a real model all sit on splines that display them.
+        int waypoints = Igi2Level.All().Sum(static l => l.Scene.Placements.Count(static p => p.TypeName == "SplineObjWaypoint"));
+        Assert.Equal(678 - 567, waypoints);
 
         foreach ((string type, int count) in declared)
         {

@@ -470,7 +470,19 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             }
             if (body.Collider is { } collider)
             {
+                // BoneDynCubeObj_RegisterHandler / its remove: the body is among the world's objects only while it is in the world.
                 world.AddBody(collider);
+                body.InWorldChanged += (_, inWorld) =>
+                {
+                    if (inWorld)
+                    {
+                        world.AddBody(collider);
+                    }
+                    else
+                    {
+                        world.RemoveBody(collider);
+                    }
+                };
             }
         }
 
