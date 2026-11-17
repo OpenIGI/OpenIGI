@@ -343,7 +343,7 @@ public sealed class CampaignScreen : ShellScreen
             return 0;
         }
 
-        int activeMission = Context.Config.Active?.ActiveMission ?? MissionRegistry.FirstMissionId;
+        int activeMission = Context.Config.Active is { } profile ? MissionReached(profile) : MissionRegistry.FirstMissionId;
         for (int i = 0; i < _missions.Count; i++)
         {
             if (_missions[i].Id == activeMission)

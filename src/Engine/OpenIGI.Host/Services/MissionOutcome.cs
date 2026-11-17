@@ -33,6 +33,9 @@ internal interface IMissionOutcomeHost
     /// <summary>Gets the player profile in use, whose campaign a completion unlocks; null for none.</summary>
     PlayerProfile? ActiveProfile { get; }
 
+    /// <summary>Gets the game being played, by title id: whose progress in the profile a completion moves.</summary>
+    string TitleId { get; }
+
     /// <summary>Gets the title's missions, which say what follows a completed one.</summary>
     IMissionCatalogue<MissionDescriptor> Missions { get; }
 
@@ -139,7 +142,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             {
                 if (host.ActiveProfile is { } activeProfile)
                 {
-                    MissionProgression.UnlockNext(activeProfile, host.Missions, nextMissionId);
+                    MissionProgression.UnlockNext(activeProfile, host.TitleId, host.Missions, nextMissionId);
                     // Retail writes config.qsc to the LOCAL device after every non-final completion, even when
                     // replaying an earlier mission leaves the frontier unchanged.
                     host.SaveConfiguration();

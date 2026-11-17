@@ -156,9 +156,43 @@ public sealed class PlayerProfile
     /// <remarks>Field <c>+0</c>, and the second argument of <c>Config_CreateNewPlayerProfile</c>.</remarks>
     public int Difficulty { get; set; } = 1;
 
-    /// <summary>The mission the player has reached.</summary>
-    /// <remarks><c>GOActiveMission</c> in the save file; read by <c>Config_PlayerGetActiveMission</c>.</remarks>
+    /// <summary>The title whose progress <see cref="ActiveMission"/> is: Project I.G.I.'s, as the original's record keeps it.</summary>
+    public const string RetailTitle = "igi1";
+
+    // The furthest mission reached in each other game: one profile plays every game in the build.
+    private readonly Dictionary<string, int> _titleMissions = new(StringComparer.Ordinal);
+
+    /// <summary>The mission the player has reached in Project I.G.I.</summary>
+    /// <remarks>
+    /// <c>GOActiveMission</c> in the save file; read by <c>Config_PlayerGetActiveMission</c>. Another game's is
+    /// <see cref="MissionOf"/>: the original's one number would have each game unlock the other's missions by their ids.
+    /// </remarks>
     public int ActiveMission { get; set; } = 1;
+
+    /// <summary>Gets the games with progress of their own, besides <see cref="RetailTitle"/>, and the mission reached in each.</summary>
+    public IReadOnlyDictionary<string, int> TitleMissions => _titleMissions;
+
+    /// <summary>Gets the mission reached in a game.</summary>
+    /// <param name="titleId">The game, by title id.</param>
+    /// <returns>The mission's id; 0 for a game not yet played, which starts at its first mission.</returns>
+    public int MissionOf(string titleId) =>
+        titleId == RetailTitle ? ActiveMission : _titleMissions.GetValueOrDefault(titleId);
+
+    /// <summary>Sets the mission reached in a game.</summary>
+    /// <param name="titleId">The game, by title id.</param>
+    /// <param name="missionId">The mission's id.</param>
+    public void SetMission(string titleId, int missionId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(titleId);
+        if (titleId == RetailTitle)
+        {
+            ActiveMission = missionId;
+        }
+        else
+        {
+            _titleMissions[titleId] = missionId;
+        }
+    }
 
     /// <summary>Whether the mouse's vertical axis is inverted.</summary>
     /// <remarks>
@@ -526,6 +560,11 @@ public sealed class PlayerProfile
         };
 
         copy.Bindings.AddRange(Bindings);
+        foreach ((string title, int mission) in _titleMissions)
+        {
+            copy._titleMissions[title] = mission;
+        }
+
         return copy;
     }
 

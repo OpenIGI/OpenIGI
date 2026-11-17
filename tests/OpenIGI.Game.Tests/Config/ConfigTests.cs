@@ -44,6 +44,22 @@ public sealed class ConfigTests
         Assert.Equal(GameConfig.CurrentControlsVersion, config.ControlsVersion);
     }
 
+    /// <summary>Each game's progress is kept in OpenIGI's file: the first game's in the original's own line, another's in its own.</summary>
+    [Fact]
+    public void Every_games_progress_round_trips()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        profile.ActiveMission = 7;
+        profile.SetMission("igi2", 4);
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        Assert.Equal(7, reloaded.Active!.ActiveMission);
+        Assert.Equal(4, reloaded.Active.MissionOf("igi2"));
+        Assert.Equal(7, reloaded.Active.MissionOf(PlayerProfile.RetailTitle));
+        Assert.Equal(0, reloaded.Active.MissionOf("igi3"));
+    }
+
     [Fact]
     public void AProfileItsPlayerReboundKeepsItsControlsAndItsInversion()
     {

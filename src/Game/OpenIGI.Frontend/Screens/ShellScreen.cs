@@ -173,9 +173,19 @@ public abstract class ShellScreen : Screen
     protected (int Done, int Total) CampaignProgress()
     {
         List<MissionInfo> missions = [.. Context.Missions.Where(static mission => mission.Campaign is null)];
-        int active = Context.Config.Active?.ActiveMission ?? 0;
+        int active = Context.Config.Active is { } profile ? MissionReached(profile) : 0;
         int done = Math.Max(0, missions.FindIndex(mission => mission.Id == active));
         return (done, missions.Count);
+    }
+
+    /// <summary>Gets the mission a profile has reached in the game being played.</summary>
+    /// <param name="profile">The profile.</param>
+    /// <returns>The mission's id; the campaign's first for a game not yet played.</returns>
+    protected int MissionReached(OpenIGI.Game.Config.PlayerProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        int reached = profile.MissionOf(Context.ActiveTitleId);
+        return reached > 0 || Context.Missions.Count == 0 ? reached : Context.Missions[0].Id;
     }
 
     /// <summary>Gets the active profile's difficulty, by name.</summary>

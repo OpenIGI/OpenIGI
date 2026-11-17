@@ -283,7 +283,7 @@ public sealed partial class ProfilesScreen : ShellScreen
                 Id = $"profile-card-{i}",
                 Active = i == Context.Config.ActiveIndex,
                 Difficulty = AiDifficultyNames.Of(profile.Difficulty),
-                Mission = MissionName(profile.ActiveMission),
+                Mission = MissionName(MissionReached(profile)),
                 Unlocked = UnlockedOf(profile),
                 Total = Context.Missions.Count,
             };
@@ -427,9 +427,10 @@ public sealed partial class ProfilesScreen : ShellScreen
             if (_progress is not null)
             {
                 _progress.Difficulty = AiDifficultyNames.Of(active.Difficulty);
-                _progress.Mission = Context.Missions.FirstOrDefault(mission => mission.Id == active.ActiveMission) is { } reached
+                int reachedId = MissionReached(active);
+                _progress.Mission = Context.Missions.FirstOrDefault(mission => mission.Id == reachedId) is { } reached
                     ? string.Create(CultureInfo.InvariantCulture, $"mission {reached.Number} · {reached.Name}")
-                    : MissionName(active.ActiveMission);
+                    : MissionName(reachedId);
                 _progress.Unlocked = UnlockedOf(active);
                 _progress.Total = Context.Missions.Count;
             }
@@ -447,7 +448,7 @@ public sealed partial class ProfilesScreen : ShellScreen
     {
         for (int i = 0; i < Context.Missions.Count; i++)
         {
-            if (Context.Missions[i].Id == profile.ActiveMission)
+            if (Context.Missions[i].Id == MissionReached(profile))
             {
                 return i + 1;
             }

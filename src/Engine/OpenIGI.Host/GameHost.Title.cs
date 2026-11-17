@@ -350,7 +350,11 @@ public sealed partial class GameHost
                 // than this build goes.
                 foreach (PlayerProfile profile in _configuration.Profiles)
                 {
-                    profile.ActiveMission = limitedMissions.ClampToOffered(profile.ActiveMission);
+                    string title = _titleRuntime.Title.Id;
+                    if (profile.MissionOf(title) is > 0 and var reached)
+                    {
+                        profile.SetMission(title, limitedMissions.ClampToOffered(reached));
+                    }
                 }
             }
         }

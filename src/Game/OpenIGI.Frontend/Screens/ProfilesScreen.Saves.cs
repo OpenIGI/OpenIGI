@@ -139,7 +139,7 @@ public sealed partial class ProfilesScreen
         }
 
         int slot = _selectedSlot;
-        int missionId = profile.ActiveMission;
+        int missionId = MissionReached(profile);
         Bgra32[] thumb = Context.Host.CaptureThumbnail(out int width, out int height);
         Context.Saves.Save(
             slot,

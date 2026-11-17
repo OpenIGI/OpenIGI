@@ -52,6 +52,8 @@ public sealed partial class GameHost
 
         public PlayerProfile? ActiveProfile => host._configuration.Active;
 
+        public string TitleId => host._titleRuntime.Title.Id;
+
         public IMissionCatalogue<MissionDescriptor> Missions => host._missions;
 
         public GameEvents? Events => host._title is { } title && title.Services.TryGet(out GameEvents? events) ? events : null;

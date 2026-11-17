@@ -48,6 +48,13 @@ public static class ConfigScriptWriter
         {
             Call("GOPlayer", Text(profile.Name));
             Call("GOActiveMission", Number(profile.ActiveMission));
+
+            // OpenIGI's own: every other game's progress, which the original's one number can't hold.
+            foreach ((string title, int mission) in profile.TitleMissions.OrderBy(static entry => entry.Key, StringComparer.Ordinal))
+            {
+                Call("GOTitleMission", Text(title), Number(mission));
+            }
+
             Call("GOInMouInv", Number(profile.InvertMouse ? 1 : 0));
             Call("GOInMouSens", Real(profile.MouseSensitivity));
 

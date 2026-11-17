@@ -28,13 +28,13 @@ public sealed class MissionProgressionTests
 
         MissionDescriptor first = missions.Require(MissionRegistry.FirstMissionId);
         PlayerProfile profile = new() { ActiveMission = first.Id };
-        Assert.True(MissionProgression.UnlockNext(profile, missions, first.NextMissionId));
+        Assert.True(MissionProgression.UnlockNext(profile, PlayerProfile.RetailTitle, missions, first.NextMissionId));
         Assert.Equal(first.NextMissionId, profile.ActiveMission);
 
-        Assert.False(MissionProgression.UnlockNext(profile, missions, first.NextMissionId));
+        Assert.False(MissionProgression.UnlockNext(profile, PlayerProfile.RetailTitle, missions, first.NextMissionId));
         Assert.Equal(first.NextMissionId, profile.ActiveMission);
         Assert.False(MissionProgression.UnlockNext(
-            profile, missions, MissionDescriptor.NextMissionUndefined));
+            profile, PlayerProfile.RetailTitle, missions, MissionDescriptor.NextMissionUndefined));
     }
 
     /// <summary>The progression the seam reports is the chain, unchanged.</summary>

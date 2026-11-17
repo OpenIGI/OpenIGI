@@ -91,7 +91,7 @@ public sealed class CampaignLimitedMissionCatalogueTests
         CampaignLimitedMissionCatalogue limited = new(inner, 6);
         PlayerProfile profile = new() { ActiveMission = 6 };
 
-        Assert.False(MissionProgression.UnlockNext(profile, limited, 7));
+        Assert.False(MissionProgression.UnlockNext(profile, PlayerProfile.RetailTitle, limited, 7));
         Assert.Equal(6, profile.ActiveMission);
         Assert.Equal(MissionCampaignStatus.Locked, MissionProgression.Status(limited, 6, 7));
     }
@@ -152,5 +152,26 @@ public sealed class CampaignLimitedMissionCatalogueTests
             descriptor = _missions.Find(m => m.Id == id);
             return descriptor is not null;
         }
+    }
+
+    /// <summary>Each game keeps its own progress: the sequel's unlocks never move the first game's, nor the reverse.</summary>
+    [Fact]
+    public void Each_game_keeps_its_own_progress()
+    {
+        ChainCatalogue campaign = ChainCatalogue.Linear(8);
+        PlayerProfile profile = new() { ActiveMission = 5 };
+
+        // Not yet played: it stands at its first mission, and finishing that unlocks the second.
+        Assert.Equal(0, profile.MissionOf("igi2"));
+        Assert.True(MissionProgression.UnlockNext(profile, "igi2", campaign, 2));
+        Assert.Equal(2, profile.MissionOf("igi2"));
+        Assert.Equal(5, profile.ActiveMission);
+
+        // The first game's frontier is its own.
+        Assert.False(MissionProgression.UnlockNext(profile, PlayerProfile.RetailTitle, campaign, 3));
+        Assert.True(MissionProgression.UnlockNext(profile, PlayerProfile.RetailTitle, campaign, 6));
+        Assert.Equal(6, profile.MissionOf(PlayerProfile.RetailTitle));
+        Assert.Equal(2, profile.MissionOf("igi2"));
+        Assert.Equal(2, profile.Clone().MissionOf("igi2"));
     }
 }
