@@ -8,7 +8,7 @@ namespace OpenIGI.Frontend.Tests;
 
 /// <summary>
 /// The profile page: one operative -- their name, their campaign and difficulty, their saves -- and their online account,
-/// signed into with Discord; profiles an earlier version made offered to pick from, and none made any more.
+/// signed into with Discord; no more profiles made.
 /// </summary>
 [Collection(ShellTestHarness.CollectionName)]
 public sealed class ProfilesShellTests : ShellTestHarness
@@ -29,41 +29,11 @@ public sealed class ProfilesShellTests : ShellTestHarness
             Assert.Contains("Mission Two", progress.Mission, StringComparison.Ordinal);
             Assert.Equal(2, progress.Unlocked);
 
-            // No profiles from an earlier version: no list of them.
-            Assert.Null(Find<ProfileCard>(screen, card => card.Id == "profile-card-0"));
 
             OptionCycler difficulty = Find<OptionCycler>(screen, cycler => cycler.Id == "profile-difficulty")!;
             difficulty.SelectedIndex = 2;
             Assert.Equal(2, host.Profile!.Difficulty);
             Assert.Equal(1, host.SaveProfilesCalls);
-        }
-        finally
-        {
-            Remove(dir);
-        }
-    }
-
-    /// <summary>Profiles an earlier version made are listed to pick the one to go on with.</summary>
-    [Fact]
-    public void Older_profiles_are_offered_to_pick_from()
-    {
-        string dir = NewDirectory();
-        try
-        {
-            (Shell shell, FakeHost host) = BuildShell(dir);
-            GameConfig config = shell.Context.Config;
-            Assert.True(config.CreateProfile("Alex", 2));
-            config.ActiveIndex = 0;
-            ProfilesScreen screen = Open(shell);
-
-            ProfileCard alex = Find<ProfileCard>(screen, card => card.Id == "profile-card-1")!;
-            Assert.False(alex.Active);
-            alex.Activate();
-            Pump(shell, 0.1f);
-
-            Assert.Equal(1, config.ActiveIndex);
-            Assert.Equal(1, host.SaveProfilesCalls);
-            Assert.NotNull(Find<Label>(screen, label => label.Text == "Alex"));
         }
         finally
         {

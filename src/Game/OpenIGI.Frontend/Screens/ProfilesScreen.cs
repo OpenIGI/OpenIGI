@@ -16,8 +16,8 @@ namespace OpenIGI.Frontend.Screens;
 /// </summary>
 /// <remarks>
 /// The original kept several profiles on a computer, one a player; an account does that job now, and signing out and in
-/// is how a second player takes the computer. Profiles made by an earlier version are offered once, in a short list, to
-/// pick the one to go on with; nothing makes new ones.
+/// is how a second player takes the computer. Profiles an earlier version made stay in the file, untouched; the one that was
+/// active goes on, and nothing makes new ones.
 /// </remarks>
 public sealed partial class ProfilesScreen : ShellScreen
 {
@@ -69,10 +69,6 @@ public sealed partial class ProfilesScreen : ShellScreen
             stack.AddChild(BuildProgress(theme));
             stack.AddChild(BuildRecord(theme));
             stack.AddChild(BuildSaves(theme));
-            if (BuildOlderProfiles(theme) is { } older)
-            {
-                stack.AddChild(older);
-            }
 
             Refresh();
             return ScrollPage(stack);
@@ -126,7 +122,7 @@ public sealed partial class ProfilesScreen : ShellScreen
         }
     }
 
-    // Left: who the player is, their account and their online record; the older profiles under them, when there are any.
+    // Left: who the player is, their account and their online record.
     private ScrollView BuildPlayerColumn(UiTheme theme)
     {
         var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f };
@@ -134,10 +130,6 @@ public sealed partial class ProfilesScreen : ShellScreen
         column.AddChild(BuildIdentity(theme));
         column.AddChild(BuildAccount(theme));
         column.AddChild(BuildRecord(theme));
-        if (BuildOlderProfiles(theme) is { } older)
-        {
-            column.AddChild(older);
-        }
 
         var scroll = new ScrollView(theme);
         scroll.SetContent(column);
@@ -262,57 +254,12 @@ public sealed partial class ProfilesScreen : ShellScreen
         return panel;
     }
 
-    // Profiles an earlier version made, to pick the one to go on with: shown only while there are more than one.
-    private GlassPanel? BuildOlderProfiles(UiTheme theme)
-    {
-        if (Context.Config.Profiles.Count <= 1)
-        {
-            return null;
-        }
-
-        GlassPanel panel = DetailPanel(theme);
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
-        column.AddChild(new Eyebrow(theme, "Profiles on this computer") { TextSize = 14f });
-        column.AddChild(new Label(theme.Body, "Made by an earlier version of the game. Pick the one to go on with; the others stay on this computer.", 15f, theme.TextMuted) { Wrap = true });
-        for (int i = 0; i < Context.Config.Profiles.Count; i++)
-        {
-            int index = i;
-            PlayerProfile profile = Context.Config.Profiles[i];
-            var card = new ProfileCard(theme, profile.Name)
-            {
-                Id = $"profile-card-{i}",
-                Active = i == Context.Config.ActiveIndex,
-                Difficulty = AiDifficultyNames.Of(profile.Difficulty),
-                Mission = MissionName(MissionReached(profile)),
-                Unlocked = UnlockedOf(profile),
-                Total = Context.Missions.Count,
-            };
-            card.Activated += _ => UseProfile(index);
-            column.AddChild(card);
-        }
-
-        panel.AddChild(column);
-        return panel;
-    }
-
     private GlassPanel DetailPanel(UiTheme theme) => new(theme)
     {
         Tint = OpenIGI.Core.Graphics.Bgra32.FromRgba(12, 14, 15, Size == ShellSize.Compact ? (byte)235 : (byte)199),
         Border = UiPalette.White(0.12f),
         Padding = Size == ShellSize.Compact ? new Thickness(16f, 12f) : new Thickness(28f, 24f),
     };
-
-    private void UseProfile(int index)
-    {
-        if (index < 0 || index >= Context.Config.Profiles.Count || index == Context.Config.ActiveIndex)
-        {
-            return;
-        }
-
-        Context.Config.ActiveIndex = index;
-        Context.Host.SaveProfiles();
-        Invalidate();
-    }
 
     private void SetDifficulty(int difficulty)
     {
