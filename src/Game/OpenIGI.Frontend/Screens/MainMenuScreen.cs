@@ -189,8 +189,8 @@ public sealed class MainMenuScreen : ShellScreen
             (KitIcon.Globe, "Multiplayer", last is null ? "Browse servers or host a game" : compact ? "Reconnect" : $"Reconnect to {last}", ShellTab.Coop),
             (KitIcon.Sliders, "Settings", compact ? "Graphics, audio" : "Graphics, controls, audio", ShellTab.Settings),
             compact
-                ? (KitIcon.Person, Context.Config.Active?.Name ?? "Profile", $"{DifficultyName()} · {done}/{total}", ShellTab.Profile)
-                : (KitIcon.Person, "Profile", $"{Context.Config.Active?.Name ?? "No profile"} · {DifficultyName()} · {profiles}", ShellTab.Profile),
+                ? (KitIcon.Person, PlayerName, $"{DifficultyName()} · {done}/{total}", ShellTab.Profile)
+                : (KitIcon.Person, "Profile", $"{PlayerName} · {DifficultyName()} · {profiles}", ShellTab.Profile),
         ];
 
         foreach ((KitIcon icon, string title, string detail, ShellTab tab) in ways)

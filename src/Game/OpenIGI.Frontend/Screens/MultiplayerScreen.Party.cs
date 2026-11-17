@@ -276,7 +276,7 @@ public sealed partial class MultiplayerScreen
         Invalidate();
     }
 
-    private string ProfileName() => Context.Config.Active?.Name is { Length: > 0 } name ? name : "You";
+    private string ProfileName() => SignedInAccount?.Name ?? (Context.Config.Active?.Name is { Length: > 0 } name ? name : "You");
 
     private static string Initial(string name) => name.Trim() is { Length: > 0 } trimmed ? trimmed[..1].ToUpperInvariant() : "?";
 }

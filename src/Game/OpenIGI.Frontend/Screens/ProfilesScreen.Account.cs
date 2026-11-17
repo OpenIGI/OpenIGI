@@ -154,7 +154,7 @@ public sealed partial class ProfilesScreen
     // Under the name: who the player is to everyone else.
     private string IdentityNote() => Accounts switch
     {
-        { Status: AccountStatus.SignedIn, Account: { } account } => $"Signed in with Discord as {account.Name}",
+        { Status: AccountStatus.SignedIn, Account: { } } => "Signed in with Discord",
         { Status: AccountStatus.Offline, Account: { } account } => $"{account.Name} · offline",
         null => "Playing on this computer",
         _ => "Playing without an account",

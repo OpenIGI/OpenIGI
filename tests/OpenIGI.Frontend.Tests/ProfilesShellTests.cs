@@ -113,7 +113,10 @@ public sealed class ProfilesShellTests : ShellTestHarness
             account.SignedInAs("Sh");
             Pump(shell, 0.1f);
             Assert.NotNull(Find<Label>(screen, label => label.Text == "SIGNED IN AS SH"));
-            Assert.NotNull(Find<Label>(screen, label => label.Text == "Signed in with Discord as Sh"));
+            // Signed in, the page shows the Discord name, not the profile's, and offers no rename.
+            Assert.NotNull(Find<Label>(screen, label => label.Text == "Signed in with Discord"));
+            Assert.NotNull(Find<Label>(screen, label => label.Text == "Sh"));
+            Assert.Null(Find<Button>(screen, button => button.Text == "Rename"));
             Assert.Null(Find<Button>(screen, button => button.Id == "profile-sign-in"));
 
             Find<Button>(screen, button => button.Text == "SIGN OUT")!.Activate();

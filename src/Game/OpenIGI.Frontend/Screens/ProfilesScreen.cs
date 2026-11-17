@@ -159,8 +159,8 @@ public sealed partial class ProfilesScreen : ShellScreen
         row.ColumnDefinitions.Add(GridLength.Star);
         row.ColumnDefinitions.Add(GridLength.Auto);
 
-        AccountSummary? account = Context.Host.Account?.Account;
-        row.Add(new OperativeMark(theme, Context.Config.Active?.Name ?? account?.Name ?? "?") { SignedIn = account is not null, Side = compact ? 56f : 88f, VerticalAlignment = VerticalAlignment.Center }, 0, 0);
+        AccountSummary? account = SignedInAccount;
+        row.Add(new OperativeMark(theme, PlayerName) { SignedIn = account is not null, Side = compact ? 56f : 88f, VerticalAlignment = VerticalAlignment.Center }, 0, 0);
 
         var names = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f, VerticalAlignment = VerticalAlignment.Center };
         names.AddChild(new Eyebrow(theme, "Operative") { Color = theme.Accent, TextSize = compact ? 12f : 14f });
@@ -183,7 +183,12 @@ public sealed partial class ProfilesScreen : ShellScreen
             Tooltip = "Change the name you play under offline. Signed in, multiplayer shows your Discord name.",
         };
         rename.Activated += _ => ShowRenameDetails();
-        row.Add(rename, 0, 2);
+
+        // Signed in, the name is the Discord one, changed on Discord: there is nothing here to rename.
+        if (account is null)
+        {
+            row.Add(rename, 0, 2);
+        }
 
         var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
         column.AddChild(row);
@@ -368,7 +373,7 @@ public sealed partial class ProfilesScreen : ShellScreen
         {
             if (_profileName is not null)
             {
-                _profileName.Text = active.Name;
+                _profileName.Text = PlayerName;
             }
 
             if (_progress is not null)

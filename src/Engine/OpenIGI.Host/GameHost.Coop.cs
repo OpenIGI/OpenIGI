@@ -114,7 +114,7 @@ public sealed partial class GameHost
         ? new CoopRooms(
             peers,
             () => _titleRuntime.Title.Id,
-            () => _configuration.Active?.Name is { Length: > 0 } name ? name : "Jones",
+            PlayerName,
             () => _configuration.Active?.Difficulty ?? 1,
             () => Game.Multiplayer.MultiplayerProtocol.ContentFingerprint(_titleRuntime.Title.Id, _titleRuntime.Mods.Select(m => $"{m.Id}@{m.Version}")),
             observer => TickObserver = observer,

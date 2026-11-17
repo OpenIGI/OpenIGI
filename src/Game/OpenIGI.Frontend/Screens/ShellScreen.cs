@@ -178,6 +178,14 @@ public abstract class ShellScreen : Screen
         return (done, missions.Count);
     }
 
+    /// <summary>Gets the name the player is shown by: their Discord name once signed in, the profile's own until then.</summary>
+    /// <remarks>The profile's name stays what its saves are filed under; signed in, it is only never shown.</remarks>
+    protected string PlayerName => SignedInAccount?.Name ?? (Context.Config.Active?.Name is { Length: > 0 } name ? name : "No profile");
+
+    /// <summary>Gets the account the player is signed in with (or was, while the servers can't be reached), or <see langword="null"/>.</summary>
+    protected AccountSummary? SignedInAccount =>
+        Context.Host.Account is { Status: AccountStatus.SignedIn or AccountStatus.Offline, Account: { } account } ? account : null;
+
     /// <summary>Gets the mission a profile has reached in the game being played.</summary>
     /// <param name="profile">The profile.</param>
     /// <returns>The mission's id; the campaign's first for a game not yet played.</returns>
@@ -342,7 +350,7 @@ public abstract class ShellScreen : Screen
 
         var right = new FlexPanel { Orientation = Orientation.Horizontal, Gap = roomy ? 28f : 16f };
         (int done, int total) = CampaignProgress();
-        var operative = new OperativeBadge(theme, Context.Config.Active?.Name ?? "No profile")
+        var operative = new OperativeBadge(theme, PlayerName)
         {
             Caption = Context.Config.Active is null || total == 0
                 ? string.Empty

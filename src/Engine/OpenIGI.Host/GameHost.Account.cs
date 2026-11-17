@@ -109,6 +109,11 @@ public sealed partial class GameHost
     private static PlayerRequestSigner? PlayerSigner() =>
         PlayerIdentities.Default is { IsReady: true } identity ? new PlayerRequestSigner(identity) : null;
 
+    // The name the player plays under: their Discord name once signed in (or while offline after), the profile's until then.
+    private string PlayerName() =>
+        _account is { State: AccountLinkState.Linked or AccountLinkState.Offline, Account: { } account } ? account.Name
+        : _configuration.Active?.Name is { Length: > 0 } name ? name : "Jones";
+
     // The profile was kept: what follows the player goes up to their account shortly, when signed in.
     private void ProfileSaved() => _profileSync?.Changed();
 
