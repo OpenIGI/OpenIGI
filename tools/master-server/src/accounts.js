@@ -63,6 +63,12 @@ export class Accounts {
     try {
       const body = request.method === "GET" || request.method === "HEAD" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
 
+      // The keys an account gathers, for the stats' object alone: the Worker routes nothing outside /v1 here.
+      if (parts[0] === "internal" && parts[1] === "keys" && parts.length === 3) {
+        const account = await this.storage.get(`account:${parts[2]}`);
+        return account ? json({ keys: account.keys }) : json({ error: "No such account." }, 404);
+      }
+
       if (parts[1] === "link" && parts.length === 2 && request.method === "POST") {
         return await this.startLink(request, url, body);
       }

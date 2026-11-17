@@ -13,12 +13,15 @@ import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
 import { handleParties } from "./parties.js";
 import { handleMaps } from "./maps.js";
 import { handleAccounts, isAccountsPath } from "./accounts.js";
+import { handleStats, isStatsPath } from "./stats.js";
+import { isAdmin } from "./signed.js";
 
 export { Room } from "./rooms.js";
 export { Party } from "./parties.js";
 export { Relays } from "./relays.js";
 export { Maps } from "./maps.js";
 export { Accounts } from "./accounts.js";
+export { Stats } from "./stats.js";
 
 const ENTRY_TTL_MS = 90_000;
 
@@ -90,6 +93,11 @@ async function route(request, env, ctx) {
     // Community maps: published, listed, downloaded, rated and reported (maps.js).
     if (url.pathname === "/v1/maps" || url.pathname.startsWith("/v1/maps/")) {
       return cors(await handleMaps(request, env));
+    }
+
+    // Match results from the servers whose matches count, and what they add up to: records and leaderboards (stats.js).
+    if (isStatsPath(url.pathname)) {
+      return cors(await handleStats(request, env));
     }
 
     // Accounts: a player's keys linked to their Discord account, and the profiles that come of it (accounts.js).
@@ -235,17 +243,21 @@ function geoOf(request, env) {
   });
 }
 
-// The relay list's admin routes, for us alone: a bearer token checked against the Worker secret ADMIN_TOKEN, and no
-// routes at all where it isn't set.
+// The admin routes, for us alone: a bearer token checked against the secret ADMIN_TOKEN, and no routes at all where it
+// isn't set. The relay list's, and the stats' list of the servers whose matches count.
 async function admin(request, env, url) {
-  if (!env.ADMIN_TOKEN || !url.pathname.startsWith("/v1/admin/relays")) {
+  const relayRoute = url.pathname.startsWith("/v1/admin/relays");
+  const statsRoute = url.pathname.startsWith("/v1/admin/stats-servers");
+  if (!env.ADMIN_TOKEN || (!relayRoute && !statsRoute)) {
     return json({ error: "not found" }, 404);
   }
 
-  const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const digest = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-  if (!crypto.subtle.timingSafeEqual(await digest(given), await digest(env.ADMIN_TOKEN))) {
+  if (!(await isAdmin(request, env))) {
     return json({ error: "unauthorised" }, 401);
+  }
+
+  if (statsRoute) {
+    return handleStats(request, env);
   }
 
   const path = url.pathname.slice("/v1".length);

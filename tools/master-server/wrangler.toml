@@ -51,6 +51,11 @@ class_name = "Maps"
 name = "ACCOUNTS"
 class_name = "Accounts"
 
+# Match results from the listed servers, and the records and boards they add up to (stats.js).
+[[durable_objects.bindings]]
+name = "STATS"
+class_name = "Stats"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
@@ -70,3 +75,7 @@ new_sqlite_classes = ["Maps"]
 [[migrations]]
 tag = "v5"
 new_sqlite_classes = ["Accounts"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["Stats"]

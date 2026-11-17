@@ -30,6 +30,7 @@ const master :Workerd.Worker = (
     (name = "maps.js", esModule = embed "../src/maps.js"),
     (name = "signed.js", esModule = embed "../src/signed.js"),
     (name = "accounts.js", esModule = embed "../src/accounts.js"),
+    (name = "stats.js", esModule = embed "../src/stats.js"),
   ],
   compatibilityDate = "2026-10-01",
   globalOutbound = "internet",
@@ -41,6 +42,7 @@ const master :Workerd.Worker = (
     (className = "Relays", uniqueKey = "openigi-master-Relays", enableSql = true),
     (className = "Maps", uniqueKey = "openigi-master-Maps", enableSql = true),
     (className = "Accounts", uniqueKey = "openigi-master-Accounts", enableSql = true),
+    (className = "Stats", uniqueKey = "openigi-master-Stats", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "storage"),
 
@@ -53,6 +55,8 @@ const master :Workerd.Worker = (
     (name = "MAPS", durableObjectNamespace = "Maps"),
     # Player accounts: Discord users and the keys they linked (accounts.js).
     (name = "ACCOUNTS", durableObjectNamespace = "Accounts"),
+    # Match results from the listed servers, and the records and boards they add up to (stats.js).
+    (name = "STATS", durableObjectNamespace = "Stats"),
 
     (name = "TURN_HOST", text = "turn.openigi.com"),
     (name = "TURN_REGION", text = "Europe"),

@@ -57,6 +57,15 @@ export async function signedBy(request, url, body, now = Date.now()) {
   return { id: (await sha256Hex(keyBytes)).slice(0, 16), raw: keyBytes.length === RAW_POINT_SIZE };
 }
 
+// Whether a request carries the admin token (ADMIN_TOKEN, a secret) as its bearer: never, where the secret isn't set.
+export async function isAdmin(request, env) {
+  const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!env.ADMIN_TOKEN || !given) return false;
+  const digest = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  const [a, b] = [await digest(given), await digest(env.ADMIN_TOKEN)];
+  return crypto.subtle.timingSafeEqual ? crypto.subtle.timingSafeEqual(a, b) : a.every((v, i) => v === b[i]);
+}
+
 // The text a signature is over.
 export function signedText(method, path, time, bodyHash) {
   return `${method.toUpperCase()}\n${path}\n${time}\n${bodyHash}`;

@@ -9,7 +9,7 @@
 // and the body's SHA-256, a line each. A map belongs to the key that first published it; a report from five keys hides it
 // until we look; the admin token takes one down or puts it back, and loads the hashes of the game's own files.
 
-import { Refusal, json, sha256Hex, signedBy } from "./signed.js";
+import { Refusal, isAdmin, json, sha256Hex, signedBy } from "./signed.js";
 
 const CHUNK = 120 * 1024;
 const MAX_EMBEDDED = 96 * 1024 * 1024;
@@ -430,13 +430,6 @@ function safePath(path) {
     && /^[A-Za-z0-9/._ -]+$/.test(path) && path.split("/").every((p) => p.length > 0 && p !== "." && p !== "..");
 }
 
-async function isAdmin(request, env) {
-  const given = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
-  if (!env.ADMIN_TOKEN || !given) return false;
-  const digest = async (s) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
-  const [a, b] = [await digest(given), await digest(env.ADMIN_TOKEN)];
-  return crypto.subtle.timingSafeEqual ? crypto.subtle.timingSafeEqual(a, b) : a.every((v, i) => v === b[i]);
-}
 
 function parseBody(body) {
   try {
