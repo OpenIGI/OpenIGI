@@ -500,6 +500,33 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     private TitleWorldModel[] Gather(Func<Soldiers.Igi2HumanSoldier, bool>? isDrawn)
     {
+        // Everything but the soldiers is the tick's and is gathered once a tick; only the soldiers the sector cull lets through
+        // change between two ticks, and the cull decides a new frame for every frame drawn.
+        if (_gatheredTick != _ticks)
+        {
+            GatherTick();
+            _gatheredTick = _ticks;
+        }
+
+        IReadOnlyList<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
+        TitleWorldModel[] all = new TitleWorldModel[_gatheredBefore.Length + soldiers.Count + _gatheredAfter.Length];
+        _gatheredBefore.CopyTo(all, 0);
+        for (int i = 0; i < soldiers.Count; i++)
+        {
+            all[_gatheredBefore.Length + i] = soldiers[i];
+        }
+
+        _gatheredAfter.CopyTo(all, _gatheredBefore.Length + soldiers.Count);
+        return all;
+    }
+
+    private long _gatheredTick = long.MinValue;
+    private TitleWorldModel[] _gatheredBefore = [];
+    private TitleWorldModel[] _gatheredAfter = [];
+
+    // The tick's models either side of the soldiers, in the order Gather hands them out.
+    private void GatherTick()
+    {
         IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
             ? lying.Items.Where(static p => p.IsInWorld).Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
             : [];
@@ -511,7 +538,6 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
                     .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
             : [];
-        IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
         IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
         // A container that holds them out of the world holds their models out too, as it does the placements'.
         IEnumerable<TitleWorldModel> barrels = StationaryGuns
@@ -531,7 +557,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
         IEnumerable<TitleWorldModel> pieces = Explosions is { } explosions ? ExplosionPieceModels.Of(explosions, _ticks) : [];
-        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces, .. NetworkModels()];
+        _gatheredBefore = [.. pickups, .. flying];
+        _gatheredAfter = [.. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces, .. NetworkModels()];
     }
 
     /// <summary>Makes the player at its spawn, as <c>HumanPlayer_CreateHandler</c> does, over a collision world.</summary>

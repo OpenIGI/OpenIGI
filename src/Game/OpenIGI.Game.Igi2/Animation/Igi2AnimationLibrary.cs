@@ -114,5 +114,10 @@ public sealed class Igi2AnimationLibrary
             : [];
     }
 
-    private static string Key(Igi2BoneHierarchy rig) => Convert.ToHexString([.. rig.ChildCounts]);
+    // Made once per rig: Find is asked for clips every tick a body changes what it plays, and the key was a byte copy and a hex
+    // string each time. A rig's child counts never change.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Igi2BoneHierarchy, string> Keys = new();
+
+    private static string Key(Igi2BoneHierarchy rig) =>
+        Keys.GetValue(rig, static r => Convert.ToHexString([.. r.ChildCounts]));
 }

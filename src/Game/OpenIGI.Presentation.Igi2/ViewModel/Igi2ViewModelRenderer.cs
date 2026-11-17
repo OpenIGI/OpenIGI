@@ -591,6 +591,8 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
     // Direct3DRender_DrawBoneMesh: each body at the level its distance picks from this view (Mesh3D_GetBoneMeshLOD), the bias having
     // its say; past its cutoff a body is not drawn. The models are the same but for the level a body wears.
+    private readonly List<TitleWorldModel> _levelled = [];
+
     private IReadOnlyList<TitleWorldModel> LevelsOf(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection)
     {
         if (Lod is not { HasBoneSettings: true } lod || _models is null)
@@ -615,7 +617,13 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
             if (drawn is null && !ReferenceEquals(kept, wanted))
             {
-                drawn = [.. models.Take(i)];
+                // The frame's own list, kept between frames: the draw reads it before the next frame refills it.
+                drawn = _levelled;
+                drawn.Clear();
+                for (int j = 0; j < i; j++)
+                {
+                    drawn.Add(models[j]);
+                }
             }
 
             if (drawn is not null && kept is not null)

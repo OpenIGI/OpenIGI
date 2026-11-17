@@ -430,9 +430,11 @@ public static class Igi2DrawableScene
         [NotNullWhen(true)] out LoadedPack? pack,
         [NotNullWhen(true)] out MefModel? model)
     {
-        // Nearest first, which is the order the packs were opened in and the order the original searches.
-        foreach (LoadedPack candidate in packs)
+        // Nearest first, which is the order the packs were opened in and the order the original searches. Indexed rather than
+        // enumerated: the view-model draw asks this for every model every frame, and the interface's enumerator is boxed.
+        for (int i = 0; i < packs.Count; i++)
         {
+            LoadedPack candidate = packs[i];
             if (candidate.TryGetModel(mesh, out MefModel? found) && found is not null)
             {
                 pack = candidate;

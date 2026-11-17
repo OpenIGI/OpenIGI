@@ -197,7 +197,32 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     /// <summary>The models it draws as this tick: itself posed, and what its clip hangs on it.</summary>
     /// <param name="tick">The tick.</param>
     /// <returns>The models, or none without a rig or while its container keeps it out of the world.</returns>
+    /// <remarks>
+    /// Built once a tick, as the soldiers' are (<see cref="Soldiers.Igi2Soldiers.Models"/>): the draw asks every frame, and posing
+    /// the rig again between two ticks gave the same answer. Moved, turned or dressed between ticks, it is built again.
+    /// </remarks>
     public IReadOnlyList<TitleWorldModel> Models(long tick)
+    {
+        if (_modelsTick == tick && _modelsAt == Position && _modelsFacing == Orientation && ReferenceEquals(_modelsWorn, WornModel))
+        {
+            return _models;
+        }
+
+        _models = BuildModels(tick);
+        _modelsTick = tick;
+        _modelsAt = Position;
+        _modelsFacing = Orientation;
+        _modelsWorn = WornModel;
+        return _models;
+    }
+
+    private IReadOnlyList<TitleWorldModel> _models = [];
+    private long _modelsTick = long.MinValue;
+    private Vector3d _modelsAt;
+    private Vector3f _modelsFacing;
+    private string? _modelsWorn;
+
+    private List<TitleWorldModel> BuildModels(long tick)
     {
         if (_rig is not { } rig || _current is null || !IsInWorld())
         {
