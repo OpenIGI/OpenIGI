@@ -56,7 +56,7 @@ public sealed class RetailIgi2WorldSceneTests
         // models, and a Train cannot be placed without one -- its carriages are spaced by the distance
         // between their model's two couplings, which nothing authors. See Igi2Train. (567 waypoints on
         // splines that do not display them are out of the world: Igi2WorldScene.IsHiddenWaypoint.)
-        Assert.Equal(12_468, placements);
+        Assert.Equal(12_264, placements);
         // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
         // registered, and a character is not a static placement. Wire is the twenty-first, and is the
         // one type here that is not placed at a position it authors -- it is strung between two.
@@ -64,7 +64,9 @@ public sealed class RetailIgi2WorldSceneTests
         // is the twenty-third and is not a task type at all: no level declares one, and every one of
         // them is made between a pair of waypoints. See Igi2SplineObject. Train would be the
         // twenty-fourth and is absent for the reason given above.
-        Assert.Equal(23, types.Count);
+        // Twenty-two, not twenty-three: every AlarmControl wears "none", which has no levels of detail (Game_CreateHandler) and
+        // places nothing.
+        Assert.Equal(22, types.Count);
     }
 
     /// <summary>
@@ -110,7 +112,7 @@ public sealed class RetailIgi2WorldSceneTests
             }
         }
 
-        Assert.Equal(11_241, total);
+        Assert.Equal(11_045, total);
         Assert.True(
             resolved >= total * 96 / 100,
             $"Only {resolved} of {total} static placements resolved, below the 96% the corpus reaches.");

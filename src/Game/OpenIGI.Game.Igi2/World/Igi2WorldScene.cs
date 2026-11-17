@@ -430,6 +430,18 @@ public sealed class Igi2WorldScene
         return 0;
     }
 
+    /// <summary>The model name that stands for none, <c>"none"</c>.</summary>
+    public const string NoModel = "none";
+
+    /// <summary>
+    /// Whether a model name is the one that stands for none. The archives ship an editor marker of that name, but
+    /// <c>Game_CreateHandler</c> sets its levels of detail to nought (<c>MTP_GetLODVirModelExistsFn("none")-&gt;nLOD = 0</c>), so
+    /// whatever wears it is neither drawn nor met: a switch whose every model is <c>none</c> stands invisible about its keypad.
+    /// </summary>
+    /// <param name="model">The model name, compared exactly as <c>strcmp</c> does.</param>
+    /// <returns><see langword="true"/> for <see cref="NoModel"/>.</returns>
+    public static bool IsNoModel(string model) => string.Equals(model, NoModel, StringComparison.Ordinal);
+
     /// <summary>The parameter an object says it is no room's with, left to the view whatever room it stands in.</summary>
     public const string ExcludedFromPortalClippingParameter = "Excluded from clipping against portals";
 
@@ -482,7 +494,8 @@ public sealed class Igi2WorldScene
 
         if (!TryGetParameter(task, modelParameter, out object? rawModel)
             || rawModel is not string model
-            || string.IsNullOrWhiteSpace(model))
+            || string.IsNullOrWhiteSpace(model)
+            || IsNoModel(model))
         {
             return false;
         }

@@ -61,9 +61,10 @@ public sealed class RetailIgi2DrawableSceneTests
 
         Assert.Equal(24, levels);
         // Each of the nine cars mounts its gun's barrel; built without the magic table, as here, on itself.
-        Assert.Equal(17_401, placements);
+        Assert.Equal(17_205, placements);
         Assert.Equal(12_240, lightmapped);
-        Assert.Equal(2_813_979L, triangles);
+        // Less the editor's "none" marker, which 204 objects wore: it has no levels of detail in the game (Game_CreateHandler).
+        Assert.Equal(2_795_163L, triangles);
 
         // The residue RetailIgi2ModelTableTests names one by one: two `soldier_1`, which is in no
         // archive anywhere in the installation, and the 17 spline waypoints naming the editor's `ai-arrow`
@@ -154,10 +155,11 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(12_477, placed);
+        Assert.Equal(12_273, placed);
         // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
         // placements at all, having become the player the mission stands up.
-        Assert.Equal(1_210, characters);
+        // And 1,202 rather than 1,210: the eight AlarmControls all wear "none", which places nothing.
+        Assert.Equal(1_202, characters);
         // Everything placed, less the characters, less the 19 the shipped data cannot resolve, plus
         // every part attached to one of them -- each of which is a placement in its own right.
         Assert.Equal(placed - characters - 19 + attached, drawable);

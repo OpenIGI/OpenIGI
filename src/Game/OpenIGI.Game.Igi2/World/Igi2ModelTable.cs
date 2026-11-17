@@ -95,7 +95,10 @@ public sealed class Igi2ModelTable
         ArgumentNullException.ThrowIfNull(virtualModel);
 
         mesh = null;
-        if (!_byName.TryGetValue(virtualModel, out Entry entry) || entry.Instance.Model.IsNone)
+
+        // Game_CreateHandler takes the levels of detail from the model named "none", so nothing that wears it is drawn or met.
+        if (Igi2WorldScene.IsNoModel(virtualModel)
+            || !_byName.TryGetValue(virtualModel, out Entry entry) || entry.Instance.Model.IsNone)
         {
             return false;
         }
