@@ -35,6 +35,46 @@ if (query.get('name')) args.push('-name', query.get('name'));
 
 const HINT = 'The folder with IGI.exe in it, usually pc inside the installation.';
 
+// --- Inside a Discord Activity --------------------------------------------------------------------------
+//
+// Discord opens the page in its own frame with ?frame_id and ?instance_id. There the page reaches other sites only through
+// Discord's proxy, by the paths the app's URL mappings name (/master, /data), and WebRTC is not allowed: the SDK rewrites
+// every request to the master and the game's files onto those paths, and the voice channel's players share one room that
+// carries the game itself (rooms.js), its code made from the Activity's instance -- the first one in hosts it, the rest
+// join it.
+
+const DISCORD_APP = '1534229764519497768';
+const IN_DISCORD = query.has('frame_id') && query.has('instance_id');
+
+async function enterDiscord() {
+  const { DiscordSDK, patchUrlMappings } = await import('./discord-sdk.js');
+  patchUrlMappings([
+    { prefix: '/master', target: 'master.openigi.com' },
+    { prefix: '/data', target: 'data.openigi.com' },
+  ]);
+  const sdk = new DiscordSDK(DISCORD_APP);
+  await sdk.ready();
+  const instance = sdk.instanceId;
+  const reply = await fetch(`https://master.openigi.com/v1/rooms/instance/${encodeURIComponent(instance)}`);
+  const room = reply.ok ? await reply.json() : null;
+  if (args.includes('-join') || args.includes('-host')) return;
+  if (room?.hosted) {
+    args.push('-join', room.code);
+  } else {
+    args.push('-host', '-instance', instance);
+    if (!args.includes('-mode')) args.push('-mode', 'coop');
+    if (!args.includes('-mission')) args.push('-mission', '1');
+  }
+}
+
+if (IN_DISCORD) {
+  try {
+    await enterDiscord();
+  } catch (error) {
+    console.error('Discord', error);
+  }
+}
+
 /** Where the site hosts the game's files (tools/web-data/pack.py); ?data-host=<url> points elsewhere. */
 const HOSTED_DATA = new URL(query.get('data-host') ?? 'https://data.openigi.com/igi1/', location.href).href.replace(/\/?$/, '/');
 
@@ -464,8 +504,11 @@ async function showGitHub() {
   $('github-stars').hidden = false;
 }
 
-showDiscord().catch(() => {});
-showGitHub().catch(() => {});
+// Outside sites the page can't reach from inside Discord's frame.
+if (!IN_DISCORD) {
+  showDiscord().catch(() => {});
+  showGitHub().catch(() => {});
+}
 
 // What the header says about the browser, as soon as it is known.
 adapterReady.then(({ adapter }) => {

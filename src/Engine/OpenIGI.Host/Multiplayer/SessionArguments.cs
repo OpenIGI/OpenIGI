@@ -15,6 +15,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="Host">Whether to host through a room: friends anywhere join by its code, no port opened.</param>
 /// <param name="Skin">The look played in, a <see cref="OpenIGI.Game.Multiplayer.PlayerSkins"/> id; empty for the saved choice.</param>
 /// <param name="Demo">A saved demo to play back, or <see langword="null"/>.</param>
+/// <param name="Instance">The Discord Activity instance whose room to host, carried by the room itself; <see langword="null"/> for none.</param>
 /// <param name="Public">Whether a hosted room is listed in the server browser, rather than reached by its code alone.</param>
 public sealed record SessionArguments(
     string? Connect,
@@ -29,7 +30,8 @@ public sealed record SessionArguments(
     bool Host = false,
     bool Public = false,
     string Skin = "",
-    string? Demo = null)
+    string? Demo = null,
+    string? Instance = null)
 {
     /// <summary>The UDP port a server listens on unless told otherwise, as the original's <c>svport</c>.</summary>
     public const int DefaultPort = 26001;
@@ -39,6 +41,7 @@ public sealed record SessionArguments(
         "Multiplayer options:\n" +
         "  -host                   host a room on the mission being played; friends join by its code\n" +
         "  -public                 list the hosted room in the server browser\n" +
+        "  -instance <id>          host the room of a Discord Activity instance, carried by the room itself\n" +
         "  -skin <id>              the look played in co-op: jones, anya, ekk, priboi, ...\n" +
         "  -join <code>            join a room by its code\n" +
         "  -connect <host[:port]>  join a server by address (LAN or dedicated)\n" +
@@ -72,6 +75,7 @@ public sealed record SessionArguments(
         bool listed = false;
         string skin = string.Empty;
         string? demo = null;
+        string? instance = null;
         List<string> left = [];
         int i = 0;
         while (i < args.Length)
@@ -119,6 +123,9 @@ public sealed record SessionArguments(
                 case "-PLAYDEMO":
                     demo = Value();
                     break;
+                case "-INSTANCE":
+                    instance = Value();
+                    break;
                 default:
                     left.Add(arg);
                     break;
@@ -133,6 +140,6 @@ public sealed record SessionArguments(
         }
 
         rest = [.. left];
-        return new SessionArguments(connect, listen, port, playerName, serverName, maxPlayers, password, mode, join, host, listed, skin, demo);
+        return new SessionArguments(connect, listen, port, playerName, serverName, maxPlayers, password, mode, join, host, listed, skin, demo, instance);
     }
 }
