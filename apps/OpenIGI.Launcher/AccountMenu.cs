@@ -19,7 +19,7 @@ namespace OpenIGI.Launcher;
 /// </summary>
 internal sealed class AccountMenu : Control
 {
-    private const float PanelWidth = 420f;
+    private const float PanelWidth = 380f;
     private const float RowHeight = 54f;
     private const float PanelPadding = 24f;
     private static readonly TimeSpan ConfirmFor = TimeSpan.FromSeconds(4);
@@ -213,8 +213,21 @@ internal sealed class AccountMenu : Control
         float drop = context.Px(6f) * (1f - amount);
         var box = new UiRect(_panel.X, _panel.Y - drop, _panel.Width, _panel.Height);
         painter.PushOpacity(amount);
-        painter.DrawBackdrop(box, context.Px(Theme.GlassBlur), Theme.SurfaceRaised);
-        painter.StrokeRect(box, context.Px(1f), UiPalette.White(0.12f));
+
+        // The page under the header steps back while the panel is open, so the panel reads as above it rather than as one
+        // more card beside the news; the header (and the button that opened it) stays as it was.
+        painter.FillRect(new UiRect(0f, _panel.Y, context.Viewport.X, context.Viewport.Y - _panel.Y), UiPalette.InkAt(0.55f));
+
+        // A soft shadow under the panel, widening and fading.
+        for (int i = 1; i <= 6; i++)
+        {
+            float spread = context.Px(4f * i);
+            painter.FillRect(new UiRect(box.X - spread, box.Y + (spread * 0.5f), box.Width + (spread * 2f), box.Height + spread), Bgra32.FromRgba(0, 0, 0, (byte)(34 - (i * 4))));
+        }
+
+        // Solid: nothing behind shows through.
+        painter.FillRect(box, Bgra32.FromRgb(15, 17, 18));
+        painter.StrokeRect(box, context.Px(1f), UiPalette.White(0.14f));
         painter.FillRect(new UiRect(box.X, box.Y, box.Width, context.Px(2f)), Theme.Accent);
 
         float pad = context.Px(PanelPadding);
@@ -234,7 +247,7 @@ internal sealed class AccountMenu : Control
     // The panel's top: who is signed in and how they stand, or what signing in brings, or what the browser is waiting on.
     private float HeaderHeight(LayoutContext context) => SignedIn is not null
         ? context.Px(_model.Record switch { null => 72f, { SeasonTotals.Matches: 0 } => 72f + 76f, _ => 72f + 96f })
-        : context.Px(Account.State is AccountLinkState.Starting or AccountLinkState.Waiting ? 112f : 136f);
+        : context.Px(Account.State is AccountLinkState.Starting or AccountLinkState.Waiting ? 112f : 128f);
 
     private void DrawHeader(UiPainter painter, UiRect header)
     {
