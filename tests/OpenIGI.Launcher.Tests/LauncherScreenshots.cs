@@ -23,8 +23,6 @@ namespace OpenIGI.Launcher.Tests;
 /// </remarks>
 public sealed class LauncherScreenshots
 {
-    private static readonly string[] Sections = ["home", "content", "mods", "maps", "servers", "logs", "settings"];
-
     // The minimum window, a small laptop, the design size, a large monitor, and a narrow tall window.
     private static readonly (int Width, int Height)[] Sizes = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (1280, 1000)];
 
@@ -48,7 +46,7 @@ public sealed class LauncherScreenshots
 
         foreach ((int width, int height) in Sizes)
         {
-            for (int section = 0; section < Sections.Length; section++)
+            foreach (LauncherSection section in LauncherScreen.Shown)
             {
                 LauncherScreen screen = new(page, rows, model, window, LauncherBackdrop.LoadPicture(images));
                 ScreenStack stack = new() { PointerSuppressed = true };
@@ -78,7 +76,7 @@ public sealed class LauncherScreenshots
 
                 using SKImage image = surface.Snapshot();
                 using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
-                using FileStream file = File.Create(Path.Combine(folder, $"{Sections[section]}-{width}x{height}.png"));
+                using FileStream file = File.Create(Path.Combine(folder, $"{section.ToString().ToLowerInvariant()}-{width}x{height}.png"));
                 png.SaveTo(file);
             }
         }
@@ -221,7 +219,7 @@ public sealed class LauncherScreenshots
 
             // Drawn once on Home first, as the window would have: the underline glides from where it was drawn.
             Save(stack, context, 1600, 900, images, fonts, Path.Combine(folder, "switch-before.png"));
-            screen.ShowSection(6, refocus: false);
+            screen.ShowSection(LauncherSection.Settings, refocus: false);
             for (int frame = 0; frame <= 24; frame++)
             {
                 stack.Update(context, input, 1f / 60f);

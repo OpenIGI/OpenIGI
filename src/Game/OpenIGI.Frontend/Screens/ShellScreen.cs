@@ -75,7 +75,8 @@ public abstract class ShellScreen : Screen
     /// <summary>Gets the margin either side of the header, footer and pages, in design units.</summary>
     protected float SideMargin => ShellSizes.SideMargin(Size);
 
-    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Maps, ShellTab.Coop, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
+    // Maps is left out for now; its screen is kept for when it returns.
+    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
 
     private Canvas? _chrome;
     private GameSwitcher? _title;
@@ -432,7 +433,6 @@ public abstract class ShellScreen : Screen
         var rail = new SectionRail(Context.Theme);
         rail.Add(KitIcon.None, "Home", Tab == ShellTab.Home, () => GoTo(ShellTab.Home));
         rail.Add(KitIcon.Target, "Campaign", Tab == ShellTab.Campaign, () => GoTo(ShellTab.Campaign));
-        rail.Add(KitIcon.ArrowDown, "Maps", Tab == ShellTab.Maps, () => GoTo(ShellTab.Maps));
         rail.Add(KitIcon.Globe, "Online", Tab == ShellTab.Coop, () => GoTo(ShellTab.Coop));
         rail.Add(KitIcon.Sliders, "Settings", Tab == ShellTab.Settings, () => GoTo(ShellTab.Settings));
         rail.Add(KitIcon.Person, "Profile", Tab == ShellTab.Profile, () => GoTo(ShellTab.Profile));
