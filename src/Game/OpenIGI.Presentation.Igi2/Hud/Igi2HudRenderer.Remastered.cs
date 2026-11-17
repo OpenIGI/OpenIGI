@@ -110,11 +110,15 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
             }
         }
 
+        // The aim every frame, the sight shown or not: its hit and kill counts are what the crosshair's marks are timed from, and a
+        // frame without them read as counts fallen to nought -- so a timed action, which hides the sight, ended with the last
+        // kill marked again as the sight came back. Project I.G.I.'s display reads it every frame the same way.
+        model.Aim = title.AimFeedback();
+
         // The crosshair, where the original would draw its sight.
         if (SightShown(title))
         {
             model.Show |= HudParts.Crosshair;
-            model.Aim = title.AimFeedback();
         }
 
         if (title.Inventory is { } inventory)
