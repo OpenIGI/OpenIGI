@@ -838,9 +838,11 @@ public static class PlayerProfileInputBindings
 
         key = KeyCode.None;
         button = null;
+        // Indexed: every action is asked every frame, and the interface's enumerator was boxed each time.
         IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
-        foreach (InputBinding binding in bindings)
+        for (int i = 0; i < bindings.Count; i++)
         {
+            InputBinding binding = bindings[i];
             if (!string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -893,9 +895,11 @@ public static class PlayerProfileInputBindings
         ArgumentNullException.ThrowIfNull(input);
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
 
+        // Indexed: every action is asked every frame, and the interface's enumerator was boxed each time.
         IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
-        foreach (InputBinding binding in bindings)
+        for (int i = 0; i < bindings.Count; i++)
         {
+            InputBinding binding = bindings[i];
             if (!string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
             {
                 continue;

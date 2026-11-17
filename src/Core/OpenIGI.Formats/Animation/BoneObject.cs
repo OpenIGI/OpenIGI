@@ -478,24 +478,22 @@ public sealed class BoneObject
     /// </remarks>
     public BonePose PoseAhead(Matrix3f? rootRotation = null)
     {
-        List<(BoneClip Clip, float Time)> clocks = [];
-        float[] elapsed = (float[])_blendElapsed.Clone();
-        void Advance(BoneClip? clip)
+        // The clocks and blend times put back afterwards, in buffers kept between calls: this is asked for every body drawn.
+        List<(BoneClip Clip, float Time)> clocks = _aheadClocks;
+        clocks.Clear();
+        if (_aheadElapsed.Length != _blendElapsed.Length)
         {
-            if (clip is null || clocks.Exists(saved => ReferenceEquals(saved.Clip, clip)))
-            {
-                return;
-            }
-
-            clocks.Add((clip, clip.Time));
-            clip.SetTime(clip.TimeAfterTick());
+            _aheadElapsed = new float[_blendElapsed.Length];
         }
+
+        float[] elapsed = _aheadElapsed;
+        Array.Copy(_blendElapsed, elapsed, elapsed.Length);
 
         for (int bone = 0; bone < _own.Length; bone++)
         {
-            Advance(_own[bone]);
-            Advance(_blendFrom[bone]);
-            Advance(_nestedFrom[bone]);
+            AdvanceAhead(clocks, _own[bone]);
+            AdvanceAhead(clocks, _blendFrom[bone]);
+            AdvanceAhead(clocks, _nestedFrom[bone]);
             if (_blendDuration[bone] > 0f)
             {
                 _blendElapsed[bone] = Math.Min(_blendElapsed[bone] + 1f, _blendDuration[bone]);
@@ -514,7 +512,31 @@ public sealed class BoneObject
             }
 
             Array.Copy(elapsed, _blendElapsed, elapsed.Length);
+            clocks.Clear();
         }
+    }
+
+    private readonly List<(BoneClip Clip, float Time)> _aheadClocks = [];
+    private float[] _aheadElapsed = [];
+
+    // A clip's clock moved on a tick, once however many bones play it, with its time kept to put back.
+    private static void AdvanceAhead(List<(BoneClip Clip, float Time)> clocks, BoneClip? clip)
+    {
+        if (clip is null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < clocks.Count; i++)
+        {
+            if (ReferenceEquals(clocks[i].Clip, clip))
+            {
+                return;
+            }
+        }
+
+        clocks.Add((clip, clip.Time));
+        clip.SetTime(clip.TimeAfterTick());
     }
 
     // Walks the bones in index order resolving each node's source, which is the original's recursion

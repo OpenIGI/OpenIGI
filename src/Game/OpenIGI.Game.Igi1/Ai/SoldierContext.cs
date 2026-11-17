@@ -396,13 +396,15 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <returns>The agent, or <see langword="null"/> when the soldier is in no group.</returns>
     public SoldierAgent? FindAgent(SoldierView view)
     {
+        // Indexed: asked for every soldier every tick, and the agents' interface enumerator was boxed each time.
         foreach (SoldierModelGroup group in Roster)
         {
-            foreach (SoldierAgent agent in group.Agents)
+            IReadOnlyList<SoldierAgent> agents = group.Agents;
+            for (int i = 0; i < agents.Count; i++)
             {
-                if (ReferenceEquals(agent.View, view))
+                if (ReferenceEquals(agents[i].View, view))
                 {
-                    return agent;
+                    return agents[i];
                 }
             }
         }
