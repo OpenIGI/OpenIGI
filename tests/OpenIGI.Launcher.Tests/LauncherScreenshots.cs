@@ -46,8 +46,7 @@ public sealed class LauncherScreenshots
 
         foreach ((int width, int height) in Sizes)
         {
-            // Each section, and the Servers section's HOST tab besides.
-            foreach ((LauncherSection section, string name) in LauncherScreen.Shown.Select(static s => (s, s.ToString().ToLowerInvariant())).Append((LauncherSection.Servers, "servers-host")))
+            foreach (LauncherSection section in LauncherScreen.Shown)
             {
                 LauncherScreen screen = new(page, rows, model, window, LauncherBackdrop.LoadPicture(images));
                 ScreenStack stack = new() { PointerSuppressed = true };
@@ -60,14 +59,7 @@ public sealed class LauncherScreenshots
                 {
                     if (frame == 2)
                     {
-                        if (name == "servers-host")
-                        {
-                            screen.ShowServers(1);
-                        }
-                        else
-                        {
-                            screen.ShowSection(section, refocus: false);
-                        }
+                        screen.ShowSection(section, refocus: false);
                     }
 
                     stack.Update(context, input, 1f / 30f);
@@ -84,7 +76,7 @@ public sealed class LauncherScreenshots
 
                 using SKImage image = surface.Snapshot();
                 using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
-                using FileStream file = File.Create(Path.Combine(folder, $"{name}-{width}x{height}.png"));
+                using FileStream file = File.Create(Path.Combine(folder, $"{section.ToString().ToLowerInvariant()}-{width}x{height}.png"));
                 png.SaveTo(file);
             }
         }

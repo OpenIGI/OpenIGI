@@ -80,8 +80,9 @@ internal sealed partial class ServersPage
 
         var top = new StackPanel { Orientation = Orientation.Vertical };
         top.AddChild(new ColourEdge { Colour = _theme.Accent });
-        int number = server is null ? 0 : MapNumber(server);
-        string? picture = number > 0 ? _model.MissionPicturePath(number) : null;
+        int id = server is null ? 0 : MapNumber(server);
+        int number = id > 0 ? _model.Mission(id)?.Number ?? id : 0;
+        string? picture = id > 0 ? _model.MissionPicturePath(id) : null;
         top.AddChild(new MissionPlate(
             _theme,
             number > 0 ? number.ToString("00", CultureInfo.InvariantCulture) : string.Empty,

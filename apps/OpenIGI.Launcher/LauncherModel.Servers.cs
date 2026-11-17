@@ -11,7 +11,7 @@ namespace OpenIGI.Launcher;
 
 /// <content>
 /// The servers: the shared server browser for the game chosen (the master's list, this network's, the saved and recent ones the
-/// game keeps too), joining one by starting the game at it, and a dedicated server of this build hosted from here.
+/// game keeps too), and joining one by starting the game at it.
 /// </content>
 internal sealed partial class LauncherModel
 {
@@ -20,8 +20,9 @@ internal sealed partial class LauncherModel
     private readonly Stopwatch _serverClock = Stopwatch.StartNew();
     private ServerBrowser? _browser;
     private string? _browsing;
-    private Process? _hosted;
-    private DedicatedServerLaunch? _hostedLaunch;
+    private IReadOnlyDictionary<int, MissionName> _missionNames = new Dictionary<int, MissionName>();
+    private string? _missionsFor;
+    private double _missionsReadAt;
 
     /// <summary>Gets every server heard of for the chosen game, unordered.</summary>
     public IEnumerable<BrowserServer> Servers => _browser?.Servers ?? [];
@@ -35,25 +36,36 @@ internal sealed partial class LauncherModel
     /// <summary>Gets a count that moves whenever the server list changes, for a page to rebuild on.</summary>
     public int ServersRevision { get; private set; }
 
-    /// <summary>Gets a value indicating whether the installed build ships a dedicated server to host from here.</summary>
-    public bool CanHostServer => _installed is { } build && Current.Retail is not null && DedicatedServerLaunch.FindServer(build.Folder) is not null;
-
-    /// <summary>Gets what the server hosted from here is doing, or <see langword="null"/> while none runs.</summary>
-    public string? HostedServerStatus => _hosted is null || _hostedLaunch is not { } launch
-        ? null
-        : _hosted.HasExited
-            ? $"The server stopped (exit code {_hosted.ExitCode}). Its log is in {DedicatedServerLaunch.FolderFor(launch.Title)}."
-            : string.Create(CultureInfo.InvariantCulture, $"{launch.Name} plays {launch.Mode.ToUpperInvariant()} on mission {launch.Mission}, UDP port {launch.Port}{(launch.Public ? ", listed" : string.Empty)}.");
-
     /// <summary>Asks again: the master's list, this network, and the saved and recent servers.</summary>
     public void RefreshServers() => Browser()?.Refresh(_serverClock.Elapsed.TotalSeconds);
 
-    /// <summary>Gets the picture of a map of the chosen game, as the installed build ships it; <see langword="null"/> before one is installed.</summary>
-    /// <param name="mission">The map's mission number.</param>
+    /// <summary>Gets the picture of a map of the chosen game, as the launcher ships it; <see langword="null"/> for none.</summary>
+    /// <param name="mission">The map's mission id.</param>
     /// <returns>The picture's file.</returns>
-    public string? MissionPicturePath(int mission) => _installed is { } build && Current.Retail is { } title
-        ? Path.Combine(build.Folder, "Assets", "missions", title.Id, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{mission}.jpg"))
+    public string? MissionPicturePath(int mission) => Current.Retail is { } title
+        ? Path.Combine(AppContext.BaseDirectory, "Assets", "missions", title.Id, string.Create(CultureInfo.InvariantCulture, $"{mission}.jpg"))
         : null;
+
+    /// <summary>Gets a map of the chosen game as the game's menus name it, once the game has listed its missions.</summary>
+    /// <param name="mission">The map's mission id.</param>
+    /// <returns>The mission, or <see langword="null"/> before the game has run.</returns>
+    public MissionName? Mission(int mission)
+    {
+        if (Current.Retail is not { } title)
+        {
+            return null;
+        }
+
+        // Read again now and then: the game writes the names down whenever it lists the missions.
+        if (_missionsFor != title.Id || _serverClock.Elapsed.TotalSeconds - _missionsReadAt > 30)
+        {
+            _missionsFor = title.Id;
+            _missionsReadAt = _serverClock.Elapsed.TotalSeconds;
+            _missionNames = MissionNames.Load(title.Id);
+        }
+
+        return _missionNames.GetValueOrDefault(mission);
+    }
 
     /// <summary>Starts the game at a server: by address where it has one, else through its room.</summary>
     /// <param name="server">The server.</param>
@@ -89,71 +101,14 @@ internal sealed partial class LauncherModel
         ServersRevision++;
     }
 
-    /// <summary>Starts a dedicated server of the installed build on this machine, reading the chosen game's own files.</summary>
-    /// <param name="form">What it plays and how it is listed.</param>
-    public void HostServer(DedicatedServerLaunch form)
-    {
-        ArgumentNullException.ThrowIfNull(form);
-        StopHostedServer();
-        if (_installed is not { } build || Current.Retail is not { } title || DedicatedServerLaunch.FindServer(build.Folder) is not { } executable)
-        {
-            Report("This build has no dedicated server to host.");
-            return;
-        }
-
-        DedicatedServerLaunch launch = form with
-        {
-            Title = title.Id,
-            GamePath = Services.GameStarter.Locate(title, Settings.GameFolders.GetValueOrDefault(title.Id)),
-        };
-        try
-        {
-            _hosted = launch.Start(executable, DedicatedServerLaunch.FolderFor(title.Id));
-            _hostedLaunch = launch;
-            _logger.Information(ServerLogCategory, $"Started a dedicated server for {title.DisplayName}: {launch.Name}, mission {launch.Mission}, {launch.Mode}, port {launch.Port}.");
-            if (NetAddress.TryParseIp("127.0.0.1", launch.Port, out NetAddress here))
-            {
-                Browser()?.Watch(here, launch.Name, _serverClock.Elapsed.TotalSeconds);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            Report($"The server didn't start: {ex.Message}", ex);
-        }
-
-        ServersRevision++;
-    }
-
-    /// <summary>Stops the server hosted from here.</summary>
-    public void StopHostedServer()
-    {
-        if (_hosted is { } server)
-        {
-            DedicatedServerLaunch.Stop(server);
-            server.Dispose();
-            _hosted = null;
-            _hostedLaunch = null;
-            ServersRevision++;
-        }
-    }
-
-    // Each frame: what the master and the servers answered, and a server hosted from here that stopped by itself.
+    // Each frame: what the master and the servers answered.
     private void TickServers()
     {
         if (_browser is { } browser && browser.Update(_serverClock.Elapsed.TotalSeconds))
         {
             ServersRevision++;
         }
-
-        if (_hosted is { HasExited: true } && _hostedLaunch is not null && _hostedExitTold != _hosted.Id)
-        {
-            _hostedExitTold = _hosted.Id;
-            _logger.Warning(ServerLogCategory, HostedServerStatus ?? "The server stopped.");
-            ServersRevision++;
-        }
     }
-
-    private int _hostedExitTold;
 
     // The browser of the chosen game: made again when another game is chosen, as each lists its own servers.
     private ServerBrowser? Browser()
@@ -190,9 +145,5 @@ internal sealed partial class LauncherModel
             ? new BrowserInfo(said.TitleId, said.Name, said.Map, said.Mode, said.Players, said.MaxPlayers, said.HasPassword, said.Version, Compatible: true)
             : null;
 
-    private void DisposeServers()
-    {
-        StopHostedServer();
-        _browser?.Dispose();
-    }
+    private void DisposeServers() => _browser?.Dispose();
 }

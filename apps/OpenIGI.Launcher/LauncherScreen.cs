@@ -249,7 +249,7 @@ internal sealed class LauncherScreen : Screen
         LauncherSection.Content => (_content = new ContentPage(_rowTheme, _model, _window.Picture)).Root,
         LauncherSection.Mods => (_mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods)).Root,
         LauncherSection.Maps => new MapsPage(_rowTheme, _model).Root,
-        LauncherSection.Servers => (_servers = new ServersPage(_theme, _rowTheme, _model, _window.Picture)).Root,
+        LauncherSection.Servers => (_servers = new ServersPage(_theme, _model, _window.Picture)).Root,
         LauncherSection.Logs => (_logs = new LogsPage(_theme, _model, _window)).Root,
         _ => SettingsPage.Build(_rowTheme, _model, _window),
     };
@@ -270,14 +270,6 @@ internal sealed class LauncherScreen : Screen
         {
             ShowAt(index, refocus);
         }
-    }
-
-    /// <summary>Shows the Servers section on its BROWSE (0) or HOST (1) tab.</summary>
-    /// <param name="tab">The tab.</param>
-    internal void ShowServers(int tab)
-    {
-        ShowSection(LauncherSection.Servers, refocus: false);
-        _servers?.SelectTab(tab);
     }
 
     // Shows the section at a place in the tabs.

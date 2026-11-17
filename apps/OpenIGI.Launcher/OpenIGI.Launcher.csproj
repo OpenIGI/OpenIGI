@@ -43,6 +43,12 @@
           Link="Assets\fonts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
 
+    <!-- The maps' pictures the game's Multiplayer page shows, linked from its assets: the released game keeps its files
+         inside its single executable, so the launcher's server list ships the same pictures itself. -->
+    <None Include="..\OpenIGI.Composition\Assets\missions\**\*.jpg"
+          Link="Assets\missions\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+
     <!-- The background picture: the same night shot the web landing page uses, linked so there is one copy. -->
     <None Include="..\OpenIGI.Web\wwwroot\landing\bg.webp"
           Link="Assets\backdrop.webp"

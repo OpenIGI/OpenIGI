@@ -219,7 +219,7 @@ internal sealed partial class ServersPage
             bool failed = _model.ServerListError is not null;
             string heading = failed ? "No answer" : heard == 0 ? "No games open" : "Nothing matches";
             string text = failed ? $"Couldn't reach the server list: {_model.ServerListError}."
-                : heard == 0 ? "No games are open right now. Host one, and it shows here for everyone."
+                : heard == 0 ? "No games are open right now. Host one from the game's Multiplayer page, and it shows here for everyone."
                 : "No games match these filters.";
             var nothing = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(24f, 72f, 24f, 56f) };
             nothing.AddChild(new Label(_theme.Display, heading.ToUpperInvariant(), 34f, failed ? _theme.Danger : _theme.Text) { HorizontalAlignment = HorizontalAlignment.Center });
@@ -262,7 +262,7 @@ internal sealed partial class ServersPage
     }
 
     // A row's look from its server, made or kept: the line, the marks, and why it can't be joined.
-    private static void Describe(ServerRow row, BrowserServer server)
+    private void Describe(ServerRow row, BrowserServer server)
     {
         BrowserInfo info = server.Info;
         bool reachable = server.Answered || server.Room is not null;
@@ -279,7 +279,7 @@ internal sealed partial class ServersPage
     }
 
     // What a server shows as a line: its kind as the line under its name says it, its mode, its map, how full and how near.
-    private static ServerLine LineOf(BrowserServer server)
+    private ServerLine LineOf(BrowserServer server)
     {
         BrowserInfo info = server.Info;
         string kind = server.Sources.HasFlag(BrowserSource.Lan) ? "LAN" : server.Address is null ? "ROOM" : "SERVER";
