@@ -150,6 +150,25 @@ public sealed class Igi2WorldEffectTests
         }
     }
 
+    /// <summary>An object excluded from clipping against portals says so on its placement, and only it.</summary>
+    [Fact]
+    public void An_object_excluded_from_portal_clipping_says_so()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        Engine.Tasks.TaskType rigid = types.Register<Interaction.Igi2EditRigidObjTask>(Interaction.Igi2EditRigidObjTask.TypeName);
+        Interaction.Igi2EditRigidObjTask excluded = (Interaction.Igi2EditRigidObjTask)tree.New(root, rigid);
+        excluded.Model = "400_01_1";
+        excluded.IsExcludedFromPortalClipping = true;
+        Interaction.Igi2EditRigidObjTask room = (Interaction.Igi2EditRigidObjTask)tree.New(root, rigid);
+        room.Model = "400_02_1";
+
+        Igi2WorldScene scene = Igi2WorldScene.Build(root);
+        Assert.True(scene.Placements.Single(static p => p.Model == "400_01_1").IsExcludedFromPortalClipping);
+        Assert.False(scene.Placements.Single(static p => p.Model == "400_02_1").IsExcludedFromPortalClipping);
+    }
+
     /// <summary>
     /// A container whose condition fails takes a document out of the world and off the pickups' list; once it runs again the document
     /// comes back, unless it was taken (<c>GenericPickup_RemoveHandler</c>, <c>GenericPickup_RegisterHandler</c>). A container inside it

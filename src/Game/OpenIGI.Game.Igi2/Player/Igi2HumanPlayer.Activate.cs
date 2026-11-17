@@ -133,8 +133,9 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>
     /// Starts activating, <c>HumanPlayer_InitActivate</c> (<c>igi2 0x4A06A0</c>): a switch is pressed at once and the activation
-    /// ends there; an unlocked door is opened or closed, on the tick the activate key goes down, and the activation ends. What
-    /// else a human activates is not ported; retail leaves an activation of an unknown kind running.
+    /// ends there; an unlocked door is opened or closed, on the tick the activate key goes down, and the activation ends. Every kind
+    /// the campaign's objects answer is handled below; the one left, a multiplayer <c>PlaceExplosiveTBA</c> (kind 12), no
+    /// single-player level places, and retail leaves an activation of an unknown kind running.
     /// </summary>
     /// <remarks>
     /// A locked door that can be picked starts the player picking it (<see cref="Igi2PlayerState.ActivateDoor"/>); one that

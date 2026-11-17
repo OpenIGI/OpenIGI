@@ -74,7 +74,14 @@ public readonly record struct Igi2Placement(
     IIgi2PlacementGeometry? Geometry = null,
     string DestroyedModel = "",
     string MountedOn = "",
-    IReadOnlyList<string>? Wears = null);
+    IReadOnlyList<string>? Wears = null)
+{
+    /// <summary>
+    /// Gets a value indicating whether it is excluded from clipping against portals: no room's interior object
+    /// (<c>EditRigidObj_UpdateInternalDataHandler</c> registers it with no sector object), so no room hides it.
+    /// </summary>
+    public bool IsExcludedFromPortalClipping { get; init; }
+}
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -423,6 +430,9 @@ public sealed class Igi2WorldScene
         return 0;
     }
 
+    /// <summary>The parameter an object says it is no room's with, left to the view whatever room it stands in.</summary>
+    public const string ExcludedFromPortalClippingParameter = "Excluded from clipping against portals";
+
     /// <summary>The parameter a <c>SplineObj</c> says whether its waypoints are in the world with.</summary>
     public const string DisplayWaypointsParameter = "Display waypoints";
 
@@ -566,7 +576,11 @@ public sealed class Igi2WorldScene
             string.Equals(task.Type.Name, WorldScene.SwitchType, StringComparison.Ordinal)
                 ? [.. WorldScene.SwitchModelParameters.Select(name =>
                     TryGetParameter(task, name, out object? raw) && raw is string worn ? worn : string.Empty)]
-                : null);
+                : null)
+        {
+            IsExcludedFromPortalClipping = TryGetParameter(task, ExcludedFromPortalClippingParameter, out object? excluded)
+                && excluded is true or (byte)1 or 1,
+        };
         return true;
     }
 }

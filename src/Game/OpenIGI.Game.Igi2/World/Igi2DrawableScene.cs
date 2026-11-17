@@ -392,8 +392,9 @@ public static class Igi2DrawableScene
         return new Igi2VisibilityKey(
             Igi2VisibilityKind.Object, placement.LevelId, placement.Model, pose.Position, Igi2Sector.Shell, centre, model.RenderSphereRadius)
         {
-            RegistersInRooms = Igi2SectorInteriorTypes.RegistersInRooms(placement.TypeName),
-            SkipsRoomTest = Igi2SectorInteriorTypes.SkipsRoomTest(placement.TypeName),
+            // One excluded from clipping against portals is no room's and left to the view, as a door is.
+            RegistersInRooms = !placement.IsExcludedFromPortalClipping && Igi2SectorInteriorTypes.RegistersInRooms(placement.TypeName),
+            SkipsRoomTest = placement.IsExcludedFromPortalClipping || Igi2SectorInteriorTypes.SkipsRoomTest(placement.TypeName),
         };
     }
 
