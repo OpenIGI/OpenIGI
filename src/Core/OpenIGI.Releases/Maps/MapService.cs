@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -92,12 +91,7 @@ public sealed class MapService(HttpClient http, Uri master)
     private async Task<T> SendAsync<T>(HttpMethod method, string path, byte[] body, MapIdentity identity, string type, CancellationToken cancel)
     {
         ArgumentNullException.ThrowIfNull(identity);
-        using HttpRequestMessage request = new(method, new Uri(master, path)) { Content = new ByteArrayContent(body) };
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue(type);
-        foreach ((string name, string value) in identity.Sign(method.Method, path, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), body))
-        {
-            request.Headers.TryAddWithoutValidation(name, value);
-        }
+        using HttpRequestMessage request = await SignedRequest.CreateAsync(identity, method, master, path, body, type).ConfigureAwait(false);
 
         using HttpResponseMessage response = await http.SendAsync(request, cancel).ConfigureAwait(false);
         await ThrowIfRefused(response, cancel).ConfigureAwait(false);

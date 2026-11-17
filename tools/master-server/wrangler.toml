@@ -46,6 +46,11 @@ class_name = "Relays"
 name = "MAPS"
 class_name = "Maps"
 
+# Player accounts (accounts.js): Discord users and the installations' keys they linked.
+[[durable_objects.bindings]]
+name = "ACCOUNTS"
+class_name = "Accounts"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
@@ -61,3 +66,7 @@ new_sqlite_classes = ["Party"]
 [[migrations]]
 tag = "v4"
 new_sqlite_classes = ["Maps"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["Accounts"]

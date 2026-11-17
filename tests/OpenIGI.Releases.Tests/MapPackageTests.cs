@@ -81,17 +81,17 @@ public sealed class MapPackageTests
 
     /// <summary>A request signed by an installation's key checks out with that key, and not once anything in it changes.</summary>
     [Fact]
-    public void A_signed_request_checks_out_only_as_it_was_signed()
+    public async Task A_signed_request_checks_out_only_as_it_was_signed()
     {
         using MapIdentity identity = MapIdentity.CreateEphemeral();
         byte[] body = Encoding.ASCII.GetBytes("a package");
-        IReadOnlyList<(string Name, string Value)> headers = identity.Sign("POST", "/v1/maps", 1_800_000_000, body);
-        string key = headers.Single(h => h.Name == MapIdentity.KeyHeader).Value;
-        string signature = headers.Single(h => h.Name == MapIdentity.SignatureHeader).Value;
-        Assert.True(MapIdentity.Verify(key, signature, "POST", "/v1/maps", 1_800_000_000, body));
-        Assert.False(MapIdentity.Verify(key, signature, "POST", "/v1/maps", 1_800_000_001, body));
-        Assert.False(MapIdentity.Verify(key, signature, "POST", "/v1/maps/other", 1_800_000_000, body));
-        Assert.False(MapIdentity.Verify(key, signature, "POST", "/v1/maps", 1_800_000_000, Encoding.ASCII.GetBytes("another")));
+        IReadOnlyList<(string Name, string Value)> headers = await SignedRequest.HeadersAsync(identity, "POST", "/v1/maps", 1_800_000_000, body);
+        string key = headers.Single(h => h.Name == SignedRequest.KeyHeader).Value;
+        string signature = headers.Single(h => h.Name == SignedRequest.SignatureHeader).Value;
+        Assert.True(SignedRequest.Verify(key, signature, "POST", "/v1/maps", 1_800_000_000, body));
+        Assert.False(SignedRequest.Verify(key, signature, "POST", "/v1/maps", 1_800_000_001, body));
+        Assert.False(SignedRequest.Verify(key, signature, "POST", "/v1/maps/other", 1_800_000_000, body));
+        Assert.False(SignedRequest.Verify(key, signature, "POST", "/v1/maps", 1_800_000_000, Encoding.ASCII.GetBytes("another")));
         Assert.Equal(16, identity.KeyId.Length);
     }
 

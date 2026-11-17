@@ -4,7 +4,8 @@
 #   workerd serve selfhost/master.capnp --directory-path storage=<dir>
 #
 # The Durable Objects (the server list, the rooms, the parties, the relays) keep their storage in <dir>. The secrets
-# come from the environment: TURN_SECRET, ADMIN_TOKEN and RELAY_KEY, as `wrangler secret put` gives them on Cloudflare.
+# come from the environment: TURN_SECRET, ADMIN_TOKEN and RELAY_KEY, as `wrangler secret put` gives them on Cloudflare,
+# and for signing in with Discord DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET and ACCOUNT_KEY (32 random bytes, base64).
 # Cloudflare's cron (the relays probed every minute) is openigi-master-probe.timer here, through the admin route.
 
 using Workerd = import "/workerd/workerd.capnp";
@@ -27,6 +28,8 @@ const master :Workerd.Worker = (
     (name = "relays.js", esModule = embed "../src/relays.js"),
     (name = "stun.js", esModule = embed "../src/stun.js"),
     (name = "maps.js", esModule = embed "../src/maps.js"),
+    (name = "signed.js", esModule = embed "../src/signed.js"),
+    (name = "accounts.js", esModule = embed "../src/accounts.js"),
   ],
   compatibilityDate = "2026-10-01",
   globalOutbound = "internet",
@@ -37,6 +40,7 @@ const master :Workerd.Worker = (
     (className = "Party", uniqueKey = "openigi-master-Party", enableSql = true),
     (className = "Relays", uniqueKey = "openigi-master-Relays", enableSql = true),
     (className = "Maps", uniqueKey = "openigi-master-Maps", enableSql = true),
+    (className = "Accounts", uniqueKey = "openigi-master-Accounts", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "storage"),
 
@@ -47,6 +51,8 @@ const master :Workerd.Worker = (
     (name = "RELAYS", durableObjectNamespace = "Relays"),
     # The community maps, every version's package kept in its storage.
     (name = "MAPS", durableObjectNamespace = "Maps"),
+    # Player accounts: Discord users and the keys they linked (accounts.js).
+    (name = "ACCOUNTS", durableObjectNamespace = "Accounts"),
 
     (name = "TURN_HOST", text = "turn.openigi.com"),
     (name = "TURN_REGION", text = "Europe"),
@@ -58,6 +64,11 @@ const master :Workerd.Worker = (
     (name = "TURN_SECRET", fromEnvironment = "TURN_SECRET"),
     (name = "ADMIN_TOKEN", fromEnvironment = "ADMIN_TOKEN"),
     (name = "RELAY_KEY", fromEnvironment = "RELAY_KEY"),
+    # Signing in with Discord (accounts.js); ACCOUNT_KEY seals the refresh tokens kept for Linked Roles.
+    (name = "DISCORD_CLIENT_ID", fromEnvironment = "DISCORD_CLIENT_ID"),
+    (name = "DISCORD_CLIENT_SECRET", fromEnvironment = "DISCORD_CLIENT_SECRET"),
+    (name = "ACCOUNT_KEY", fromEnvironment = "ACCOUNT_KEY"),
+    (name = "PUBLIC_URL", text = "https://master.openigi.com"),
     # Only a test sets these (the built-in relay on another port, where a request says it is).
     (name = "TURN_PORT", fromEnvironment = "TURN_PORT"),
     (name = "TURN_TLS_PORT", fromEnvironment = "TURN_TLS_PORT"),

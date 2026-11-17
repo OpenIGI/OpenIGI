@@ -12,11 +12,13 @@
 import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
 import { handleParties } from "./parties.js";
 import { handleMaps } from "./maps.js";
+import { handleAccounts, isAccountsPath } from "./accounts.js";
 
 export { Room } from "./rooms.js";
 export { Party } from "./parties.js";
 export { Relays } from "./relays.js";
 export { Maps } from "./maps.js";
+export { Accounts } from "./accounts.js";
 
 const ENTRY_TTL_MS = 90_000;
 
@@ -88,6 +90,11 @@ async function route(request, env, ctx) {
     // Community maps: published, listed, downloaded, rated and reported (maps.js).
     if (url.pathname === "/v1/maps" || url.pathname.startsWith("/v1/maps/")) {
       return cors(await handleMaps(request, env));
+    }
+
+    // Accounts: a player's keys linked to their Discord account, and the profiles that come of it (accounts.js).
+    if (isAccountsPath(url.pathname)) {
+      return cors(await handleAccounts(request, env));
     }
 
     if (url.pathname === "/v1/parties" || url.pathname.startsWith("/v1/parties/")) {
@@ -561,8 +568,8 @@ function json(value, status = 200) {
 function cors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
-  headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  headers.set("access-control-allow-headers", "content-type, x-openigi-token");
+  headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
+  headers.set("access-control-allow-headers", "content-type, x-openigi-token, x-openigi-key, x-openigi-signature, x-openigi-time");
   headers.set("access-control-max-age", "86400");
   return new Response(response.body, { status: response.status, headers });
 }

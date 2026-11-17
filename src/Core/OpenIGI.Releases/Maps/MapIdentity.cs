@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 
 namespace OpenIGI.Releases.Maps;
 
@@ -10,20 +9,11 @@ namespace OpenIGI.Releases.Maps;
 /// </summary>
 /// <remarks>
 /// No account and nothing to sign up to: losing the key loses the right to publish new versions of one's maps, nothing else.
-/// What is signed is the request -- its method, path, time and the hash of its body -- so a signature is good for that request
-/// alone, and only for a few minutes.
+/// What is signed is the request (<see cref="SignedRequest"/>) -- its method, path, time and the hash of its body -- so a
+/// signature is good for that request alone, and only for a few minutes.
 /// </remarks>
-public sealed class MapIdentity : IDisposable
+public sealed class MapIdentity : IRequestSigner, IDisposable
 {
-    /// <summary>The header the public key goes in, as its SubjectPublicKeyInfo in base64.</summary>
-    public const string KeyHeader = "X-OpenIGI-Key";
-
-    /// <summary>The header the signature goes in, IEEE P1363 (r then s) in base64.</summary>
-    public const string SignatureHeader = "X-OpenIGI-Signature";
-
-    /// <summary>The header the signing time goes in, as Unix seconds.</summary>
-    public const string TimeHeader = "X-OpenIGI-Time";
-
     private readonly ECDsa _key;
 
     private MapIdentity(ECDsa key)
@@ -66,53 +56,8 @@ public sealed class MapIdentity : IDisposable
         return new MapIdentity(key);
     }
 
-    /// <summary>The text a request's signature is over: its method, path, time and body's hash, a line each.</summary>
-    /// <param name="method">The method, such as <c>POST</c>.</param>
-    /// <param name="path">The path, such as <c>/v1/maps</c>.</param>
-    /// <param name="unixSeconds">When it is signed.</param>
-    /// <param name="body">The body.</param>
-    /// <returns>The text.</returns>
-    public static string SignedText(string method, string path, long unixSeconds, ReadOnlySpan<byte> body) =>
-        $"{method.ToUpperInvariant()}\n{path}\n{unixSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}\n{MapPackage.Hash(body)}";
-
-    /// <summary>Signs a request.</summary>
-    /// <param name="method">The method.</param>
-    /// <param name="path">The path.</param>
-    /// <param name="unixSeconds">When it is signed.</param>
-    /// <param name="body">The body.</param>
-    /// <returns>The headers to send it with.</returns>
-    public IReadOnlyList<(string Name, string Value)> Sign(string method, string path, long unixSeconds, ReadOnlySpan<byte> body)
-    {
-        byte[] signature = _key.SignData(Encoding.UTF8.GetBytes(SignedText(method, path, unixSeconds, body)), HashAlgorithmName.SHA256);
-        return
-        [
-            (KeyHeader, PublicKey),
-            (SignatureHeader, Convert.ToBase64String(signature)),
-            (TimeHeader, unixSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-        ];
-    }
-
-    /// <summary>Checks a request's signature, as the server does.</summary>
-    /// <param name="publicKey">The public key it came with.</param>
-    /// <param name="signature">Its signature.</param>
-    /// <param name="method">The method.</param>
-    /// <param name="path">The path.</param>
-    /// <param name="unixSeconds">The time it says it was signed.</param>
-    /// <param name="body">The body.</param>
-    /// <returns>Whether the key signed it.</returns>
-    public static bool Verify(string publicKey, string signature, string method, string path, long unixSeconds, ReadOnlySpan<byte> body)
-    {
-        try
-        {
-            using ECDsa key = ECDsa.Create();
-            key.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKey), out _);
-            return key.VerifyData(Encoding.UTF8.GetBytes(SignedText(method, path, unixSeconds, body)), Convert.FromBase64String(signature), HashAlgorithmName.SHA256);
-        }
-        catch (Exception error) when (error is FormatException or CryptographicException)
-        {
-            return false;
-        }
-    }
+    /// <inheritdoc/>
+    public Task<byte[]> SignAsync(byte[] text) => Task.FromResult(_key.SignData(text, HashAlgorithmName.SHA256));
 
     /// <inheritdoc/>
     public void Dispose() => _key.Dispose();

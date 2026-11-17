@@ -9,12 +9,13 @@
 // and the body's SHA-256, a line each. A map belongs to the key that first published it; a report from five keys hides it
 // until we look; the admin token takes one down or puts it back, and loads the hashes of the game's own files.
 
+import { Refusal, json, sha256Hex, signedBy } from "./signed.js";
+
 const CHUNK = 120 * 1024;
 const MAX_EMBEDDED = 96 * 1024 * 1024;
 const MAX_PACKAGE = MAX_EMBEDDED + 4 * 1024 * 1024;
 const MAX_FILES = 6000;
 const MAX_MANIFEST = 4 * 1024 * 1024;
-const MAX_SKEW_SECONDS = 600;
 const HIDE_AT_REPORTS = 5;
 const GAMES = ["igi1", "igi2"];
 const EXTENSIONS = new Set([
@@ -111,7 +112,7 @@ export class Maps {
       throw new Refusal(413, "The map is too big.");
     }
 
-    const key = await signer(request, url, body);
+    const key = await signedBy(request, url, body);
     const { manifest, problems } = await readPackage(body, await this.gameFiles());
     if (problems.length > 0) {
       throw new Refusal(422, "The map breaks the rules.", problems);
@@ -151,7 +152,7 @@ export class Maps {
       owner: key.id,
       published: new Date().toISOString(),
       size: body.length,
-      sha256: await hex(body),
+      sha256: await sha256Hex(body),
       chunks,
       downloads: existing?.downloads ?? 0,
       ratingSum: existing?.ratingSum ?? 0,
@@ -206,7 +207,7 @@ export class Maps {
   // One rating a key, one to five stars; a second from the same key replaces the first.
   async rate(request, url, map) {
     const body = new Uint8Array(await request.arrayBuffer());
-    const key = await signer(request, url, body);
+    const key = await signedBy(request, url, body);
     const stars = Number(parseBody(body).stars);
     if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
       throw new Refusal(400, "A rating is one to five stars.");
@@ -226,7 +227,7 @@ export class Maps {
   // One report a key; enough of them hide the map until it is looked at.
   async report(request, url, map) {
     const body = new Uint8Array(await request.arrayBuffer());
-    const key = await signer(request, url, body);
+    const key = await signedBy(request, url, body);
     const reason = String(parseBody(body).reason ?? "").slice(0, 500);
     if (await this.storage.get(`report:${map.id}:${key.id}`)) {
       return json({ reported: true });
@@ -242,7 +243,7 @@ export class Maps {
   async remove(request, url, map) {
     if (!(await isAdmin(request, this.env))) {
       const body = new Uint8Array(await request.arrayBuffer());
-      const key = await signer(request, url, body);
+      const key = await signedBy(request, url, body);
       if (key.id !== map.owner) {
         throw new Refusal(403, "Only its author takes a map down.");
       }
@@ -367,7 +368,7 @@ export async function readPackage(body, gameFiles = new Set()) {
       return { manifest, problems: [`The package ends inside ${file.path}.`] };
     }
 
-    if ((await hex(body.subarray(at, at + file.size))) !== file.sha256) {
+    if ((await sha256Hex(body.subarray(at, at + file.size))) !== file.sha256) {
       problems.push(`${file.path} is not the file the manifest names.`);
     }
 
@@ -429,36 +430,6 @@ function safePath(path) {
     && /^[A-Za-z0-9/._ -]+$/.test(path) && path.split("/").every((p) => p.length > 0 && p !== "." && p !== "..");
 }
 
-// The key that signed a request, checked: its signature over the method, path, time and the body's hash, made within ten
-// minutes of now.
-async function signer(request, url, body) {
-  const publicKey = request.headers.get("x-openigi-key");
-  const signature = request.headers.get("x-openigi-signature");
-  const time = Number(request.headers.get("x-openigi-time"));
-  if (!publicKey || !signature || !Number.isFinite(time)) {
-    throw new Refusal(401, "Sign the request with your installation's key.");
-  }
-
-  if (Math.abs(Date.now() / 1000 - time) > MAX_SKEW_SECONDS) {
-    throw new Refusal(401, "The request was signed too long ago (or your clock is wrong).");
-  }
-
-  let key;
-  try {
-    key = await crypto.subtle.importKey("spki", fromBase64(publicKey), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
-  } catch {
-    throw new Refusal(401, "The key is not one.");
-  }
-
-  const text = `${request.method.toUpperCase()}\n${url.pathname}\n${time}\n${await hex(body)}`;
-  const good = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64(signature), new TextEncoder().encode(text));
-  if (!good) {
-    throw new Refusal(401, "The signature does not check out.");
-  }
-
-  return { id: (await hex(fromBase64(publicKey))).slice(0, 16) };
-}
-
 async function isAdmin(request, env) {
   const given = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
   if (!env.ADMIN_TOKEN || !given) return false;
@@ -473,26 +444,4 @@ function parseBody(body) {
   } catch {
     throw new Refusal(400, "The body is JSON.");
   }
-}
-
-async function hex(bytes) {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function fromBase64(text) {
-  const raw = atob(text);
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-}
-
-class Refusal extends Error {
-  constructor(status, message, problems = undefined) {
-    super(message);
-    this.status = status;
-    this.problems = problems;
-  }
-}
-
-function json(value, status = 200) {
-  return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 }
