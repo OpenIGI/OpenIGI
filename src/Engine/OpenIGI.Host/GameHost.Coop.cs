@@ -23,6 +23,10 @@ public sealed partial class GameHost
     /// </remarks>
     public Func<int, Net.INetTransport>? OpenUdp { get; set; }
 
+    /// <summary>Gets or sets the Discord Activity this game runs in, or <see langword="null"/>: the room the menu hosts is then its.</summary>
+    /// <remarks>Set by the browser build's composition root, from <c>-instance</c>, before <see cref="Start"/>.</remarks>
+    public string? DiscordInstance { get; set; }
+
     // Into a mission from over a played one -- a restart, or a co-op client following its server -- behind the same going-in
     // sequence: the frozen level under the menu is the picture held, the menu leaves, and the place comes back as asked.
     private void GoIntoMission(FrameLoopState state, int missionId)
@@ -122,6 +126,7 @@ public sealed partial class GameHost
             _logger)
         {
             OpenUdp = OpenUdp,
+            Instance = DiscordInstance,
             ReloadTables = ReloadTitleTables,
             Arenas = HasArena,
             GamePath = () => _gamePath,

@@ -147,6 +147,12 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
 
     private string Protocol => MultiplayerProtocol.IdFor(_titleId()).ToString("x16", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Gets or sets the Discord Activity this game runs in, or <see langword="null"/>: a room hosted from the menu is then
+    /// the Activity's own, which everyone in the voice channel reaches, and carries the game itself.
+    /// </summary>
+    public string? Instance { get; set; }
+
     /// <inheritdoc/>
     public void Host(int missionId, int difficulty, bool listed, string mode = Game.Multiplayer.Modes.GameModes.Coop)
     {
@@ -156,7 +162,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         bool versus = Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
         SessionArguments arguments = new(
             Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: $"{_playerName()}'s game", MaxPlayers: versus ? 15 : 3,
-            Password: string.Empty, Mode: versus ? mode : Game.Multiplayer.Modes.GameModes.Coop, Host: true, Public: listed);
+            Password: string.Empty, Mode: versus ? mode : Game.Multiplayer.Modes.GameModes.Coop, Host: true, Public: listed, Instance: Instance);
         Begin(RoomSessions.Start(arguments, _titleId(), missionId, _version, _peers, _logger, _content()));
         Shell?.StartMission(missionId, difficulty);
     }

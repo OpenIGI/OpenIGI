@@ -243,6 +243,12 @@ assert.equal(storage.store.has(`key:${desk.id}`), false);
   assert.equal(said.access_token, "token-code-ana");
   assert.equal(said.account.name, "Ana");
   assert.equal((await accounts.fetch(new Request("https://master/v1/auth/discord/activity", { method: "POST", body: JSON.stringify({ code: "nonsense" }) }))).status, 401);
+
+  // Signed with the player's key, the same sign-in links that key: the game in the Activity is signed in.
+  const discordGame = await playerKey();
+  const linking = await accounts.fetch(await signed(discordGame, "POST", "/v1/auth/discord/activity", text(JSON.stringify({ code: "code-ana" }))));
+  assert.equal((await linking.json()).linked, true);
+  assert.equal((await (await accounts.fetch(new Request(`https://master/v1/players/${discordGame.id}`))).json()).name, "Ana");
 }
 
 // Starting from Discord's Linked Roles: an account with no game yet, and its standing told.

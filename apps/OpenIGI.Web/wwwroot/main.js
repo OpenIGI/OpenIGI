@@ -60,10 +60,12 @@ async function enterDiscord() {
   // the game's own name.
   try {
     const { code } = await sdk.commands.authorize({ client_id: DISCORD_APP, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
+    // Signed with this browser's player key, so the same sign-in links the game here to the account.
+    const body = JSON.stringify({ code });
     const traded = await fetch('https://master.openigi.com/v1/auth/discord/activity', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code }),
+      headers: { 'content-type': 'application/json', ...await signedHeaders('POST', '/v1/auth/discord/activity', body) },
+      body,
     });
     if (traded.ok) {
       const { access_token: accessToken, account } = await traded.json();
@@ -77,13 +79,24 @@ async function enterDiscord() {
   const reply = await fetch(`https://master.openigi.com/v1/rooms/instance/${encodeURIComponent(instance)}`);
   const room = reply.ok ? await reply.json() : null;
   if (args.includes('-join') || args.includes('-host')) return;
-  if (room?.hosted) {
-    args.push('-join', room.code);
-  } else {
-    args.push('-host', '-instance', instance);
-    if (!args.includes('-mode')) args.push('-mode', 'coop');
-    if (!args.includes('-mission')) args.push('-mission', '1');
-  }
+
+  // Someone in the voice channel already hosts: straight into their game. Otherwise the menu, where co-op hosted is the
+  // channel's room for the others to come into.
+  if (room?.hosted) args.push('-join', room.code);
+  args.push('-instance', instance);
+}
+
+/** The headers that sign a request to the master with this browser's player key (SignedRequest.cs, signed.js). */
+async function signedHeaders(method, path, body) {
+  identity.imports.start();
+  const time = Math.floor(Date.now() / 1000);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)));
+  const hash = [...digest].map(b => b.toString(16).padStart(2, '0')).join('');
+  const text = new TextEncoder().encode(`${method}\n${path}\n${time}\n${hash}`);
+  let raw = '';
+  for (const b of text) raw += String.fromCharCode(b);
+  const signature = await identity.imports.sign(btoa(raw));
+  return { 'x-openigi-key': identity.imports.publicKey(), 'x-openigi-signature': signature, 'x-openigi-time': String(time) };
 }
 
 if (IN_DISCORD) {

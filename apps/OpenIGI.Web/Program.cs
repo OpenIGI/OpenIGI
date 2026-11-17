@@ -126,6 +126,7 @@ public static partial class Program
         _game.TickObserver = _session as IHostTickObserver;
         _game.RoomPeers = new BrowserRtcPeerFactory();
         _game.OpenLink = WebLinks.Open;
+        _game.DiscordInstance = session.Instance;
         _game.Start();
     }
 

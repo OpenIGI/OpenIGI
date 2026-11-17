@@ -89,7 +89,7 @@ export class Accounts {
       }
 
       if (parts[1] === "auth" && parts[2] === "discord" && parts[3] === "activity" && request.method === "POST") {
-        return await this.fromActivity(body);
+        return await this.fromActivity(request, url, body);
       }
 
       if (parts[1] === "auth" && parts[2] === "discord" && parts[3] === "verify" && request.method === "GET") {
@@ -258,8 +258,11 @@ export class Accounts {
   }
 
   // Inside a Discord Activity the SDK's authorize hands the page a code with no redirect: traded here for the access token
-  // the page gives back to the SDK (authenticate), with who the player is. The account is made or found on the way.
-  async fromActivity(body) {
+  // the page gives back to the SDK (authenticate), with who the player is. The account is made or found on the way, and a
+  // request signed with the player's key links that key to it: the game inside Discord is then signed in, as from its
+  // profile page.
+  async fromActivity(request, url, body) {
+    const key = request.headers.has("x-openigi-key") ? await playerKey(request, url, body) : null;
     if (!this.env.DISCORD_CLIENT_ID || !this.env.DISCORD_CLIENT_SECRET) {
       throw new Refusal(503, "Signing in with Discord isn't set up on this server yet.");
     }
@@ -279,7 +282,12 @@ export class Accounts {
     }
 
     const account = await this.upsertAccount(user);
-    return json({ access_token: grant.access_token, account: present(account) });
+    if (key) {
+      await this.attachKey(account, key.id, "Discord");
+    }
+
+    await this.keepToken(account.id, grant);
+    return json({ access_token: grant.access_token, account: present(account), linked: key !== null });
   }
 
   // Back from Discord for Linked Roles: the account made or found, its token kept, its standing told.
