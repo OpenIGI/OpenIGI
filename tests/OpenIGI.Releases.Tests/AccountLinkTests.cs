@@ -198,7 +198,7 @@ public sealed class AccountLinkTests
     // The master's accounts, as far as these tests need them.
     private sealed class Master
     {
-        public Master() => Client = new HttpClient(new Answering(Answer));
+        public Master() => Client = new HttpClient(new AnsweringHandler(Answer));
 
         public HttpClient Client { get; }
 
@@ -256,10 +256,5 @@ public sealed class AccountLinkTests
             Task.FromResult(_key.SignData(text, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
 
         public void Dispose() => _key.Dispose();
-    }
-
-    private sealed class Answering(Func<HttpRequestMessage, Task<HttpResponseMessage>> answer) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => answer(request);
     }
 }

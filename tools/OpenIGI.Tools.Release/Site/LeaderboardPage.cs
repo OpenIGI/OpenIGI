@@ -2,8 +2,9 @@ namespace OpenIGI.Tools.Release;
 
 /// <summary>
 /// <c>/leaderboard/</c>: the best players on the official servers this season or all time, by score, kills, wins, K/D or
-/// matches, read from the master as the page opens; <c>/leaderboard/?player=ID</c> is one player's record (by their
-/// Discord user id or a key's). Static like the rest of the site; everything shown is set as text, never as markup.
+/// matches, read from the master as the page opens; <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page
+/// sends here) is one player's record by their Discord user id or a key's: this season, their medals and their latest
+/// matches. Static like the rest of the site; everything shown is set as text, never as markup.
 /// </summary>
 internal static class LeaderboardPage
 {
@@ -65,6 +66,11 @@ internal static class LeaderboardPage
             .stat b { display: block; font-size: 30px; font-stretch: 80%; }
             .profile { display: flex; align-items: center; gap: 16px; }
             .profile img { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--accent); }
+            .medals { display: flex; flex-wrap: wrap; gap: 8px; }
+            .medal { border: 1px solid var(--accent); border-radius: 999px; padding: 6px 12px; font: 600 13px var(--sans); color: var(--accent); background: rgba(232, 163, 61, 0.08); }
+            .medal.none { border-color: var(--line); color: var(--muted); background: none; }
+            h2 { margin: 24px 0 10px; font: 500 11.5px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+            td.won { color: var(--accent); }
             .narrow-hide { }
             @media (max-width: 620px) { .narrow-hide { display: none; } th, td { padding: 10px 8px; } }
             [hidden] { display: none !important; }
@@ -100,11 +106,21 @@ internal static class LeaderboardPage
               <div class="profile"><img id="avatar" alt="" hidden><div><span class="mono" id="season"></span><h1 id="name" style="font-size: 44px"></h1></div></div>
               <div class="panel stats" id="figures" style="margin-top: 14px"></div>
               <p id="alltime" style="margin-top: 12px"></p>
+              <h2>Medals</h2>
+              <div class="medals" id="medals"></div>
+              <h2>Latest matches</h2>
+              <div class="panel">
+                <table>
+                  <thead><tr><th>When</th><th>Match</th><th>Kills</th><th>Deaths</th><th>Result</th></tr></thead>
+                  <tbody id="matches"></tbody>
+                </table>
+              </div>
             </section>
 
             <div style="display: flex; flex-wrap: wrap; gap: 12px">
               <a class="button primary" href="/">Play free in the browser</a>
               <a class="button" href="/leaderboard/" id="back" hidden>The whole board</a>
+              <a class="button" href="/privacy/">Privacy</a>
             </div>
           </main>
           <script>
@@ -189,6 +205,39 @@ internal static class LeaderboardPage
                 }));
                 const a = record.allTime;
                 $("alltime").textContent = `All time: ${number(a.matches)} matches, ${number(a.wins)} wins, ${number(a.kills)} kills, ${a.kd.toFixed(2)} K/D.`;
+                const medals = (record.medals ?? []).map((medal) => {
+                  const chip = document.createElement("span");
+                  chip.className = "medal";
+                  chip.textContent = medal.name;
+                  chip.title = medal.about;
+                  return chip;
+                });
+                if (medals.length === 0) {
+                  const none = document.createElement("span");
+                  none.className = "medal none";
+                  none.textContent = "None yet: a kill on an official server is the first.";
+                  medals.push(none);
+                }
+                $("medals").replaceChildren(...medals);
+                const modes = { tdm: "Team deathmatch", ffa: "Free for all", sd: "Search & destroy", elim: "Elimination" };
+                const matches = (record.latest ?? []).map((match) => {
+                  const you = match.you?.[0];
+                  const tr = document.createElement("tr");
+                  tr.append(
+                    cell(new Date(match.at).toLocaleDateString("en", { day: "numeric", month: "short" })),
+                    cell(`${modes[match.mode] ?? match.mode.toUpperCase()} · map ${match.map}`),
+                    cell(number(you?.kills)),
+                    cell(number(you?.deaths)),
+                    cell(you?.won ? "Won" : "Lost", you?.won ? "won" : ""));
+                  return tr;
+                });
+                if (matches.length === 0) {
+                  const tr = document.createElement("tr");
+                  tr.append(cell("No matches yet.", "empty"));
+                  tr.firstChild.colSpan = 5;
+                  matches.push(tr);
+                }
+                $("matches").replaceChildren(...matches);
               } catch {
                 $("name").textContent = "No record";
                 $("alltime").textContent = "This player has no matches on the official servers yet, or the stats can't be reached right now.";

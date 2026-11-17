@@ -1,6 +1,7 @@
 // Match results on their own, in Node: `node test/matches.test.mjs`. A listed server's signed result is counted; any other
 // server's is refused; a malformed one is refused; totals add up per season and all time; the board ranks by each metric
-// (K/D only from five matches), gathers a linked account's keys under its name, and a record reads by key or account.
+// (K/D only from five matches), gathers a linked account's keys under its name, and a record reads by key or account
+// with the medals its totals have earned.
 import assert from "node:assert/strict";
 import { webcrypto as crypto } from "node:crypto";
 import { Stats, checkResult, scoreOf, seasonOf } from "../src/stats.js";
@@ -142,9 +143,23 @@ const allTime = await get("/v1/leaderboard?period=all&metric=kills");
 assert.equal(allTime.rows.find((row) => row.name === "Bo").kills, 18);
 assert.equal(seasonOf(Date.UTC(2027, 0, 1)), "2027-01");
 
+// Medals follow from all-time totals: Ana has a kill and a win; Bo's 9-0 win is a Ghost, kept across seasons.
+assert.deepEqual(anaRecord.medals.map((medal) => medal.id), ["first-kill", "first-win"]);
+assert.ok((await get(`/v1/players/${BO}/stats`)).medals.some((medal) => medal.id === "ghost" && medal.name === "Ghost"));
+assert.ok(!(await get(`/v1/players/${CY}/stats`)).medals.some((medal) => medal.id === "ghost"));
+
 // A malformed result is refused before anything is counted.
 assert.throws(() => checkResult({ title: "igi9", mode: "tdm", map: "1", seconds: 1, players: [] }));
 assert.throws(() => checkResult({ title: "igi1", mode: "tdm", map: "1", seconds: 1, players: [line(BO, "Bo", 0, -1, 0, true), line(CY, "Cy", 1, 0, 0, false)] }));
+
+// A deleted account's keys are forgotten: off every board, no record, their lines in kept results made anonymous.
+const forgot = await ask(new Request("https://master/internal/forget", { method: "POST", body: JSON.stringify({ keys: [BO] }) }));
+assert.equal((await forgot.json()).forgotten, 1);
+assert.ok(!(await get("/v1/leaderboard?period=all&metric=kills")).rows.some((row) => row.name === "Bo"));
+assert.equal((await get(`/v1/players/${BO}/stats`)).allTime.matches, 0);
+const kept = await get("/v1/matches");
+assert.ok(kept.every((match) => match.players.every((p) => p.player !== BO && p.name !== "Bo")));
+assert.ok(kept.some((match) => match.players.some((p) => p.player === CY)));
 
 // Removing a server: its next result is refused.
 const keyId = (await get("/v1/admin/stats-servers"))[0].keyId;

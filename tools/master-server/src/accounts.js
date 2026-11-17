@@ -414,6 +414,13 @@ export class Accounts {
     const account = await this.storage.get(`account:${id}`);
     if (!account) return;
     await this.storage.delete([`account:${id}`, `token:${id}`, `profile:${id}`, ...account.keys.map((k) => `key:${k}`)]);
+    // Its record on the official servers goes with it (stats.js).
+    if (this.env.STATS && account.keys.length > 0) {
+      await this.env.STATS.get(this.env.STATS.idFromName("all")).fetch("https://stats/internal/forget", {
+        method: "POST",
+        body: JSON.stringify({ keys: account.keys }),
+      });
+    }
   }
 
   async upsertAccount(user) {

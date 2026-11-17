@@ -41,7 +41,8 @@ public sealed record RecordTotals(int Matches, int Wins, int Kills, int Deaths, 
 /// <param name="Season">The season now, as <c>yyyy-MM</c>.</param>
 /// <param name="ThisSeason">This season's totals.</param>
 /// <param name="AllTime">All time's.</param>
-public sealed record AccountRecord(string Season, RecordTotals ThisSeason, RecordTotals AllTime);
+/// <param name="Medals">The names of the medals earned, in the order they come.</param>
+public sealed record AccountRecord(string Season, RecordTotals ThisSeason, RecordTotals AllTime, IReadOnlyList<string> Medals);
 
 /// <summary>
 /// The player's online account: optional, and signed into with Discord. Signing in names the player by their Discord name

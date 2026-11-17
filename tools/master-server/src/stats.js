@@ -6,7 +6,11 @@
 //   GET  /v1/matches                      the latest results, newest first
 //   GET  /v1/leaderboard?period=&metric=  the best players: period season (this month, UTC), a month (2026-10) or all; metric score, kills,
 //                                         wins, kd or matches
-//   GET  /v1/players/<id>/stats           one player's record (a key's id or an account's): this season, all time, latest
+//   GET  /v1/players/<id>/stats           one player's record (a key's id or an account's): this season, all time, latest,
+//                                         and the medals earned (medals.js)
+//   POST /internal/forget { keys }          an account deleted (accounts.js): its keys' totals gone, and their name and id
+//                                         taken out of every kept result (the line itself stays, so the others' add up);
+//                                         reached only from the accounts' object, never from outside
 //   /v1/admin/stats-servers               the servers whose matches count (admin token): GET lists, POST { key, name } adds,
 //                                         DELETE /<keyId> removes
 //
@@ -15,9 +19,10 @@
 //   server:<keyId>          { name, added }
 //   match:<time>-<rand>     the result, as kept
 //   recent                  the latest results' keys, newest first
-//   tot:<period>:<player>   { name, matches, wins, kills, deaths, objectives, seconds, score }
+//   tot:<period>:<player>   { name, matches, wins, kills, deaths, objectives, seconds, score, flawless }
 //   last:<player>           the player's latest results' keys, newest first
 
+import { isFlawless, medalsOf } from "./medals.js";
 import { Refusal, json, signedBy } from "./signed.js";
 
 const RECENT = 50;
@@ -69,6 +74,10 @@ export class Stats {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
     try {
+      if (parts[0] === "internal" && parts[1] === "forget" && request.method === "POST") {
+        return json({ forgotten: await this.forget((await request.json()).keys ?? []) });
+      }
+
       if (parts[1] === "admin") {
         return await this.admin(request, parts[3]);
       }
@@ -200,6 +209,7 @@ export class Stats {
       season,
       seasonTotals: finish(seasonTotal),
       allTime: finish(allTotal),
+      medals: medalsOf(allTotal),
       latest: results.map((match) => ({ ...match, you: match.players.filter((line) => keys.includes(line.player)) })),
     };
   }
@@ -225,6 +235,25 @@ export class Stats {
     } catch {
       // Discord is told next time.
     }
+  }
+
+  // Some keys' record forgotten: totals and latest lists gone, every kept result naming them made anonymous.
+  async forget(keys) {
+    const gone = new Set(keys.filter((key) => /^[0-9a-f]{16}$/.test(key)));
+    if (gone.size === 0) return 0;
+    const totals = await this.storage.list({ prefix: "tot:" });
+    const deletes = [...totals.keys()].filter((name) => gone.has(name.slice(name.lastIndexOf(":") + 1)));
+    deletes.push(...[...gone].map((key) => `last:${key}`));
+    const writes = {};
+    for (const [name, match] of await this.storage.list({ prefix: "match:" })) {
+      if (!match.players.some((line) => gone.has(line.player))) continue;
+      writes[name] = { ...match, players: match.players.map((line) => (gone.has(line.player) ? { ...line, player: null, name: "Player" } : line)) };
+    }
+
+    await this.storage.delete(deletes);
+    if (Object.keys(writes).length > 0) await this.storage.put(writes);
+    this.boards.clear();
+    return gone.size;
   }
 
   async latest(names) {
@@ -313,7 +342,7 @@ export function checkResult(body) {
 }
 
 function zero() {
-  return { matches: 0, wins: 0, kills: 0, deaths: 0, objectives: 0, seconds: 0, score: 0 };
+  return { matches: 0, wins: 0, kills: 0, deaths: 0, objectives: 0, seconds: 0, score: 0, flawless: 0 };
 }
 
 function add(total, line) {
@@ -327,6 +356,7 @@ function add(total, line) {
     objectives: base.objectives + line.objectives,
     seconds: base.seconds + line.seconds,
     score: base.score + line.score,
+    flawless: (base.flawless ?? 0) + (isFlawless(line) ? 1 : 0),
   };
 }
 

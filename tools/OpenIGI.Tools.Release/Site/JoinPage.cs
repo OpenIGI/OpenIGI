@@ -1,7 +1,8 @@
 namespace OpenIGI.Tools.Release;
 
 /// <summary>
-/// The page an invite link opens: <c>/join/CODE</c> for a friend's room, <c>/party/CODE</c> for a friend's party. The site is
+/// The page an invite link opens: <c>/join/CODE</c> for a friend's room, <c>/party/CODE</c> for a friend's party (and
+/// <c>/u/ID</c>, a player's page, sent on to the leaderboard's). The site is
 /// static, so it is the site's <c>404.html</c>, which the host serves for every path it has no file for; the page reads the
 /// code from its own address and offers the two ways in -- the browser build at the site's root, or the installed game
 /// through the launcher's <c>openigi://</c> link. Any other missing path gets a plain "not here".
@@ -73,6 +74,13 @@ internal static class JoinPage
           </main>
           <script>
             (() => {
+              // /u/ID: a player's page, by their Discord user id or a key's, which the leaderboard page shows.
+              const player = /^\/u\/([0-9a-f]{16}|\d{5,25})\/?$/.exec(location.pathname);
+              if (player) {
+                location.replace('/leaderboard/?player=' + player[1]);
+                return;
+              }
+
               // /join/CODE or /party/CODE: a code as the master server makes them, six of its letters and digits.
               const match = /^\/(join|party)\/([A-Za-z0-9]{6})\/?$/.exec(location.pathname);
               const code = match ? match[2].toUpperCase() : null;

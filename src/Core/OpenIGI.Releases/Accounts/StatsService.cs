@@ -33,12 +33,19 @@ public sealed record MatchReport(string Title, string Mode, string Map, int Seco
 /// <param name="Kd">Kills a death, to two places.</param>
 public sealed record StatTotals(int Matches, int Wins, int Kills, int Deaths, int Objectives, int Seconds, int Score, double Kd);
 
+/// <summary>A medal: something a player has done on the official servers, read from their all-time totals.</summary>
+/// <param name="Id">Its id, such as <c>first-win</c>.</param>
+/// <param name="Name">Its name, such as <c>First win</c>.</param>
+/// <param name="About">What earns it.</param>
+public sealed record Medal(string Id, string Name, string About);
+
 /// <summary>A player's record on the official servers.</summary>
 /// <param name="Player">Who: a key's id or an account's.</param>
 /// <param name="Season">The season now, as <c>yyyy-MM</c>.</param>
 /// <param name="SeasonTotals">This season's totals.</param>
 /// <param name="AllTime">All time's.</param>
-public sealed record PlayerRecord(string Player, string Season, StatTotals SeasonTotals, StatTotals AllTime);
+/// <param name="Medals">The medals earned, or <see langword="null"/> from a master too old to say.</param>
+public sealed record PlayerRecord(string Player, string Season, StatTotals SeasonTotals, StatTotals AllTime, IReadOnlyList<Medal>? Medals = null);
 
 /// <summary>
 /// The master server's stats (tools/master-server/src/stats.js): a listed server reports its decided matches, signed by its

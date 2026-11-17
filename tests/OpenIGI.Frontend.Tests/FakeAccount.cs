@@ -61,7 +61,7 @@ internal sealed class FakeAccount : IAccountPanel
         Status = AccountStatus.SignedIn;
         Account = new AccountSummary("279730101439168512", name, "https://cdn.discordapp.com/embed/avatars/5.png");
         SignInUrl = null;
-        Record = new AccountRecord("2026-11", new RecordTotals(12, 7, 96, 41, 2.34, 1460), new RecordTotals(30, 16, 210, 118, 1.78, 3320));
+        Record = new AccountRecord("2026-11", new RecordTotals(12, 7, 96, 41, 2.34, 1460), new RecordTotals(30, 16, 210, 118, 1.78, 3320), ["First blood", "First win", "Regular", "Marksman"]);
         return this;
     }
 }

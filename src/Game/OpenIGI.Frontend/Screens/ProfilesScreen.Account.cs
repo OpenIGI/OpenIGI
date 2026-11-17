@@ -25,7 +25,7 @@ public sealed partial class ProfilesScreen
     private IAccountPanel? Accounts => Context.Host.Account;
 
     private string AccountKey => Accounts is { } accounts
-        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{accounts.Record}|{accounts.Avatar is not null}|{_confirmingDelete}|{_copiedLink}"
+        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{accounts.Record}|{(accounts.Record is { } shown ? string.Join(',', shown.Medals) : string.Empty)}|{accounts.Avatar is not null}|{_confirmingDelete}|{_copiedLink}"
         : string.Empty;
 
     // The account's panel: what it is for while signed out, the sign-in while it waits, and the account once signed in.
@@ -139,6 +139,12 @@ public sealed partial class ProfilesScreen
             : Accounts?.Status == AccountStatus.SignedIn
                 ? "Matches on the official servers are counted here from your next one on."
                 : "Sign in and play on the official servers to start your record."));
+        if (record is { Medals.Count: > 0 })
+        {
+            column.AddChild(new Eyebrow(theme, "Medals") { TextSize = compact ? 11f : 12f });
+            column.AddChild(new Label(theme.Body, string.Join("  ·  ", record.Medals), compact ? 14f : 16f, theme.Accent) { Wrap = true });
+        }
+
         panel.AddChild(column);
         return panel;
     }

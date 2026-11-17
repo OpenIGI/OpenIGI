@@ -182,7 +182,7 @@ public sealed partial class GameHost
         public string? Problem => link.Error;
 
         public AccountRecord? Record => host._record is { } kept && link.Account?.Id == kept.Account
-            ? new AccountRecord(kept.Record.Season, Totals(kept.Record.SeasonTotals), Totals(kept.Record.AllTime))
+            ? new AccountRecord(kept.Record.Season, Totals(kept.Record.SeasonTotals), Totals(kept.Record.AllTime), [.. (kept.Record.Medals ?? []).Select(static medal => medal.Name)])
             : null;
 
         public string? SyncNote => host._profileSync?.State switch

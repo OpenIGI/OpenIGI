@@ -62,6 +62,11 @@ public sealed class SiteWriterTests : IDisposable
         string invite = Read("404.html");
         Assert.Contains("'/?' + (party ? 'party=' : 'join=') + code", invite, StringComparison.Ordinal);
         Assert.Contains("'openigi://' + (party ? 'party/' : 'join/') + code", invite, StringComparison.Ordinal);
+        Assert.Contains("location.replace('/leaderboard/?player=' + player[1])", invite, StringComparison.Ordinal);
+
+        // The leaderboard (each player's record, medals and latest matches) and the privacy page.
+        Assert.Contains("id=\"medals\"", Read("leaderboard/index.html"), StringComparison.Ordinal);
+        Assert.Contains("Delete account", Read("privacy/index.html"), StringComparison.Ordinal);
         Assert.StartsWith("ok 3 release(s)", Read("healthz"), StringComparison.Ordinal);
     }
 
