@@ -8,8 +8,36 @@ using OpenIGI.Game.Physics;
 namespace OpenIGI.Game.Igi2.Interaction;
 
 /// <summary>A door's link to the sector portal it stands in.</summary>
-public sealed partial class Igi2DoorTask
+public sealed partial class Igi2DoorTask : IIgi2WorldMember
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Door_RemoveHandler</c>: a linked door taken out of the world leaves its portal open from both sides, and forgets the state it
+    /// last counted, so it counts afresh once it is back. Its solid leaves the world with its container (<see cref="Igi2WorldPresence"/>).
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        if (_portal1 == NoPortal)
+        {
+            return;
+        }
+
+        if (Portals is { } portals)
+        {
+            if (_sector1 is { } sector1)
+            {
+                portals.Set(sector1, _portal1, 1);
+            }
+
+            if (_sector2 is { } sector2)
+            {
+                portals.Set(sector2, _portal2, 1);
+            }
+        }
+
+        _status = 0;
+    }
+
     /// <summary>The portal a door is linked to none of, <c>0xFFFF</c>.</summary>
     public const int NoPortal = 0xFFFF;
 

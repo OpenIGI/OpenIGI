@@ -30,7 +30,7 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// whether that thrust is over a thousandth; its children run.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IAttachParent
+public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IAttachParent, World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = Igi2Train.TrainType;
@@ -287,6 +287,9 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
             }
         }
     }
+
+    /// <inheritdoc/>
+    void World.IIgi2WorldMember.RemoveFromWorld() => Remove();
 
     /// <summary>Takes it out of the world, its sound with it, <c>Train_RemoveHandler</c>.</summary>
     public void Remove()

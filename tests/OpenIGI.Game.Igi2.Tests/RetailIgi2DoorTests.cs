@@ -163,6 +163,25 @@ public sealed class RetailIgi2DoorTests
         Assert.Equal(door.Position, door.CurrentPosition);
     }
 
+    /// <summary>A shut door taken out of the world leaves the portals it stands in open (<c>Door_RemoveHandler</c>).</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_shut_door_taken_out_of_the_world_leaves_its_portals_open()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Scene, m.Level.ModelFor);
+        Igi2SectorPortals portals = new(m.Collision!, graph);
+        foreach (Igi2DoorTask each in m.Doors)
+        {
+            each.Portals = portals;
+            each.AttachToPortal(m.Collision!);
+        }
+
+        Igi2DoorTask door = m.Doors.First(static d => d.Portal1 != Igi2DoorTask.NoPortal);
+        int shut = OpenSectors(graph, portals);
+        door.RemoveFromWorld();
+        Assert.True(OpenSectors(graph, portals) > shut);
+    }
+
     private static int OpenSectors(Igi2SectorGraph graph, Igi2SectorPortals portals) =>
         Enumerable.Range(0, graph.Sectors.Count).Sum(s => Enumerable.Range(0, Igi2SectorPortals.Capacity).Count(p => portals.IsOpen(s, p)));
 

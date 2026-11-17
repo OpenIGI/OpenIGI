@@ -64,6 +64,12 @@ public sealed class Particle2DSystem
     /// <summary>Gets a value indicating whether the system has deleted itself.</summary>
     public bool IsDeleted { get; private set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the system is in the world, and so drawn: a container whose condition fails takes it
+    /// out with what made it (<c>Particle2DDynCubeObj_RemoveHandler</c>), its particles kept where they were until it is back.
+    /// </summary>
+    public bool IsInWorld { get; set; } = true;
+
     /// <summary>Gets or sets a value indicating whether the system deletes itself once empty (from creation, yes).</summary>
     public bool IsSelfDestruct { get; set; } = true;
 

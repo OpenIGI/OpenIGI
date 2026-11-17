@@ -38,7 +38,8 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// gun and its sound with it, and its destroyed model is left where it stood.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2PartMover, IIgi2ExplosionTarget, IIgi2Destructible, IIgi2AnimTarget
+public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2PartMover, IIgi2ExplosionTarget, IIgi2Destructible, IIgi2AnimTarget,
+    World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Car";
@@ -825,6 +826,18 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             Remove();
             _isExploded = 1;
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Car_RemoveHandler</c>, as a container takes it out: its engine sound is deleted and what hangs on it leaves with it, its gun's
+    /// sound among them. Its run makes the sound again once it is back.
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        _engineSound?.Delete();
+        _engineSound = null;
+        Gun?.StopSound();
     }
 
     // Car_RemoveHandler on blowing up: its engine sound and its gun gone, and it out of the world.

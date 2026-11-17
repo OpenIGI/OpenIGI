@@ -227,10 +227,33 @@ public sealed partial class Igi2HumanAiTask : Igi2Task
 /// sixty to calm down, two metres between soldiers and thirty to run to an alarm. Its formation distance is held to [0, 10]
 /// and its script is <c>MISSION:AI/Squad_&lt;id&gt;.qsc</c> (<c>AISquad_UpdateInternalDataHandler</c>, <c>0x4990E0</c>).
 /// </remarks>
-public sealed partial class Igi2AiSquadTask : Igi2Task
+public sealed partial class Igi2AiSquadTask : Igi2Task, IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AISquad";
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>AISquad_RemoveQTaskHandler</c>: off the squads' list, which other squads' sightings and spreading out walk. Its soldiers,
+    /// its children, leave the world through it.
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        if (Squad is { } squad)
+        {
+            squad.World.Squads.Remove(squad);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>AISquad_RegisterQTaskHandler</c>: back on the end of the squads' list, once.</remarks>
+    public void PutInWorld()
+    {
+        if (Squad is { } squad && !squad.World.Squads.Contains(squad))
+        {
+            squad.World.Squads.Add(squad);
+        }
+    }
 
     /// <summary>Gets or sets the distance between the squad's soldiers, in metres.</summary>
     [ScriptParam(ScriptParamType.Real32, "Formation Distance")]
