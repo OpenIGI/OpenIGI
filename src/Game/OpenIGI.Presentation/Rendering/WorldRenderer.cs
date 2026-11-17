@@ -109,6 +109,12 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public bool FaceGroupBlending { get; set; }
 
+    /// <summary>
+    /// The alpha a glass subset's texel needs to reach the opaque world: all but solid, so a glazing texture's frame lands in the
+    /// G-buffer and its pane, however smudged, is left whole to the glass pass.
+    /// </summary>
+    public const byte GlassFrameAlphaReference = 250;
+
     /// <summary>Gets how many sub-meshes the last <see cref="Draw"/> submitted.</summary>
     public int LastDrawCount { get; private set; }
 
@@ -592,19 +598,28 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     continue;
                 }
 
-                if (faceGroups)
-                {
-                    byte reference = subset.Blend switch
+                byte reference = faceGroups
+                    ? subset.Blend switch
                     {
-                        SubsetBlend.Opaque => 0,
-                        SubsetBlend.AlphaTested => 65,
-                        _ => 2,
-                    };
-                    if (reference != appliedReference)
-                    {
-                        _device.SetAlphaReference(reference);
-                        appliedReference = reference;
+                        SubsetBlend.Opaque => (byte)0,
+                        SubsetBlend.AlphaTested => (byte)65,
+                        _ => (byte)2,
                     }
+                    : IGraphicsDevice.DefaultAlphaReference;
+
+                // A pane's texture drawn into the opaque world keeps only its SOLID texels, the frame: everything the glass
+                // pass draws as translucency stays out of the G-buffer. At the ordinary half cut a pane whose smudges run
+                // above half alpha -- I.G.I. 2's dirty windows, alpha 64 to 160 throughout and no frame at all -- left its
+                // dirt there as solid grey blots on clear air, under the pane the glass pass then laid over them.
+                if (subset.Material.Glass && !glassOnly && !rotorsOnly && !blendedOnly)
+                {
+                    reference = GlassFrameAlphaReference;
+                }
+
+                if (reference != appliedReference)
+                {
+                    _device.SetAlphaReference(reference);
+                    appliedReference = reference;
                 }
 
                 // A rotor is the smear of a blade whatever its texture is listed as: the original blends every copy of it
