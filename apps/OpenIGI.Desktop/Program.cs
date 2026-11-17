@@ -560,6 +560,7 @@ try
         game.EditorFactory = new OpenIGI.Editor.EditorFactory { PickFolder = (title, initial) => FolderPicker.PickAsync(title, initial, owner) };
         game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
         game.OpenUdp = port => UdpTransport.Open(port);
+        game.OpenLink = OpenInBrowser;
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;
@@ -647,4 +648,22 @@ finally
 {
     window.Dispose();
 }
+}
+
+// A page in the player's own browser: the system opens the address (xdg-open, open, or the shell on Windows).
+static void OpenInBrowser(string url)
+{
+    if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+    {
+        return;
+    }
+
+    try
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+    }
+    catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or PlatformNotSupportedException)
+    {
+        // Nothing to open it with: the profile page still shows the address to copy.
+    }
 }

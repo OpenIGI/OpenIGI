@@ -413,6 +413,8 @@ export const imports = {
     if (!fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },
+  // A page in a new tab (the Discord sign-in); only an https address, never one the game didn't make.
+  openLink: url => { if (/^https:\/\//.test(url)) window.open(url, '_blank', 'noopener'); },
   setGyro: wanted => gyro.setWanted(wanted),
   setTextEntry: wanted => {
     textWanted = wanted;

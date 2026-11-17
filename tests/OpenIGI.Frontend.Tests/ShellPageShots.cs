@@ -43,10 +43,24 @@ public sealed class ShellPageShots
         ("08-settings-controls", static context => new SettingsScreen(context) { StartCategory = "controls" }, false),
         ("09-settings-gameplay", static context => new SettingsScreen(context) { StartCategory = "gameplay" }, false),
         ("10-profile", static context => new ProfilesScreen(context), false),
+        ("10-profile-waiting", static context => new ProfilesScreen(context), false),
+        ("10-profile-signed-in", static context => new ProfilesScreen(context), false),
         ("11-extras", static context => new ExtrasScreen(context), false),
         ("12-pause", static context => new PauseScreen(context), true),
         ("13-maps", static context => new MapsScreen(context), false),
     ];
+
+    // The account each profile page is drawn with: signed out, waiting on Discord, or signed in.
+    private static FakeAccount AccountFor(string page) => page switch
+    {
+        _ when page.EndsWith("signed-in", StringComparison.Ordinal) => new FakeAccount().SignedInAs("Sh"),
+        _ when page.EndsWith("waiting", StringComparison.Ordinal) => new FakeAccount
+        {
+            Status = AccountStatus.WaitingForBrowser,
+            SignInUrl = "https://master.openigi.com/v1/auth/discord/start?code=NSTG5TWS",
+        },
+        _ => new FakeAccount(),
+    };
 
     [Fact]
     public void Draw_every_page()
@@ -83,6 +97,7 @@ public sealed class ShellPageShots
                     Party = new MultiplayerScreenshots.FakeParty { Party = MultiplayerScreenshots.Squad() },
                     Pictures = mission => MultiplayerScreenshots.Picture(images, pictures, mission),
                     Maps = new FakeMaps(),
+                    Account = AccountFor(name),
                 };
                 GameConfig config = GameConfig.CreateDefault();
                 if (config.Active is { } active)

@@ -35,6 +35,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="playedMods">The mods that change play the running title is played with.</param>
 /// <param name="coop">Co-op through rooms, where the build can make WebRTC connections.</param>
 /// <param name="party">Parties, where the build can play together at all.</param>
+/// <param name="account">The player's online account, where the build can reach the OpenIGI servers.</param>
 /// <param name="maps">Community maps, where the build can fetch and play them.</param>
 /// <param name="missionPicture">A mission's picture taken beforehand, or <see langword="null"/> where there is none.</param>
 /// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
@@ -65,6 +66,7 @@ public sealed class ShellHost(
     Action? editTouchLayout = null,
     Func<bool>? openEditor = null,
     IPartyPanel? party = null,
+    IAccountPanel? account = null,
     IShellMaps? maps = null,
     Func<int, MissionPicture?>? missionPicture = null) : IShellHost
 {
@@ -73,6 +75,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public IPartyPanel? Party => party;
+
+    /// <inheritdoc/>
+    public IAccountPanel? Account => account;
 
     /// <inheritdoc/>
     public IShellMaps? Maps => maps;
