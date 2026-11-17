@@ -476,6 +476,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             _tiles[tile].Lod.Refresh(left, top, right, bottom);
         }
+
+        // A finer tile's edge stands on the heights of the tile it lies in, so every tile is tessellated again.
+        foreach (Tile each in _tiles)
+        {
+            each.Lod.ForgetFrame();
+        }
     }
 
     // Paint changed a tile's material ids; the quadtree reads them as it splits, so only the set of materials it draws passes

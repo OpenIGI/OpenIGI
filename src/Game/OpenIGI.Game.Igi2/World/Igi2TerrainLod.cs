@@ -95,6 +95,13 @@ public sealed class Igi2TerrainLod
     private readonly List<int> _slotMaterial = [];
     private Igi2TerrainTessellationBuilder? _frameBuilder;
 
+    // The view the last frame's tessellation was made for, which TessellateFrame hands back while nothing has changed.
+    private Igi2TerrainTessellation? _lastFrame;
+    private Vector3d _lastEye;
+    private Vector3f[] _lastPlanes = [];
+    private int _lastPlaneCount;
+    private Igi2TerrainLodSettings _lastSettings;
+
     /// <summary>Builds the quadtree over one tile.</summary>
     /// <param name="tile">The tile.</param>
     /// <param name="materials">The level's terrain materials, keyed by id.</param>
@@ -130,6 +137,7 @@ public sealed class Igi2TerrainLod
     /// </remarks>
     public void RefreshMaterials()
     {
+        ForgetFrame();
         Array.Fill(_slotOf, -1);
         _slotMaterial.Clear();
         HashSet<byte> painted = [];
@@ -167,7 +175,11 @@ public sealed class Igi2TerrainLod
     public int PassCount => _slotMaterial.Count;
 
     /// <summary>Gets the tile the quadtree is built over.</summary>
-    internal Igi2TerrainTile Tile => _tile;
+    /// <remarks>
+    /// By reference: the tile is a large struct holding references, and the traversal reads it several times a vertex, so a
+    /// copy per read was a write-barrier block move that cost more than the tessellation itself.
+    /// </remarks>
+    internal ref readonly Igi2TerrainTile Tile => ref _tile;
 
     /// <summary>Gets the level's terrain materials, keyed by id.</summary>
     internal IReadOnlyDictionary<int, TerrainMaterialTask> Materials => _materials;
@@ -195,8 +207,39 @@ public sealed class Igi2TerrainLod
     /// <param name="view">The current eye and clipping planes.</param>
     /// <param name="settings">The current detail controls.</param>
     /// <returns>The frame's borrowed geometry.</returns>
-    public Igi2TerrainTessellation TessellateFrame(in Igi2TerrainView view, in Igi2TerrainLodSettings settings) =>
-        (_frameBuilder ??= new Igi2TerrainTessellationBuilder(this, reuseBuffers: true)).Run(view, settings);
+    /// <remarks>
+    /// The tessellation is a function of the view, the settings and the tile alone, so a frame seen from where the last one was
+    /// -- a player standing still, or several frames drawn between two moves of the camera -- is handed the last one's again
+    /// rather than walking the quadtree to the same answer. An edit to the ground forgets it (<see cref="ForgetFrame"/>).
+    /// </remarks>
+    public Igi2TerrainTessellation TessellateFrame(in Igi2TerrainView view, in Igi2TerrainLodSettings settings)
+    {
+        ReadOnlySpan<Vector3f> planes = view.PlaneNormals;
+        if (_lastFrame is { } kept
+            && view.Eye.Equals(_lastEye)
+            && settings == _lastSettings
+            && planes.SequenceEqual(_lastPlanes.AsSpan(0, _lastPlaneCount)))
+        {
+            return kept;
+        }
+
+        Igi2TerrainTessellation tessellation = (_frameBuilder ??= new Igi2TerrainTessellationBuilder(this, reuseBuffers: true)).Run(view, settings);
+        if (_lastPlanes.Length < planes.Length)
+        {
+            _lastPlanes = new Vector3f[planes.Length];
+        }
+
+        planes.CopyTo(_lastPlanes);
+        _lastPlaneCount = planes.Length;
+        _lastEye = view.Eye;
+        _lastSettings = settings;
+        _lastFrame = tessellation;
+        return tessellation;
+    }
+
+    /// <summary>Forgets the last frame's tessellation, after the ground it was made from changed.</summary>
+    /// <remarks>Every tile's, on any edit: a finer tile's edge is held to the heights of the tile it lies in.</remarks>
+    public void ForgetFrame() => _lastFrame = null;
 
     /// <inheritdoc/>
     public override string ToString() =>
@@ -207,7 +250,11 @@ public sealed class Igi2TerrainLod
     /// <param name="top">The first changed row.</param>
     /// <param name="right">The last changed column.</param>
     /// <param name="bottom">The last changed row.</param>
-    public void Refresh(int left, int top, int right, int bottom) => _bounds.Update(_tile, left, top, right, bottom);
+    public void Refresh(int left, int top, int right, int bottom)
+    {
+        _bounds.Update(_tile, left, top, right, bottom);
+        ForgetFrame();
+    }
 
     /// <summary>Gets the height at a sample, extrapolating the row and column past the tile.</summary>
     /// <param name="x">The sample's column, which may be <see cref="Igi2TerrainTile.Width"/>.</param>

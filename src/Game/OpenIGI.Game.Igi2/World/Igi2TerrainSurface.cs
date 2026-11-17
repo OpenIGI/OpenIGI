@@ -511,10 +511,18 @@ public readonly record struct Igi2TerrainTile(
             return null;
         }
 
-        // The last declared first, as the original's own search for the map a point belongs to goes.
-        for (int i = Hosts.Count - 1; i >= 0; i--)
+        // By reference: a tile is a large struct holding references, and the quadtree asks this of every vertex along a join.
+        ReadOnlySpan<Igi2TerrainTile> hosts = Hosts switch
         {
-            Igi2TerrainTile host = Hosts[i];
+            Igi2TerrainTile[] array => array,
+            List<Igi2TerrainTile> list => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(list),
+            _ => [.. Hosts],
+        };
+
+        // The last declared first, as the original's own search for the map a point belongs to goes.
+        for (int i = hosts.Length - 1; i >= 0; i--)
+        {
+            ref readonly Igi2TerrainTile host = ref hosts[i];
             if (!host.Extent.Touches(x, y, x, y))
             {
                 continue;

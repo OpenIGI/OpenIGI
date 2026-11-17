@@ -200,7 +200,13 @@ internal sealed class Igi2TerrainTessellationBuilder
     // lies in draws there; on the edge of a finer tile's ground, its own true height, which is that line for the finer tile.
     private double? HeldHeight(int x, int y)
     {
-        Igi2TerrainTile tile = _owner.Tile;
+        ref readonly Igi2TerrainTile tile = ref _owner.Tile;
+        if (tile.Submaps is not { Count: > 0 } && _owner.SeamSize == 0)
+        {
+            // A tile with no finer tile inside it and none around it holds nothing to any join.
+            return null;
+        }
+
         int n = _owner.RootSize;
         bool northOrSouth = y == 0 || y == n;
         if (_owner.SeamSize > 0 && (northOrSouth || x == 0 || x == n)
