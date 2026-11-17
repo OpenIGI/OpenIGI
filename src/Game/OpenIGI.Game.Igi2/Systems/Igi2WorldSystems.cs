@@ -169,6 +169,10 @@ internal static class Igi2WorldSystems
         }
     }
 
+    /// <summary>The level's countdowns, whose displays the HUD draws while they count (<c>MissionTimerDrawTask</c>).</summary>
+    public static void MissionTimers(Igi2LevelBuild b) =>
+        b.Player.MissionTimers = [.. b.Root.Descendants().OfType<Igi2MissionTimerTask>()];
+
     /// <summary>Spline path guides connect to the models they move once the level is loaded; those models move, and are drawn moving.</summary>
     public static void SplineGuides(Igi2LevelBuild b)
     {

@@ -180,6 +180,51 @@ public sealed class Igi2WorldEffectTests
         Assert.False(key.IsInWorld);
     }
 
+    /// <summary>
+    /// A countdown is shown from the run its start expression holds until it runs out; taken out of the world its display goes, and the
+    /// next run while it counts puts it back (<c>MissionTimer_RunHandler</c>, <c>MissionTimer_RemoveHandler</c>).
+    /// </summary>
+    [Fact]
+    public void A_countdown_is_shown_while_it_counts_and_in_the_world()
+    {
+        Flow.Igi2MissionTimerTask timer = new() { StartExpression = "1", TimeInSeconds = 0.1f };
+        timer.Prepare();
+        Flow.Igi2LevelRun level = Level();
+        Assert.False(timer.IsShown);
+
+        timer.Run(level);
+        Assert.True(timer.IsShown);
+        Assert.Equal("00 : 00", timer.DisplayText);
+
+        timer.RemoveFromWorld();
+        Assert.False(timer.IsShown);
+        timer.Run(level);
+        Assert.True(timer.IsShown);
+
+        for (int tick = 0; tick < 10; tick++)
+        {
+            timer.Run(level);
+        }
+
+        Assert.Equal(Flow.Igi2MissionTimerStatus.Finished, timer.Status);
+        Assert.False(timer.IsShown);
+    }
+
+    /// <summary>An overlay up when its holder leaves the world comes down, and the infrared view with it (<c>OverlayHolder_RemoveHandler</c>).</summary>
+    [Fact]
+    public void An_overlay_comes_down_as_its_holder_leaves_the_world()
+    {
+        Flow.Igi2ScreenOverlay screen = new();
+        Flow.Igi2OverlayHolderTask holder = new() { VisibleExpression = "1", InfraredExpression = "1", OverlayType = 1, Screen = screen };
+        holder.Run(Level());
+        Assert.Equal(Flow.Igi2OverlayType.Zoom, screen.Overlay);
+        Assert.True(screen.IsInfrared);
+
+        holder.RemoveFromWorld();
+        Assert.Null(screen.Overlay);
+        Assert.False(screen.IsInfrared);
+    }
+
     /// <summary>A building's lightmap info hands it its indoors ambient light as the level loads.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_buildings_lightmap_info_sets_its_inside_ambient()

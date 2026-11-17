@@ -64,6 +64,9 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
             }
         }
 
+        // The countdowns are tasks of the game screen of their own, drawn over it whatever else it shows.
+        DrawMissionTimers(batch, title, screenWidth, screenHeight);
+
         // The remastered crosshair stands in for the original's sight where it is chosen; scopes keep their own.
         if (!(remastered && HudCVars.Crosshair.Value))
         {

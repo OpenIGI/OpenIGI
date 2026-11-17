@@ -21,6 +21,7 @@ public sealed partial class Igi2HudRenderer
     private readonly IOpenIgiLogger _logger;
     private Igi2SpriteResources? _assets;
     private BitmapTextRenderer? _font;
+    private BitmapTextRenderer? _timerFont;
     private int _loadedRounds = -1;
     private int _availableRounds = -1;
     private string _ammunition = string.Empty;
@@ -63,6 +64,7 @@ public sealed partial class Igi2HudRenderer
         _remastered?.Dispose();
         _remastered = null;
         _font = null;
+        _timerFont = null;
         _textFont = null;
         if (_bandStripes != TextureHandle.None) { _device.DestroyTexture(_bandStripes); _bandStripes = TextureHandle.None; }
         if (_bandPlain != TextureHandle.None) { _device.DestroyTexture(_bandPlain); _bandPlain = TextureHandle.None; }
@@ -302,6 +304,31 @@ public sealed partial class Igi2HudRenderer
             _font?.DrawCentered(batch, line.Text.AsSpan(0, Math.Min(line.RevealedCharacters, line.Text.Length)), width * 0.5f * _scale, y * _scale,
                 Bgra32.FromRgba(255, 255, 255, Channel(fade)), _scale, _scale);
             y += 28f;
+        }
+    }
+
+    /// <summary>
+    /// The countdowns on the game screen, <c>MissionTimerDrawTask_DrawHandler</c>: <c>MM : SS</c> in <c>font3.fnt</c>, white, centred
+    /// across half the display's width with its top at nine tenths of its height, in the display's own pixels.
+    /// </summary>
+    private void DrawMissionTimers(SpriteBatch batch, Igi2TitlePlayer title, int screenWidth, int screenHeight)
+    {
+        foreach (OpenIGI.Game.Igi2.Flow.Igi2MissionTimerTask timer in title.MissionTimers)
+        {
+            if (!timer.IsShown)
+            {
+                continue;
+            }
+
+            _timerFont ??= _assets?.Get("font3.fnt") is { IsFont: true } font ? new BitmapTextRenderer(font) : null;
+            _timerFont?.DrawCentered(
+                batch,
+                timer.DisplayText,
+                (int)(screenWidth * OpenIGI.Game.Igi2.Flow.Igi2MissionTimerTask.DisplayX),
+                (int)(screenHeight * OpenIGI.Game.Igi2.Flow.Igi2MissionTimerTask.DisplayY),
+                Bgra32.FromRgba(255, 255, 255, 255),
+                _scale,
+                _scale);
         }
     }
 

@@ -23,10 +23,18 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// on its own, so <c>isPlaying</c> stays set after a one-shot has finished.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SoundGeneratorTask : Igi2Task
+public sealed partial class Igi2SoundGeneratorTask : Igi2Task, World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SoundGenerator";
+
+    /// <inheritdoc/>
+    /// <remarks><c>SoundGenerator_RemoveHandler</c>: its sound is deleted; <c>isPlaying</c> is left as it was.</remarks>
+    public void RemoveFromWorld()
+    {
+        _sound?.Delete();
+        _sound = null;
+    }
 
     /// <summary>The native its scripts start a sound with.</summary>
     public const string PlaySoundNative = "SoundGenerator_PlaySound";

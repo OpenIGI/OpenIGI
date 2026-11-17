@@ -447,6 +447,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the overlay the scripts have put on the game screen, which the HUD draws.</summary>
     public Igi2ScreenOverlay? ScreenOverlay { get; set; }
 
+    /// <summary>Gets or sets the level's countdowns, which the HUD draws while each is shown (<see cref="Igi2MissionTimerTask.IsShown"/>).</summary>
+    public IReadOnlyList<Igi2MissionTimerTask> MissionTimers { get; set; } = [];
+
     /// <summary>Gets or sets the level's figures (<see cref="World.Igi2EditBoneObjTask"/>), drawn with the soldiers.</summary>
     public IReadOnlyList<World.Igi2EditBoneObjTask> Figures { get; set; } = [];
 

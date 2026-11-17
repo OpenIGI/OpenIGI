@@ -63,6 +63,9 @@ public static class Igi2LevelSystems
     /// <summary>The scripted overlays.</summary>
     public const string ScreenOverlay = "ScreenOverlay";
 
+    /// <summary>The countdowns on the game screen.</summary>
+    public const string MissionTimers = "MissionTimers";
+
     /// <summary>The wires.</summary>
     public const string Wires = "Wires";
 
@@ -163,6 +166,7 @@ public static class Igi2LevelSystems
         .Add(System(Flocks, Igi2WorldSystems.Flocks))
         .Add(System(CutsceneCameraLinks, Igi2WorldSystems.CutsceneCameraLinks))
         .Add(System(ScreenOverlay, Igi2WorldSystems.ScreenOverlay))
+        .Add(System(MissionTimers, Igi2WorldSystems.MissionTimers))
         .Add(System(Wires, Igi2InteractionSystems.Wires))
         .Add(System(Ladders, Igi2InteractionSystems.Ladders))
         .Add(System(Switches, Igi2InteractionSystems.Switches))

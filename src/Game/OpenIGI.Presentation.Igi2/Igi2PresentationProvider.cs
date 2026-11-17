@@ -341,7 +341,8 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             task.TracelineStart,
             task.TracelineEnd,
             new Bgra32(Channel(task.Colour.Z), Channel(task.Colour.Y), Channel(task.Colour.X), Channel(task.Alpha)),
-            () => task.IsActive);
+            // RainEffect_RemoveHandler: a container that holds it out of the world takes the rain away with it.
+            () => task.IsActive && OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(task));
         return new RetailWeather(request.Device, PrecipitationStyle.Igi2, settings, texture, random, offsets[..task.Layers]);
     }
 

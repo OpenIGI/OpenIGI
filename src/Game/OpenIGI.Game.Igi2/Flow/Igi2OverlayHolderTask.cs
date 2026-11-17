@@ -71,10 +71,21 @@ public sealed class Igi2ScreenOverlay
 /// sets the view's infrared, and an overlay not yet up is put up, of its type, a binocular one showing the distance as asked; down, its
 /// overlay is taken down and the infrared view with it. Its children do not run.
 /// </remarks>
-public sealed partial class Igi2OverlayHolderTask : Igi2Task
+public sealed partial class Igi2OverlayHolderTask : Igi2Task, World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "OverlayHolder";
+
+    /// <inheritdoc/>
+    /// <remarks><c>OverlayHolder_RemoveHandler</c>: an overlay it has up comes down, and the infrared view with it.</remarks>
+    public void RemoveFromWorld()
+    {
+        if (_isUp)
+        {
+            Screen?.Hide();
+            _isUp = false;
+        }
+    }
 
     private LevelExpression? _visible;
     private LevelExpression? _infrared;
