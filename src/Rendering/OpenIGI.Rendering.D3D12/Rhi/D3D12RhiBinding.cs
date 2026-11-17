@@ -182,7 +182,7 @@ internal sealed class D3D12SamplerTable
     /// <param name="key">The samplers' identities, in table order.</param>
     /// <param name="start">The first descriptor.</param>
     /// <param name="count">How many.</param>
-    public D3D12SamplerTable(D3D12RhiDevice device, string key, int start, int count)
+    public D3D12SamplerTable(D3D12RhiDevice device, D3D12SamplerTableKey key, int start, int count)
     {
         _device = device;
         Key = key;
@@ -191,7 +191,7 @@ internal sealed class D3D12SamplerTable
     }
 
     /// <summary>Gets the key it is shared under.</summary>
-    public string Key { get; }
+    public D3D12SamplerTableKey Key { get; }
 
     /// <summary>Gets the first descriptor.</summary>
     public int Start { get; }
@@ -209,6 +209,56 @@ internal sealed class D3D12SamplerTable
         {
             _device.ForgetSamplerTable(this);
         }
+    }
+}
+
+/// <summary>What a sampler table holds: its samplers' descriptors, in table order, without their labels.</summary>
+/// <remarks>
+/// By what the samplers do, not which objects they are: a level makes the same sampler many times. Compared by value, so
+/// one scratch key can be refilled for every lookup and only a table that is new keeps a copy.
+/// </remarks>
+internal sealed class D3D12SamplerTableKey : IEquatable<D3D12SamplerTableKey>
+{
+    private RhiSamplerDescriptor[] _items = [];
+    private int _count;
+
+    /// <summary>Refills the key from a sequence of samplers.</summary>
+    /// <param name="samplers">The samplers, in table order.</param>
+    public void Fill(IReadOnlyList<D3D12RhiSampler> samplers)
+    {
+        if (_items.Length < samplers.Count)
+        {
+            _items = new RhiSamplerDescriptor[samplers.Count];
+        }
+
+        _count = samplers.Count;
+        for (int i = 0; i < _count; i++)
+        {
+            _items[i] = samplers[i].Descriptor with { Label = string.Empty };
+        }
+    }
+
+    /// <summary>Copies the key, to keep beside the table it names.</summary>
+    /// <returns>A key nothing refills.</returns>
+    public D3D12SamplerTableKey Copy() => new() { _items = _items[.._count], _count = _count };
+
+    /// <inheritdoc/>
+    public bool Equals(D3D12SamplerTableKey? other) =>
+        other is not null && other._count == _count && _items.AsSpan(0, _count).SequenceEqual(other._items.AsSpan(0, other._count));
+
+    /// <inheritdoc/>
+    public override bool Equals(object? obj) => Equals(obj as D3D12SamplerTableKey);
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
+    {
+        HashCode hash = default;
+        for (int i = 0; i < _count; i++)
+        {
+            hash.Add(_items[i]);
+        }
+
+        return hash.ToHashCode();
     }
 }
 

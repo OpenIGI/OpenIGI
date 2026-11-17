@@ -38,6 +38,30 @@ internal sealed unsafe partial class D3D12RhiDevice
     private const ulong MaxPendingUploadBytes = 64UL * 1024 * 1024;
     private const int MaxFreeStagingChunks = 8;
 
+    // A finished list's hand-offs and written buffers, kept for the next lists to fill: every pass finishes one a frame.
+    private readonly System.Collections.Concurrent.ConcurrentBag<List<D3D12LayoutHandOff>> _handOffLists = [];
+    private readonly System.Collections.Concurrent.ConcurrentBag<List<D3D12RhiBuffer>> _writtenLists = [];
+
+    // Submission scratch, which only the submitting thread touches.
+    private readonly List<TextureBarrier> _handOverBarriers = [];
+    private readonly List<(nint Allocator, nint List)> _fixups = [];
+
+    /// <summary>Gets an empty list for a finished command list's hand-offs.</summary>
+    /// <returns>The list, recycled once the command list has run.</returns>
+    internal List<D3D12LayoutHandOff> RentHandOffList() => _handOffLists.TryTake(out List<D3D12LayoutHandOff>? list) ? list : [];
+
+    /// <summary>Gets an empty list for the buffers a finished command list writes.</summary>
+    /// <returns>The list, recycled once the command list has run.</returns>
+    internal List<D3D12RhiBuffer> RentWrittenList() => _writtenLists.TryTake(out List<D3D12RhiBuffer>? list) ? list : [];
+
+    private void Recycle(D3D12RhiCommandBuffer buffer)
+    {
+        buffer.HandOffs.Clear();
+        _handOffLists.Add(buffer.HandOffs);
+        buffer.Written.Clear();
+        _writtenLists.Add(buffer.Written);
+    }
+
     private readonly List<(ulong Ticket, nint Allocator)> _allocators = [];
     private readonly Stack<nint> _lists = new();
     private readonly List<D3D12RhiBuffer> _freeStaging = [];
@@ -239,7 +263,8 @@ internal sealed unsafe partial class D3D12RhiDevice
         }
 
         ApplyFrameWait();
-        List<(nint Allocator, nint List)> fixups = [];
+        List<(nint Allocator, nint List)> fixups = _fixups;
+        fixups.Clear();
         if (upload is not null)
         {
             ExecuteOne(upload, fixups);
@@ -258,6 +283,7 @@ internal sealed unsafe partial class D3D12RhiDevice
             ReturnList((ID3D12CommandAllocator*)allocator, (ID3D12GraphicsCommandList7*)list, ticket);
         }
 
+        fixups.Clear();
         if (upload is not null)
         {
             ReturnList(upload.Allocator, upload.List, ticket);
@@ -267,6 +293,7 @@ internal sealed unsafe partial class D3D12RhiDevice
             }
 
             _uploadChunks.Clear();
+            Recycle(upload);
         }
 
         foreach (D3D12RhiCommandBuffer buffer in buffers)
@@ -277,6 +304,7 @@ internal sealed unsafe partial class D3D12RhiDevice
             }
 
             ReturnList(buffer.Allocator, buffer.List, ticket);
+            Recycle(buffer);
         }
 
         ReleaseRetired();
@@ -289,7 +317,8 @@ internal sealed unsafe partial class D3D12RhiDevice
     /// <param name="fixups">Receives the hand-over list, to be given back with the rest.</param>
     private void ExecuteOne(D3D12RhiCommandBuffer buffer, List<(nint Allocator, nint List)> fixups)
     {
-        List<TextureBarrier> barriers = [];
+        List<TextureBarrier> barriers = _handOverBarriers;
+        barriers.Clear();
         foreach (D3D12LayoutHandOff handOff in buffer.HandOffs)
         {
             D3D12RhiTexture texture = (D3D12RhiTexture)handOff.Texture;
@@ -322,7 +351,7 @@ internal sealed unsafe partial class D3D12RhiDevice
         if (barriers.Count > 0)
         {
             TakeList(out ID3D12CommandAllocator* allocator, out ID3D12GraphicsCommandList7* list);
-            TextureBarrier[] array = [.. barriers];
+            Span<TextureBarrier> array = CollectionsMarshal.AsSpan(barriers);
             fixed (TextureBarrier* first = array)
             {
                 BarrierGroup group = new() { Type = BarrierType.Texture, NumBarriers = (uint)array.Length, PTextureBarriers = first };

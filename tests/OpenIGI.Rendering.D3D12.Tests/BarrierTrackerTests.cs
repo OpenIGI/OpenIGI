@@ -27,7 +27,9 @@ public sealed class BarrierTrackerTests
         Assert.Empty(tracker.QueuedTextureBarriers);
         Assert.Empty(tracker.QueuedBufferBarriers);
 
-        D3D12LayoutHandOff handOff = Assert.Single(tracker.HandOffs());
+        List<D3D12LayoutHandOff> handOffs = [];
+        tracker.HandOffs(handOffs);
+        D3D12LayoutHandOff handOff = Assert.Single(handOffs);
         Assert.Equal(BarrierLayout.DirectQueueShaderResource, handOff.First);
         Assert.Equal(BarrierLayout.DirectQueueShaderResource, handOff.Last);
     }
@@ -72,7 +74,9 @@ public sealed class BarrierTrackerTests
         Assert.Equal(BarrierAccess.ShaderResource, barrier.AccessAfter);
 
         // The list leaves it where its last use put it, and needed it first as a target.
-        D3D12LayoutHandOff handOff = Assert.Single(tracker.HandOffs());
+        List<D3D12LayoutHandOff> handOffs = [];
+        tracker.HandOffs(handOffs);
+        D3D12LayoutHandOff handOff = Assert.Single(handOffs);
         Assert.Equal(BarrierLayout.RenderTarget, handOff.First);
         Assert.Equal(BarrierLayout.DirectQueueShaderResource, handOff.Last);
     }

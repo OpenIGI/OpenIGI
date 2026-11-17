@@ -91,7 +91,7 @@ internal sealed class WorldPlacementTransforms
         // displayed placement cached above stays right; only the transform is per-frame.
         if (Objects?.TryGetSwivelOrientation(placement, FrameAlpha, FrameSmooth, out Matrix3f orientation) == true)
         {
-            displayed = displayed with { Orientation = orientation };
+            displayed = Placed(displayed, displayed.Position, orientation);
         }
 
         // A fan or a radar head, which turns for ever and never leaves its spot. Same reasoning as
@@ -101,23 +101,33 @@ internal sealed class WorldPlacementTransforms
         WorldPlacement carried = placement;
         if (Spins?.TryGetOrientation(placement, FrameAlpha, out Matrix3f spun) == true)
         {
-            displayed = displayed with { Orientation = spun };
-            carried = placement with { Orientation = spun };
+            displayed = Placed(displayed, displayed.Position, spun);
+            if (Motions is not null)
+            {
+                carried = Placed(placement, placement.Position, spun);
+            }
         }
 
         // A door a title swings: it leaves its spot as well as turning.
         if (Motions?.TryGetTransform(carried, FrameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
         {
-            displayed = displayed with { Position = moved, Orientation = movedOrientation };
+            displayed = Placed(displayed, moved, movedOrientation);
         }
 
         if (Objects?.TryGetStandOrientation(placement, out Matrix3f stand) == true)
         {
-            displayed = displayed with { Orientation = stand };
+            displayed = Placed(displayed, displayed.Position, stand);
         }
 
         return displayed;
     }
+
+    // The placement standing there, turned so: itself when it already is. Every live object is asked this every frame, and a
+    // closed door or a still camera was a new record each time -- which also told the claim cache it was a new placement.
+    private static WorldPlacement Placed(WorldPlacement displayed, Vector3d position, Matrix3f orientation) =>
+        displayed.Position.Equals(position) && displayed.Orientation.Equals(orientation)
+            ? displayed
+            : displayed with { Position = position, Orientation = orientation };
 
     internal bool UsesDestroyedReplacement(WorldPlacement placement) =>
         placement.DestroyedReplacement is not null

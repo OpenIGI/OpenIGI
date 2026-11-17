@@ -97,7 +97,6 @@ internal sealed unsafe class D3D12BarrierTracker
     private readonly Stack<State> _free = [];
     private readonly List<TextureBarrier> _textures = [];
     private readonly List<BufferBarrier> _buffers = [];
-    private readonly List<D3D12LayoutHandOff> _handOffs = [];
     private bool _flushAll;
 
     /// <summary>Gets or sets a value indicating whether every command waits for everything before it.</summary>
@@ -298,19 +297,17 @@ internal sealed unsafe class D3D12BarrierTracker
     }
 
     /// <summary>The layouts the list's textures need first and are left in, for the submission to hand them over.</summary>
-    /// <returns>One hand-off per texture the list used.</returns>
-    public List<D3D12LayoutHandOff> HandOffs()
+    /// <param name="into">Receives one hand-off per texture the list used, after what it already holds.</param>
+    public void HandOffs(List<D3D12LayoutHandOff> into)
     {
-        _handOffs.Clear();
+        ArgumentNullException.ThrowIfNull(into);
         foreach ((object key, State state) in _states)
         {
             if (state.IsTexture)
             {
-                _handOffs.Add(new D3D12LayoutHandOff(state.Resource, key, state.First, state.FirstSync, state.FirstAccess, state.Layout));
+                into.Add(new D3D12LayoutHandOff(state.Resource, key, state.First, state.FirstSync, state.FirstAccess, state.Layout));
             }
         }
-
-        return [.. _handOffs];
     }
 
     /// <summary>Whether a layout lets a command make an access, so no transition is needed.</summary>
@@ -437,7 +434,6 @@ internal sealed unsafe class D3D12BarrierTracker
         _states.Clear();
         _textures.Clear();
         _buffers.Clear();
-        _handOffs.Clear();
         _flushAll = false;
     }
 

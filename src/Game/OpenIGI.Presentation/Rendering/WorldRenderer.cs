@@ -429,7 +429,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     continue;
                 }
 
-                if (level > 0 && lod.Level(displayed, level) is { } lower && _subsets.ResolveLevel(lower) is { } lowerModel)
+                // Asked with the placement as authored: here it differs from the displayed one only in where it stands, which
+                // the draw takes from the entry, and the levels are kept per placement. A moving object asked as displayed was
+                // a new placement every frame -- its chain and resolved model built again and kept, without end.
+                if (level > 0 && lod.Level(scene.Placements[index], level) is { } lower && _subsets.ResolveLevel(lower) is { } lowerModel)
                 {
                     displayed = lower;
                     model = lowerModel;
