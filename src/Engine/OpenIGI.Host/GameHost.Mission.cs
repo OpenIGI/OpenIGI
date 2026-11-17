@@ -358,14 +358,16 @@ public sealed partial class GameHost
                     _remasteredHud.Dispose();
                     _remasteredHud = null;
                 }
+            }
 
-                _debugOverlay?.Dispose();
-                _debugOverlay = new DebugOverlayRenderer(_device, _logger);
-                if (!_debugOverlay.Load())
-                {
-                    _debugOverlay.Dispose();
-                    _debugOverlay = null;
-                }
+            // The F12 panel is the host's own tool, not part of a loadout: loaded for every title. I.G.I. 2 arms its player
+            // itself and declares no loadout here, and with the panel loaded only above it F12 toggled nothing in the sequel.
+            _debugOverlay?.Dispose();
+            _debugOverlay = new DebugOverlayRenderer(_device, _logger);
+            if (!_debugOverlay.Load())
+            {
+                _debugOverlay.Dispose();
+                _debugOverlay = null;
             }
 
             // The weapons lying in the level and what flies in it are the title's to draw, with its own models.
