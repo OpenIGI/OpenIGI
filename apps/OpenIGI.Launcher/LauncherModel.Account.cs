@@ -53,6 +53,14 @@ internal sealed partial class LauncherModel
         if (shown != _accountShown)
         {
             _accountShown = shown;
+            _logger.Information(LogCategory, _account.State switch
+            {
+                AccountLinkState.Linked => $"Account: signed in with Discord as {_account.Account?.Name}.",
+                AccountLinkState.Unlinked => "Account: not signed in.",
+                AccountLinkState.Waiting => "Account: waiting for the Discord sign-in in the browser.",
+                AccountLinkState.Offline => $"Account: the master can't be reached ({_account.Error}).",
+                _ => $"Account: {_account.State}{(_account.Error is { } error ? $" ({error})" : string.Empty)}.",
+            });
             Changed();
         }
     }

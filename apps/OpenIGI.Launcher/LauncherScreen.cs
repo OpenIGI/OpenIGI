@@ -289,6 +289,10 @@ internal sealed class LauncherScreen : Screen
         row.Add(new ChromeCaption(_theme));
         row.Add(new Panel(), grow: 1f);
 
+        // The account, on the strip that has room for it at every width: the header's tabs fill a small window.
+        _accountChip = new AccountChip(_theme, _model.Account) { Margin = new Thickness(0f, 0f, 16f, 0f) };
+        row.Add(_accountChip);
+
         var minimize = new IconButton(_theme, KitIcon.Minimize) { Tooltip = "Minimise" };
         minimize.Activated += _ => _window.Minimize();
         var maximize = new IconButton(_theme, KitIcon.Maximize) { Tooltip = "Maximise" };
@@ -346,8 +350,6 @@ internal sealed class LauncherScreen : Screen
 
         row.Add(nav);
         row.Add(new Panel(), grow: 1f);
-        _accountChip = new AccountChip(_theme, _model.Account);
-        row.Add(_accountChip);
         row.Add(new StatusIndicator(_theme));
         bar.AddChild(row);
         return bar;

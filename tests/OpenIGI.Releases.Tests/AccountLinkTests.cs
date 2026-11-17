@@ -110,6 +110,24 @@ public sealed class AccountLinkTests
         Assert.Null(link.LinkUrl);
     }
 
+    /// <summary>LINK pressed while the account is first being asked about is kept, and the link asked for once that is back.</summary>
+    [Fact]
+    public async Task Link_pressed_during_the_first_check_is_not_lost()
+    {
+        Master master = new();
+        List<string> opened = [];
+        using PointSigner key = new();
+        AccountLink link = new(new AccountService(master.Client, new Uri("https://master.test")), () => key, opened.Add, "Desktop");
+
+        link.Refresh();
+        Assert.True(link.IsBusy);
+        link.Link();
+        await Settle(link);
+        await Settle(link);
+        Assert.Equal(AccountLinkState.Waiting, link.State);
+        Assert.Single(opened);
+    }
+
     /// <summary>Nothing is asked while the player's key isn't loaded; it is asked as soon as it is.</summary>
     [Fact]
     public async Task Nothing_is_asked_until_the_key_is_loaded()

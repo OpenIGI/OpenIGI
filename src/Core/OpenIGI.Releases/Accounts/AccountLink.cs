@@ -52,6 +52,9 @@ public sealed class AccountLink
     private DateTimeOffset _retryAt;
     private string? _code;
 
+    // LINK pressed while another request was on its way: the link is asked for as soon as that one is back.
+    private bool _linkAsked;
+
     /// <summary>Initializes a new instance of the <see cref="AccountLink"/> class.</summary>
     /// <param name="service">The master's accounts.</param>
     /// <param name="signer">The key the player plays under, or <see langword="null"/> while it isn't loaded.</param>
@@ -117,6 +120,12 @@ public sealed class AccountLink
     /// <summary>Begins linking: a link asked for, then the browser opened on its page.</summary>
     public void Link()
     {
+        if (_pending is not null && State is not AccountLinkState.Starting)
+        {
+            _linkAsked = true;
+            return;
+        }
+
         if (_pending is not null || State is AccountLinkState.Waiting || _signer() is not { } key)
         {
             return;
@@ -193,6 +202,14 @@ public sealed class AccountLink
             _pending = null;
             _collect = null;
             collect?.Invoke(finished);
+            if (_linkAsked && _pending is null)
+            {
+                _linkAsked = false;
+                if (State is AccountLinkState.Unlinked or AccountLinkState.Offline)
+                {
+                    Link();
+                }
+            }
         }
 
         DateTimeOffset now = _clock();

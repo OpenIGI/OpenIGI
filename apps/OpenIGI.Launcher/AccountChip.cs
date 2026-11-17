@@ -8,7 +8,7 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Launcher;
 
 /// <summary>
-/// The header's account: SIGN IN WITH DISCORD while signed out; while the browser is out on Discord, a word saying so with
+/// The account, on the launcher's top strip: SIGN IN WITH DISCORD while signed out; while the browser is out on Discord, a word saying so with
 /// OPEN AGAIN and CANCEL; once signed in, the player's initial and Discord name with SIGN OUT. The game uses the same
 /// sign-in, so it never asks again.
 /// </summary>
@@ -26,7 +26,7 @@ internal sealed class AccountChip : FlexPanel
         _theme = theme;
         _account = account;
         Orientation = Orientation.Horizontal;
-        Gap = 12f;
+        Gap = 10f;
         VerticalAlignment = VerticalAlignment.Center;
         Update();
     }
@@ -35,7 +35,9 @@ internal sealed class AccountChip : FlexPanel
     /// <returns><see langword="true"/> when it was rebuilt, and the header needs laying out again.</returns>
     public bool Update()
     {
-        string key = $"{_account.State}|{_account.Account?.Name}|{_account.IsBusy}|{_account.Error}";
+        // Rebuilt only when what it shows changes: a fresh button fades in, and the busy flag alone came and went too fast for
+        // one to be seen. A press while busy is kept by the account itself.
+        string key = $"{(_account.State == AccountLinkState.Checking ? AccountLinkState.Unlinked : _account.State)}|{_account.Account?.Name}|{_account.Error}";
         if (key == _shown)
         {
             return false;
@@ -45,9 +47,6 @@ internal sealed class AccountChip : FlexPanel
         ClearChildren();
         switch (_account.State)
         {
-            case AccountLinkState.Checking:
-                break;
-
             case AccountLinkState.Starting or AccountLinkState.Waiting:
                 Add(Note("Finish signing in in your browser"));
                 Add(Small("OPEN AGAIN", "Open the Discord page again.", _account.OpenLinkAgain));
@@ -56,7 +55,7 @@ internal sealed class AccountChip : FlexPanel
 
             case AccountLinkState.Linked or AccountLinkState.Offline when _account.Account is { } signedIn:
                 Add(new Mark(_theme, signedIn.Name) { Online = _account.State == AccountLinkState.Linked });
-                Add(new Label(_theme.BodyStrong, signedIn.Name, 16f, _theme.TextBright) { VerticalAlignment = VerticalAlignment.Center });
+                Add(new Label(_theme.BodyStrong, signedIn.Name, 14f, _theme.TextBright) { VerticalAlignment = VerticalAlignment.Center });
                 Add(Small("SIGN OUT", "Sign this computer out of your account, the game included.", _account.Unlink));
                 break;
 
@@ -65,12 +64,12 @@ internal sealed class AccountChip : FlexPanel
                 {
                     Accent = ButtonAccent.Ghost,
                     LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.People, centre, size, ink),
-                    GlyphSize = 16f,
-                    TextSize = 14f,
+                    GlyphSize = 14f,
+                    TextSize = 12f,
                     Tracking = 0.12f,
-                    Padding = new Thickness(16f, 0f),
-                    Height = 36f,
-                    IsEnabled = !_account.IsBusy,
+                    Padding = new Thickness(12f, 0f),
+                    Height = 26f,
+                    // Never greyed out while the master is first asked: on the dark strip that read as no button at all.
                     VerticalAlignment = VerticalAlignment.Center,
                     Tooltip = _account.Error ?? "Sign in once here and the game is signed in too: your Discord name in multiplayer, your progress on every computer, your record.",
                 };
@@ -82,18 +81,17 @@ internal sealed class AccountChip : FlexPanel
         return true;
     }
 
-    private Label Note(string text) => new(_theme.Body, text, 14f, _theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center };
+    private Label Note(string text) => new(_theme.Body, text, 13f, _theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center };
 
     private Button Small(string text, string tooltip, Action act)
     {
         var button = new Button(_theme, text)
         {
             Accent = ButtonAccent.Text,
-            TextSize = 13f,
+            TextSize = 12f,
             Tracking = 0.12f,
             Padding = new Thickness(8f, 0f),
-            Height = 32f,
-            IsEnabled = !_account.IsBusy,
+            Height = 26f,
             VerticalAlignment = VerticalAlignment.Center,
             Tooltip = tooltip,
         };
@@ -108,7 +106,7 @@ internal sealed class AccountChip : FlexPanel
 
         public bool Online { get; init; }
 
-        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(context.Px(32f), context.Px(32f));
+        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(context.Px(24f), context.Px(24f));
 
         protected override void OnDraw(UiPainter painter)
         {
