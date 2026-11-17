@@ -137,7 +137,12 @@ public sealed class MaterialLibraryTests : IDisposable
         foreach (string glass in (string[])["631_12_1_argb8888", "600_09_1_argb8888", "436_14_1argb8888", "glass_argb8888", "412_06_1_argb8888 "])
         {
             Assert.True(library.For(glass).Glass, glass);
+            Assert.True(library.For(glass).GlassStains, glass);
         }
+
+        // Project I.G.I.'s panes paint a reflection, which the reflection pass supplies: glass, and no stains.
+        Assert.True(library.For("418_05_1_argb8888").Glass);
+        Assert.False(library.For("418_05_1_argb8888").GlassStains);
 
         Assert.False(library.For("230_42_1_argb8888").Glass);
         Assert.False(library.For("600_09_1").Glass);

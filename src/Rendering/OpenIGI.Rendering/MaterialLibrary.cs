@@ -203,7 +203,11 @@ public sealed class MaterialLibrary
             // through is a statement about that surface and has no sensible blanket value.
             NoHistory: false,
             Glass: Flag(element, "glass") ?? false,
-            Matte: Flag(element, "matte") ?? fallback.Matte);
+            Matte: Flag(element, "matte") ?? fallback.Matte)
+        {
+            // Never inherited either, for the same reason: it says what one pane's texture is.
+            GlassStains = Flag(element, "glassStains") ?? false,
+        };
     }
 
     private static bool? Flag(JsonElement element, string name) =>

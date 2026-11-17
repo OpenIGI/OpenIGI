@@ -261,20 +261,24 @@
       "(its name carries a trailing space in the packs, kept here), 710_02_1, 770_02_1.",
       "",
       "LEFT OUT: 230_42_1 (a cabinet whose wooden frame is most of the texture), 261_34_1 (flowers), 413_08_1 (icicles),",
-      "crater1 and wake (ground marks), and the characters' hair and clothing, which no world pass draws."
+      "crater1 and wake (ground marks), and the characters' hair and clothing, which no world pass draws.",
+      "",
+      "glassStains: these panes' colour is DIRT ON THE GLASS, not the painted stand-in for a reflection Project I.G.I.'s panes",
+      "carry, so it is laid over what gets through by its alpha, lit by the pane's lightmap. Without it the glass pass drew",
+      "only the transmission and these windows came out crystal clear on every look but the original's."
     ],
-    "631_12_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "231_17_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "436_14_1argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "560_06_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "600_08_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "600_09_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "260_34_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "560_09_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "glass_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "glass123_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "412_06_1_argb8888 ": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "710_02_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "770_02_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true }
+    "631_12_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "231_17_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "436_14_1argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "560_06_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "600_08_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "600_09_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "260_34_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "560_09_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "glass_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "glass123_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "412_06_1_argb8888 ": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "710_02_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true },
+    "770_02_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true, "glassStains": true }
   }
 }

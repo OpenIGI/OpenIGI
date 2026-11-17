@@ -131,7 +131,8 @@ public sealed partial class GraphicsDevice
     /// <param name="call">What to draw.</param>
     /// <param name="ranges">Which parts of it, or empty for the call's own range.</param>
     /// <param name="modelView">Its transform into view space.</param>
-    private void DrawGlass(IRhiRenderPassEncoder pass, in MeshDrawCall call, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView)
+    /// <param name="hasLightmap">Whether it carries a lightmap, which lights its stains.</param>
+    private void DrawGlass(IRhiRenderPassEncoder pass, in MeshDrawCall call, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, bool hasLightmap)
     {
         if (_glassPipelines is not { } pipelines || _glassGroup is not { } group)
         {
@@ -140,6 +141,17 @@ public sealed partial class GraphicsDevice
 
         Span<float> push = stackalloc float[GlassPipelineCache.PushDataBytes / sizeof(float)];
         WriteGlassPush(push, modelView);
+
+        // A stained pane's dirt, lit as the forward pass lights a translucent face group over the scene's linear image:
+        // x whether it has any, y the lightmap scale through the curve's power over the exposure (ForwardPushBlock),
+        // z whether a lightmap lights it, w the model's flat light for one that has none.
+        if (_material.GlassStains)
+        {
+            push[28] = 1f;
+            push[29] = MathF.Pow(MathF.Max(_lightmapScale, 0f), 2.2f) / MathF.Max(_sceneExposure, 1e-3f);
+            push[30] = hasLightmap ? 1f : 0f;
+            push[31] = (_modelAmbient.X + _modelAmbient.Y + _modelAmbient.Z) / 3f;
+        }
 
         IRhiRenderPipeline pipeline = pipelines.ForCull(_cullMode);
         DrawGlassWith(pass, pipeline, group, call, ranges, push);
