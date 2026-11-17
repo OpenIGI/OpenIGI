@@ -48,7 +48,8 @@ public sealed partial class Igi2HudRenderer
     /// </remarks>
     private void DrawInventory(SpriteBatch batch, Igi2TitlePlayer title)
     {
-        if (title.Inventory is not { } inventory || _font is not { } font)
+        // Hidden by the profile's option, which the inventory key flips (Config_IsInventoryHidden).
+        if (title.Inventory is not { } inventory || _font is not { } font || title.GameConfig?.Active?.HideInventory == true)
         {
             return;
         }

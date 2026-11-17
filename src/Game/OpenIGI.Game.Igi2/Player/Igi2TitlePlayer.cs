@@ -690,6 +690,13 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
+
+        // HumanPlayer_RunDelayedHandler: in the world, the inventory key pressed shows or hides the inventory, a profile option.
+        if (Human.IsActive && Human.Channels.WasPressed(Humans.Igi2HumanChannel.Inventory) && GameConfig?.Active is { } profile)
+        {
+            profile.HideInventory = !profile.HideInventory;
+        }
+
         RunNetworkHumans();
 
         // The computer's menu, a task of the game screen, runs after the player, and its screens with it.

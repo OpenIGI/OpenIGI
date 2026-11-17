@@ -85,7 +85,7 @@ public sealed partial class Igi2HumanPlayer
     /// </item>
     /// </list>
     /// <para>
-    /// Not ported yet: the action menu's pickups. The degraded-copy slowdown is inert: its factor is one.
+    /// The pickups offer themselves to the action menu from <see cref="Pickup"/>. The degraded-copy slowdown is inert: its factor is one.
     /// </para>
     /// </remarks>
     public void Update()
