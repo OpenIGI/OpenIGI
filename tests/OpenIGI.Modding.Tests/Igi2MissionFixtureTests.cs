@@ -75,6 +75,34 @@ public sealed class Igi2MissionFixtureTests
         Assert.InRange(Distance(guardTrain.CurrentPosition, guard.Position), guardOffset - 1024, guardOffset + 1024);
     }
 
+    /// <summary>
+    /// A blown-up object in mission 14 goes off as retail's does: fireballs, the explosion's smoke puffs in the level's particles
+    /// (none were made), and the fire its container holds lighting once it has exploded.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void An_exploding_object_throws_fire_and_smoke_and_lights_its_fire()
+    {
+        Igi2Mission mission = MissionFixture.Igi2(14);
+        Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(mission.Stand());
+        GameTask root = player.Level!.Root;
+        Igi2ExplodeObjectTask tank = root.Descendants().OfType<Igi2ExplodeObjectTask>().Single(static e => e.Id == 4004);
+        Game.World.Particles.Particle2DModule particles = player.Particles!;
+        int smokeBefore = particles.Systems.Count(static s => s.Look.Sprite == Game.World.ExplosionSmoke.Sprite);
+        int fireBefore = particles.Systems.Where(static s => s.Look.Sprite == "fireball.spr" && s.IsInWorld).Sum(static s => s.Count);
+
+        tank.Explosive.WeaponHit(100000f);
+        player.Tick(default);
+        Assert.NotEmpty(player.Explosions!.FireBalls);
+
+        for (int tick = 0; tick < 60; tick++)
+        {
+            player.Tick(default);
+        }
+
+        Assert.True(particles.Systems.Count(static s => s.Look.Sprite == Game.World.ExplosionSmoke.Sprite) > smokeBefore, "the explosion smokes");
+        Assert.True(particles.Systems.Where(static s => s.Look.Sprite == "fireball.spr" && s.IsInWorld).Sum(static s => s.Count) > fireBefore, "its fire burns");
+    }
+
     private static double Distance(Vector3d a, Vector3d b) =>
         Math.Sqrt(((a.X - b.X) * (a.X - b.X)) + ((a.Y - b.Y) * (a.Y - b.Y)) + ((a.Z - b.Z) * (a.Z - b.Z)));
 

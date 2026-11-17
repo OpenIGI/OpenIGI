@@ -100,6 +100,41 @@ public sealed class ExplosionSmoke : IDynamicTask
         return true;
     }
 
+    /// <summary>The smoke's sprite, <c>smoke2.spr</c>.</summary>
+    public const string Sprite = "smoke2.spr";
+
+    // Explosion0_AddSmoke in both games (Project I.G.I.'s 0x47EAD0, I.G.I. 2's igi2 0x508A30): a grey of 12.7 ("33KA" three times),
+    // seen to 819200 units, rising at 2.23 a tick.
+    private const float Grey = 12.7f;
+    private const float Range = 819200f;
+    private const float Rise = 2.23f;
+
+    /// <summary>
+    /// Makes a puff's particle system in a title's particle module, <c>Explosion0_AddSmoke</c>: one particle of
+    /// <see cref="Sprite"/> at the smoke, grey, seen through the depth, rising, turned and turning as the puff was drawn.
+    /// </summary>
+    /// <param name="module">The title's particle module.</param>
+    /// <param name="puff">The puff.</param>
+    /// <returns>The system.</returns>
+    public static Particle2DSystem EmitInto(Particle2DModule module, ExplosionSmokePuff puff)
+    {
+        ArgumentNullException.ThrowIfNull(module);
+        ArgumentNullException.ThrowIfNull(puff);
+        Particle2DLook look = new(
+            Sprite,
+            IsAnimated: false,
+            Frames: module.FramesOf(Sprite),
+            AnimationDelta: 0,
+            new Vector3f(Grey, Grey, Grey),
+            puff.Size,
+            puff.Size,
+            Range,
+            puff.Flags | Particle2DFlags.DepthTested);
+        Particle2DSystem system = module.New(look, new Vector3f(0f, 0f, Rise), puff.SizeDelta, 1, collider: null);
+        system.AddParticle(puff.Position, new Vector3f(0f, 0f, 1f), puff.Intensity, puff.RotationDelta, puff.Rotation, 1f, puff.Lifetime, puff.Fadetime);
+        return system;
+    }
+
     private Fpu Draw() => _random.NextDouble();
 
     /// <summary><c>Explosion0_AddSmoke</c>: a particle at the smoke, turned at random and turning at random.</summary>

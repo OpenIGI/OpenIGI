@@ -90,7 +90,7 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     public const string FragmentModel = "1009_01_1";
 
     /// <summary>The smoke's sprite.</summary>
-    public const string SmokeSprite = "smoke2.spr";
+    public const string SmokeSprite = ExplosionSmoke.Sprite;
 
     // 0x47F200's first FireBall: 75 ticks, its animation as long, and a quarter smaller when it is not alone.
     private const int FireballTicks = 75;
@@ -111,9 +111,7 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     private const float FragmentScale = 0.00048828125f;
     private const float TumbleRange = 0.03141593f;
 
-    // 0x47EAD0: the smoke rises at 2.23 a tick, a grey of 12.7.
-    private const float SmokeRise = 2.23f;
-    private const float SmokeColour = 12.7f;
+    // 0x47EAD0's depth range, which a flashbang's smoke shares with the explosion's (ExplosionSmoke.EmitInto).
     private const float SmokeDepth = 819200f;
 
     // A flashbang's smoke (0x47E790, 0x47E820): its grey, its size, its growth and room, its rise (4096000 by 9.259259e-6), its
@@ -377,25 +375,6 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     }
 
     // 0x47EAD0: a puff is a particle system of its own, of one particle, rising at 2.23 a tick.
-    private Particle2DSystem? EmitSmoke(ExplosionSmokePuff puff)
-    {
-        if (Particles is not { } module)
-        {
-            return null;
-        }
-
-        Particle2DLook look = new(
-            SmokeSprite,
-            IsAnimated: false,
-            Frames: module.FramesOf(SmokeSprite),
-            AnimationDelta: 0,
-            new Vector3f(SmokeColour, SmokeColour, SmokeColour),
-            puff.Size,
-            puff.Size,
-            SmokeDepth,
-            puff.Flags | Particle2DFlags.DepthTested);
-        Particle2DSystem system = module.New(look, new Vector3f(0f, 0f, SmokeRise), puff.SizeDelta, 1, collider: null);
-        system.AddParticle(puff.Position, new Vector3f(0f, 0f, 1f), puff.Intensity, puff.RotationDelta, puff.Rotation, 1f, puff.Lifetime, puff.Fadetime);
-        return system;
-    }
+    private Particle2DSystem? EmitSmoke(ExplosionSmokePuff puff) =>
+        Particles is { } module ? ExplosionSmoke.EmitInto(module, puff) : null;
 }
