@@ -246,8 +246,16 @@ internal sealed class AccountMenu : Control
 
     // The panel's top: who is signed in and how they stand, or what signing in brings, or what the browser is waiting on.
     private float HeaderHeight(LayoutContext context) => SignedIn is not null
-        ? context.Px(_model.Record switch { null => 72f, { SeasonTotals.Matches: 0 } => 72f + 76f, _ => 72f + 96f })
-        : context.Px(Account.State is AccountLinkState.Starting or AccountLinkState.Waiting ? 112f : 128f);
+        ? context.Px(_model.Record switch { null => 72f, { SeasonTotals.Matches: 0 } => 72f + 62f, _ => 72f + 96f })
+        : context.Px(Account.State is AccountLinkState.Starting or AccountLinkState.Waiting ? 112f : Account.Error is null ? 124f : 150f);
+
+    // What signing in brings, a line each.
+    private static readonly string[] SignInPoints =
+    [
+        "Cloud sync for progress, difficulty and controls",
+        "Your Discord name in multiplayer",
+        "Stats and a place on the leaderboard",
+    ];
 
     private void DrawHeader(UiPainter painter, UiRect header)
     {
@@ -261,7 +269,7 @@ internal sealed class AccountMenu : Control
             painter.DrawText(Theme.Display, Fit(account.Name), new UiVec2(textX, header.Y + context.Px(18f)), context.Px(30f), Theme.TextBright);
             painter.DrawText(
                 Theme.Body,
-                Account.State == AccountLinkState.Linked ? "This computer: the launcher and the game" : "Offline: the servers can't be reached",
+                Account.State == AccountLinkState.Linked ? "Cloud sync on · launcher and game" : "Offline: the servers can't be reached",
                 new UiVec2(textX, header.Y + context.Px(50f)),
                 context.Px(14f),
                 Account.State == AccountLinkState.Linked ? Theme.TextMuted : Theme.Warning);
@@ -274,7 +282,7 @@ internal sealed class AccountMenu : Control
                 StatTotals season = record.SeasonTotals;
                 if (season.Matches == 0)
                 {
-                    DrawWrapped(painter, "No matches on the official servers yet this season. Play one and it counts here.", new UiVec2(header.X, y + context.Px(38f)), header.Width);
+                    DrawWrapped(painter, "No matches yet this season.", new UiVec2(header.X, y + context.Px(38f)), header.Width);
                     return;
                 }
 
@@ -305,12 +313,19 @@ internal sealed class AccountMenu : Control
             return;
         }
 
-        painter.DrawLabel(Theme.Mono, "ONLINE ACCOUNT", new UiVec2(header.X, header.Y), context.Px(11f), Theme.Accent, 0.2f);
-        painter.DrawText(Theme.Display, "Play as yourself", new UiVec2(header.X, header.Y + context.Px(18f)), context.Px(30f), Theme.TextBright);
-        string why = Account.Error is { } error
-            ? error
-            : "Your Discord name in multiplayer, your progress on every computer and in the browser, and a record of your matches. Sign in once: the game uses it too.";
-        DrawWrapped(painter, why, new UiVec2(header.X, header.Y + context.Px(58f)), header.Width, Account.Error is null ? Theme.TextMuted : Theme.Danger);
+        painter.DrawText(Theme.Display, "Sign in with Discord", new UiVec2(header.X, header.Y), context.Px(28f), Theme.TextBright);
+        float line = header.Y + context.Px(46f);
+        foreach (string point in SignInPoints)
+        {
+            KitIcons.Draw(painter, KitIcon.Check, new UiVec2(header.X + context.Px(8f), line + context.Px(10f)), context.Px(14f), Theme.Accent);
+            painter.DrawText(Theme.Body, point, new UiVec2(header.X + context.Px(26f), line), context.Px(15f), Theme.Text);
+            line += context.Px(26f);
+        }
+
+        if (Account.Error is { } error)
+        {
+            DrawWrapped(painter, error, new UiVec2(header.X, line + context.Px(4f)), header.Width, Theme.Danger);
+        }
     }
 
     private void DrawWrapped(UiPainter painter, string text, UiVec2 at, float width, Bgra32? colour = null)
@@ -406,7 +421,7 @@ internal sealed class AccountMenu : Control
             ];
         }
 
-        return [new(KitIcon.People, "CONTINUE WITH DISCORD", "BROWSER", RowKind.Primary, Account.Link)];
+        return [new(KitIcon.People, "SIGN IN WITH DISCORD", string.Empty, RowKind.Primary, Account.Link)];
     }
 
     private void SignOut()

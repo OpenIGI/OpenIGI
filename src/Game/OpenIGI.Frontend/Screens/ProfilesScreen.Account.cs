@@ -51,8 +51,8 @@ public sealed partial class ProfilesScreen
                 break;
 
             case AccountStatus.SignedOut:
-                column.AddChild(Headline(theme, "Play as yourself"));
-                column.AddChild(Note(theme, "Sign in with Discord to play multiplayer under your Discord name, keep your progress on every computer and in the browser, and build an online record of your matches."));
+                column.AddChild(Headline(theme, "Sign in with Discord"));
+                column.AddChild(Note(theme, "· Cloud sync for progress, difficulty and controls\n· Your Discord name in multiplayer\n· Stats and a place on the leaderboard"));
                 column.AddChild(Actions(SignInButton(theme, accounts)));
                 break;
 
