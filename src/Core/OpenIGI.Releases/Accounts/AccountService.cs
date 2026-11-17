@@ -200,6 +200,7 @@ public sealed class AccountService(HttpClient http, Uri master)
 [JsonSerializable(typeof(LinkStart))]
 [JsonSerializable(typeof(LinkState))]
 [JsonSerializable(typeof(OwnAccount))]
+[JsonSerializable(typeof(PlayerAccount))]
 [JsonSerializable(typeof(RemoteProfile))]
 [JsonSerializable(typeof(Dictionary<string, PlayerAccount>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]

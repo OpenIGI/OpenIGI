@@ -1,6 +1,5 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Launcher.Services;
 using OpenIGI.Net.Identity;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.Releases.Maps;
@@ -30,7 +29,8 @@ internal sealed partial class LauncherModel
         new AccountService(AccountHttp, MapService.Master),
         () => (_identity ??= LoadIdentity()) is { } identity ? new PlayerRequestSigner(identity) : null,
         Open,
-        "Desktop");
+        "Desktop",
+        rememberPath: SettingsPaths.GetFilePath("account.json"));
 
     /// <summary>Gets the signed-in player's Discord avatar as a file on this computer, once it has come down; else <see langword="null"/>.</summary>
     public string? AvatarFile { get; private set; }
@@ -74,7 +74,7 @@ internal sealed partial class LauncherModel
         }
 
         _account.Update();
-        PlayerAccount? signedIn = _account.State is AccountLinkState.Linked or AccountLinkState.Offline ? _account.Account : null;
+        PlayerAccount? signedIn = _account.IsSignedIn ? _account.Account : null;
         TickAvatar(signedIn);
         TickRecord(_account.State == AccountLinkState.Linked ? signedIn : null);
 
@@ -94,7 +94,7 @@ internal sealed partial class LauncherModel
         }
     }
 
-    // The avatar, downloaded once per account and picture and kept beside the launcher's settings.
+    // The avatar, fetched into the settings folder the game shares (AvatarCache): once per account and picture.
     private void TickAvatar(PlayerAccount? signedIn)
     {
         if (_avatarAsked is { IsCompleted: true } done)
@@ -115,26 +115,10 @@ internal sealed partial class LauncherModel
 
         _avatarFor = wanted;
         AvatarFile = null;
-        if (signedIn is not null && wanted is { Length: > 0 })
+        if (signedIn is not null)
         {
-            _avatarAsked = DownloadAvatarAsync(signedIn.Id, wanted);
+            _avatarAsked = AvatarCache.FetchAsync(AccountHttp, signedIn, SettingsPaths.GetUserDirectory());
         }
-    }
-
-    private static async Task<string?> DownloadAvatarAsync(string accountId, string url)
-    {
-        // Named by the picture's own address, so a changed avatar is a new file and never the old one's.
-        string hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..12];
-        string path = Path.Combine(LauncherPaths.ConfigDirectory, $"avatar-{accountId}-{hash}.png");
-        if (File.Exists(path))
-        {
-            return path;
-        }
-
-        byte[] bytes = await AccountHttp.GetByteArrayAsync(url).ConfigureAwait(false);
-        Directory.CreateDirectory(LauncherPaths.ConfigDirectory);
-        await File.WriteAllBytesAsync(path, bytes).ConfigureAwait(false);
-        return path;
     }
 
     // This season's record on the official servers, read every few minutes while signed in.

@@ -80,7 +80,7 @@ public sealed class ShellPageShots
         using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
         using SkiaImageStore images = new();
         using SkiaFontCache fonts = new();
-        Dictionary<int, MissionPicture?> pictures = [];
+        Dictionary<int, MenuPicture?> pictures = [];
 
         foreach ((int width, int height, float density) in Sizes)
         {

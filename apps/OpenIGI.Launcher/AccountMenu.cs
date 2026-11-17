@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
@@ -60,7 +61,7 @@ internal sealed class AccountMenu : Control
 
     private AccountLink Account => _model.Account;
 
-    private PlayerAccount? SignedIn => Account.State is AccountLinkState.Linked or AccountLinkState.Offline ? Account.Account : null;
+    private PlayerAccount? SignedIn => Account.IsSignedIn ? Account.Account : null;
 
     /// <summary>Shuts the panel.</summary>
     public void Close()
@@ -372,23 +373,8 @@ internal sealed class AccountMenu : Control
 
     private void DrawAvatar(UiPainter painter, UiRect box, PlayerAccount account, float appear)
     {
-        LayoutContext context = painter.Context;
-        if (_model.AvatarFile is { } file && _pictures(file) is { } picture)
-        {
-            painter.PushOpacity(appear);
-            picture.DrawCover(painter, box);
-            painter.PopOpacity();
-        }
-        else
-        {
-            painter.FillRect(box, UiPalette.AccentAt(0.14f * appear));
-            string initial = account.Name.Trim() is { Length: > 0 } name ? name[..1].ToUpperInvariant() : "?";
-            float size = box.Height * 0.55f;
-            float width = Theme.Display.MeasureWidth(initial, size);
-            painter.DrawText(Theme.Display, initial, new UiVec2(box.Center.X - (width * 0.5f), UiRowStyle.CapsCenterY(Theme.Display, size, box)), size, UiPalette.Fade(Theme.Accent, appear));
-        }
-
-        painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(Account.State == AccountLinkState.Linked ? Theme.Accent : Theme.Border, appear));
+        (UiImage Image, float Aspect)? avatar = _model.AvatarFile is { } file && _pictures(file) is { } picture ? (picture.Image, picture.Aspect) : null;
+        KitDraw.PlayerMark(painter, Theme, box, account.Name, avatar, signedIn: Account.State == AccountLinkState.Linked, appear);
     }
 
     private void DrawCaret(UiPainter painter, UiVec2 centre, float appear)

@@ -781,7 +781,7 @@ public sealed partial class GameHost
                 party: _coop is null ? null : new PartyPanel(this),
                 account: AccountPanelFor(),
                 maps: OperatingSystem.IsBrowser() ? null : new ShellMaps(this),
-                missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(_device)).Get(_titleRuntime.Title.Id, mission),
+                missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(MenuPictures)).Get(_titleRuntime.Title.Id, mission),
                 touchScreen: () => _window.Input.Touch.InUse,
                 editTouchLayout: () =>
                 {

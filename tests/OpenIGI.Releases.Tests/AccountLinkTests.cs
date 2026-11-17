@@ -128,6 +128,37 @@ public sealed class AccountLinkTests
         Assert.Single(opened);
     }
 
+    /// <summary>The account signed in is kept for the next start, shown before the master answers, and forgotten on signing out.</summary>
+    [Fact]
+    public async Task The_account_is_remembered_for_the_next_start()
+    {
+        string file = Path.Combine(Path.GetTempPath(), "openigi-account-tests", Guid.NewGuid().ToString("N"), "account.json");
+        try
+        {
+            Master master = new() { Linked = true };
+            using PointSigner key = new();
+            AccountLink first = new(new AccountService(master.Client, new Uri("https://master.test")), () => key, null, "Desktop", rememberPath: file);
+            Assert.False(first.IsSignedIn);
+            await Settle(first);
+            Assert.True(File.Exists(file));
+
+            // The next start: signed in from the first frame, before anything is asked.
+            AccountLink next = new(new AccountService(master.Client, new Uri("https://master.test")), () => key, null, "Desktop", rememberPath: file);
+            Assert.Equal(AccountLinkState.Checking, next.State);
+            Assert.True(next.IsSignedIn);
+            Assert.Equal("Ana", next.Account!.Name);
+
+            next.Unlink();
+            await Settle(next);
+            Assert.False(next.IsSignedIn);
+            Assert.False(File.Exists(file));
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(Path.GetDirectoryName(file))!, recursive: true);
+        }
+    }
+
     /// <summary>Nothing is asked while the player's key isn't loaded; it is asked as soon as it is.</summary>
     [Fact]
     public async Task Nothing_is_asked_until_the_key_is_loaded()

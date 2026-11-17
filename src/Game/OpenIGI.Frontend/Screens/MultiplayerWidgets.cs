@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -196,7 +197,7 @@ internal sealed class MissionPlate : UiElement
     public string? Mode { get; set; }
 
     /// <summary>Gets or sets the mission's picture, or <see langword="null"/> for the hatching.</summary>
-    public MissionPicture? Picture { get; set; }
+    public MenuPicture? Picture { get; set; }
 
     /// <summary>Gets or sets the size of the map's name, in design units.</summary>
     public float TitleSize { get; set; } = 34f;
@@ -244,14 +245,9 @@ internal sealed class MissionPlate : UiElement
 
     // The picture, filling the plate: scaled to cover it and cut to it about its middle, then shaded from the foot and from
     // the left so the name reads over whatever the picture is of.
-    private static void DrawPicture(UiPainter painter, UiRect box, MissionPicture picture)
+    private static void DrawPicture(UiPainter painter, UiRect box, MenuPicture picture)
     {
-        float plate = box.Width / MathF.Max(1f, box.Height);
-        float shot = picture.Width / (float)picture.Height;
-        UiRect source = shot > plate
-            ? new UiRect((1f - (plate / shot)) / 2f, 0f, plate / shot, 1f)
-            : new UiRect(0f, (1f - (shot / plate)) / 2f, 1f, shot / plate);
-        painter.DrawSprite(picture.Image, box, source, Bgra32.FromRgb(255, 255, 255));
+        KitDraw.Cover(painter, picture.Image, picture.Aspect, box);
 
         Span<UiGradientStop> foot = [new(0f, UiPalette.InkAt(0.1f)), new(0.3f, UiPalette.InkAt(0.1f)), new(1f, UiPalette.InkAt(0.92f))];
         painter.FillGradient(box, foot, UiGradientDirection.Vertical);

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace OpenIGI.Releases.Accounts;
 
 /// <summary>Where an install stands with its account.</summary>
@@ -44,6 +46,7 @@ public sealed class AccountLink
     private readonly Action<string>? _openLink;
     private readonly Func<DateTimeOffset> _clock;
     private readonly string _label;
+    private readonly string? _rememberPath;
 
     private Task? _pending;
     private Action<Task>? _collect;
@@ -61,7 +64,12 @@ public sealed class AccountLink
     /// <param name="openLink">Opens a page in the player's browser, or <see langword="null"/> where nothing can (the page is then only shown).</param>
     /// <param name="label">What this install calls itself on the account, such as "Desktop" or "Browser".</param>
     /// <param name="clock">The time; <see cref="DateTimeOffset.UtcNow"/> unless a test says otherwise.</param>
-    public AccountLink(AccountService service, Func<IRequestSigner?> signer, Action<string>? openLink, string label, Func<DateTimeOffset>? clock = null)
+    /// <param name="rememberPath">
+    /// The file the account last signed in is kept in, shared by the game and the launcher, or <see langword="null"/> to keep
+    /// none: shown from the first frame (while <see cref="State"/> is still <see cref="AccountLinkState.Checking"/>), until
+    /// the master says otherwise.
+    /// </param>
+    public AccountLink(AccountService service, Func<IRequestSigner?> signer, Action<string>? openLink, string label, Func<DateTimeOffset>? clock = null, string? rememberPath = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(signer);
@@ -70,7 +78,12 @@ public sealed class AccountLink
         _openLink = openLink;
         _label = label;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _rememberPath = rememberPath;
+        Account = Recall(rememberPath);
     }
+
+    /// <summary>Gets whether the account is (or, until the master has answered, was last) signed in on this computer.</summary>
+    public bool IsSignedIn => Account is not null && State is AccountLinkState.Checking or AccountLinkState.Linked or AccountLinkState.Offline;
 
     /// <summary>Raised when the account changes: linked, unlinked, deleted, or first learned.</summary>
     public event Action<PlayerAccount?>? AccountChanged;
@@ -291,6 +304,7 @@ public sealed class AccountLink
         }
 
         Account = account;
+        Keep(account);
         AccountChanged?.Invoke(account);
     }
 
@@ -311,6 +325,44 @@ public sealed class AccountLink
         }
 
         Error = error is AccountRefusedException refused ? refused.Message : "Something went wrong. Try again.";
+    }
+
+    // The account signed in, kept for the next start; nothing kept once signed out.
+    private void Keep(PlayerAccount? account)
+    {
+        if (_rememberPath is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (account is null)
+            {
+                File.Delete(_rememberPath);
+            }
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_rememberPath)) ?? ".");
+                File.WriteAllText(_rememberPath, JsonSerializer.Serialize(account, AccountJsonContext.Default.PlayerAccount));
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // Not kept: the next start asks the master before it shows anyone.
+        }
+    }
+
+    private static PlayerAccount? Recall(string? path)
+    {
+        try
+        {
+            return path is not null && File.Exists(path) ? JsonSerializer.Deserialize(File.ReadAllText(path), AccountJsonContext.Default.PlayerAccount) : null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
     }
 
     private void Run(Task task, Action<Task> collect)

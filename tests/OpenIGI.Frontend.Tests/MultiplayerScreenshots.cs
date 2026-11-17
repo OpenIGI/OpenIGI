@@ -48,7 +48,7 @@ public sealed class MultiplayerScreenshots
         using IgiTypography typography = IgiTypography.Load(LoadFont);
         using SkiaImageStore images = new();
         using SkiaFontCache fonts = new();
-        Dictionary<int, MissionPicture?> pictures = [];
+        Dictionary<int, MenuPicture?> pictures = [];
 
         foreach ((int width, int height, float density) in Sizes)
         {
@@ -168,15 +168,15 @@ public sealed class MultiplayerScreenshots
     }
 
     // A mission's shipped picture, read by the game's own JPEG reader, or none when the mission has no file.
-    internal static MissionPicture? Picture(SkiaImageStore images, Dictionary<int, MissionPicture?> known, int mission)
+    internal static MenuPicture? Picture(SkiaImageStore images, Dictionary<int, MenuPicture?> known, int mission)
     {
-        if (!known.TryGetValue(mission, out MissionPicture? picture))
+        if (!known.TryGetValue(mission, out MenuPicture? picture))
         {
             string path = Path.Combine(AppContext.BaseDirectory, "Assets", "missions", GameTitle.Igi1.Id, $"{mission}.jpg");
             if (File.Exists(path))
             {
                 TextureImage image = JpegImage.Read(File.ReadAllBytes(path));
-                picture = new MissionPicture(images.CreateImage(image.Width, image.Height, image.GetLevel(0)), image.Width, image.Height);
+                picture = new MenuPicture(images.CreateImage(image.Width, image.Height, image.GetLevel(0)), image.Width, image.Height);
             }
 
             known[mission] = picture;

@@ -25,7 +25,7 @@ public sealed partial class ProfilesScreen
     private IAccountPanel? Accounts => Context.Host.Account;
 
     private string AccountKey => Accounts is { } accounts
-        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{accounts.Record}|{_confirmingDelete}|{_copiedLink}"
+        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{accounts.Record}|{accounts.Avatar is not null}|{_confirmingDelete}|{_copiedLink}"
         : string.Empty;
 
     // The account's panel: what it is for while signed out, the sign-in while it waits, and the account once signed in.

@@ -16,6 +16,11 @@ public sealed partial class GameHost
     private static readonly HttpClient AccountHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     private AccountLink? _account;
+    private Menu.AccountAvatar? _avatar;
+    private Menu.MenuPictureLoader? _menuPictures;
+
+    // What makes the menu's pictures, the missions' and the avatar alike.
+    private Menu.MenuPictureLoader MenuPictures => _menuPictures ??= new Menu.MenuPictureLoader(_device);
     private ProfileSync? _profileSync;
     private StatsService? _stats;
     private Task<PlayerRecord>? _recordAsked;
@@ -39,6 +44,7 @@ public sealed partial class GameHost
         {
             _account?.Update();
             _profileSync?.Update();
+            _avatar?.Update(_account is { IsSignedIn: true } signedIn ? signedIn.Account : null);
             UpdateRecord();
         }
     }
@@ -59,7 +65,9 @@ public sealed partial class GameHost
                 PlayerSigner,
                 url => OpenLink?.Invoke(url),
                 // What the account lists this install as; never the computer's own name, which is the player's business.
-                OperatingSystem.IsBrowser() ? "Browser" : "Desktop");
+                OperatingSystem.IsBrowser() ? "Browser" : "Desktop",
+                rememberPath: SettingsPaths.GetFilePath("account.json"));
+            _avatar = new Menu.AccountAvatar(MenuPictures, AccountHttp);
             _stats = new StatsService(AccountHttp, MapService.Master);
             _profileSync = new ProfileSync(service, PlayerSigner, new SyncedProfile(this), SettingsPaths.GetFilePath("account-sync.json"));
             _account.AccountChanged += account =>
@@ -111,7 +119,7 @@ public sealed partial class GameHost
 
     // The name the player plays under: their Discord name once signed in (or while offline after), the profile's until then.
     private string PlayerName() =>
-        _account is { State: AccountLinkState.Linked or AccountLinkState.Offline, Account: { } account } ? account.Name
+        _account is { IsSignedIn: true, Account: { } account } ? account.Name
         : _configuration.Active?.Name is { Length: > 0 } name ? name : "Jones";
 
     // The profile was kept: what follows the player goes up to their account shortly, when signed in.
@@ -153,6 +161,8 @@ public sealed partial class GameHost
                 host._accountSeen = true;
                 return link.State switch
                 {
+                    // Signed in when the game last ran: shown so from the first frame, until the master says otherwise.
+                    AccountLinkState.Checking when link.Account is not null => AccountStatus.SignedIn,
                     AccountLinkState.Unlinked => AccountStatus.SignedOut,
                     AccountLinkState.Starting => AccountStatus.Starting,
                     AccountLinkState.Waiting => AccountStatus.WaitingForBrowser,
@@ -166,6 +176,8 @@ public sealed partial class GameHost
         public AccountSummary? Account => link.Account is { } account ? new AccountSummary(account.Id, account.Name, account.Avatar) : null;
 
         public string? SignInUrl => link.LinkUrl;
+
+        public MenuPicture? Avatar => host._avatar?.Picture;
 
         public string? Problem => link.Error;
 

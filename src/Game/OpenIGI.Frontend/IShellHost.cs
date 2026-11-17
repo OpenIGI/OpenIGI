@@ -129,7 +129,7 @@ public interface IShellHost
     /// <summary>A mission's picture, taken beforehand: what a page shows of a map whose level is not behind the menu.</summary>
     /// <param name="missionId">The mission.</param>
     /// <returns>The picture, or <see langword="null"/> where the host has none of it.</returns>
-    MissionPicture? MissionPicture(int missionId) => null;
+    MenuPicture? MissionPicture(int missionId) => null;
 
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;

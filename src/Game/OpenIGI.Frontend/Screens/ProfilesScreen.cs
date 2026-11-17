@@ -160,7 +160,13 @@ public sealed partial class ProfilesScreen : ShellScreen
         row.ColumnDefinitions.Add(GridLength.Auto);
 
         AccountSummary? account = SignedInAccount;
-        row.Add(new OperativeMark(theme, PlayerName) { SignedIn = account is not null, Side = compact ? 56f : 88f, VerticalAlignment = VerticalAlignment.Center }, 0, 0);
+        row.Add(new PlayerMark(theme, PlayerName)
+        {
+            SignedIn = account is not null,
+            Avatar = account is not null && Accounts?.Avatar is { } avatar ? (avatar.Image, avatar.Aspect) : null,
+            Side = compact ? 56f : 88f,
+            VerticalAlignment = VerticalAlignment.Center,
+        }, 0, 0);
 
         var names = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f, VerticalAlignment = VerticalAlignment.Center };
         names.AddChild(new Eyebrow(theme, "Operative") { Color = theme.Accent, TextSize = compact ? 12f : 14f });

@@ -125,9 +125,9 @@ internal sealed class FakeHost : IShellHost
     public IAccountPanel? Account { get; set; }
 
     /// <summary>The missions' pictures, by mission, or null for none.</summary>
-    public Func<int, MissionPicture?>? Pictures { get; set; }
+    public Func<int, MenuPicture?>? Pictures { get; set; }
 
-    public MissionPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
+    public MenuPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
 
     public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
 

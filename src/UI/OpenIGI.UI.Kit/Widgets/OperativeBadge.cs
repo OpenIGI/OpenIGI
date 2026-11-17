@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Animation;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -12,7 +13,6 @@ namespace OpenIGI.UI.Kit.Widgets;
 public class OperativeBadge : Control
 {
     private string _name = string.Empty;
-    private string _initial = string.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="OperativeBadge"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -30,12 +30,27 @@ public class OperativeBadge : Control
         set
         {
             _name = (value ?? string.Empty).ToUpperInvariant();
-            _initial = _name.Length > 0 ? _name[..1] : "?";
         }
     }
 
     /// <summary>Gets or sets the line under the name: the difficulty and how far the operative has got.</summary>
     public string Caption { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets where the name is read from each frame, for a name that changes while the badge is up; none keeps <see cref="Name"/>.</summary>
+    public Func<string>? NameSource { get; set; }
+
+    /// <summary>Gets or sets the avatar drawn in the square in place of the initial, read each frame; <see langword="null"/> for the initial.</summary>
+    public Func<(UiImage Image, float Aspect)?>? Avatar { get; set; }
+
+    /// <inheritdoc/>
+    protected override void OnUpdate(float elapsedSeconds)
+    {
+        base.OnUpdate(elapsedSeconds);
+        if (NameSource?.Invoke() is { } name && !string.Equals(name, _name, StringComparison.OrdinalIgnoreCase))
+        {
+            Name = name;
+        }
+    }
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
@@ -55,11 +70,7 @@ public class OperativeBadge : Control
         float square = context.Px(Square);
         var box = new UiRect(Bounds.Right - square, Bounds.Center.Y - (square * 0.5f), square, square);
 
-        painter.FillRect(box, UiPalette.InkAt(0.5f * appear));
-        painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(Theme.Accent, appear));
-        float initialSize = context.Px(19f);
-        float initialWidth = Theme.Display.MeasureWidth(_initial, initialSize);
-        painter.DrawText(Theme.Display, _initial, new UiVec2(box.Center.X - (initialWidth * 0.5f), UiRowStyle.CapsCenterY(Theme.Display, initialSize, box)), initialSize, UiPalette.Fade(Theme.Accent, appear));
+        KitDraw.PlayerMark(painter, Theme, box, _name, Avatar?.Invoke(), signedIn: true, appear);
 
         float right = box.X - context.Px(Gap);
         float captionSize = context.Px(CaptionSize);

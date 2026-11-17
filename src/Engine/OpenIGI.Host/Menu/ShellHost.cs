@@ -68,7 +68,7 @@ public sealed class ShellHost(
     IPartyPanel? party = null,
     IAccountPanel? account = null,
     IShellMaps? maps = null,
-    Func<int, MissionPicture?>? missionPicture = null) : IShellHost
+    Func<int, MenuPicture?>? missionPicture = null) : IShellHost
 {
     /// <inheritdoc/>
     public ICoopRooms? Coop => coop;
@@ -144,7 +144,7 @@ public sealed class ShellHost(
     public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
 
     /// <inheritdoc/>
-    public MissionPicture? MissionPicture(int missionId) => missionPicture?.Invoke(missionId);
+    public MenuPicture? MissionPicture(int missionId) => missionPicture?.Invoke(missionId);
 
     /// <inheritdoc/>
     public bool TouchScreen => touchScreen?.Invoke() ?? false;
