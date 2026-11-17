@@ -74,6 +74,7 @@ internal sealed class LauncherScreen : Screen
     private ServersPage? _servers;
     private LogsPage? _logs;
     private GameSwitcher? _switcher;
+    private AccountChip? _accountChip;
     private UiElement? _chrome;
     private FooterBar? _footer;
     private int _section;
@@ -215,6 +216,11 @@ internal sealed class LauncherScreen : Screen
             RequestLayout();
         }
 
+        if (_accountChip?.Update() == true)
+        {
+            RequestLayout();
+        }
+
         _home?.Update();
         _content?.Update();
         _mods?.Update();
@@ -340,6 +346,8 @@ internal sealed class LauncherScreen : Screen
 
         row.Add(nav);
         row.Add(new Panel(), grow: 1f);
+        _accountChip = new AccountChip(_theme, _model.Account);
+        row.Add(_accountChip);
         row.Add(new StatusIndicator(_theme));
         bar.AddChild(row);
         return bar;

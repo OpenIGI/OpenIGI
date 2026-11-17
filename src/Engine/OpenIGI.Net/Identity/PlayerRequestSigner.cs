@@ -1,7 +1,7 @@
-using OpenIGI.Net.Identity;
+
 using OpenIGI.Releases;
 
-namespace OpenIGI.Host.Accounts;
+namespace OpenIGI.Net.Identity;
 
 /// <summary>
 /// The key a player plays under (<see cref="IPlayerIdentity"/>), signing requests to the master server's accounts: the same

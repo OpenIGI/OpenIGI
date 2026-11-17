@@ -3,7 +3,6 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Config;
 using OpenIGI.Host.Configuration;
-using OpenIGI.Host.Accounts;
 using OpenIGI.Net.Identity;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.Releases.Maps;
@@ -186,13 +185,7 @@ public sealed partial class GameHost
 
         public void SignIn() => link.Link();
 
-        public void OpenSignInPage()
-        {
-            if (link.LinkUrl is { } url)
-            {
-                host.OpenLink?.Invoke(url);
-            }
-        }
+        public void OpenSignInPage() => link.OpenLinkAgain();
 
         public string? CopySignInLink()
         {

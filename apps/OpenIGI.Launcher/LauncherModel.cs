@@ -438,6 +438,7 @@ internal sealed partial class LauncherModel : IDisposable
     {
         TickServers();
         TickInvite(elapsedSeconds);
+        TickAccount();
         while (_results.TryDequeue(out Action? result))
         {
             result();
@@ -479,6 +480,7 @@ internal sealed partial class LauncherModel : IDisposable
         _download?.Dispose();
         _running?.Dispose();
         DisposeServers();
+        DisposeAccount();
         _http.Dispose();
     }
 

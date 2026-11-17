@@ -141,6 +141,15 @@ public sealed class AccountLink
         });
     }
 
+    /// <summary>Opens the waiting link's page in the player's browser again, for one closed by mistake.</summary>
+    public void OpenLinkAgain()
+    {
+        if (State == AccountLinkState.Waiting && LinkUrl is { } url)
+        {
+            _openLink?.Invoke(url);
+        }
+    }
+
     /// <summary>Stops waiting on a link; the code simply lapses on the master.</summary>
     public void CancelLink()
     {
