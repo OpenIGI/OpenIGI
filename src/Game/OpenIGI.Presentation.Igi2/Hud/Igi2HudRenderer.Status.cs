@@ -281,10 +281,20 @@ public sealed partial class Igi2HudRenderer
         float y = title.IsCutscenePlaying ? height - 100f : 36f;
         foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
-            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying) { continue; }
-            _font?.DrawCentered(batch, slot.Text.AsSpan(0, Math.Min(slot.Printed, slot.Text.Length)), width * 0.5f * _scale, y * _scale,
-                Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
-            y += 28f;
+            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying || _font is not { } font) { continue; }
+
+            // StatusMessageScreen_FormatMessageText: a cutscene's line wraps to most of the display's width, a message to its box's
+            // forty "A"s less six; the last three lines show.
+            string printed = slot.Text[..Math.Min(slot.Printed, slot.Text.Length)];
+            float wrap = title.IsCutscenePlaying
+                ? width * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneWidthShare
+                : (font.Measure(OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthString).Width
+                    * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthCount) - OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxMargin;
+            foreach (string line in WrappedLines(font, printed, wrap))
+            {
+                font.DrawCentered(batch, line, width * 0.5f * _scale, y * _scale, Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
+                y += 28f;
+            }
         }
 
         // The other game's mission's lines, under the player's own, in the same face.
@@ -330,6 +340,25 @@ public sealed partial class Igi2HudRenderer
                 _scale,
                 _scale);
         }
+    }
+
+    // The lines a printed message wraps into, kept while its text and width stay as they were.
+    private readonly Dictionary<(string Text, float Width), IReadOnlyList<string>> _wrapped = [];
+
+    private IReadOnlyList<string> WrappedLines(BitmapTextRenderer font, string printed, float wrap)
+    {
+        if (!_wrapped.TryGetValue((printed, wrap), out IReadOnlyList<string>? lines))
+        {
+            if (_wrapped.Count > 256)
+            {
+                _wrapped.Clear();
+            }
+
+            lines = OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.Wrap(printed, text => font.Measure(text).Width, wrap);
+            _wrapped[(printed, wrap)] = lines;
+        }
+
+        return lines;
     }
 
     private void Sprite(SpriteBatch batch, string name, float x, float y, Bgra32 colour)

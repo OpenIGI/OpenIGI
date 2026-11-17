@@ -157,7 +157,8 @@ public sealed class Igi2StatusMessageScreen
 
         if (message.IsCutsceneMessage)
         {
-            // Laid out whole on its first tick (StatusMessageScreen_FormatMessageText, not ported), and done from then on.
+            // Laid out whole on its first tick (StatusMessageScreen_FormatMessageText, which the HUD runs: Igi2StatusMessageLayout),
+            // and done from then on.
             slot.DoneTicks++;
         }
         else if (slot.Age >= PrintStart)

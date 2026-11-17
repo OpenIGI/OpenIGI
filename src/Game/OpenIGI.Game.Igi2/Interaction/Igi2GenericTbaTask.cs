@@ -145,7 +145,7 @@ public sealed partial class Igi2GenericTbaTask
     [ScriptParam(ScriptParamType.Real32, "Activate Time (s)")]
     public float ActivateTime { get; set; } = 4f;
 
-    /// <summary>Gets or sets the status screen's icon for it, which the status screen shows (not ported).</summary>
+    /// <summary>Gets or sets the status screen's icon for it, which the action menu shows when it is offered.</summary>
     [ScriptParam(ScriptParamType.DropDownCombo, "Click to select sprite")]
     public string Sprite { get; set; } = string.Empty;
 
@@ -316,7 +316,7 @@ public sealed partial class Igi2GenericTbaTask
     /// <inheritdoc/>
     /// <remarks>
     /// <c>GenericTBA_UpdateInternalDataHandler</c> (<c>igi2 0x4C2450</c>): the <c>ExplodeObject</c>'s, then its icon looked up among
-    /// the status screen's (not ported) and its script compiled.
+    /// the status screen's (by name, as the HUD resolves <see cref="Sprite"/>) and its script compiled.
     /// </remarks>
     protected override void OnParsed() => Explosive.Reset();
 }
