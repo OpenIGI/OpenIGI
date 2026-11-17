@@ -15,6 +15,7 @@
 //   pending:<player> the code a key is waiting on (one at a time)
 //   oauth:<state>    { code, expires }
 //   token:<id>       the Discord refresh token, sealed with ACCOUNT_KEY (AES-GCM); kept only when that secret is set
+//   profile:<id>     the player's profile as their games keep it in step (GET/PUT /v1/account/profile): { data, updated }
 //
 // The secrets and settings, from the environment: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, ACCOUNT_KEY (32 bytes,
 // base64) and PUBLIC_URL (https://master.openigi.com unless said).
@@ -28,6 +29,7 @@ const MAX_KEYS = 20;
 const MAX_LOOKUP = 64;
 const MAX_LABEL = 40;
 const MAX_NAME = 32;
+const MAX_PROFILE_BYTES = 64 * 1024;
 const DISCORD = "https://discord.com";
 const DISCORD_API = "https://discord.com/api/v10";
 const SCOPES = "identify role_connections.write";
@@ -44,7 +46,8 @@ export async function handleAccounts(request, env) {
 // Whether a path is one of the accounts'.
 export function isAccountsPath(pathname) {
   return pathname === "/v1/link" || pathname.startsWith("/v1/link/") || pathname.startsWith("/v1/auth/discord/")
-    || pathname === "/v1/players" || pathname.startsWith("/v1/players/") || pathname === "/v1/account";
+    || pathname === "/v1/players" || pathname.startsWith("/v1/players/") || pathname === "/v1/account"
+    || pathname === "/v1/account/profile";
 }
 
 export class Accounts {
@@ -82,6 +85,14 @@ export class Accounts {
 
       if (parts[1] === "players" && parts.length === 3 && request.method === "GET") {
         return await this.profile(parts[2]);
+      }
+
+      if (parts[1] === "account" && parts[2] === "profile" && parts.length === 3 && request.method === "GET") {
+        return await this.readProfile(request, url, body);
+      }
+
+      if (parts[1] === "account" && parts[2] === "profile" && parts.length === 3 && request.method === "PUT") {
+        return await this.writeProfile(request, url, body);
       }
 
       if (parts[1] === "account" && parts.length === 2 && request.method === "GET") {
@@ -242,6 +253,41 @@ export class Accounts {
     });
   }
 
+  // The profile the account's games keep in step, as the last of them wrote it; { data: null } before any has.
+  async readProfile(request, url, body) {
+    const account = await this.linkedAccount(request, url, body);
+    const kept = await this.storage.get(`profile:${account}`);
+    return json(kept ?? { data: null, updated: 0 });
+  }
+
+  // A game's profile, kept as the account's: the newest write wins, and the game merges what it reads before it writes.
+  async writeProfile(request, url, body) {
+    const account = await this.linkedAccount(request, url, body);
+    if (body.length > MAX_PROFILE_BYTES) {
+      throw new Refusal(413, "The profile is too big.");
+    }
+
+    const asked = parseJson(body);
+    if (!asked.data || typeof asked.data !== "object" || Array.isArray(asked.data)) {
+      throw new Refusal(400, "Send the profile as { data: {...} }.");
+    }
+
+    const kept = { data: asked.data, updated: Date.now() };
+    await this.storage.put(`profile:${account}`, kept);
+    return json({ updated: kept.updated });
+  }
+
+  // The account the signing key is linked to; a key that isn't linked has no profile to keep.
+  async linkedAccount(request, url, body) {
+    const key = await playerKey(request, url, body);
+    const linked = await this.storage.get(`key:${key.id}`);
+    if (!linked) {
+      throw new Refusal(403, "Sign in first.");
+    }
+
+    return linked.account;
+  }
+
   // The signing key leaves its account; the account stays for its other keys (or until it is deleted).
   async unlink(request, url, body) {
     const key = await playerKey(request, url, body);
@@ -275,7 +321,7 @@ export class Accounts {
   async deleteAccount(id) {
     const account = await this.storage.get(`account:${id}`);
     if (!account) return;
-    await this.storage.delete([`account:${id}`, `token:${id}`, ...account.keys.map((k) => `key:${k}`)]);
+    await this.storage.delete([`account:${id}`, `token:${id}`, `profile:${id}`, ...account.keys.map((k) => `key:${k}`)]);
   }
 
   async upsertAccount(user) {

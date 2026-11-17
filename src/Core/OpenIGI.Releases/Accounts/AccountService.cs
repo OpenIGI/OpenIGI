@@ -45,6 +45,11 @@ public sealed record AccountKey(string Id, string Label, long Added, bool Curren
 /// <param name="Keys">Every key on the account.</param>
 public sealed record OwnAccount(bool Linked, string Player, PlayerAccount? Account, IReadOnlyList<AccountKey>? Keys);
 
+/// <summary>The profile an account's games keep in step, as the master holds it.</summary>
+/// <param name="Data">The profile's document, or <see langword="null"/> before any game has written one.</param>
+/// <param name="Updated">When it was written, Unix milliseconds; 0 before.</param>
+public sealed record RemoteProfile(JsonElement? Data, long Updated);
+
 /// <summary>An account request the master server refused.</summary>
 public sealed class AccountRefusedException(string message, HttpStatusCode status) : Exception(message)
 {
@@ -110,6 +115,33 @@ public sealed class AccountService(HttpClient http, Uri master)
     public Task DeleteAccountAsync(IRequestSigner key, CancellationToken cancel = default) =>
         SendAsync(key, HttpMethod.Delete, "/v1/account", [], AccountJsonContext.Default.JsonElement, cancel);
 
+    /// <summary>Reads the profile the account's games keep in step.</summary>
+    /// <param name="key">A key linked to the account.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>The profile, or one with no data before any game has written it.</returns>
+    public Task<RemoteProfile> GetProfileAsync(IRequestSigner key, CancellationToken cancel = default) =>
+        SendAsync(key, HttpMethod.Get, "/v1/account/profile", [], AccountJsonContext.Default.RemoteProfile, cancel);
+
+    /// <summary>Writes the account's profile: the newest write wins, so a game merges what it read before it writes.</summary>
+    /// <param name="key">A key linked to the account.</param>
+    /// <param name="data">The profile's document.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>When the master kept it, Unix milliseconds.</returns>
+    public async Task<long> PutProfileAsync(IRequestSigner key, JsonElement data, CancellationToken cancel = default)
+    {
+        using MemoryStream body = new();
+        using (Utf8JsonWriter writer = new(body))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("data");
+            data.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+
+        JsonElement kept = await SendAsync(key, HttpMethod.Put, "/v1/account/profile", body.ToArray(), AccountJsonContext.Default.JsonElement, cancel).ConfigureAwait(false);
+        return kept.TryGetProperty("updated", out JsonElement updated) && updated.TryGetInt64(out long at) ? at : 0;
+    }
+
     /// <summary>Looks players up by their keys' ids, as a game server does for its scoreboard.</summary>
     /// <param name="playerIds">The ids (at most 64 are looked up).</param>
     /// <param name="cancel">Stops it.</param>
@@ -168,6 +200,7 @@ public sealed class AccountService(HttpClient http, Uri master)
 [JsonSerializable(typeof(LinkStart))]
 [JsonSerializable(typeof(LinkState))]
 [JsonSerializable(typeof(OwnAccount))]
+[JsonSerializable(typeof(RemoteProfile))]
 [JsonSerializable(typeof(Dictionary<string, PlayerAccount>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(JsonElement))]

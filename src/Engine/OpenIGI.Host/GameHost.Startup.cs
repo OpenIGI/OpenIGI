@@ -732,6 +732,8 @@ public sealed partial class GameHost
                     {
                         HostConfiguration.Save(_configuration, _logger);
                     }
+
+                    ProfileSaved();
                 },
                 captureThumbnail: (out captureWidth, out captureHeight) =>
                 {

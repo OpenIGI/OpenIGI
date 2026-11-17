@@ -1,4 +1,8 @@
+using System.Text.Json;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend;
+using OpenIGI.Game.Config;
+using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Accounts;
 using OpenIGI.Net.Identity;
 using OpenIGI.Releases.Accounts;
@@ -13,6 +17,7 @@ public sealed partial class GameHost
     private static readonly HttpClient AccountHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     private AccountLink? _account;
+    private ProfileSync? _profileSync;
 
     // Whether the profile page has looked at the account: until it has, nothing is asked of the servers.
     private bool _accountSeen;
@@ -30,6 +35,7 @@ public sealed partial class GameHost
         if (_accountSeen)
         {
             _account?.Update();
+            _profileSync?.Update();
         }
     }
 
@@ -41,13 +47,64 @@ public sealed partial class GameHost
             return null;
         }
 
-        _account ??= new AccountLink(
-            new AccountService(AccountHttp, MapService.Master),
-            static () => PlayerIdentities.Default is { IsReady: true } identity ? new PlayerRequestSigner(identity) : null,
-            url => OpenLink?.Invoke(url),
-            // What the account lists this install as; never the computer's own name, which is the player's business.
-            OperatingSystem.IsBrowser() ? "Browser" : "Desktop");
+        if (_account is null)
+        {
+            AccountService service = new(AccountHttp, MapService.Master);
+            _account = new AccountLink(
+                service,
+                PlayerSigner,
+                url => OpenLink?.Invoke(url),
+                // What the account lists this install as; never the computer's own name, which is the player's business.
+                OperatingSystem.IsBrowser() ? "Browser" : "Desktop");
+            _profileSync = new ProfileSync(service, PlayerSigner, new SyncedProfile(this), SettingsPaths.GetFilePath("account-sync.json"));
+            _account.AccountChanged += account =>
+            {
+                if (account is null)
+                {
+                    _profileSync.SignedOut();
+                }
+                else
+                {
+                    _profileSync.SignedIn(account.Id);
+                }
+            };
+
+            // A computer signed in when the game last ran asks at once, so its profile is in step before it is played.
+            _accountSeen = _profileSync.WasSignedIn;
+        }
+
         return new AccountPanel(_account, this);
+    }
+
+    private static PlayerRequestSigner? PlayerSigner() =>
+        PlayerIdentities.Default is { IsReady: true } identity ? new PlayerRequestSigner(identity) : null;
+
+    // The profile was kept: what follows the player goes up to their account shortly, when signed in.
+    private void ProfileSaved() => _profileSync?.Changed();
+
+    // The active profile as the account keeps it in step (ProfileDocument), and kept here once merged.
+    private sealed class SyncedProfile(GameHost host) : ISyncedProfile
+    {
+        public string? Fingerprint() => host._configuration.Active is { } profile ? ProfileDocument.From(profile).Fingerprint() : null;
+
+        public JsonElement? Take() => host._configuration.Active is { } profile ? ProfileDocument.From(profile).ToJson() : null;
+
+        public JsonElement? Adopt(JsonElement remote, bool localIsNewer)
+        {
+            if (host._configuration.Active is not { } profile || ProfileDocument.FromJson(remote) is not { } theirs)
+            {
+                return null;
+            }
+
+            ProfileDocument.Merge(ProfileDocument.From(profile), theirs, localIsNewer).ApplyTo(profile);
+            host.RestoreTitleInputBindings();
+            if (host._options.SavesUserFiles)
+            {
+                HostConfiguration.Save(host._configuration, host._logger);
+            }
+
+            return ProfileDocument.From(profile).ToJson();
+        }
     }
 
     // The account as the profile page sees it. Nothing is asked of the servers until the page first looks, so a run that
@@ -76,6 +133,14 @@ public sealed partial class GameHost
         public string? SignInUrl => link.LinkUrl;
 
         public string? Problem => link.Error;
+
+        public string? SyncNote => host._profileSync?.State switch
+        {
+            ProfileSyncState.Syncing => "Syncing your profile…",
+            ProfileSyncState.Synced => "Your progress, difficulty and controls are synced to your account.",
+            ProfileSyncState.Failed => "Couldn't sync your profile just now; it will try again.",
+            _ => null,
+        };
 
         public bool IsBusy => link.IsBusy;
 

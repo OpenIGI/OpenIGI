@@ -24,7 +24,7 @@ public sealed partial class ProfilesScreen
     private IAccountPanel? Accounts => Context.Host.Account;
 
     private string AccountKey => Accounts is { } accounts
-        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{_confirmingDelete}|{_copiedLink}"
+        ? $"{accounts.Status}|{accounts.Account?.Id}|{accounts.Account?.Name}|{accounts.Problem}|{accounts.SignInUrl}|{accounts.IsBusy}|{accounts.SyncNote}|{_confirmingDelete}|{_copiedLink}"
         : string.Empty;
 
     // The account's panel: what it is for while signed out, the sign-in while it waits, and the account once signed in.
@@ -78,6 +78,11 @@ public sealed partial class ProfilesScreen
             case AccountStatus.SignedIn when account is not null:
                 column.AddChild(Headline(theme, $"Signed in as {account.Name}"));
                 column.AddChild(Note(theme, "Multiplayer shows your Discord name, and your matches on the official servers count toward your record."));
+                if (accounts.SyncNote is { } synced)
+                {
+                    column.AddChild(new Label(theme.Body, synced, 15f, theme.Accent) { Wrap = true });
+                }
+
                 column.AddChild(_confirmingDelete ? DeleteQuestion(theme, accounts) : Actions(
                     Ghost(theme, "SIGN OUT", "Play without the account on this computer again. Everything else stays.", accounts.SignOut),
                     Destructive(theme, "DELETE ACCOUNT", "Delete your OpenIGI account and everything our servers keep of it.", () => _confirmingDelete = true)));

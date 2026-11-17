@@ -188,6 +188,24 @@ assert.equal((await ask(await signed(publisher, "POST", "/v1/link"))).status, 40
   assert.deepEqual(key, { id: desk.id, raw: true });
 }
 
+// The profile kept in step: only a linked key reads or writes it, the newest write wins, and deleting the account drops it.
+{
+  assert.equal((await ask(await signed(stranger, "GET", "/v1/account/profile"))).status, 403);
+  const empty = await (await ask(await signed(desk, "GET", "/v1/account/profile"))).json();
+  assert.deepEqual(empty, { data: null, updated: 0 });
+
+  const profile = { name: "Ana", missions: { igi1: 7, igi2: 3 } };
+  const put = await ask(await signed(desk, "PUT", "/v1/account/profile", text(JSON.stringify({ data: profile }))));
+  assert.equal(put.status, 200);
+  const read = await (await ask(await signed(desk, "GET", "/v1/account/profile"))).json();
+  assert.deepEqual(read.data, profile);
+  assert.ok(read.updated > 0);
+
+  assert.equal((await ask(await signed(desk, "PUT", "/v1/account/profile", text(JSON.stringify({ data: [1] }))))).status, 400);
+  assert.equal((await ask(await signed(desk, "PUT", "/v1/account/profile", text(JSON.stringify({ data: { big: "x".repeat(70 * 1024) } }))))).status, 413);
+  assert.ok(storage.store.has("profile:111111111111111111"));
+}
+
 // Unlinking takes the one key off; deleting takes the account and all of it.
 assert.equal((await (await ask(await signed(web, "DELETE", "/v1/link"))).json()).unlinked, true);
 assert.equal((await ask(new Request(`https://master/v1/players/${web.id}`))).status, 404);
@@ -196,6 +214,7 @@ assert.deepEqual(storage.store.get("account:222222222222222222").keys, []);
 assert.equal((await (await ask(await signed(desk, "DELETE", "/v1/account"))).json()).deleted, true);
 assert.equal(storage.store.has("account:111111111111111111"), false);
 assert.equal(storage.store.has("token:111111111111111111"), false);
+assert.equal(storage.store.has("profile:111111111111111111"), false);
 assert.equal(storage.store.has(`key:${desk.id}`), false);
 
 // Without the Discord app set up, the start page says so instead of sending anyone off.

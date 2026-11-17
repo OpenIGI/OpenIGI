@@ -47,6 +47,9 @@ public interface IAccountPanel
     /// <summary>Gets what went wrong last, for the player, or <see langword="null"/>.</summary>
     string? Problem { get; }
 
+    /// <summary>Gets how the profile stands with the account, for the player, or <see langword="null"/> while signed out.</summary>
+    string? SyncNote => null;
+
     /// <summary>Gets whether a request is on its way, for buttons to wait.</summary>
     bool IsBusy { get; }
 

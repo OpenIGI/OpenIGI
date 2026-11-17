@@ -605,7 +605,7 @@ function json(value, status = 200) {
 function cors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
-  headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
+  headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
   headers.set("access-control-allow-headers", "content-type, x-openigi-token, x-openigi-key, x-openigi-signature, x-openigi-time");
   headers.set("access-control-max-age", "86400");
   return new Response(response.body, { status: response.status, headers });

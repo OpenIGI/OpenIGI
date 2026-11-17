@@ -66,6 +66,8 @@ public sealed partial class GameHost
             {
                 HostConfiguration.Save(host._configuration, host._logger);
             }
+
+            host.ProfileSaved();
         }
 
         public void StartMission(int id) => host.StartMission(id);
