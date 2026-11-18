@@ -650,14 +650,9 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
                 cursorY + (fill.OffsetY * scale) + (fill.Height * scale * top),
                 fill.Width * scale,
                 fill.Height * scale * (bottom - top));
-            RectF riskSource = RectF.FromEdges(
-                fill.U0,
-                fill.V0 + ((fill.V1 - fill.V0) * top),
-                fill.U1,
-                fill.V0 + ((fill.V1 - fill.V0) * bottom));
-            Bgra32 red = new(40, 50, 255, (byte)(255f * pulse));
-            batch.Draw(foreground.Textures[fill.TextureIndex], risk, riskSource, red);
-            batch.Draw(foreground.Textures[fill.TextureIndex], risk, riskSource, red);
+            // A solid red, not the bar's own green picture tinted red: green times red is all but black on the original's
+            // dark frame, so the warning was barely there.
+            batch.FillRect(risk, new Bgra32(40, 50, 255, (byte)(255f * pulse)));
         }
     }
 

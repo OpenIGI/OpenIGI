@@ -4,6 +4,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
@@ -74,7 +75,8 @@ internal sealed partial class RemasteredHudRenderer
         ScoreboardControls? controls = null,
         bool relayed = false,
         string mode = "",
-        bool besideVote = false)
+        bool besideVote = false,
+        UiPicture? ownAvatar = null)
     {
         _removeButtons.Clear();
         ArgumentNullException.ThrowIfNull(batch);
@@ -194,7 +196,7 @@ internal sealed partial class RemasteredHudRenderer
             {
                 var row = new UiRect(rowX, y, rowWidth, rowHeight);
                 bool own = localEntity is { } self && line.Entity == self;
-                DrawPlayerCard(painter, type, context, row, line, own, teamed, killsRight, deathsRight, pingRight);
+                DrawPlayerCard(painter, type, context, row, line, own, own ? ownAvatar : null, teamed, killsRight, deathsRight, pingRight);
                 if (controls is { } hand && hand.Removable.Contains(line.Entity))
                 {
                     DrawRemove(painter, type, context, row, killsRight - Px(110f), line.Entity, hand);
@@ -313,6 +315,7 @@ internal sealed partial class RemasteredHudRenderer
         UiRect row,
         ScoreboardLine line,
         bool own,
+        UiPicture? avatar,
         bool teamed,
         float killsRight,
         float deathsRight,
@@ -328,18 +331,27 @@ internal sealed partial class RemasteredHudRenderer
         bool host = line.Slot == ServerSession.HostSlot;
         float dim = line.IsAlive ? 1f : 0.55f;
 
-        // The badge: the player's initial on their own colour (their team's in a team match).
+        // The badge: the player's own picture where there is one (theirs, signed in), else their initial on their own colour
+        // (their team's in a team match).
         float badgeSize = Px(44f);
         var badge = new UiRect(row.X + Px(16f), row.Y + ((row.Height - badgeSize) * 0.5f), badgeSize, badgeSize);
         Bgra32 badgeColour = teamed
             ? (line.Team == TeamRoster.Good ? UiPalette.Info : Accent)
             : BadgeColours[(int)((uint)line.Slot % (uint)BadgeColours.Length)];
         painter.FillRoundedRect(badge, _surfaces?.Rounded ?? default, badgeColour.WithAlpha((byte)(255 * dim)), Px(5f));
-        string initial = line.Name.Length > 0 ? char.ToUpperInvariant(line.Name[0]).ToString() : "?";
-        float initialSize = Px(22f);
-        float initialWidth = type.Heading.MeasureWidth(initial, initialSize);
-        painter.DrawLabel(
-            type.Heading, initial, new UiVec2(badge.X + ((badge.Width - initialWidth) * 0.5f), UiRowStyle.CapsCenterY(type.Heading, initialSize, badge)), initialSize, Bgra32.FromRgb(14, 16, 20), 0f);
+        if (avatar is { } picture)
+        {
+            picture.DrawCover(painter, badge, dim);
+            painter.StrokeRect(badge, MathF.Max(1f, Px(2f)), badgeColour.WithAlpha((byte)(255 * dim)));
+        }
+        else
+        {
+            string initial = line.Name.Length > 0 ? char.ToUpperInvariant(line.Name[0]).ToString() : "?";
+            float initialSize = Px(22f);
+            float initialWidth = type.Heading.MeasureWidth(initial, initialSize);
+            painter.DrawLabel(
+                type.Heading, initial, new UiVec2(badge.X + ((badge.Width - initialWidth) * 0.5f), UiRowStyle.CapsCenterY(type.Heading, initialSize, badge)), initialSize, Bgra32.FromRgb(14, 16, 20), 0f);
+        }
 
         // The name and its tags, with its state on a line of its own beneath.
         float nameX = badge.Right + Px(16f);

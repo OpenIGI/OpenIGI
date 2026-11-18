@@ -43,6 +43,25 @@ public sealed class ProfilesShellTests : ShellTestHarness
 
     /// <summary>Renaming keeps the profile's saves, and refuses an empty name or one another profile here has.</summary>
     [Fact]
+    public void Outside_a_mission_nothing_can_be_saved_and_an_empty_slot_neither_loads_nor_deletes()
+    {
+        string dir = NewDirectory();
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            ProfilesScreen screen = Open(shell);
+            Pump(shell, 0.1f);
+            Assert.False(Find<Button>(screen, button => button.Text == "Save here")!.IsEnabled);
+            Assert.False(Find<Button>(screen, button => button.Text == "Load")!.IsEnabled);
+            Assert.False(Find<Button>(screen, button => button.Text == "Delete save")!.IsEnabled);
+        }
+        finally
+        {
+            Remove(dir);
+        }
+    }
+
+    [Fact]
     public void Renaming_keeps_the_saves_and_refuses_an_empty_or_taken_name()
     {
         string dir = NewDirectory();
@@ -52,6 +71,9 @@ public sealed class ProfilesShellTests : ShellTestHarness
             GameConfig config = shell.Context.Config;
             Assert.True(config.CreateProfile("Alex", 1));
             config.ActiveIndex = 0;
+
+            // Saved from inside a mission, the only place a game is saved from.
+            shell.Context.InGame = true;
             ProfilesScreen screen = Open(shell);
             Find<Button>(screen, button => button.Text == "Save here")!.Activate();
 

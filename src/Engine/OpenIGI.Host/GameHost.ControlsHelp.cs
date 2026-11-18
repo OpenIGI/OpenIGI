@@ -191,7 +191,7 @@ public sealed partial class GameHost
             && int.TryParse(place.AsSpan(Prefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)
             && _missions.TryGet(id, out Game.World.MissionDescriptor? mission)
             && mission is { Name.Length: > 0 }
-                ? mission.Name
+                ? Shown(mission.Name)
                 : place;
     }
 

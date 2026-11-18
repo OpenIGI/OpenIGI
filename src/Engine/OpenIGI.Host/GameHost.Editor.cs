@@ -516,7 +516,7 @@ public sealed partial class GameHost
 
         public MissionDescriptor? Mission => host._session.Mission;
 
-        public string MissionName(MissionDescriptor mission) => host._menuStrings?.Get(mission.Name) ?? mission.Name;
+        public string MissionName(MissionDescriptor mission) => host.Shown(mission.Name);
 
         public bool IsWarmingUp => host.IsWarmingUp;
 

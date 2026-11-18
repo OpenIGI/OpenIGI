@@ -385,7 +385,8 @@ public sealed partial class GameHost
                 _scoreboardUp ? ScoreboardHand(board) : null,
                 session.Relayed,
                 session.Mode,
-                besideVote: voteBesideBoard);
+                besideVote: voteBesideBoard,
+                ownAvatar: _avatar?.Picture);
             state.Batch.End();
         }
 

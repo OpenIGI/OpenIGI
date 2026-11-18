@@ -22,6 +22,9 @@ public sealed partial class ProfilesScreen
     private int _selectedSlot;
     private Label? _savesTitle;
     private Label? _slotNote;
+    private Button? _saveButton;
+    private Button? _loadButton;
+    private Button? _deleteButton;
     private int _confirmedSlot = -1;
 
     private GlassPanel BuildSaves(UiTheme theme)
@@ -109,6 +112,7 @@ public sealed partial class ProfilesScreen
         foot.Add(save, 1, 2);
         foot.Add(load, 1, 3);
         layout.Add(foot, 3, 0);
+        (_saveButton, _loadButton, _deleteButton) = (save, load, delete);
         panel.AddChild(layout);
         return panel;
     }
@@ -133,7 +137,8 @@ public sealed partial class ProfilesScreen
 
     private void SaveToSelectedSlot()
     {
-        if (Context.Config.Active is not { } profile)
+        // There is something to save only inside a mission: the menus' own game is no game.
+        if (!Context.InGame || Context.Config.Active is not { } profile)
         {
             return;
         }
@@ -211,6 +216,27 @@ public sealed partial class ProfilesScreen
             _slotNote.Text = picked is null
                 ? string.Create(CultureInfo.InvariantCulture, $"Slot {_selectedSlot + 1:00} · Empty")
                 : string.Create(CultureInfo.InvariantCulture, $"Slot {_selectedSlot + 1:00} · {picked.MissionName}");
+            ShowSlotActions(profileName is not null, picked is not null);
+        }
+    }
+
+    // What can be done with the slot picked: saved into only from inside a mission; loaded or deleted only when it holds a save.
+    private void ShowSlotActions(bool hasProfile, bool holdsSave)
+    {
+        if (_saveButton is not null)
+        {
+            _saveButton.IsEnabled = hasProfile && Context.InGame;
+            _saveButton.Tooltip = Context.InGame ? string.Empty : "Saving is done inside a mission: pause it and come here.";
+        }
+
+        if (_loadButton is not null)
+        {
+            _loadButton.IsEnabled = holdsSave;
+        }
+
+        if (_deleteButton is not null)
+        {
+            _deleteButton.IsEnabled = holdsSave;
         }
     }
 }

@@ -551,7 +551,7 @@ public sealed partial class GameHost
         if (!_loadSequence.LiveScene)
         {
             string title = (_loadingInfo?.Name
-                ?? (_loadingMission is { } mission ? _menuStrings?.Get(mission.Name) ?? mission.Name : string.Empty))
+                ?? (_loadingMission is { } mission ? Shown(mission.Name) : string.Empty))
                 .ToUpperInvariant();
             float fit = MathF.Min(1f, (width - (left * 2f)) / MathF.Max(1f, UiPainter.MeasureLabel(type.Display, title, titleSize, 0.01f)));
             float size = titleSize * fit;

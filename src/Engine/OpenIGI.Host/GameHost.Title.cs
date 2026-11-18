@@ -452,10 +452,16 @@ public sealed partial class GameHost
         new(
             descriptor.Id,
             number,
-            _menuStrings?.Get(descriptor.Name) ?? descriptor.Name,
-            _menuStrings?.Get(descriptor.Description) ?? descriptor.Description,
+            Shown(descriptor.Name),
+            Shown(descriptor.Description),
             descriptor.BriefingSprite,
             campaign);
+
+    /// <summary>A text of the title's menus as the player reads it: a key such as <c>Mission 2 Name</c> looked up in the menus'
+    /// strings, in the language they are shown in; the text itself where there is no such key.</summary>
+    /// <param name="key">The key, or the text.</param>
+    /// <returns>The text shown.</returns>
+    internal string Shown(string key) => _menuStrings?.Get(key) ?? key;
 
     /// <summary>Builds the shell's context for the title running now.</summary>
     /// <param name="host">The seam the shell acts through; it belongs to the session, not to a game.</param>
