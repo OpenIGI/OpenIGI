@@ -6,8 +6,9 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.UI.Kit.Hud;
 
 /// <summary>
-/// Co-op's revival on the HUD, kept spare: over a fallen teammate a small dark disc with a cross, its ring filling in the
-/// accent as they are brought back and their name under it; and for the player who is down, low on the screen and clear of
+/// Co-op's revival on the HUD, kept spare: over a fallen teammate -- wherever they are, through walls, pinned to the
+/// screen's edge with an arrow when out of view -- a small dark disc with a cross, its ring filling in the accent as they
+/// are brought back, their name and how far under it; and for the player who is down, low on the screen and clear of
 /// the crosshair, a word (DOWN, or BEING REVIVED) over a thin bar and one quiet line -- no panel behind either, so neither
 /// stands between the player and the fight.
 /// </summary>
@@ -27,7 +28,10 @@ public static class ReviveHud
     /// <param name="centre">Where the marker stands on the screen: over where the teammate lies.</param>
     /// <param name="name">The teammate's name.</param>
     /// <param name="progress">How far their revival has run, nought to one.</param>
-    public static void DrawMarker(UiPainter painter, UiTheme theme, UiVec2 centre, string name, float progress)
+    /// <param name="distanceMetres">How far they are, said beside the name.</param>
+    /// <param name="pointing">Where they really are from the marker, when it stands pinned to the screen's edge because they
+    /// are out of view: an arrow beside it points the way. <see langword="null"/> when they are in view.</param>
+    public static void DrawMarker(UiPainter painter, UiTheme theme, UiVec2 centre, string name, float progress, double distanceMetres, UiVec2? pointing = null)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
@@ -51,13 +55,49 @@ public static class ReviveHud
         painter.FillRect(new UiRect(centre.X - arm, centre.Y - (thick * 0.5f), arm * 2f, thick), cross);
         painter.FillRect(new UiRect(centre.X - (thick * 0.5f), centre.Y - arm, thick, arm * 2f), cross);
 
-        // The name under it, a hair of shadow under that.
+        // Out of view, an arrow just outside the ring pointing the way to them.
+        if (pointing is { } way && (MathF.Abs(way.X) + MathF.Abs(way.Y)) > 0.001f)
+        {
+            float length = MathF.Sqrt((way.X * way.X) + (way.Y * way.Y));
+            var unit = new UiVec2(way.X / length, way.Y / length);
+            var side = new UiVec2(-unit.Y, unit.X);
+            float clear = radius + context.Px(5f);
+            float arrow = context.Px(9f);
+            var foot = new UiVec2(centre.X + (unit.X * clear), centre.Y + (unit.Y * clear));
+            UiVec2[] corners =
+            [
+                new(foot.X + (unit.X * arrow * 1.3f), foot.Y + (unit.Y * arrow * 1.3f)),
+                new(foot.X + (side.X * arrow), foot.Y + (side.Y * arrow)),
+                new(foot.X - (side.X * arrow), foot.Y - (side.Y * arrow)),
+            ];
+
+            // A dark edge round it, the same arrow grown about its own middle, so it reads on bright ground as well as dark.
+            var middle = new UiVec2((corners[0].X + corners[1].X + corners[2].X) / 3f, (corners[0].Y + corners[1].Y + corners[2].Y) / 3f);
+            UiVec2 Grown(UiVec2 corner) => new(middle.X + ((corner.X - middle.X) * 1.4f), middle.Y + ((corner.Y - middle.Y) * 1.4f));
+            painter.FillTriangle(Grown(corners[0]), Grown(corners[1]), Grown(corners[2]), UiPalette.InkAt(0.75f));
+            painter.FillTriangle(corners[0], corners[1], corners[2], progress > 0f ? UiPalette.Accent : UiPalette.Text);
+        }
+
+        // The name under it and how far, quieter; a hair of shadow under each.
         float size = context.Px(16f);
-        float width = theme.Body.MeasureWidth(name, size);
-        var at = new UiVec2(centre.X - (width * 0.5f), centre.Y + radius + context.Px(5f));
+        float farSize = size * 0.85f;
         float offset = MathF.Max(1f, context.Px(1f));
-        painter.DrawLabel(theme.Body, name, new UiVec2(at.X + offset, at.Y + offset), size, Bgra32.FromRgba(0, 0, 0, 200), 0.02f);
-        painter.DrawLabel(theme.Body, name, at, size, UiPalette.Text, 0.02f);
+        string far = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{distanceMetres:0} m");
+        float nameWidth = theme.Body.MeasureWidth(name, size);
+        float gap = size * 0.45f;
+        float total = nameWidth + gap + theme.Body.MeasureWidth(far, farSize);
+        float x = centre.X - (total * 0.5f);
+        float y = centre.Y + radius + context.Px(5f);
+        Shadowed(painter, theme, name, new UiVec2(x, y), size, UiPalette.Text, offset);
+        float farY = y + ((theme.Body.LineHeight(size) - theme.Body.LineHeight(farSize)) * 0.5f);
+        Shadowed(painter, theme, far, new UiVec2(x + nameWidth + gap, farY), farSize, UiPalette.TextSecondary, offset);
+    }
+
+    // Some words with a hair of shadow under them.
+    private static void Shadowed(UiPainter painter, UiTheme theme, string text, UiVec2 at, float size, Bgra32 colour, float offset)
+    {
+        painter.DrawLabel(theme.Body, text, new UiVec2(at.X + offset, at.Y + offset), size, Bgra32.FromRgba(0, 0, 0, 200), 0.02f);
+        painter.DrawLabel(theme.Body, text, at, size, colour, 0.02f);
     }
 
     /// <summary>Draws the read-out of the player who is down.</summary>

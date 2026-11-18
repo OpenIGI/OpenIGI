@@ -129,6 +129,50 @@ public readonly struct WorldCanvas
         return true;
     }
 
+    /// <summary>
+    /// Puts the canvas's origin on the screen however it stands to the eye: where it is when it is in view, else pinned to a
+    /// box inset from the screen's edges where the line from the middle towards it meets that box -- so a mark that has to be
+    /// found anywhere (a fallen teammate) is always on the screen, pointing the way. Behind the eye it pins to the side it is
+    /// on, below the middle, or to the foot of the screen when it is straight behind.
+    /// </summary>
+    /// <param name="inset">How far in from the screen's edges a pinned mark stands, in pixels.</param>
+    /// <param name="screenX">Receives the horizontal pixel position.</param>
+    /// <param name="screenY">Receives the vertical pixel position.</param>
+    /// <returns><see langword="true"/> when it is in view where it stands; <see langword="false"/> when it is pinned.</returns>
+    public bool PinToScreen(float inset, out float screenX, out float screenY)
+    {
+        float halfW = _width * 0.5f;
+        float halfH = _height * 0.5f;
+        float roomX = MathF.Max(1f, halfW - inset);
+        float roomY = MathF.Max(1f, halfH - inset);
+        Vector3d view = _worldToView.Transform(new Vector3d(_anchor.X - _eyePosition.X, _anchor.Y - _eyePosition.Y, _anchor.Z - _eyePosition.Z));
+
+        double dx;
+        double dy;
+        if (view.Z > 0.05)
+        {
+            float x = (float)((((view.X / view.Z / _tangentH) * 0.5) + 0.5) * _width);
+            float y = (float)((1.0 - (((view.Y / view.Z / _tangentV) * 0.5) + 0.5)) * _height);
+            if (MathF.Abs(x - halfW) <= roomX && MathF.Abs(y - halfH) <= roomY)
+            {
+                (screenX, screenY) = (x, y);
+                return true;
+            }
+
+            (dx, dy) = (x - halfW, y - halfH);
+        }
+        else
+        {
+            // Behind: the side it is on, and below the middle, never above it.
+            (dx, dy) = (view.X, Math.Abs(view.Y) + 0.25);
+        }
+
+        double scale = Math.Min(roomX / Math.Max(1e-6, Math.Abs(dx)), roomY / Math.Max(1e-6, Math.Abs(dy)));
+        screenX = halfW + (float)(dx * scale);
+        screenY = halfH + (float)(dy * scale);
+        return false;
+    }
+
     /// <summary>Draws a textured rectangle of the canvas.</summary>
     /// <param name="batch">The open sprite batch.</param>
     /// <param name="texture">The texture to sample.</param>

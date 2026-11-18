@@ -12,6 +12,27 @@ public sealed class WorldCanvasTests
     private const int Height = 1080;
 
     [Fact]
+    public void A_mark_in_view_stands_where_it_is_and_one_out_of_view_is_pinned_inside_the_edge_on_its_side()
+    {
+        // Ahead: where it is.
+        Assert.True(Canvas(new Vector3d(0.0, 2.5, 1.7)).PinToScreen(64f, out float x, out float y));
+        Assert.Equal(960f, x, 1);
+        Assert.Equal(540f, y, 1);
+
+        // Far off to the right, out of the view: pinned 64 pixels in from the right edge.
+        Assert.False(Canvas(new Vector3d(50.0, 2.5, 1.7)).PinToScreen(64f, out x, out y));
+        Assert.Equal(Width - 64f, x, 1);
+        Assert.InRange(y, 64f, Height - 64f);
+
+        // Behind and to the left: pinned on the left, at or below the middle -- never at the top.
+        Assert.False(Canvas(new Vector3d(-3.0, -10.0, 1.7)).PinToScreen(64f, out x, out y));
+        Assert.True(x < 960f);
+        Assert.True(y >= 540f);
+        Assert.InRange(x, 64f - 0.5f, Width - 64f + 0.5f);
+        Assert.InRange(y, 64f - 0.5f, Height - 64f + 0.5f);
+    }
+
+    [Fact]
     public void TheOriginLandsWhereTheAnchorIs()
     {
         WorldCanvas canvas = Canvas(new Vector3d(0.0, 2.5, 1.7));

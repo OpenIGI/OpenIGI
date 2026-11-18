@@ -524,11 +524,11 @@ internal sealed partial class RemasteredHudRenderer
             return;
         }
 
+        // Wherever they lie: in view where they are, else pinned to the screen's edge pointing the way.
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         WorldCanvas canvas = new(marker.AnchorMetres, eye, horizontalTangent, aspectRatio, screenWidth, screenHeight, MetresPerUnit);
-        if (canvas.TryProject(0f, 0f, out float x, out float y) && x >= 0f && x <= screenWidth && y >= 0f && y <= screenHeight)
-        {
-            var painter = UiPainter.Create(batch, new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight)));
-            ReviveHud.DrawMarker(painter, type, new UiVec2(x, y), marker.Name, marker.Progress);
-        }
+        bool inView = canvas.PinToScreen(context.Px(64f), out float x, out float y);
+        UiVec2? pointing = inView ? null : new UiVec2(x - (screenWidth * 0.5f), y - (screenHeight * 0.5f));
+        ReviveHud.DrawMarker(UiPainter.Create(batch, context), type, new UiVec2(x, y), marker.Name, marker.Progress, canvas.DistanceMetres, pointing);
     }
 }

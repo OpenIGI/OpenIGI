@@ -89,8 +89,11 @@ public sealed class AllyTagScreenshots
             {
                 var painter = new UiPainter(renderer, new LayoutContext(Width, Height));
                 level?.DrawCover(painter, new UiRect(0f, 0f, Width, Height));
-                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width * 0.36f, Height * 0.56f), "Anya", 0f);
-                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width * 0.62f, Height * 0.48f), "Jones", 0.6f);
+                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width * 0.36f, Height * 0.56f), "Anya", 0f, 23);
+                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width * 0.62f, Height * 0.48f), "Jones", 0.6f, 4);
+
+                // One out of view to the right: pinned to the edge, pointing the way.
+                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width - 64f, Height * 0.42f), "Priboi", 0f, 118, new UiVec2(1f, -0.15f));
                 ReviveHud.DrawDowned(painter, theme, progress);
                 renderer.Flush();
             }
