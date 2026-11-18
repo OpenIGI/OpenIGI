@@ -545,6 +545,38 @@ public sealed class RetailIgi2FiringTests
         player.Ticks++;
     }
 
+    /// <summary>
+    /// A firefight's worth of rounds -- 96 in a few ticks, from two guards -- fits a snapshot's first part, and a client reads
+    /// each written once: the log once took a few kilobytes and sent every snapshot reliably, once a second.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_firefights_rounds_fit_the_snapshot_and_each_is_read_once()
+    {
+        (_, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2WeaponTables tables = weapons.Inventory.Tables;
+        Igi2WeaponTypeTask gun = weapons.Inventory.Current!.WeaponType;
+        Multiplayer.Igi2FiredLog log = new();
+        for (int i = 0; i < 96; i++)
+        {
+            float[] aim = Game.EngineEuler.Rotation(0.01f * i, 0f, 0.02f * i);
+            log.Note(i / 16, 100000 + (i % 2), new Igi2LaunchNote(
+                new Igi2ProjectileLaunch(1, new Vector3d(100000 + i, -250000, 4096), aim, default, 400f, 260f, 0, gun, null), 0));
+        }
+
+        byte[] written = log.Capture(6, tables)!;
+        Assert.True(written.Length <= Multiplayer.Igi2FiredLog.Budget, $"{written.Length} bytes");
+
+        Multiplayer.Igi2FiredLog client = new();
+        client.Replay(null, null, tables, static _ => null);
+        int read = 0;
+        client.Replay(written, null, tables, _ => { read++; return null; });
+        Assert.True(read >= 16, $"only {read} of the 96 rounds were written");
+
+        int again = 0;
+        client.Replay(written, null, tables, _ => { again++; return null; });
+        Assert.Equal(0, again);
+    }
+
     private static (Igi2HumanPlayer Player, Igi2PlayerWeapons Weapons, RecordingEffects Effects) ArmedPlayer()
     {
         (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, RecordingEffects effects, _) = ArmedPlayerWithWorld();
