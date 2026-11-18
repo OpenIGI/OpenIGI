@@ -95,6 +95,9 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
             ? own.Health / 255f
             : null;
 
+    /// <inheritdoc/>
+    public float OwnShield => _session is { EntityId: { } self } session ? (float)session.ShieldLeft(self, _clock.Elapsed.TotalSeconds) : 0f;
+
     /// <summary>Gets the room joined through, when the session is one.</summary>
     public RoomTransport? Room => _transport as RoomTransport;
 

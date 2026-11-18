@@ -103,6 +103,9 @@ public static class ClientReplication
             world.Sides(session.MatchState?.Mode ?? MatchModes.Coop, entity => TeamOf(board, entity), ownTeam);
         }
 
+        // Who spawn protection shields, for the shielded look.
+        world.Shielded(entity => session.ShieldLeft(entity, now) > 0);
+
         // The server level's running state, taken each time a new one comes.
         if (session.TakeLevel() is { } level)
         {

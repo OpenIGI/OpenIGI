@@ -269,6 +269,16 @@ public interface IReplicatedWorld
     /// <param name="slot">The client's slot.</param>
     void Respawn(int slot);
 
+    /// <summary>Makes a living player unable to be hurt for a while -- spawn protection -- ending early the moment it fires.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="ticks">For how long, in ticks.</param>
+    void Shield(int slot, int ticks)
+    {
+    }
+
+    /// <summary>Gets the players shielded now (<see cref="Shield"/>), by entity, with the ticks each has left.</summary>
+    IReadOnlyList<ShieldState> Shields => [];
+
     /// <summary>Records the level as it stands, as what <see cref="ResetToLevelStart"/> puts back: as the session takes it up.</summary>
     void MarkLevelStart()
     {
@@ -384,6 +394,12 @@ public interface IReplicatedClientWorld
     /// <param name="teamOf">A player's team by its entity, or <see langword="null"/> when it isn't known.</param>
     /// <param name="ownTeam">This player's team, or <see langword="null"/> when it isn't known.</param>
     void Sides(string mode, Func<int, int?> teamOf, int? ownTeam)
+    {
+    }
+
+    /// <summary>Takes who spawn protection shields now, by entity, so a shielded player is drawn so.</summary>
+    /// <param name="shielded">Whether a player is shielded, by its entity.</param>
+    void Shielded(Func<int, bool> shielded)
     {
     }
 
@@ -539,6 +555,53 @@ public enum SessionMessage : byte
 
     /// <summary>Server to client, reliable: a piece of a file asked for.</summary>
     FilePart = 24,
+
+    /// <summary>
+    /// Server to client, reliable: the players spawn protection shields now (<see cref="ShieldState"/>), sent whenever who is
+    /// shielded changes. A client that does not know it passes it by.
+    /// </summary>
+    Shields = 25,
+}
+
+/// <summary>A player spawn protection shields: who, and for how many ticks more at most (firing ends it sooner).</summary>
+/// <param name="Entity">Its entity.</param>
+/// <param name="TicksLeft">The ticks it has left.</param>
+public readonly record struct ShieldState(int Entity, int TicksLeft)
+{
+    /// <summary>Writes a list of shields, after its message's id.</summary>
+    /// <param name="writer">Where to.</param>
+    /// <param name="shields">The shields.</param>
+    public static void Write(Net.BitWriter writer, IReadOnlyList<ShieldState> shields)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(shields);
+        writer.WriteVarUInt((uint)shields.Count);
+        foreach (ShieldState shield in shields)
+        {
+            writer.WriteVarUInt((uint)Math.Max(0, shield.Entity));
+            writer.WriteVarUInt((uint)Math.Max(0, shield.TicksLeft));
+        }
+    }
+
+    /// <summary>Reads a list <see cref="Write"/> wrote.</summary>
+    /// <param name="reader">Where from.</param>
+    /// <returns>The shields, or <see langword="null"/> for a list cut short.</returns>
+    public static List<ShieldState>? Read(ref Net.BitReader reader)
+    {
+        uint count = reader.ReadVarUInt();
+        if (count > 256)
+        {
+            return null;
+        }
+
+        List<ShieldState> shields = [];
+        for (int i = 0; i < count; i++)
+        {
+            shields.Add(new ShieldState((int)reader.ReadVarUInt(), (int)reader.ReadVarUInt()));
+        }
+
+        return reader.IsOverflowed ? null : shields;
+    }
 }
 
 /// <summary>A player the server re-armed: what it carries now, and whether it was armed from nothing.</summary>

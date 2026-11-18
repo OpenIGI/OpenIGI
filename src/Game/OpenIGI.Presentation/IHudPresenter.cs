@@ -419,6 +419,16 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the player's own spawn protection while it lasts, under the crosshair.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="left">The seconds it has left.</param>
+    /// <param name="total">The seconds it lasts in all.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawShield(SpriteBatch batch, float left, float total, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws the line telling that a teammate has gone down, at the top of the screen.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="index">Its place among the lines up now, 0 the newest.</param>

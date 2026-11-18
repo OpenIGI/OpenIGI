@@ -411,6 +411,17 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // This player's spawn protection while it lasts: the bar a share of what it began with.
+        float shieldLeft = (TickObserver as ISessionScoreboard)?.OwnShield ?? 0f;
+        _shieldTotal = shieldLeft <= 0f ? 0f : Math.Max(_shieldTotal, shieldLeft);
+        if (shieldLeft > 0f && _remasteredHud is { IsReady: true } shieldHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            shieldHud.DrawShield(state.Batch, shieldLeft, _shieldTotal, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // This player fallen in co-op: down, not out, and how far a teammate has got with bringing it back.
         if (TickObserver is ISessionScoreboard { OwnRevive: { } revival } && _remasteredHud is { IsReady: true } downedHud)
         {

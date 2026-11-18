@@ -24,6 +24,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="Model">The model its look is built from, or <see langword="null"/> for the level's own player's.</param>
 /// <param name="CarriesBomb">Whether it carries the bomb the bomb modes plant, drawn on its back.</param>
 /// <param name="Health">Its health while it stands, 0 to 1, for its name tag; <see langword="null"/> fallen or not known.</param>
+/// <param name="Shielded">Whether spawn protection shields it now: it is drawn in the shielded look.</param>
 public readonly record struct PartnerBody(
     object Key,
     Vector3d Feet,
@@ -40,7 +41,8 @@ public readonly record struct PartnerBody(
     float? Revive = null,
     string? Model = null,
     bool CarriesBomb = false,
-    float? Health = null)
+    float? Health = null,
+    bool Shielded = false)
 {
     /// <summary>Gets a partner's body from its rig, followed as the mission's own player's is.</summary>
     /// <param name="key">What the body follows.</param>

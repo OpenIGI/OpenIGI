@@ -627,6 +627,9 @@ public sealed partial class GameHost
             _modelGlows.Draw(glowing.DrawnGlows, eye, projection);
         }
 
+        // Every other player spawn protection shields, in the shielded look over the finished scene, seen through walls.
+        _soldiers?.DrawShieldedPartners(eye);
+
         // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD
         // pass and for the same reason as the inspector selection below: submitted from the world
         // pass it would be lit and fogged into a smear. Here it composites over the finished

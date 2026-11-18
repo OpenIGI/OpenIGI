@@ -17,6 +17,9 @@ public sealed partial class GameHost
     private readonly HashSet<string> _downSeen = new(StringComparer.Ordinal);
     private readonly List<(string Name, Vector3d Metres, int At)> _downAlerts = [];
 
+    // How long this player's spawn protection lasted when it began, which its bar runs down from.
+    private float _shieldTotal;
+
     // Each frame: a teammate newly down is told once, with the sound; one back up is forgotten, so a second fall is told again.
     private void UpdateDownedAlerts(IReadOnlyList<ReviveMarker> fallen)
     {

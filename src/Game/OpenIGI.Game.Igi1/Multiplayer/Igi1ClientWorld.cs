@@ -154,7 +154,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
                 PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model,
                 (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0,
-                alive ? h.Health / 255f : null));
+                alive ? h.Health / 255f : null,
+                alive && _shielded(h.Id)));
         }
 
         return bodies;
@@ -462,6 +463,12 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
 
     /// <inheritdoc/>
     public void Skin(int entity, string skin) => _skins[entity] = skin;
+
+    // Whether spawn protection shields a player, by its entity, as the session last said.
+    private Func<int, bool> _shielded = static _ => false;
+
+    /// <inheritdoc/>
+    public void Shielded(Func<int, bool> shielded) => _shielded = shielded ?? throw new ArgumentNullException(nameof(shielded));
 
     /// <inheritdoc/>
     public void Sides(string mode, Func<int, int?> teamOf, int? ownTeam)

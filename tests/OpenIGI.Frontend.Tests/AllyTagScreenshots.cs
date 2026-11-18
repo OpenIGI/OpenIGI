@@ -137,6 +137,9 @@ public sealed class AllyTagScreenshots
             PingMark.Draw(painter, typography.Body, new UiVec2(Width * 0.54f, Height * 0.62f), "Anya", 31, 0.7f, 1f);
             PingMark.Draw(painter, typography.Body, new UiVec2(Width * 0.66f, Height * 0.42f), "Jones", 74, 4f, 1f);
             PingMark.Draw(painter, typography.Body, new UiVec2(64f, Height * 0.5f), "Priboi", 140, 4f, 1f, new UiVec2(-1f, 0.1f));
+
+            // This player's spawn protection, part run down.
+            ShieldHud.Draw(painter, typography.CreateTheme(), 1.2f, 2f);
             renderer.Flush();
         }
 

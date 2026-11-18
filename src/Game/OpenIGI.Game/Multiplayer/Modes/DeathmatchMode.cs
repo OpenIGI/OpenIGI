@@ -21,6 +21,12 @@ public sealed record DeathmatchSettings
 
     /// <summary>Gets the seconds after a spawn in which a loadout picked is handed over at once; later, it comes with the next.</summary>
     public double LoadoutSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// Gets the seconds a player put back at a spawn cannot be hurt, so nobody is killed as they appear; it ends early the moment
+    /// they fire. Nought for none.
+    /// </summary>
+    public double SpawnProtectSeconds { get; init; } = 2;
 }
 
 /// <summary>Deathmatch: a point for each kill of an enemy, back again a few seconds after dying, until the limit or the clock.</summary>
@@ -240,6 +246,11 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
     {
         host.Respawn(slot);
         _spawnedAt[slot] = tick;
+        if (Settings.SpawnProtectSeconds > 0)
+        {
+            host.World.Shield(slot, (int)Math.Round(Settings.SpawnProtectSeconds * tickRate));
+        }
+
         if (_loadouts.TryGetValue(slot, out ArmouryItem? item))
         {
             host.Give(slot, item.Weapon, item.Rounds);

@@ -509,6 +509,16 @@ internal sealed partial class RemasteredHudRenderer
     }
 
     /// <inheritdoc/>
+    public void DrawShield(SpriteBatch batch, float left, float total, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_theme is { } type)
+        {
+            ShieldHud.Draw(UiPainter.Create(batch, new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight))), type, left, total);
+        }
+    }
+
+    /// <inheritdoc/>
     public void DrawDownedAlert(SpriteBatch batch, int index, string name, double distanceMetres, float opacity, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);

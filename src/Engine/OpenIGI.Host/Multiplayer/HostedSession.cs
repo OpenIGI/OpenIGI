@@ -143,6 +143,12 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     public float? OwnRevive =>
         _options.IncludesHost && Game.Multiplayer.Modes.PlayerSides.Revivable(Mode) ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
 
+    /// <inheritdoc/>
+    public float OwnShield =>
+        _options.IncludesHost && _session is { } session && _world?.Shields.FirstOrDefault(s => s.Entity == ServerSession.HostEntity) is { TicksLeft: > 0 } shield
+            ? shield.TicksLeft / (float)Math.Max(1, session.TickRate)
+            : 0f;
+
     /// <summary>A map as a player reads it: a mission by its number, anything else as it is.</summary>
     /// <param name="map">The map.</param>
     /// <returns>The name.</returns>

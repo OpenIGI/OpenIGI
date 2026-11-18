@@ -5,6 +5,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -16,6 +17,28 @@ public sealed partial class SoldierRenderer
 
     // Each standing partner's health, for its name tag.
     private readonly Dictionary<object, float?> _partnerHealth = [];
+
+    // The partners spawn protection shields now, drawn in the shielded look; and the ranges list that drawing reuses.
+    private readonly HashSet<object> _partnerShielded = [];
+    private readonly List<MeshDrawRange> _shieldRanges = [];
+
+    /// <inheritdoc/>
+    public void DrawShieldedPartners(in Camera3D camera)
+    {
+        if (_partnersHidden || _partnerShielded.Count == 0)
+        {
+            return;
+        }
+
+        foreach (object key in _partnerShielded)
+        {
+            if (_partners.TryGetValue(key, out PlayerBodyRenderer? body) && !_fallen.ContainsKey(key))
+            {
+                // The "out of the fight" look: a soft blue outline over a faint blue fill, through walls.
+                body.DrawSilhouette(camera, SilhouetteGroup.Disabled, _shieldRanges);
+            }
+        }
+    }
 
     // The fallen partners: what lies where, and how far each one's revival has gone.
     private readonly Dictionary<object, (Vector3d Feet, float? Progress)> _fallen = [];
@@ -183,6 +206,14 @@ public sealed partial class SoldierRenderer
             }
 
             _partnerHealth[partner.Key] = partner.Health;
+            if (partner.Shielded)
+            {
+                _partnerShielded.Add(partner.Key);
+            }
+            else
+            {
+                _partnerShielded.Remove(partner.Key);
+            }
 
             if (partner.CarriesBomb)
             {
@@ -221,6 +252,7 @@ public sealed partial class SoldierRenderer
             _partnerHolding.Remove(gone);
             _partnerNames.Remove(gone);
             _partnerHealth.Remove(gone);
+            _partnerShielded.Remove(gone);
             _fallen.Remove(gone);
             _partnerModels.Remove(gone);
         }
@@ -381,6 +413,7 @@ public sealed partial class SoldierRenderer
         _carriedBombs = null;
         _partnerNames.Clear();
         _partnerHealth.Clear();
+        _partnerShielded.Clear();
         _partnerLoad = null;
     }
 }

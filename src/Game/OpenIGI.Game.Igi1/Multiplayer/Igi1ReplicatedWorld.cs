@@ -128,6 +128,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
                 Model = PlayerSkins.Of(e.p.Skin).Model,
                 CarriesBomb = e.Slot == _bombCarrier,
                 Health = e.p.IsDead ? null : e.p.Health.RemainingFraction,
+                Shielded = _shields.ContainsKey(e.Slot),
             })];
     }
 
@@ -261,6 +262,8 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     /// <inheritdoc/>
     public Snapshot Capture(long tick)
     {
+        EndShields();
+
         // A match keeps the level's scenes held every tick, not only once it began: a level up after the match was made
         // (or put back between rounds) has its scenes, and their voices, start otherwise.
         if (IsVersus && _game.World.Cutscenes is { Held: false } scenes)

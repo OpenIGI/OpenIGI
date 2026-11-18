@@ -31,6 +31,34 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void A_player_put_back_at_a_spawn_is_shielded_for_the_spawn_protection_and_not_with_none()
+    {
+        Host host = new(teams: [0, 1]);
+        DeathmatchMode mode = new(TickRate, teams: true, new DeathmatchSettings { RespawnSeconds = 3, SpawnProtectSeconds = 2 });
+        mode.Start(host, 0);
+        host.Fake.ShieldsGiven.Clear();
+        mode.Tick(host, TickRate, [new WorldDeath(Victim: 11, Killer: 10)]);
+        mode.Tick(host, TickRate * 4, []);
+        Assert.Equal([(1, TickRate * 2)], host.Fake.ShieldsGiven);
+
+        Host bare = new(teams: [0, 1]);
+        DeathmatchMode unshielded = new(TickRate, teams: true, new DeathmatchSettings { RespawnSeconds = 3, SpawnProtectSeconds = 0 });
+        unshielded.Start(bare, 0);
+        unshielded.Tick(bare, TickRate, [new WorldDeath(Victim: 11, Killer: 10)]);
+        unshielded.Tick(bare, TickRate * 4, []);
+        Assert.Empty(bare.Fake.ShieldsGiven);
+    }
+
+    [Fact]
+    public void Shields_go_over_the_wire_as_they_were()
+    {
+        OpenIGI.Net.BitWriter writer = new();
+        ShieldState.Write(writer, [new ShieldState(0, 60), new ShieldState(7, 12)]);
+        OpenIGI.Net.BitReader reader = new(writer.AsSpan().ToArray());
+        Assert.Equal([new ShieldState(0, 60), new ShieldState(7, 12)], ShieldState.Read(ref reader));
+    }
+
+    [Fact]
     public void The_dead_come_back_after_the_delay_and_not_before()
     {
         Host host = new(teams: [0, 1]);
@@ -634,6 +662,8 @@ public sealed class GameModeTests
 
         public IReplicatedWorld World => _world;
 
+        public FakeWorld Fake => _world;
+
         public int TickRate => GameModeTests.TickRate;
 
         public IReadOnlyList<int> PlayerSlots { get; }
@@ -663,6 +693,10 @@ public sealed class GameModeTests
         public Dictionary<int, OpenIGI.Core.Numerics.Vector3d> Positions { get; } = [];
 
         public List<int> Killed { get; } = [];
+
+        public List<(int Slot, int Ticks)> ShieldsGiven { get; } = [];
+
+        public void Shield(int slot, int ticks) => ShieldsGiven.Add((slot, ticks));
 
         public HashSet<int> Using { get; } = [];
 

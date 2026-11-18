@@ -155,6 +155,27 @@ public sealed partial class ServerSession
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    // Who the clients were last told is shielded, by entity.
+    private readonly HashSet<int> _shieldsTold = [];
+
+    // Every client told, on the reliable line, when who spawn protection shields changes: with the ticks each has left, so its
+    // own read-out runs down; and an empty list when the last one ends.
+    private void TellShields()
+    {
+        IReadOnlyList<ShieldState> shields = _world.Shields;
+        if (shields.Count == _shieldsTold.Count && shields.All(s => _shieldsTold.Contains(s.Entity)))
+        {
+            return;
+        }
+
+        _shieldsTold.Clear();
+        _shieldsTold.UnionWith(shields.Select(static s => s.Entity));
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Shields, 8);
+        ShieldState.Write(_writer, shields);
+        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+    }
+
     private readonly List<CombatNote> _hostCombat = [];
 
     /// <summary>Takes the hits the listen server's own player scored or took since the last call, for its HUD.</summary>

@@ -26,6 +26,9 @@ public interface ISessionScoreboard
     /// <summary>Gets how far this end's own fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> while it is up.</summary>
     float? OwnRevive => null;
 
+    /// <summary>Gets how long this end's own player's spawn protection has left, in seconds; nought when it has none.</summary>
+    float OwnShield => 0f;
+
     /// <summary>Gets whether this player's connection goes through the TURN relay rather than straight to the others.</summary>
     bool Relayed => false;
 

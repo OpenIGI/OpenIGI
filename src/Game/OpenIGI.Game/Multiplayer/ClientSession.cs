@@ -413,6 +413,15 @@ public sealed class ClientSession
     /// <param name="now">The current time in seconds.</param>
     public void Poll(double now) => _net.Update(now);
 
+    // Each shielded player's entity, and when its shield runs out on this clock.
+    private readonly Dictionary<int, double> _shields = [];
+
+    /// <summary>Gets how long a player's spawn protection has left, in seconds; nought when it has none.</summary>
+    /// <param name="entity">The player's entity.</param>
+    /// <param name="now">The clock, as <see cref="Receive"/> is given it.</param>
+    /// <returns>The seconds.</returns>
+    public double ShieldLeft(int entity, double now) => _shields.TryGetValue(entity, out double until) ? Math.Max(0, until - now) : 0;
+
     /// <summary>Gets or sets the server tick, to a fraction, the others were last drawn at: what a shot made now was aimed at.</summary>
     public double? DrawnTick { get; set; }
 
@@ -795,6 +804,15 @@ public sealed class ClientSession
                 for (int i = 0; i < lines && !reader.IsOverflowed; i++)
                 {
                     _rconAnswers.Add(reader.ReadString(200));
+                }
+
+                break;
+            case SessionMessage.Shields when ShieldState.Read(ref reader) is { } shields:
+                // Who spawn protection shields now, each until its ticks run out -- or until the next word, which ends it sooner.
+                _shields.Clear();
+                foreach (ShieldState shield in shields)
+                {
+                    _shields[shield.Entity] = now + (shield.TicksLeft / (double)Math.Max(1, TickRate));
                 }
 
                 break;

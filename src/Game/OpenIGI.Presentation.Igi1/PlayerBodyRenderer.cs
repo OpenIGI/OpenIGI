@@ -893,6 +893,38 @@ internal sealed class PlayerBodyRenderer(
         _device.ClearPoseInterpolation();
     }
 
+    /// <summary>Draws the body, as it was posed this frame, into the silhouette highlight as one of a group.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="highlight">The group it is highlighted as.</param>
+    /// <param name="ranges">A list to gather the body's index ranges in, reused.</param>
+    public void DrawSilhouette(in Camera3D camera, SilhouetteGroup highlight, List<MeshDrawRange> ranges)
+    {
+        ArgumentNullException.ThrowIfNull(ranges);
+        if (_member is not { HasFrameState: true } member || _group is not { } group)
+        {
+            return;
+        }
+
+        ranges.Clear();
+        foreach (MeshSubset subset in group.Geometry.Subsets)
+        {
+            if (subset.IndexCount > 0)
+            {
+                ranges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+            }
+        }
+
+        if (ranges.Count == 0)
+        {
+            return;
+        }
+
+        SoldierSkinning.Flush(_device, member, group.Geometry, group.Body.Model);
+        _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
+        _device.DrawSilhouette(member.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation), highlight);
+        _device.ClearPoseInterpolation();
+    }
+
     /// <summary>Puts the body into the traced world without drawing any of it.</summary>
     /// <param name="camera">The eye, for the same model-view the drawn path composes.</param>
     /// <param name="member">The body's frame state, which carries its posed mesh.</param>

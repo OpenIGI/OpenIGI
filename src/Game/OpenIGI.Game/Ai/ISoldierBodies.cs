@@ -50,6 +50,16 @@ public interface ISoldierBodies : IDisposable
     /// <param name="radiusPixels">The glow's screen-space radius, in pixels.</param>
     void DrawBinocularOutlines(in Camera3D camera, float radiusPixels);
 
+    /// <summary>
+    /// Draws every other player spawn protection shields now in the shielded look -- a soft outline over a faint fill, seen
+    /// through walls -- so everyone can tell at a glance who cannot be hurt yet. Over the finished scene, as the binoculars'
+    /// marks are.
+    /// </summary>
+    /// <param name="camera">The eye the scene is being drawn through.</param>
+    void DrawShieldedPartners(in Camera3D camera)
+    {
+    }
+
     /// <summary>Collects every nearby soldier's bones, and the capsules a ragdoll of it collides with, for the debug view.</summary>
     /// <param name="eye">Where the eye is, in metres.</param>
     /// <param name="range">How far out to look, in metres.</param>
