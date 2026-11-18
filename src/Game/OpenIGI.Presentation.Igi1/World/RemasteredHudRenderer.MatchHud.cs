@@ -1,5 +1,7 @@
+using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
+using OpenIGI.UI.Kit.Hud;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
@@ -321,9 +323,15 @@ internal sealed partial class RemasteredHudRenderer
 
         float size = Px(match ? 76f : 58f);
         Centred(painter, type.Display, result.Title, centre, band.Y + Px(match ? 18f : 14f), size, colour, 0.08f);
+        bool summed = result.Summary is not null;
         if (result.Detail.Length > 0)
         {
-            Centred(painter, type.Heading, result.Detail, centre, band.Bottom - Px(36f), Px(16f), UiPalette.TextBright, 0.2f);
+            Centred(painter, type.Heading, result.Detail, centre, band.Bottom - Px(summed ? 82f : 36f), Px(16f), UiPalette.TextBright, 0.2f);
+        }
+
+        if (result.Summary is { } summary)
+        {
+            MatchSummaryRow.Draw(painter, type, centre, band.Bottom - Px(54f), summary.Place, summary.Players, summary.Kills, summary.Deaths, summary.Ratio, summary.Best);
         }
     }
 
@@ -363,10 +371,5 @@ internal sealed partial class RemasteredHudRenderer
         return text;
     }
 
-    private static string Place(int rank) => rank switch
-    {
-        <= 0 => "-",
-        _ when rank % 100 is 11 or 12 or 13 => $"{rank}TH",
-        _ => (rank % 10) switch { 1 => $"{rank}ST", 2 => $"{rank}ND", 3 => $"{rank}RD", _ => $"{rank}TH" },
-    };
+    private static string Place(int rank) => MatchSummaryRow.Ordinal(rank);
 }

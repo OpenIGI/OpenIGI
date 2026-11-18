@@ -238,4 +238,24 @@ public sealed class MatchHudTests
     {
         Assert.Null(MatchHud.Of(new MatchState(MatchModes.Coop, MatchPhase.Live, 1, -1, null), 0, Board(), 10));
     }
+
+    [Fact]
+    public void A_players_own_match_is_summed_up_by_kills_then_fewest_deaths_the_first_its_most_valuable()
+    {
+        ScoreboardLine[] lines =
+        [
+            new(0, "Ana", 0, 0, 14, 6, true),
+            new(1, "Bo", 1, 0, 14, 9, true),
+            new(2, "Cy", 1, 0, 3, 2, true),
+        ];
+        MatchSummary first = MatchSummary.Of(lines[0], lines);
+        Assert.Equal(1, first.Place);
+        Assert.True(first.Best);
+        Assert.Equal("2.33", first.Ratio);
+        Assert.Equal(2, MatchSummary.Of(lines[1], lines).Place);
+        MatchSummary last = MatchSummary.Of(lines[2], lines);
+        Assert.Equal(3, last.Place);
+        Assert.False(last.Best);
+        Assert.Equal("5.00", MatchSummary.Of(new ScoreboardLine(3, "Dee", 0, 0, 5, 0, true), lines).Ratio);
+    }
 }

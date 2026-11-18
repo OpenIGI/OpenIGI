@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Hud;
@@ -142,6 +143,51 @@ public sealed class AllyTagScreenshots
         using SKImage image = surface.Snapshot();
         using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
         using FileStream file = File.Create(Path.Combine(folder, $"pings-{Width}x{Height}.png"));
+        png.SaveTo(file);
+    }
+
+    [Fact]
+    public void Draw_the_match_summary()
+    {
+        string? folder = Environment.GetEnvironmentVariable("OPENIGI_SHELL_SHOTS");
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(folder);
+        using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
+        UiTheme theme = typography.CreateTheme();
+        using SkiaImageStore images = new();
+        using SkiaFontCache fonts = new();
+        UiPicture? level = MultiplayerScreenshots.Picture(images, [], 1);
+        const int Width = 1920;
+        const int Height = 1080;
+        using SKSurface surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        MultiplayerScreenshots.DrawGround(surface.Canvas, Width, Height);
+        using (SkiaUiRenderer renderer = new(surface.Canvas, images, fonts))
+        {
+            var painter = new UiPainter(renderer, new LayoutContext(Width, Height));
+            level?.DrawCover(painter, new UiRect(0f, 0f, Width, Height));
+
+            // The match card as the HUD lays it, its band in the victory colour, with the player's own match across it.
+            var band = new UiRect(0f, 76f, Width, 196f);
+            painter.FillRect(band, Bgra32.FromRgba(6, 8, 11, 200));
+            painter.FillRect(new UiRect(0f, band.Y, Width, 2f), Bgra32.FromRgb(255, 206, 92));
+            painter.FillRect(new UiRect(0f, band.Bottom - 2f, Width, 2f), Bgra32.FromRgb(255, 206, 92));
+            float centre = Width * 0.5f;
+            float titleWidth = UiPainter.MeasureLabel(theme.Display, "VICTORY", 76f, 0.08f);
+            painter.DrawLabel(theme.Display, "VICTORY", new UiVec2(centre - (titleWidth * 0.5f), band.Y + 18f), 76f, Bgra32.FromRgb(255, 206, 92), 0.08f);
+            const string Detail = "13 – 7  ·  NEXT MATCH IN 0:14";
+            float detailWidth = UiPainter.MeasureLabel(theme.Heading, Detail, 16f, 0.2f);
+            painter.DrawLabel(theme.Heading, Detail, new UiVec2(centre - (detailWidth * 0.5f), band.Bottom - 82f), 16f, UiPalette.TextBright, 0.2f);
+            MatchSummaryRow.Draw(painter, theme, centre, band.Bottom - 54f, 1, 8, 14, 6, "2.33", best: true);
+            renderer.Flush();
+        }
+
+        using SKImage image = surface.Snapshot();
+        using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
+        using FileStream file = File.Create(Path.Combine(folder, $"match-summary-{Width}x{Height}.png"));
         png.SaveTo(file);
     }
 }

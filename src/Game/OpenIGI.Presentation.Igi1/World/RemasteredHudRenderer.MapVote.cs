@@ -105,7 +105,7 @@ internal sealed partial class RemasteredHudRenderer
     private const float IntermissionCardTop = 76f;
 
     // The match card's height, as ResultBand draws a match's.
-    private const float MatchCardHeight = 150f;
+    private const float MatchCardHeight = 196f;
 
     // While a decided match's vote is open, the screen under its card is shared: the scoreboard on the left, the maps on the right,
     // the two side by side and centred together, down to the foot of the safe area.

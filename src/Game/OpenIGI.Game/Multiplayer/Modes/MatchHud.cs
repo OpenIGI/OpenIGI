@@ -16,7 +16,33 @@ public sealed record TeamStrip(int Team, string Name, int Score, IReadOnlyList<b
 /// <param name="Title">What happened, as <c>ROUND WON</c> or <c>VICTORY</c>.</param>
 /// <param name="Detail">Why, or the final score.</param>
 /// <param name="Outcome">1 for the local player's side winning, -1 for it losing, 0 for a draw or nobody's.</param>
-public sealed record ResultCard(string Title, string Detail, int Outcome);
+/// <param name="Summary">At a match's end, the local player's own match in numbers; <see langword="null"/> otherwise.</param>
+public sealed record ResultCard(string Title, string Detail, int Outcome, MatchSummary? Summary = null);
+
+/// <summary>The local player's match in numbers, on the card at its end.</summary>
+/// <param name="Place">Where it finished among the players, from 1, by kills and then by fewest deaths.</param>
+/// <param name="Players">How many played.</param>
+/// <param name="Kills">Its kills.</param>
+/// <param name="Deaths">Its deaths.</param>
+public sealed record MatchSummary(int Place, int Players, int Kills, int Deaths)
+{
+    /// <summary>Gets a value indicating whether it finished first: the match's most valuable player.</summary>
+    public bool Best => Place == 1 && Players > 1;
+
+    /// <summary>Gets its kills for each death, as the card says it: <c>2.33</c>, or its kills where it never died.</summary>
+    public string Ratio => (Deaths == 0 ? Kills : Kills / (double)Deaths).ToString("0.00", CultureInfo.InvariantCulture);
+
+    /// <summary>Makes the summary of a player's line among a match's lines.</summary>
+    /// <param name="own">The player's line.</param>
+    /// <param name="lines">Every player's line.</param>
+    /// <returns>The summary.</returns>
+    public static MatchSummary Of(ScoreboardLine own, IReadOnlyList<ScoreboardLine> lines)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        int place = 1 + lines.Count(l => l.Slot != own.Slot && (l.Kills > own.Kills || (l.Kills == own.Kills && l.Deaths < own.Deaths)));
+        return new MatchSummary(place, Math.Max(1, lines.Count), own.Kills, own.Deaths);
+    }
+}
 
 /// <summary>An action the local player can take where it stands, as <c>HOLD [E] TO PLANT AT A</c>.</summary>
 /// <param name="Verb">The verb before the key, as <c>HOLD</c>.</param>
@@ -275,7 +301,11 @@ public sealed record MatchHud
                 && own is { IsAlive: true },
         };
 
-        return hud with { Result = ResultOf(state, report, own, hud, left) };
+        ResultCard? result = ResultOf(state, report, own, hud, left);
+        return hud with
+        {
+            Result = result is not null && state.Phase == MatchPhase.Intermission && own is { } mine ? result with { Summary = MatchSummary.Of(mine, lines) } : result,
+        };
     }
 
 
