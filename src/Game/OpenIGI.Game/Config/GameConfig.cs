@@ -223,11 +223,29 @@ public sealed class GameConfig
     public static GameConfig CreateDefault()
     {
         GameConfig config = new() { ControlsVersion = CurrentControlsVersion };
+        config.EnsureProfile();
+        return config;
+    }
+
+    /// <summary>Gives a configuration with no profiles the original's default one, and makes it the active one.</summary>
+    /// <returns><see langword="true"/> when one was added.</returns>
+    /// <remarks>
+    /// A player is never left as nobody. An I.G.I. 2 <c>config.qvm</c> holds no profiles the first game's reader knows
+    /// (the GOG release's has none at all), and the shell then named the player "No profile" until they made one.
+    /// </remarks>
+    public bool EnsureProfile()
+    {
+        if (_profiles.Count > 0)
+        {
+            return false;
+        }
+
         PlayerProfile profile = PlayerProfile.CreateDefault();
         profile.Name = DefaultProfileName;
         profile.Difficulty = 1;
-        config.Add(profile);
-        return config;
+        Add(profile);
+        _activeIndex = 0;
+        return true;
     }
 
     /// <summary>Truncates a name to the original's buffer.</summary>

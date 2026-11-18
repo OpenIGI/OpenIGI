@@ -40,6 +40,13 @@ internal static class HostConfiguration
     {
         GameConfig config = Read(fileSystem, logger);
 
+        // A file with no profiles in it -- I.G.I. 2's own config.qvm -- leaves the player as nobody: they play as the
+        // original's default operative until they make their own.
+        if (config.EnsureProfile())
+        {
+            logger.Information("Config", $"No profiles were read; playing as {GameConfig.DefaultProfileName}.");
+        }
+
         // Whichever file it came from: a new player's profiles are the retail file's, and those carry the
         // original's arrow keys. See GameConfig.MigrateControls.
         if (config.MigrateControls())
