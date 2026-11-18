@@ -44,6 +44,18 @@ public static class HudCrosshair
     private static readonly Bgra32 KillInk = Bgra32.FromRgba(232, 48, 40, 255);
     private static readonly Bgra32 Edge = Bgra32.FromRgba(0, 0, 0, 90);
 
+    // The colours a player may pick (r_crosshair_color), in its order.
+    private static readonly Bgra32[] Colours =
+    [
+        Bgra32.FromRgb(255, 255, 255),
+        Bgra32.FromRgb(80, 255, 120),
+        Bgra32.FromRgb(255, 235, 60),
+        Bgra32.FromRgb(70, 230, 255),
+        Bgra32.FromRgb(255, 90, 230),
+        Bgra32.FromRgb(255, 70, 60),
+        Bgra32.FromRgb(232, 163, 61),
+    ];
+
     // The three ticks' directions: left, right and below (the screen's y runs down).
     private static readonly (float X, float Y)[] Ticks = [(-1f, 0f), (1f, 0f), (0f, 1f)];
 
@@ -78,35 +90,56 @@ public static class HudCrosshair
         UiPainter painter = context.Painter;
         UiVec2 c = new(MathF.Round(context.Width * 0.5f) + 0.5f, MathF.Round(context.Height * 0.5f) + 0.5f);
         float u = MathF.Max(0.75f, context.Px(1f));
-        float width = MathF.Max(1.1f, 1.25f * u);
-        float offset = Math.Clamp(SpreadPixels(state.Spread, frame) * SpreadShare, LeastOffset * u, MostOffset * u);
+        Paint(painter, c, u, shape, SpreadPixels(state.Spread, frame) * SpreadShare, CrosshairStyle.Current);
+        if (HudCVars.ShowsHitMarkers)
+        {
+            Marks(painter, c, u, MathF.Max(1.1f, 1.25f * u), state);
+        }
+    }
+
+    /// <summary>Draws the crosshair for a weapon's shape in a style, about a point: what <see cref="Draw"/> draws.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="c">The centre.</param>
+    /// <param name="u">One design pixel, in screen pixels.</param>
+    /// <param name="shape">The weapon's kind of crosshair.</param>
+    /// <param name="spread">How far the weapon's spread puts the ticks from the centre, in pixels.</param>
+    /// <param name="style">How the player has it look.</param>
+    public static void Paint(UiPainter painter, UiVec2 c, float u, CrosshairShape shape, float spread, CrosshairStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(style);
+        Bgra32 ink = style.Ink;
+        Bgra32 edge = style.Outline ? HudDrawContext.Fade(Edge, ink.A / 255f) : default;
+        float width = MathF.Max(1.1f, 1.25f * u) * style.Thickness;
+        float tick = TickLength * u * style.Size;
+        float offset = (style.Dynamic ? Math.Clamp(spread, LeastOffset * u, MostOffset * u) : LeastOffset * u * 1.6f) + (style.Gap * u);
         switch (shape)
         {
             case CrosshairShape.Shotgun:
-                Ring(painter, c, offset, MathF.Max(1f, width * 0.8f), White);
+                Ring(painter, c, offset, MathF.Max(1f, width * 0.8f), ink, edge);
                 break;
             case CrosshairShape.Melee:
-                Point(painter, c, width * 0.75f, HudDrawContext.Fade(White, 0.5f));
-                break;
+                Point(painter, c, width * 0.75f, HudDrawContext.Fade(ink, 0.5f), edge);
+                return;
             case CrosshairShape.Sniper:
-                ThreeTicks(painter, c, offset, TickLength * u, width, White);
+                ThreeTicks(painter, c, offset, tick, width, ink, edge);
                 foreach ((float x, float y) in Diagonals)
                 {
                     // A short tick on the diagonal, running outward from its place.
                     UiVec2 at = new(c.X + (x * offset), c.Y + (y * offset));
-                    float reach = TickLength * u * 0.5f * 0.70710678f;
-                    Stroke(painter, at, new UiVec2(at.X + (MathF.Sign(x) * reach), at.Y + (MathF.Sign(y) * reach)), width, White);
+                    float reach = tick * 0.5f * 0.70710678f;
+                    Stroke(painter, at, new UiVec2(at.X + (MathF.Sign(x) * reach), at.Y + (MathF.Sign(y) * reach)), width, ink, edge);
                 }
 
                 break;
             default:
-                ThreeTicks(painter, c, offset, TickLength * u, width, White);
+                ThreeTicks(painter, c, offset, tick, width, ink, edge);
                 break;
         }
 
-        if (HudCVars.ShowsHitMarkers)
+        if (style.Dot)
         {
-            Marks(painter, c, u, width, state);
+            Point(painter, c, MathF.Max(1f, width * 0.7f), ink, edge);
         }
     }
 
@@ -149,11 +182,11 @@ public static class HudCrosshair
     }
 
     // Left, right and below, each running out from the offset.
-    private static void ThreeTicks(UiPainter painter, UiVec2 c, float offset, float length, float width, Bgra32 ink)
+    private static void ThreeTicks(UiPainter painter, UiVec2 c, float offset, float length, float width, Bgra32 ink, Bgra32 edge)
     {
         foreach ((float x, float y) in Ticks)
         {
-            Stroke(painter, new UiVec2(c.X + (x * offset), c.Y + (y * offset)), new UiVec2(c.X + (x * (offset + length)), c.Y + (y * (offset + length))), width, ink);
+            Stroke(painter, new UiVec2(c.X + (x * offset), c.Y + (y * offset)), new UiVec2(c.X + (x * (offset + length)), c.Y + (y * (offset + length))), width, ink, edge);
         }
     }
 
@@ -165,29 +198,46 @@ public static class HudCrosshair
         {
             float x = (corner & 1) == 0 ? Diagonal : -Diagonal;
             float y = corner < 2 ? Diagonal : -Diagonal;
-            Stroke(painter, new UiVec2(c.X + (x * inner), c.Y + (y * inner)), new UiVec2(c.X + (x * outer), c.Y + (y * outer)), width, ink);
+            Stroke(painter, new UiVec2(c.X + (x * inner), c.Y + (y * inner)), new UiVec2(c.X + (x * outer), c.Y + (y * outer)), width, ink, HudDrawContext.Fade(Edge, ink.A / 255f));
         }
     }
 
-    // A stroke over its faint dark edge.
-    private static void Stroke(UiPainter painter, UiVec2 from, UiVec2 to, float width, Bgra32 ink)
+    // A stroke over its faint dark edge, where it has one.
+    private static void Stroke(UiPainter painter, UiVec2 from, UiVec2 to, float width, Bgra32 ink, Bgra32 edge)
     {
-        painter.StrokeSoft(from, to, width + 1.5f, HudDrawContext.Fade(Edge, ink.A / 255f));
+        if (edge.A > 0)
+        {
+            painter.StrokeSoft(from, to, width + 1.5f, edge);
+        }
+
         painter.StrokeSoft(from, to, width, ink);
     }
 
-    // A circle over its faint dark edge.
-    private static void Ring(UiPainter painter, UiVec2 c, float radius, float width, Bgra32 ink)
+    // A circle over its faint dark edge, where it has one.
+    private static void Ring(UiPainter painter, UiVec2 c, float radius, float width, Bgra32 ink, Bgra32 edge)
     {
         float half = width * 0.5f;
-        painter.FillArc(c, MathF.Max(0f, radius - half - 0.75f), radius + half + 0.75f, 0f, MathF.Tau, HudDrawContext.Fade(Edge, ink.A / 255f));
+        if (edge.A > 0)
+        {
+            painter.FillArc(c, MathF.Max(0f, radius - half - 0.75f), radius + half + 0.75f, 0f, MathF.Tau, edge);
+        }
+
         painter.FillArc(c, MathF.Max(0f, radius - half), radius + half, 0f, MathF.Tau, ink);
     }
 
-    // A small soft square, the knife's point.
-    private static void Point(UiPainter painter, UiVec2 c, float half, Bgra32 ink)
+    // A small soft square: the knife's point, or the crosshair's centre dot.
+    private static void Point(UiPainter painter, UiVec2 c, float half, Bgra32 ink, Bgra32 edge)
     {
-        painter.StrokeSoft(new UiVec2(c.X - half - 0.75f, c.Y), new UiVec2(c.X + half + 0.75f, c.Y), (half * 2f) + 1.5f, HudDrawContext.Fade(Edge, ink.A / 255f));
+        if (edge.A > 0)
+        {
+            painter.StrokeSoft(new UiVec2(c.X - half - 0.75f, c.Y), new UiVec2(c.X + half + 0.75f, c.Y), (half * 2f) + 1.5f, edge);
+        }
+
         painter.StrokeSoft(new UiVec2(c.X - half, c.Y), new UiVec2(c.X + half, c.Y), half * 2f, ink);
     }
+
+    /// <summary>A colour of the crosshair's, by its place (<see cref="HudCVars.CrosshairColour"/>).</summary>
+    /// <param name="index">The place.</param>
+    /// <returns>The colour.</returns>
+    public static Bgra32 ColourAt(int index) => Colours[Math.Clamp(index, 0, Colours.Length - 1)];
 }

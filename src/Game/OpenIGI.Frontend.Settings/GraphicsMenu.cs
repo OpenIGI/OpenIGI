@@ -526,6 +526,30 @@ public static class GraphicsMenu
             "Crosshair",
             "A clean crosshair shaped to the weapon in hand: it opens as you fire, turns red over an enemy, in place of the original's."),
         new GraphicsSetting(
+            "r_crosshair_color",
+            "Crosshair Colour",
+            "The crosshair's colour.",
+            new Dictionary<string, string>
+            {
+                ["0"] = "White",
+                ["1"] = "Green",
+                ["2"] = "Yellow",
+                ["3"] = "Cyan",
+                ["4"] = "Magenta",
+                ["5"] = "Red",
+                ["6"] = "Orange",
+            }),
+        new GraphicsSetting("r_crosshair_size", "Crosshair Size", "How long the crosshair's ticks are.", Step: 10f),
+        new GraphicsSetting("r_crosshair_thickness", "Crosshair Thickness", "How thick the crosshair's ticks are.", Step: 10f),
+        new GraphicsSetting("r_crosshair_gap", "Crosshair Gap", "Extra space between the crosshair's centre and its ticks.", Step: 1f),
+        new GraphicsSetting("r_crosshair_opacity", "Crosshair Opacity", "How solid the crosshair is.", Step: 5f),
+        new GraphicsSetting("r_crosshair_dot", "Crosshair Dot", "A dot at the crosshair's centre."),
+        new GraphicsSetting("r_crosshair_outline", "Crosshair Outline", "A faint dark edge round the crosshair, so it reads on bright ground."),
+        new GraphicsSetting(
+            "r_crosshair_dynamic",
+            "Dynamic Crosshair",
+            "The crosshair opens as you move and fire, showing where rounds may land; off, it holds still."),
+        new GraphicsSetting(
             "r_ammo_cue",
             "Ammo Warning",
             "A word under the crosshair when your weapon runs low: LOW AMMO, then RELOAD when it is empty, NO AMMO when you have none left."),

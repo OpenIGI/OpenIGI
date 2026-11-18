@@ -136,6 +136,39 @@ public static class HudCVars
         CVarOptions.Archive,
         "The sound when a teammate goes down in co-op, by its name in the game's sound table (camera_beep_al, mapcomp_02...); empty for none.");
 
+    /// <summary>The remastered crosshair's colour, by its place in the crosshair's colours.</summary>
+    public static readonly NumericCVar<int> CrosshairColour = CVar.Int(
+        "r_crosshair_color", 0, 0, 6, CVarOptions.Archive,
+        "The crosshair's colour: 0 white, 1 green, 2 yellow, 3 cyan, 4 magenta, 5 red, 6 the HUD's orange.");
+
+    /// <summary>The remastered crosshair's ticks' length, in hundredths of their own.</summary>
+    public static readonly NumericCVar<int> CrosshairSize = CVar.Int(
+        "r_crosshair_size", 100, 50, 300, CVarOptions.Archive, "The crosshair's ticks' length, in percent.");
+
+    /// <summary>The remastered crosshair's ticks' thickness, in hundredths of their own.</summary>
+    public static readonly NumericCVar<int> CrosshairThickness = CVar.Int(
+        "r_crosshair_thickness", 100, 50, 300, CVarOptions.Archive, "The crosshair's ticks' thickness, in percent.");
+
+    /// <summary>How far the remastered crosshair's ticks stand further out than the weapon's spread puts them, in design pixels.</summary>
+    public static readonly NumericCVar<int> CrosshairGap = CVar.Int(
+        "r_crosshair_gap", 0, 0, 20, CVarOptions.Archive, "Extra space between the crosshair's centre and its ticks.");
+
+    /// <summary>The remastered crosshair's opacity, in percent.</summary>
+    public static readonly NumericCVar<int> CrosshairOpacity = CVar.Int(
+        "r_crosshair_opacity", 92, 20, 100, CVarOptions.Archive, "The crosshair's opacity, in percent.");
+
+    /// <summary>Whether the remastered crosshair has a dot at its centre.</summary>
+    public static readonly BoolCVar CrosshairDot = CVar.Bool(
+        "r_crosshair_dot", false, CVarOptions.Archive, "A dot at the crosshair's centre.");
+
+    /// <summary>Whether the remastered crosshair's ticks have a faint dark edge, to read on bright ground.</summary>
+    public static readonly BoolCVar CrosshairOutline = CVar.Bool(
+        "r_crosshair_outline", true, CVarOptions.Archive, "A faint dark edge round the crosshair, so it reads on bright ground.");
+
+    /// <summary>Whether the remastered crosshair opens with the weapon's spread, or holds still.</summary>
+    public static readonly BoolCVar CrosshairDynamic = CVar.Bool(
+        "r_crosshair_dynamic", true, CVarOptions.Archive, "The crosshair opens as you move and fire, showing the weapon's spread; off, it holds still.");
+
     /// <summary>Whether the crosshair marks a hit and confirms a kill.</summary>
     public static readonly BoolCVar HitMarkers = Presets.Define(
         CVar.Bool(

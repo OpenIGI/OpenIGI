@@ -7,6 +7,9 @@
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi1\OpenIGI.Presentation.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+
+    <!-- The Skia drawer, so the HUD's own parts can be drawn to a picture off the screen to look at. -->
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Skia\OpenIGI.UI.Skia.csproj" />
   </ItemGroup>
 
   <ItemGroup>
