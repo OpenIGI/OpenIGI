@@ -803,6 +803,22 @@ public sealed class Igi2CoopPairTests
             $"the fallen partner left no pool of blood: dead {partner.IsDead}, clip done {partner.IsDeathAnimationDone}, settled {partner.IsDeathPositionStabilized}, puddle {partner.IsBloodPuddle}, mark on {partner.Shadow.IsEnabled} valid {partner.Shadow.IsPositionValid} size {partner.Shadow.Size}, state {partner.Locomotion.CurrentState}");
     }
 
+    /// <summary>The host falls on the joiner's screen as it fell on its own: the same death clip, not one the joiner drew.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_a_fallen_host_dies_the_hosts_death()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Igi2HumanPlayer copy = Assert.Single(pair.Joiner!.NetworkHumans).Human;
+        pair.Joiner.Human.Position = pair.Host!.Human.Position + new Vector3d(CoopSquad.ReviveReachUnits * 4, 0, 0);
+        pair.Host.Human.Damage.Damage = pair.Host.Human.Damage.MaxDamage + 1f;
+        pair.Host.Human.UpdateDie();
+        Assert.True(pair.RunUntil(() => copy.IsDead, 300) >= 0, "the joiner's copy of the host never fell");
+        pair.RunUntil(() => false, 30);
+
+        Assert.Equal(pair.Host.Human.Animation.LastState, copy.Animation.LastState);
+    }
+
     /// <summary>
     /// A guard the joiner kills is in the joiner's kill feed, under the joiner and its weapon: I.G.I. 2 told the session of no
     /// hit, so its players had no hit marks, no mark of where a hit came from, and no guard in the feed.

@@ -407,7 +407,11 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             (byte)Math.Clamp(human.Team, 0, 255),
             condition,
             unchecked((byte)shots),
-            ActionSequence: human.UpperBodySequence);
+            ActionSequence: human.UpperBodySequence,
+
+            // Fallen, the death clip it plays: each game once drew its own, and the partner fell one way on its own screen and
+            // another on the others'.
+            ClipTime: human.IsDead ? (ushort)Math.Clamp(human.Animation.LastState, 0, ushort.MaxValue) : (ushort)0);
     }
 
     private sealed class RewindScope(List<(Igi2Human Human, Vector3d Was, Matrix3f Turned)> moved) : IDisposable

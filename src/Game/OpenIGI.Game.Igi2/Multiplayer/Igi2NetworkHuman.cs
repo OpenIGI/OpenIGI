@@ -177,6 +177,9 @@ public sealed class Igi2NetworkHuman
     // Whether the puppet has been posed once, its state's entry run.
     private bool _posed;
 
+    // Whether its fall has taken the server's death clip.
+    private bool _deathPosed;
+
     // The weapon the server's copy holds, carried and put in hand here: it is drawn in the hand, the body is posed holding it,
     // and the rounds the server's copy fires are fired again from it. Whether it was put in hand now.
     private bool Hold(int held)
@@ -208,10 +211,24 @@ public sealed class Igi2NetworkHuman
             }
 
             Human.Update(_frame);
+
+            // The death the server's copy fell in, not one drawn here.
+            if (!_deathPosed && target.ClipTime != 0
+                && Human.Locomotion.CurrentState is Igi2PlayerState.Die or Igi2PlayerState.DieAlternate)
+            {
+                if (Human.Animation.LastState != target.ClipTime)
+                {
+                    Human.Animation.PlayState(target.ClipTime, 0, Igi2HumanPlayer.StateBlendSeconds);
+                }
+
+                _deathPosed = true;
+            }
+
             Human.RunPuppetBody();
             return;
         }
 
+        _deathPosed = false;
         if (Human.IsDead)
         {
             Human.Revive(target.Position.ToVector(), Quantize.AngleFromBits(target.Yaw));
