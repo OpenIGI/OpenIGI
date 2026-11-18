@@ -100,8 +100,10 @@ public sealed partial class Igi2HumanPlayer
 
         ActionMenu.Update();
 
-        // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490):
-        // the controllers that step themselves step, before the next tick's input runs the update.
+        // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490): the
+        // human's own part first -- a shot's hold on the visibility factor runs down, the mission clock counts and the cough
+        // is kept -- then the controllers that step themselves step, before the next tick's input runs the update.
+        RunHuman();
         Animation.AutoStep();
         TouchPose();
 

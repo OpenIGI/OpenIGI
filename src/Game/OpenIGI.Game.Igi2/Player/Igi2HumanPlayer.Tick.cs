@@ -219,7 +219,6 @@ public sealed partial class Igi2HumanPlayer
         }
 
         View.DampenOffsets();
-        MaintainCough();
     }
 
     /// <summary>How deep the water is, and what it allows.</summary>
