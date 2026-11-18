@@ -35,12 +35,15 @@ public sealed class RelayedRoomTests
         byte[] buffer = new byte[64];
         NetAddress from = default;
         int length = 0;
-        await Until(() => host.TryReceive(buffer, out from, out length));
+
+        // Both sides polled while waiting, as a game polls every frame: the joiner is welcomed before the host is told it
+        // joined, so on a slow machine the host may not have taken the join in yet when the joiner is already open.
+        await Until(() => { host.Poll(); joiner.Poll(); return host.TryReceive(buffer, out from, out length); });
         Assert.Equal([1, 2, 3], buffer[..length]);
         Assert.Equal(NetAddressKind.Peer, from.Kind);
 
         host.Send(from, [9, 8]);
-        await Until(() => joiner.TryReceive(buffer, out _, out length));
+        await Until(() => { host.Poll(); joiner.Poll(); return joiner.TryReceive(buffer, out _, out length); });
         Assert.Equal([9, 8], buffer[..length]);
         Assert.Equal("room relay", host.Route(from));
     }
