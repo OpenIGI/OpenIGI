@@ -519,7 +519,13 @@ public sealed partial class GameHost : IDisposable
     // under the several seconds the bake itself takes, so the two do not read as one long event.
     private const float ProbeFadeMilliseconds = 600f;
 
-    private const int ShowcaseMissionId = 1;
+    // The level behind the menu when nothing has chosen one: the campaign's first. Not a fixed id -- I.G.I. 2's mission 1
+    // is a multiplayer map, which a build without its maps (the browser's) does not offer, and its menu stood over black.
+    private int ShowcaseMissionId =>
+        (_missions is null ? null : _missions.InProgressionOrder().FirstOrDefault()?.Id) ?? FirstGameShowcaseMissionId;
+
+    // The first game's opening mission, for the moment before any catalogue is read.
+    private const int FirstGameShowcaseMissionId = 1;
 
     // How long a mission has to stay selected before its level is built. Every selection re-arms the
     // timer, so running down the list faster than this builds nothing at all. It can be short now that
