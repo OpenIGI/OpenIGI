@@ -1,46 +1,66 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Multiplayer;
 
-/// <summary>Where a player looked as one of its commands began, and whether its look was the unfiltered Smooth Motion one.</summary>
+/// <summary>How a player stood as one of its commands began: where it looked, how its controls read, and the seed its draws take.</summary>
 /// <param name="IdealGamma">The heading the command's turn is added to, <c>Human_s.vIdealGamma</c>.</param>
 /// <param name="IdealPitch">The view's pitch the command's look is added to, <c>HumanView_s.vIdealPitch</c>.</param>
 /// <param name="Unfiltered">Whether the vertical look skipped the original's mouse filters.</param>
-public readonly record struct Igi2CommandLook(float IdealGamma, float IdealPitch, bool Unfiltered);
+/// <param name="SteadyTurns">Whether the ground speed turns with the body (<c>g_steady_turns</c>).</param>
+/// <param name="InvertMouse">Whether the mouse is inverted, which a peek's height reads.</param>
+/// <param name="Seed">The seed the player's stream is set to before the command runs, at most <see cref="Igi2Command.SeedLimit"/>.</param>
+public readonly record struct Igi2CommandStart(float IdealGamma, float IdealPitch, bool Unfiltered, bool SteadyTurns, bool InvertMouse, uint Seed);
+
+/// <summary>What a command left the player with that a lost key press would leave otherwise on the two machines.</summary>
+/// <param name="Chosen">The weapon chosen, by number, or -1 for none.</param>
+/// <param name="Walk">Whether it walks rather than runs.</param>
+/// <param name="FieldOfView">The view's field of view, which the look's turn is scaled by.</param>
+/// <param name="ObjectFieldOfView">The first-person weapon's field of view.</param>
+public readonly record struct Igi2CommandEnd(int Chosen, bool Walk, float FieldOfView, float ObjectFieldOfView);
 
 /// <summary>
-/// An I.G.I. 2 client's command as it goes to the server: the player's channel frame, where it looked as it began, and the
-/// weapon it had chosen once it had run.
+/// An I.G.I. 2 client's command as it goes to the server: the player's channel frame, how the player stood as it began, and what
+/// it left the player with.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The channel frame turns the player by the mouse's movement, not to a heading. Run from a heading the server's copy did not
-/// share, the same frame turns it somewhere else, and every step after goes another way: a turn the two once disagreed about
-/// stays between them for good, and the client was put back again and again. So the command also says where the client's
+/// share, the same frame turns it somewhere else, and every step after goes another way. So the command says where the client's
 /// player looked before the frame turned it, as Project I.G.I.'s command carries its yaw and pitch, and the server's copy
-/// starts each command from there -- the frame then turns it exactly as it turned the client's.
+/// starts each command from there.
 /// </para>
 /// <para>
-/// The weapon keys are steps too -- next, previous, a category -- each from what is in hand, and the server changes its copy's
-/// weapons on its own tick (a pickup taken, a grenade thrown away) while the client hears of it later. A key between the two
-/// lands on another weapon there, and every step after kept them a weapon apart. So the command carries the weapon the client
-/// chose as a number, Project I.G.I.'s chosen weapon, and the server's copy picks that one by number in place of the keys.
+/// The same for everything else the two copies must agree on. The player's draws -- a round's scatter, a gun's kick -- come from
+/// its own stream, which the server's copy began afresh when the client joined: both are set from the command's seed before it
+/// runs (Source's <c>random_seed</c>). The client's own settings that steer the simulation -- steady turns, the inverted mouse
+/// a peek reads -- were the server's defaults on its copy. And the toggles a key press flips -- walk or run, the field of view,
+/// the weapon -- are carried as what they came to: a press lost with a dropped command left the two copies apart for good,
+/// and the client was put back on every step after.
 /// </para>
 /// </remarks>
 public static class Igi2Command
 {
+    /// <summary>The largest seed a command carries: a float holds every whole number to 2^24 exactly.</summary>
+    public const uint SeedLimit = (1u << 24) - 1;
+
     private const int Gamma = Igi2HumanChannels.Count;
     private const int Pitch = Gamma + 1;
     private const int Flags = Pitch + 1;
     private const int Chosen = Flags + 1;
+    private const int SeedAt = Chosen + 1;
+    private const int FieldOfViewAt = SeedAt + 1;
+    private const int ObjectFieldOfViewAt = FieldOfViewAt + 1;
 
-    // The flags: the look is carried at all (a blank command, all noughts, carries none and turns nobody to north), and it
-    // was the unfiltered one. The chosen weapon is carried plus one, so nought is none.
-    private const int HasLook = 1;
+    /// <summary>The command's length.</summary>
+    public const int ChannelCount = ObjectFieldOfViewAt + 1;
+
+    // The flags. A blank command, all noughts, carries none of the state and changes nobody's.
+    private const int HasState = 1;
     private const int UnfilteredLook = 2;
-
-    /// <summary>The command's length: the channel frame, the look and the chosen weapon.</summary>
-    public const int ChannelCount = Chosen + 1;
+    private const int SteadyTurnsFlag = 4;
+    private const int InvertMouseFlag = 8;
+    private const int WalkFlag = 16;
 
     // The keys that step the weapon from what is in hand, which the chosen weapon stands in for on the server.
     private static readonly Igi2HumanChannel[] WeaponSteps =
@@ -59,16 +79,23 @@ public static class Igi2Command
 
     /// <summary>Writes a command.</summary>
     /// <param name="frame">The player's channel frame, <see cref="Igi2HumanChannels.Count"/> values.</param>
-    /// <param name="look">Where it looked as the frame was run.</param>
-    /// <param name="chosen">The weapon it had chosen once the frame had run, by number, or -1 for none.</param>
+    /// <param name="start">How the player stood as the frame was run.</param>
+    /// <param name="end">What the frame left it with.</param>
     /// <param name="command">Where the command goes, <see cref="ChannelCount"/> values.</param>
-    public static void Pack(ReadOnlySpan<float> frame, in Igi2CommandLook look, int chosen, Span<float> command)
+    public static void Pack(ReadOnlySpan<float> frame, in Igi2CommandStart start, in Igi2CommandEnd end, Span<float> command)
     {
         frame[..Igi2HumanChannels.Count].CopyTo(command);
-        command[Gamma] = look.IdealGamma;
-        command[Pitch] = look.IdealPitch;
-        command[Flags] = HasLook | (look.Unfiltered ? UnfilteredLook : 0);
-        command[Chosen] = chosen < 0 ? 0f : chosen + 1;
+        command[Gamma] = start.IdealGamma;
+        command[Pitch] = start.IdealPitch;
+        command[Flags] = HasState
+            | (start.Unfiltered ? UnfilteredLook : 0)
+            | (start.SteadyTurns ? SteadyTurnsFlag : 0)
+            | (start.InvertMouse ? InvertMouseFlag : 0)
+            | (end.Walk ? WalkFlag : 0);
+        command[Chosen] = end.Chosen < 0 ? 0f : end.Chosen + 1;
+        command[SeedAt] = start.Seed & SeedLimit;
+        command[FieldOfViewAt] = end.FieldOfView;
+        command[ObjectFieldOfViewAt] = end.ObjectFieldOfView;
     }
 
     /// <summary>
@@ -76,13 +103,15 @@ public static class Igi2Command
     /// </summary>
     /// <param name="command">The command, <see cref="ChannelCount"/> values.</param>
     /// <param name="frame">Where the channel frame goes, <see cref="Igi2HumanChannels.Count"/> values.</param>
+    /// <param name="end">What the frame left the client's player with, when the command carries it.</param>
     /// <returns>
-    /// Where the player looked as the frame was run, a pitch out of the view's reach held to it; or <see langword="null"/> for
-    /// a command that carries no look.
+    /// How the player stood as the frame was run, a pitch out of the view's reach held to it; or <see langword="null"/> for a
+    /// command that carries none.
     /// </returns>
-    public static Igi2CommandLook? Unpack(ReadOnlySpan<float> command, Span<float> frame)
+    public static Igi2CommandStart? Unpack(ReadOnlySpan<float> command, Span<float> frame, out Igi2CommandEnd? end)
     {
         command[..Igi2HumanChannels.Count].CopyTo(frame);
+        end = null;
         float chosen = command[Chosen] - 1f;
         if (float.IsFinite(chosen) && chosen >= 0f)
         {
@@ -95,14 +124,47 @@ public static class Igi2Command
         }
 
         int flags = float.IsFinite(command[Flags]) ? (int)command[Flags] : 0;
-        if ((flags & HasLook) == 0 || !float.IsFinite(command[Gamma]) || !float.IsFinite(command[Pitch]))
+        if ((flags & HasState) == 0 || !float.IsFinite(command[Gamma]) || !float.IsFinite(command[Pitch]))
         {
             return null;
         }
 
-        return new Igi2CommandLook(
+        float seed = command[SeedAt];
+        float fieldOfView = command[FieldOfViewAt];
+        float objectFieldOfView = command[ObjectFieldOfViewAt];
+        if (float.IsFinite(fieldOfView) && fieldOfView > 0f && float.IsFinite(objectFieldOfView) && objectFieldOfView > 0f)
+        {
+            end = new Igi2CommandEnd(
+                float.IsFinite(chosen) && chosen >= 0f ? (int)chosen : -1,
+                (flags & WalkFlag) != 0,
+                Math.Clamp(fieldOfView, MinFieldOfView, MaxFieldOfView),
+                Math.Clamp(objectFieldOfView, MinFieldOfView, MaxFieldOfView));
+        }
+
+        return new Igi2CommandStart(
             command[Gamma],
             Math.Clamp(command[Pitch], -Igi2HumanView.PitchLimit, Igi2HumanView.PitchLimit),
-            (flags & UnfilteredLook) != 0);
+            (flags & UnfilteredLook) != 0,
+            (flags & SteadyTurnsFlag) != 0,
+            (flags & InvertMouseFlag) != 0,
+            float.IsFinite(seed) && seed >= 0f ? (uint)Math.Min(seed, SeedLimit) : 0u);
     }
+
+    /// <summary>Sets a player's stream from a command's seed, as both machines do before the command runs.</summary>
+    /// <param name="random">The player's stream.</param>
+    /// <param name="seed">The seed.</param>
+    public static void Reseed(IgiRandom random, uint seed)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        random.Seed(seed | 1u, seed ^ 0x9E3779B9u, ~seed | 2u);
+    }
+
+    /// <summary>The seed a client gives its command for a tick: its tick number spread over the seed's bits.</summary>
+    /// <param name="tick">The client's tick.</param>
+    /// <returns>The seed.</returns>
+    public static uint SeedFor(long tick) => unchecked((uint)tick * 2654435761u) & SeedLimit;
+
+    // The field of view a command may set: a zoom's narrowest to a wide view's widest, so a client can't widen the server's.
+    private const float MinFieldOfView = 0.01f;
+    private const float MaxFieldOfView = 2f;
 }

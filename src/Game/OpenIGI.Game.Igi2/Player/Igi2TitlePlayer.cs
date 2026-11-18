@@ -711,7 +711,18 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.View.RunZoom();
         if (Human.UnfilteredMouse) { WriteSmoothLook(); }
         Human.Ticks = (int)_ticks;
-        CommandLook = new Multiplayer.Igi2CommandLook(Human.IdealGamma, Human.View.IdealPitch, Human.UnfilteredMouse);
+
+        // A co-op client's player draws from a stream of its own, set from the command's seed before each tick, as the server's
+        // copy of it is set before it runs the command: the same rounds scatter the same way on both.
+        uint seed = 0;
+        if (SeedsCommands)
+        {
+            seed = Multiplayer.Igi2Command.SeedFor(_ticks);
+            Multiplayer.Igi2Command.Reseed(Human.Random, seed);
+        }
+
+        CommandStart = new Multiplayer.Igi2CommandStart(
+            Human.IdealGamma, Human.View.IdealPitch, Human.UnfilteredMouse, Human.SteadyTurns, Human.InvertMouse, seed);
         Human.Update(_frame);
         Human.RunDelayed();
 

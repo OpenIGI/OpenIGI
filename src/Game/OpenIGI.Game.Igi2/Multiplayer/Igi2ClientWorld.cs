@@ -52,6 +52,11 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
         // The client's own player falls when the server's does and stands again when revived: what it carries is the server's
         // to take, not the fall's, so its HUD and its predicted shots keep the kit through it.
         _level.Human.KeepsWeaponsWhenDown = true;
+
+        // Its player's draws come from a stream of its own, set from each command's seed, as the server's copy's are: the
+        // level's other users of the level stream it shared keep drawing from that one.
+        _level.Human.Random = new IgiRandom();
+        _level.SeedsCommands = true;
         _vehicles = new Igi2VehicleStates(_level);
         _vehicles.Puppet();
         BindLevelState();
@@ -65,7 +70,7 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
     {
         get
         {
-            Igi2Command.Pack(_level.LastFrame, _level.CommandLook, _level.Human.ChosenWeaponNumber, _command);
+            Igi2Command.Pack(_level.LastFrame, _level.CommandStart, _level.CommandEnd, _command);
             return _command;
         }
     }

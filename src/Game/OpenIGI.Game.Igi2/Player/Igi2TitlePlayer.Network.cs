@@ -313,10 +313,20 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
     {
         foreach (Igi2NetworkHuman other in _networkHumans)
         {
-            other.RunDelayed(_ticks, RunNetworkGunShot);
+            other.RunDelayed(_ticks, RunNetworkGunShot, NetworkRewind);
         }
     }
 
-    /// <summary>Gets where the level's own player looked as its last tick's frame began, which a client's command carries.</summary>
-    internal Igi2CommandLook CommandLook { get; private set; }
+    /// <summary>Gets how the level's own player stood as its last tick's frame began, which a client's command carries.</summary>
+    internal Igi2CommandStart CommandStart { get; private set; }
+
+    /// <summary>Gets what the level's own player's last tick left it with, which a client's command carries.</summary>
+    internal Igi2CommandEnd CommandEnd =>
+        new(Human.ChosenWeaponNumber, Human.IsWalk, Human.View.FieldOfView, Human.View.ObjectFieldOfView);
+
+    /// <summary>
+    /// Gets or sets whether the level's own player's stream is set from each tick's command seed: on a co-op client, whose
+    /// server's copy of it draws from the same seeds.
+    /// </summary>
+    internal bool SeedsCommands { get; set; }
 }

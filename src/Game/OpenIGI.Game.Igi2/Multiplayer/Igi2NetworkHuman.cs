@@ -91,6 +91,10 @@ public sealed class Igi2NetworkHuman
     /// What the level does between two commands run in one tick: the shots the first fired traced, as the next tick's run
     /// handler would have traced them before the second.
     /// </param>
+    /// <param name="rewind">
+    /// What puts the others back where its client saw them as it made each command, for as long as the command runs: what the
+    /// command strikes inside it (a knife's blow) meets them there, as Project I.G.I.'s partner's commands do.
+    /// </param>
     /// <remarks>
     /// Each of its client's commands is run once, in order, so the player goes exactly where its client predicted it, as
     /// Project I.G.I.'s partner does (<see cref="UserCommandBuffer.Due"/>): none on a tick the queue is dry -- the player waits
@@ -99,7 +103,7 @@ public sealed class Igi2NetworkHuman
     /// tick further behind its client for good, until the queue was full and the client's newest commands were refused. The
     /// client was put back again and again.
     /// </remarks>
-    internal void RunDelayed(long tick, Action<Igi2NetworkHuman>? betweenCommands = null)
+    internal void RunDelayed(long tick, Action<Igi2NetworkHuman>? betweenCommands = null, Func<Igi2NetworkHuman, IDisposable?>? rewind = null)
     {
         if (PuppetTarget is { } target)
         {
@@ -127,28 +131,44 @@ public sealed class Igi2NetworkHuman
                 break;
             }
 
+            using IDisposable? rewound = rewind?.Invoke(this);
             RunCommand(tick);
         }
     }
 
     // One of its client's commands: begun from where the client's player looked, the frame then turning it as it turned there.
+    // The client's player's settings and seed are taken before it, and what its toggles came to after.
     private void RunCommand(long tick)
     {
-        if (Igi2Command.Unpack(_command, _frame) is { } look)
+        Igi2CommandStart? start = Igi2Command.Unpack(_command, _frame, out Igi2CommandEnd? end);
+        if (start is { } began)
         {
             if (!Human.IsDead)
             {
-                Human.IdealGamma = look.IdealGamma;
-                Human.View.IdealPitch = look.IdealPitch;
+                Human.IdealGamma = began.IdealGamma;
+                Human.View.IdealPitch = began.IdealPitch;
             }
 
-            Human.UnfilteredMouse = look.Unfiltered;
+            Human.UnfilteredMouse = began.Unfiltered;
+            Human.SteadyTurns = began.SteadyTurns;
+            Human.InvertMouse = began.InvertMouse;
         }
 
         Human.View.RunZoom();
         Human.Ticks = (int)tick;
+        if (start is { } seeded)
+        {
+            Igi2Command.Reseed(Human.Random, seeded.Seed);
+        }
+
         Human.Update(_frame);
         Human.RunDelayed();
+        if (end is { } left && !Human.IsDead)
+        {
+            Human.IsWalk = left.Walk;
+            Human.View.FieldOfView = left.FieldOfView;
+            Human.View.ObjectFieldOfView = left.ObjectFieldOfView;
+        }
     }
 
     // What shows the rounds the server's copy fires, made once the puppet is first run.

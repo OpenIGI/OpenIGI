@@ -68,6 +68,32 @@ public sealed class Igi2CoopPairTests
         Assert.True(poses.Count > 10, $"the copy of the walking host took {poses.Count} distinct poses in 30 ticks");
     }
 
+    /// <summary>
+    /// A joiner running in a curve and firing as it goes is where its server has it: the server's copy runs its commands from
+    /// the same look, settings and seed, so the prediction is never put right. Its turn once carried the ground speed round on
+    /// the client alone (steady turns), and every turn at a run slid the server's copy aside.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_joiner_running_in_a_curve_and_firing_is_never_corrected()
+    {
+        using Igi2CoopPair pair = Joined();
+        pair.RunUntil(() => false, 60);
+        long before = pair.Client.Session!.Reconciler.Corrections;
+
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        for (int i = 0; i < 240; i++)
+        {
+            pair.JoinerInput.Mouse.AddMotion(i % 80 < 40 ? 6f : -6f, 0f);
+            pair.JoinerInput.Mouse.SetButton(MouseButton.Left, i % 30 < 10);
+            pair.RunUntil(() => false, 1);
+        }
+
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        pair.JoinerInput.Mouse.SetButton(MouseButton.Left, false);
+        long corrections = pair.Client.Session.Reconciler.Corrections - before;
+        Assert.True(corrections <= 1, $"{corrections} corrections in 8 s of running, turning and firing; last error {pair.Client.Session.Reconciler.LastError:F0}");
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void Every_soldier_is_sent_and_the_joiner_poses_its_copies_where_the_hosts_stand()
     {
