@@ -255,6 +255,31 @@ public sealed class Igi2CoopPairTests
         Assert.Contains(drawn, part => string.Equals(part.Model, gun, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// A partner at work -- manning a gun, hacking a terminal, picking a lock, searching a cabinet -- is shown at it: those
+    /// states' entries needed what is worked, which a copy has none of, and the copy stood there with its gun up.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_a_working_host_plays_the_work()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Igi2HumanPlayer copy = Assert.Single(pair.Joiner!.NetworkHumans).Human;
+        (int State, int Clip)[] work =
+        [
+            (Igi2PlayerState.ActivateStationaryGun, Igi2HumanPlayer.StationaryGunClip),
+            (Igi2PlayerState.ActivateTerminal, Igi2HumanPlayer.HackAnimation),
+            (Igi2PlayerState.ActivateDoor, Igi2HumanPlayer.PickLockAnimation),
+            (Igi2PlayerState.ActivateCabinet, Igi2HumanPlayer.SearchLoopClip),
+        ];
+        foreach ((int state, int clip) in work)
+        {
+            copy.PoseAsPuppet(Igi2PlayerState.Stand, false, 0, 0, 0, copy.Position, default, copy.Gamma, 0f);
+            copy.PoseAsPuppet(state, false, 0, 0, 0, copy.Position, default, copy.Gamma, 0f);
+            Assert.Equal(clip, ((OpenIGI.Game.Igi2.Humans.Igi2HumanAnimation)copy.Animation).LastState);
+        }
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void The_joiners_copy_of_the_host_is_no_target_of_its_soldiers_and_the_hosts_partner_is()
     {

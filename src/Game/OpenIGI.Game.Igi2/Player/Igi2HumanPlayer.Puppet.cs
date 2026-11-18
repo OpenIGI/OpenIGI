@@ -30,6 +30,7 @@ public sealed partial class Igi2HumanPlayer
         if (entered)
         {
             Locomotion.Enter(state, this);
+            PlayWorkAsPuppet(state);
         }
 
         if (Array.Find(Gaits, g => g.State == state) is { TimeScale: float timeScale })
@@ -50,6 +51,46 @@ public sealed partial class Igi2HumanPlayer
         UpdateViewBody(updateAnimation: false);
         Weapon.UpdateStatus();
         RunPuppetBody();
+    }
+
+    /// <summary>
+    /// The clip a copy plays at a door, a terminal, a cabinet, a mounted gun, a timed action or a silent kill: each of those
+    /// states' entries needs what is worked, which a copy has none of, and played nothing -- a partner picking a lock or manning
+    /// a gun stood there with its gun up. The original's remote human plays the state's own clip
+    /// (<c>HumanAnim_SetAnimationAndTimeFromState</c> from <c>HumanRemote_UpdateAnim</c>), the upper body let go.
+    /// </summary>
+    /// <param name="state">The state entered.</param>
+    private void PlayWorkAsPuppet(int state)
+    {
+        if (state is not (Igi2PlayerState.ActivateDoor or Igi2PlayerState.ActivateTerminal or Igi2PlayerState.ActivateGenericTba
+            or Igi2PlayerState.ActivateCabinet or Igi2PlayerState.ActivateStationaryGun or Igi2PlayerState.SilentKill))
+        {
+            return;
+        }
+
+        Animation.ClearUpperBody(0f);
+        switch (state)
+        {
+            case Igi2PlayerState.ActivateDoor:
+                Animation.PlayState(PickLockAnimation, 0, StateBlendSeconds);
+                break;
+            case Igi2PlayerState.ActivateTerminal:
+                Animation.PlayState(HackAnimation, 0, StateBlendSeconds);
+                break;
+            case Igi2PlayerState.ActivateCabinet:
+                Animation.PlayState(SearchLoopClip, 0, StateBlendSeconds);
+                Animation.LoopMain();
+                break;
+            case Igi2PlayerState.ActivateStationaryGun:
+                Animation.PlayState(StationaryGunClip, 0, StateBlendSeconds);
+                break;
+            case Igi2PlayerState.SilentKill:
+                Animation.PlayNamed(SilentKillAnimation, 0, StateBlendSeconds);
+                break;
+            default:
+                Animation.PlayState(state, 0, StateBlendSeconds);
+                break;
+        }
     }
 
     /// <summary>
