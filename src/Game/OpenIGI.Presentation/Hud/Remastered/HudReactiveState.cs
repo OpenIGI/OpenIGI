@@ -137,7 +137,7 @@ public sealed class HudReactiveState
         bool minimal = density == HudDensity.Minimal;
         (float since, bool urgent, float rest) = part switch
         {
-            HudParts.Status => (_statusAt, model.Health < 0.5f || (model.Visibility is { } v && v >= model.VisibilityAlert) || model.ThreatLevel > 0.2f, minimal ? 0f : 0.55f),
+            HudParts.Status => (_statusAt, model.Health < 0.5f || model.IsSeen || model.ThreatLevel > 0.2f, minimal ? 0f : 0.55f),
             HudParts.Weapon => (_weaponAt, model.Weapon is { State: HudWeaponState.Reloading or HudWeaponState.Empty } || LowRounds(model.Weapon), minimal ? 0f : 0.4f),
             _ => (Seconds, true, 1f),
         };
@@ -280,8 +280,8 @@ public sealed class HudReactiveState
         _swayX.Update(elapsed);
         _swayY.Update(elapsed);
 
-        // Seen: the meter pulses from the moment it crosses the warning, for as long as it stays over.
-        bool alert = model.Visibility is { } visible && visible >= model.VisibilityAlert;
+        // Seen: the meter pulses from the moment the player is seen (the title's own state, else the warning crossed).
+        bool alert = model.IsSeen;
         if (alert && !_wasAlert)
         {
             _alertAt = seconds;

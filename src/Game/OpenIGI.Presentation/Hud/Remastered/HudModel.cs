@@ -256,6 +256,16 @@ public sealed class HudModel
     /// <summary>Gets or sets the visibility past which the meter warns, nought to one.</summary>
     public float VisibilityAlert { get; set; } = 0.75f;
 
+    /// <summary>
+    /// Gets or sets whether the enemy has spotted the player this mission, for a title that keeps the state (I.G.I. 2's eye turns
+    /// red once a squad has spotted the player, <c>Human.nSpotted</c>); <see langword="null"/> where the title has none, and the
+    /// meter's warning stands in for it.
+    /// </summary>
+    public bool? Spotted { get; set; }
+
+    /// <summary>Gets a value indicating whether the meter shows the player seen: the title's own state, else visibility past the warning.</summary>
+    public bool IsSeen => Spotted ?? (Visibility is { } visible && visible >= VisibilityAlert);
+
     /// <summary>Gets or sets the weapon in hand, or <see langword="null"/> for none.</summary>
     public HudWeaponView? Weapon { get; set; }
 
@@ -336,6 +346,7 @@ public sealed class HudModel
         Stance = HudStance.None;
         Visibility = null;
         VisibilityAlert = 0.75f;
+        Spotted = null;
         Weapon = null;
         _slots.Clear();
         _actions.Clear();

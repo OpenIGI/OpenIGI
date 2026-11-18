@@ -58,7 +58,7 @@ public static class HudStatus
         x += gaugeWidth + context.Px(8f);
         if (model.Visibility is { } visibility)
         {
-            DrawVisibility(context, new UiRect(x, gaugeTop + context.Px(18f), meterWidth, gaugeHeight - context.Px(18f)), visibility, model.VisibilityAlert);
+            DrawVisibility(context, new UiRect(x, gaugeTop + context.Px(18f), meterWidth, gaugeHeight - context.Px(18f)), visibility, model.VisibilityAlert, model.IsSeen);
             x += meterWidth + context.Px(8f);
         }
 
@@ -120,7 +120,7 @@ public static class HudStatus
     }
 
     // The meter: a thin column in the title's ramp, with the warning level marked, pulsing once over it.
-    private static void DrawVisibility(HudDrawContext context, UiRect rect, float visibility, float alert)
+    private static void DrawVisibility(HudDrawContext context, UiRect rect, float visibility, float alert, bool seen)
     {
         HudPalette palette = context.Palette;
         float v = Math.Clamp(visibility, 0f, 1f);
@@ -145,7 +145,7 @@ public static class HudStatus
         context.Painter.DrawLabel(context.Fonts.Value, "VIS", new UiVec2(rect.X - context.Px(4f), rect.Y - context.Px(17f)), context.Px(12f), palette.Primary, 0.08f);
 
         // Seen: not the colour alone -- an open eye and the word, so it reads whatever the eye makes of red.
-        if (v >= alert)
+        if (seen)
         {
             float blink = 0.75f + (0.25f * pulse);
             UiVec2 eye = new(rect.X + (rect.Width * 0.5f), rect.Y - context.Px(30f));

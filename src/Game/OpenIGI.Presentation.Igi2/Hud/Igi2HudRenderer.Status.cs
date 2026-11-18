@@ -33,6 +33,9 @@ public sealed partial class Igi2HudRenderer
     private string _weaponLabel = string.Empty;
     private static readonly Bgra32 Blue = Bgra32.FromRgba(102, 153, 255, 255);
 
+    /// <summary>The eye once the player has been spotted: <c>HumanPlayer_StatusDisplayHandler</c>'s (0.8, 0.4, 0.5).</summary>
+    private static readonly Bgra32 SpottedRed = Bgra32.FromRgba(204, 102, 128, 255);
+
     /// <summary>Creates the title's HUD presenter.</summary>
     /// <param name="device">The sprite upload device.</param>
     /// <param name="logger">The load diagnostics.</param>
@@ -97,7 +100,8 @@ public sealed partial class Igi2HudRenderer
     {
         Igi2HumanPlayer human = title.Human;
         // humanplayer.c HumanPlayer_StatusDisplayHandler: posture and health at the lower left, visibility beside them.
-        string stance = human.Pose switch
+        // Flying (the parachute, state 57) first, then the pose, then running or standing.
+        string stance = human.Locomotion.CurrentState == Igi2PlayerState.Fly ? "stance_flying.spr" : human.Pose switch
         {
             Igi2HumanPose.Crouching => "stance_crouching.spr",
             Igi2HumanPose.LyingFlat => "stance_lying.spr",
@@ -114,7 +118,8 @@ public sealed partial class Igi2HudRenderer
             Bar(batch, "powerbar.spr", 38f - (fill.Width * 0.5f), height - 52f - (fill.Height * 0.5f), health, healthColour, vertical: true);
             float visibilityX = x + frame.Width + 5f, visibilityY = y + 10f;
             Sprite(batch, "visibilitymeter.spr", visibilityX, visibilityY, Blue);
-            Sprite(batch, "visibilityalert.spr", visibilityX + 10f, y, Blue);
+            // The eye: blue until a squad has spotted the player this mission (nSpotted, Human+0x1E0), then red for the rest of it.
+            Sprite(batch, "visibilityalert.spr", visibilityX + 10f, y, human.TimesSpotted > 0 ? SpottedRed : Blue);
             // The bar is the visibility factor (HumanPlayer_UpdateVisibilityFactor): the light, the stance and the movement, not the light alone.
             float light = Math.Clamp(human.VisibilityFactor, 0f, 1f), brightness = Math.Clamp(light - 0.5f, 0f, 0.5f) * 2f;
             Bgra32 visibilityColour = Bgra32.FromRgba(Channel((brightness + 1f) * 0.4f), Channel(0.6f - (brightness * 0.4f)), Channel(1f - (brightness * 0.8f)), 255);

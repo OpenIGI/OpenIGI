@@ -102,6 +102,9 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
             _ => human.IsRunning ? HudStance.Running : HudStance.Standing,
         };
         model.Visibility = Math.Clamp(human.VisibilityFactor, 0f, 1f);
+        // HumanPlayer_StatusDisplayHandler: the eye is red once a squad has spotted the player this mission (nSpotted), not
+        // while the bar runs high -- a shot lights the bar but leaves the eye as it was.
+        model.Spotted = human.TimesSpotted > 0;
 
         IReadOnlyList<float> flash = human.DamageFlash;
         model.Damage = new HudDamage(flash[0], flash[3], flash[1], flash[2]);
