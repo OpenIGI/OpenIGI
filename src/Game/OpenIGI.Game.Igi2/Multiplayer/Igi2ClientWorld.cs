@@ -132,7 +132,7 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
 
         if (!_puppets.TryGetValue(human.Id, out Igi2NetworkHuman? puppet))
         {
-            if (_level.PlayerBodyFor(human.Team) is not { } body
+            if (_level.PlayerBodyFor(human.Team, _looks.GetValueOrDefault(human.Id)) is not { } body
                 || _level.AddPartnerPuppet(body, human.Position.ToVector(), Quantize.AngleFromBits(human.Yaw), human.Team) is not { } made)
             {
                 return;
@@ -144,6 +144,26 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
         }
 
         puppet.PuppetTarget = human;
+    }
+
+    // The look each other player chose, by entity, a PlayerSkins id, from the server's scoreboard.
+    private readonly Dictionary<int, string> _looks = [];
+
+    /// <inheritdoc/>
+    /// <remarks>A copy already made in another body is let go, and made again in the look's at the next snapshot.</remarks>
+    public void Skin(int entity, string skin)
+    {
+        if (_looks.TryGetValue(entity, out string? had) && had == skin)
+        {
+            return;
+        }
+
+        _looks[entity] = skin;
+        if (_puppets.TryGetValue(entity, out Igi2NetworkHuman? puppet)
+            && !string.Equals(puppet.Human.Model?.Name, _level.PlayerBodyFor(puppet.Human.Team, skin), StringComparison.OrdinalIgnoreCase))
+        {
+            Hide(entity);
+        }
     }
 
     /// <inheritdoc/>

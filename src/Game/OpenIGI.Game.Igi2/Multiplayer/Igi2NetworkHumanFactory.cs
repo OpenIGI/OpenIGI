@@ -25,7 +25,7 @@ internal static class Igi2NetworkHumanFactory
         int team)
     {
         Igi2LevelSurroundings surroundings = shared.ForRemotePlayer();
-        Formats.World.MefModel? body = kit.Models(model);
+        Formats.World.MefModel? body = kit.Looks(model);
         Igi2BoneHierarchy? rig = body?.BoneHierarchy;
 
         Igi2PlayerWeapons? weapons = null;

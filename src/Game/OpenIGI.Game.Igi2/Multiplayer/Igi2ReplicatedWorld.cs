@@ -217,17 +217,46 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             }
         }
 
-        string body = _level.PlayerBodyFor(side) ?? model.Name;
+        string body = _level.PlayerBodyFor(side, _looks.GetValueOrDefault(slot)) ?? model.Name;
         if (_level.AddNetworkHuman(body, at, gamma, side) is not { } human)
         {
             return null;
         }
 
         Teams.Assign(slot, side);
+        Seat(slot, human);
+        return slot + 1;
+    }
+
+    // A client's player put in its slot, armed with the mission's loadout, and heard as it fires.
+    private void Seat(int slot, Igi2NetworkHuman human)
+    {
         _bySlot[slot] = human;
         Arm(human);
         HearLaunches(human.Weapons?.Firing, () => EntityOf(human.Human));
-        return slot + 1;
+    }
+
+    // The look each client's player chose, by slot, a PlayerSkins id.
+    private readonly Dictionary<int, string> _looks = [];
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A client's player is made again in the body of its look where it stands, as it joins: a body's bones are its model's, so a
+    /// new look is a new body. The host's own look is the clients' to draw, each on its copy of the host.
+    /// </remarks>
+    public void SetSkin(int slot, string skin)
+    {
+        _looks[slot] = skin;
+        if (!_bySlot.TryGetValue(slot, out Igi2NetworkHuman? worn)
+            || _level.PlayerBodyFor(Teams.TeamOf(slot), skin) is not { } body
+            || string.Equals(worn.Human.Model?.Name, body, StringComparison.OrdinalIgnoreCase)
+            || _level.AddNetworkHuman(body, worn.Human.Position, worn.Human.Gamma, worn.Human.Team) is not { } dressed)
+        {
+            return;
+        }
+
+        _level.RemoveNetworkHuman(worn);
+        Seat(slot, dressed);
     }
 
     /// <inheritdoc/>
@@ -235,6 +264,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
     {
         Teams.Remove(slot);
         _names.Remove(slot);
+        _looks.Remove(slot);
         if (_bySlot.Remove(slot, out Igi2NetworkHuman? human))
         {
             _level.RemoveNetworkHuman(human);

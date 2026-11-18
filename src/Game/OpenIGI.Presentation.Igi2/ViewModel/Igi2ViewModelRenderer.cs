@@ -66,6 +66,9 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     private Igi2TextureLoader? _textures;
     private Igi2ModelTable? _table;
     private Func<string, MefModel?>? _models;
+
+    // The packs the models are read from: the level's, then any a co-op look the level lacks was borrowed from.
+    private IReadOnlyList<LoadedPack> _packs = [];
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ViewModelRenderer"/> class.</summary>
@@ -112,12 +115,32 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             return false;
         }
 
-        _table = Igi2ModelTable.Create([.. packs.Select(static pack => pack.Pack)]);
-        _models = Igi2DrawableScene.Models(_table, packs);
+        ReadModels(packs);
         _textures = new Igi2TextureLoader(_device, _resources, _logger);
         _spriteResources = new Igi2SpriteResources(_device, _resources.FileSystem, _logger);
         _spriteResources.Get("alarmlight.spr");
         return true;
+    }
+
+    // The models and their textures read from packs; a co-op look's body none of them holds is borrowed from the pack that
+    // ships it (Igi2LookPacks), which is read beside them from then on.
+    private void ReadModels(IReadOnlyList<LoadedPack> packs)
+    {
+        _packs = packs;
+        _table = Igi2ModelTable.Create([.. packs.Select(static pack => pack.Pack)]);
+        Func<string, MefModel?> held = Igi2DrawableScene.Models(_table, packs);
+        _models = name => held(name) ?? Borrowed(name);
+    }
+
+    private MefModel? Borrowed(string name)
+    {
+        if (OpenIGI.Game.Igi2.Multiplayer.Igi2LookPacks.PackOf(name, _resources, _logger) is not { } pack || _packs.Contains(pack))
+        {
+            return null;
+        }
+
+        ReadModels([.. _packs, pack]);
+        return _models!(name);
     }
 
     /// <inheritdoc/>
@@ -706,6 +729,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _textures = null;
         _table = null;
         _models = null;
+        _packs = [];
     }
 
     // Two faces moved alike: none moved, or the same weights.

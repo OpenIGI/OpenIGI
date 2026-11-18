@@ -41,10 +41,17 @@ public sealed class CoopSquad
     /// <summary>Gets whether a checkpoint has been kept: somewhere the squad stood together.</summary>
     public bool HasCheckpoint => _checkpoint.Count > 0;
 
-    /// <summary>Gets how far a fallen player's revival has gone, in <c>[0,1]</c>.</summary>
+    /// <summary>Gets a value indicating whether a player of the squad stood at the last tick: someone who could revive the fallen.</summary>
+    public bool AnyoneStanding { get; private set; } = true;
+
+    /// <summary>
+    /// Gets how far a fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> when nobody is left standing to
+    /// revive it -- a player alone, or the whole squad down -- so it is not told to wait for a teammate.
+    /// </summary>
     /// <param name="entity">The player's entity, which the caller knows to be down.</param>
     /// <returns>The progress.</returns>
-    public float ReviveProgressOf(int entity) => Math.Min(1f, _reviving.GetValueOrDefault(entity) / (float)ReviveTicks);
+    public float? ReviveProgressOf(int entity) =>
+        AnyoneStanding ? Math.Min(1f, _reviving.GetValueOrDefault(entity) / (float)ReviveTicks) : null;
 
     /// <summary>
     /// Runs a tick of the squad: the checkpoint kept every so often while nobody is down, and each fallen player tended by a
@@ -58,6 +65,7 @@ public sealed class CoopSquad
         ArgumentNullException.ThrowIfNull(members);
         List<Vector3d> up = [.. members.Where(static m => !m.Down).Select(static m => m.At)];
         bool anyDown = members.Any(static m => m.Down);
+        AnyoneStanding = up.Count > 0;
         if (!anyDown && up.Count > 0 && (_checkpointTick is not { } kept || now - kept >= CheckpointTicks))
         {
             _checkpoint.Clear();
@@ -102,5 +110,9 @@ public sealed class CoopSquad
     public void Forget(int entity) => _reviving.Remove(entity);
 
     /// <summary>Forgets every revival under way: the squad stood up together from the checkpoint.</summary>
-    public void StoodUpTogether() => _reviving.Clear();
+    public void StoodUpTogether()
+    {
+        _reviving.Clear();
+        AnyoneStanding = true;
+    }
 }

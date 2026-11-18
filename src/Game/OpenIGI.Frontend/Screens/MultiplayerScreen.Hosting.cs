@@ -87,12 +87,13 @@ public sealed partial class MultiplayerScreen
 
         if (HostingCoop)
         {
-            List<PlayerSkin> looks = [.. PlayerSkins.All];
-            int chosen = Math.Max(0, looks.FindIndex(s => s.Id == PlayerSkins.Of(PlayerSkins.Chosen.Value).Id));
+            PlayerLooks catalogue = PlayerSkins.For(Context.ActiveTitleId);
+            List<PlayerSkin> looks = [.. catalogue.All];
+            int chosen = Math.Max(0, looks.FindIndex(s => s.Id == catalogue.Own.Id));
             OptionCycler operative = Row(theme, "Operative", [.. looks.Select(static s => s.Name)], chosen, "How you appear to the others.");
             operative.SelectionChanged += index =>
             {
-                PlayerSkins.Chosen.Value = looks[index].Id;
+                catalogue.Chosen.Value = looks[index].Id;
                 Context.Host.SaveSettings();
             };
             column.AddChild(operative);

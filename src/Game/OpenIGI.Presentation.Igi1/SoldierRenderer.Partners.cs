@@ -284,7 +284,7 @@ public sealed partial class SoldierRenderer
             return (mission, wanted is { Length: > 0 } ? wanted : fallback);
         }
 
-        if (OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == wanted) is { } skin
+        if (OpenIGI.Game.Multiplayer.PlayerSkins.Igi1.All.FirstOrDefault(s => s.Model == wanted) is { } skin
             && BorrowLevel?.Invoke(skin.HomeLevel) is { } home
             && home.TryGetModel(wanted, out _))
         {
@@ -300,7 +300,7 @@ public sealed partial class SoldierRenderer
     // mission hasn't loaded, or one of another shape, keeps the player's set.
     private BoneAnimationSet AnimationsFor(string model, LoadedMission mission, BoneAnimationSet player)
     {
-        if (OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == model) is not { } skin || skin.Skeleton == player.Skeleton.Id)
+        if (OpenIGI.Game.Multiplayer.PlayerSkins.Igi1.All.FirstOrDefault(s => s.Model == model) is not { } skin || skin.Skeleton == player.Skeleton.Id)
         {
             return player;
         }

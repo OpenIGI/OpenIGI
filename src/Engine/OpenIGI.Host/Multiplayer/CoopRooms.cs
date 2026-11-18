@@ -230,7 +230,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             return;
         }
 
-        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.Of(PlayerSkins.Chosen.Value).Id);
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id);
         Begin(new SessionClient(open(0), address, request, _titleId(), _logger, reopen: () => open(0)) { Mode = line.Info.Mode });
         _logger.Information(LogCategory, $"Joining {line.Info.Name} at {address} on mission {mission} ({line.Info.Mode}).");
         _startWhenReady = (mission, _difficulty(), false);

@@ -19,6 +19,9 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <param name="Tuning">The player script's tuning, or <see langword="null"/>.</param>
 /// <param name="Sounds">The level's sounds.</param>
 /// <param name="Services">The session's tables.</param>
+/// <param name="Looks">
+/// The models another player's body is found among: the level's, then a co-op look's the level lacks (<see cref="Igi2LookPacks"/>).
+/// </param>
 internal sealed record Igi2PlayerSpawnKit(
     Igi2CollisionWorld World,
     Igi2HumanPlayerGeneral General,
@@ -27,7 +30,8 @@ internal sealed record Igi2PlayerSpawnKit(
     Func<string, Formats.World.MefModel?> Models,
     Igi2PlayerTuning? Tuning,
     Igi2Sounds Sounds,
-    Engine.Titles.IServiceCatalog Services);
+    Engine.Titles.IServiceCatalog Services,
+    Func<string, Formats.World.MefModel?> Looks);
 
 /// <summary>The level's other players: those a server runs for its clients, beside the level's own.</summary>
 public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
@@ -140,7 +144,22 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
     /// <returns>The model's name, or <see langword="null"/> when the level's player has none.</returns>
     internal string? PlayerBodyFor(int team) =>
         Human.Model is not { } own ? null
-            : (SpawnKit is { } kit && LevelTasks().OfType<Igi2SpawnAreaTask>().Any() ? Igi2Gameplay.TeamModel(team, kit.Models) : null) ?? own.Name;
+            : (SpawnKit is { } kit && IsMultiplayerMap ? Igi2Gameplay.TeamModel(team, kit.Models) : null) ?? own.Name;
+
+    /// <summary>
+    /// Gets the body a player wears: in a campaign mission played together, the co-op look it chose (<see cref="PlayerSkins.Igi2"/>)
+    /// when that look's body can be had, here or from the pack that ships it; otherwise its side's (<see cref="PlayerBodyFor(int)"/>).
+    /// </summary>
+    /// <param name="team">The player's team.</param>
+    /// <param name="look">The look it chose, a <see cref="PlayerSkins"/> id, or <see langword="null"/>.</param>
+    /// <returns>The model's name, or <see langword="null"/> when the level's player has none.</returns>
+    internal string? PlayerBodyFor(int team, string? look) =>
+        !IsMultiplayerMap && PlayerSkins.Igi2.Of(look).Model is { Length: > 0 } worn && SpawnKit?.Looks(worn) is not null
+            ? worn
+            : PlayerBodyFor(team);
+
+    // Whether the level is a multiplayer map (its spawn areas), whose sides' bodies are its own, rather than a campaign mission.
+    private bool IsMultiplayerMap => LevelTasks().OfType<Igi2SpawnAreaTask>().Any();
 
     /// <summary>Puts a player taken out (<see cref="RemoveNetworkHuman"/>) back in the level as it was, its client come back.</summary>
     /// <param name="player">The player.</param>

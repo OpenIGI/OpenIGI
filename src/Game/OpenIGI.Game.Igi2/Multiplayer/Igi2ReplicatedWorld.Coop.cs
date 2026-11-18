@@ -60,8 +60,14 @@ public sealed partial class Igi2ReplicatedWorld
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Not once the level's own flow has failed: I.G.I. 2's missions fail a few seconds after their "player dead" status message
+    /// has shown (mission 1's <c>StatusMessage_356.nTicksSinceFinishedDisplay &gt; 5 * GAME_FREQUENCY</c>), a latch standing
+    /// the squad up again does not lift, so the mission is only restarted.
+    /// </remarks>
     public bool CanRetryFromCheckpoint =>
-        HoldsTheDead && _squad.HasCheckpoint && Members() is { Count: > 0 } members && members.TrueForAll(static m => m.Down);
+        HoldsTheDead && _squad.HasCheckpoint && _level.Outcome != OpenIGI.Game.Player.TitleMissionOutcome.Failed
+        && Members() is { Count: > 0 } members && members.TrueForAll(static m => m.Down);
 
     /// <inheritdoc/>
     public void RetryFromCheckpoint()
@@ -90,6 +96,7 @@ public sealed partial class Igi2ReplicatedWorld
         }
 
         _level.RemoveNetworkHuman(human);
+        _looks.Remove(slot);
         _squad.Forget(slot + 1);
         _dead.Remove(slot + 1);
         _parked[parked] = (human, Teams.TeamOf(slot));

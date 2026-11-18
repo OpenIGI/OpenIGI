@@ -101,7 +101,7 @@ public sealed partial class GameHost
         }
 
         (Vector3d feet, float facing) = StandLook(eye);
-        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, feet, facing + _previewTurn, PreviewGun(backdrop));
+        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Igi1.Of(_previewLook).Model, feet, facing + _previewTurn, PreviewGun(backdrop));
 
         // Drawn between its last two ticks, as the game's own bodies are.
         bodies.BeginFrame(_previewElapsed / PreviewTickSeconds, smooth: true);

@@ -115,7 +115,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
                 Name = Game.Multiplayer.Modes.PlayerSides.ShowsName(VersusMode, TeamOf(ServerSession.HostSlot), TeamOf(e.Slot)) ? e.p.Name : null,
                 Dead = e.p.IsDead,
                 Revive = e.p.IsDead && Game.Multiplayer.Modes.PlayerSides.Revivable(VersusMode) ? ReviveProgressOf(e.p.Entity) : null,
-                Model = PlayerSkins.Of(e.p.Skin).Model,
+                Model = PlayerSkins.Igi1.Of(e.p.Skin).Model,
                 CarriesBomb = e.Slot == _bombCarrier,
                 Health = e.p.IsDead ? null : e.p.Health.RemainingFraction,
                 Shielded = _shields.ContainsKey(e.Slot),

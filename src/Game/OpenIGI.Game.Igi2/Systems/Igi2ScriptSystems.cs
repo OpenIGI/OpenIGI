@@ -38,6 +38,13 @@ internal static class Igi2ScriptSystems
             // The players the scripts weigh (HumanPlayer_isDead: none left alive), which a server's other players join.
             b.Player.ScriptPlayers = levelNatives.Players;
 
+            // And the player task's isDead with them (HumanPlayer_0.isDead), which most missions fail on: a level with players
+            // reads them; one without keeps the task's own latch.
+            if (OpenIGI.Game.Player.PlayerSpawn.FindGameplayTask(b.Root) is Igi2HumanPlayerTask playerTask)
+            {
+                playerTask.Fallen = () => levelNatives.Players.Count > 0 && levelNatives.NoneLeftAlive;
+            }
+
             // The player's designator marks its target where the level's scripts read it (LaserDesignator_GetTicksHeldOnTask).
             b.Player.Weapons?.Firing.LaserDesignator = levelNatives.LaserDesignator;
         }

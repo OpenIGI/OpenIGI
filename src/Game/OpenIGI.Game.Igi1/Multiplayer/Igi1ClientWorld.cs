@@ -152,7 +152,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
                 !alive,
                 alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
-                PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model,
+                PlayerSkins.Igi1.Of(_skins.GetValueOrDefault(h.Id)).Model,
                 (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0,
                 alive ? h.Health / 255f : null,
                 alive && _shielded(h.Id)));

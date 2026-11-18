@@ -394,7 +394,7 @@ public sealed partial class GameHost
                     // player's own, which it is seen in climbing or fallen as the others see it.
                     bodies.BorrowLevel = level => Borrow(loaded, _resources, level);
                     string? look = TickObserver is Multiplayer.ISessionLook { OwnSkin.Length: > 0 } session
-                        ? Game.Multiplayer.PlayerSkins.Of(session.OwnSkin).Model
+                        ? Game.Multiplayer.PlayerSkins.Igi1.Of(session.OwnSkin).Model
                         : null;
                     bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma, look);
                 }

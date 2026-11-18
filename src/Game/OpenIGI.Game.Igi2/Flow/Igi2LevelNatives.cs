@@ -28,6 +28,9 @@ public sealed class Igi2LevelNatives
     /// <summary>Gets the players of the level running; the original's one player is a roster of one.</summary>
     public PlayerRoster<Igi2HumanPlayer> Players { get; } = new();
 
+    /// <summary>Gets a value indicating whether no player of the level is left alive, as <c>HumanPlayer_isDead</c> weighs them: true for none.</summary>
+    public bool NoneLeftAlive => Players.Nearest(static p => p.IsDead ? null : 0) is null;
+
     private Func<int, object?> _taskById = static _ => null;
 
     /// <summary>Gets the laser designator's module state.</summary>
@@ -88,7 +91,7 @@ public sealed class Igi2LevelNatives
         }, 0);
 
         // HumanPlayer_isDeadCB: one with no player or a dead one, as a real; of several, one when none is left alive.
-        functions.Register(natives, "HumanPlayer_isDead", _ => QvmValue.FromDouble(Players.Nearest(static p => p.IsDead ? null : 0) is null ? 1.0 : 0.0), 1);
+        functions.Register(natives, "HumanPlayer_isDead", _ => QvmValue.FromDouble(NoneLeftAlive ? 1.0 : 0.0), 1);
 
         functions.Register(natives, "HumanPlayer_GetPrimaryWeaponModel", _ => QvmValue.FromString(PrimaryWeapon()?.FixedModel ?? string.Empty), 0);
         functions.Register(natives, "HumanPlayer_GetPrimaryWeaponID", _ => QvmValue.FromString(PrimaryWeapon()?.WeaponId ?? string.Empty), 0);
