@@ -103,8 +103,16 @@ WaterVaryings vertexMain(WaterVertexInput input)
 {
     WaterVaryings output;
 
-    float3 sun = float3(cSunX, cSunY, cSunZ);
-    float3 sunColour = float3(cSunRed, cSunGreen, cSunBlue);
+    // Filled in a component at a time: a vector made whole of specialization constants is emitted to WGSL as a `const`,
+    // which an `override` may not initialise, and the browser refused the shader -- every frame with water in it was lost.
+    float3 sun;
+    sun.x = cSunX;
+    sun.y = cSunY;
+    sun.z = cSunZ;
+    float3 sunColour;
+    sunColour.x = cSunRed;
+    sunColour.y = cSunGreen;
+    sunColour.z = cSunBlue;
     float3 normal = input.normal * push.fogNormalScale.w;
 
     // r0: from the surface to the eye.
