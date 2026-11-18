@@ -7,10 +7,10 @@ using OpenIGI.UI.Kit.Hud;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <summary>Other players' names over their heads.</summary>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     /// <inheritdoc/>
     /// <remarks>

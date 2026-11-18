@@ -178,6 +178,9 @@ public sealed partial class GameHost
 
     private readonly List<StatusMessageDisplay> _guestMessages = [];
 
+    // The other players' names and fallen marks a title running its own level tells of; the soldier renderer's are the rest.
+    private Game.Multiplayer.ICoopMarks? CoopMarks => TitlePlayer as Game.Multiplayer.ICoopMarks;
+
     /// <summary>Draws what the mods lay over the player's view, after the game's HUD and status and before a cut-scene's framing.</summary>
     /// <param name="state">The frame loop's state, whose sprite batch they draw into.</param>
     /// <param name="view">The frame's view, whose eye and projection place their markers.</param>
@@ -391,7 +394,7 @@ public sealed partial class GameHost
         }
 
         // The fallen teammates, each marked where it lies: a cross in a disc, its ring the revival; and a fall told as it happens.
-        IReadOnlyList<Game.Ai.ReviveMarker> fallen = _soldiers?.ReviveMarkers() ?? [];
+        IReadOnlyList<Game.Ai.ReviveMarker> fallen = [.. _soldiers?.ReviveMarkers() ?? [], .. CoopMarks?.ReviveMarkers() ?? []];
         UpdateDownedAlerts(fallen);
         if (_remasteredHud is { IsReady: true } reviveHud && (fallen.Count > 0 || _downAlerts.Count > 0))
         {
@@ -526,7 +529,8 @@ public sealed partial class GameHost
         }
 
         // The other players' names over their heads, on the same eye and lens as the marker.
-        if (_remasteredHud is { IsReady: true } tagHud && _soldiers?.NameTags() is { Count: > 0 } tags)
+        IReadOnlyList<Game.Ai.WorldNameTag> tags = [.. _soldiers?.NameTags() ?? [], .. CoopMarks?.NameTags() ?? []];
+        if (_remasteredHud is { IsReady: true } tagHud && tags.Count > 0)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();

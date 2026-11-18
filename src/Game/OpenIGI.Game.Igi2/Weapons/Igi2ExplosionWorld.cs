@@ -256,6 +256,11 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             Effects.AiEvent(request.AiEvent, request.AiEventFlags, request.Position, request.AiEventRange);
         }
 
+        if (!_replaying)
+        {
+            Started?.Invoke(request);
+        }
+
         return explosion;
     }
 

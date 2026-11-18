@@ -5,10 +5,10 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>The match's banner: its mode and clock across the top, a decided match's result, and a warning to get back.</content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     /// <inheritdoc/>
     public void DrawMatchBanner(SpriteBatch batch, MatchBanner banner, string? warning, int screenWidth, int screenHeight)

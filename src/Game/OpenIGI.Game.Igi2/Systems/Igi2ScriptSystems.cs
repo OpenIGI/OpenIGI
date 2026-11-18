@@ -35,6 +35,9 @@ internal static class Igi2ScriptSystems
             Dictionary<int, object> placed = b.PlacedById;
             levelNatives.Bind(b.Player.Human, id => placed.GetValueOrDefault(id), b.Root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault());
 
+            // The players the scripts weigh (HumanPlayer_isDead: none left alive), which a server's other players join.
+            b.Player.ScriptPlayers = levelNatives.Players;
+
             // The player's designator marks its target where the level's scripts read it (LaserDesignator_GetTicksHeldOnTask).
             b.Player.Weapons?.Firing.LaserDesignator = levelNatives.LaserDesignator;
         }

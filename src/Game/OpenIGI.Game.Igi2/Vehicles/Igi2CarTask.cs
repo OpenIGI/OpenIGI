@@ -369,7 +369,11 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             IsDoorOpen = LevelExpression.Truncate(level.Evaluate(_openDoor)) != 0;
         }
 
-        RunDetection(level);
+        if (!IsPuppet)
+        {
+            RunDetection(level);
+        }
+
         level.RunChildren(this);
         RunWheels();
 
@@ -379,8 +383,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             door.Run(IsDoorOpen);
         }
 
-        // DeathZone_RunHandler: while the car is not at rest.
-        if (_deathZones.Count > 0 && _body is { } body && !body.IsIdle())
+        // DeathZone_RunHandler: while the car is not at rest. A co-op client's copy kills nobody: the server's car does.
+        if (!IsPuppet && _deathZones.Count > 0 && _body is { } body && !body.IsIdle())
         {
             Igi2Pose pose = Igi2Pose.FromMatrix(body.Position, Rows(body.Orientation));
             foreach (Igi2DeathZone zone in _deathZones)
@@ -396,7 +400,10 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         Gun?.Run(_detection, tick);
         _isWeaponSystemsRun = false;
-        Explode();
+        if (!IsPuppet)
+        {
+            Explode();
+        }
     }
 
     /// <inheritdoc/>
@@ -430,6 +437,11 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         IdealDeltaGamma = channels.Count > 0 ? channels[0] : 0f;
         IsBreak = channels.Count > 3 && channels[3] != HoldChannel;
+        if (IsPuppet)
+        {
+            return;
+        }
+
         if (time != 0)
         {
             if (flowTick != _movedTick && _body is { } body)

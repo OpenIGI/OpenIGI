@@ -350,14 +350,16 @@ public sealed partial class GameHost
                     _hud.Dispose();
                     _hud = null;
                 }
+            }
 
-                _remasteredHud?.Dispose();
-                _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
-                if (_remasteredHud is not null && !_remasteredHud.Load())
-                {
-                    _remasteredHud.Dispose();
-                    _remasteredHud = null;
-                }
+            // The remastered display and the session's overlays on it, for every title: I.G.I. 2 declares no loadout, and made
+            // only beside one it never drew a scoreboard, a teammate's name or a fallen teammate's mark.
+            _remasteredHud?.Dispose();
+            _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
+            if (_remasteredHud is not null && !_remasteredHud.Load())
+            {
+                _remasteredHud.Dispose();
+                _remasteredHud = null;
             }
 
             // The F12 panel is the host's own tool, not part of a loadout: loaded for every title. I.G.I. 2 arms its player

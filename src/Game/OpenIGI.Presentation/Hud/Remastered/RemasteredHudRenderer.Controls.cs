@@ -6,9 +6,9 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     // The controls panel's measures, in design units: the scoreboard's card, its columns side by side.
     private const float ControlsWidth = 1240f;

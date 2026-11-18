@@ -6,10 +6,10 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>A match's buy menu: a panel at the left of the screen, a numbered row for each item, its price on the right.</content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     private readonly List<(int Index, float X, float Y, float Width, float Height)> _buyRows = [];
 

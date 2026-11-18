@@ -30,8 +30,26 @@ internal sealed record Igi2PlayerSpawnKit(
     Engine.Titles.IServiceCatalog Services);
 
 /// <summary>The level's other players: those a server runs for its clients, beside the level's own.</summary>
-public sealed partial class Igi2TitlePlayer : IReplicatedTitle
+public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
 {
+    /// <summary>Gets or sets what tells this level's other players' names and fallen marks: the session's world, server's or client's.</summary>
+    internal ICoopMarks? Marks { get; set; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<OpenIGI.Game.Ai.WorldNameTag> NameTags() => Marks?.NameTags() ?? [];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<OpenIGI.Game.Ai.ReviveMarker> ReviveMarkers() => Marks?.ReviveMarkers() ?? [];
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The mission's id, as a session names it and a client follows its server on to it: left unnamed, a server gone on to the
+    /// next mission named the one it left, and every client loaded that again.
+    /// </remarks>
+    string IReplicatedTitle.Map => MissionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // IReplicatedTitle.Level stays this player: each level makes a player of its own (Igi2Gameplay), so another level is another one.
+
     /// <inheritdoc/>
     public IReplicatedWorld CreateReplicatedWorld(bool includesHost) => new Igi2ReplicatedWorld(this) { IncludesHost = includesHost };
 
@@ -72,6 +90,12 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
     internal List<PlayerRoster<Igi2HumanPlayer>> SmokeRosters { get; } = [];
 
     /// <summary>
+    /// Gets or sets the players the level's scripts weigh, <c>HumanPlayer_isDead</c> among them (none left alive): a server's
+    /// other players stand in it beside the level's own, so one player down is not the mission lost.
+    /// </summary>
+    internal PlayerRoster<Igi2HumanPlayer>? ScriptPlayers { get; set; }
+
+    /// <summary>
     /// Makes another player in the level, armed, bodied and in every list the level's own player is in, driven by the commands
     /// its client sends.
     /// </summary>
@@ -82,23 +106,23 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
     /// <returns>The player, or <see langword="null"/> when the level was made without a spawn kit.</returns>
     public Igi2NetworkHuman? AddNetworkHuman(string model, Vector3d position, float gamma, int team)
     {
-        ArgumentNullException.ThrowIfNull(model);
-        if (SpawnKit is not { } kit)
+        if (MakeOtherPlayer(model, position, gamma, team) is not { } added)
         {
             return null;
         }
 
-        Igi2NetworkHuman added = Igi2NetworkHumanFactory.Make(this, kit, _surroundings, model, position, gamma, team);
-        _networkHumans.Add(added);
-        Igi2HumanPlayer human = added.Human;
-        if (MapHumans is List<Igi2Human> humans)
-        {
-            humans.Add(human);
-        }
+        Register(added.Human);
+        return added;
+    }
 
+    // A server's other player in every list the level's own player is in: seen and hunted, struck by blasts, weighed by the
+    // scripts, counted by the areas and burnt by the smoke.
+    private void Register(Igi2HumanPlayer human)
+    {
         (Ai?.Detection ?? _surroundings.Detection)?.Register(human);
         Explosions?.AddTarget(human);
         Ai?.Players.Add(human);
+        ScriptPlayers?.Add(human);
         foreach (PlayerRoster<Flow.IIgi2AreaOccupant> roster in AreaRosters)
         {
             roster.Add(human);
@@ -107,6 +131,67 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
         foreach (PlayerRoster<Igi2HumanPlayer> roster in SmokeRosters)
         {
             roster.Add(human);
+        }
+    }
+
+    /// <summary>Gets the body a player of a side wears: on a multiplayer map its team's (<c>NetManager_atGoodModel</c> /
+    /// <c>atBadModel</c>), elsewhere the level's own player's.</summary>
+    /// <param name="team">The player's team.</param>
+    /// <returns>The model's name, or <see langword="null"/> when the level's player has none.</returns>
+    internal string? PlayerBodyFor(int team) =>
+        Human.Model is not { } own ? null
+            : (SpawnKit is { } kit && LevelTasks().OfType<Igi2SpawnAreaTask>().Any() ? Igi2Gameplay.TeamModel(team, kit.Models) : null) ?? own.Name;
+
+    /// <summary>Puts a player taken out (<see cref="RemoveNetworkHuman"/>) back in the level as it was, its client come back.</summary>
+    /// <param name="player">The player.</param>
+    public void ReturnNetworkHuman(Igi2NetworkHuman player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (_networkHumans.Contains(player))
+        {
+            return;
+        }
+
+        _networkHumans.Add(player);
+        (MapHumans as List<Igi2Human>)?.Add(player.Human);
+        if (player.Human.Collider is { } collider)
+        {
+            player.World.AddBody(collider);
+        }
+
+        Register(player.Human);
+    }
+
+    /// <summary>
+    /// Makes a client's copy of another player: bodied, armed and drawn, standing in the level's humans so it blocks and is struck,
+    /// but posed by the snapshots (<see cref="Igi2NetworkHuman.PuppetTarget"/>) and nothing of the level's own to count.
+    /// </summary>
+    /// <param name="model">The body model it wears.</param>
+    /// <param name="position">Where its feet stand, in world units.</param>
+    /// <param name="gamma">The heading it faces.</param>
+    /// <param name="team">Its team.</param>
+    /// <returns>The puppet, or <see langword="null"/> when the level was made without a spawn kit.</returns>
+    /// <remarks>
+    /// The soldiers, the areas, the smoke and the blasts are the server's to weigh against its players: a client that put its
+    /// copies in their lists had its own guards hunt them, and its own areas and alarms counted them.
+    /// </remarks>
+    public Igi2NetworkHuman? AddPartnerPuppet(string model, Vector3d position, float gamma, int team) =>
+        MakeOtherPlayer(model, position, gamma, team);
+
+    // Another player made and stood in the level's humans, in neither the soldiers' nor the level's lists yet.
+    private Igi2NetworkHuman? MakeOtherPlayer(string model, Vector3d position, float gamma, int team)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (SpawnKit is not { } kit)
+        {
+            return null;
+        }
+
+        Igi2NetworkHuman added = Igi2NetworkHumanFactory.Make(this, kit, _surroundings, model, position, gamma, team);
+        _networkHumans.Add(added);
+        if (MapHumans is List<Igi2Human> humans)
+        {
+            humans.Add(added.Human);
         }
 
         return added;
@@ -128,6 +213,7 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
         (Ai?.Detection ?? _surroundings.Detection)?.Remove(human);
         Explosions?.RemoveTarget(human);
         Ai?.Players.Remove(human);
+        ScriptPlayers?.Remove(human);
         foreach (PlayerRoster<Flow.IIgi2AreaOccupant> roster in AreaRosters)
         {
             roster.Remove(human);

@@ -4,6 +4,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using Xunit;
+using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Igi1.World;
 using OpenIGI.Rendering.Headless;
 

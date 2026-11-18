@@ -53,7 +53,7 @@ public sealed record Igi2AiGunParameters(
 /// Its carrier places it, <c>AIStationaryGun_UpdateAttachmentHandler</c>: a holder once, a car each time it moves.
 /// </para>
 /// </remarks>
-public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
+public sealed partial class Igi2AiStationaryGun : IIgi2WeaponOwner
 {
     /// <summary>The magic task type the gun's attach point is.</summary>
     public const string TypeName = "AIStationaryGun";
@@ -232,6 +232,12 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
     public void Run(Igi2AiDetection? detection, int ticks)
     {
         _ticks = ticks;
+        if (IsPuppet)
+        {
+            RunPuppet();
+            return;
+        }
+
         if (detection is null || _base is null)
         {
             return;

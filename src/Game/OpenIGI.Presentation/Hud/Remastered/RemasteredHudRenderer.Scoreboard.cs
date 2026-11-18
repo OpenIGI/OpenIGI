@@ -12,10 +12,10 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <summary>The session's scoreboard, held open on its key.</summary>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     // The board's measures, in design units. Nothing is smaller than LabelText: it is read at a glance mid-fight, and on
     // a phone the same units come out a third of the size they do on a monitor.

@@ -8,7 +8,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// The chat, in the readouts' own hand: tracked mono capitals for what a thing is, the body face for what was said, the accent
@@ -18,7 +18,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// being typed on an accent rule like the weapon's name, whom it goes to beside a diamond like the weapon's state, and the keys
 /// that work as key caps. On a touch screen the column stands above the keyboard and shows no keys.
 /// </content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     // How wide the chat runs, its text size, and how many rows it shows open. Layout pixels.
     private const float ChatWidthUnits = 520f;

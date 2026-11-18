@@ -5,13 +5,13 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// The local player's combat feedback round the crosshair: the hit marker's four ticks as its rounds strike (red for a kill,
 /// wider for the head), and a red glow on a ring round the middle pointing where each shot that struck it came from.
 /// </content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     private static Bgra32 HitWhite => Bgra32.FromRgb(255, 255, 255);
     private static Bgra32 HitKill => Bgra32.FromRgb(255, 72, 60);

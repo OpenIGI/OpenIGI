@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// what fires, shows and sounds is the fire type's handler and the <see cref="Effects"/>.
 /// </para>
 /// </remarks>
-public sealed class Igi2WeaponFiring
+public sealed partial class Igi2WeaponFiring
 {
     /// <summary>The fire sound's slot, the one the holder's death stops (<c>aptSoundSlotQTaskRef[0]</c>).</summary>
     public const int FireSoundSlot = 0;
@@ -147,6 +147,7 @@ public sealed class Igi2WeaponFiring
     public void CreateProjectile(in Igi2ProjectileLaunch launch, GameTask fireTypeParameters)
     {
         ArgumentNullException.ThrowIfNull(fireTypeParameters);
+        NoteLaunch(launch, fireTypeParameters);
         if (launch.ProjectileTaskType == _taskTypes.GunShot)
         {
             GunShot.CreateProjectile(launch, Igi2GunShotParameters.Of(fireTypeParameters));

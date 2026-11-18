@@ -42,6 +42,10 @@ public sealed partial class GameHost
     private TitlePlayerFeatures? _titleFeatures;
 
     private ITitlePlayer? TitlePlayer => _titleFeatures?.Player;
+
+    // What a session serves or follows: the mission itself where the mission is the level (I.G.I.), else the title's own
+    // player that runs its level behind it (I.G.I. 2). Handed the mission alone, an I.G.I. 2 joiner never found its level.
+    private object? ReplicatedTitle => _hosted is Game.Multiplayer.IReplicatedTitle ? _hosted : TitlePlayer as Game.Multiplayer.IReplicatedTitle;
     private readonly OpenIGI.Presentation.Cameras.TitlePlayerPresentation _titlePresentation = new();
     private float _titlePresentationBlend = 1f;
     private ITitleViewModelPresenter? _titleArms;

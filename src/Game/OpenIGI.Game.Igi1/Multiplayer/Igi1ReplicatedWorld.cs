@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 {
     /// <summary>The entity id of the mission's own player.</summary>
-    public const int HostEntity = 0;
+    public const int HostEntity = ReplicatedEntity.Host;
 
     /// <summary>How finely a clip's time is carried: sixteenths of a tick, so a clip of up to 136 seconds fits the 16 bits.</summary>
     public const float ClipTimeScale = 16f;
@@ -37,7 +37,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     public static float UnpackClipTime(ushort carried) => carried / ClipTimeScale * Formats.Animation.BoneAnimation.FrameStep;
 
     /// <summary>The entity id a soldier's task id is carried past in snapshots.</summary>
-    public const int SoldierEntityBase = 100000;
+    public const int SoldierEntityBase = ReplicatedEntity.SoldierBase;
 
     /// <summary>The team every player of a co-op session is on, the original player's.</summary>
     public const int PlayerTeam = 0;
@@ -47,21 +47,11 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     // How far from the level's start the host must have gone for one joining to be stood beside the host instead: 30 m.
     private const double LateJoinDistance = 30 * 4096;
 
-    /// <summary>How long a teammate stands by a fallen player to bring it back, in ticks: five seconds.</summary>
-    public static int ReviveTicks => CoopCVars.ReviveSeconds.Value * 30;
+    /// <summary>How long a teammate stands by a fallen player to bring it back, in ticks (<see cref="CoopSquad.ReviveTicks"/>).</summary>
+    public static int ReviveTicks => CoopSquad.ReviveTicks;
 
-    /// <summary>How near a teammate stands to a fallen player to revive it, in world units: two metres.</summary>
-    public const double ReviveReachUnits = 2 * 4096;
-
-    // How often, while the whole squad stands, where each stands is kept as the checkpoint: fifteen seconds of ticks.
-    private const int CheckpointTicks = 15 * 30;
-
-    // Where each player stood when the squad last stood together, by entity, and the tick it was kept on.
-    private readonly Dictionary<int, (Vector3d At, float Yaw)> _checkpoint = [];
-    private long? _checkpointTick;
-
-    // Each fallen player's revival so far, in ticks, by entity.
-    private readonly Dictionary<int, int> _reviving = [];
+    // The squad's revivals and its checkpoint.
+    private readonly CoopSquad _squad = new();
 
     // The players whose clients dropped, kept aside out of the level by their parked keys.
     private readonly Dictionary<int, Igi1NetworkPlayer> _parked = [];
@@ -198,7 +188,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         _game.World.NetworkPlayers.Remove(player);
-        _reviving.Remove(player.Entity);
+        _squad.Forget(player.Entity);
         _dead.Remove(player.Entity);
         _parked[parked] = player;
 
@@ -709,12 +699,12 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     public float? ReviveProgressOf(int entity)
     {
         bool down = entity == HostEntity ? IncludesHost && _game.World.IsPlayerDead : _bySlot.TryGetValue(entity - 1, out Igi1NetworkPlayer? p) && p.IsDead;
-        return down ? Math.Min(1f, _reviving.GetValueOrDefault(entity) / (float)ReviveTicks) : null;
+        return down ? _squad.ReviveProgressOf(entity) : null;
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each fallen player within <see cref="ReviveReachUnits"/> of a living one counts a tick towards its revival; one left
+    /// Each fallen player within <see cref="CoopSquad.ReviveReachUnits"/> of a living one counts a tick towards its revival; one left
     /// alone starts again from nothing. At <see cref="ReviveTicks"/> it stands up where it fell, at full health. The
     /// soldiers' toughness is kept to the squad's size here too, once a tick.
     /// </remarks>
@@ -722,66 +712,31 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     {
         ScaleEnemies();
 
-        List<(int Entity, int Slot, Vector3d At)> down = [];
-        List<Vector3d> up = [];
+        List<SquadMember> members = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            if (_game.World.IsPlayerDead)
-            {
-                down.Add((HostEntity, ServerSession.HostSlot, host.Body.Position));
-            }
-            else
-            {
-                up.Add(host.Body.Position);
-            }
+            members.Add(new SquadMember(HostEntity, ServerSession.HostSlot, host.Body.Position, host.Body.Yaw, _game.World.IsPlayerDead));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            if (other.IsDead)
-            {
-                down.Add((slot + 1, slot, other.Player.Body.Position));
-            }
-            else
-            {
-                up.Add(other.Player.Body.Position);
-            }
-        }
-
-        // The whole squad standing: where each stands is the checkpoint, kept every so often.
-        if (down.Count == 0 && up.Count > 0 && (_checkpointTick is not { } kept || CurrentTick - kept >= CheckpointTicks))
-        {
-            KeepCheckpoint();
+            members.Add(new SquadMember(slot + 1, slot, other.Player.Body.Position, other.Player.Body.Yaw, other.IsDead));
         }
 
         List<int> revived = [];
-        foreach ((int entity, int slot, Vector3d at) in down)
+        foreach (SquadMember fallen in _squad.Tick(CurrentTick, members))
         {
-            bool tended = up.Exists(p => Vector3d.Distance(p, at) <= ReviveReachUnits);
-            int ticks = tended ? _reviving.GetValueOrDefault(entity) + 1 : 0;
-            if (ticks < ReviveTicks)
+            _dead.Remove(fallen.Entity);
+            if (fallen.Entity == HostEntity && _game.World.Player is not null)
             {
-                _reviving[entity] = ticks;
-                continue;
+                _game.Harm.RevivePlayer(fallen.At, fallen.Yaw);
+            }
+            else if (_bySlot.TryGetValue(fallen.Slot, out Igi1NetworkPlayer? partner))
+            {
+                Igi1PlayerHarm.RevivePlayer(partner, fallen.At, fallen.Yaw);
             }
 
-            _reviving.Remove(entity);
-            _dead.Remove(entity);
-            if (entity == HostEntity && _game.World.Player is { } own)
-            {
-                _game.Harm.RevivePlayer(at, own.Body.Yaw);
-            }
-            else if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? partner))
-            {
-                Igi1PlayerHarm.RevivePlayer(partner, at, partner.Player.Body.Yaw);
-            }
-
-            revived.Add(slot);
-        }
-
-        foreach (int entity in _reviving.Keys.Where(e => !down.Exists(d => d.Entity == e)).ToArray())
-        {
-            _reviving.Remove(entity);
+            revived.Add(fallen.Slot);
         }
 
         return revived;
@@ -789,7 +744,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 
     /// <inheritdoc/>
     public bool CanRetryFromCheckpoint =>
-        _checkpoint.Count > 0
+        _squad.HasCheckpoint
         && (!IncludesHost || _game.World.IsPlayerDead)
         && _bySlot.Values.All(static p => p.IsDead);
 
@@ -798,35 +753,19 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     {
         if (IncludesHost && _game.World.Player is { } own)
         {
-            (Vector3d at, float yaw) = _checkpoint.GetValueOrDefault(HostEntity, (own.Body.Position, own.Body.Yaw));
+            (Vector3d at, float yaw) = _squad.CheckpointOf(HostEntity) ?? (own.Body.Position, own.Body.Yaw);
             _game.Harm.RevivePlayer(at, yaw);
             _dead.Remove(HostEntity);
         }
 
         foreach (Igi1NetworkPlayer partner in _bySlot.Values)
         {
-            (Vector3d at, float yaw) = _checkpoint.GetValueOrDefault(partner.Entity, (partner.Player.Body.Position, partner.Player.Body.Yaw));
+            (Vector3d at, float yaw) = _squad.CheckpointOf(partner.Entity) ?? (partner.Player.Body.Position, partner.Player.Body.Yaw);
             Igi1PlayerHarm.RevivePlayer(partner, at, yaw);
             _dead.Remove(partner.Entity);
         }
 
-        _reviving.Clear();
-    }
-
-    private void KeepCheckpoint()
-    {
-        _checkpoint.Clear();
-        if (IncludesHost && _game.World.Player is { } own)
-        {
-            _checkpoint[HostEntity] = (own.Body.Position, own.Body.Yaw);
-        }
-
-        foreach (Igi1NetworkPlayer partner in _bySlot.Values)
-        {
-            _checkpoint[partner.Entity] = (partner.Player.Body.Position, partner.Player.Body.Yaw);
-        }
-
-        _checkpointTick = CurrentTick;
+        _squad.StoodUpTogether();
     }
 
     // The lift a player rides, by the rule its car carries it by: a client draws it on that car, wherever its own copy of
@@ -861,7 +800,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         int players = _bySlot.Count + (IncludesHost ? 1 : 0);
         if (_game.World.Soldiers is { } soldiers)
         {
-            soldiers.HealthScale = 1f + (CoopCVars.EnemyHealthPerPlayer.Value / 100f * Math.Max(0, players - 1));
+            soldiers.HealthScale = CoopSquad.EnemyHealthScale(players);
         }
     }
 

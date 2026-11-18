@@ -429,6 +429,12 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         _runTick = tick;
         Ticks = tick;
         firing.RunGunShot();
+        if (IsPuppet)
+        {
+            RunPuppet(level, firing, tick);
+            return;
+        }
+
         float target = firing.Inventory.Current?.WeaponType.StandingPrecisionDegrees ?? 0f;
         _precision = ((((Fpu)target - _precision) * 0.4000000059604645) + _precision).F;
         _kickTilt = ((-(Fpu)_kickTilt * _kickDamping) + _kickTilt).F;

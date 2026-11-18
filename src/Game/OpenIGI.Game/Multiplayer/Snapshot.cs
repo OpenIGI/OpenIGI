@@ -31,6 +31,14 @@ namespace OpenIGI.Game.Multiplayer;
 /// </param>
 /// <param name="ImpactSequence">The number of the first of <paramref name="Impacts"/> among all its client was ever sent.</param>
 /// <param name="SenseSequence">The number of the first of <paramref name="Senses"/> among all its client was ever sent.</param>
+/// <param name="Fired">
+/// What the level's bodies fired lately -- rounds, grenades, rockets -- as the world writes it, for each client to fire the same
+/// from its own copies of them, harmless; or <see langword="null"/> where it sends none.
+/// </param>
+/// <param name="Vehicles">
+/// The level's vehicles and guns -- its cars, trains, turrets and mounted guns -- as the world writes them, for each client to
+/// stand its copies where the server's are; or <see langword="null"/> where it sends none.
+/// </param>
 public sealed record Snapshot(
     long Tick,
     ReplicatedHuman[] Humans,
@@ -43,7 +51,9 @@ public sealed record Snapshot(
     ReplicatedProjectile[]? Projectiles = null,
     byte[]? Tasks = null,
     uint ImpactSequence = 0,
-    uint SenseSequence = 0)
+    uint SenseSequence = 0,
+    byte[]? Fired = null,
+    byte[]? Vehicles = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -104,6 +114,12 @@ public static class SnapshotCodec
 
     // The level's tasks' state: a few bits each, and a plant's place.
     private const int MaxTaskBytes = 4096;
+
+    // What was fired over the last few ticks: a launch is some twenty bytes.
+    private const int MaxFiredBytes = 4096;
+
+    // The level's vehicles and guns: a car some thirty bytes.
+    private const int MaxVehicleBytes = 4096;
     private const uint AllFields = (1u << FieldCount) - 1;
 
     /// <summary>Writes a snapshot.</summary>
@@ -250,6 +266,8 @@ public static class SnapshotCodec
         if (!worldSame)
         {
             WriteBlob(writer, snapshot.Tasks, baseline is null ? null : baseline.Tasks ?? [], MaxTaskBytes);
+            WriteBlob(writer, snapshot.Fired, baseline is null ? null : baseline.Fired ?? [], MaxFiredBytes);
+            WriteBlob(writer, snapshot.Vehicles, baseline is null ? null : baseline.Vehicles ?? [], MaxVehicleBytes);
         }
 
         // The rounds that landed: events, not state, so written whole and never against the baseline.
@@ -452,6 +470,18 @@ public static class SnapshotCodec
             return false;
         }
 
+        byte[]? fired = baseline?.Fired;
+        if (!worldSame && !ReadBlob(ref reader, baseline, baseline?.Fired, MaxFiredBytes, out fired))
+        {
+            return false;
+        }
+
+        byte[]? vehicles = baseline?.Vehicles;
+        if (!worldSame && !ReadBlob(ref reader, baseline, baseline?.Vehicles, MaxVehicleBytes, out vehicles))
+        {
+            return false;
+        }
+
         uint impactCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
         uint impactSequence = impactCount == 0 ? 0 : reader.ReadBits(32);
         if (reader.IsOverflowed || impactCount > ReplicatedImpact.MaxPerSnapshot)
@@ -483,7 +513,7 @@ public static class SnapshotCodec
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks, impactSequence, senseSequence);
+        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks, impactSequence, senseSequence, fired, vehicles);
         return true;
     }
 
@@ -493,7 +523,9 @@ public static class SnapshotCodec
         && (a.Cameras ?? []).AsSpan().SequenceEqual(b.Cameras ?? [])
         && (a.Wrecks ?? []).AsSpan().SequenceEqual(b.Wrecks ?? [])
         && (a.Projectiles ?? []).AsSpan().SequenceEqual(b.Projectiles ?? [])
-        && (a.Tasks ?? []).AsSpan().SequenceEqual(b.Tasks ?? []);
+        && (a.Tasks ?? []).AsSpan().SequenceEqual(b.Tasks ?? [])
+        && (a.Fired ?? []).AsSpan().SequenceEqual(b.Fired ?? [])
+        && (a.Vehicles ?? []).AsSpan().SequenceEqual(b.Vehicles ?? []);
 
     // A blob of the world's: one bit when it is as the baseline had it, else its bytes.
     private static void WriteBlob(BitWriter writer, byte[]? blob, byte[]? baseline, int maxBytes)

@@ -828,7 +828,7 @@ public sealed partial class GameHost : IDisposable
                 // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
                 if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
                 {
-                    hold.Pump(_hosted);
+                    hold.Pump(ReplicatedTitle);
                 }
 
                 continue;

@@ -78,6 +78,13 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
             return;
         }
 
+        // A co-op client's puppet bleeds where the round struck; the server's copy takes the harm, and falls if it kills.
+        if (Puppet is not null)
+        {
+            CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
+            return;
+        }
+
         bool instantDeathDisabled = false;
         if (Mind is { } mind)
         {
@@ -169,6 +176,11 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
 
         Vector3d eyes = View.Position;
         ShakeView(hit, SoldierShakeAngle);
+        if (Puppet is not null)
+        {
+            return;
+        }
+
         Damage.LastPart = Igi2DamagePart.Chest;
         Vector3f root = RootTranslation;
         float radius = ((Fpu.Sqrt((((Fpu)root.X * root.X) + ((Fpu)root.Y * root.Y)) + ((Fpu)root.Z * root.Z)) + ModelRadius) * 0.33333334f).F;
@@ -212,7 +224,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
     public void CloseCombatDamage(float damage, Igi2Human attacker)
     {
         ArgumentNullException.ThrowIfNull(attacker);
-        if (Mind is not { IsInvulnerable: true })
+        if (Mind is not { IsInvulnerable: true } && Puppet is null)
         {
             Matrix3f o = Orientation;
             Fpu fx = (((Fpu)o.M13 + o.M11) * 0.0) + ((Fpu)o.M12 * 4096.0);

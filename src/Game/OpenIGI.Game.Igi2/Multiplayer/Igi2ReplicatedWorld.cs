@@ -19,10 +19,10 @@ namespace OpenIGI.Game.Igi2.Multiplayer;
 /// stands beside the level's own spawn, a pace apart per slot, on the level player's team.
 /// </para>
 /// </remarks>
-public sealed class Igi2ReplicatedWorld : IReplicatedWorld
+public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
 {
     /// <summary>The entity id of the level's own player.</summary>
-    public const int HostEntity = 0;
+    public const int HostEntity = ReplicatedEntity.Host;
 
     private const double SpawnSpacing = 8192;
 
@@ -38,6 +38,39 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     {
         _level = level ?? throw new ArgumentNullException(nameof(level));
         _level.NetworkRewind = RewindFor;
+        _level.Marks = this;
+
+        // Every explosion the level sets off is told to the clients, who show what their own players did not set off.
+        _level.Explosions?.Started = request => _blasts.Note(EntityOf(request.Owner), request);
+
+        // And everything every body fires, for the clients to fire again from their copies of it.
+        HearLaunches(_level.Weapons?.Firing, () => IncludesHost ? HostEntity : -1);
+        if (_level.Soldiers is { } soldiers)
+        {
+            for (int i = 0; i < soldiers.Bodies.Count; i++)
+            {
+                int entity = SoldierEntity(i);
+                HearLaunches(soldiers.Bodies[i].Weapon.Firing, () => entity);
+            }
+        }
+
+        _vehicles = new Igi2VehicleStates(_level);
+        foreach ((int source, Weapons.Igi2WeaponFiring firing) in _vehicles.Weapons())
+        {
+            HearLaunches(firing, () => source);
+        }
+    }
+
+    // A weapon's launches noted against its body's entity, as the tick has it then; none for a body no client is shown.
+    private void HearLaunches(Weapons.Igi2WeaponFiring? firing, Func<int> entity)
+    {
+        firing?.Launched = note =>
+        {
+            if (entity() is >= 0 and var source)
+            {
+                _fired.Note(CurrentTick, source, note);
+            }
+        };
     }
 
     /// <inheritdoc/>
@@ -64,7 +97,11 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     public Igi2NetworkHuman? PlayerOf(int slot) => _bySlot.GetValueOrDefault(slot);
 
     /// <inheritdoc/>
-    public int? AddPlayer(int slot, string name) => Place(slot, team: null);
+    public int? AddPlayer(int slot, string name)
+    {
+        _names[slot] = name;
+        return Place(slot, team: null);
+    }
 
     /// <inheritdoc/>
     public int TeamOf(int slot) => Teams.TeamOf(slot);
@@ -180,8 +217,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             }
         }
 
-        // On a multiplayer map each team wears its own bodies (NetManager_atGoodModel / atBadModel); elsewhere the level's.
-        string body = (areas.Length > 0 && _level.SpawnKit is { } kit ? Igi2Gameplay.TeamModel(side, kit.Models) : null) ?? model.Name;
+        string body = _level.PlayerBodyFor(side) ?? model.Name;
         if (_level.AddNetworkHuman(body, at, gamma, side) is not { } human)
         {
             return null;
@@ -189,6 +225,8 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
 
         Teams.Assign(slot, side);
         _bySlot[slot] = human;
+        Arm(human);
+        HearLaunches(human.Weapons?.Firing, () => EntityOf(human.Human));
         return slot + 1;
     }
 
@@ -196,6 +234,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     public void RemovePlayer(int slot)
     {
         Teams.Remove(slot);
+        _names.Remove(slot);
         if (_bySlot.Remove(slot, out Igi2NetworkHuman? human))
         {
             _level.RemoveNetworkHuman(human);
@@ -208,20 +247,24 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     /// <inheritdoc/>
     public Snapshot Capture(long tick)
     {
+        KeepStartKit();
         _scratch.Clear();
         if (IncludesHost)
         {
-            _scratch.Add(Replicate(HostEntity, _level.Human));
+            _scratch.Add(WithRevive(Replicate(HostEntity, _level.Human)));
         }
 
         foreach ((int slot, Igi2NetworkHuman human) in _bySlot)
         {
-            _scratch.Add(Replicate(slot + 1, human.Human));
+            _scratch.Add(WithRevive(Replicate(slot + 1, human.Human)));
         }
+
+        // The soldiers, which only the server's minds run: every client poses its copies by these.
+        CaptureSoldiers(_scratch);
 
         // By id, as the codec writes them and a snapshot is searched: the players stand in the order they last spawned.
         _scratch.Sort(static (a, b) => a.Id.CompareTo(b.Id));
-        return new Snapshot(tick, [.. _scratch]);
+        return new Snapshot(tick, [.. _scratch], Igi2DoorCommands.Capture(DoorTasks), Lifts: Lifts(), Vehicles: _vehicles.Capture(), Fired: _fired.Capture(tick, _level.Weapons?.Inventory.Tables));
     }
 
     /// <summary>Puts every player but a shooter where the shooter's client drew them when it fired, until the scope ends.</summary>
@@ -240,8 +283,8 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             return null;
         }
 
-        List<(Igi2HumanPlayer Human, Vector3d Was, Matrix3f Turned)> moved = [];
-        void MoveBack(int id, Igi2HumanPlayer human)
+        List<(Igi2Human Human, Vector3d Was, Matrix3f Turned)> moved = [];
+        void MoveBack(int id, Igi2Human human)
         {
             // The living, where the shooter's client drew them, to the fraction of a tick it drew them at.
             double moment = lag.AimedAt(CurrentTick, shooter.Commands.LastViewTick, shooter.Commands.LastViewFraction);
@@ -262,6 +305,15 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         foreach ((int slot, Igi2NetworkHuman other) in _bySlot)
         {
             MoveBack(slot + 1, other.Human);
+        }
+
+        // The soldiers too: a partner's round meets the guard where its client drew him.
+        if (_level.Soldiers is { } soldiers)
+        {
+            for (int i = 0; i < soldiers.Bodies.Count; i++)
+            {
+                MoveBack(SoldierEntity(i), soldiers.Bodies[i]);
+            }
         }
 
         return moved.Count == 0 ? null : new RewindScope(moved);
@@ -287,6 +339,8 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             condition |= ReplicatedHumanCondition.Low;
         }
 
+        int shots = human.Weapon.Inventory?.TotalBulletsFired ?? 0;
+
         return new ReplicatedHuman(
             id,
             Int3.From(human.Position),
@@ -298,14 +352,15 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             (ushort)Math.Clamp(human.Weapon.Inventory?.Current?.WeaponType.Id ?? 0, 0, ushort.MaxValue),
             (byte)Math.Round(left * 255),
             (byte)Math.Clamp(human.Team, 0, 255),
-            condition);
+            condition,
+            unchecked((byte)shots));
     }
 
-    private sealed class RewindScope(List<(Igi2HumanPlayer Human, Vector3d Was, Matrix3f Turned)> moved) : IDisposable
+    private sealed class RewindScope(List<(Igi2Human Human, Vector3d Was, Matrix3f Turned)> moved) : IDisposable
     {
         public void Dispose()
         {
-            foreach ((Igi2HumanPlayer human, Vector3d was, Matrix3f turned) in moved)
+            foreach ((Igi2Human human, Vector3d was, Matrix3f turned) in moved)
             {
                 human.Position = was;
                 human.Orientation = turned;

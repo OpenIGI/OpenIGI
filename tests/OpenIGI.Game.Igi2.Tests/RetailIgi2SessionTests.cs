@@ -72,27 +72,38 @@ public sealed class RetailIgi2SessionTests
 
         Assert.Equal(hostWas.X + 4096, level.Human.Position.X);
 
-        // A death: the client's player falls; the match counts it, the scoreboard tells the client, and once the respawn
-        // delay is over and the client can pay, a new body stands in the level.
+        // A death: a campaign mission played together holds its dead (co-op, not the multiplayer maps' paid respawn). The
+        // client's player falls and lies where it fell; the match counts it and the scoreboard tells the client.
+        Assert.True(world.HoldsTheDead);
         player.Human.Damage.MaxDamage = 1f;
         player.Human.HandleDamage(Humans.Igi2DamagePart.Head, 1000f, default);
-        for (int i = 0; i < 130; i++)
-        {
-            now += 1.0 / 30;
-            long tick = level.TickCount;
-            server.Receive(now, tick);
-            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
-            server.Send(now, tick);
-            client.Receive(now);
-            client.SendCommand(new float[Igi2HumanChannels.Count], now);
-            client.Flush(now);
-        }
-
+        Run(130);
         Assert.Equal(1, server.Match.Players[0].Deaths);
         Assert.Contains(client.Scoreboard!.Lines, l => l.Slot == 0 && l.Deaths == 1);
-        Igi2NetworkHuman reborn = world.PlayerOf(0)!;
-        Assert.NotSame(player, reborn);
-        Assert.False(reborn.Human.IsDead);
+        Assert.Same(player, world.PlayerOf(0));
+        Assert.True(player.Human.IsDead);
+        Assert.NotNull(world.ReviveProgressOf(1));
+
+        // The host stands beside it as long as a revival takes, and it stands up where it lay, the same body, whole.
+        level.Human.Position = player.Human.Position + new Core.Numerics.Vector3d(2048, 0, 0);
+        Run(CoopSquad.ReviveTicks + 30);
+        Assert.Same(player, world.PlayerOf(0));
+        Assert.False(player.Human.IsDead);
         Assert.True(server.Match.Players[0].IsAlive);
+
+        void Run(int ticks)
+        {
+            for (int i = 0; i < ticks; i++)
+            {
+                now += 1.0 / 30;
+                long tick = level.TickCount;
+                server.Receive(now, tick);
+                level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+                server.Send(now, tick);
+                client.Receive(now);
+                client.SendCommand(new float[Igi2HumanChannels.Count], now);
+                client.Flush(now);
+            }
+        }
     }
 }

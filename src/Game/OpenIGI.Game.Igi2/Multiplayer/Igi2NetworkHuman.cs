@@ -73,15 +73,43 @@ public sealed class Igi2NetworkHuman
         Human.RunDelayed();
     }
 
+    // What shows the rounds the server's copy fires, made once the puppet is first run.
+    private Weapons.Igi2RemoteGunfire? _gunfire;
+
     private void RunPuppet(long tick, in ReplicatedHuman target)
     {
         Array.Clear(_frame);
+        Human.Ticks = (int)tick;
+        bool alive = (target.Flags & ReplicatedHumanCondition.Alive) != 0;
+
+        // Fallen on the server: it falls here, and its own death plays out where it lay; stood up there, it stands here.
+        if (!alive)
+        {
+            if (!Human.IsDead)
+            {
+                Human.Damage.Damage = Human.Damage.MaxDamage + 1f;
+                Human.UpdateDie();
+            }
+
+            Human.Update(_frame);
+            return;
+        }
+
+        if (Human.IsDead)
+        {
+            Human.Revive(target.Position.ToVector(), Quantize.AngleFromBits(target.Yaw));
+        }
+
+        if (Weapons?.Firing is { } firing)
+        {
+            (_gunfire ??= new Weapons.Igi2RemoteGunfire(firing, Human)).Take(target.Shots);
+        }
+
         if (Human.Locomotion.CurrentState != target.State)
         {
             Human.Locomotion.Enter(target.State, Human);
         }
 
-        Human.Ticks = (int)tick;
         Human.Update(_frame);
         Human.Position = target.Position.ToVector();
         Human.Speed = target.Velocity;

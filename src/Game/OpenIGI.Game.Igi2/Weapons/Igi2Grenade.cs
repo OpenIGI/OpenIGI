@@ -109,6 +109,12 @@ public sealed class Igi2NoGrenadeEffects : IIgi2GrenadeEffects
 /// <summary>A thrown grenade in flight, <c>Grenade_s</c>: a physics object with a fuse.</summary>
 public sealed class Igi2Grenade : IDynamicTask
 {
+    /// <summary>
+    /// Gets or sets a value indicating whether it is a co-op client's copy of another machine's: it flies, but where it would go
+    /// off it is simply spent, the server's blast being shown in its stead.
+    /// </summary>
+    public bool IsReplica { get; init; }
+
     /// <summary>The gravity a grenade falls by, <c>Grenade_Move</c> (<c>igi2 0x483FE0</c>): units a tick squared.</summary>
     public const float Gravity = 44.600887f;
 
@@ -293,7 +299,7 @@ public sealed class Igi2Grenade : IDynamicTask
             effects.FlashBang(Position, _ground.Intersections[0], Throw.Thrower is Humans.Igi2Human human ? human.Team : -1);
         }
 
-        if (Kind == Igi2GrenadeKind.Normal)
+        if (Kind == Igi2GrenadeKind.Normal && !IsReplica)
         {
             Igi2GrenadeParameters p = Throw.Parameters;
             effects.Explode(new Igi2GrenadeExplosion(
@@ -370,6 +376,12 @@ public sealed class Igi2Grenades(
     /// <summary>Gets or sets what a grenade's end shows and does.</summary>
     public IIgi2GrenadeEffects Effects { get; set; } = new Igi2NoGrenadeEffects();
 
+    /// <summary>
+    /// Gets or sets a value indicating whether what is launched now is a co-op client's copy of another machine's
+    /// (<see cref="Igi2WeaponFiring.Replay"/>): each grenade and rocket made then is a replica.
+    /// </summary>
+    public bool LaunchingReplicas { get; set; }
+
     /// <summary>Gets or sets where an impact grenade's blast goes off, or <see langword="null"/> for a level where none can.</summary>
     public Igi2ExplosionWorld? Explosions { get; set; }
 
@@ -413,7 +425,7 @@ public sealed class Igi2Grenades(
             return;
         }
 
-        Igi2Missile flying = new(launch, model, type, missile, models(model), World, explosions, MissileStream, LevelTick);
+        Igi2Missile flying = new(launch, model, type, missile, models(model), World, explosions, MissileStream, LevelTick) { IsReplica = LaunchingReplicas };
         flying.StartSound(MissileSounds);
         Dynamic.Add(flying);
     }
@@ -425,7 +437,7 @@ public sealed class Igi2Grenades(
         ArgumentNullException.ThrowIfNull(fireType);
         if (Explosions is { } explosions)
         {
-            Dynamic.Add(new Igi2ImpactGrenade(launch, Igi2ImpactGrenadeParameters.Of(fireType), explosions, World.Query));
+            Dynamic.Add(new Igi2ImpactGrenade(launch, Igi2ImpactGrenadeParameters.Of(fireType), explosions, World.Query) { IsReplica = LaunchingReplicas });
         }
     }
 
@@ -479,6 +491,6 @@ public sealed class Igi2Grenades(
             _logger.Warning("Grenade", $"No physics object type for {weapon.FixedModel}: the grenade does not fly.");
         }
 
-        Dynamic.Add(new Igi2Grenade(grenade, model, body, kind, this));
+        Dynamic.Add(new Igi2Grenade(grenade, model, body, kind, this) { IsReplica = LaunchingReplicas });
     }
 }

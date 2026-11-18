@@ -578,6 +578,9 @@ public sealed partial class Igi2GunPickup
         return true;
     }
 
+    /// <summary>Marks the pickup for deleting, nobody given it: on a co-op client, a weapon another player took on the server.</summary>
+    public void TakenElsewhere() => IsDelete = true;
+
     /// <summary>
     /// Gives the human the weapon and marks the pickup for deleting, <c>GunPickup_Pickup</c> (<c>igi2 0x46C010</c>).
     /// </summary>

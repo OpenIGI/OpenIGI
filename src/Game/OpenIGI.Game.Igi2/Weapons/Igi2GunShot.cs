@@ -122,7 +122,7 @@ public sealed record Igi2GunShotHitRecord(Igi2MaterialEffect Effect, WorldInters
 /// that pass within two metres of its head (<see cref="FindHearableIntersections"/>).
 /// </para>
 /// </remarks>
-public sealed class Igi2GunShot
+public sealed partial class Igi2GunShot
 {
     /// <summary>The bullets a shot holds at once, <c>15</c>; one fired past them is counted and lost.</summary>
     public const int MaxInstants = 15;
@@ -172,6 +172,12 @@ public sealed class Igi2GunShot
 
     /// <summary>Gets or sets how the shot traces its bullets.</summary>
     public Igi2GunShotOptions Options { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether its bullets do no harm: a co-op client's copy of another machine's rounds. They fly,
+    /// draw their tracers and leave their marks; a human they strike bleeds, glass breaks, and nothing else is touched or told.
+    /// </summary>
+    public bool IsHarmless { get; set; }
 
     /// <summary>Gets the bullets until the next tracer, <c>GunShot+0xA8</c>: drawn at zero, then five more without.</summary>
     public int TracerCountdown { get; private set; } = TracerInterval;
@@ -253,7 +259,10 @@ public sealed class Igi2GunShot
             return;
         }
 
-        world.EvaluateGunShot(this, shooter);
+        if (!IsHarmless)
+        {
+            world.EvaluateGunShot(this, shooter);
+        }
         uint groups = ObjectGroups | ((Options & Igi2GunShotOptions.IgnoreTerrain) == 0 ? Igi2CollisionWorld.TerrainGroup : 0u);
         WeaponCollisionQuery query = new(shooter, Ignore, hitProbability);
         _trace.Mesh = 0;
@@ -466,7 +475,11 @@ public sealed class Igi2GunShot
         float damage = ((falloff * bullet.DamageFactor) * left).F;
         Vector3f shot = new((new Fpu(end.X) - start.X).F, (new Fpu(end.Y) - start.Y).F, (new Fpu(end.Z) - start.Z).F);
         object? struck = hit.HitObject?.Handler ?? hit.HitObject?.Owner;
-        if (struck is IWeaponHitTarget target)
+        if (IsHarmless)
+        {
+            StrikeHarmlessly(struck, hit, damage, shot, shooter, bullet);
+        }
+        else if (struck is IWeaponHitTarget target)
         {
             // The engine's WeaponHit to whatever was struck; one of this game's takes it whole.
             Igi2WeaponHit own = new(hit, damage, shot, shooter, bullet.WeaponType, bullet.AmmoType);
@@ -486,8 +499,11 @@ public sealed class Igi2GunShot
             uint draw = shooter.Random.NextRaw();
             string sound = material?.BulletHitSounds[(int)(draw % 6)] ?? string.Empty;
             rung = effects.NewSound(sound, hit.Position);
-            Vector3f back = new((new Fpu(bullet.Direction.X) * -1.0f).F, (new Fpu(bullet.Direction.Y) * -1.0f).F, (new Fpu(bullet.Direction.Z) * -1.0f).F);
-            effects.SendAiEvent(new Igi2WeaponAiEvent(StrikeEvent, StrikeFlags, StrikeRadius, hit.Position, back, shooter.Team, shooter));
+            if (!IsHarmless)
+            {
+                Vector3f back = new((new Fpu(bullet.Direction.X) * -1.0f).F, (new Fpu(bullet.Direction.Y) * -1.0f).F, (new Fpu(bullet.Direction.Z) * -1.0f).F);
+                effects.SendAiEvent(new Igi2WeaponAiEvent(StrikeEvent, StrikeFlags, StrikeRadius, hit.Position, back, shooter.Team, shooter));
+            }
         }
 
         float penetration = (new Fpu(bullet.Penetration) - (material?.PenetrationPower ?? 0f)).F;

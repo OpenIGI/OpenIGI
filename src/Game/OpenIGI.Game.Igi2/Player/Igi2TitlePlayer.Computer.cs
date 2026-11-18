@@ -186,6 +186,14 @@ public sealed partial class Igi2TitlePlayer
             return;
         }
 
+        // A co-op session's other players, marked as the player is, wherever they stand: a teammate is always known.
+        if (_networkHumans.Exists(other => ReferenceEquals(other.Human, human)))
+        {
+            _mapMarks.Add(new Igi2ComputerMapMark(
+                Igi2ComputerMarkKind.Marker, human.Position, Marker: Igi2ComputerMarker.Triangle, Colour: Igi2ComputerMarkerColour.BrightGreen, Gamma: human.Gamma));
+            return;
+        }
+
         Vector3d head = new(human.Position.X, human.Position.Y, human.Position.Z + 4096.0);
         if (CollisionWorld is { } world)
         {

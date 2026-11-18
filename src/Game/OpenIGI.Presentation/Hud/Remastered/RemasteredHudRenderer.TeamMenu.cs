@@ -7,14 +7,14 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// A team match's team menu: across the middle of the screen, a card for each side -- its number key, its name in its colour,
 /// how many play on it and who -- this player's own edged and marked, a side it can't join greyed and marked full; then a
 /// narrower card to be put on the fairer side, and how to choose below.
 /// </content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     // The most names a side's card lists before it says how many more.
     private const int TeamCardNames = 8;

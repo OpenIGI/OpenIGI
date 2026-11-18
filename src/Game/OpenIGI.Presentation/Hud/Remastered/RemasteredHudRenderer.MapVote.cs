@@ -7,14 +7,14 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// The vote for the next map, under a decided match's card: a card for each map offered -- its number key, its mission's plate,
 /// its name and mode, and a bar of the votes it has -- the player's own pick edged in amber and the one leading marked, the time
 /// left and how many have voted above them, and how to vote below.
 /// </content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     // The amber the front end draws its choices in, and the cards' faces.
     private static Bgra32 VoteAccent => Bgra32.FromRgb(232, 163, 59);

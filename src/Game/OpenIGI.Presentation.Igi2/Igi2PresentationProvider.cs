@@ -47,6 +47,11 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     public Igi2PresentationProvider() =>
         Presenters = new PresenterRegistry()
             .Add<HudPresentationRequest, ITitleHudPresenter>(CreateTitleHud)
+
+            // The session's overlays -- the scoreboard, the co-op talk, the fallen teammates, the names over heads -- are both
+            // games' own: the shared remastered display draws them over either title's HUD.
+            .Add<HudPresentationRequest, IRemasteredHudPresenter>(static (in HudPresentationRequest request) =>
+                new OpenIGI.Presentation.Hud.Remastered.RemasteredHudRenderer(request.Device, request.Logger))
             .Add<ViewModelPresentationRequest, ITitleViewModelPresenter>(CreateTitleViewModel)
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)

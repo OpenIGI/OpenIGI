@@ -9,14 +9,14 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// A multiplayer mode's HUD: the score strip across the top (each side's score and players, the clock between, the bomb's
 /// fuse in its place once planted), the role and the mode under it, a plant or defuse in progress and what the player can do
 /// where it stands under the crosshair, and a decided round's or match's card across the middle.
 /// </content>
-internal sealed partial class RemasteredHudRenderer
+public sealed partial class RemasteredHudRenderer
 {
     // The player's own side, the other, and the strip's faces.
     private static Bgra32 Ally => Bgra32.FromRgb(86, 172, 255);

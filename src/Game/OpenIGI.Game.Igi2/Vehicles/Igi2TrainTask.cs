@@ -238,6 +238,11 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
     public void UpdateAnimData(Igi2AnimUpdate update)
     {
         ArgumentNullException.ThrowIfNull(update.Program);
+        if (IsPuppet)
+        {
+            return;
+        }
+
         float thrust = update.Program.Channels[0];
         if (thrust != HoldThrust)
         {
@@ -301,7 +306,7 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
 
         // DeathZone_RunHandler: a carriage's kill boxes take its locomotive's speed, which moves them while it is not nought.
         float speed = Parent is Igi2TrainTask engine ? engine._speed : _speed;
-        if (_deathZones.Count > 0 && speed != 0f)
+        if (!IsPuppet && _deathZones.Count > 0 && speed != 0f)
         {
             Igi2Pose pose = Igi2Pose.FromMatrix(_at, Rows(_orientation));
             foreach (Igi2DeathZone zone in _deathZones)

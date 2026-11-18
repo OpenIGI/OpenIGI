@@ -12,15 +12,15 @@ using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Hud.Remastered;
 
-/// <summary>The remaster's tactical, resolution-independent in-game HUD.</summary>
+/// <summary>The remaster's tactical, resolution-independent in-game HUD, and every session's overlays on it, for either title.</summary>
 /// <remarks>
 /// The status screen remains the faithful retail renderer.  This deliberately consumes the same live
 /// player, weapon and objective data but presents it with the modern shell's distance-field fonts and
 /// layout system, so changing the surface cannot change the simulation behind it.
 /// </remarks>
-internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
+public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
 {
     /// <summary>Leaves breathing room below the compact objective readout for the modern comms cards.</summary>
     public const float MessageTopInsetDesign = 116f;
@@ -53,6 +53,9 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
     private InteractionBadgeSprite? _badge;
     private bool _disposed;
 
+    /// <summary>Initializes a new instance of the <see cref="RemasteredHudRenderer"/> class.</summary>
+    /// <param name="device">The graphics device it uploads through.</param>
+    /// <param name="logger">Where its load reports.</param>
     public RemasteredHudRenderer(IGraphicsDevice device, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -61,8 +64,10 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         _logger = logger;
     }
 
+    /// <inheritdoc/>
     public bool IsReady => _body is not null;
 
+    /// <inheritdoc/>
     public bool Load()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -100,6 +105,7 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         }
     }
 
+    /// <inheritdoc/>
     public void Draw(SpriteBatch batch, in RemasteredHudSnapshot snapshot, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
@@ -459,6 +465,7 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
             Accent);
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
