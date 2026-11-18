@@ -26,7 +26,13 @@ public sealed partial class MultiplayerScreen
     private static readonly int[] ToughnessChoices = [0, 50, 100, 150];
 
     // The modes a game is hosted in, co-op first.
-    private static readonly string[] HostModes = [MatchModes.Coop, MatchModes.TeamDeathmatch, MatchModes.FreeForAll, MatchModes.Elimination, MatchModes.SearchAndDestroy];
+    private static readonly string[] AllHostModes = [MatchModes.Coop, MatchModes.TeamDeathmatch, MatchModes.FreeForAll, MatchModes.Elimination, MatchModes.SearchAndDestroy];
+
+    // I.G.I. 2 is hosted in co-op alone for now: its versus modes are not ready to be played.
+    private static readonly string[] CoopOnly = [MatchModes.Coop];
+
+    // The modes the game being played may be hosted in.
+    private string[] HostModes => Context.ActiveTitleId == GameTitle.Igi2.Id ? CoopOnly : AllHostModes;
 
     private int _hostMode;
     private int _mission;
@@ -54,7 +60,11 @@ public sealed partial class MultiplayerScreen
     private GlassPanel BuildGameSettings(UiTheme theme, ICoopRooms coop)
     {
         StackPanel column = FormColumn(theme, "Game");
-        OptionCycler mode = Row(theme, "Mode", [.. HostModes.Select(MatchModes.Title)], _hostMode, "Co-op plays the mission against its guards, together. The others play its map as an arena, the guards gone, one side against the other or everyone for themselves.");
+        string modeHint = HostModes.Length == 1
+            ? "Co-op plays the mission against its guards, together. This game's other modes are not ready yet."
+            : "Co-op plays the mission against its guards, together. The others play its map as an arena, the guards gone, one side against the other or everyone for themselves.";
+        _hostMode = Math.Clamp(_hostMode, 0, HostModes.Length - 1);
+        OptionCycler mode = Row(theme, "Mode", [.. HostModes.Select(MatchModes.Title)], _hostMode, modeHint);
         mode.SelectionChanged += index =>
         {
             _hostMode = index;
