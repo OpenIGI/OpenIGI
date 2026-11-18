@@ -90,6 +90,20 @@ public interface IForestPresenter : IDisposable
     /// <summary>Draws the foliage.</summary>
     /// <param name="frame">The frame to draw for.</param>
     void Draw(in ForestFrame frame);
+
+    /// <summary>
+    /// Draws the foliage the last <see cref="Draw(in ForestFrame)"/> left to blend, over the finished picture: after every body,
+    /// tested against the depth and writing none.
+    /// </summary>
+    /// <param name="camera">The camera the frame is drawn from.</param>
+    /// <remarks>
+    /// Blended where the trunks are drawn, its leaves wrote their depth over the whole of each leaf card, the faintest fringe
+    /// included, and every body drawn after them -- a guard, a co-op partner -- failed the depth test behind a bush the
+    /// picture showed the ground through.
+    /// </remarks>
+    void DrawBlended(in Camera3D camera)
+    {
+    }
 }
 
 /// <summary>Draws a title's water.</summary>

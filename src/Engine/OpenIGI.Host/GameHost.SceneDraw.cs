@@ -384,6 +384,50 @@ public sealed partial class GameHost
         _device.SetFirstPersonGeometry(false);
     }
 
+    /// <summary>
+    /// Draws the leaves the forest left to blend, over every body in the picture, in the air and through the windows the scene
+    /// pass drew the forest in.
+    /// </summary>
+    /// <param name="eye">The camera.</param>
+    /// <remarks>
+    /// Blended in the scene pass, with the trunks, the leaves wrote their depth over the whole of each card, and every guard and
+    /// co-op partner drawn after them vanished behind a bush the picture showed the ground through.
+    /// </remarks>
+    private void DrawBlendedForest(in Camera3D eye)
+    {
+        if (_forest is not { } forest || _world?.Visibility?.IsOutsideVisible == false)
+        {
+            return;
+        }
+
+        bool retailFog = FogCVars.RetailFog.Value && !ComputerMapClear;
+        bool retailForest = retailFog && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+        if (retailForest)
+        {
+            _device.SetFog(RetailAir(_globalLight.ObjectFog) with
+            {
+                DensityPerMetre = RetailAir(_globalLight.TerrainFog).DensityPerMetre * 0.8f,
+            });
+        }
+
+        ViewClip? outsideClip = _world?.Visibility?.OutsideClip;
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(outsideClip);
+        }
+
+        forest.DrawBlended(eye);
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(null);
+        }
+
+        if (retailForest)
+        {
+            _device.SetFog(RetailAir(_globalLight.ObjectFog));
+        }
+    }
+
     /// <summary>Draws what the forward pass owns over the lit picture: the translucent world, the water, the light streaks, the effects and the weather.</summary>
     private void DrawForwardPass(
         HostConsole console, bool captured, Camera3D eye, Matrix4f projection, MapSceneView? mapScene, RenderResolution resolution,
@@ -446,6 +490,8 @@ public sealed partial class GameHost
         {
             _world.Draw(_scene, eye, projection, new WorldDrawOptions(FromEye: true, BlendedOnly: true));
         }
+
+        DrawBlendedForest(eye);
 
         // The level's glazing, over a picture the lighting has finished. It has to follow the
         // opaque world for the ordinary reason anything blended does, and it is a pass of its own

@@ -206,7 +206,8 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// Three passes, because the original has three state blocks and switches between them per face
     /// group. The trunks go first and opaque; then the foliage, which is alpha-tested and so still belongs
     /// in the opaque pass — the original's alpha-test block leaves <c>ALPHABLENDENABLE</c> off; then, when
-    /// <see cref="SortedFoliage"/> is set, the foliage instead goes last and blended, back to front.
+    /// <see cref="SortedFoliage"/> is set or the original's look asks for high-quality forests, the foliage instead goes last
+    /// and blended, back to front: sorted here, and drawn by <see cref="DrawBlended"/> once every body is in the picture.
     /// </para>
     /// <para>
     /// Grouping by pass rather than by tree is a departure: <c>ForestRender_Draw</c> walks one tree's face
@@ -223,6 +224,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _visible.Clear();
+        _blendedReference = null;
 
         // The cull runs in engine units, because everything it measures is: a stand's centre and half
         // extent, a tree's position, and the ViewCutoff the level authored in metres and the load
@@ -277,9 +279,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
             }
 
             _visible.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
-            _device.SetAlphaReference(RetailBlendedAlphaReference);
-            Issue(camera, static s => s.Foliage, BlendMode.AlphaBlend, doubled: true);
-            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+            _blendedReference = RetailBlendedAlphaReference;
             return;
         }
 
@@ -299,7 +299,39 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         // Back to front, which is what SortRender_AllocItem's key buys: it takes the view-space depth of
         // the face group's first vertex and the sort renderer replays the items in that order.
         _visible.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
-        Issue(camera, static s => s.Foliage, BlendMode.AlphaBlend, doubled: true);
+        _blendedReference = IGraphicsDevice.DefaultAlphaReference;
+    }
+
+    // The alpha cut the leaves left to blend are drawn at, or null when this frame's leaves were all cut out where the trunks are.
+    private byte? _blendedReference;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The original's sorted foliage goes through <c>SortRender_AllocItem</c> and comes back from the sort renderer at the end of
+    /// the frame, after every human, as <c>ForestRender_DrawSortedFaceGroup</c> (<c>0x57E270</c>) under
+    /// <c>Direct3DRender_SetBlendStateTransparent</c>, which writes no depth.
+    /// </remarks>
+    public void DrawBlended(in Camera3D camera)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_blendedReference is not { } reference)
+        {
+            return;
+        }
+
+        _blendedReference = null;
+        _device.SetCullMode(CullMode.CounterClockwise);
+        _device.SetDepthState(DepthState.TestOnly);
+        _device.SetAlphaReference(reference);
+        try
+        {
+            Issue(camera, static s => s.Foliage, BlendMode.AlphaBlend, doubled: true);
+        }
+        finally
+        {
+            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+            _device.SetDepthState(DepthState.TestAndWrite);
+        }
     }
 
     /// <summary>Builds a tree's orientation, with its per-axis scale folded in.</summary>
