@@ -41,10 +41,13 @@ public sealed class LocalFileDevice : IFileDevice
     }
 
     // One entry per directory the fallback has had to look inside, mapping a lower-cased child name to
-    // the name the filesystem actually holds. Built lazily and never invalidated: it is consulted only
-    // after an exact-case lookup has already failed, and a file written while the game runs is written
-    // through the name the writer used, which is the name the exact lookup then finds.
-    private readonly Dictionary<string, Dictionary<string, string>> _foldedDirectories =
+    // the name the filesystem actually holds, with the directory's write time when it was listed. Built
+    // lazily; consulted only after an exact-case lookup has already failed. A name it does not hold is
+    // looked for again only when the directory has been written since: files can arrive after the game
+    // first looked -- a browser writes a mission's files into its in-memory disk when the mission is
+    // chosen, into folders the game listed at start-up -- and a listing kept from before they came left
+    // I.G.I. 2's upper-case folders reporting a level's terrain and sounds absent though they were there.
+    private readonly Dictionary<string, (Dictionary<string, string> Children, DateTime Written)> _foldedDirectories =
         new(StringComparer.Ordinal);
 
     /// <summary>Gets the absolute directory device-relative paths resolve against.</summary>
@@ -256,32 +259,48 @@ public sealed class LocalFileDevice : IFileDevice
 
     private bool TryFoldChild(string directory, string name, out string actual)
     {
-        Dictionary<string, string>? children;
         lock (_foldedDirectories)
         {
-            if (!_foldedDirectories.TryGetValue(directory, out children))
+            if (!_foldedDirectories.TryGetValue(directory, out (Dictionary<string, string> Children, DateTime Written) listed))
             {
-                children = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                if (Directory.Exists(directory))
-                {
-                    foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
-                    {
-                        string entryName = Path.GetFileName(entry);
-                        children.TryAdd(entryName, entryName);
-                    }
-                }
-
-                _foldedDirectories[directory] = children;
+                listed = List(directory);
+                _foldedDirectories[directory] = listed;
             }
-        }
+            else if (!listed.Children.ContainsKey(name) && WrittenAt(directory) != listed.Written)
+            {
+                // Not there when it was listed, and the directory has changed since: list it again.
+                listed = List(directory);
+                _foldedDirectories[directory] = listed;
+            }
 
-        if (children.TryGetValue(name, out string? found))
-        {
-            actual = found;
-            return true;
+            if (listed.Children.TryGetValue(name, out string? found))
+            {
+                actual = found;
+                return true;
+            }
         }
 
         actual = string.Empty;
         return false;
     }
+
+    private static (Dictionary<string, string> Children, DateTime Written) List(string directory)
+    {
+        Dictionary<string, string> children = new(StringComparer.OrdinalIgnoreCase);
+        DateTime written = WrittenAt(directory);
+        if (Directory.Exists(directory))
+        {
+            foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                string entryName = Path.GetFileName(entry);
+                children.TryAdd(entryName, entryName);
+            }
+        }
+
+        return (children, written);
+    }
+
+    // When a directory was last written, or the minimum for one that does not exist: a folder made later then counts as changed.
+    private static DateTime WrittenAt(string directory) =>
+        Directory.Exists(directory) ? Directory.GetLastWriteTimeUtc(directory) : DateTime.MinValue;
 }
