@@ -29,7 +29,11 @@ public abstract partial class Igi2Human : IAiDetectable
     protected virtual bool IsDetectionActive => true;
 
     /// <inheritdoc/>
-    public bool IsGone => false;
+    /// <remarks>
+    /// A human of the level's own is never gone; another player taken out of the level as its client leaves is, so a camera or
+    /// a guard that had it listed lets it go rather than watching -- and a camera beeping at -- where it last stood.
+    /// </remarks>
+    public bool IsGone { get; internal set; }
 
     /// <summary>
     /// Gets where the eyes are by stance alone, <c>HumanView_GetOriginalViewPosition</c> (<c>igi2 0x4D7150</c>): above the feet by

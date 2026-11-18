@@ -76,6 +76,21 @@ public sealed class Igi2NetworkHuman
     // What shows the rounds the server's copy fires, made once the puppet is first run.
     private Weapons.Igi2RemoteGunfire? _gunfire;
 
+    // The weapon the server's copy holds, carried and put in hand here: it is drawn in the hand, the body is posed holding it,
+    // and the rounds the server's copy fires are fired again from it.
+    private void Hold(int held)
+    {
+        if (held == 0 || Weapons is not { } weapons
+            || weapons.Inventory.HeldForSnapshot == held
+            || weapons.Inventory.WeaponByNumber(held - 1) is not { } item)
+        {
+            return;
+        }
+
+        weapons.Inventory.EnableWeaponType(item.WeaponType.WeaponId, addAmmo: false);
+        weapons.Activate(item);
+    }
+
     private void RunPuppet(long tick, in ReplicatedHuman target)
     {
         Array.Clear(_frame);
@@ -100,6 +115,7 @@ public sealed class Igi2NetworkHuman
             Human.Revive(target.Position.ToVector(), Quantize.AngleFromBits(target.Yaw));
         }
 
+        Hold(target.Weapon);
         if (Weapons?.Firing is { } firing)
         {
             (_gunfire ??= new Weapons.Igi2RemoteGunfire(firing, Human)).Take(target.Shots);

@@ -35,7 +35,7 @@ public sealed partial class Igi2ReplicatedWorld
             Quantize.AngleToBits(pose.Pitch),
             (ushort)Math.Clamp(pose.State, 0, ushort.MaxValue),
             0,
-            (ushort)Math.Clamp(soldier.Weapon.Inventory?.Current?.WeaponType.Id ?? 0, 0, ushort.MaxValue),
+            soldier.Weapon.Inventory?.HeldForSnapshot ?? 0,
             (byte)Math.Round(left * 255),
             (byte)Math.Clamp(soldier.Team, 0, 255),
             pose.Alive ? ReplicatedHumanCondition.Alive : ReplicatedHumanCondition.None,

@@ -445,6 +445,75 @@ public sealed class Igi2CoopPairTests
         Assert.NotEmpty(Assert.Single(pair.Host.NetworkHumans).Human.Model!.BoneNames);
     }
 
+    /// <summary>The joiner's copy of the host holds the weapon the host holds, drawn in its hand and posed with it.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_the_host_holds_the_hosts_weapon()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponTypeTask? held = pair.Host!.Weapons?.Inventory.Current?.WeaponType;
+        Assert.NotNull(held);
+
+        Igi2NetworkHuman copy = Assert.Single(pair.Joiner!.NetworkHumans);
+        Assert.True(
+            pair.RunUntil(() => copy.Weapons?.Inventory.Current?.WeaponType.WeaponId == held.WeaponId, 120) >= 0,
+            $"the copy holds {copy.Weapons?.Inventory.Current?.WeaponType.WeaponId ?? "nothing"}, the host {held.WeaponId}");
+    }
+
+    /// <summary>
+    /// A joiner fallen while the host stands is not its own level's "player dead" (HumanPlayer_0.isDead), which shows "Mission
+    /// failed": its level weighs the host's copy beside its own player, as the server's weighs both.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_joiner_down_while_the_host_stands_is_not_its_levels_player_dead()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Assert.True(pair.Joiner!.Level!.Natives.TryResolve("HumanPlayer_0.isDead", out QvmSymbol? isDead));
+
+        Igi2NetworkHuman partner = Assert.Single(pair.Host!.NetworkHumans);
+        partner.Human.Damage.Damage = partner.Human.Damage.MaxDamage + 1f;
+        partner.Human.UpdateDie();
+        Assert.True(pair.RunUntil(() => pair.Joiner.Human.IsDead, 300) >= 0, "the joiner's own player never fell");
+        pair.RunUntil(() => false, 30);
+        Assert.Equal(0, isDead.Variable!.Read().ToInt32());
+    }
+
+    /// <summary>
+    /// Without friendly fire (coop_friendlyfire, off unless the host turns it on, as Project I.G.I.'s co-op has it) the host's
+    /// rounds do its partner no harm, a soldier's still do; with it on, the host's do too.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_teammates_round_does_no_harm_without_friendly_fire()
+    {
+        using Igi2CoopPair pair = Joined();
+        Igi2NetworkHuman partner = Assert.Single(pair.Host!.NetworkHumans);
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponTypeTask gun = pair.Host.Weapons!.Inventory.Current!.WeaponType;
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponHit From(OpenIGI.Game.Igi2.Weapons.IIgi2WeaponOwner? shooter) =>
+            new(new OpenIGI.Game.Physics.WorldIntersection { Position = partner.Human.Position }, 0.05f, new OpenIGI.Core.Numerics.Vector3f(-40960f, 0f, 0f), shooter, gun, null);
+
+        float before = partner.Human.Damage.Damage;
+        partner.Human.WeaponHit(From(pair.Host.Human));
+        Assert.Equal(before, partner.Human.Damage.Damage);
+        pair.Host.Human.WeaponHit(From(partner.Human));
+        Assert.Equal(0f, pair.Host.Human.Damage.Damage);
+
+        partner.Human.WeaponHit(From(null));
+        Assert.True(partner.Human.Damage.Damage > before, "a soldier's round did the partner no harm");
+
+        float soldierHurt = partner.Human.Damage.Damage;
+        CoopCVars.FriendlyFire.Value = true;
+        try
+        {
+            partner.Human.WeaponHit(From(pair.Host.Human));
+            Assert.True(partner.Human.Damage.Damage > soldierHurt, "with friendly fire on the host's round did no harm");
+        }
+        finally
+        {
+            CoopCVars.FriendlyFire.Value = false;
+        }
+    }
+
     internal static Igi2CoopPair Joined(params string[] hostArgs) => JoinedOn(Igi2CoopPair.FirstMission, hostArgs);
 
     internal static Igi2CoopPair JoinedOn(int mission, params string[] hostArgs)

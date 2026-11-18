@@ -37,6 +37,15 @@ public sealed partial class Igi2ReplicatedWorld
     /// <remarks>A campaign mission: a fallen player lies where it fell until a teammate stands by it (<see cref="CoopSquad"/>).</remarks>
     public bool HoldsTheDead => !IsMatchMap;
 
+    // Whether a round or blast does a player no harm: in a campaign mission played together without friendly fire
+    // (coop_friendlyfire, as Project I.G.I.'s co-op has it), one from another of the session's players. Its own still hurts it.
+    private bool Spared(Igi2HumanPlayer struck, Weapons.IIgi2WeaponOwner? by) =>
+        HoldsTheDead
+        && !CoopCVars.FriendlyFire.Value
+        && by is Igi2HumanPlayer shooter
+        && !ReferenceEquals(shooter, struck)
+        && (ReferenceEquals(shooter, _level.Human) || _bySlot.Values.Any(p => ReferenceEquals(p.Human, shooter)));
+
     /// <inheritdoc/>
     public float? ReviveProgressOf(int entity) => HumanOf(entity) is { IsDead: true } ? _squad.ReviveProgressOf(entity) : null;
 

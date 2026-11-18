@@ -172,6 +172,7 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
         }
 
         _networkHumans.Add(player);
+        player.Human.IsGone = false;
         (MapHumans as List<Igi2Human>)?.Add(player.Human);
         if (player.Human.Collider is { } collider)
         {
@@ -192,10 +193,20 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
     /// <returns>The puppet, or <see langword="null"/> when the level was made without a spawn kit.</returns>
     /// <remarks>
     /// The soldiers, the areas, the smoke and the blasts are the server's to weigh against its players: a client that put its
-    /// copies in their lists had its own guards hunt them, and its own areas and alarms counted them.
+    /// copies in their lists had its own guards hunt them, and its own areas and alarms counted them. The scripts' "player dead"
+    /// weighs them, though, as the server's does its players: a client fallen while its partners stand is not the mission lost,
+    /// and its own level showed "Mission failed" when it weighed itself alone.
     /// </remarks>
-    public Igi2NetworkHuman? AddPartnerPuppet(string model, Vector3d position, float gamma, int team) =>
-        MakeOtherPlayer(model, position, gamma, team);
+    public Igi2NetworkHuman? AddPartnerPuppet(string model, Vector3d position, float gamma, int team)
+    {
+        if (MakeOtherPlayer(model, position, gamma, team) is not { } puppet)
+        {
+            return null;
+        }
+
+        ScriptPlayers?.Add(puppet.Human);
+        return puppet;
+    }
 
     // Another player made and stood in the level's humans, in neither the soldiers' nor the level's lists yet.
     private Igi2NetworkHuman? MakeOtherPlayer(string model, Vector3d position, float gamma, int team)
@@ -228,6 +239,7 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
         }
 
         Igi2HumanPlayer human = player.Human;
+        human.IsGone = true;
         (MapHumans as List<Igi2Human>)?.Remove(human);
         (Ai?.Detection ?? _surroundings.Detection)?.Remove(human);
         Explosions?.RemoveTarget(human);

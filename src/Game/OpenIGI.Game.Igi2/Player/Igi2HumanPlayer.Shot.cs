@@ -43,6 +43,12 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// <summary>Gets or sets when a passing bullet was last heard, shared for the whole run of the game.</summary>
     public Igi2WhizzbyClock WhizzbyClock { get; set; } = new();
 
+    /// <summary>
+    /// Gets or sets whether a round or blast from someone does this player no harm, which the original never needed: in a co-op
+    /// room without friendly fire, another player's (<c>coop_friendlyfire</c>). Null for none spared.
+    /// </summary>
+    public Func<IIgi2WeaponOwner?, bool>? Spares { get; set; }
+
     /// <summary>Gets or sets the level's tick, <c>LevelFlow_ptLevelFlow-&gt;nTick</c>.</summary>
     public Func<int> LevelTick { get; set; } = static () => 0;
 
@@ -61,6 +67,11 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// </remarks>
     public void WeaponHit(in Igi2WeaponHit hit)
     {
+        if (Spares?.Invoke(hit.Shooter) == true)
+        {
+            return;
+        }
+
         Weapon.LeaveZoomAlternateFireMode();
         Fpu damage = hit.Damage;
         damage = Difficulty switch

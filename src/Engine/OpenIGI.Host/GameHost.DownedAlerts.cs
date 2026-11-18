@@ -31,9 +31,11 @@ public sealed partial class GameHost
             {
                 _downAlerts.RemoveAll(a => a.Name == mark.Name);
                 _downAlerts.Add((mark.Name, mark.AnchorMetres, now));
+                // Once: the alert's sound is a definition another use may loop -- I.G.I. 2's camera alarm beep, the default,
+                // loops until its camera stops it -- and nothing would stop it here.
                 if (HudCVars.DownedSound.Value is { Length: > 0 } sound)
                 {
-                    _audioOut.Sounds?.PlayDefinition(sound, priority: 200);
+                    _audioOut.Sounds?.PlayDefinition(sound, priority: 200, looping: false);
                 }
             }
         }

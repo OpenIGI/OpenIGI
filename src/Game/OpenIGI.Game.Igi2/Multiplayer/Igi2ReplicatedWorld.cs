@@ -39,6 +39,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         _level = level ?? throw new ArgumentNullException(nameof(level));
         _level.NetworkRewind = RewindFor;
         _level.Marks = this;
+        _level.Human.Spares = by => Spared(_level.Human, by);
 
         // Every explosion the level sets off is told to the clients, who show what their own players did not set off.
         _level.Explosions?.Started = request => _blasts.Note(EntityOf(request.Owner), request);
@@ -228,10 +229,12 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         return slot + 1;
     }
 
-    // A client's player put in its slot, armed with the mission's loadout, and heard as it fires.
+    // A client's player put in its slot, armed with the mission's loadout, heard as it fires, and spared its teammates' fire.
     private void Seat(int slot, Igi2NetworkHuman human)
     {
         _bySlot[slot] = human;
+        Igi2HumanPlayer struck = human.Human;
+        struck.Spares = by => Spared(struck, by);
         Arm(human);
         HearLaunches(human.Weapons?.Firing, () => EntityOf(human.Human));
     }
@@ -379,7 +382,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             Quantize.AngleToBits(human.View.Pitch),
             (ushort)Math.Clamp(human.Locomotion.CurrentState, 0, ushort.MaxValue),
             (ushort)Math.Clamp(human.ActionState, 0, ushort.MaxValue),
-            (ushort)Math.Clamp(human.Weapon.Inventory?.Current?.WeaponType.Id ?? 0, 0, ushort.MaxValue),
+            human.Weapon.Inventory?.HeldForSnapshot ?? 0,
             (byte)Math.Round(left * 255),
             (byte)Math.Clamp(human.Team, 0, 255),
             condition,

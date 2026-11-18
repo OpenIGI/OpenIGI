@@ -168,6 +168,9 @@ public sealed class Igi2Inventory : ISavedState
     /// <returns>The item, or <see langword="null"/> for a number no weapon has.</returns>
     public Igi2WeaponItem? WeaponByNumber(int number) => (uint)number < (uint)_weapons.Length ? _weapons[number] : null;
 
+    /// <summary>Gets the weapon in hand as a snapshot names it: its number plus one, nought for none (<see cref="WeaponByNumber"/>).</summary>
+    public ushort HeldForSnapshot => Current is { } held ? (ushort)Math.Clamp(held.Number + 1, 0, ushort.MaxValue) : (ushort)0;
+
     /// <summary>Finds a weapon by the name of its constant.</summary>
     /// <param name="weaponId">The name, <c>WEAPON_ID_*</c>.</param>
     /// <returns>The item, or <see langword="null"/>.</returns>
