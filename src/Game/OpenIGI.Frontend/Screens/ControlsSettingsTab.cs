@@ -47,6 +47,15 @@ internal static class ControlsSettingsTab
             "Tilting the top of the phone away looks down instead of up."),
     ];
 
+    // How the movement keys behave, as the player likes them.
+    private static readonly GraphicsSetting[] MovementSettings =
+    [
+        new GraphicsSetting(
+            "in_crouch_toggle",
+            "Toggle Crouch",
+            "Press crouch once to crouch and again to stand, rather than holding it down."),
+    ];
+
     /// <summary>Builds the category's groups.</summary>
     /// <param name="context">The shared shell context.</param>
     /// <param name="rowBuilder">What the touch screen's rows are built with.</param>
@@ -160,7 +169,12 @@ internal static class ControlsSettingsTab
 
         resetBindings = Reset;
 
-        List<SettingsGroup> groups = [BuildBand(context, theme, grouped, Reset), SettingsGroup.Of("Mouse", [sensitivity, invert])];
+        List<SettingsGroup> groups =
+        [
+            BuildBand(context, theme, grouped, Reset),
+            SettingsGroup.Of("Mouse", [sensitivity, invert]),
+            SettingsGroup.Of("Movement", rowBuilder.SettingRows(theme, MovementSettings)),
+        ];
         if (context.Host.TouchScreen)
         {
             List<Control> touchRows = rowBuilder.SettingRows(theme, TouchSettings);

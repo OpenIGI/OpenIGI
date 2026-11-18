@@ -28,6 +28,9 @@ namespace OpenIGI.Host;
 /// </remarks>
 public sealed partial class GameHost
 {
+    // Crouch made a toggle where the player has it so (in_crouch_toggle).
+    private readonly HoldToggle _crouchToggle = new();
+
     private const double TitleUnitsPerMetre = WorldUnits.PerMetre;
 
     // What stood the player now standing: the title's own gameplay, or one the session's content provides in its stead.
@@ -253,6 +256,13 @@ public sealed partial class GameHost
 
         PlayerProfile? profile = _configuration.Active;
         PlayerAction replaced = Gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
+        ulong titleHeld = !still && Gameplay is { } sampled ? TitleInputBindings.Sample(profile, TitleInput, sampled.InputBindings, pressed: false) : 0;
+
+        // Crouch, held or toggled as the player has it: a shared action, or the title's own bit that stands for it.
+        ulong titleCrouch = Gameplay is { } crouching ? crouching.InputBindings.Where(static b => b.Replaces == PlayerAction.Crouch).Aggregate(0UL, static (mask, b) => mask | b.Mask) : 0;
+        bool crouch = _crouchToggle.Apply((held & PlayerAction.Crouch) != 0 || (titleHeld & titleCrouch) != 0, PlayerControlCVars.CrouchToggle.Value);
+        held = crouch ? held | PlayerAction.Crouch : held & ~PlayerAction.Crouch;
+        titleHeld = crouch ? titleHeld | titleCrouch : titleHeld & ~titleCrouch;
 
         // The computer's key opens the mission's computer, not the title's own, where the mission's serves it.
         if (TitleUsesMissionComputer)
@@ -274,7 +284,7 @@ public sealed partial class GameHost
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
-            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, TitleInput, gameplay.InputBindings, pressed: false) : 0,
+            TitleHeld: titleHeld,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys())));
         observer?.AfterTitleTick(player);
