@@ -214,6 +214,12 @@ public sealed partial class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, I
             return false;
         }
 
+        // A co-op server's mine laid on a client lies still: the server's goes off, and its blast comes with the server's.
+        if (IsReplica)
+        {
+            return true;
+        }
+
         _explosive.Run(null);
         ProximityMineStep step = _fuse.Run();
         if (step.ArmedNow)
@@ -242,8 +248,19 @@ public sealed partial class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, I
     /// <param name="human">The human.</param>
     /// <param name="position">Its place, a metre up.</param>
     /// <param name="radius">Its size.</param>
-    public void Notify(Igi2Human human, Vector3d position, float radius) =>
-        _fuse.Sense(Position, new Vector3f(_frame[1], _frame[4], _frame[7]), position, radius);
+    public void Notify(Igi2Human human, Vector3d position, float radius)
+    {
+        if (!IsReplica)
+        {
+            _fuse.Sense(Position, new Vector3f(_frame[1], _frame[4], _frame[7]), position, radius);
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether it is a co-op server's mine laid on a client (<see cref="Player.Igi2LevelMines.IsReplica"/>):
+    /// seen and solid, but never armed, set off or struck here.
+    /// </summary>
+    public bool IsReplica { get; init; }
 
     /// <summary>The computer's map sets a remote mine off, <c>ComputerMap_Trace</c>: it explodes nine ticks on.</summary>
     public void DetonateFromMap() => _fuse.SetOffFromMap();
@@ -255,10 +272,22 @@ public sealed partial class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, I
     public bool IsExploded => _explosive.IsExploded;
 
     /// <inheritdoc/>
-    public void WeaponHit(in Igi2WeaponHit hit) => _explosive.WeaponHit(hit, this);
+    public void WeaponHit(in Igi2WeaponHit hit)
+    {
+        if (!IsReplica)
+        {
+            _explosive.WeaponHit(hit, this);
+        }
+    }
 
     /// <inheritdoc/>
-    public void ExplosionHit(in Igi2ExplosionHit hit) => _explosive.ExplosionHit(hit);
+    public void ExplosionHit(in Igi2ExplosionHit hit)
+    {
+        if (!IsReplica)
+        {
+            _explosive.ExplosionHit(hit);
+        }
+    }
 
     // The name an exploding object's script would be compiled under; a mine has no script.
     private sealed class Igi2MineTaskName : Igi2Task

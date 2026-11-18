@@ -42,7 +42,9 @@ internal static class Igi2LevelState
     /// <param name="blasts">The explosions lately set off.</param>
     /// <param name="breakingCutscene">Whether the server's cutscene key is held: its skip, which every client's scene follows.</param>
     /// <returns>The state: never nothing, so a client knows the server's word has come.</returns>
-    public static byte[] Capture(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, long tick, Igi2BlastLog blasts, bool breakingCutscene)
+    /// <param name="dropped">The guns lying that the level did not place, and the level's pickups they are among.</param>
+    /// <param name="mines">The mines lying, and the level's mines they are among.</param>
+    public static byte[] Capture(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, long tick, Igi2BlastLog blasts, bool breakingCutscene, (Igi2DroppedGuns Guns, Pickups.Igi2PickupList? Pickups) dropped, (Igi2LaidMines Mines, Player.Igi2LevelMines? World) mines)
     {
         BitWriter writer = new(1024);
         writer.WriteBool(breakingCutscene);
@@ -59,6 +61,8 @@ internal static class Igi2LevelState
         }
 
         blasts.Write(writer);
+        dropped.Guns.Write(writer, dropped.Pickups);
+        mines.Mines.Write(writer, mines.World);
         return writer.AsSpan().ToArray();
     }
 
@@ -74,7 +78,9 @@ internal static class Igi2LevelState
     /// A weapon another player took is taken out of this level, nobody's: this player's own pickups go by its own copy's
     /// walking over them, which the server's copy does too.
     /// </remarks>
-    public static bool Apply(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, byte[] state, Igi2BlastLog blasts, int? ownEntity, Weapons.Igi2ExplosionWorld? explosions)
+    /// <param name="dropped">The guns the server lays that the level did not place, and this level's pickups to lay them among.</param>
+    /// <param name="mines">The mines the server lays, this level's mines to lay them among, and the session's weapons.</param>
+    public static bool Apply(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, byte[] state, Igi2BlastLog blasts, int? ownEntity, Weapons.Igi2ExplosionWorld? explosions, (Igi2DroppedGuns Guns, Pickups.Igi2PickupList? Pickups) dropped, (Igi2LaidMines Mines, Player.Igi2LevelMines? World, Weapons.Igi2WeaponTables? Tables) mines)
     {
         ArgumentNullException.ThrowIfNull(state);
         BitReader reader = new(state);
@@ -101,6 +107,16 @@ internal static class Igi2LevelState
         if (!reader.IsOverflowed)
         {
             blasts.Show(ref reader, ownEntity, explosions);
+        }
+
+        if (!reader.IsOverflowed)
+        {
+            dropped.Guns.Read(ref reader, dropped.Pickups);
+        }
+
+        if (!reader.IsOverflowed)
+        {
+            mines.Mines.Read(ref reader, mines.World, mines.Tables);
         }
 
         return breakingCutscene;

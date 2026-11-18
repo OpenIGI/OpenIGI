@@ -39,6 +39,12 @@ public sealed partial class Igi2ReplicatedWorld
         return replicated;
     }
 
+    // The guns lying that the level did not place, numbered for the clients.
+    private readonly Igi2DroppedGuns _dropped = new();
+
+    // The mines lying in the level, numbered for the clients.
+    private readonly Igi2LaidMines _mines = new();
+
     // The level's lifts, in its tree's order, as a snapshot carries them; none for a level without any.
     private ReplicatedLift[]? Lifts()
     {
@@ -72,6 +78,6 @@ public sealed partial class Igi2ReplicatedWorld
             _variablesMade = true;
         }
 
-        return Igi2LevelState.Capture(_guns, _variables, CurrentTick, _blasts, _level.Flow?.IsBreakKeyDown == true);
+        return Igi2LevelState.Capture(_guns, _variables, CurrentTick, _blasts, _level.Flow?.IsBreakKeyDown == true, (_dropped, _level.Human.Pickups), (_mines, _level.Mines));
     }
 }

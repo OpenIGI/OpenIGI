@@ -31,10 +31,22 @@ public sealed class Igi2LevelMines(Igi2TitlePlayer player, Igi2CollisionWorld co
     /// <inheritdoc/>
     public Weapons.Igi2NotifyList Notified => notified;
 
+    /// <summary>
+    /// Gets or sets whether these are a co-op client's mines, which are the server's to lay: what this level lays itself -- its
+    /// own player's mine -- is not, and only the server's are, lying still (<see cref="Weapons.Igi2Mine.IsReplica"/>). The client's
+    /// own once lay live beside the server's and went off on its own.
+    /// </summary>
+    public bool IsReplica { get; set; }
+
     /// <inheritdoc/>
     public void Lay(Weapons.Igi2Mine mine)
     {
         ArgumentNullException.ThrowIfNull(mine);
+        if (IsReplica && !mine.IsReplica)
+        {
+            return;
+        }
+
         _laid.Add(mine);
         player.Dynamic.Add(mine);
         if (mine.Solid is { } solid)
@@ -65,8 +77,9 @@ public sealed class Igi2LevelMines(Igi2TitlePlayer player, Igi2CollisionWorld co
     /// </summary>
     /// <param name="saved">Its state.</param>
     /// <param name="tables">The session's weapon tables.</param>
+    /// <param name="replica">Whether it is a co-op server's mine laid on a client, lying still.</param>
     /// <returns>The mine, or <see langword="null"/> when no weapon lays that kind.</returns>
-    public Weapons.Igi2Mine? Recreate(in Weapons.Igi2Mine.Saved saved, Weapons.Igi2WeaponTables tables)
+    public Weapons.Igi2Mine? Recreate(in Weapons.Igi2Mine.Saved saved, Weapons.Igi2WeaponTables tables, bool replica = false)
     {
         ArgumentNullException.ThrowIfNull(tables);
         foreach (Weapons.Igi2WeaponTypeTask weapon in tables.WeaponTypes)
@@ -85,7 +98,10 @@ public sealed class Igi2LevelMines(Igi2TitlePlayer player, Igi2CollisionWorld co
                 }
 
                 Weapons.Igi2Mine mine = new(
-                    this, saved.Position, saved.Frame, weapon.FixedModel, saved.ArmTicks, saved.TimeBeforeExplode, saved.DetectionRadius, explosion, saved.IsRemote);
+                    this, saved.Position, saved.Frame, weapon.FixedModel, saved.ArmTicks, saved.TimeBeforeExplode, saved.DetectionRadius, explosion, saved.IsRemote)
+                {
+                    IsReplica = replica,
+                };
                 mine.Apply(saved);
                 Lay(mine);
                 return mine;

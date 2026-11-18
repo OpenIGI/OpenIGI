@@ -18,6 +18,7 @@ public sealed partial class Igi2ClientWorld
         }
 
         _worldTaken = snapshot.Tick;
+        _dropped.Tick();
 
         // The hits the server's copy of this client's player took, felt by this one: the flinch that stopped the server's in
         // its stride, the push along the shot, the cry, the shake and the red flash. The damage comes with the player's health.

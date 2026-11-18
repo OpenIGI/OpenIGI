@@ -139,6 +139,94 @@ public sealed class Igi2CoopPairTests
         Assert.True(pair.RunUntil(() => copy.IsDead, 300) >= 0, "the joiner's copy of the soldier never fell");
     }
 
+    /// <summary>
+    /// The guns dead guards drop lie on the joiner where they lie on the host, the same guns and no others: each machine once
+    /// dropped its own -- the joiner's copies the guns they were made with, by its own stream -- and a gun the host took could
+    /// still be taken on the joiner.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_guns_dead_guards_drop_lie_on_the_joiner_as_on_the_host()
+    {
+        using Igi2CoopPair pair = Joined();
+        IReadOnlyList<Igi2HumanSoldier> bodies = pair.Host!.Soldiers!.Bodies;
+        int killed = 0;
+        for (int i = 0; i < bodies.Count && killed < 3; i++)
+        {
+            if (!bodies[i].IsDead && bodies[i].IsActive && bodies[i].Weapon.Inventory?.Current is not null)
+            {
+                bodies[i].KillOutright();
+                killed++;
+            }
+        }
+
+        Assert.True(killed > 0, "the mission has no armed living soldier");
+        pair.RunUntil(() => false, 240);
+
+        static List<(string Weapon, Vector3d At)> Dropped(Igi2TitlePlayer level) =>
+            [.. level.Human.Pickups!.Items.Where(static g => g.Task is null && !g.IsDelete && !g.IsMoving).Select(static g => (g.WeaponType.WeaponId, g.Position))];
+
+        List<(string Weapon, Vector3d At)> host = Dropped(pair.Host), joiner = Dropped(pair.Joiner!);
+        Assert.NotEmpty(host);
+        Assert.Equal(host.Count, joiner.Count);
+        foreach ((string weapon, Vector3d at) in host)
+        {
+            Assert.Contains(joiner, j => j.Weapon == weapon && Vector3d.Distance(j.At, at) < 64);
+        }
+    }
+
+    /// <summary>
+    /// A mine laid on the host lies on the joiner, still, and goes when the host's does; one the joiner's own game would lay is
+    /// not laid there. Mines once travelled with nothing: a partner saw none, and the layer's own lay live and went off alone.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_mine_laid_on_the_host_lies_still_on_the_joiner_and_goes_with_it()
+    {
+        using Igi2CoopPair pair = Joined();
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponTables tables = pair.Host!.Weapons!.Inventory.Tables;
+        Vector3d at = pair.Host.Human.Position + new Vector3d(4096, 0, 0);
+        float[] frame = OpenIGI.Game.EngineEuler.Rotation(0f, 0f, 0f);
+        OpenIGI.Game.Igi2.Weapons.Igi2Mine.Saved saved = new(at, frame, false, false, 0f, -1, 0, 0, 0, 0f, 0f, false, false);
+        OpenIGI.Game.Igi2.Weapons.Igi2Mine laid = pair.Host.Mines!.Recreate(saved, tables)!;
+        Assert.NotNull(laid);
+
+        Assert.True(pair.RunUntil(() => pair.Joiner!.Mines!.Laid.Count == 1, 120) >= 0, "the host's mine never lay on the joiner");
+        OpenIGI.Game.Igi2.Weapons.Igi2Mine copy = pair.Joiner!.Mines!.Laid[0];
+        Assert.True(copy.IsReplica);
+        Assert.True(Vector3d.Distance(copy.Position, at) < 64);
+
+        // The joiner's own laying lays nothing of its own.
+        pair.Joiner.Mines.Recreate(saved with { Position = at + new Vector3d(0, 4096, 0) }, pair.Joiner.Weapons!.Inventory.Tables);
+        Assert.Single(pair.Joiner.Mines.Laid);
+
+        laid.Delete();
+        pair.Host.Mines.Remove(laid);
+        Assert.True(pair.RunUntil(() => pair.Joiner.Mines.Laid.Count == 0, 120) >= 0, "the joiner's copy outlived the host's mine");
+    }
+
+    /// <summary>
+    /// An object that explodes is the server's to blow up: on the joiner its own rounds do not set it off -- it went up twice on
+    /// the shooter's screen, its own and the server's -- and the server's word that it went up puts on what is left of it.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_exploding_objects_go_up_on_the_servers_word_alone()
+    {
+        using Igi2CoopPair pair = Joined();
+        OpenIGI.Game.Igi2.Interaction.Igi2ExplodeObjectTask target = pair.Joiner!.LevelTasks()
+            .OfType<OpenIGI.Game.Igi2.Interaction.Igi2ExplodeObjectTask>()
+            .First(static o => !o.Explosive.IsExploded && o.DestroyedModel.Length > 0 && o.Explosive.Models?.Invoke(o.DestroyedModel) is not null);
+
+        target.Explosive.WeaponHit(1_000_000f);
+        pair.RunUntil(() => false, 10);
+        Assert.False(target.Explosive.IsExploded, $"{target.Name} went up on the joiner's own round");
+
+        Assert.True(pair.Joiner.Level!.Natives.TryResolve($"{target.Name}.isExploded", out QvmSymbol? isExploded));
+        string whole = target.Explosive.Model;
+        isExploded!.Variable!.TryWrite(QvmValue.FromInt32(1), out _);
+        target.Explosive.Run(pair.Joiner.Level);
+        Assert.True(target.Explosive.IsExploded);
+        Assert.True(target.Explosive.Model == target.DestroyedModel && target.Explosive.Model != whole, $"{target.Name} kept its whole model");
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void The_joiners_copy_of_the_host_is_no_target_of_its_soldiers_and_the_hosts_partner_is()
     {

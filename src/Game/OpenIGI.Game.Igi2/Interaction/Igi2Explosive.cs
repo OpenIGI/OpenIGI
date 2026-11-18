@@ -168,6 +168,20 @@ public sealed class Igi2Explosive
     /// <param name="level">The level's tick; <see langword="null"/> for an object made while the level runs, which has no script.</param>
     public void Run(Igi2LevelRun? level)
     {
+        // A co-op client's object is the server's: exploded when the server's isExploded comes (mirrored), never by what this
+        // client's own rounds and blasts did to it. Set off here too it went up twice on the shooter's screen, here and in the
+        // server's blast replayed; left to the mirror alone it kept its whole model and its solid. The blast itself comes once,
+        // with the server's (Igi2BlastLog).
+        if (level is { IsReplica: true })
+        {
+            if (_isExploded != 0 && !_wornExploded)
+            {
+                SetExploded();
+            }
+
+            return;
+        }
+
         if (_isExploded != 0)
         {
             return;
@@ -318,7 +332,11 @@ public sealed class Igi2Explosive
         }
 
         _isExploded = 1;
+        _wornExploded = true;
     }
+
+    // Whether it wears what exploding leaves of it: its destroyed model and solid.
+    private bool _wornExploded;
 
     /// <summary>
     /// Writes its save state, <c>ExplodeObject_ptSerializeParameterList</c>: a model object's, then whether it has exploded and is

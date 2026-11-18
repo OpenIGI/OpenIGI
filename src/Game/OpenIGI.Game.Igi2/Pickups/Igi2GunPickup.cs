@@ -578,6 +578,9 @@ public sealed partial class Igi2GunPickup
         return true;
     }
 
+    /// <summary>Gets a value indicating whether it is a co-op server's gun laid on a client (<see cref="Igi2PickupList.IsReplica"/>).</summary>
+    public bool IsReplica { get; init; }
+
     /// <summary>Marks the pickup for deleting, nobody given it: on a co-op client, a weapon another player took on the server.</summary>
     public void TakenElsewhere() => IsDelete = true;
 

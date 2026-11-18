@@ -324,7 +324,7 @@ public sealed partial class Igi2SecurityCameraTask
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        RunLens();
+        RunLens(level.IsReplica);
         level.RunChildren(this);
 
         if (_isDestroyed != 0)
@@ -473,7 +473,9 @@ public sealed partial class Igi2SecurityCameraTask
     protected override void OnParsed() => Prepare();
 
     // The lens's tick, SCamera_SCameraLensRunHandler (igi2 0x48EF20). The computer map's blink timers are the computer's.
-    private void RunLens()
+    // On a co-op client (replica) the camera is destroyed when the server's is (isExploded mirrored), never by this client's own
+    // rounds: blown up here too it went up twice on the shooter's screen, and left to the mirror alone it kept its whole lens.
+    private void RunLens(bool replica)
     {
         if (_lightTicks != 0) { _lightTicks--; }
         else { LightBright = !LightBright; _lightTicks = 7; }
@@ -505,22 +507,20 @@ public sealed partial class Igi2SecurityCameraTask
             lens.DetectionSound = Kill(lens.DetectionSound);
         }
 
+        if (replica)
+        {
+            lens.IsExplode = false;
+            if (_isDestroyed != 0 && !string.Equals(lens.Model, CameraDestroyedModel, StringComparison.Ordinal))
+            {
+                WearDestroyedLens(lens);
+            }
+        }
+
         if (lens.IsExplode)
         {
             lens.IsExplode = false;
             _isDestroyed = 1;
-            lens.Model = CameraDestroyedModel;
-            if (Models?.Invoke(CameraDestroyedModel) is { } destroyed && Igi2CollisionWorld.Meshes(destroyed) is { } meshes)
-            {
-                foreach (Igi2RigidObject solid in _solids)
-                {
-                    if (solid.Owner is Igi2CollisionOwner { Depth: > 0 })
-                    {
-                        solid.ChangeModel(meshes, destroyed.NativeMarkerBound);
-                    }
-                }
-            }
-
+            WearDestroyedLens(lens);
             Explosions?.New(
                 lens.Position,
                 1,
@@ -551,6 +551,22 @@ public sealed partial class Igi2SecurityCameraTask
             {
                 solid.Position = lens.Position;
                 Array.Copy(lens.Frame, solid.Orientation, solid.Orientation.Length);
+            }
+        }
+    }
+
+    // The lens in its destroyed model, its solid with it.
+    private void WearDestroyedLens(Lens lens)
+    {
+        lens.Model = CameraDestroyedModel;
+        if (Models?.Invoke(CameraDestroyedModel) is { } destroyed && Igi2CollisionWorld.Meshes(destroyed) is { } meshes)
+        {
+            foreach (Igi2RigidObject solid in _solids)
+            {
+                if (solid.Owner is Igi2CollisionOwner { Depth: > 0 })
+                {
+                    solid.ChangeModel(meshes, destroyed.NativeMarkerBound);
+                }
             }
         }
     }
