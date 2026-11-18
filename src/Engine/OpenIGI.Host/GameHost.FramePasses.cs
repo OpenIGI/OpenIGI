@@ -181,6 +181,9 @@ public sealed partial class GameHost
         state.Console.Update(_window.Input, Math.Clamp((consoleNow - state.LastConsoleMilliseconds) / 1000f, 0f, 0.25f));
         state.LastConsoleMilliseconds = consoleNow;
 
+        // The interface drawn for the player's colour vision, as the settings have it this frame.
+        OpenIGI.UI.Widgets.UiPalette.Vision = (OpenIGI.UI.Widgets.ColourVision)Rendering.HudCVars.ColourVision.Value;
+
         // A co-op line being typed takes the keyboard next, the same way.
         UpdateNextMap();
         UpdateBombSounds();

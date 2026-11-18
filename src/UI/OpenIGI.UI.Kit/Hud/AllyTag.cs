@@ -74,12 +74,7 @@ public static class AllyTag
             float barWidth = MathF.Max(context.Px(36f), line.Width);
             var track = new UiRect(head.X - (barWidth * 0.5f), line.Bottom + context.Px(2f * scale), barWidth, barHeight);
             painter.FillRect(track, UiPalette.InkAt(0.6f * fade));
-            painter.FillRect(new UiRect(track.X, track.Y, track.Width * Math.Clamp(left, 0f, 1f), track.Height), HealthColour(left).WithAlpha((byte)(235 * fade)));
+            painter.FillRect(new UiRect(track.X, track.Y, track.Width * Math.Clamp(left, 0f, 1f), track.Height), UiPalette.Health(left).WithAlpha((byte)(235 * fade)));
         }
     }
-
-    /// <summary>The colour health is shown in: the healthy colour, then amber, then the alarm colour as it runs low.</summary>
-    /// <param name="health">The health left, 0 to 1.</param>
-    /// <returns>The colour.</returns>
-    public static Bgra32 HealthColour(float health) => health > 0.6f ? UiPalette.Success : health > 0.3f ? UiPalette.Warning : UiPalette.Danger;
 }

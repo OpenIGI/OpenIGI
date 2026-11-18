@@ -40,9 +40,9 @@ internal sealed partial class RemasteredHudRenderer
 
     // The board's face with the hairline laid over it, for the rounded edge drawn under the face.
     private static Bgra32 BoardEdge => Bgra32.FromRgba(34, 36, 39, 246);
-    private static Bgra32 Alive => Bgra32.FromRgb(74, 222, 128);
+    private static Bgra32 Alive => UiPalette.Success;
     private static Bgra32 Down => Bgra32.FromRgb(251, 176, 59);
-    private static Bgra32 Bad => Bgra32.FromRgb(232, 92, 80);
+    private static Bgra32 Bad => UiPalette.Danger;
 
     // Each player's badge colour, by slot: distinct at a glance, none of them the accent the own row is lit in.
     private static readonly Bgra32[] BadgeColours =

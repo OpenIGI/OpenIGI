@@ -79,12 +79,7 @@ public static class RemasteredHudPresentation
     }
 
     /// <summary>Chooses the health colour with deliberately broad warning bands.</summary>
-    public static Bgra32 HealthColour(float fraction) => Math.Clamp(fraction, 0f, 1f) switch
-    {
-        > 0.55f => UiPalette.Success,
-        > 0.28f => UiPalette.Accent,
-        _ => UiPalette.Danger,
-    };
+    public static Bgra32 HealthColour(float fraction) => UiPalette.Health(fraction);
 
     /// <summary>Returns the first objective the player can still complete.</summary>
     public static MissionObjective? PrimaryObjective(IEnumerable<MissionObjective> objectives)

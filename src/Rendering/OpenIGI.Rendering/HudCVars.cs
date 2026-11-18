@@ -136,6 +136,11 @@ public static class HudCVars
         CVarOptions.Archive,
         "The sound when a teammate goes down in co-op, by its name in the game's sound table (camera_beep_al, mapcomp_02...); empty for none.");
 
+    /// <summary>The colour vision the interface is drawn for: 0 full, 1 deuteranopia, 2 protanopia, 3 tritanopia.</summary>
+    public static readonly NumericCVar<int> ColourVision = CVar.Int(
+        "r_colorblind", 0, 0, 3, CVarOptions.Archive,
+        "Draw the interface for colour blindness: 0 off, 1 deuteranopia (red-green), 2 protanopia (red-green), 3 tritanopia (blue-yellow).");
+
     /// <summary>The remastered crosshair's colour, by its place in the crosshair's colours.</summary>
     public static readonly NumericCVar<int> CrosshairColour = CVar.Int(
         "r_crosshair_color", 0, 0, 6, CVarOptions.Archive,

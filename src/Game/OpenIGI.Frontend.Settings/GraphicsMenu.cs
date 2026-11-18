@@ -526,6 +526,18 @@ public static class GraphicsMenu
             "Crosshair",
             "A clean crosshair shaped to the weapon in hand: it opens as you fire, turns red over an enemy, in place of the original's."),
         new GraphicsSetting(
+            "r_colorblind",
+            "Colour Blind Mode",
+            "Draws the interface's paired colours -- alive and down, healthy and hurt, one team and the other -- in colours that "
+                + "stay apart for your kind of colour vision.",
+            new Dictionary<string, string>
+            {
+                ["0"] = "Off",
+                ["1"] = "Deuteranopia",
+                ["2"] = "Protanopia",
+                ["3"] = "Tritanopia",
+            }),
+        new GraphicsSetting(
             "r_crosshair_color",
             "Crosshair Colour",
             "The crosshair's colour.",
