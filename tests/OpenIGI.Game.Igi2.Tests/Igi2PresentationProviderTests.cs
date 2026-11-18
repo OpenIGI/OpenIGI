@@ -54,7 +54,10 @@ public sealed class Igi2PresentationProviderTests
         Assert.Null(provider.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(default));
         Assert.Null(provider.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(default));
         Assert.Null(provider.Presenters.Create<HudPresentationRequest, IHudPresenter>(default));
-        Assert.Null(provider.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(default));
+
+        // The remastered display's session overlays -- scoreboard, talk, name tags -- are both games' own since co-op came to
+        // I.G.I. 2, so the provider supplies that one; it needs a device to draw with, which this request has none of.
+        Assert.True(provider.Presenters.Has<HudPresentationRequest, IRemasteredHudPresenter>());
         Assert.Null(provider.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(default));
         Assert.Null(provider.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(default));
         Assert.Null(provider.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(default));
