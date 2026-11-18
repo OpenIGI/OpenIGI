@@ -122,6 +122,13 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the remastered display says under the crosshair when the weapon runs low or empty.</summary>
+    public static readonly BoolCVar AmmoCue = CVar.Bool(
+        "r_ammo_cue",
+        true,
+        CVarOptions.Archive,
+        "With the remaster HUD, a word under the crosshair when the weapon runs low: LOW AMMO, RELOAD, NO AMMO.");
+
     /// <summary>The sound a teammate going down plays, by its name in the title's sound table; empty for none.</summary>
     public static readonly StringCVar DownedSound = CVar.Text(
         "hud_down_sound",

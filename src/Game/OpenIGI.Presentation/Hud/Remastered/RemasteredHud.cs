@@ -223,6 +223,9 @@ public sealed class RemasteredHud : IDisposable
         HudReadouts.DrawMessages(context, model);
         context.EndElement();
         ReportUnshown(context);
+        // Under the crosshair, a word when the weapon runs low or empty.
+        HudAmmoCue.Draw(context, model);
+
         // The remastered crosshair, shaped to the weapon and answering the aim; without it, the plain mark the frame opens.
         if (HudCVars.Crosshair.Value)
         {

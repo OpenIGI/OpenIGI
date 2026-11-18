@@ -526,6 +526,10 @@ public static class GraphicsMenu
             "Crosshair",
             "A clean crosshair shaped to the weapon in hand: it opens as you fire, turns red over an enemy, in place of the original's."),
         new GraphicsSetting(
+            "r_ammo_cue",
+            "Ammo Warning",
+            "A word under the crosshair when your weapon runs low: LOW AMMO, then RELOAD when it is empty, NO AMMO when you have none left."),
+        new GraphicsSetting(
             "r_hit_markers",
             "Hit Markers",
             "A mark on the crosshair when a round hits, and a red cross when it kills; larger for a headshot."),
