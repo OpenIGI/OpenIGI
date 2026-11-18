@@ -425,7 +425,7 @@ public sealed class ServerRow : Control
         float gap = context.Px(2f);
         float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
-        float official = _line.Official ? OfficialMark.Width(context, Theme) + context.Px(8f) : 0f;
+        float official = _line.Official ? OfficialMark.Width(context) + context.Px(8f) : 0f;
         float marks = official + (Locked ? context.Px(22f) : 0f) + (Saved ? context.Px(22f) : 0f);
         string name = Theme.BodyStrong.Fit(_line.Name, nameSize, right - x - marks);
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, UiPalette.Fade(Unjoinable ? Theme.TextSecondary : Theme.Text, appear));
@@ -474,7 +474,7 @@ public sealed class ServerRow : Control
         float gap = context.Px(3f);
         float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
-        float official = _line.Official ? OfficialMark.Width(context, Theme) + context.Px(10f) : 0f;
+        float official = _line.Official ? OfficialMark.Width(context) + context.Px(8f) : 0f;
         float marks = official + (Locked ? context.Px(24f) : 0f);
         string name = Theme.BodyStrong.Fit(_line.Name, nameSize, room - marks);
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, ink(Theme.Text));

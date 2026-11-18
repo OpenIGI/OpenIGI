@@ -6,24 +6,24 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.UI.Kit.Servers;
 
 /// <summary>
-/// The mark of an official server -- one of ours, whose matches count toward the stats and leaderboards: a tick and
-/// OFFICIAL in the accent, in a box outlined in it, the same make as a mode's badge. Wherever the multiplayer page names a
-/// server it draws this after the name.
+/// The mark of an official server -- one of ours, whose matches count toward the stats and leaderboards: the verified badge
+/// people know from social apps, a scalloped seal in the accent with a tick through it. Wherever the multiplayer page names
+/// a server it draws this after the name.
 /// </summary>
 public static class OfficialMark
 {
-    private const string Text = "OFFICIAL";
-    private const float Tracking = 0.08f;
+    // The seal's scallops, how deep they cut into its edge, and how finely its edge is drawn.
+    private const int Scallops = 8;
+    private const float Depth = 0.13f;
+    private const int Points = 96;
 
     /// <summary>Gets the mark's width, to keep room for it after a name.</summary>
     /// <param name="context">The layout context.</param>
-    /// <param name="theme">The theme.</param>
     /// <returns>The width, in pixels.</returns>
-    public static float Width(LayoutContext context, UiTheme theme)
+    public static float Width(LayoutContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(theme);
-        return context.Px(30f) + UiPainter.MeasureLabel(theme.Heading, Text, context.Px(11f), Tracking);
+        return context.Px(20f);
     }
 
     /// <summary>Draws the mark, its left edge at a point and its middle on a line.</summary>
@@ -36,16 +36,28 @@ public static class OfficialMark
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
-        LayoutContext context = painter.Context;
-        float height = context.Px(20f);
-        var box = new UiRect(leftMiddle.X, leftMiddle.Y - (height / 2f), Width(context, theme), height);
-        Bgra32 colour = UiPalette.Fade(theme.Accent, appear);
-        float tick = context.Px(12f);
-        painter.FillRect(box, UiPalette.AccentAt(0.12f * appear));
-        painter.StrokeRect(box, context.Px(1f), colour);
-        KitIcons.Draw(painter, KitIcon.Check, new UiVec2(box.X + context.Px(11f), box.Center.Y), tick, colour);
-        float size = context.Px(11f);
-        painter.DrawLabel(theme.Heading, Text, new UiVec2(box.X + context.Px(21f), UiRowStyle.CapsCenterY(theme.Heading, size, box)), size, colour, Tracking);
+        float size = Width(painter.Context);
+        var box = new UiRect(leftMiddle.X, leftMiddle.Y - (size / 2f), size, size);
+        UiVec2 centre = box.Center;
+        float outer = size / 2f;
+
+        // The seal: a fan of triangles about its middle, its edge rounded out into scallops.
+        Bgra32 seal = UiPalette.Fade(theme.Accent, appear);
+        Span<UiVec2> edge = stackalloc UiVec2[Points];
+        for (int i = 0; i < Points; i++)
+        {
+            float angle = i * MathF.Tau / Points;
+            float radius = outer * (1f - Depth + (Depth * MathF.Abs(MathF.Cos(angle * Scallops / 2f))));
+            (float sin, float cos) = MathF.SinCos(angle);
+            edge[i] = new UiVec2(centre.X + (cos * radius), centre.Y + (sin * radius));
+        }
+
+        for (int i = 0; i < Points; i++)
+        {
+            painter.FillTriangle(centre, edge[i], edge[(i + 1) % Points], seal);
+        }
+
+        KitIcons.Draw(painter, KitIcon.Check, new UiVec2(centre.X, centre.Y - (size * 0.03f)), size * 0.5f, Bgra32.FromRgba(10, 12, 13, (byte)(255f * appear)));
         return box;
     }
 }
