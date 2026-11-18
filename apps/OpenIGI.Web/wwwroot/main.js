@@ -17,6 +17,11 @@ import * as userFiles from './user-files.js';
 
 const GAME_ROOT = '/game';
 
+// Every file the page loads is listed for the service worker once the game is up (keepShell), so the list must not stop at
+// the browser's default of 250 entries: the runtime alone is more, and a short list would let the worker drop files the page
+// still needs.
+performance.setResourceTimingBufferSize?.(10000);
+
 const $ = id => document.getElementById(id);
 const canvas = $('view');
 const landing = $('landing');
@@ -40,6 +45,27 @@ if (query.get('name')) args.push('-name', query.get('name'));
 
 const GAME_KEY = 'openigi-game';
 const IN_DISCORD = query.has('frame_id') && query.has('instance_id');
+
+// The page kept for a visit with no network (sw.js): not inside Discord's frame, which reaches everything through its proxy,
+// not for an automated run's served folder (?data=), and not when asked not to (?sw=0).
+const OFFLINE_SHELL = 'serviceWorker' in navigator && window.isSecureContext && !IN_DISCORD
+  && !query.has('data') && query.get('sw') !== '0';
+if (OFFLINE_SHELL) {
+  navigator.serviceWorker.register('sw.js').catch(error => console.warn(`The page can't be kept for offline play: ${error.message}`));
+}
+
+/** Tells the service worker every file of the page's the game loaded, so it keeps them all and lets older ones go. */
+function keepShell() {
+  if (!OFFLINE_SHELL) return;
+  navigator.serviceWorker.ready.then(registration => {
+    // The game's own files are not the page's: game-files.js keeps those, and a data host on the page's own address (a local
+    // test server's /data/) would otherwise have them copied here a second time.
+    const data = hostedData();
+    const urls = performance.getEntriesByType('resource').map(entry => entry.name)
+      .filter(name => name.startsWith(registration.scope) && !name.startsWith(data) && !name.startsWith(`${registration.scope}data/`));
+    registration.active?.postMessage({ type: 'keep', urls });
+  }).catch(() => {});
+}
 
 function savedGame() {
   try {
@@ -536,6 +562,9 @@ async function start() {
 
   // The missions' files, downloaded ahead while the menu is up, so the first mission chosen starts at once.
   if (source.hosted) setTimeout(() => source.prefetch(), 3000);
+
+  // Everything the page needed has loaded by now: kept for a visit with no network.
+  keepShell();
 
   // In a room the game can't stop when its tab is hidden: a host that stopped would stop everyone's game, and a joiner
   // that stopped would be dropped. A hidden tab gets no animation frames and its timers are held to one a second, but a
