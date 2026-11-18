@@ -784,6 +784,33 @@ public sealed class Igi2CoopPairTests
     }
 
     /// <summary>
+    /// The joiner's copy of the host takes no harm from the joiner's own rounds, friendly fire or not: its harm is the server's,
+    /// and it once bled, cried out and flinched on the joiner's screen where the server spared it.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_the_host_takes_no_harm_from_the_joiners_rounds()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Igi2HumanPlayer copy = Assert.Single(pair.Joiner!.NetworkHumans).Human;
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponTypeTask gun = pair.Joiner.Weapons!.Inventory.Current!.WeaponType;
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponHit hit = new(
+            new OpenIGI.Game.Physics.WorldIntersection { Position = copy.Position }, 0.05f, new Vector3f(-40960f, 0f, 0f), pair.Joiner.Human, gun, null);
+
+        CoopCVars.FriendlyFire.Value = true;
+        try
+        {
+            copy.WeaponHit(hit);
+        }
+        finally
+        {
+            CoopCVars.FriendlyFire.Value = false;
+        }
+
+        Assert.Equal(0f, copy.Damage.Damage);
+    }
+
+    /// <summary>
     /// Without friendly fire (coop_friendlyfire, off unless the host turns it on, as Project I.G.I.'s co-op has it) the host's
     /// rounds do its partner no harm, a soldier's still do; with it on, the host's do too.
     /// </summary>

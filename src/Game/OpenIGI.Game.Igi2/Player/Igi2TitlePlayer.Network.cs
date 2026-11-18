@@ -211,6 +211,10 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
         }
 
         ScriptPlayers?.Add(puppet.Human);
+
+        // Its harm is the server's: this client's own rounds struck it and it bled, cried out and flinched on this screen even
+        // where the server spared it (friendly fire off), and its own player feels the hits the server's copy takes (FeelHit).
+        puppet.Human.Spares = static _ => true;
         return puppet;
     }
 
