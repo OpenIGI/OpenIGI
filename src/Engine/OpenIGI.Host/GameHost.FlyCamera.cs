@@ -132,8 +132,11 @@ public sealed partial class GameHost
                 _window.CursorLocked = UsesMissionComputer && !OverlayHasPointer && !state.CaptureMode;
                 ReleasePlayerLook();
             }
-            else if (_mission.Scenes?.IsPlaying == true)
+            else if (_mission.Scenes?.IsPlaying == true || TitlePlayer is { IsCutscenePlaying: true })
             {
+                // Either game's cutscene: nothing aims, so the mouse is let go. In a browser that is what lets the skip be
+                // held at all -- with the pointer locked, the browser keeps Escape to itself until the key comes up, so the
+                // page never saw it held, and an I.G.I. 2 scene (the title player's, not the host's) could not be skipped.
                 HoldPlayerStill();
                 _window.CursorLocked = false;
             }
