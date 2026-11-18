@@ -59,9 +59,16 @@ public sealed class GameProfile
         && Directory.Exists(DataRoot)
         && File.Exists(Path.Combine(DataRoot, Title.SignatureFile));
 
+    /// <summary>Gets a value indicating whether the title is played by opening it anew rather than from <see cref="DataRoot"/>.</summary>
+    /// <remarks>
+    /// A browser holds one game's files at a time: the other is not installed anywhere this session can read, and
+    /// choosing it reloads the page into it. Set by a host that can do that.
+    /// </remarks>
+    public bool PlayableElsewhere { get; init; }
+
     /// <summary>Gets whether the title can be played from this profile.</summary>
     public GameAvailability Availability =>
-        Title.Support == GameAvailability.Available && IsInstalled
+        Title.Support == GameAvailability.Available && (IsInstalled || PlayableElsewhere)
             ? GameAvailability.Available
             : GameAvailability.Unavailable;
 

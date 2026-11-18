@@ -128,6 +128,23 @@
     .points li { position: relative; padding-left: 18px; }
     .points li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 8px; height: 1px; background: var(--muted); }
     .path .action { margin-top: auto; }
+
+    /* Which game the browser card plays: two halves of one pill, the chosen one filled. */
+    .games { display: inline-flex; align-self: flex-start; padding: 3px; border: 1px solid rgba(236, 235, 230, 0.18); border-radius: 999px; }
+    .games button {
+      appearance: none;
+      padding: 7px 14px;
+      border: none;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font: 600 13px/1.2 var(--sans);
+      cursor: pointer;
+    }
+    .games button:hover { color: var(--text); }
+    .games button[aria-pressed="true"] { background: rgba(236, 235, 230, 0.16); color: var(--text); }
+    .games button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+    .games button:disabled { cursor: default; }
     .play { text-decoration: none; }
 
     .action { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
@@ -279,7 +296,7 @@
       <div class="content">
         <section class="intro">
           <span class="mono">An independent reimplementation</span>
-          <h1>Project I.G.I.</h1>
+          <h1 id="game-name">Project I.G.I.</h1>
           <p class="lead">Two ways to play: straight away in the browser, on a computer or a phone, or with the desktop build, which has the whole remaster.</p>
         </section>
 
@@ -290,6 +307,10 @@
               <span class="mono kicker">Play now</span>
               <h2 id="browser-title">In the browser</h2>
               <span class="mono platforms">Chrome, Edge, Safari · computers and phones</span>
+            </div>
+            <div class="games" id="games" role="group" aria-label="Game">
+              <button type="button" data-game="igi1" aria-pressed="true">Project I.G.I.</button>
+              <button type="button" data-game="igi2" aria-pressed="false">I.G.I. 2</button>
             </div>
             <ul class="points">
               <li>Nothing to install: the game's files download once and are kept for the next visit.</li>

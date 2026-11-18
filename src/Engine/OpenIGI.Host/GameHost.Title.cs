@@ -69,7 +69,10 @@ public sealed partial class GameHost
             return false;
         }
 
-        foreach (GameTitle candidate in _titles.Titles)
+        // The catalogue's titles; and where another game is opened anew rather than switched to (a browser's catalogue
+        // holds only the game it loaded), every title there is -- the page decides whether it can open it.
+        IEnumerable<GameTitle> offered = OpenTitleElsewhere is null ? _titles.Titles : _titles.Titles.Union(GameTitle.All);
+        foreach (GameTitle candidate in offered)
         {
             if (!string.Equals(candidate.Id, titleId.Trim(), StringComparison.OrdinalIgnoreCase))
             {
@@ -86,6 +89,12 @@ public sealed partial class GameHost
 
             if (!_titles.TryResolve(candidate, out TitleBinding? binding) || !binding.IsInstalled)
             {
+                if (OpenTitleElsewhere is { } open)
+                {
+                    _logger.Information(TitleLogCategory, $"Opening {candidate.DisplayName} anew.");
+                    return open(candidate.Id);
+                }
+
                 _logger.Warning(
                     TitleLogCategory,
                     $"{candidate.DisplayName} is not installed where this build looks for it, so it cannot be run.");
@@ -514,12 +523,22 @@ public sealed partial class GameHost
     /// what it is rather than as what it was at boot.
     /// </remarks>
     private IReadOnlyList<GameProfile> TitleCatalogue() =>
-        GameProfileResolver.BuildCatalogue(
-            ActiveTitle,
-            _gamePath,
-            null,
-            null,
-            title => _titles.TryResolve(title, out TitleBinding? other) ? other.DataRoot : null);
+        [.. GameProfileResolver.BuildCatalogue(
+                ActiveTitle,
+                _gamePath,
+                null,
+                null,
+                title => _titles.TryResolve(title, out TitleBinding? other) ? other.DataRoot : null)
+            .Select(profile => OpenTitleElsewhere is not null && !profile.IsInstalled
+                ? new GameProfile(profile.Title, profile.DataRoot) { PlayableElsewhere = true }
+                : profile)];
+
+    /// <summary>Gets or sets how a host that cannot run another game in this session opens it anew instead.</summary>
+    /// <remarks>
+    /// A browser holds one game's files at a time, so choosing the other reloads the page into it -- downloaded once and
+    /// kept, like the first. Given the title's id; returns whether that is happening. Null where a switch is in-process.
+    /// </remarks>
+    public Func<string, bool>? OpenTitleElsewhere { get; set; }
 
     /// <summary>Brings what is loaded up to date with the content layers, after anything changed them.</summary>
     /// <param name="report">Receives a sentence on what was reloaded.</param>

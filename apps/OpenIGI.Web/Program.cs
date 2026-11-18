@@ -79,7 +79,14 @@ public static partial class Program
         {
             LockedPreset = GraphicsPreset.Vanilla,
         };
+        // The page says which game it put in place (-title, from its game switch); there is nothing to probe.
         IGameTitleRuntime runtime = TitleCatalog.Default;
+        if (options.Title is { } requested)
+        {
+            runtime = TitleCatalog.TryResolve(requested, out IGameTitleRuntime? chosen)
+                ? chosen
+                : throw new ArgumentException($"'{requested}' is not a game this build runs. -title {TitleCatalog.KnownTitleIds}");
+        }
 
         VirtualFileSystem fileSystem = new(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(GameRoot));
@@ -126,6 +133,7 @@ public static partial class Program
         _game.TickObserver = _session as IHostTickObserver;
         _game.RoomPeers = new BrowserRtcPeerFactory();
         _game.OpenLink = WebLinks.Open;
+        _game.OpenTitleElsewhere = WebLinks.OpenGame;
         _game.DiscordInstance = session.Instance;
         _game.Start();
     }
