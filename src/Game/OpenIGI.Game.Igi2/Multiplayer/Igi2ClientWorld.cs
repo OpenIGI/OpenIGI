@@ -133,10 +133,23 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Through the body's own shift, so a climber's ladder and a rider's platform take it too (<see cref="Humans.Igi2Human.Shift"/>);
+    /// and, as Project I.G.I.'s client does, a body this client has falling that the server has standing, lifted by the
+    /// correction, stops falling: kept, the fall carried it through the floor again before the next word came.
+    /// </remarks>
     public void MoveLocal(Vector3d offset, bool serverGrounded)
     {
-        _level.Human.Position += offset;
-        _level.Human.UpdateViewBody(updateAnimation: false);
+        Igi2HumanPlayer own = _level.Human;
+        own.Shift(offset);
+        if (serverGrounded && offset.Z > 0 && own.AttachParent is null
+            && (own.Signal & Igi2PlayerSignal.Grounded) == 0 && own.Speed.Z < 0f)
+        {
+            own.Speed = new Vector3f(own.Speed.X, own.Speed.Y, 0f);
+            own.ImpactSpeed = default;
+        }
+
+        own.UpdateViewBody(updateAnimation: false);
         _level.ViewError.Note(offset);
     }
 

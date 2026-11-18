@@ -391,6 +391,18 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             condition |= ReplicatedHumanCondition.Low;
         }
 
+        // On the ground and climbing, as Project I.G.I.'s server says them: a client's correction lifting its falling player onto
+        // the floor the server has it standing on stops the fall.
+        if ((human.Signal & Igi2PlayerSignal.Grounded) != 0)
+        {
+            condition |= ReplicatedHumanCondition.OnGround;
+        }
+
+        if (human.AttachParent is not null)
+        {
+            condition |= ReplicatedHumanCondition.Climbing;
+        }
+
         int shots = human.Weapon.Inventory?.ShotSequence ?? 0;
 
         return new ReplicatedHuman(
