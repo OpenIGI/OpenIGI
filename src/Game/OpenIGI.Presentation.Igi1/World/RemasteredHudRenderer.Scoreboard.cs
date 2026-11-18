@@ -1,9 +1,12 @@
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit.Hud;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -495,11 +498,25 @@ internal sealed partial class RemasteredHudRenderer
     private static Bgra32 PingColour(int ping) => ping < 60 ? Alive : ping < 110 ? Down : Bad;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Low and centred, clear of the crosshair: DOWN in the alarm colour, what brings a fallen player back, and the
-    /// revival's bar filling in the accent as a teammate stands by.
-    /// </remarks>
+    /// <remarks>Low and centred, clear of the crosshair, with no panel behind it (<see cref="ReviveHud.DrawDowned"/>).</remarks>
     public void DrawDowned(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_theme is { } type)
+        {
+            ReviveHud.DrawDowned(UiPainter.Create(batch, new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight))), type, progress);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void DrawReviveMarker(
+        SpriteBatch batch,
+        ReviveMarker marker,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (_theme is not { } type)
@@ -507,35 +524,11 @@ internal sealed partial class RemasteredHudRenderer
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float Px(float units) => context.Px(units);
-        float width = MathF.Min(Px(560f), context.SafeRect.Width * 0.9f);
-        float height = Px(150f);
-        float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
-        float y = context.SafeRect.Y + (context.SafeRect.Height * 0.62f);
-        var panel = new UiRect(x, y, width, height);
-        painter.FillRoundedRect(panel, _surfaces?.Rounded ?? default, BoardFace, Px(10f));
-        painter.FillRect(new UiRect(x, y, width, MathF.Max(2f, Px(3f))), Bad);
-
-        float titleSize = Px(34f);
-        string title = progress > 0f ? "BEING REVIVED" : "YOU'RE DOWN";
-        float titleWidth = type.Heading.MeasureWidth(title, titleSize) * 1.06f;
-        painter.DrawLabel(type.Heading, title, new UiVec2(x + ((width - titleWidth) * 0.5f), y + Px(22f)), titleSize, progress > 0f ? Accent : Bad, 0.06f);
-
-        string line = progress > 0f
-            ? "Stay put, a teammate is with you"
-            : "A teammate can revive you by standing beside you  ·  Fire to watch another";
-        float lineSize = Px(17f);
-        float lineWidth = type.Body.MeasureWidth(line, lineSize);
-        painter.DrawLabel(type.Body, line, new UiVec2(x + ((width - lineWidth) * 0.5f), y + Px(68f)), lineSize, UiPalette.TextSecondary, 0.01f);
-
-        var track = new UiRect(x + Px(34f), y + height - Px(40f), width - Px(68f), Px(12f));
-        painter.FillRoundedRect(track, _surfaces?.Rounded ?? default, Bgra32.FromRgba(255, 255, 255, 26), Px(6f));
-        if (progress > 0f)
+        WorldCanvas canvas = new(marker.AnchorMetres, eye, horizontalTangent, aspectRatio, screenWidth, screenHeight, MetresPerUnit);
+        if (canvas.TryProject(0f, 0f, out float x, out float y) && x >= 0f && x <= screenWidth && y >= 0f && y <= screenHeight)
         {
-            var fill = new UiRect(track.X, track.Y, MathF.Max(track.Height, track.Width * Math.Clamp(progress, 0f, 1f)), track.Height);
-            painter.FillRoundedRect(fill, _surfaces?.Rounded ?? default, Accent, Px(6f));
+            var painter = UiPainter.Create(batch, new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight)));
+            ReviveHud.DrawMarker(painter, type, new UiVec2(x, y), marker.Name, marker.Progress);
         }
     }
 }

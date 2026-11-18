@@ -390,30 +390,14 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // The fallen teammates, each marked where it lies with the same prompt anything usable gets: its ring is the revival.
+        // The fallen teammates, each marked where it lies: a cross in a disc, its ring the revival.
         if (_remasteredHud is { IsReady: true } reviveHud && _soldiers?.ReviveMarkers() is { Count: > 0 } fallen)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             foreach (Game.Ai.ReviveMarker mark in fallen)
             {
-                reviveHud.DrawInteractionPrompt(
-                    state.Batch,
-                    new InteractionPromptView(
-                        mark.AnchorMetres,
-                        1f,
-                        1f,
-                        "+",
-                        $"Revive {mark.Name}",
-                        mark.Progress > 0f
-                            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Reviving {mark.Progress * 100f:0}%, stay close")
-                            : "Stand beside them for 5 seconds",
-                        mark.Progress),
-                    eye,
-                    horizontalTangent,
-                    aspectRatio,
-                    SafeWindowWidth,
-                    SafeWindowHeight);
+                reviveHud.DrawReviveMarker(state.Batch, mark, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             }
 
             state.Batch.End();

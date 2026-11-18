@@ -419,6 +419,25 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the marker over a fallen teammate in co-op: where they lie, who they are, how far their revival has run.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="marker">The teammate, and where they lie.</param>
+    /// <param name="eye">Where the world is seen from, for projecting the anchor.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawReviveMarker(
+        SpriteBatch batch,
+        Game.Ai.ReviveMarker marker,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
     /// <summary>Draws the prompt for the action available where the player is looking.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="view">What the prompt should say and where it is anchored.</param>

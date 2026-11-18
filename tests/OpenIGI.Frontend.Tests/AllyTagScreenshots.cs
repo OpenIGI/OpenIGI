@@ -3,6 +3,7 @@ using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Hud;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Skia;
+using OpenIGI.UI.Widgets;
 using SkiaSharp;
 using Xunit;
 
@@ -57,6 +58,46 @@ public sealed class AllyTagScreenshots
             using SKImage image = surface.Snapshot();
             using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
             using FileStream file = File.Create(Path.Combine(folder, $"allies-{width}x{height}.png"));
+            png.SaveTo(file);
+        }
+    }
+
+    [Fact]
+    public void Draw_the_revive_hud()
+    {
+        string? folder = Environment.GetEnvironmentVariable("OPENIGI_SHELL_SHOTS");
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(folder);
+        using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
+        UiTheme theme = typography.CreateTheme();
+        using SkiaImageStore images = new();
+        using SkiaFontCache fonts = new();
+        UiPicture? level = MultiplayerScreenshots.Picture(images, [], 1);
+
+        // A teammate down and waiting, one being brought back; and this player down, then being brought back.
+        foreach ((string state, float progress) in new[] { ("down", 0f), ("reviving", 0.45f) })
+        {
+            const int Width = 1920;
+            const int Height = 1080;
+            using SKSurface surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+            MultiplayerScreenshots.DrawGround(surface.Canvas, Width, Height);
+            using (SkiaUiRenderer renderer = new(surface.Canvas, images, fonts))
+            {
+                var painter = new UiPainter(renderer, new LayoutContext(Width, Height));
+                level?.DrawCover(painter, new UiRect(0f, 0f, Width, Height));
+                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width * 0.36f, Height * 0.56f), "Anya", 0f);
+                ReviveHud.DrawMarker(painter, theme, new UiVec2(Width * 0.62f, Height * 0.48f), "Jones", 0.6f);
+                ReviveHud.DrawDowned(painter, theme, progress);
+                renderer.Flush();
+            }
+
+            using SKImage image = surface.Snapshot();
+            using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
+            using FileStream file = File.Create(Path.Combine(folder, $"revive-{state}-{Width}x{Height}.png"));
             png.SaveTo(file);
         }
     }
