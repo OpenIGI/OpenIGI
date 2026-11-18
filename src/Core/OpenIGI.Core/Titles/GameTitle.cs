@@ -51,6 +51,11 @@ public sealed record GameTitle(
         "IGI_GAME_PATH")
     {
         MissionCount = 14,
+        MissionNames =
+        [
+            "Trainyard", "SAM Base", "Military Airbase", "GOD", "Radar Base", "Get Priboi", "Border Crossing",
+            "Re-Supply", "Missile Trainyard", "Defend Priboi", "Eagle's Nest I", "Eagle's Nest II", "Nuclear Infiltration", "Finding the Bomb",
+        ],
     };
 
     /// <summary>Gets I.G.I. 2: Covert Strike (2003).</summary>
@@ -88,6 +93,14 @@ public sealed record GameTitle(
 
     /// <summary>Gets how many missions the title's campaign has, each a map a server can play.</summary>
     public int MissionCount { get; init; }
+
+    /// <summary>Gets the campaign's missions' names as the menus show them, by mission id from 1; empty where not known.</summary>
+    public IReadOnlyList<string> MissionNames { get; init; } = [];
+
+    /// <summary>Gets a mission's name (Trainyard) by its id, which a server lists its map by.</summary>
+    /// <param name="mission">The mission's id, from 1.</param>
+    /// <returns>Its name, or <see langword="null"/> where not known.</returns>
+    public string? MissionName(int mission) => mission >= 1 && mission <= MissionNames.Count ? MissionNames[mission - 1] : null;
 
     /// <summary>Gets every title the shell knows about, active first.</summary>
     public static IReadOnlyList<GameTitle> All { get; } = [Igi1, Igi2];

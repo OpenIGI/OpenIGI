@@ -444,9 +444,6 @@ public sealed partial class GameHost
         }
 
         _shellMissions = missions;
-
-        // The launcher's server list names maps as the menus do; only the game can read the names, so it writes them down.
-        Core.Titles.MissionNames.Save(_titleRuntime.Title.Id, [.. missions.Where(static m => m.Campaign is null).Select(static m => new Core.Titles.MissionName(m.Id, m.Number, m.Name))]);
         return missions;
     }
 

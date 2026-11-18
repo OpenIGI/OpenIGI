@@ -20,9 +20,6 @@ internal sealed partial class LauncherModel
     private readonly Stopwatch _serverClock = Stopwatch.StartNew();
     private ServerBrowser? _browser;
     private string? _browsing;
-    private IReadOnlyDictionary<int, MissionName> _missionNames = new Dictionary<int, MissionName>();
-    private string? _missionsFor;
-    private double _missionsReadAt;
 
     /// <summary>Gets every server heard of for the chosen game, unordered.</summary>
     public IEnumerable<BrowserServer> Servers => _browser?.Servers ?? [];
@@ -46,26 +43,10 @@ internal sealed partial class LauncherModel
         ? Path.Combine(AppContext.BaseDirectory, "Assets", "missions", title.Id, string.Create(CultureInfo.InvariantCulture, $"{mission}.jpg"))
         : null;
 
-    /// <summary>Gets a map of the chosen game as the game's menus name it, once the game has listed its missions.</summary>
+    /// <summary>Gets a map of the chosen game as the game's menus name it (Trainyard).</summary>
     /// <param name="mission">The map's mission id.</param>
-    /// <returns>The mission, or <see langword="null"/> before the game has run.</returns>
-    public MissionName? Mission(int mission)
-    {
-        if (Current.Retail is not { } title)
-        {
-            return null;
-        }
-
-        // Read again now and then: the game writes the names down whenever it lists the missions.
-        if (_missionsFor != title.Id || _serverClock.Elapsed.TotalSeconds - _missionsReadAt > 30)
-        {
-            _missionsFor = title.Id;
-            _missionsReadAt = _serverClock.Elapsed.TotalSeconds;
-            _missionNames = MissionNames.Load(title.Id);
-        }
-
-        return _missionNames.GetValueOrDefault(mission);
-    }
+    /// <returns>Its name, or <see langword="null"/> where not known.</returns>
+    public string? MissionName(int mission) => Current.Retail?.MissionName(mission);
 
     /// <summary>Starts the game at a server: by address where it has one, else through its room.</summary>
     /// <param name="server">The server.</param>

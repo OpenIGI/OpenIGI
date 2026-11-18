@@ -107,9 +107,9 @@ internal sealed partial class ServersPage
     private Label Body(string text, Bgra32 colour, float size = 16f) =>
         new(_theme.Body, text, size, colour) { Wrap = true, Margin = new Thickness(0f, 2f, 0f, 2f) };
 
-    // A server's map as the game's menus name it (Trainyard); "Mission 2" before the game has listed its missions.
+    // A server's map as the game's menus name it (Trainyard); "Mission 2" where the name is not known.
     private string MapName(BrowserServer server) => MapNumber(server) is > 0 and int id
-        ? _model.Mission(id)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"Mission {id}")
+        ? _model.MissionName(id) ?? string.Create(CultureInfo.InvariantCulture, $"Mission {id}")
         : server.Info.Map;
 
     private static int MapNumber(BrowserServer server) =>
