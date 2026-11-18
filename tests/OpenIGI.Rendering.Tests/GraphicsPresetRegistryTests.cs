@@ -165,6 +165,12 @@ public sealed class GraphicsPresetRegistryTests
             // where it cannot run.
             "r_ray_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
             "r_dlssg_ui_recomposition",
+
+            // How the player likes the interface, not how well the world is drawn: the crosshair's look, the ammo warning
+            // under it, and the colours drawn for their colour vision. A quality tier resetting them would undo a choice
+            // the player made about their own eyes and hands.
+            "r_crosshair_color", "r_crosshair_size", "r_crosshair_thickness", "r_crosshair_gap", "r_crosshair_opacity",
+            "r_crosshair_dot", "r_crosshair_outline", "r_crosshair_dynamic", "r_ammo_cue", "r_colorblind",
         ];
 
         _ = LightingCVars.Lighting;

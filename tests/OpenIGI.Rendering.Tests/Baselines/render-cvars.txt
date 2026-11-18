@@ -1,8 +1,10 @@
+hud_down_sound	camera_beep_al	archive
 hud_retail_scale	0	archive
 r_aa	0	archive
 r_aa_threshold	0.05	archive
 r_alpha_hash	0	archive
 r_ambient_scale	0	-
+r_ammo_cue	1	archive
 r_anisotropy	8	archive
 r_ao	0	archive
 r_ao_intensity	1.2	archive
@@ -26,10 +28,19 @@ r_cards_density	8	archive
 r_cards_dump		-
 r_cards_probe	0	-
 r_chromatic	0	archive
+r_colorblind	0	archive
 r_computer_tactical	1	archive
 r_contact_shadows	0.35	archive
 r_contrast	1	archive
 r_crosshair	1	archive
+r_crosshair_color	0	archive
+r_crosshair_dot	0	archive
+r_crosshair_dynamic	1	archive
+r_crosshair_gap	0	archive
+r_crosshair_opacity	92	archive
+r_crosshair_outline	1	archive
+r_crosshair_size	100	archive
+r_crosshair_thickness	100	archive
 r_damage_flash	0.55	archive
 r_day_length	40	archive
 r_day_night_cycle	0	archive
