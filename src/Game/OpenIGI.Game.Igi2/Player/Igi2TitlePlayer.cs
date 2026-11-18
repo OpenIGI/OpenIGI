@@ -86,7 +86,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>), the player's and the soldiers': coloured by the
+    /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>) -- in I.G.I. 2 a dead body's pool of blood --
+    /// the player's, the soldiers' and the other players' in a co-op session (whose pools showed on no screen): coloured by the
     /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>).
     /// </remarks>
     public IReadOnlyList<TitleGroundDecal> GroundDecals
@@ -96,7 +97,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             if (_decalsTick != _ticks)
             {
                 IEnumerable<Humans.Igi2Human> bodies = Soldiers?.Bodies ?? [];
-                _decals = [.. bodies.Prepend(Human).Select(static h => Decal(h.Shadow)).OfType<TitleGroundDecal>()];
+                IEnumerable<Humans.Igi2Human> others = _networkHumans.Select(static n => (Humans.Igi2Human)n.Human);
+                _decals = [.. bodies.Prepend(Human).Concat(others).Select(static h => Decal(h.Shadow)).OfType<TitleGroundDecal>()];
                 _decalsTick = _ticks;
             }
 

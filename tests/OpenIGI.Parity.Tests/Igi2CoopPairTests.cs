@@ -784,6 +784,26 @@ public sealed class Igi2CoopPairTests
     }
 
     /// <summary>
+    /// A fallen partner leaves its pool of blood where it lies, as a guard does: the ground's marks were the player's and the
+    /// guards' alone, and a partner who fell left none on any screen.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_fallen_partner_leaves_its_pool_of_blood()
+    {
+        using Igi2CoopPair pair = Joined();
+        Igi2HumanPlayer partner = Assert.Single(pair.Host!.NetworkHumans).Human;
+
+        // The host stands well away, or it revives the partner before its body has come to rest.
+        pair.Host.Human.Position = partner.Position + new Vector3d(CoopSquad.ReviveReachUnits * 4, 0, 0);
+        partner.Damage.Damage = partner.Damage.MaxDamage + 1f;
+        partner.UpdateDie();
+        Assert.True(
+            pair.RunUntil(() => pair.Host.GroundDecals.Any(d => d.Texture.EndsWith(OpenIGI.Game.World.HumanShadow.PoolTexture, StringComparison.Ordinal)
+                && Math.Abs(d.Position.X - partner.Position.X) + Math.Abs(d.Position.Y - partner.Position.Y) < 4096), 400) >= 0,
+            $"the fallen partner left no pool of blood: dead {partner.IsDead}, clip done {partner.IsDeathAnimationDone}, settled {partner.IsDeathPositionStabilized}, puddle {partner.IsBloodPuddle}, mark on {partner.Shadow.IsEnabled} valid {partner.Shadow.IsPositionValid} size {partner.Shadow.Size}, state {partner.Locomotion.CurrentState}");
+    }
+
+    /// <summary>
     /// A guard the joiner kills is in the joiner's kill feed, under the joiner and its weapon: I.G.I. 2 told the session of no
     /// hit, so its players had no hit marks, no mark of where a hit came from, and no guard in the feed.
     /// </summary>
