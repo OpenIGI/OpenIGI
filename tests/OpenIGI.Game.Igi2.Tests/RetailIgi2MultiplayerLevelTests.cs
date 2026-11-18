@@ -43,7 +43,7 @@ public sealed class RetailIgi2MultiplayerLevelTests
             level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
             server.Send(now, tick);
             client.Receive(now);
-            client.SendCommand(new float[Humans.Igi2HumanChannels.Count], now);
+            client.SendCommand(new float[Igi2Command.ChannelCount], now);
             client.Flush(now);
         }
 

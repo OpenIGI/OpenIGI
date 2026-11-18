@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
@@ -27,6 +28,29 @@ public sealed class Igi2NetworkHuman
         Human = human;
         Weapons = weapons;
         World = world;
+        human.Felt = (part, direction) => _felt.Add((part, direction, Commands.LastTakenTick));
+    }
+
+    // The hits it took since the last snapshot, each with the newest of its client's commands run when it came.
+    private readonly List<(Igi2DamagePart Part, Vector3f Direction, long After)> _felt = [];
+
+    /// <summary>The sense a hit is sent as, for the player's own game to feel (<see cref="Igi2HumanPlayer.FeelHit"/>).</summary>
+    internal const byte HitSense = 0;
+
+    /// <summary>Takes the hits it has felt since the last snapshot, as senses its client's game feels.</summary>
+    /// <param name="entity">Its entity in the snapshots.</param>
+    /// <param name="into">Where they go.</param>
+    /// <remarks>Each goes with how many of its client's commands the server has run since, as Project I.G.I.'s shove does.</remarks>
+    internal void TakeFelt(int entity, List<ReplicatedSense> into)
+    {
+        long now = Commands.LastTakenTick;
+        foreach ((Igi2DamagePart part, Vector3f direction, long after) in _felt)
+        {
+            int carried = now == long.MinValue || after == long.MinValue ? 0 : (int)Math.Clamp(now - after, 0, 255);
+            into.Add(new ReplicatedSense(entity, HitSense, direction, A: (float)part, Ticks: carried));
+        }
+
+        _felt.Clear();
     }
 
     /// <summary>Gets the player.</summary>
@@ -36,7 +60,10 @@ public sealed class Igi2NetworkHuman
     public Igi2PlayerWeapons? Weapons { get; }
 
     /// <summary>Gets its client's commands, by the tick each is for.</summary>
-    public UserCommandBuffer Commands { get; } = new(Igi2HumanChannels.Count);
+    public UserCommandBuffer Commands { get; } = new(Igi2Command.ChannelCount);
+
+    // The command being run, the channel frame and the look its client began it with.
+    private readonly float[] _command = new float[Igi2Command.ChannelCount];
 
     /// <summary>Gets the channel frame it last ran on.</summary>
     public ReadOnlySpan<float> Frame => _frame;
@@ -50,14 +77,29 @@ public sealed class Igi2NetworkHuman
     /// </summary>
     /// <remarks>
     /// A client has no other player's commands, only where the server had it. So its copy is a puppet: each tick its body
-    /// is put in the state the snapshot names and run with no controls, so the body's own states choose its clips as the
-    /// server's did, and then it is stood exactly where the snapshot puts it, facing and looking as it does.
+    /// is put in the state the snapshot names and that state's clip played on, its controls never run
+    /// (<see cref="Igi2HumanPlayer.PoseAsPuppet"/>), and it is stood exactly where the snapshot puts it, facing and looking as it does.
     /// </remarks>
     public ReplicatedHuman? PuppetTarget { get; set; }
 
-    /// <summary>Its delayed half on a tick: its zoom, its update on its client's command for the tick, and its delayed handler.</summary>
+    /// <summary>
+    /// Its delayed half on a tick: for each of its client's commands due, its zoom, its update on the command and its delayed
+    /// handler.
+    /// </summary>
     /// <param name="tick">The tick being run.</param>
-    internal void RunDelayed(long tick)
+    /// <param name="betweenCommands">
+    /// What the level does between two commands run in one tick: the shots the first fired traced, as the next tick's run
+    /// handler would have traced them before the second.
+    /// </param>
+    /// <remarks>
+    /// Each of its client's commands is run once, in order, so the player goes exactly where its client predicted it, as
+    /// Project I.G.I.'s partner does (<see cref="UserCommandBuffer.Due"/>): none on a tick the queue is dry -- the player waits
+    /// for its client -- and two on a tick it is catching up. A dry queue once repeated the last command: the server's copy
+    /// walked and turned on keys nobody pressed, and as the queue never ran more than one a tick, every dry tick left it a
+    /// tick further behind its client for good, until the queue was full and the client's newest commands were refused. The
+    /// client was put back again and again.
+    /// </remarks>
+    internal void RunDelayed(long tick, Action<Igi2NetworkHuman>? betweenCommands = null)
     {
         if (PuppetTarget is { } target)
         {
@@ -65,8 +107,33 @@ public sealed class Igi2NetworkHuman
             return;
         }
 
-        // The sequel's human is one of the level's and runs every tick, so a dry queue repeats the last command.
-        Commands.TakeOrRepeat(_frame);
+        bool first = true;
+        for (int due = Commands.Due(); due > 0 && Commands.TryTake(_command); due--)
+        {
+            if (!first)
+            {
+                betweenCommands?.Invoke(this);
+            }
+
+            first = false;
+            RunCommand(tick);
+        }
+    }
+
+    // One of its client's commands: begun from where the client's player looked, the frame then turning it as it turned there.
+    private void RunCommand(long tick)
+    {
+        if (Igi2Command.Unpack(_command, _frame) is { } look)
+        {
+            if (!Human.IsDead)
+            {
+                Human.IdealGamma = look.IdealGamma;
+                Human.View.IdealPitch = look.IdealPitch;
+            }
+
+            Human.UnfilteredMouse = look.Unfiltered;
+        }
+
         Human.View.RunZoom();
         Human.Ticks = (int)tick;
         Human.Update(_frame);
@@ -121,18 +188,11 @@ public sealed class Igi2NetworkHuman
             (_gunfire ??= new Weapons.Igi2RemoteGunfire(firing, Human)).Take(target.Shots);
         }
 
-        if (Human.Locomotion.CurrentState != target.State)
-        {
-            Human.Locomotion.Enter(target.State, Human);
-        }
-
-        Human.Update(_frame);
-        Human.Position = target.Position.ToVector();
-        Human.Speed = target.Velocity;
-        Human.Gamma = Quantize.AngleFromBits(target.Yaw);
-        Human.IdealGamma = Human.Gamma;
-        Human.View.Pitch = Quantize.AngleFromBits(target.Pitch);
-        Human.UpdateBody();
-        Human.UpdateViewBody(updateAnimation: false);
+        Human.PoseAsPuppet(
+            target.State,
+            target.Position.ToVector(),
+            target.Velocity,
+            Quantize.AngleFromBits(target.Yaw),
+            Quantize.AngleFromBits(target.Pitch));
     }
 }

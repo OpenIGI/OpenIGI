@@ -711,6 +711,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.View.RunZoom();
         if (Human.UnfilteredMouse) { WriteSmoothLook(); }
         Human.Ticks = (int)_ticks;
+        CommandLook = new Multiplayer.Igi2CommandLook(Human.IdealGamma, Human.View.IdealPitch, Human.UnfilteredMouse);
         Human.Update(_frame);
         Human.RunDelayed();
 

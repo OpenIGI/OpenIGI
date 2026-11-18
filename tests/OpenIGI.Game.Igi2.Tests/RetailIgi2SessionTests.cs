@@ -29,7 +29,7 @@ public sealed class RetailIgi2SessionTests
         ClientSession client = new(new NetClient(network.Open(), protocol), world.ChannelCount);
         client.Connect(serverNet.LocalAddress, new JoinRequest("Jones", "test", string.Empty), now);
 
-        float[] forwards = new float[Igi2HumanChannels.Count];
+        float[] forwards = new float[Igi2Command.ChannelCount];
         forwards[(int)Igi2HumanChannel.MoveForwards] = 1f;
         Core.Numerics.Vector3d? start = null;
         for (int i = 0; i < 150; i++)
@@ -101,7 +101,7 @@ public sealed class RetailIgi2SessionTests
                 level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
                 server.Send(now, tick);
                 client.Receive(now);
-                client.SendCommand(new float[Igi2HumanChannels.Count], now);
+                client.SendCommand(new float[Igi2Command.ChannelCount], now);
                 client.Flush(now);
             }
         }

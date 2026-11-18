@@ -101,6 +101,30 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     {
         Damage.LastPart = part;
         Damage.Add(part, ((Fpu)hitDamage * Damage.Multiplier(part)).F);
+        Felt?.Invoke(part, direction);
+        FeelHit(part, direction);
+    }
+
+    /// <summary>
+    /// Gets or sets what hears of each hit the player takes, its zone and the shot's way: a co-op server records them, for the
+    /// player's own game to feel (<see cref="FeelHit"/>).
+    /// </summary>
+    public Action<Igi2DamagePart, Vector3f>? Felt { get; set; }
+
+    /// <summary>
+    /// The player's reaction to a hit, <c>HumanPlayer_HandleDamage</c> past the damage: the flinch, the cry, the shake, the red
+    /// flash and the push along the shot.
+    /// </summary>
+    /// <param name="part">The zone hit.</param>
+    /// <param name="direction">Which way the shot travelled; nought for none, which flashes the screen evenly and pushes nothing.</param>
+    /// <remarks>
+    /// A co-op client's player feels here the hits the server's copy of it took: the guards' rounds land on that copy, so its
+    /// damage comes with the snapshots, but left without the flinch and the push it ran on where the server's had stopped and
+    /// been knocked aside, and was put back.
+    /// </remarks>
+    public void FeelHit(Igi2DamagePart part, Vector3f direction)
+    {
+        Damage.LastPart = part;
         Signal |= Igi2PlayerSignal.Hit;
         if (!IsDead)
         {

@@ -80,6 +80,27 @@ public sealed partial class Igi2LiftTask
         _speed = (float)(leg.UnitsPerTick / length);
     }
 
+    /// <summary>Gets whether what a body stands on is one of this lift's solids: the body rides the car.</summary>
+    /// <param name="ground">What the body stands on, or <see langword="null"/> in the air.</param>
+    /// <returns><see langword="true"/> when it stands on the car.</returns>
+    public bool Carries(OpenIGI.Game.Physics.IWorldCollider? ground)
+    {
+        if (ground is not Collision.Igi2RigidObject solid)
+        {
+            return false;
+        }
+
+        foreach (Collision.Igi2RigidObject own in _solids)
+        {
+            if (ReferenceEquals(own, solid))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // The car put on a leg between two floors, so far along it, and its riders' attachments with it.
     private void SetLeg(Igi2FloorTask from, Igi2FloorTask to, float along)
     {

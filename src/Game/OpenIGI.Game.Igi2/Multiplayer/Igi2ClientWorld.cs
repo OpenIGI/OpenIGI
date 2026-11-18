@@ -44,8 +44,18 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
         BindLevelState();
     }
 
+    // The command sent up for the tick: the player's frame, where it looked as the frame began, and the weapon it chose (Igi2Command).
+    private readonly float[] _command = new float[Igi2Command.ChannelCount];
+
     /// <inheritdoc/>
-    public ReadOnlySpan<float> LocalFrame => _level.LastFrame;
+    public ReadOnlySpan<float> LocalFrame
+    {
+        get
+        {
+            Igi2Command.Pack(_level.LastFrame, _level.CommandLook, _level.Human.ChosenWeaponNumber, _command);
+            return _command;
+        }
+    }
 
     /// <inheritdoc/>
     public IReadOnlyCollection<int> Shown => _puppets.Keys;

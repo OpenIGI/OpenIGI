@@ -18,6 +18,27 @@ public sealed partial class Igi2ReplicatedWorld
     // The level's doors, found once.
     private Interaction.Igi2DoorTask[] DoorTasks => _doorTasks ??= Igi2DoorCommands.Of(_level);
 
+    // A player as a snapshot carries it, with the lift it rides: a client draws it on its own copy of that car, as Project
+    // I.G.I.'s does, not where the snapshots had it -- under the floor of a car going up, in the roof of one coming down.
+    private ReplicatedHuman OnLift(ReplicatedHuman replicated, Player.Igi2HumanPlayer human)
+    {
+        _liftTasks ??= [.. _level.LevelTasks().OfType<Interaction.Igi2LiftTask>()];
+        if (human.IsDead || human.GroundCollider is not { } ground)
+        {
+            return replicated;
+        }
+
+        for (int i = 0; i < _liftTasks.Length && i < ReplicatedLift.MaxPerSnapshot; i++)
+        {
+            if (_liftTasks[i].Carries(ground))
+            {
+                return replicated with { Platform = (byte)(i + 1) };
+            }
+        }
+
+        return replicated;
+    }
+
     // The level's lifts, in its tree's order, as a snapshot carries them; none for a level without any.
     private ReplicatedLift[]? Lifts()
     {

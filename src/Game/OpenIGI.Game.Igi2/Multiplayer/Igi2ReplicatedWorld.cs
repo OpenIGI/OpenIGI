@@ -87,7 +87,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
     public bool IncludesHost { get; set; } = true;
 
     /// <inheritdoc/>
-    public int ChannelCount => Igi2HumanChannels.Count;
+    public int ChannelCount => Igi2Command.ChannelCount;
 
     /// <inheritdoc/>
     public long CurrentTick => _level.TickCount;
@@ -284,12 +284,14 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         _scratch.Clear();
         if (IncludesHost)
         {
-            _scratch.Add(WithRevive(Replicate(HostEntity, _level.Human)));
+            _scratch.Add(WithRevive(OnLift(Replicate(HostEntity, _level.Human), _level.Human)));
         }
 
+        List<ReplicatedSense> felt = [];
         foreach ((int slot, Igi2NetworkHuman human) in _bySlot)
         {
-            _scratch.Add(WithRevive(Replicate(slot + 1, human.Human)));
+            _scratch.Add(WithRevive(OnLift(Replicate(slot + 1, human.Human), human.Human)));
+            human.TakeFelt(slot + 1, felt);
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -297,7 +299,14 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
 
         // By id, as the codec writes them and a snapshot is searched: the players stand in the order they last spawned.
         _scratch.Sort(static (a, b) => a.Id.CompareTo(b.Id));
-        return new Snapshot(tick, [.. _scratch], Igi2DoorCommands.Capture(DoorTasks), Lifts: Lifts(), Vehicles: _vehicles.Capture(), Fired: _fired.Capture(tick, _level.Weapons?.Inventory.Tables));
+        return new Snapshot(
+            tick,
+            [.. _scratch],
+            Igi2DoorCommands.Capture(DoorTasks),
+            Senses: felt.Count == 0 ? null : [.. felt],
+            Lifts: Lifts(),
+            Vehicles: _vehicles.Capture(),
+            Fired: _fired.Capture(tick, _level.Weapons?.Inventory.Tables));
     }
 
     /// <summary>Puts every player but a shooter where the shooter's client drew them when it fired, until the scope ends.</summary>

@@ -286,22 +286,31 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
     {
         foreach (Igi2NetworkHuman other in _networkHumans)
         {
-            if (other.Weapons is not { } weapons)
-            {
-                continue;
-            }
-
-            using IDisposable? rewound = NetworkRewind?.Invoke(other);
-            weapons.RunGunShot();
+            RunNetworkGunShot(other);
         }
     }
 
-    /// <summary>The other players' delayed halves, after the level's own, each on the command its client sent for the tick.</summary>
+    // One other player's shots, traced with the others put back where its client saw them as it fired.
+    private void RunNetworkGunShot(Igi2NetworkHuman other)
+    {
+        if (other.Weapons is not { } weapons)
+        {
+            return;
+        }
+
+        using IDisposable? rewound = NetworkRewind?.Invoke(other);
+        weapons.RunGunShot();
+    }
+
+    /// <summary>The other players' delayed halves, after the level's own, each on the commands of its client's due this tick.</summary>
     private void RunNetworkHumans()
     {
         foreach (Igi2NetworkHuman other in _networkHumans)
         {
-            other.RunDelayed(_ticks);
+            other.RunDelayed(_ticks, RunNetworkGunShot);
         }
     }
+
+    /// <summary>Gets where the level's own player looked as its last tick's frame began, which a client's command carries.</summary>
+    internal Igi2CommandLook CommandLook { get; private set; }
 }

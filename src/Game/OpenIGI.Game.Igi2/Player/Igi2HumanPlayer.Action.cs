@@ -66,6 +66,9 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Gets or sets the weapon a change is under way to, by number, or −1, <c>nChangeWeaponID</c>.</summary>
     public int ChangeWeaponId { get; set; } = -1;
 
+    /// <summary>Gets the weapon the player has chosen, by number: the one a change is under way to, else the one shown; -1 for none.</summary>
+    public int ChosenWeaponNumber => ChangeWeaponId >= 0 ? ChangeWeaponId : Weapon.Inventory?.StatusDisplay?.Number ?? -1;
+
     /// <summary>Gets or sets where the player is in the weapon cycle, <c>nWeaponCycle</c>.</summary>
     public int WeaponCycleIndex { get; set; }
 
