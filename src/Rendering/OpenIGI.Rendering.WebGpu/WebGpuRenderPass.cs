@@ -311,7 +311,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     {
         ThrowIfEnded();
         SendHeld();
-        Wgpu.wgpuRenderPassEncoderSetViewport(_handle, x, y, width, height, minDepth, maxDepth);
+        WebGpuHotCalls.wgpuRenderPassEncoderSetViewport(_handle.Handle, x, y, width, height, minDepth, maxDepth);
     }
 
     /// <inheritdoc/>
@@ -480,7 +480,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     {
         ThrowIfEnded();
         SendHeld();
-        Wgpu.wgpuRenderPassEncoderEnd(_handle);
+        WebGpuHotCalls.wgpuRenderPassEncoderEnd(_handle.Handle);
         _ended = true;
     }
 
@@ -497,7 +497,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         if (!_ended && _handle.IsValid)
         {
             SendHeld();
-            Wgpu.wgpuRenderPassEncoderEnd(_handle);
+            WebGpuHotCalls.wgpuRenderPassEncoderEnd(_handle.Handle);
             _ended = true;
         }
 

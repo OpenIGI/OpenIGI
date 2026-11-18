@@ -225,8 +225,8 @@ public static class Igi2BoneMath
     {
         ArgumentNullException.ThrowIfNull(rig);
         ArgumentNullException.ThrowIfNull(bones);
-        IReadOnlyList<int> parents = rig.Parents;
-        IReadOnlyList<Vector3f> rest = rig.Translations;
+        ReadOnlySpan<int> parents = rig.ParentSpan;
+        ReadOnlySpan<Vector3f> rest = rig.TranslationSpan;
         int count = Math.Min(rig.BoneCount, bones.BoneCount);
         for (int bone = 0; bone < count; bone++)
         {

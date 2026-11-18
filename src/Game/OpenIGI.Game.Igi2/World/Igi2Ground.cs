@@ -37,7 +37,6 @@ namespace OpenIGI.Game.Igi2.World;
 /// </remarks>
 public sealed class Igi2Ground : IGroundHeightField
 {
-    private readonly IReadOnlyList<Igi2TerrainTile> _tiles;
     private readonly Igi2DiscardBox[] _discards;
     private readonly Vector3d _origin;
 
@@ -48,7 +47,6 @@ public sealed class Igi2Ground : IGroundHeightField
     {
         ArgumentNullException.ThrowIfNull(surface);
         Surface = surface;
-        _tiles = surface.Tiles;
         _discards = surface.DiscardBoxes;
         _origin = surface.Origin;
     }
@@ -57,7 +55,7 @@ public sealed class Igi2Ground : IGroundHeightField
     public Igi2TerrainSurface Surface { get; }
 
     /// <summary>Gets a value indicating whether this level has any ground to stand on.</summary>
-    public bool IsEmpty => _tiles.Count == 0;
+    public bool IsEmpty => Surface.TileSpan.IsEmpty;
 
     /// <inheritdoc/>
     public bool TryGetGround(double x, double y, double z, double aboveUnits, out TerrainGround ground)
@@ -119,7 +117,7 @@ public sealed class Igi2Ground : IGroundHeightField
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"I.G.I. 2 ground over {_tiles.Count} tile(s), {_discards.Length} discard(s)";
+        $"I.G.I. 2 ground over {Surface.TileSpan.Length} tile(s), {_discards.Length} discard(s)";
 
     // Terrain_GetNextZHandler, 0x572E80: the point relative to the terrain as floats, the ground there
     // (Igi2TerrainVertex), the discard boxes, and the height back in the world at the client's precision.
@@ -128,7 +126,7 @@ public sealed class Igi2Ground : IGroundHeightField
         ground = default;
         float relativeX = ((Fpu)x - _origin.X).F;
         float relativeY = ((Fpu)y - _origin.Y).F;
-        if (!Igi2TerrainVertex.TrySample(_tiles, relativeX, relativeY, out Igi2TerrainSample sample)
+        if (!Igi2TerrainVertex.TrySample(Surface.TileSpan, relativeX, relativeY, out Igi2TerrainSample sample)
             || Igi2DiscardBox.AnyContains(_discards, relativeX, relativeY))
         {
             return false;

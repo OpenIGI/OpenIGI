@@ -140,12 +140,13 @@ public sealed class Igi2AnimController : IIgi2PoseSource
         {
             bones.Root = default;
         }
-        else if (Active(clip.Translation, static k => k.Time) is int key)
+        else if (ActiveKey(clip.TranslationKeys) is int key and >= 0)
         {
-            Igi2TranslationKey from = clip.Translation[key];
-            if (key + 1 < clip.Translation.Count)
+            ReadOnlySpan<Igi2TranslationKey> translation = clip.TranslationKeys;
+            Igi2TranslationKey from = translation[key];
+            if (key + 1 < translation.Length)
             {
-                Igi2TranslationKey to = clip.Translation[key + 1];
+                Igi2TranslationKey to = translation[key + 1];
                 Fpu t = (Fpu)(double)(Time - from.Time) / (to.Time - from.Time);
                 bones.Root = new Vector3f(
                     ((((Fpu)to.Translation.X - from.Translation.X) * t) + from.Translation.X).F,
@@ -167,14 +168,15 @@ public sealed class Igi2AnimController : IIgi2PoseSource
                 continue;
             }
 
-            IReadOnlyList<Igi2RotationKey> track = clip.Rotations(bone);
-            if (Active(track, static k => k.Time) is not int key)
+            ReadOnlySpan<Igi2RotationKey> track = clip.RotationKeys(bone);
+            int key = ActiveKey(track);
+            if (key < 0)
             {
                 continue;
             }
 
             Igi2RotationKey from = track[key];
-            if (key + 1 >= track.Count)
+            if (key + 1 >= track.Length)
             {
                 bones.Orientations[bone] = from.Rotation;
                 bones.Ops[bone] = 0;
@@ -212,21 +214,15 @@ public sealed class Igi2AnimController : IIgi2PoseSource
             return null;
         }
 
-        IReadOnlyList<Igi2RotationKey> track = clip.Rotations(bone);
-        return Active(track, static k => k.Time) is int key ? track[key] : null;
+        ReadOnlySpan<Igi2RotationKey> track = clip.RotationKeys(bone);
+        int key = ActiveKey(track);
+        return key >= 0 ? track[key] : null;
     }
 
-    /// <summary>The active key: the last whose time the controller has reached.</summary>
-    private int? Active<TKey>(IReadOnlyList<TKey> track, Func<TKey, int> timeOf)
-    {
-        int? key = null;
-        for (int i = 0; i < track.Count && timeOf(track[i]) <= Time; i++)
-        {
-            key = i;
-        }
+    // The active key at the controller's time (Igi2ActiveKey).
+    private int ActiveKey(ReadOnlySpan<Igi2TranslationKey> track) => Igi2ActiveKey.Of(track, Time);
 
-        return key;
-    }
+    private int ActiveKey(ReadOnlySpan<Igi2RotationKey> track) => Igi2ActiveKey.Of(track, Time);
 
     /// <summary>Gets the clip, or <see langword="null"/>.</summary>
     public Igi2AnimationClip? Clip { get; private set; }

@@ -121,7 +121,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
                 native.timestampWrites = &timestamps;
             }
 
-            WGPURenderPassEncoder pass = Wgpu.wgpuCommandEncoderBeginRenderPass(_handle, &native);
+            WGPURenderPassEncoder pass = new(WebGpuHotCalls.wgpuCommandEncoderBeginRenderPass(_handle.Handle, &native));
             return pass.IsValid
                 ? new WebGpuRenderPassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group, _device)
                 : throw new InvalidOperationException($"The render pass '{descriptor.Label}' could not begin.");
@@ -221,7 +221,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
         WGPUTexelCopyTextureInfo to = TextureSide(destination);
         WGPUExtent3D extent = Extent(size);
 
-        Wgpu.wgpuCommandEncoderCopyTextureToTexture(_handle, &from, &to, &extent);
+        WebGpuHotCalls.wgpuCommandEncoderCopyTextureToTexture(_handle.Handle, &from, &to, &extent);
     }
 
     /// <inheritdoc/>
@@ -288,11 +288,11 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
         {
             using WebGpuString name = new(label);
             WGPUCommandBufferDescriptor native = new() { label = name.View };
-            return Wgpu.wgpuCommandEncoderFinish(handle, &native);
+            return new WGPUCommandBuffer(WebGpuHotCalls.wgpuCommandEncoderFinish(handle.Handle, &native));
         }
         finally
         {
-            Wgpu.wgpuCommandEncoderRelease(handle);
+            WebGpuHotCalls.wgpuCommandEncoderRelease(handle.Handle);
         }
     }
 
@@ -308,7 +308,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 
         if (_handle.IsValid)
         {
-            Wgpu.wgpuCommandEncoderRelease(_handle);
+            WebGpuHotCalls.wgpuCommandEncoderRelease(_handle.Handle);
             _handle = default;
         }
     }

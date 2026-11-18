@@ -68,6 +68,7 @@ public sealed class Igi2AnimationClip
     private const int NoNext = 0;
 
     private readonly Igi2RotationKey[][] _rotations;
+    private readonly Igi2TranslationKey[] _translation;
 
     private Igi2AnimationClip(
         string name,
@@ -88,6 +89,7 @@ public sealed class Igi2AnimationClip
         Hierarchy = hierarchy;
         DeclaredEventCount = declaredEventCount;
         Translation = translation;
+        _translation = translation;
         _rotations = rotations;
         Triggers = triggers;
         Links = links;
@@ -144,6 +146,24 @@ public sealed class Igi2AnimationClip
     /// <returns>The keys, in time order; empty when the clip leaves the bone alone.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The bone is not one this clip has.</exception>
     public IReadOnlyList<Igi2RotationKey> Rotations(int bone)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bone);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bone, _rotations.Length);
+        return _rotations[bone];
+    }
+
+    /// <summary>Gets the root translation track as a span, for a loop that reads it every pose.</summary>
+    /// <remarks>
+    /// The same keys as <see cref="Translation"/>. A struct read through <see cref="IReadOnlyList{T}"/> is an interface call the
+    /// browser's ahead-of-time compiler leaves to its interpreter; a span is read in place.
+    /// </remarks>
+    public ReadOnlySpan<Igi2TranslationKey> TranslationKeys => _translation;
+
+    /// <summary>Gets one bone's rotation track as a span, the same keys as <see cref="Rotations"/>.</summary>
+    /// <param name="bone">The bone.</param>
+    /// <returns>The keys, in time order; empty when the clip leaves the bone alone.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The bone is not one this clip has.</exception>
+    public ReadOnlySpan<Igi2RotationKey> RotationKeys(int bone)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(bone);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bone, _rotations.Length);

@@ -30,21 +30,22 @@ public static class Igi2ClipSampler
     /// <param name="time">The controller time, in the clip's units.</param>
     /// <returns>The root's position, or zero for an empty track.</returns>
     /// <remarks>Linear between keys: the translation key has no tangents.</remarks>
-    public static Vector3f SampleTranslation(IReadOnlyList<Igi2TranslationKey> track, int time)
+    public static Vector3f SampleTranslation(ReadOnlySpan<Igi2TranslationKey> track, int time)
     {
-        ArgumentNullException.ThrowIfNull(track);
-        if (!TryFindSegment(track, time, static k => k.Time, out int index, out double t))
+        int index = Igi2ActiveKey.Of(track, time);
+        if (index < 0)
         {
             return default;
         }
 
         Vector3f from = track[index].Translation;
-        if (index + 1 >= track.Count)
+        if (index + 1 >= track.Length)
         {
             return from;
         }
 
         Vector3f to = track[index + 1].Translation;
+        double t = Between(time, track[index].Time, track[index + 1].Time);
         return new Vector3f(
             (float)(((to.X - from.X) * t) + from.X),
             (float)(((to.Y - from.Y) * t) + from.Y),
@@ -59,21 +60,22 @@ public static class Igi2ClipSampler
     /// a plain slerp when clear.
     /// </param>
     /// <returns>The bone's local orientation, or the identity for an empty track.</returns>
-    public static Quaternion32 SampleRotation(IReadOnlyList<Igi2RotationKey> track, int time, bool squad)
+    public static Quaternion32 SampleRotation(ReadOnlySpan<Igi2RotationKey> track, int time, bool squad)
     {
-        ArgumentNullException.ThrowIfNull(track);
-        if (!TryFindSegment(track, time, static k => k.Time, out int index, out double t))
+        int index = Igi2ActiveKey.Of(track, time);
+        if (index < 0)
         {
             return new Quaternion32(0f, 0f, 0f, 1f);
         }
 
         Igi2RotationKey from = track[index];
-        if (index + 1 >= track.Count)
+        if (index + 1 >= track.Length)
         {
             return from.Rotation;
         }
 
         Igi2RotationKey to = track[index + 1];
+        double t = Between(time, from.Time, to.Time);
         Quaternion32 rotation = Slerp(from.Rotation, to.Rotation, t);
         if (!squad)
         {
@@ -105,10 +107,10 @@ public static class Igi2ClipSampler
 
         for (int bone = 0; bone < clip.BoneCount; bone++)
         {
-            rotations[bone] = SampleRotation(clip.Rotations(bone), time, squad);
+            rotations[bone] = SampleRotation(clip.RotationKeys(bone), time, squad);
         }
 
-        return SampleTranslation(clip.Translation, time);
+        return SampleTranslation(clip.TranslationKeys, time);
     }
 
     /// <summary>The sequel's quaternion slerp, <c>Quat32_SLERP</c> (<c>igi2 0x5635D0</c>).</summary>
@@ -174,32 +176,6 @@ public static class Igi2ClipSampler
             (float)((toWeight * to.W) + (fromWeight * from.W)));
     }
 
-    private static bool TryFindSegment<TKey>(
-        IReadOnlyList<TKey> track,
-        int time,
-        Func<TKey, int> timeOf,
-        out int index,
-        out double t)
-    {
-        // The active key is the last whose time the controller has reached; the stepper scans with <=.
-        index = -1;
-        for (int i = 0; i < track.Count && timeOf(track[i]) <= time; i++)
-        {
-            index = i;
-        }
-
-        t = 0.0;
-        if (index < 0)
-        {
-            return false;
-        }
-
-        if (index + 1 < track.Count)
-        {
-            int start = timeOf(track[index]);
-            t = (double)(time - start) / (timeOf(track[index + 1]) - start);
-        }
-
-        return true;
-    }
+    // How far a time is from one key to the next, as the segment's parameter.
+    private static double Between(int time, int start, int end) => (double)(time - start) / (end - start);
 }

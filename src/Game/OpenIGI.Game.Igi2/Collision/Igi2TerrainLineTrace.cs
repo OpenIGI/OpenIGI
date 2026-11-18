@@ -35,9 +35,10 @@ internal static class Igi2TerrainLineTrace
     /// <param name="trace">The lines and their running results.</param>
     public static void Trace(Igi2TerrainCollider ground, Igi2TerrainSurface surface, WorldLineTrace trace)
     {
-        for (int tile = 0; tile < surface.Tiles.Count; tile++)
+        ReadOnlySpan<Igi2TerrainTile> tiles = surface.TileSpan;
+        for (int tile = 0; tile < tiles.Length; tile++)
         {
-            Tile frame = new(surface.Tiles[tile], surface.Origin);
+            Tile frame = new(tiles[tile], surface.Origin);
             for (int i = 0; i < trace.Count; i++)
             {
                 if (frame.Trace(surface, trace.Starts[i], trace.Ends[i], out Vector3f local))
@@ -83,7 +84,7 @@ internal static class Igi2TerrainLineTrace
         hit.LeaveMaterial = null;
         hit.Distance = distance.Value;
 
-        if (!Igi2TerrainVertex.TrySample(surface.Tiles, ((Fpu)x - origin.X).F, ((Fpu)y - origin.Y).F, out Igi2TerrainSample sample))
+        if (!Igi2TerrainVertex.TrySample(surface.TileSpan, ((Fpu)x - origin.X).F, ((Fpu)y - origin.Y).F, out Igi2TerrainSample sample))
         {
             return;
         }
@@ -106,9 +107,10 @@ internal static class Igi2TerrainLineTrace
         Vector3d origin = surface.Origin;
         Fpu across = (Fpu)x - origin.X;
         bool owns = true;
-        for (int m = 0; m < surface.Tiles.Count; m++)
+        ReadOnlySpan<Igi2TerrainTile> tiles = surface.TileSpan;
+        for (int m = 0; m < tiles.Length; m++)
         {
-            Igi2TerrainTile other = surface.Tiles[m];
+            ref readonly Igi2TerrainTile other = ref tiles[m];
             Fpu centreX = (Fpu)other.Centre.X - origin.X;
             float centreY = ((Fpu)other.Centre.Y - origin.Y).F;
             Fpu halfWidth = (Fpu)other.WorldWidth * 2048f;

@@ -285,7 +285,7 @@ public sealed unsafe class WebGpuSurface : IDisposable
         }
 
         WGPUSurfaceTexture current = new();
-        Wgpu.wgpuSurfaceGetCurrentTexture(_handle, &current);
+        WebGpuHotCalls.wgpuSurfaceGetCurrentTexture(_handle.Handle, &current);
 
         if (current.status is not (WGPUSurfaceGetCurrentTextureStatus.SuccessOptimal
             or WGPUSurfaceGetCurrentTextureStatus.SuccessSuboptimal))

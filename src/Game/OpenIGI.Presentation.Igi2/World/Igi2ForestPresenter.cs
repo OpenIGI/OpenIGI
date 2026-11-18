@@ -138,7 +138,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 _device.CreateMesh(geometry.Vertices, geometry.Indices),
                 [.. trunk],
                 [.. leaves],
-                stand.Trees,
+                [.. stand.Trees],
                 Igi2ForestBsp.Build(stand.Trees, stand.Centre, stand.HalfExtent, height),
                 stand.Centre,
                 centre,
@@ -148,7 +148,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 (float)(stand.ViewCutoff * WorldScene.UnitsPerMetre)));
         }
 
-        TreeCount = _stands.Sum(static s => s.Trees.Count);
+        TreeCount = _stands.Sum(static s => s.Trees.Length);
         log.Information(
             LogCategory,
             $"Forest: {_stands.Count} stand(s), {TreeCount} trees, {_stands.Sum(static s => s.Bsp.Count)} indexed.");
@@ -425,7 +425,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     private void Accept(int stand, int tree, in Camera3D camera, float biasScale, float biasInverse)
     {
         Stand owner = _stands[stand];
-        Igi2Tree placed = owner.Trees[tree];
+        ref readonly Igi2Tree placed = ref owner.Trees[tree];
 
         // The model's centre is added to the camera-relative offset without being rotated by the tree,
         // which is what ForestRender_GetLOD does -- it takes the mesh centre straight off the model.
@@ -482,7 +482,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 continue;
             }
 
-            Igi2Tree tree = stand.Trees[visible.Tree];
+            ref readonly Igi2Tree tree = ref stand.Trees[visible.Tree];
             Matrix3f orientation = OrientationOf(tree);
             float grey = ((float)tree.Light.R + tree.Light.G + tree.Light.B) / (3f * 255f);
             Vector3f sun = orientation.Transform(_towardsSun).NormalizedOrSelf() * grey;
@@ -508,7 +508,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 continue;
             }
 
-            Igi2Tree tree = stand.Trees[visible.Tree];
+            ref readonly Igi2Tree tree = ref stand.Trees[visible.Tree];
             // Drawn in metres: the frame's camera is, and so are the mesh's own vertices now.
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), OrientationOf(tree));
             TextureHandle bake = BakeOf(tree.Light, doubled);
@@ -581,7 +581,9 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         MeshHandle Mesh,
         Part[] Trunk,
         Part[] Foliage,
-        IReadOnlyList<Igi2Tree> Trees,
+        // An array, read in place: the trees are structs, and a tree read through IReadOnlyList for every visible tree every frame is
+        // a copy and a call the browser's ahead-of-time compiler leaves to its interpreter.
+        Igi2Tree[] Trees,
         Igi2ForestBsp Bsp,
         Vector3d Centre,
         Vector3f ModelCentre,

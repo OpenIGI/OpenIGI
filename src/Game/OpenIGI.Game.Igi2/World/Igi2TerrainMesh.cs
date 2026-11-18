@@ -151,6 +151,12 @@ public sealed class Igi2TerrainMesh
     /// height map's own slope, taken per sample so the level of detail cannot change it.</remarks>
     public IReadOnlyList<Vector3f> Normals { get; }
 
+    /// <summary>Gets <see cref="Positions"/> as a span, for the presenter that reads every vertex each time the ground is streamed.</summary>
+    public ReadOnlySpan<Vector3d> PositionSpan => Core.Collections.ReadOnlyListSpans.AsReadOnlySpan(Positions);
+
+    /// <summary>Gets <see cref="Normals"/> as a span, read as <see cref="PositionSpan"/> is.</summary>
+    public ReadOnlySpan<Vector3f> NormalSpan => Core.Collections.ReadOnlyListSpans.AsReadOnlySpan(Normals);
+
     /// <summary>Gets each sample's baked light, row-major and matching <see cref="Positions"/>.</summary>
     public IReadOnlyList<Bgra32> Lights { get; }
 

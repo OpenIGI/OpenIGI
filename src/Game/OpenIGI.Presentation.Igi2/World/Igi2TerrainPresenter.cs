@@ -98,7 +98,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly bool _tessellates;
     private readonly Igi2EditableTerrain? _editable;
 
-    private readonly Dictionary<int, ushort> _remap = [];
+    private readonly Igi2VertexRemap _remap = new();
     private readonly List<Vertex3D> _vertices = [];
     private readonly List<ushort> _compact = [];
 
@@ -498,13 +498,15 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private void UploadLightmap(Igi2TerrainMesh mesh, Igi2TerrainTile tile, TextureHandle lightmap)
     {
         (float ScaleX, float ScaleY, float OffsetX, float OffsetY) projection = tile.LightmapProjection();
-        Dictionary<int, ushort> remap = [];
+        Igi2VertexRemap remap = new();
         List<Vertex3D> vertices = [];
         List<ushort> compact = [];
 
         // The terrain map's own pass, which the original issues for every face it did not discard --
         // materials or none. Walking the material passes instead dropped the faces no material covers.
         {
+            ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+            ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
             ReadOnlySpan<int> indices = mesh.GroundIndices.Span;
             for (int i = 0; i < indices.Length; i += 3)
             {
@@ -522,8 +524,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                     if (!remap.TryGetValue(index, out ushort mapped))
                     {
                         mapped = (ushort)vertices.Count;
-                        remap[index] = mapped;
-                        vertices.Add(BuildLightmapVertex(mesh, index, tile.Centre, projection));
+                        remap.Set(index, mapped);
+                        vertices.Add(BuildLightmapVertex(positions, normals, index, tile.Centre, projection));
                     }
 
                     compact.Add(mapped);
@@ -562,12 +564,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         return device.CreateTexture(new TextureDescription(width, height), pixels);
     }
 
-    private static Vertex3D Build(Igi2TerrainMesh mesh, Igi2TerrainPass pass, int index, Vector3d centre)
+    private static Vertex3D Build(ReadOnlySpan<Vector3d> positions, ReadOnlySpan<Vector3f> normals, Igi2TerrainPass pass, int index, Vector3d centre)
     {
-        Vector3d world = mesh.Positions[index];
+        Vector3d world = positions[index];
         (float U, float V) diffuseUv = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, world, pass.MappingStyle);
         (float U, float V) detailUv = Igi2TerrainMesh.TextureCoordinate(pass.DetailTextureScale, world, pass.MappingStyle);
-        Vector3f normal = mesh.Normals[index];
+        Vector3f normal = normals[index];
 
         // THE WEIGHT IS FOLDED INTO THE COLOUR, not left in the alpha for a blend factor to apply.
         //
@@ -620,19 +622,20 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
     /// <summary>Builds a vertex of the lightmap pass: the projection in place of the material's uv.</summary>
     private static Vertex3D BuildLightmapVertex(
-        Igi2TerrainMesh mesh,
+        ReadOnlySpan<Vector3d> positions,
+        ReadOnlySpan<Vector3f> normals,
         int index,
         Vector3d centre,
         (float ScaleX, float ScaleY, float OffsetX, float OffsetY) projection)
     {
-        Vector3d world = mesh.Positions[index];
+        Vector3d world = positions[index];
 
         return new Vertex3D(
             new Vector3f(
                 (float)((world.X - centre.X) / WorldScene.UnitsPerMetre),
                 (float)((world.Y - centre.Y) / WorldScene.UnitsPerMetre),
                 (float)((world.Z - centre.Z) / WorldScene.UnitsPerMetre)),
-            mesh.Normals[index],
+            normals[index],
             (float)((world.X * projection.ScaleX) + projection.OffsetX),
             (float)((world.Y * projection.ScaleY) + projection.OffsetY),
             0f,
@@ -657,6 +660,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _remap.Clear();
         _vertices.Clear();
         _compact.Clear();
+        ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+        ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
 
         for (int i = 0; i < indices.Length; i += 3)
         {
@@ -671,8 +676,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 if (!_remap.TryGetValue(index, out ushort mapped))
                 {
                     mapped = (ushort)_vertices.Count;
-                    _remap[index] = mapped;
-                    _vertices.Add(Build(mesh, pass, index, centre));
+                    _remap.Set(index, mapped);
+                    _vertices.Add(Build(positions, normals, pass, index, centre));
                 }
 
                 _compact.Add(mapped);
@@ -699,6 +704,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
         // As above: the bake covers every face the ground draws, not only those a material claimed.
         {
+            ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+            ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
             ReadOnlySpan<int> indices = mesh.GroundIndices.Span;
             for (int i = 0; i < indices.Length; i += 3)
             {
@@ -713,8 +720,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                     if (!_remap.TryGetValue(index, out ushort mapped))
                     {
                         mapped = (ushort)_vertices.Count;
-                        _remap[index] = mapped;
-                        _vertices.Add(BuildLightmapVertex(mesh, index, tile.Centre, tile.Projection));
+                        _remap.Set(index, mapped);
+                        _vertices.Add(BuildLightmapVertex(positions, normals, index, tile.Centre, tile.Projection));
                     }
 
                     _compact.Add(mapped);
@@ -787,9 +794,11 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     {
         // Only the vertices this chunk's own triangles touch, compacted, so the alpha can carry this
         // material's weight and the indices stay 16-bit.
-        Dictionary<int, ushort> remap = [];
+        Igi2VertexRemap remap = new();
         List<Vertex3D> vertices = [];
         List<ushort> compact = [];
+        ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+        ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
 
         for (int i = 0; i < indices.Length; i += 3)
         {
@@ -807,8 +816,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 if (!remap.TryGetValue(index, out ushort mapped))
                 {
                     mapped = (ushort)vertices.Count;
-                    remap[index] = mapped;
-                    vertices.Add(Build(mesh, pass, index, centre));
+                    remap.Set(index, mapped);
+                    vertices.Add(Build(positions, normals, pass, index, centre));
                 }
 
                 compact.Add(mapped);

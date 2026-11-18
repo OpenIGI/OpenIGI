@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using OpenIGI.Rendering.WebGpu.Native;
 
 namespace OpenIGI.Rendering.WebGpu;
 
@@ -58,4 +59,34 @@ internal static unsafe class WebGpuHotCalls
 
     [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuQueueWriteBuffer", ExactSpelling = true)]
     public static extern void wgpuQueueWriteBuffer(nint queue, nint buffer, ulong bufferOffset, void* data, nuint size);
+
+    // Once a pass or a frame rather than once a draw, but a frame makes dozens of passes: through the binding they were another
+    // hundredth of the browser's frame. The descriptors are the binding's own structs, passed by pointer.
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuDeviceCreateCommandEncoder", ExactSpelling = true)]
+    public static extern nint wgpuDeviceCreateCommandEncoder(nint device, WGPUCommandEncoderDescriptor* descriptor);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuCommandEncoderBeginRenderPass", ExactSpelling = true)]
+    public static extern nint wgpuCommandEncoderBeginRenderPass(nint commandEncoder, WGPURenderPassDescriptor* descriptor);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuRenderPassEncoderSetViewport", ExactSpelling = true)]
+    public static extern void wgpuRenderPassEncoderSetViewport(nint renderPassEncoder, float x, float y, float width, float height, float minDepth, float maxDepth);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuRenderPassEncoderEnd", ExactSpelling = true)]
+    public static extern void wgpuRenderPassEncoderEnd(nint renderPassEncoder);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuQueueSubmit", ExactSpelling = true)]
+    public static extern void wgpuQueueSubmit(nint queue, nuint commandCount, WGPUCommandBuffer* commands);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuCommandEncoderCopyTextureToTexture", ExactSpelling = true)]
+    public static extern void wgpuCommandEncoderCopyTextureToTexture(nint commandEncoder, WGPUTexelCopyTextureInfo* source, WGPUTexelCopyTextureInfo* destination, WGPUExtent3D* copySize);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuCommandEncoderFinish", ExactSpelling = true)]
+    public static extern nint wgpuCommandEncoderFinish(nint commandEncoder, WGPUCommandBufferDescriptor* descriptor);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuCommandEncoderRelease", ExactSpelling = true)]
+    public static extern void wgpuCommandEncoderRelease(nint commandEncoder);
+
+    [DllImport(Wgpu.LibraryName, EntryPoint = "wgpuSurfaceGetCurrentTexture", ExactSpelling = true)]
+    public static extern void wgpuSurfaceGetCurrentTexture(nint surface, WGPUSurfaceTexture* surfaceTexture);
 }

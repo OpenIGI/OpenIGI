@@ -46,7 +46,7 @@ public sealed class Igi2TerrainCollider : IWorldGroundCollider
             double endZ = trace.Ends[i].Z;
             float relativeY = ((Fpu)start.Y - origin.Y).F;
             float relativeX = ((Fpu)start.X - origin.X).F;
-            if (!Igi2TerrainVertex.TrySample(_surface.Tiles, relativeX, relativeY, out Igi2TerrainSample sample))
+            if (!Igi2TerrainVertex.TrySample(_surface.TileSpan, relativeX, relativeY, out Igi2TerrainSample sample))
             {
                 return;
             }
