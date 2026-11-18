@@ -32,6 +32,15 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
     public Igi2ClientWorld(Igi2TitlePlayer level)
     {
         _level = level ?? throw new ArgumentNullException(nameof(level));
+
+        // A session joining again on a new line (its old one went quiet) takes the same level over: the copies the last
+        // session's world made of the others are let go, or they stood on, frozen where they were last shown and drawn beside
+        // the new copies this world makes of the same players.
+        foreach (Igi2NetworkHuman stale in _level.NetworkHumans.ToArray())
+        {
+            _level.RemoveNetworkHuman(stale);
+        }
+
         foreach (Igi2HumanSoldier soldier in _level.Soldiers?.Bodies ?? [])
         {
             soldier.Puppet = soldier.PuppetPose();

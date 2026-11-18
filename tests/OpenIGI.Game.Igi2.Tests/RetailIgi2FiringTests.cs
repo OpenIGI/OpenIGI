@@ -54,7 +54,9 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(1, inventory.TotalBulletsFired);
         Assert.Equal(["0:mp5_loop:loop"], effects.Sounds);
         Assert.Equal([39, 15, 23], effects.Events.Select(static e => e.Event));
-        Assert.Equal(15, player.IgnoreLightEffectOnVisibilityTimer);
+        // Fifteen set by the shot in the update, one already counted down by the human's own tick at the end of the same
+        // delayed half (Human_RunHandler): the hold is gone fifteen ticks after the shot, as retail's is.
+        Assert.Equal(14, player.IgnoreLightEffectOnVisibilityTimer);
         Assert.Equal(1, player.MissionShots);
         Assert.Single(effects.Flashes);
         Igi2CasingEjection casing = Assert.Single(effects.Casings);

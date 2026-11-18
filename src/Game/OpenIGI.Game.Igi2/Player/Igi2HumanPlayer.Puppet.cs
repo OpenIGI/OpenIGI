@@ -10,6 +10,10 @@ public sealed partial class Igi2HumanPlayer
     /// stood where the server's stands, facing and looking as it does.
     /// </summary>
     /// <param name="state">The server's copy's locomotion state.</param>
+    /// <param name="rearmed">
+    /// Whether the state's entry must run even if the state is unchanged: a weapon was put in its hand this tick (its clips are
+    /// the weapon's), or this is its first pose.
+    /// </param>
     /// <param name="position">Where its feet stand, in world units.</param>
     /// <param name="speed">Its speed.</param>
     /// <param name="gamma">Its heading.</param>
@@ -26,9 +30,9 @@ public sealed partial class Igi2HumanPlayer
     /// steps at the rate its tick would set (<see cref="Humans.Igi2Human.ControlGait"/>); every other state keeps what its entry set.
     /// </para>
     /// </remarks>
-    public void PoseAsPuppet(int state, Vector3d position, Vector3f speed, float gamma, float pitch)
+    public void PoseAsPuppet(int state, bool rearmed, Vector3d position, Vector3f speed, float gamma, float pitch)
     {
-        if (Locomotion.CurrentState != state)
+        if (rearmed || Locomotion.CurrentState != state)
         {
             Locomotion.Enter(state, this);
         }

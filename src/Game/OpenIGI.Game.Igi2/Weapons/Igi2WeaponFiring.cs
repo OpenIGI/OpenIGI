@@ -596,7 +596,7 @@ public sealed partial class Igi2WeaponFiring
         Igi2FireRequest request = Request(item, fireType, message.HeldTime, Position(message.Position), message.Direction, parameters);
         Igi2FireResult result = handler.Fire(request);
         int fired = result.BulletsFired;
-        _inventory.TotalBulletsFired += fired;
+        _inventory.CountFired(fired);
         if (fired != 0 || result.Delay != 0)
         {
             _inventory.Delay = result.Delay;

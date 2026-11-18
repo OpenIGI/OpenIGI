@@ -163,6 +163,21 @@ public sealed class Igi2Inventory : ISavedState
     /// <summary>Gets or sets the bullets fired since the weapon was put in hand, <c>nTotalBulletsFired</c>.</summary>
     public int TotalBulletsFired { get; set; }
 
+    /// <summary>
+    /// Gets the bullets fired from this inventory in all, counted on through every change of weapon: what a co-op server sends
+    /// of a body's shots, a change being a shot to show. <see cref="TotalBulletsFired"/> starts again at each weapon put in hand,
+    /// and every switch read as a shot on the others' screens.
+    /// </summary>
+    public int ShotSequence { get; private set; }
+
+    /// <summary>Counts bullets fired from the weapon in hand, in both counts.</summary>
+    /// <param name="bullets">How many.</param>
+    public void CountFired(int bullets)
+    {
+        TotalBulletsFired += bullets;
+        ShotSequence = unchecked(ShotSequence + bullets);
+    }
+
     /// <summary>Finds a weapon by its number, the value of its <c>WEAPON_ID_*</c> constant (<c>WeaponType_GetWeaponTypeFromID</c>, <c>igi2 0x436710</c>).</summary>
     /// <param name="number">The number.</param>
     /// <returns>The item, or <see langword="null"/> for a number no weapon has.</returns>

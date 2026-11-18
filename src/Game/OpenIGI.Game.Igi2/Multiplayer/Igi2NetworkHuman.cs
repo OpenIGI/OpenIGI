@@ -143,19 +143,22 @@ public sealed class Igi2NetworkHuman
     // What shows the rounds the server's copy fires, made once the puppet is first run.
     private Weapons.Igi2RemoteGunfire? _gunfire;
 
+    // Whether the puppet has been posed once, its state's entry run.
+    private bool _posed;
+
     // The weapon the server's copy holds, carried and put in hand here: it is drawn in the hand, the body is posed holding it,
-    // and the rounds the server's copy fires are fired again from it.
-    private void Hold(int held)
+    // and the rounds the server's copy fires are fired again from it. Whether it was put in hand now.
+    private bool Hold(int held)
     {
         if (held == 0 || Weapons is not { } weapons
             || weapons.Inventory.HeldForSnapshot == held
             || weapons.Inventory.WeaponByNumber(held - 1) is not { } item)
         {
-            return;
+            return false;
         }
 
         weapons.Inventory.EnableWeaponType(item.WeaponType.WeaponId, addAmmo: false);
-        weapons.Activate(item);
+        return weapons.Activate(item);
     }
 
     private void RunPuppet(long tick, in ReplicatedHuman target)
@@ -182,7 +185,11 @@ public sealed class Igi2NetworkHuman
             Human.Revive(target.Position.ToVector(), Quantize.AngleFromBits(target.Yaw));
         }
 
-        Hold(target.Weapon);
+        // A weapon put in hand changes the clips every state plays (the weapon's own body clips): the state is entered again,
+        // or a copy made unarmed and given its gun while it stood kept the unarmed clip, and no gun hung in its hands. So is the
+        // first pose's: a copy is made standing without the stand's entry ever run (Create's TransitionTo), so no clip at all.
+        bool rearmed = Hold(target.Weapon) || !_posed;
+        _posed = true;
         if (Weapons?.Firing is { } firing)
         {
             (_gunfire ??= new Weapons.Igi2RemoteGunfire(firing, Human)).Take(target.Shots);
@@ -190,6 +197,7 @@ public sealed class Igi2NetworkHuman
 
         Human.PoseAsPuppet(
             target.State,
+            rearmed,
             target.Position.ToVector(),
             target.Velocity,
             Quantize.AngleFromBits(target.Yaw),

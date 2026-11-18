@@ -381,7 +381,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             condition |= ReplicatedHumanCondition.Low;
         }
 
-        int shots = human.Weapon.Inventory?.TotalBulletsFired ?? 0;
+        int shots = human.Weapon.Inventory?.ShotSequence ?? 0;
 
         return new ReplicatedHuman(
             id,

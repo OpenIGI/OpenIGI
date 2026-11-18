@@ -46,7 +46,7 @@ public sealed class Igi2RemoteGunfire(Igi2WeaponFiring weapon, IIgi2WeaponOwner 
         }
 
         _sinceShot = 0;
-        weapon.Inventory.TotalBulletsFired++;
+        weapon.Inventory.CountFired(1);
         Igi2GunFire.Flash(gun, weapon, owner);
         int mode = weapon.Inventory.Current?.ActiveFireMode ?? 0;
         if (!gun.IsFireSoundLooped(mode))

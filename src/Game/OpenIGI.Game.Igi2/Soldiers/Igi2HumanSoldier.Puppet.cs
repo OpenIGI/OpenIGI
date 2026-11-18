@@ -33,7 +33,7 @@ public sealed partial class Igi2HumanSoldier
     /// <summary>Gets the soldier as it stands now, as a server sends it and a client stands its copy before the first is sent.</summary>
     /// <returns>Its pose.</returns>
     public Igi2SoldierPose PuppetPose() =>
-        new(Position, Gamma, View.Pitch, Locomotion.CurrentState, !IsDead, unchecked((byte)(Weapon.Inventory?.TotalBulletsFired ?? 0)));
+        new(Position, Gamma, View.Pitch, Locomotion.CurrentState, !IsDead, unchecked((byte)(Weapon.Inventory?.ShotSequence ?? 0)));
 
     // The puppet's tick, in place of the mind's update: its state's clip played, the body put where the server's stands.
     private void RunPuppet(in Igi2SoldierPose pose)

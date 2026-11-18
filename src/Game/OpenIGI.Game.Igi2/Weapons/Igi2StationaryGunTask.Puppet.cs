@@ -13,7 +13,7 @@ public sealed partial class Igi2StationaryGunTask
 
     /// <summary>Gets where it points and what it has fired now, as a server sends it.</summary>
     /// <returns>Its aim.</returns>
-    public Igi2GunAim Aim() => new(_finalTilt, _finalTurn, unchecked((byte)(_firing?.Inventory.TotalBulletsFired ?? 0)));
+    public Igi2GunAim Aim() => new(_finalTilt, _finalTurn, unchecked((byte)(_firing?.Inventory.ShotSequence ?? 0)));
 
     /// <summary>Points it as the server's points, on a co-op client, with the flash and report of each round the server's fired since.</summary>
     /// <param name="aim">The server's aim.</param>

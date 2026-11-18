@@ -1,7 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Multiplayer;
 using OpenIGI.Game.Igi2.Soldiers;
+using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -458,6 +460,29 @@ public sealed class Igi2CoopPairTests
         Assert.True(
             pair.RunUntil(() => copy.Weapons?.Inventory.Current?.WeaponType.WeaponId == held.WeaponId, 120) >= 0,
             $"the copy holds {copy.Weapons?.Inventory.Current?.WeaponType.WeaponId ?? "nothing"}, the host {held.WeaponId}");
+    }
+
+    /// <summary>
+    /// The joiner draws the host's gun in its copy's hands, the copy standing still the whole time: held is not enough, the
+    /// clip the copy plays must hang it. A copy made unarmed and given its gun while it stood kept the unarmed clip -- the host
+    /// stood empty-handed on the joiner's game while the host saw the joiner's gun.
+    /// </summary>
+    [RequiresTitleDataTheory("igi2")]
+    [InlineData("", "")]
+    [InlineData("chn3", "igiagent2")]
+    public void The_joiner_draws_the_hosts_gun_in_its_copys_hands(string hostLook, string joinerLook)
+    {
+        using Igi2CoopPair pair = hostLook.Length == 0 ? Joined() : new(hostLook, joinerLook);
+        Assert.True(
+            pair.RunUntil(() => pair.Joined && pair.Joiner!.NetworkHumans.Count == 1, 4000) >= 0,
+            "the joiner never drew the host");
+        pair.RunUntil(() => false, 120);
+
+        Igi2NetworkHuman copy = Assert.Single(pair.Joiner!.NetworkHumans);
+        string? gun = copy.Weapons?.Inventory.Current?.WeaponType.FixedModel;
+        Assert.NotNull(gun);
+        IReadOnlyList<TitleWorldModel> drawn = Igi2BodyFrame.Build(copy.Human, copy.Human.BodyPose(), copy.Human.Model!.Name, gun, 0);
+        Assert.Contains(drawn, part => string.Equals(part.Model, gun, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

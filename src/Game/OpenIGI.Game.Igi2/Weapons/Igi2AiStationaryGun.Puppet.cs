@@ -23,7 +23,7 @@ public sealed partial class Igi2AiStationaryGun
 
     /// <summary>Gets where it points and what it has fired now, as a server sends it.</summary>
     /// <returns>Its aim.</returns>
-    public Igi2GunAim Aim() => new(_tilt, _turn, unchecked((byte)_firing.Inventory.TotalBulletsFired));
+    public Igi2GunAim Aim() => new(_tilt, _turn, unchecked((byte)_firing.Inventory.ShotSequence));
 
     /// <summary>Points it as the server's points, on a co-op client, with the flash and report of each round the server's fired since.</summary>
     /// <param name="aim">The server's aim.</param>
