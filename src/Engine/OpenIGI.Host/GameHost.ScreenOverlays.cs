@@ -390,14 +390,22 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // The fallen teammates, each marked where it lies: a cross in a disc, its ring the revival.
-        if (_remasteredHud is { IsReady: true } reviveHud && _soldiers?.ReviveMarkers() is { Count: > 0 } fallen)
+        // The fallen teammates, each marked where it lies: a cross in a disc, its ring the revival; and a fall told as it happens.
+        IReadOnlyList<Game.Ai.ReviveMarker> fallen = _soldiers?.ReviveMarkers() ?? [];
+        UpdateDownedAlerts(fallen);
+        if (_remasteredHud is { IsReady: true } reviveHud && (fallen.Count > 0 || _downAlerts.Count > 0))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             foreach (Game.Ai.ReviveMarker mark in fallen)
             {
                 reviveHud.DrawReviveMarker(state.Batch, mark, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            }
+
+            int line = 0;
+            foreach ((string name, double metres, float opacity) in DownedAlertsShown(eye.Position))
+            {
+                reviveHud.DrawDownedAlert(state.Batch, line++, name, metres, opacity, SafeWindowWidth, SafeWindowHeight);
             }
 
             state.Batch.End();

@@ -122,6 +122,13 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>The sound a teammate going down plays, by its name in the title's sound table; empty for none.</summary>
+    public static readonly StringCVar DownedSound = CVar.Text(
+        "hud_down_sound",
+        "camera_beep_al",
+        CVarOptions.Archive,
+        "The sound when a teammate goes down in co-op, by its name in the game's sound table (camera_beep_al, mapcomp_02...); empty for none.");
+
     /// <summary>Whether the crosshair marks a hit and confirms a kill.</summary>
     public static readonly BoolCVar HitMarkers = Presets.Define(
         CVar.Bool(

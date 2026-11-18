@@ -65,6 +65,39 @@ public static class ReviveHud
         HudInk.Caption(painter, theme.Body, centre.X, centre.Y + radius + context.Px(5f), name, HudInk.Distance(distanceMetres), context.Px(16f));
     }
 
+    /// <summary>Draws the line that tells a teammate has gone down: a small red cross, who, and how far, at the top of the screen.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme, for its type.</param>
+    /// <param name="index">Its place among the lines up now, 0 the newest, each under the last.</param>
+    /// <param name="name">Who went down.</param>
+    /// <param name="distanceMetres">How far they are.</param>
+    /// <param name="opacity">How much of it is left to see, 1 to 0 as it fades.</param>
+    public static void DrawAlert(UiPainter painter, UiTheme theme, int index, string name, double distanceMetres, float opacity)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        LayoutContext context = painter.Context;
+        UiRect safe = context.SafeRect;
+        float size = context.Px(17f);
+        float line = theme.Body.LineHeight(size) + context.Px(8f);
+        float top = safe.Y + (safe.Height * 0.16f) + (index * line);
+        string said = $"{name} is down";
+
+        // The words centred, a small red cross before them.
+        float cross = size * 0.62f;
+        float gap = context.Px(10f);
+        float width = theme.Body.MeasureWidth(said, size) + (size * 0.45f) + theme.Body.MeasureWidth(HudInk.Distance(distanceMetres), size * 0.85f);
+        float left = safe.X + (safe.Width * 0.5f) - ((width + cross + gap) * 0.5f);
+        var mark = new UiVec2(left + (cross * 0.5f), top + (theme.Body.LineHeight(size) * 0.5f));
+        float thick = MathF.Max(2f, cross * 0.3f);
+        Bgra32 red = UiPalette.Danger.WithAlpha((byte)(255 * opacity));
+        painter.FillRect(new UiRect(mark.X - (cross * 0.5f) - 1f, mark.Y - (thick * 0.5f) - 1f, cross + 2f, thick + 2f), UiPalette.InkAt(0.6f * opacity));
+        painter.FillRect(new UiRect(mark.X - (thick * 0.5f) - 1f, mark.Y - (cross * 0.5f) - 1f, thick + 2f, cross + 2f), UiPalette.InkAt(0.6f * opacity));
+        painter.FillRect(new UiRect(mark.X - (cross * 0.5f), mark.Y - (thick * 0.5f), cross, thick), red);
+        painter.FillRect(new UiRect(mark.X - (thick * 0.5f), mark.Y - (cross * 0.5f), thick, cross), red);
+        HudInk.Caption(painter, theme.Body, left + cross + gap + (width * 0.5f), top, said, HudInk.Distance(distanceMetres), size, opacity);
+    }
+
     /// <summary>Draws the read-out of the player who is down.</summary>
     /// <param name="painter">The painter.</param>
     /// <param name="theme">The theme, for its type.</param>

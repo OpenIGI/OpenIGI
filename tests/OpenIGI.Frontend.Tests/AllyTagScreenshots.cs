@@ -95,6 +95,7 @@ public sealed class AllyTagScreenshots
 
                 // One out of view to the right: pinned to the edge, pointing the way.
                 ReviveHud.DrawMarker(painter, theme, new UiVec2(Width - 64f, Height * 0.42f), "Priboi", 0f, 118, new UiVec2(1f, -0.15f));
+                ReviveHud.DrawAlert(painter, theme, 0, "Priboi", 118, 1f);
                 ReviveHud.DrawDowned(painter, theme, progress);
                 renderer.Flush();
             }

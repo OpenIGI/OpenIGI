@@ -509,6 +509,16 @@ internal sealed partial class RemasteredHudRenderer
     }
 
     /// <inheritdoc/>
+    public void DrawDownedAlert(SpriteBatch batch, int index, string name, double distanceMetres, float opacity, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_theme is { } type)
+        {
+            ReviveHud.DrawAlert(UiPainter.Create(batch, new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight))), type, index, name, distanceMetres, opacity);
+        }
+    }
+
+    /// <inheritdoc/>
     public void DrawReviveMarker(
         SpriteBatch batch,
         ReviveMarker marker,

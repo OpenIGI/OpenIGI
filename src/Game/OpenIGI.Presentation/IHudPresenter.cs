@@ -419,6 +419,18 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the line telling that a teammate has gone down, at the top of the screen.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="index">Its place among the lines up now, 0 the newest.</param>
+    /// <param name="name">Who went down.</param>
+    /// <param name="distanceMetres">How far they are.</param>
+    /// <param name="opacity">How much of it is left to see.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawDownedAlert(SpriteBatch batch, int index, string name, double distanceMetres, float opacity, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws the marker over a fallen teammate in co-op: where they lie, who they are, how far their revival has run.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="marker">The teammate, and where they lie.</param>
