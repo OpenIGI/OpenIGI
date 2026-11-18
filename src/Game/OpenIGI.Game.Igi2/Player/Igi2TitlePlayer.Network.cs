@@ -237,6 +237,35 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
         return added;
     }
 
+    /// <summary>
+    /// Takes the level's own player out of the level's world, on a dedicated server where nobody plays it: neither seen, hunted,
+    /// struck by blasts, counted by the areas or burnt by the smoke, and solid to nobody. The scripts still weigh it until a
+    /// client joins (<see cref="ScriptPlayers"/>), so a server waiting for its first player does not fail its mission.
+    /// </summary>
+    internal void RetireLevelPlayer()
+    {
+        Igi2HumanPlayer human = Human;
+        human.IsGone = true;
+        (MapHumans as List<Igi2Human>)?.Remove(human);
+        (Ai?.Detection ?? _surroundings.Detection)?.Remove(human);
+        Explosions?.RemoveTarget(human);
+        Ai?.Players.Remove(human);
+        foreach (PlayerRoster<Flow.IIgi2AreaOccupant> roster in AreaRosters)
+        {
+            roster.Remove(human);
+        }
+
+        foreach (PlayerRoster<Igi2HumanPlayer> roster in SmokeRosters)
+        {
+            roster.Remove(human);
+        }
+
+        if (human.Collider is { } collider)
+        {
+            SpawnKit?.World.RemoveBody(collider);
+        }
+    }
+
     /// <summary>Takes a player out of the level, as its client leaves.</summary>
     /// <param name="player">The player.</param>
     /// <returns><see langword="true"/> when it was in the level.</returns>

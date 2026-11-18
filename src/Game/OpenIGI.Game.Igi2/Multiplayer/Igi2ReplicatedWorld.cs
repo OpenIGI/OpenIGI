@@ -86,7 +86,25 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
     public Igi2SpawnSelector Spawns { get; } = new();
 
     /// <summary>Gets or sets a value indicating whether the level's own player is a player of the session (a listen server).</summary>
-    public bool IncludesHost { get; set; } = true;
+    /// <remarks>
+    /// Without one -- a dedicated server -- the level's own player is nobody's, and is taken out of the level's world: the
+    /// guards hunted it at the spawn and the areas counted it, though no one played it. The scripts weigh it until a client
+    /// joins, so an empty server does not fail its mission.
+    /// </remarks>
+    public bool IncludesHost
+    {
+        get => _includesHost;
+        set
+        {
+            _includesHost = value;
+            if (!value)
+            {
+                _level.RetireLevelPlayer();
+            }
+        }
+    }
+
+    private bool _includesHost = true;
 
     /// <inheritdoc/>
     public int ChannelCount => Igi2Command.ChannelCount;
@@ -241,6 +259,13 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         struck.Spares = by => Spared(struck, by);
         struck.KeepsWeaponsWhenDown = HoldsTheDead;
         HearHarm(slot + 1, struck);
+
+        // A dedicated server's level player is weighed by the scripts only until a player has joined.
+        if (!IncludesHost)
+        {
+            _level.ScriptPlayers?.Remove(_level.Human);
+        }
+
         Arm(human);
         HearLaunches(human.Weapons?.Firing, () => EntityOf(human.Human));
     }

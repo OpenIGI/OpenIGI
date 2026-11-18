@@ -54,6 +54,26 @@ public sealed class RetailIgi2NetworkHumanTests
         Assert.Empty(level.NetworkHumans);
     }
 
+    /// <summary>
+    /// A dedicated server's level player, whom nobody plays, is out of the level's world -- unseen, unhunted -- and the scripts
+    /// weigh it only until a player joins. The guards hunted it at the spawn.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dedicated_servers_level_player_is_out_of_the_world()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        Igi2ReplicatedWorld world = new(level) { IncludesHost = false };
+
+        Assert.True(level.Human.IsGone);
+        Assert.DoesNotContain(level.Human, level.Ai!.Detection!.Detectables);
+        Assert.DoesNotContain(level.Human, level.Ai.Players);
+        Assert.Contains(level.Human, level.ScriptPlayers!);
+
+        Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Assert.DoesNotContain(level.Human, level.ScriptPlayers!);
+        Assert.Equal(world.PlayerOf(0)!.Human, level.Ai.Players.Primary);
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void A_single_player_level_has_no_networked_players_and_one_rostered_player()
     {
