@@ -110,11 +110,16 @@ jobs:
 
       # DXIL is checked byte for byte too, so the DXC slangc hands it to is pinned in the same manifest. Its
       # asset names carry the build's date, not the version, so they are read off the tagged release.
+      # The release is read through the API with the run's token: unsigned, every job on the runner's address shares 60
+      # calls an hour, and a busy day runs out (403).
       - name: Install DXC
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pinned=$(jq -r .dxcVersion src/Rendering/OpenIGI.Shaders/ShaderModules.json)
           echo "Pinned DXC release: v$pinned"
-          url=$(curl -fsSL "https://api.github.com/repos/microsoft/DirectXShaderCompiler/releases/tags/v$pinned" \
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/microsoft/DirectXShaderCompiler/releases/tags/v$pinned" \
             | jq -r '.assets[] | select(.name | test("^linux_dxc_.*\\.tar\\.gz$")) | .browser_download_url' | head -n1)
           mkdir -p "$RUNNER_TEMP/dxc"
           curl -fsSL "$url" | tar -xz -C "$RUNNER_TEMP/dxc"
