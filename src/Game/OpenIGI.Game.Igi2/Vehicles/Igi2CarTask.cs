@@ -633,10 +633,11 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     }
 
     /// <summary>Gets the model it left when it blew up, where it stood, or <see langword="null"/> when it has not or leaves none.</summary>
+    /// <param name="tick">The tick the model is for: a wreck still sliding is drawn between its last two ticks.</param>
     /// <returns>The wreck.</returns>
-    public Game.Player.TitleWorldModel? Wreck() =>
+    public Game.Player.TitleWorldModel? Wreck(long tick) =>
         _isExploded != 0 && _type is { DestroyedModel.Length: > 0 } type && Models?.Invoke(type.DestroyedModel) is not null
-            ? new Game.Player.TitleWorldModel(type.DestroyedModel, CurrentPosition, Rows(CurrentOrientation))
+            ? new Game.Player.TitleWorldModel(type.DestroyedModel, CurrentPosition, Rows(CurrentOrientation), Instance: this, Tick: tick)
             : null;
 
     /// <inheritdoc/>

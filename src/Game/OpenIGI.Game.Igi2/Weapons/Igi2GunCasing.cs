@@ -120,7 +120,8 @@ public sealed class Igi2GunCasings(Func<string, MefModel?> models)
     public void Run() => _casings.RemoveAll(static c => !c.Run());
 
     /// <summary>The casings as models to draw.</summary>
+    /// <param name="tick">The tick the models are for: a casing is drawn between where it was a tick ago and where it is.</param>
     /// <returns>One rigid model a casing.</returns>
-    public IEnumerable<TitleWorldModel> Models() =>
-        _casings.Select(static c => new TitleWorldModel(c.Model, c.Position, c.Orientation));
+    public IEnumerable<TitleWorldModel> Models(long tick) =>
+        _casings.Select(c => new TitleWorldModel(c.Model, c.Position, c.Orientation, Instance: c, Tick: tick));
 }

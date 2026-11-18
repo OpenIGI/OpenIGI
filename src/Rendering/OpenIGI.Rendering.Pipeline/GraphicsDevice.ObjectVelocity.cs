@@ -21,12 +21,18 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    // A draw whose position jumped further than this since the draw it was paired with is a mispairing, not
-    // motion: nothing this pass serves moves two metres in a frame. Squared, in metres. Measured in the WORLD
-    // (camera-relative axes, absolute origin), never in view space: there a camera that turned -- a shaken
-    // cutscene camera, a quick look round -- swings everything a few metres off by more than this, and every
-    // draw in the frame was refused its pairing.
+    // A draw paired only by its mesh and its place in the frame's order whose position jumped further than this since
+    // the draw it was paired with is a mispairing, not motion: nothing unnamed moves two metres in a frame. Squared, in
+    // metres. Measured in the WORLD (camera-relative axes, absolute origin), never in view space: there a camera that
+    // turned -- a shaken cutscene camera, a quick look round -- swings everything a few metres off by more than this, and
+    // every draw in the frame was refused its pairing.
     private const float MaxPairedJumpSquared = 4f;
+
+    // A draw the renderer NAMED cannot be mispaired, so the bar is only for a teleport -- a vehicle put back at its start,
+    // a body moved by a load. Two metres refused real motion: a plane or a car past sixty metres a second covers that in
+    // one 30 Hz step, which is a frame wherever the picture keeps to the ticks, and every such frame it ghosted under the
+    // camera's reprojection. Thirty-two metres, the distance the title camera itself takes for a cut.
+    private const float MaxNamedJumpSquared = 32f * 32f;
 
     private readonly List<ObjectVelocityDraw> _objectVelocityDraws = [];
     private readonly Dictionary<MotionKey, ObjectMotion> _objectMotionPrevious = [];
@@ -139,8 +145,9 @@ public sealed partial class GraphicsDevice
         Matrix4f previous = rasterNow;
         float previousPoseBlend = _poseBlend;
 
+        float maxJumpSquared = identity != 0 ? MaxNamedJumpSquared : MaxPairedJumpSquared;
         if (_objectMotionPrevious.TryGetValue(key, out ObjectMotion before)
-            && (translation - before.GuardPosition).LengthSquared <= MaxPairedJumpSquared
+            && (translation - before.GuardPosition).LengthSquared <= maxJumpSquared
             && _scene is { } scene)
         {
             Matrix4f currentJitter = firstPerson && !rigJittered

@@ -239,10 +239,17 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         List<TitleWorldModel> models = [new TitleWorldModel(WornModel, Position, frame, pose, this, tick) { MorphWeights = Animation.Igi2MorphWeights.Drawn(MorphWeights) }];
         if (_current.Clip is { } clip)
         {
+            // Each part named by its place on the body, so it is drawn between ticks with the body rather than stepping beside it.
+            int index = 0;
             foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, _current.Time, pose, WeaponModel.Length > 0 ? WeaponModel : null))
             {
                 Vector3f local = frame.Transposed().Transform(part.Position);
-                models.Add(new TitleWorldModel(part.Model, new Vector3d(Position.X + local.X, Position.Y + local.Y, Position.Z + local.Z), frame * part.Orientation));
+                models.Add(new TitleWorldModel(
+                    part.Model,
+                    new Vector3d(Position.X + local.X, Position.Y + local.Y, Position.Z + local.Z),
+                    frame * part.Orientation,
+                    Instance: (this, index++),
+                    Tick: tick));
             }
         }
 

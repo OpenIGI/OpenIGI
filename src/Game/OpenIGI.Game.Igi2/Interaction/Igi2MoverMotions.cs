@@ -47,7 +47,7 @@ public sealed class Igi2MoverMotions : IPlacementMotion
                 // ticks, or a wheel or a gun trails the body it is on.
                 if (_movers.TryGetValue(placement.LevelId, out IIgi2Mover? carrier) && tickFraction < 1f)
                 {
-                    Matrix3f standing = Blend(carrier.CurrentOrientation, carrier.CurrentOrientation, 1f);
+                    Matrix3f standing = Frame(carrier.CurrentOrientation);
                     Vector3d local = standing.Transform(WorldScene.ToUnits(positionMetres) - carrier.CurrentPosition);
                     Matrix3f localOrientation = standing.Transposed() * orientation;
                     double f = Math.Clamp(tickFraction, 0f, 1f);
@@ -90,9 +90,10 @@ public sealed class Igi2MoverMotions : IPlacementMotion
         return true;
     }
 
-    private static Matrix3f Blend(IReadOnlyList<float> from, IReadOnlyList<float> to, float t)
-    {
-        float Mix(int i) => from[i] + ((to[i] - from[i]) * t);
-        return new Matrix3f(Mix(0), Mix(1), Mix(2), Mix(3), Mix(4), Mix(5), Mix(6), Mix(7), Mix(8));
-    }
+    // Between two frames a tick apart, kept a rotation: mixed number by number, a plane banking or a car turning hard was drawn
+    // squashed half way through every tick, its axes shortened and no longer square.
+    private static Matrix3f Blend(IReadOnlyList<float> from, IReadOnlyList<float> to, float t) =>
+        t >= 1f ? Frame(to) : t <= 0f ? Frame(from) : Interpolation.InterpolateRotation(Frame(from), Frame(to), t);
+
+    private static Matrix3f Frame(IReadOnlyList<float> m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 }

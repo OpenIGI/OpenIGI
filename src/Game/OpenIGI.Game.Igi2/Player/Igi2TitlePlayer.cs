@@ -236,6 +236,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public bool IsCutscenePlaying => Level?.IsCutsceneRunning ?? false;
 
     /// <inheritdoc/>
+    /// <remarks>The cutscene's camera changed this tick (<c>CutScene_InterpolateCamera</c>'s just-changed flag), which starts its filters afresh too.</remarks>
+    public bool IsViewCut => Level?.CutsceneView?.IsCameraJustChanged == true;
+
+    /// <inheritdoc/>
     public bool IsMenuEnabled => Flow?.IsMenuEnabled ?? true;
 
     /// <inheritdoc/>
@@ -527,33 +531,25 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     // The tick's models either side of the soldiers, in the order Gather hands them out.
     private void GatherTick()
     {
-        IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
-            ? lying.Items.Where(static p => p.IsInWorld).Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
-            : [];
-        IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
-            ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
-                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
-                    .Where(static g => g.Parameters.Model.Length != 0)
-                    .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
-                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
-                    .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
-            : [];
+        long tick = _ticks;
+        IEnumerable<TitleWorldModel> pickups = Igi2LevelModels.Lying(Human.Pickups, tick);
+        IEnumerable<TitleWorldModel> flying = Igi2LevelModels.InFlight(Grenades, tick);
         IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
         // A container that holds them out of the world holds their models out too, as it does the placements'.
         IEnumerable<TitleWorldModel> barrels = StationaryGuns
             .Where(static g => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(g))
-            .Select(static g => g.Barrel()).OfType<TitleWorldModel>();
+            .Select(g => g.Barrel(tick)).OfType<TitleWorldModel>();
         IEnumerable<TitleWorldModel> wrecks = Cars
             .Where(static c => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(c))
-            .Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+            .Select(c => c.Wreck(tick)).OfType<TitleWorldModel>();
         IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
-            ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
+            ? mineWorld.Laid.Select(m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame]), Instance: m, Tick: tick))
             : [];
         // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
         // interaction mode draws the working body rather than the first-person weapon.
         IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
             ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
-        IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
+        IEnumerable<TitleWorldModel> casings = Casings?.Models(tick) ?? [];
 
         // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
         IEnumerable<TitleWorldModel> pieces = Explosions is { } explosions ? ExplosionPieceModels.Of(explosions, _ticks) : [];

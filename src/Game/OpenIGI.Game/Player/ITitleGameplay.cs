@@ -141,6 +141,12 @@ public interface ITitlePlayer
     /// <summary>Gets a value indicating whether the title's level played a cutscene on the last tick, which Escape breaks rather than pausing.</summary>
     bool IsCutscenePlaying => false;
 
+    /// <summary>
+    /// Gets a value indicating whether the view jumped on the last tick -- a cutscene cut to another of its cameras -- so the
+    /// picture draws it where it now is rather than sweeping there from where it was.
+    /// </summary>
+    bool IsViewCut => false;
+
     /// <summary>Gets a value indicating whether the title's level lets the in-game menu open.</summary>
     bool IsMenuEnabled => true;
 

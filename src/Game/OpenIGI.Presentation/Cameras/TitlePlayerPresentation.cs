@@ -36,7 +36,10 @@ public sealed class TitlePlayerPresentation
         Frame frame = Capture(player);
         _previous = _current;
         _current = frame;
-        if (_previous is null || frame.Cutscene || _previous.Cutscene != frame.Cutscene
+        // A cutscene's camera is drawn between its ticks as the player's eyes are, so it glides with the plane it rides rather
+        // than holding a tick while the world it looks at moves on between them. Only a cut, the start or end of a cutscene, or a
+        // jump no camera could make in a tick starts afresh.
+        if (_previous is null || frame.Cut || _previous.Cutscene != frame.Cutscene
             || (frame.Eye.Position - _previous.Eye.Position).Length > 32.0)
         {
             _previous = frame;
@@ -153,7 +156,7 @@ public sealed class TitlePlayerPresentation
         ITitlePlayer player = features.Player;
         return new(
             new Camera3D(player.EyePosition * (1.0 / 4096.0), player.ViewOrientation), player.FieldOfViewScale,
-            features.FirstPerson?.FirstPerson, player.IsCutscenePlaying,
+            features.FirstPerson?.FirstPerson, player.IsCutscenePlaying, player.IsViewCut,
             features.Look is { CanPreviewLook: true } look ? look.LookOrientation : null);
     }
 
@@ -161,5 +164,5 @@ public sealed class TitlePlayerPresentation
 
     private static Vector3f ToFloat(Vector3d value) => new((float)value.X, (float)value.Y, (float)value.Z);
 
-    private sealed record Frame(Camera3D Eye, float FieldOfView, TitleFirstPersonView? Hands, bool Cutscene, Matrix3f? Look);
+    private sealed record Frame(Camera3D Eye, float FieldOfView, TitleFirstPersonView? Hands, bool Cutscene, bool Cut, Matrix3f? Look);
 }

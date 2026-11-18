@@ -575,9 +575,10 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     }
 
     /// <summary>The barrel as drawn: its model at its mount in its frame.</summary>
+    /// <param name="tick">The tick the model is for: a barrel swung is drawn between its last two ticks.</param>
     /// <returns>The barrel, or <see langword="null"/> without one.</returns>
-    public Game.Player.TitleWorldModel? Barrel() =>
-        BarrelModel is { } model ? new Game.Player.TitleWorldModel(model, _mount, Rows(_gunFrame)) : null;
+    public Game.Player.TitleWorldModel? Barrel(long tick) =>
+        BarrelModel is { } model ? new Game.Player.TitleWorldModel(model, _mount, Rows(_gunFrame), Instance: this, Tick: tick) : null;
 
     // StationaryGun_Fire.
     private void Fire(bool isFire)

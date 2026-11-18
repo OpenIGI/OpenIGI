@@ -53,10 +53,14 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     // Each body model's levels: their names, the first's first, and their triangle counts.
     private readonly Dictionary<string, (string[] Names, int[] Triangles)> _bodyLevels = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Part> _skinBatch = [];
-    private readonly Dictionary<object, Track> _tracks = [];
+    // Each named model's last two tick poses; its serial names its draws to the velocity stamp, clear of the world's placements.
+    private readonly TickPoseHistory<object> _tracks = new(firstSerial: TitleModelMotionIdentities);
     private long _worldFrame;
     // The most skinning jobs at once.
     private const int SkinWorkers = 4;
+
+    // The first motion identity a named model is given: far above any the world's placements are named by (their scene index).
+    private const long TitleModelMotionIdentities = 1L << 40;
 
     private readonly Core.Threading.IWorkScheduler? _work;
     private Igi2TextureLoader? _textures;
@@ -206,7 +210,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         {
             if (wanted.MuzzleFlashes is { Count: > 0 })
             {
-                (Vector3d flashAt, Matrix3f flashOrientation) = Placed(wanted, Math.Clamp(blend, 0f, 1f));
+                (Vector3d flashAt, Matrix3f flashOrientation, _) = Placed(wanted, Math.Clamp(blend, 0f, 1f));
                 QueueFlashes(wanted.MuzzleFlashes, wanted.Model, flashAt, flashOrientation);
             }
         }
@@ -224,7 +228,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
-            (Vector3d at, Matrix3f orientation) = Placed(wanted, between);
+            (Vector3d at, Matrix3f orientation, long identity) = Placed(wanted, between);
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
             if (wanted.Scale != 1f)
             {
@@ -278,10 +282,14 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                     _device.SetObjectFogRange(depth - radius, depth + radius);
                 }
 
+                // A named model moves on its own: a held gun, a grenade in flight, a casing, a body. Its draws pair with its own
+                // from the frame before and stamp that motion, or the temporal passes take it for the wall behind and trail it.
+                _device.SetObjectMotion(identity != 0, identity);
                 DrawPart(part, modelView, orientation);
             }
         }
 
+        _device.SetObjectMotion(false);
         if (retailFog)
         {
             _device.SetObjectFogRange(0f, 0f);
@@ -293,43 +301,17 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
-    // Where a model is drawn this frame: between where it was a tick ago and where it is, when the title names it.
-    private (Vector3d At, Matrix3f Orientation) Placed(TitleWorldModel wanted, float blend)
+    // Where a model is drawn this frame: between where it was a tick ago and where it is, when the title names it; and the
+    // identity its draws stamp their motion under, nought for one drawn only where the last tick left it.
+    private (Vector3d At, Matrix3f Orientation, long Identity) Placed(TitleWorldModel wanted, float blend)
     {
         if (wanted.Instance is not { } instance)
         {
-            return (wanted.Position, wanted.Orientation);
+            return (wanted.Position, wanted.Orientation, 0);
         }
 
-        if (!_tracks.TryGetValue(instance, out Track? track))
-        {
-            track = new Track();
-            _tracks[instance] = track;
-        }
-
-        if (track.Tick != wanted.Tick)
-        {
-            bool next = track.Tick == wanted.Tick - 1;
-            track.From = next ? track.To : wanted.Position;
-            track.FromOrientation = next ? track.ToOrientation : wanted.Orientation;
-            track.To = wanted.Position;
-            track.ToOrientation = wanted.Orientation;
-            track.Tick = wanted.Tick;
-        }
-        else
-        {
-            // Drawn again within its tick, as it is now: the tick's latest state is where it goes, from where it was.
-            track.To = wanted.Position;
-            track.ToOrientation = wanted.Orientation;
-        }
-
-        track.SeenFrame = _worldFrame;
-        if (blend >= 1f || (track.From == track.To && track.FromOrientation == track.ToOrientation))
-        {
-            return (track.To, track.ToOrientation);
-        }
-
-        return (Vector3d.Lerp(track.From, track.To, blend), Interpolation.InterpolateRotation(track.FromOrientation, track.ToOrientation, blend));
+        TickPose pose = _tracks.Present(instance, wanted.Tick, wanted.Position, wanted.Orientation, blend, _worldFrame);
+        return (pose.Position, pose.Orientation, pose.Serial);
     }
 
     // A body drawn between its last two skins when they are a tick apart; the blend last frame drew with is the frame's motion.
@@ -351,10 +333,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             return;
         }
 
-        foreach (object stale in _tracks.Where(entry => _worldFrame - entry.Value.SeenFrame > 300).Select(static entry => entry.Key).ToArray())
-        {
-            _tracks.Remove(stale);
-        }
+        _tracks.Forget(_worldFrame - 300);
     }
 
     private static bool WorldModelVisible(TitleWorldModel wanted, MefModel model, in Matrix4f modelView, in FrustumCulling.Frustum frustum)
@@ -420,7 +399,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                 continue;
             }
 
-            (Vector3d at, Matrix3f orientation) = Placed(wanted, between);
+            (Vector3d at, Matrix3f orientation, _) = Placed(wanted, between);
             bool poseBetween = between < 1f && part.SkinTick == wanted.Tick && part.PreviousSkinTick == wanted.Tick - 1;
             _device.SetPoseInterpolation(poseBetween ? 1f - between : 0f, poseBetween ? part.LastPoseBlend : 0f);
             OpenIGI.Presentation.Rendering.BinocularMarking.Draw(
@@ -777,21 +756,5 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         public float LastPoseBlend { get; set; }
 
         public long LastDrawnSkinTick { get; set; } = long.MinValue;
-    }
-
-    // Where one named model was a tick ago and where it is, to be drawn between.
-    private sealed class Track
-    {
-        public long Tick { get; set; } = long.MinValue;
-
-        public Vector3d From { get; set; }
-
-        public Vector3d To { get; set; }
-
-        public Matrix3f FromOrientation { get; set; }
-
-        public Matrix3f ToOrientation { get; set; }
-
-        public long SeenFrame { get; set; }
     }
 }

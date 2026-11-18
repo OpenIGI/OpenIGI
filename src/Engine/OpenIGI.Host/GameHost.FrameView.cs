@@ -103,11 +103,14 @@ public sealed partial class GameHost
         // between them keeps sweeping 0 to 1 with real time, which rocked the eye, the arms and
         // every guard back and forth between two poses a thirtieth of a second apart. At blend 1
         // every one of those readings is simply the tick that was last run.
-        // Cutscene camera and vehicle transforms are authored and committed on the 30 Hz task
+        // Project I.G.I.'s cutscene camera and vehicle transforms are authored and committed on the 30 Hz task
         // tick. Blending only the SoldierRenderer between its previous/current records while the
         // camera and its parent vehicle stay on the current record makes a seated actor sweep
         // backwards after every tick, then glide forwards again. Retail presents the cinematic
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
+        // I.G.I. 2's cutscenes are drawn between ticks instead, all of a piece: its camera, its movers and its
+        // bodies take the same blend, so a camera riding a plane glides with it. Holding the camera alone on
+        // the tick while the plane was drawn between left the plane sawing back and forth against the frame.
         bool smoothPresentation = !MenuPausesGame
             && _mission.Scenes?.IsPlaying != true
             && (!_options.Lockstep || _options.CaptureRate > _loop.Clock.TickRate)
@@ -116,7 +119,7 @@ public sealed partial class GameHost
         float tickBlend = smoothPresentation
             ? _loop.Clock.TickFraction(pacingWall)
             : 1f;
-        _titlePresentationBlend = TitlePlayer is { IsCutscenePlaying: true } ? 1f : tickBlend;
+        _titlePresentationBlend = tickBlend;
         PresentTitleLook(smoothPresentation && !console.WantsPointer);
 
         // Whether the picture's own clock keeps step with the wall clock, behind

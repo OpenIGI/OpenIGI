@@ -117,6 +117,25 @@ public sealed class TitlePlayerPresentationTests
         Assert.Equal(new Vector3d(100.0, 0.0, 0.0), presentation.Camera(0.25f).Position);
     }
 
+    /// <summary>A cutscene's camera glides between its ticks as the world it looks at does; a cut to another camera does not sweep.</summary>
+    [Fact]
+    public void Cutscene_camera_blends_between_ticks_and_snaps_on_a_cut()
+    {
+        Player player = new() { IsCutscenePlaying = true };
+        TitlePlayerPresentation presentation = new();
+        presentation.Reset(new TitlePlayerFeatures(player));
+        player.EyePosition = new Vector3d(4096.0, 0.0, 0.0);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
+        player.EyePosition = new Vector3d(8192.0, 0.0, 0.0);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
+        Assert.Equal(new Vector3d(1.25, 0.0, 0.0), presentation.Camera(0.25f).Position);
+
+        player.IsViewCut = true;
+        player.EyePosition = new Vector3d(12288.0, 0.0, 0.0);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
+        Assert.Equal(new Vector3d(3.0, 0.0, 0.0), presentation.Camera(0.25f).Position);
+    }
+
     private sealed class Player : ITitlePlayer, ITitleFirstPerson
     {
         private readonly BonePose _pose = BonePose.FromBones([Matrix3f.Identity], [default], [-1]);
@@ -125,6 +144,7 @@ public sealed class TitlePlayerPresentationTests
         public Matrix3f ViewOrientation => Camera3D.Default.Orientation;
         public float FieldOfViewScale { get; set; } = 1f;
         public bool IsCutscenePlaying { get; set; }
+        public bool IsViewCut { get; set; }
         public long TickNumber { get; set; }
         public TitleFirstPersonView FirstPerson => new(EyePosition, Matrix3f.Identity, 0.5f, TickNumber,
             [new("arms", _pose, default, Matrix3f.Identity),
