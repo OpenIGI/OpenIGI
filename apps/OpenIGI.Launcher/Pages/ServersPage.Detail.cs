@@ -29,7 +29,7 @@ internal sealed partial class ServersPage
     {
         string makeup = server is null
             ? $"none|{searching}|{_note}"
-            : $"{server.Key}|{server.Info.Compatible}|{server.Answered}|{server.IsFull}|{server.Info.Passworded}|{server.Sources}|{server.Info.Players == 0}|{server.Info.Mode}|{server.Info.Map}|{server.Info.Name}";
+            : $"{server.Key}|{server.Info.Compatible}|{server.Answered}|{server.IsFull}|{server.Info.Passworded}|{server.Sources}|{server.Info.Players == 0}|{server.Info.Mode}|{server.Info.Map}|{server.Info.Name}|{server.Official}";
         if (makeup != _builtSide)
         {
             _builtSide = makeup;
@@ -109,7 +109,7 @@ internal sealed partial class ServersPage
         head.ColumnDefinitions.Add(GridLength.Star);
         head.ColumnDefinitions.Add(GridLength.Auto);
         var names = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6f };
-        names.AddChild(new Eyebrow(_theme, line.Region.Length > 0 ? $"{line.Kind} · {line.Region}" : line.Kind) { TextSize = 14f });
+        names.AddChild(new Eyebrow(_theme, line.Heading) { TextSize = 14f });
         names.AddChild(new Label(_theme.Heading, info.Name, 28f, _theme.Text) { Wrap = true });
         head.Add(names, 0, 0);
         bool favourite = server.Sources.HasFlag(BrowserSource.Favourite);

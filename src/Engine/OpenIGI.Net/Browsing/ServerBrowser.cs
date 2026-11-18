@@ -240,7 +240,10 @@ public sealed class ServerBrowser : IDisposable
                 (string?)entry["version"] ?? string.Empty,
                 Compatible: protocol.Length == 0 || string.Equals((string?)entry["protocol"], protocol, StringComparison.OrdinalIgnoreCase));
             string key = address is { } at ? BrowserServer.KeyOf(at) : BrowserServer.KeyOfRoom(room!);
-            servers.Add(new BrowserServer(key, address, room, info, (string?)entry["region"] ?? string.Empty, BrowserSource.Internet, null));
+            servers.Add(new BrowserServer(key, address, room, info, (string?)entry["region"] ?? string.Empty, BrowserSource.Internet, null)
+            {
+                Official = (bool?)entry["official"] ?? false,
+            });
         }
 
         return servers;
@@ -349,6 +352,7 @@ public sealed class ServerBrowser : IDisposable
             Region = known.Region.Length > 0 ? known.Region : heard.Region,
             Info = known.Answered || heard.Info.Map.Length == 0 ? known.Info : heard.Info,
             Sources = known.Sources | heard.Sources,
+            Official = heard.Sources.HasFlag(BrowserSource.Internet) ? heard.Official : known.Official,
         };
     }
 

@@ -44,6 +44,9 @@ public sealed record CoopRoomInfo(string Code, string Name, int MissionId, int P
     /// <summary>Gets a value indicating whether it is a dedicated server rather than a player's room.</summary>
     public bool Dedicated { get; init; }
 
+    /// <summary>Gets a value indicating whether it is an official server, whose matches count toward the stats.</summary>
+    public bool Official { get; init; }
+
     /// <summary>Gets a value indicating whether it answered from this network.</summary>
     public bool Lan { get; init; }
 

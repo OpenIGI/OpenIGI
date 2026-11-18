@@ -13,7 +13,7 @@ import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
 import { handleParties } from "./parties.js";
 import { handleMaps } from "./maps.js";
 import { handleAccounts, isAccountsPath } from "./accounts.js";
-import { handleStats, isStatsPath } from "./stats.js";
+import { handleStats, isStatsPath, officialName } from "./stats.js";
 import { isAdmin } from "./signed.js";
 
 export { Room } from "./rooms.js";
@@ -84,6 +84,17 @@ async function route(request, env, ctx) {
       if (!reserve.ok) {
         return cors(reserve);
       }
+    }
+
+    // A heartbeat signed by a registered server's key (stats.js) lists the server as official. The list takes the word
+    // from here alone: whatever a heartbeat says of it itself is dropped.
+    if (url.pathname === "/v1/servers/heartbeat" && request.method === "POST") {
+      const body = new Uint8Array(await request.arrayBuffer());
+      const headers = new Headers(request.headers);
+      headers.delete(OFFICIAL_HEADER);
+      const official = await officialName(request, url, body, env);
+      if (official) headers.set(OFFICIAL_HEADER, encodeURIComponent(official));
+      return cors(await list.fetch(new Request(request.url, { method: "POST", headers, body })));
     }
 
     if (url.pathname.startsWith("/v1/admin/")) {
@@ -264,6 +275,9 @@ async function admin(request, env, url) {
   return relays(env).fetch(new Request(`https://relays${path}`, { method: request.method, body: request.body, headers: request.headers }));
 }
 
+// The header the Worker tells the list a heartbeat's server is official by: its registered name, URI-encoded.
+const OFFICIAL_HEADER = "x-openigi-official";
+
 export class ServerList {
   constructor(state, env) {
     this.state = state;
@@ -373,6 +387,10 @@ export class ServerList {
         return json({ error: entry }, 400);
       }
 
+      // Its registered name, when the Worker found its heartbeat signed by a registered server's key.
+      const official = request.headers.get(OFFICIAL_HEADER);
+      entry.official = official ? decodeURIComponent(official) : null;
+
       // A room is claimed only from the address that hosts it: nobody lists another's room as their server.
       const claimed = entry.room === null ? undefined : this.rooms.get(entry.room);
       if (claimed && claimed.ip !== ip) {
@@ -393,7 +411,7 @@ export class ServerList {
         entry.savedAt = before.savedAt;
       }
 
-      return json({ listed: true, address: ip, port: entry.port, ttl: ENTRY_TTL_MS / 1000, verified: this.verified(entry) });
+      return json({ listed: true, address: ip, port: entry.port, ttl: ENTRY_TTL_MS / 1000, verified: this.verified(entry), official: entry.official !== null });
     }
 
     if (request.method === "POST" && url.pathname === "/v1/servers/shutdown") {
@@ -438,7 +456,7 @@ export class ServerList {
 
 // Whether an entry differs from the one before in anything but its time and its player count: worth writing again.
 function changed(before, after) {
-  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "maxPlayers", "passworded", "region", "room"]) {
+  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "maxPlayers", "passworded", "region", "room", "official"]) {
     if (before[field] !== after[field]) {
       return true;
     }
@@ -595,8 +613,8 @@ export function stats(servers, rooms, relayStatus = [], detailed = false) {
 }
 
 function publicView(s, verified) {
-  const { lastSeen, savedAt, ...rest } = s;
-  return { ...rest, verified, age: Math.round((Date.now() - lastSeen) / 1000) };
+  const { lastSeen, savedAt, official, ...rest } = s;
+  return { ...rest, verified, official: Boolean(official), age: Math.round((Date.now() - lastSeen) / 1000) };
 }
 
 function countFrom(servers, ip) {

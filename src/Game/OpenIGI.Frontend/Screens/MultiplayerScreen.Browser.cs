@@ -376,7 +376,8 @@ public sealed partial class MultiplayerScreen
         room.MaxPlayers,
         room.PingMs,
         room.Region.Length > 0 ? room.Region.ToUpperInvariant() : room.Lan || room.Dedicated ? string.Empty : room.Passworded ? "password" : "P2P",
-        room.MissionId);
+        room.MissionId,
+        room.Official);
 
     private string MapName(int missionId) => Context.Missions.FirstOrDefault(m => m.Id == missionId) is { } mission
         ? mission.Name

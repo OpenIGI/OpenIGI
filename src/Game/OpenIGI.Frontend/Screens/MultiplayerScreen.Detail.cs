@@ -48,7 +48,7 @@ public sealed partial class MultiplayerScreen
         head.ColumnDefinitions.Add(GridLength.Star);
         head.ColumnDefinitions.Add(GridLength.Auto);
         var names = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6f };
-        names.AddChild(new Eyebrow(theme, line.Region.Length > 0 ? $"{line.Kind} · {line.Region}" : line.Kind) { TextSize = 14f });
+        names.AddChild(new Eyebrow(theme, line.Heading) { TextSize = 14f });
         names.AddChild(new Label(theme.Heading, room.Name, 30f, theme.Text) { Wrap = true });
         head.Add(names, 0, 0);
         bool favourite = room.Favourite;

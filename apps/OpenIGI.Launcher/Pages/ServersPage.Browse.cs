@@ -294,7 +294,8 @@ internal sealed partial class ServersPage
             info.MaxPlayers,
             ping,
             server.Region.ToUpperInvariant(),
-            MapNumber(server));
+            MapNumber(server),
+            server.Official);
     }
 
     // Whether a server is of the kind shown.

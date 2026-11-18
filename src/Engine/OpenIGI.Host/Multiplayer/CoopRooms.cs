@@ -475,6 +475,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             PingMs = s.Ping is { } ping ? (int)Math.Round(ping * 1000) : null,
             Region = s.Region,
             Dedicated = s.Address is not null && s.Sources.HasFlag(BrowserSource.Internet),
+            Official = s.Official,
             Lan = s.Sources.HasFlag(BrowserSource.Lan),
             Favourite = s.Sources.HasFlag(BrowserSource.Favourite),
             Recent = s.Sources.HasFlag(BrowserSource.History),

@@ -176,10 +176,14 @@ public readonly record struct ServerColumnPlaces(float Star, float Name, float N
 /// <param name="Ping">The round trip in milliseconds, or <see langword="null"/> while not known.</param>
 /// <param name="Region">Where it is.</param>
 /// <param name="MapNumber">The map's mission number, which the map column is ordered by; 0 when not known.</param>
-public sealed record ServerLine(string Name, string Kind, string ModeId, string Mode, string Map, int Players, int MaxPlayers, int? Ping, string Region, int MapNumber = 0)
+/// <param name="Official">Whether it is an official server, marked so after its name (<see cref="OfficialMark"/>).</param>
+public sealed record ServerLine(string Name, string Kind, string ModeId, string Mode, string Map, int Players, int MaxPlayers, int? Ping, string Region, int MapNumber = 0, bool Official = false)
 {
     /// <summary>Gets a value indicating whether it has no room left.</summary>
     public bool Full => Players >= MaxPlayers;
+
+    /// <summary>Gets what it is and where, as the panel of the server picked heads its name: <c>OFFICIAL SERVER · EU</c>.</summary>
+    public string Heading => (Official ? "OFFICIAL " : string.Empty) + (Region.Length > 0 ? $"{Kind} · {Region}" : Kind);
 
     /// <summary>Gets how strong the line is, 0 to 4 bars, by its round trip.</summary>
     public int Bars => Ping switch
@@ -421,11 +425,17 @@ public sealed class ServerRow : Control
         float gap = context.Px(2f);
         float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
-        float marks = (Locked ? context.Px(22f) : 0f) + (Saved ? context.Px(22f) : 0f);
+        float official = _line.Official ? OfficialMark.Width(context, Theme) + context.Px(8f) : 0f;
+        float marks = official + (Locked ? context.Px(22f) : 0f) + (Saved ? context.Px(22f) : 0f);
         string name = Theme.BodyStrong.Fit(_line.Name, nameSize, right - x - marks);
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, UiPalette.Fade(Unjoinable ? Theme.TextSecondary : Theme.Text, appear));
         float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(10f);
         float markY = top + (Theme.BodyStrong.LineHeight(nameSize) / 2f);
+        if (_line.Official)
+        {
+            markX = OfficialMark.Draw(painter, Theme, new UiVec2(markX, markY), appear).Right + context.Px(8f);
+        }
+
         if (Locked)
         {
             KitIcons.Draw(painter, KitIcon.Lock, new UiVec2(markX + context.Px(6f), markY), context.Px(14f), UiPalette.Fade(Theme.TextSecondary, appear));
@@ -452,7 +462,8 @@ public sealed class ServerRow : Control
         painter.DrawText(Theme.Body, Theme.Body.Fit(under, underSize, right - x), new UiVec2(x, underY), underSize, UiPalette.Fade(Theme.TextSecondary, appear));
     }
 
-    // The name, a padlock after it when it asks for a password; under it, its kind and where it is, or why it cannot be joined.
+    // The name, the official mark after it for one of ours and a padlock when it asks for a password; under it, its kind
+    // and where it is, or why it cannot be joined.
     private void DrawName(UiPainter painter, float x, float room, Func<Bgra32, Bgra32> ink)
     {
         LayoutContext context = painter.Context;
@@ -463,13 +474,20 @@ public sealed class ServerRow : Control
         float gap = context.Px(3f);
         float block = Theme.BodyStrong.LineHeight(nameSize) + gap + Theme.Body.LineHeight(underSize);
         float top = bounds.Y + ((bounds.Height - block) / 2f);
-        float marks = Locked ? context.Px(24f) : 0f;
+        float official = _line.Official ? OfficialMark.Width(context, Theme) + context.Px(10f) : 0f;
+        float marks = official + (Locked ? context.Px(24f) : 0f);
         string name = Theme.BodyStrong.Fit(_line.Name, nameSize, room - marks);
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, top), nameSize, ink(Theme.Text));
+        float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(10f);
+        float markY = top + (Theme.BodyStrong.LineHeight(nameSize) / 2f);
+        if (_line.Official)
+        {
+            markX = OfficialMark.Draw(painter, Theme, new UiVec2(markX, markY), appear).Right + context.Px(8f);
+        }
+
         if (Locked)
         {
-            float markX = x + Theme.BodyStrong.MeasureWidth(name, nameSize) + context.Px(8f);
-            KitIcons.Draw(painter, KitIcon.Lock, new UiVec2(markX + context.Px(8f), top + (Theme.BodyStrong.LineHeight(nameSize) / 2f)), context.Px(16f), ink(Theme.TextSecondary));
+            KitIcons.Draw(painter, KitIcon.Lock, new UiVec2(markX + context.Px(8f), markY), context.Px(16f), ink(Theme.TextSecondary));
         }
 
         float underY = top + Theme.BodyStrong.LineHeight(nameSize) + gap;

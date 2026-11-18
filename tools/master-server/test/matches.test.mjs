@@ -4,7 +4,7 @@
 // with the medals its totals have earned.
 import assert from "node:assert/strict";
 import { webcrypto as crypto } from "node:crypto";
-import { Stats, checkResult, scoreOf, seasonOf } from "../src/stats.js";
+import { Stats, checkResult, officialName, scoreOf, seasonOf } from "../src/stats.js";
 
 function fakeStorage() {
   const store = new Map();
@@ -160,6 +160,17 @@ assert.equal((await get(`/v1/players/${BO}/stats`)).allTime.matches, 0);
 const kept = await get("/v1/matches");
 assert.ok(kept.every((match) => match.players.every((p) => p.player !== BO && p.name !== "Bo")));
 assert.ok(kept.some((match) => match.players.some((p) => p.player === CY)));
+
+// A heartbeat signed by the registered server's key names it official; another key's, or an unsigned one, doesn't.
+const env = { STATS: { idFromName: () => "all", get: () => ({ fetch: (url) => stats.fetch(new Request(url)) }) } };
+const beat = { port: 26000, name: "Official EU" };
+const official1 = async (request) => officialName(request, new URL(request.url), new Uint8Array(await request.clone().arrayBuffer()), env);
+assert.equal(await official1(await signed(official, beat, "/v1/servers/heartbeat")), "Official OpenIGI EU");
+assert.equal(await official1(await signed(community, beat, "/v1/servers/heartbeat")), null);
+assert.equal(await official1(new Request("https://master/v1/servers/heartbeat", { method: "POST", body: "{}" })), null);
+// Signed for another path: not good for this one.
+const elsewhere = await signed(official, beat, "/v1/matches");
+assert.equal(await officialName(elsewhere, new URL("https://master/v1/servers/heartbeat"), new Uint8Array(await elsewhere.arrayBuffer()), env), null);
 
 // Removing a server: its next result is refused.
 const keyId = (await get("/v1/admin/stats-servers"))[0].keyId;

@@ -1,7 +1,10 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net.Browsing;
+using OpenIGI.Releases;
 
 namespace OpenIGI.Host.Dedicated;
 
@@ -32,16 +35,19 @@ public sealed record ShutdownBody(int Port);
 /// </summary>
 /// <remarks>
 /// Each beat runs off the loop's thread and is never waited on: a master that is slow or down costs the game nothing, and the
-/// next beat simply tries again. What the master answered is told the first time and whenever it changes.
+/// next beat simply tries again. What the master answered is told the first time and whenever it changes. Each beat is
+/// signed by the server's own key, where it has one: the master lists a server whose key it has registered as official.
 /// </remarks>
 /// <param name="master">The master server.</param>
 /// <param name="logger">Where its answers are told.</param>
-public sealed class MasterHeartbeat(Uri master, IOpenIgiLogger logger) : IDisposable
+/// <param name="key">The server's own key, which its matches are reported under; <see langword="null"/> for unsigned beats.</param>
+public sealed class MasterHeartbeat(Uri master, IOpenIgiLogger logger, IRequestSigner? key = null) : IDisposable
 {
     /// <summary>The seconds between beats.</summary>
     public const double IntervalSeconds = 30;
 
     private const string LogCategory = "Master";
+    private const string HeartbeatPath = "/v1/servers/heartbeat";
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private double _lastBeat = double.NegativeInfinity;
     private Task? _inFlight;
@@ -86,12 +92,12 @@ public sealed class MasterHeartbeat(Uri master, IOpenIgiLogger logger) : IDispos
         string answer;
         try
         {
-            using HttpResponseMessage response = await _http.PostAsJsonAsync(
-                new Uri(master, "/v1/servers/heartbeat"),
-                beat,
-                DedicatedJsonContext.Default.HeartbeatBody).ConfigureAwait(false);
+            using HttpRequestMessage request = await RequestOf(beat).ConfigureAwait(false);
+            using HttpResponseMessage response = await _http.SendAsync(request).ConfigureAwait(false);
             string text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            answer = response.IsSuccessStatusCode ? $"listed on {master.Host}" : $"{master.Host} refused the listing: {(int)response.StatusCode} {text}";
+            answer = !response.IsSuccessStatusCode
+                ? $"{master.Host} refused the listing: {(int)response.StatusCode} {text}"
+                : IsOfficial(text) ? $"listed on {master.Host} as an official server" : $"listed on {master.Host}";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
@@ -102,6 +108,39 @@ public sealed class MasterHeartbeat(Uri master, IOpenIgiLogger logger) : IDispos
         {
             _lastAnswer = answer;
             logger.Information(LogCategory, answer);
+        }
+    }
+
+    // A beat as it is sent: its body, signed by the server's key where it has one.
+    private async Task<HttpRequestMessage> RequestOf(HeartbeatBody beat)
+    {
+        byte[] body = JsonSerializer.SerializeToUtf8Bytes(beat, DedicatedJsonContext.Default.HeartbeatBody);
+        var request = new HttpRequestMessage(HttpMethod.Post, new Uri(master, HeartbeatPath))
+        {
+            Content = new ByteArrayContent(body) { Headers = { ContentType = new MediaTypeHeaderValue("application/json") } },
+        };
+        if (key is not null)
+        {
+            foreach ((string name, string value) in await SignedRequest.HeadersAsync(key, "POST", HeartbeatPath, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), body).ConfigureAwait(false))
+            {
+                request.Headers.TryAddWithoutValidation(name, value);
+            }
+        }
+
+        return request;
+    }
+
+    // Whether the master's answer lists the server as official.
+    private static bool IsOfficial(string answer)
+    {
+        try
+        {
+            using JsonDocument read = JsonDocument.Parse(answer);
+            return read.RootElement.TryGetProperty("official", out JsonElement official) && official.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

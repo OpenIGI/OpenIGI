@@ -202,8 +202,8 @@ public sealed class MultiplayerScreenshots
 
     internal static List<CoopRoomInfo> Games() =>
     [
-        new("EU1", "OpenIGI Official · Frankfurt #1", 1, 11, 16, false) { Mode = MatchModes.TeamDeathmatch, PingMs = 38, Region = "eu", Dedicated = true, Favourite = true },
-        new("EU2", "OpenIGI Official · Frankfurt #2", 3, 16, 16, false) { Mode = MatchModes.SearchAndDestroy, PingMs = 41, Region = "eu", Dedicated = true },
+        new("EU1", "OpenIGI Official · Frankfurt #1", 1, 11, 16, false) { Mode = MatchModes.TeamDeathmatch, PingMs = 38, Region = "eu", Dedicated = true, Official = true, Favourite = true },
+        new("EU2", "OpenIGI Official · Frankfurt #2", 3, 16, 16, false) { Mode = MatchModes.SearchAndDestroy, PingMs = 41, Region = "eu", Dedicated = true, Official = true },
         new("K7QX2M", "Anya's room", 2, 2, 4, false) { Mode = MatchModes.Coop, Region = string.Empty },
         new("IN1", "Mumbai Regulars", 5, 7, 16, true) { Mode = MatchModes.FreeForAll, PingMs = 121, Region = "in", Dedicated = true, Recent = true },
         new("LAN1", "Living room", 1, 1, 4, false) { Mode = MatchModes.Coop, PingMs = 2, Lan = true },

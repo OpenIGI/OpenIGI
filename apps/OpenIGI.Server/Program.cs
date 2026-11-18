@@ -162,11 +162,12 @@ if (bans.Load() is { } banProblem)
     logger.Warning(LogCategory, banProblem);
 }
 
-MasterHeartbeat? heartbeat = config.Public ? new MasterHeartbeat(config.Master, logger) : null;
-
-// The server's own key, which its match results are signed with: the master counts them once this key is listed there.
+// The server's own key, which its match results and its heartbeats are signed with: the master counts its matches, and
+// lists it as official, once this key is registered there.
 using EcdsaPlayerIdentity statsKey = EcdsaPlayerIdentity.LoadOrCreate(config.StatsKeyFile);
 logger.Information(LogCategory, $"Stats key {PlayerIdentities.IdOf(statsKey.PublicKey)}: {Convert.ToBase64String(statsKey.PublicKey)}");
+var serverKey = new PlayerRequestSigner(statsKey);
+MasterHeartbeat? heartbeat = config.Public ? new MasterHeartbeat(config.Master, logger, serverKey) : null;
 using DedicatedServer dedicated = new(
     server,
     config,
@@ -179,7 +180,7 @@ using DedicatedServer dedicated = new(
     () => host.MissionList)
 {
     Arenas = host.HasArena,
-    Reporter = config.Public ? new MatchReporter(server, config.Master, new PlayerRequestSigner(statsKey), logger) : null,
+    Reporter = config.Public ? new MatchReporter(server, config.Master, serverKey, logger) : null,
 };
 if (MatchModes.IsVersus(mode) && !host.HasArena(mission))
 {

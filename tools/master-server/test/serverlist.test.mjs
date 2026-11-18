@@ -66,6 +66,14 @@ assert.equal((await list.fetch(heartbeat("1.2.3.4", { ...server, room: "ABCDEF" 
 const claim = await (await list.fetch(heartbeat("5.6.7.8", { ...server, room: "ABCDEF" }))).json();
 assert.equal(claim.verified, true);
 
+// The Worker's word that a heartbeat came from a registered server marks it official; without it, it is not.
+const officially = heartbeat("1.2.3.4", server);
+officially.headers.set("x-openigi-official", encodeURIComponent("Official EU"));
+assert.equal((await (await list.fetch(officially)).json()).official, true);
+assert.equal((await listed(list)).find((s) => s.address === "1.2.3.4").official, true);
+await list.fetch(heartbeat("1.2.3.4", server));
+assert.equal((await listed(list)).find((s) => s.address === "1.2.3.4").official, false);
+
 // Shut down: off the list, and out of storage.
 await list.fetch(
   new Request("https://list/v1/servers/shutdown", {

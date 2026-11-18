@@ -8,6 +8,8 @@
 //                                         wins, kd or matches
 //   GET  /v1/players/<id>/stats           one player's record (a key's id or an account's): this season, all time, latest,
 //                                         and the medals earned (medals.js)
+//   GET  /internal/servers/<keyId>        a registered server by its key's id ({ name }), or 404: what marks a server
+//                                         official on the list (officialName); reached only from the Worker
 //   POST /internal/forget { keys }          an account deleted (accounts.js): its keys' totals gone, and their name and id
 //                                         taken out of every kept result (the line itself stays, so the others' add up);
 //                                         reached only from the accounts' object, never from outside
@@ -45,6 +47,22 @@ export async function handleStats(request, env) {
   return env.STATS.get(env.STATS.idFromName("all")).fetch(request);
 }
 
+// The name a heartbeat's server is registered under here, when the heartbeat is signed by a registered server's key:
+// what the list marks it official by. A heartbeat signed by any other key, or badly, or not at all is listed as before,
+// only not official.
+export async function officialName(request, url, body, env) {
+  if (!env.STATS || !request.headers.get("x-openigi-key")) return null;
+  let key;
+  try {
+    key = await signedBy(request, url, body);
+  } catch {
+    return null;
+  }
+
+  const answer = await env.STATS.get(env.STATS.idFromName("all")).fetch(`https://stats/internal/servers/${key.id}`);
+  return answer.ok ? ((await answer.json()).name ?? null) : null;
+}
+
 // Whether a path is one of the stats'.
 export function isStatsPath(pathname) {
   return pathname === "/v1/matches" || pathname === "/v1/leaderboard" || /^\/v1\/players\/[^/]+\/stats$/.test(pathname);
@@ -76,6 +94,11 @@ export class Stats {
     try {
       if (parts[0] === "internal" && parts[1] === "forget" && request.method === "POST") {
         return json({ forgotten: await this.forget((await request.json()).keys ?? []) });
+      }
+
+      if (parts[0] === "internal" && parts[1] === "servers" && request.method === "GET") {
+        const server = await this.storage.get(`server:${parts[2]}`);
+        return server ? json({ name: server.name }) : json({ error: "Not found." }, 404);
       }
 
       if (parts[1] === "admin") {

@@ -77,6 +77,15 @@ public sealed class ServerBrowserTests
     }
 
     [Fact]
+    public void A_server_the_master_lists_as_official_is_marked_so()
+    {
+        JsonNode list = JsonNode.Parse("""{ "servers": [ { "title": "igi1", "address": "203.0.113.7", "port": 26001, "name": "Official EU", "official": true }, { "title": "igi1", "address": "203.0.113.8", "port": 26001, "name": "Someone's" } ] }""")!;
+        List<BrowserServer> servers = ServerBrowser.ReadMasterList(list, "igi1");
+        Assert.True(servers[0].Official);
+        Assert.False(servers[1].Official);
+    }
+
+    [Fact]
     public void A_line_of_another_protocol_is_not_compatible()
     {
         JsonNode list = JsonNode.Parse("""{ "servers": [ { "title": "igi1", "room": "XYZ789", "protocol": "0498fad9e47c6b7f", "name": "Old" }, { "title": "igi1", "room": "ABC234", "protocol": "7478398C138C41A2", "name": "Ours" } ] }""")!;
