@@ -45,11 +45,10 @@ public sealed class TaskDocsGenerator : IIncrementalGenerator
             return default;
         }
 
+        // The type's own row always, its text empty where the build keeps no documentation (a release's package): the
+        // class is emitted wherever there are task classes, so the code that reads it builds either way.
         ImmutableArray<Row>.Builder found = ImmutableArray.CreateBuilder<Row>();
-        if (Summary(type) is { Length: > 0 } summary)
-        {
-            found.Add(new Row(name, string.Empty, summary));
-        }
+        found.Add(new Row(name, string.Empty, Summary(type)));
 
         foreach (ISymbol member in type.GetMembers())
         {
@@ -113,7 +112,7 @@ public sealed class TaskDocsGenerator : IIncrementalGenerator
         source.AppendLine("    /// <summary>Gets the rows: the script type, the parameter as the levels declare it (empty for the type), and the text.</summary>");
         source.AppendLine("    public static global::System.Collections.Generic.IReadOnlyList<(string Type, string Parameter, string Text)> All { get; } =");
         source.AppendLine("    [");
-        foreach (Row row in rows)
+        foreach (Row row in rows.Where(static r => r.Text.Length > 0))
         {
             source.Append("        (").Append(Literal(row.Type)).Append(", ").Append(Literal(row.Parameter)).Append(", ").Append(Literal(row.Text)).AppendLine("),");
         }
