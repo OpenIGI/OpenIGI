@@ -624,37 +624,32 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
         float cursorY = anchorY
             - (StatusScreenLayout.HealthForegroundInset * scale)
             - (fill.Height * scale * 0.5f);
-        float croppedTop = 1f - healthFraction;
-        RectF destination = new(
-            cursorX + (fill.OffsetX * scale),
-            cursorY + (fill.OffsetY * scale) + (fill.Height * scale * croppedTop),
-            fill.Width * scale,
-            fill.Height * scale * healthFraction);
-        RectF source = RectF.FromEdges(
-            fill.U0,
-            fill.V0 + ((fill.V1 - fill.V0) * croppedTop),
-            fill.U1,
-            fill.V1);
-        batch.Draw(foreground.Textures[fill.TextureIndex], destination, source, neutral);
+        float left = cursorX + (fill.OffsetX * scale);
+        float barTop = cursorY + (fill.OffsetY * scale);
 
-        // A planted bomb's share of the bar, as the remaster adds it: the part it would take, over itself in a pulsing red.
+        // The bars from one height of the bar up to another (nought at its foot, one at its top), at native width.
+        void Bars(float from, float to, Bgra32 colour)
+        {
+            float top = 1f - to;
+            float bottom = 1f - from;
+            RectF destination = new(left, barTop + (fill.Height * scale * top), fill.Width * scale, fill.Height * scale * (bottom - top));
+            RectF source = RectF.FromEdges(fill.U0, fill.V0 + ((fill.V1 - fill.V0) * top), fill.U1, fill.V0 + ((fill.V1 - fill.V0) * bottom));
+            batch.Draw(foreground.Textures[fill.TextureIndex], destination, source, colour);
+        }
+
+        // A planted bomb's share of the bar, as the remaster adds it: the bars it would take flash, the rest stand steady.
         (float riskFrom, float riskTo) = OpenIGI.Presentation.Hud.HudBlastRisk.Span(healthFraction);
+        Bars(0f, riskFrom, neutral);
         if (riskTo > riskFrom)
         {
             float pulse = OpenIGI.Presentation.Hud.HudBlastRisk.Pulse(
                 Environment.TickCount64 / 1000.0, OpenIGI.Presentation.Hud.HudBlastRisk.IsLethal(healthFraction));
-            float top = 1f - riskTo;
-            float bottom = 1f - riskFrom;
-            RectF risk = new(
-                cursorX + (fill.OffsetX * scale),
-                cursorY + (fill.OffsetY * scale) + (fill.Height * scale * top),
-                fill.Width * scale,
-                fill.Height * scale * (bottom - top));
-            // A solid red, not the bar's own green picture tinted red: green times red is all but black on the original's
-            // dark frame, so the warning was barely there.
-            batch.FillRect(risk, new Bgra32(40, 50, 255, (byte)(255f * pulse)));
+            Bars(riskFrom, riskTo, neutral.WithAlpha((byte)(neutral.A * Flash(pulse))));
         }
     }
+
+    // The flashing bars' opacity at a point of the pulse: from all but gone to whole, so they blink rather than dim.
+    private static float Flash(float pulse) => Math.Clamp((pulse - 0.35f) / 0.65f, 0f, 1f);
 
     private static void DrawInteractionProgress(
         SpriteBatch batch,
