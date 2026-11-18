@@ -784,6 +784,27 @@ public sealed class Igi2CoopPairTests
     }
 
     /// <summary>
+    /// A guard the joiner kills is in the joiner's kill feed, under the joiner and its weapon: I.G.I. 2 told the session of no
+    /// hit, so its players had no hit marks, no mark of where a hit came from, and no guard in the feed.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_guard_the_joiner_kills_is_in_its_kill_feed()
+    {
+        using Igi2CoopPair pair = Joined();
+        Igi2HumanPlayer partner = Assert.Single(pair.Host!.NetworkHumans).Human;
+        Igi2HumanSoldier guard = pair.Host.Soldiers!.Bodies[IndexOfLiving(pair.Host.Soldiers.Bodies)];
+        OpenIGI.Game.Igi2.Weapons.Igi2WeaponTypeTask gun = partner.Weapon.Inventory!.Current!.WeaponType;
+        guard.WeaponHit(new OpenIGI.Game.Igi2.Weapons.Igi2WeaponHit(
+            new OpenIGI.Game.Physics.WorldIntersection { Position = guard.Position }, 1_000_000f, new Vector3f(40960f, 0f, 0f), partner, gun, null));
+        Assert.True(guard.IsDead || guard.Damage.IsFatal, "the round did not kill the guard");
+
+        Assert.True(
+            pair.RunUntil(() => pair.Client.KillFeed.Any(k => k.Note.KillerEntity == pair.Client.LocalEntity), 120) >= 0,
+            "the joiner's feed never listed its kill");
+        Assert.Contains(pair.Client.KillFeed, k => k.Note.KillerEntity == pair.Client.LocalEntity && k.Note.Weapon == gun.WeaponId);
+    }
+
+    /// <summary>
     /// The joiner's copy of the host takes no harm from the joiner's own rounds, friendly fire or not: its harm is the server's,
     /// and it once bled, cried out and flinched on the joiner's screen where the server spared it.
     /// </summary>

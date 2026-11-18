@@ -80,11 +80,14 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
             AiDifficulty.Hard => damage * 1.25f,
             _ => damage,
         };
-        HandleDamage(DamagePartOf(hit), damage.F, hit.ShotVector);
+        Igi2DamagePart part = DamagePartOf(hit);
+        HandleDamage(part, damage.F, hit.ShotVector);
         if (Damage.IsFatal && Killer is null && hit.Shooter is { } shooter)
         {
             Killer = shooter;
         }
+
+        Struck?.Invoke(hit.Shooter, part);
 
         CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
     }
@@ -110,6 +113,12 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// player's own game to feel (<see cref="FeelHit"/>).
     /// </summary>
     public Action<Igi2DamagePart, Vector3f>? Felt { get; set; }
+
+    /// <summary>
+    /// Gets or sets what hears of each round or blast that hurts the player, by whom (or <see langword="null"/>) and in what zone:
+    /// a co-op server, for its players' hit marks and the kill feed.
+    /// </summary>
+    public Action<object?, Igi2DamagePart>? Struck { get; set; }
 
     /// <summary>
     /// The player's reaction to a hit, <c>HumanPlayer_HandleDamage</c> past the damage: the flinch, the cry, the shake, the red

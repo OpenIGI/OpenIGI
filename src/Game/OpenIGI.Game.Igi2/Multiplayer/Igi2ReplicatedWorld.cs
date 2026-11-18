@@ -41,6 +41,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         _level.Marks = this;
         _level.Human.Spares = by => Spared(_level.Human, by);
         _level.Human.KeepsWeaponsWhenDown = HoldsTheDead;
+        HearHarm(HostEntity, _level.Human);
 
         // Every explosion the level sets off is told to the clients, who show what their own players did not set off.
         _level.Explosions?.Started = request => _blasts.Note(EntityOf(request.Owner), request);
@@ -131,7 +132,9 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
 
             if (_dead.Add(entity))
             {
-                deaths.Add(new WorldDeath(entity, EntityOf(human.Killer)));
+                // The killing blow's weapon and head, for the death's line in the feed.
+                (string weapon, bool head) = _killingBlow.Remove(entity, out (string Weapon, bool Head) blow) ? blow : (string.Empty, false);
+                deaths.Add(new WorldDeath(entity, EntityOf(human.Killer), weapon, Headshot: head));
             }
         }
 
@@ -237,6 +240,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         Igi2HumanPlayer struck = human.Human;
         struck.Spares = by => Spared(struck, by);
         struck.KeepsWeaponsWhenDown = HoldsTheDead;
+        HearHarm(slot + 1, struck);
         Arm(human);
         HearLaunches(human.Weapons?.Firing, () => EntityOf(human.Human));
     }

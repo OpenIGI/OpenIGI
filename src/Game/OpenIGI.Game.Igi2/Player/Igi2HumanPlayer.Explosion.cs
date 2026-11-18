@@ -55,6 +55,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
                 _ => damage,
             };
             Damage.Add(Igi2DamagePart.Chest, damage.F);
+            Struck?.Invoke(hit.Owner, Igi2DamagePart.Chest);
         }
 
         ShakeView(hit, PlayerShakeAngle);
