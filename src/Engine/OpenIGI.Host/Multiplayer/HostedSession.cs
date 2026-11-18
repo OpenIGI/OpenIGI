@@ -139,29 +139,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             return false;
         }
 
-        string own = session.Match.Players.GetValueOrDefault(ServerSession.HostSlot)?.Name ?? "Jones";
-        int ownTeam = session.Match.Players.GetValueOrDefault(ServerSession.HostSlot)?.Team ?? Game.Multiplayer.TeamRoster.Good;
-        int enemy = ownTeam == Game.Multiplayer.TeamRoster.Good ? Game.Multiplayer.TeamRoster.Bad : Game.Multiplayer.TeamRoster.Good;
-        const int Host = ServerSession.HostEntity;
-        Game.Multiplayer.Modes.KillNote[] notes = set == 2
-            ?
-            [
-                new("Kim", ownTeam, "Anya", ownTeam, 61, 62, "WEAPON_ID_UZI", Marks: Game.Multiplayer.Modes.KillMarks.TeamKill),
-                new(string.Empty, -1, "Dmitri", enemy, -1, 63, "WEAPON_ID_GRENADE", Game.Multiplayer.Modes.KillCause.Suicide),
-                new(string.Empty, -1, "Kim", ownTeam, -1, 61, string.Empty, Game.Multiplayer.Modes.KillCause.Fall),
-                new("Anya", ownTeam, Game.Multiplayer.Modes.KillNote.GuardName, -1, 62, -1, "WEAPON_ID_MP5SD",
-                    Marks: Game.Multiplayer.Modes.KillMarks.Guard | Game.Multiplayer.Modes.KillMarks.Headshot),
-                new("Viktor_Sniper_Longname", enemy, own, ownTeam, 65, Host, "WEAPON_ID_DRAGUNOV", Marks: Game.Multiplayer.Modes.KillMarks.Headshot),
-            ]
-            :
-            [
-                new("Anya", ownTeam, "Viktor", enemy, 62, 65, "WEAPON_ID_GRENADE", Game.Multiplayer.Modes.KillCause.Explosive),
-                new("Dmitri", enemy, "Kim", ownTeam, 63, 61, "WEAPON_ID_KNIFE", Game.Multiplayer.Modes.KillCause.Melee, Game.Multiplayer.Modes.KillMarks.Backstab),
-                new("Viktor", enemy, "Anya", ownTeam, 65, 62, "WEAPON_ID_SPAS12"),
-                new(own, ownTeam, "Dmitri", enemy, Host, 63, "WEAPON_ID_AK47"),
-                new(own, ownTeam, "Boris", enemy, Host, 66, "WEAPON_ID_M16A2", Marks: Game.Multiplayer.Modes.KillMarks.Headshot),
-            ];
-        foreach (Game.Multiplayer.Modes.KillNote note in notes)
+        Game.Multiplayer.MatchPlayer? host = session.Match.Players.GetValueOrDefault(ServerSession.HostSlot);
+        foreach (Game.Multiplayer.Modes.KillNote note in Game.Multiplayer.Modes.KillFeedSample.Notes(
+            set, _titleId, host?.Name ?? "Jones", ServerSession.HostEntity, host?.Team ?? Game.Multiplayer.TeamRoster.Good))
         {
             session.AnnounceKill(note);
         }

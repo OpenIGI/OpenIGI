@@ -1,4 +1,5 @@
 hud_down_sound	camera_beep_al	archive
+hud_killfeed	1	archive
 hud_retail_scale	0	archive
 r_aa	0	archive
 r_aa_threshold	0.05	archive
