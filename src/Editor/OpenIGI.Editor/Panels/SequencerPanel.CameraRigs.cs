@@ -7,7 +7,7 @@ using OpenIGI.Editor.Core.Missions;
 namespace OpenIGI.Editor.Panels;
 
 /// <content>
-/// Camera rigs, as Unreal's rail and crane rigs and Cinemachine's dolly track: a rail clicked out on the ground in the viewport, a
+/// Camera rigs -- rails, cranes and dolly tracks, as film crews have them: a rail clicked out on the ground in the viewport, a
 /// crane or an orbit round the selected object -- each baked into plain keys the game reads, its settings kept so it can be changed
 /// and its keys made again (<see cref="CutsceneRigs"/>).
 /// </content>

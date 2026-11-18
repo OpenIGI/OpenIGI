@@ -35,7 +35,7 @@ public sealed class OverheadMapTests
     public void Each_cut_shows_the_storey_under_it()
     {
         OverheadScene scene = Scene();
-        OverheadRaster raster = new(scene, new FloorPlan(scene));
+        OverheadRaster raster = new(scene, new FloorPlan(scene), OpenIGI.Core.Threading.InlineWorkScheduler.Instance);
         Bgra32 Middle(int floor, bool walls = false) => raster.Render(View(floor, walls))[(20 * 40) + 20];
         Assert.Equal(Red, Middle(0));
         Assert.Equal(Green, Middle(2));
@@ -51,7 +51,7 @@ public sealed class OverheadMapTests
     public void A_cut_wall_is_drawn_black()
     {
         OverheadScene scene = Scene();
-        OverheadRaster raster = new(scene, new FloorPlan(scene));
+        OverheadRaster raster = new(scene, new FloorPlan(scene), OpenIGI.Core.Threading.InlineWorkScheduler.Instance);
         Bgra32[] picture = raster.Render(View(2, walls: true));
 
         // The building's west wall runs north-south at x = 15 m: the pixel on it is near black, the one inside is floor 1's.

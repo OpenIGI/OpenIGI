@@ -10,7 +10,7 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Editor.Core.Cutscenes;
 
-/// <summary>What a camera rig is, as Unreal's rail and crane rigs and Cinemachine's dolly track are.</summary>
+/// <summary>What a camera rig is: a rail, a crane or a dolly track, as film crews and animation tools have them.</summary>
 public enum CutsceneRigKind
 {
     /// <summary>Along a path laid on the ground, at one speed; watching a subject when it has one, else looking along the way.</summary>

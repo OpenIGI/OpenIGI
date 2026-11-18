@@ -8,7 +8,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Editor.Panels;
 
 /// <summary>
-/// The open scene's camera rig for the viewport, as Unreal draws a camera actor and its motion trail: each key a camera with its
+/// The open scene's camera rig for the viewport, drawn as a camera and its motion trail: each key a camera with its
 /// lens, the path flown between them ticked every half second, a line to what a key watches; and the handles that move and turn
 /// a key there, written back through the space it is seen in (<see cref="CutsceneShotSpace"/>).
 /// </summary>

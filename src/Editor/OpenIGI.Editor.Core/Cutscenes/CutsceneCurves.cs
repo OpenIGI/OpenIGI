@@ -37,7 +37,7 @@ public enum CutsceneChannel
 }
 
 /// <summary>
-/// A scene's camera as curves over its clock, as Unreal's curve editor shows a transform's channels: each channel the game blends
+/// A scene's camera as curves over its clock, as an animation curve editor shows a transform's channels: each channel the game blends
 /// (place, the three angles, the lens) read off its own path (<see cref="CutsceneCameraMath.Evaluate"/>), and the speed and turn
 /// rate it flies at; a key's value on a channel written back into its knot.
 /// </summary>

@@ -14,8 +14,8 @@ namespace OpenIGI.Game.World;
 /// <remarks>
 /// <para>
 /// One implementation for the game, which builds a riding shot's frame with <see cref="ToWorld"/>, and the editor, which writes
-/// what its viewport shows back into the key with <see cref="ToAuthored"/> -- as Unreal's pilot writes a camera's view back
-/// through its parent's transform.
+/// what its viewport shows back into the key with <see cref="ToAuthored"/> -- a piloted camera's view written back through its
+/// parent's transform.
 /// </para>
 /// <para>
 /// <see cref="Matrix3f.Transform(Vector3d)"/> is the engine's row-vector multiply: the orientations here are orthonormal, so each one's

@@ -9,7 +9,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Editor.Panels;
 
 /// <summary>
-/// Piloting a camera key, as Unreal pilots an actor: the viewport goes to the key -- where it is seen, its lens, a moment after it
+/// Piloting a camera key, as editors pilot a camera: the viewport goes to the key -- where it is seen, its lens, a moment after it
 /// starts -- and flying the viewport flies the key, every move written back into it through the space it is seen in
 /// (<see cref="CutsceneShotSpace"/>: a riding key relative to where its ride stood as the level loaded), its angles the nearest
 /// to its own (<see cref="CameraAngles"/>) and its roll kept, the editor's camera having none.
@@ -173,7 +173,7 @@ internal sealed partial class SequencerPanel
         return true;
     }
 
-    /// <summary>Writes the viewport into the key selected, or adds a key from it at the playhead (Unreal's key from view).</summary>
+    /// <summary>Writes the viewport into the key selected, or adds a key from it at the playhead (a key from the view).</summary>
     public void KeyFromView()
     {
         if (SelectedShot() is not null)

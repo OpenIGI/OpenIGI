@@ -28,7 +28,8 @@ public sealed record PresenceActivity(
 /// Discord not running it simply tries again now and then.
 /// </summary>
 /// <remarks>
-/// It runs on a thread of its own: the game only hands it the activity wanted, and nothing here can stall a frame.
+/// Its connection runs on the work scheduler, beside the frame: the game only hands it the activity wanted, and nothing here
+/// can stall a frame. Started only where the scheduler is concurrent (never in a browser, which has no Discord to talk to).
 /// </remarks>
 public sealed class DiscordPresence : IDisposable
 {
@@ -45,19 +46,25 @@ public sealed class DiscordPresence : IDisposable
 
     private readonly string _clientId;
     private readonly CancellationTokenSource _stop = new();
-    private readonly Thread _thread;
+    private readonly Task _running;
     private readonly object _gate = new();
     private PresenceActivity? _wanted;
     private int _nonce;
 
-    /// <summary>Initializes a new instance of the <see cref="DiscordPresence"/> class and starts its thread.</summary>
+    /// <summary>Initializes a new instance of the <see cref="DiscordPresence"/> class and starts its connection.</summary>
     /// <param name="clientId">The Discord application the activity is shown as.</param>
-    public DiscordPresence(string clientId)
+    /// <param name="work">Where the connection runs; it must run beside the caller.</param>
+    public DiscordPresence(string clientId, Core.Threading.IWorkScheduler work)
     {
         ArgumentException.ThrowIfNullOrEmpty(clientId);
+        ArgumentNullException.ThrowIfNull(work);
+        if (!work.IsConcurrent)
+        {
+            throw new ArgumentException("The presence's connection waits on Discord, so it needs a scheduler that runs beside the frame.", nameof(work));
+        }
+
         _clientId = clientId;
-        _thread = new Thread(Run) { IsBackground = true, Name = "Discord presence" };
-        _thread.Start();
+        _running = work.Run(Run);
     }
 
     /// <summary>Shows an activity, or clears it with <see langword="null"/>; sent as soon as Discord is there to take it.</summary>
@@ -83,7 +90,7 @@ public sealed class DiscordPresence : IDisposable
             Monitor.PulseAll(_gate);
         }
 
-        _thread.Join(TimeSpan.FromSeconds(2));
+        _running.Wait(TimeSpan.FromSeconds(2));
         _stop.Dispose();
     }
 

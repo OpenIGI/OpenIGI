@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Textures;
@@ -79,14 +80,15 @@ public sealed partial class GameHost
         job.Steps.Dispose();
         _overheadJob = null;
         IOpenIgiLogger logger = _logger;
-        _ = Task.Run(() =>
+        IWorkScheduler work = _work;
+        _ = work.Run(() =>
         {
             try
             {
                 System.Diagnostics.Stopwatch finishing = System.Diagnostics.Stopwatch.StartNew();
 
                 // Textures no finer than a map needs: a model's is seen from above at a few centimetres a texel at most.
-                OverheadScene scene = job.Gathering.Finish(maxTextureSide: 256);
+                OverheadScene scene = job.Gathering.Finish(work, maxTextureSide: 256);
                 logger.Information("Editor", string.Create(CultureInfo.InvariantCulture, $"The map's scene: gathered over {job.Frames} frames ({job.FrameMs:0} ms of them, the longest {job.LongestMs:0} ms), finished in {finishing.ElapsedMilliseconds} ms off the frame; {scene.Groups.Sum(static g => g.Corners.Length) / (3 * OverheadScene.Stride)} triangles, {scene.Textures.Count} textures, {scene.Collision.Length / OverheadScene.CollisionStride} collision triangles, ground {(scene.HasGround ? "drawn" : "missing")}."));
                 job.Done.TrySetResult(scene);
             }
@@ -105,7 +107,7 @@ public sealed partial class GameHost
         {
         }
 
-        return gathering.Finish(int.MaxValue);
+        return gathering.Finish(_work, int.MaxValue);
     }
 
     // The level's extent from above, in world units: its objects, the odd far-flung one left out, a margin round them, and
@@ -340,9 +342,10 @@ public sealed partial class GameHost
         }
 
         /// <summary>Makes the scene: the textures decoded and no wider than a side, and every face's ground found.</summary>
+        /// <param name="work">Where the textures and the faces are worked through, side by side.</param>
         /// <param name="maxTextureSide">The widest a texture is kept.</param>
         /// <returns>The scene.</returns>
-        public OverheadScene Finish(int maxTextureSide)
+        public OverheadScene Finish(IWorkScheduler work, int maxTextureSide)
         {
             double west = minX / WorldUnits.PerMetre, south = minY / WorldUnits.PerMetre;
             double east = maxX / WorldUnits.PerMetre, north = maxY / WorldUnits.PerMetre;
@@ -360,7 +363,7 @@ public sealed partial class GameHost
 
             int tileCount = tiles?.Tiles.Count ?? 0;
             OverheadTexture[] textures = new OverheadTexture[_files.Count + tileCount];
-            Parallel.For(0, textures.Length, i => textures[i] = Fit(
+            work.ForRange(0, textures.Length, 0, i => textures[i] = Fit(
                 i < _files.Count ? Decode(_files[i]) : Tile(tiles!.Tiles[i - _files.Count]),
                 maxTextureSide));
             int TextureOf(int key) => key >= -1 ? key : -2 - key < tileCount ? _files.Count + (-2 - key) : -1;
@@ -379,7 +382,7 @@ public sealed partial class GameHost
             foreach (OverheadGroup group in groups.Where(static g => g.Pass >= OverheadPass.Solid))
             {
                 float[] v = group.Corners;
-                Parallel.For(0, v.Length / (3 * S), t =>
+                work.ForRange(0, v.Length / (3 * S), 0, t =>
                 {
                     int o = t * 3 * S;
                     float under = Under(v[o], v[o + 1], v[o + 2], v[o + S], v[o + S + 1], v[o + S + 2], v[o + (2 * S)], v[o + (2 * S) + 1], v[o + (2 * S) + 2]);

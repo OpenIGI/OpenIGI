@@ -127,6 +127,9 @@ public sealed record OverheadMap(int Width, int Height, Bgra32[] Pixels, double 
 /// <summary>What an editor session may ask of the host.</summary>
 public interface IEditorHost
 {
+    /// <summary>Gets where work off the frame goes: beside it on the desktop, inline where there are no threads.</summary>
+    Core.Threading.IWorkScheduler Work { get; }
+
     /// <summary>Gets the graphics device, for fonts and textures.</summary>
     IGraphicsDevice Device { get; }
 

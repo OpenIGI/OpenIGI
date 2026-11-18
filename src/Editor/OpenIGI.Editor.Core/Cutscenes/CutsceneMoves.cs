@@ -17,7 +17,7 @@ public sealed record CutsceneMove(IReadOnlyList<CutsceneShot> Keys, double Start
 }
 
 /// <summary>
-/// A scene's camera as moves and keys, as Unreal's Sequencer shows camera cuts with the keys on them and Unity's Timeline its clips:
+/// A scene's camera as moves and keys, as a film editor's timeline shows camera cuts with the keys on them, a clip a shot:
 /// the game keeps only a list of knots (<c>EditCamera</c>), each gliding into the next or cutting to it; a move is a run of knots
 /// gliding on, ended by one that cuts. And the key edits that keep the scene's timing: retiming a key, adding one where the path
 /// is, taking one out.
@@ -105,7 +105,7 @@ public static class CutsceneMoves
     }
 
     /// <summary>
-    /// The step that adds a key where the path is at a moment, as Unreal adds a key at the playhead: the key the moment falls in
+    /// The step that adds a key where the path is at a moment, as an animation editor adds a key at the playhead: the key the moment falls in
     /// is split there, the new key taking the path's own values and everything else of the key it splits.
     /// </summary>
     /// <param name="document">The mission, which must declare <c>EditCamera</c>.</param>

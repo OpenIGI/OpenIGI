@@ -476,6 +476,8 @@ public sealed partial class GameHost
         private Scripting.Vocabulary.ScriptVocabulary? _vocabulary;
         private Core.Titles.GameTitle? _vocabularyTitle;
 
+        public Core.Threading.IWorkScheduler Work => host._work;
+
         public IGraphicsDevice Device => host._device;
 
         public InputState Input => host._window.Input;

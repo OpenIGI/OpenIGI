@@ -7,8 +7,7 @@ namespace OpenIGI.Game.World;
 /// (<see cref="CutsceneCameraMath.Hermite"/>), so a turn of a few degrees written as 350 turns the camera the long way round.
 /// </summary>
 /// <remarks>
-/// As Unreal keeps a piloted actor's rotation winding when it writes the view back (<c>GetWindingAndRemainder</c>,
-/// <c>SetClosestToMe</c>): of every set of angles that makes the same turn -- each angle a whole turn more or less, and the second
+/// A piloted camera keeps its rotation's winding when the view is written back: of every set of angles that makes the same turn -- each angle a whole turn more or less, and the second
 /// Euler solution -- the one nearest the angles given.
 /// </remarks>
 public static class CameraAngles
@@ -26,7 +25,7 @@ public static class CameraAngles
     {
         Vector3f first = orientation.ToEngineEulerAngles();
         Vector3f best = Wound(first, near);
-        double bestDistance = Distance(best, near);
+        double bestDistance = TurnBetween(best, near);
         foreach (Vector3f other in Alternatives(first))
         {
             if (!Same(Matrix3f.FromEngineEulerAngles(other.X, other.Y, other.Z), orientation))
@@ -35,7 +34,7 @@ public static class CameraAngles
             }
 
             Vector3f wound = Wound(other, near);
-            double distance = Distance(wound, near);
+            double distance = TurnBetween(wound, near);
             if (distance < bestDistance)
             {
                 (best, bestDistance) = (wound, distance);
@@ -88,7 +87,8 @@ public static class CameraAngles
         yield return new Vector3f(a.X - Half, Half - a.Y, a.Z - Half);
     }
 
-    private static double Distance(Vector3f a, Vector3f b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) + Math.Abs(a.Z - b.Z);
+    // How far apart two sets of angles are: each angle's turn, summed.
+    private static double TurnBetween(Vector3f a, Vector3f b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) + Math.Abs(a.Z - b.Z);
 
     private static bool Same(Matrix3f a, Matrix3f b) =>
         Near(a.Row1, b.Row1) && Near(a.Row2, b.Row2) && Near(a.Row3, b.Row3);

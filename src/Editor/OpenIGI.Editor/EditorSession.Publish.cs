@@ -162,24 +162,7 @@ internal sealed partial class EditorSession
         using MemoryStream stream = new();
         MapPackage.Write(manifest, path => bytes[path], stream);
         byte[] package = stream.ToArray();
-        _publishing = Task.Run(async () =>
-        {
-            using HttpClient http = new() { Timeout = TimeSpan.FromMinutes(5) };
-            using MapIdentity identity = Host.GameHost.MapIdentity();
-            try
-            {
-                MapListing listing = await new MapService(http, MapService.Master).PublishAsync(package, identity).ConfigureAwait(false);
-                return string.Create(CultureInfo.InvariantCulture, $"Published {listing.Title} (version {listing.Version}): up for everyone now.");
-            }
-            catch (MapRefusedException refused)
-            {
-                return $"Not published: {refused.Message}{(refused.Problems.Count > 0 ? " " + refused.Problems[0] : string.Empty)}";
-            }
-            catch (HttpRequestException error)
-            {
-                return $"Not published: the map server could not be reached ({error.Message}).";
-            }
-        });
+        _publishing = PublishAsync(package);
         Notify(string.Create(CultureInfo.InvariantCulture, $"Publishing {manifest.Title} ({package.Length / (1024.0 * 1024.0):0.0} MB)…"));
         _pendingSteps.Enqueue(() =>
         {
@@ -194,6 +177,26 @@ internal sealed partial class EditorSession
             _host.Logger.Information("Editor", said);
             return true;
         });
+    }
+
+    // The package sent to the map server: asynchronous I/O, so no thread of its own.
+    private static async Task<string> PublishAsync(byte[] package)
+    {
+        using HttpClient http = new() { Timeout = TimeSpan.FromMinutes(5) };
+        using MapIdentity identity = Host.GameHost.MapIdentity();
+        try
+        {
+            MapListing listing = await new MapService(http, MapService.Master).PublishAsync(package, identity).ConfigureAwait(false);
+            return string.Create(CultureInfo.InvariantCulture, $"Published {listing.Title} (version {listing.Version}): up for everyone now.");
+        }
+        catch (MapRefusedException refused)
+        {
+            return $"Not published: {refused.Message}{(refused.Problems.Count > 0 ? " " + refused.Problems[0] : string.Empty)}";
+        }
+        catch (HttpRequestException error)
+        {
+            return $"Not published: the map server could not be reached ({error.Message}).";
+        }
     }
 
     // A map's id made from its name: lowercase letters and digits, hyphens between words.

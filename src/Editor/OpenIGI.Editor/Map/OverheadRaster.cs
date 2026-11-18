@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Host.Editor;
 
 namespace OpenIGI.Editor.Map;
@@ -32,6 +33,7 @@ internal readonly record struct OverheadView(double WestMetres, double NorthMetr
 /// </remarks>
 internal sealed class OverheadRaster
 {
+    private readonly IWorkScheduler _work;
     private const int Band = 16;
 
     // Where an added ground pass still counts as lying on the first, in metres.
@@ -47,8 +49,10 @@ internal sealed class OverheadRaster
     /// <summary>Initializes a new instance of the <see cref="OverheadRaster"/> class.</summary>
     /// <param name="scene">The level from above.</param>
     /// <param name="plan">Its storeys, for the walls.</param>
-    public OverheadRaster(OverheadScene scene, FloorPlan plan)
+    /// <param name="work">Where its bands of rows are drawn side by side.</param>
+    public OverheadRaster(OverheadScene scene, FloorPlan plan, IWorkScheduler work)
     {
+        _work = work ?? throw new ArgumentNullException(nameof(work));
         _scene = scene;
         _plan = plan;
         _textures = [.. scene.Textures.Select(static t => new Mips(t))];
@@ -65,7 +69,7 @@ internal sealed class OverheadRaster
         Bin(view, faces, walls);
 
         Bgra32[] picture = new Bgra32[view.Width * view.Height];
-        Parallel.For(0, bands, band => DrawBand(view, band, faces[band], walls[band], picture));
+        _work.ForRange(0, bands, 0, band => DrawBand(view, band, faces[band], walls[band], picture));
         return picture;
     }
 

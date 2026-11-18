@@ -33,14 +33,14 @@ public sealed partial class GameHost
         }
 
         _presenceAt = _presenceClock.Elapsed;
-        if (!ShowsPresence || !PresenceCVars.Enabled.Value || !_options.SavesUserFiles)
+        if (!ShowsPresence || !PresenceCVars.Enabled.Value || !_options.SavesUserFiles || !_work.IsConcurrent)
         {
             _presence?.Dispose();
             _presence = null;
             return;
         }
 
-        _presence ??= new DiscordPresence(PresenceCVars.ClientId.Value);
+        _presence ??= new DiscordPresence(PresenceCVars.ClientId.Value, _work);
         _presence.Show(Activity());
     }
 

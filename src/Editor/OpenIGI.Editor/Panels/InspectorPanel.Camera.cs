@@ -6,7 +6,7 @@ using OpenIGI.UI.Editor.Widgets;
 namespace OpenIGI.Editor.Panels;
 
 /// <content>
-/// A cutscene camera key in words before its raw parameters, as Unreal's details panel shows a camera's lens and transform: which
+/// A cutscene camera key in words before its raw parameters, as an editor's details panel shows a camera's lens and transform: which
 /// key of which scene it is and when, what it rides or watches (a riding key is written relative to where its ride stood as the
 /// level loaded), its lens in degrees, its turn in degrees, how long it holds and whether it glides on; and Pilot, to fly it.
 /// </content>

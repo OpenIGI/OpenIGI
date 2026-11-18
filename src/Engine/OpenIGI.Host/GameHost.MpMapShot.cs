@@ -182,7 +182,7 @@ public sealed partial class GameHost
         }
         else
         {
-            Parallel.For(0, height, Row);
+            _work.ForRange(0, height, 0, Row);
         }
 
         double[] known = [.. ground.Where(static h => !double.IsNaN(h))];

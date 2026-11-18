@@ -9,7 +9,7 @@ using OpenIGI.UI.Layout;
 namespace OpenIGI.Editor.Panels;
 
 /// <content>
-/// The curves view under the camera lane, as Unreal's curve editor in small: one channel of the scene's camera over its clock --
+/// The curves view under the camera lane, an animation curve editor in small: one channel of the scene's camera over its clock --
 /// how fast it flies or turns, or a value the game blends (place, the three angles, the lens) -- read off the game's own path, its
 /// keys as dots on it. A key's dot dragged up or down writes its value on that channel.
 /// </content>

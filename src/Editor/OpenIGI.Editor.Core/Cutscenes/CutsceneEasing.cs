@@ -290,7 +290,7 @@ public static class CutsceneEasing
     }
 
     // Where along the original span (0..1 of its time) the camera is at a share of the eased span's time: the ease shapes the share of
-    // the WAY covered, as a dolly is driven -- by the curves of a flat key tangent (Unreal's ease: smoothstep in and out, at most half
+    // the WAY covered, as a dolly is driven -- by the curves of a flat key tangent (the usual ease: smoothstep in and out, at most half
     // again the mean pace; a quadratic for one end, at most twice) -- so it is the ease's own whatever speed the game's curve had there (shaping its time
     // instead multiplied the two, a span that already sped up overshooting to more than twice its pace).
     private static double Shape(CutsceneEase ease, double share, CutsceneKey[] path, float scale, double start, double span) => ease switch

@@ -38,14 +38,7 @@ public sealed partial class GameHost
                 {
                     string game = _titleRuntime.Title.Id;
                     IOpenIgiLogger logger = _logger;
-                    _mapDownloads.Add(Task.Run(async () =>
-                    {
-                        using HttpClient http = new();
-                        foreach (MapListing map in await new MapService(http, MapService.Master).ListAsync(game).ConfigureAwait(false))
-                        {
-                            logger.Information("Maps", string.Create(CultureInfo.InvariantCulture, $"online: {map.Id}  {map.Title} by {map.Author} (v{map.Version}, {map.Downloads} downloads, {map.Rating:0.0} stars)"));
-                        }
-                    }));
+                    _mapDownloads.Add(ListOnline(game, logger));
                 }
             },
             "[online]");
@@ -62,18 +55,7 @@ public sealed partial class GameHost
 
                 string id = context[0];
                 IOpenIgiLogger logger = _logger;
-                _mapDownloads.Add(Task.Run(async () =>
-                {
-                    try
-                    {
-                        await InstallMapAsync(id).ConfigureAwait(false);
-                        logger.Information("Maps", $"Installed {id}.");
-                    }
-                    catch (Exception error) when (error is HttpRequestException or MapRefusedException or InvalidDataException or IOException)
-                    {
-                        logger.Warning("Maps", $"{id} not installed: {error.Message}");
-                    }
-                }));
+                _mapDownloads.Add(Install(id, logger));
             },
             "<id>");
         console.Commands.Add(
@@ -321,6 +303,30 @@ public sealed partial class GameHost
         if (rescan)
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
+        }
+    }
+
+    // The published maps, listed into the log (map_list online).
+    private static async Task ListOnline(string game, IOpenIgiLogger logger)
+    {
+        using HttpClient http = new();
+        foreach (MapListing map in await new MapService(http, MapService.Master).ListAsync(game).ConfigureAwait(false))
+        {
+            logger.Information("Maps", string.Create(CultureInfo.InvariantCulture, $"online: {map.Id}  {map.Title} by {map.Author} (v{map.Version}, {map.Downloads} downloads, {map.Rating:0.0} stars)"));
+        }
+    }
+
+    // A published map downloaded and installed (map_get), what came of it told in the log.
+    private static async Task Install(string id, IOpenIgiLogger logger)
+    {
+        try
+        {
+            await InstallMapAsync(id).ConfigureAwait(false);
+            logger.Information("Maps", $"Installed {id}.");
+        }
+        catch (Exception error) when (error is HttpRequestException or MapRefusedException or InvalidDataException or IOException)
+        {
+            logger.Warning("Maps", $"{id} not installed: {error.Message}");
         }
     }
 }

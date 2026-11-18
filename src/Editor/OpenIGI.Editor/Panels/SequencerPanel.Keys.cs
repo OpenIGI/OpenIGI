@@ -12,7 +12,7 @@ using OpenIGI.UI.Layout;
 namespace OpenIGI.Editor.Panels;
 
 /// <summary>
-/// The camera lane as moves with their keys, as Unreal's Sequencer draws camera cuts with transform keys on them: one clip a move
+/// The camera lane as moves with their keys, as a film editor's timeline draws camera cuts with transform keys on them: one clip a move
 /// (keys gliding one into the next, ended by a cut), a diamond a key -- a key that only ends a glide is a diamond, not a sliver to
 /// miss. A diamond dragged retimes its key (the key before gives or takes the time; Shift ripples the rest along); a move's end
 /// dragged stretches all its keys; a click in a move picks the key there and puts the playhead where it was clicked.
@@ -198,7 +198,7 @@ internal sealed partial class SequencerPanel
         _moveStretch = null;
     }
 
-    /// <summary>Adds a key where the path is at the playhead, as Unreal keys the camera at the current time.</summary>
+    /// <summary>Adds a key where the path is at the playhead, keying the camera at the current time.</summary>
     public void AddKeyAtPlayhead()
     {
         if (_scene is not { } scene || _workspace.Document is not { } document)

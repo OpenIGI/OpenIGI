@@ -1,3 +1,4 @@
+using OpenIGI.Core.Threading;
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -92,6 +93,18 @@ internal sealed partial class MapPanel
 
     // The level from above, gathered once the mission is up (and again after Redraw or for another mission), then finished and
     // readied for drawing off the frame; the models' boxes stand in meanwhile.
+    // The level's scene once gathered, and its floors and rasteriser made from it on the scheduler.
+    private async Task<(OverheadScene Scene, OverheadRaster Raster, FloorPlan Plan)> Prepare(Task<OverheadScene> making)
+    {
+        OverheadScene scene = await making.ConfigureAwait(false);
+        IWorkScheduler work = _host.Work;
+        return await work.Run(() =>
+        {
+            FloorPlan plan = new(scene);
+            return (scene, new OverheadRaster(scene, plan, work), plan);
+        }).ConfigureAwait(false);
+    }
+
     private void EnsureMap()
     {
         int? mission = _workspace.Mission?.Id;
@@ -104,12 +117,7 @@ internal sealed partial class MapPanel
         Release();
         if (_host.MakeOverheadScene() is { } making)
         {
-            _preparing = Task.Run(async () =>
-            {
-                OverheadScene scene = await making.ConfigureAwait(false);
-                FloorPlan plan = new(scene);
-                return (scene, new OverheadRaster(scene, plan), plan);
-            });
+            _preparing = Prepare(making);
         }
         else
         {
@@ -228,7 +236,7 @@ internal sealed partial class MapPanel
         }
 
         // A picture a released map no longer wants is drawn to the end and dropped: a tenth of a second.
-        _rendering = Task.Run(() => (next, raster.Render(next), whole));
+        _rendering = _host.Work.Run(() => (next, raster.Render(next), whole));
     }
 
     // Whether a picture already shows a view: the same storey and walls, scale and size, and within half a pixel of it.
