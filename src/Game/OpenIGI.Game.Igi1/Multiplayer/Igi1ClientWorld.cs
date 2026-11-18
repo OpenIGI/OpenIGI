@@ -153,7 +153,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 !alive,
                 alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
                 PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model,
-                (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0));
+                (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0,
+                alive ? h.Health / 255f : null));
         }
 
         return bodies;

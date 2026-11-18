@@ -14,6 +14,9 @@ public sealed partial class SoldierRenderer
     private readonly Dictionary<object, PlayerBodyRenderer> _partners = [];
     private readonly Dictionary<object, string> _partnerNames = [];
 
+    // Each standing partner's health, for its name tag.
+    private readonly Dictionary<object, float?> _partnerHealth = [];
+
     // The fallen partners: what lies where, and how far each one's revival has gone.
     private readonly Dictionary<object, (Vector3d Feet, float? Progress)> _fallen = [];
 
@@ -39,7 +42,7 @@ public sealed partial class SoldierRenderer
         {
             if (!_fallen.ContainsKey(key) && _partnerNames.TryGetValue(key, out string? name) && body.HeadAnchorMetres() is { } head)
             {
-                tags.Add(new WorldNameTag(head, name));
+                tags.Add(new WorldNameTag(head, name, _partnerHealth.GetValueOrDefault(key)));
             }
         }
 
@@ -179,6 +182,8 @@ public sealed partial class SoldierRenderer
                 _partnerNames[partner.Key] = name;
             }
 
+            _partnerHealth[partner.Key] = partner.Health;
+
             if (partner.CarriesBomb)
             {
                 _partnerBombs.Add(partner.Key);
@@ -215,6 +220,7 @@ public sealed partial class SoldierRenderer
             _partnerBombs.Remove(gone);
             _partnerHolding.Remove(gone);
             _partnerNames.Remove(gone);
+            _partnerHealth.Remove(gone);
             _fallen.Remove(gone);
             _partnerModels.Remove(gone);
         }
@@ -374,6 +380,7 @@ public sealed partial class SoldierRenderer
         _carriedBombs?.Dispose();
         _carriedBombs = null;
         _partnerNames.Clear();
+        _partnerHealth.Clear();
         _partnerLoad = null;
     }
 }

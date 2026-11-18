@@ -36,7 +36,8 @@ public static class AllyTag
     /// <param name="head">The point over the player's head, on the screen.</param>
     /// <param name="name">The player's name.</param>
     /// <param name="distanceMetres">How far the player is.</param>
-    public static void Draw(UiPainter painter, UiFont font, UiVec2 head, string name, double distanceMetres)
+    /// <param name="health">Their health, 0 to 1, shown as a thin bar under the name while they are hurt; <see langword="null"/> where not known.</param>
+    public static void Draw(UiPainter painter, UiFont font, UiVec2 head, string name, double distanceMetres, float? health = null)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(font);
@@ -52,8 +53,6 @@ public static class AllyTag
 
         float size = context.Px(Size * scale);
         float marker = context.Px(6f * scale);
-        float shadowOffset = MathF.Max(1f, context.Px(1f));
-        Bgra32 shade = Bgra32.FromRgba(0, 0, 0, (byte)(200 * fade));
 
         // The marker: a small triangle pointing down at the head, in the accent.
         float tipY = head.Y - context.Px(4f * scale);
@@ -63,29 +62,24 @@ public static class AllyTag
             new UiVec2(head.X, tipY),
             UiPalette.Accent.WithAlpha((byte)(235 * fade)));
 
-        // The name over it, and far off how far, quieter; each a hair of shadow under it.
-        string? howFar = distanceMetres > DistanceShownMetres
-            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{distanceMetres:0} m")
-            : null;
-        float farSize = size * 0.85f;
-        float gap = size * 0.45f;
-        float nameWidth = font.MeasureWidth(name, size);
-        float farWidth = howFar is null ? 0f : font.MeasureWidth(howFar, farSize);
-        float total = nameWidth + (howFar is null ? 0f : gap + farWidth);
-        float lineHeight = size * 1.2f;
-        var line = new UiRect(head.X - (total * 0.5f), tipY - marker - context.Px(3f * scale) - lineHeight, total, lineHeight);
-
-        Label(painter, font, name, new UiVec2(line.X, UiRowStyle.CapsCenterY(font, size, line)), size, UiPalette.Text.WithAlpha((byte)(245 * fade)), shade, shadowOffset);
-        if (howFar is not null)
+        // The name over it, and far off how far, quieter; hurt, a thin bar between the name and the marker -- how much health is
+        // left, in its colour. Whole, no bar, so a healthy squad stays quiet.
+        bool hurt = health is < 0.995f;
+        float barHeight = MathF.Max(2f, context.Px(3f * scale));
+        float barSpace = hurt ? barHeight + context.Px(4f * scale) : 0f;
+        float top = tipY - marker - context.Px(3f * scale) - barSpace - font.LineHeight(size);
+        UiRect line = HudInk.Caption(painter, font, head.X, top, name, distanceMetres > DistanceShownMetres ? HudInk.Distance(distanceMetres) : null, size, fade);
+        if (hurt && health is { } left)
         {
-            Label(painter, font, howFar, new UiVec2(line.X + nameWidth + gap, UiRowStyle.CapsCenterY(font, farSize, line)), farSize, UiPalette.TextSecondary.WithAlpha((byte)(240 * fade)), shade, shadowOffset);
+            float barWidth = MathF.Max(context.Px(36f), line.Width);
+            var track = new UiRect(head.X - (barWidth * 0.5f), line.Bottom + context.Px(2f * scale), barWidth, barHeight);
+            painter.FillRect(track, UiPalette.InkAt(0.6f * fade));
+            painter.FillRect(new UiRect(track.X, track.Y, track.Width * Math.Clamp(left, 0f, 1f), track.Height), HealthColour(left).WithAlpha((byte)(235 * fade)));
         }
     }
 
-    // Some words with a hair of shadow under them.
-    private static void Label(UiPainter painter, UiFont font, string text, UiVec2 at, float size, Bgra32 colour, Bgra32 shade, float offset)
-    {
-        painter.DrawLabel(font, text, new UiVec2(at.X + offset, at.Y + offset), size, shade, 0.02f);
-        painter.DrawLabel(font, text, at, size, colour, 0.02f);
-    }
+    /// <summary>The colour health is shown in: the healthy colour, then amber, then the alarm colour as it runs low.</summary>
+    /// <param name="health">The health left, 0 to 1.</param>
+    /// <returns>The colour.</returns>
+    public static Bgra32 HealthColour(float health) => health > 0.6f ? UiPalette.Success : health > 0.3f ? UiPalette.Warning : UiPalette.Danger;
 }

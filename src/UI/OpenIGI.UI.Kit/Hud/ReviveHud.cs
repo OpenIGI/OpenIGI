@@ -56,48 +56,13 @@ public static class ReviveHud
         painter.FillRect(new UiRect(centre.X - (thick * 0.5f), centre.Y - arm, thick, arm * 2f), cross);
 
         // Out of view, an arrow just outside the ring pointing the way to them.
-        if (pointing is { } way && (MathF.Abs(way.X) + MathF.Abs(way.Y)) > 0.001f)
+        if (pointing is { } way)
         {
-            float length = MathF.Sqrt((way.X * way.X) + (way.Y * way.Y));
-            var unit = new UiVec2(way.X / length, way.Y / length);
-            var side = new UiVec2(-unit.Y, unit.X);
-            float clear = radius + context.Px(5f);
-            float arrow = context.Px(9f);
-            var foot = new UiVec2(centre.X + (unit.X * clear), centre.Y + (unit.Y * clear));
-            UiVec2[] corners =
-            [
-                new(foot.X + (unit.X * arrow * 1.3f), foot.Y + (unit.Y * arrow * 1.3f)),
-                new(foot.X + (side.X * arrow), foot.Y + (side.Y * arrow)),
-                new(foot.X - (side.X * arrow), foot.Y - (side.Y * arrow)),
-            ];
-
-            // A dark edge round it, the same arrow grown about its own middle, so it reads on bright ground as well as dark.
-            var middle = new UiVec2((corners[0].X + corners[1].X + corners[2].X) / 3f, (corners[0].Y + corners[1].Y + corners[2].Y) / 3f);
-            UiVec2 Grown(UiVec2 corner) => new(middle.X + ((corner.X - middle.X) * 1.4f), middle.Y + ((corner.Y - middle.Y) * 1.4f));
-            painter.FillTriangle(Grown(corners[0]), Grown(corners[1]), Grown(corners[2]), UiPalette.InkAt(0.75f));
-            painter.FillTriangle(corners[0], corners[1], corners[2], progress > 0f ? UiPalette.Accent : UiPalette.Text);
+            HudInk.EdgeArrow(painter, centre, radius + context.Px(5f), way, progress > 0f ? UiPalette.Accent : UiPalette.Text);
         }
 
-        // The name under it and how far, quieter; a hair of shadow under each.
-        float size = context.Px(16f);
-        float farSize = size * 0.85f;
-        float offset = MathF.Max(1f, context.Px(1f));
-        string far = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{distanceMetres:0} m");
-        float nameWidth = theme.Body.MeasureWidth(name, size);
-        float gap = size * 0.45f;
-        float total = nameWidth + gap + theme.Body.MeasureWidth(far, farSize);
-        float x = centre.X - (total * 0.5f);
-        float y = centre.Y + radius + context.Px(5f);
-        Shadowed(painter, theme, name, new UiVec2(x, y), size, UiPalette.Text, offset);
-        float farY = y + ((theme.Body.LineHeight(size) - theme.Body.LineHeight(farSize)) * 0.5f);
-        Shadowed(painter, theme, far, new UiVec2(x + nameWidth + gap, farY), farSize, UiPalette.TextSecondary, offset);
-    }
-
-    // Some words with a hair of shadow under them.
-    private static void Shadowed(UiPainter painter, UiTheme theme, string text, UiVec2 at, float size, Bgra32 colour, float offset)
-    {
-        painter.DrawLabel(theme.Body, text, new UiVec2(at.X + offset, at.Y + offset), size, Bgra32.FromRgba(0, 0, 0, 200), 0.02f);
-        painter.DrawLabel(theme.Body, text, at, size, colour, 0.02f);
+        // The name under it and how far, quieter.
+        HudInk.Caption(painter, theme.Body, centre.X, centre.Y + radius + context.Px(5f), name, HudInk.Distance(distanceMetres), context.Px(16f));
     }
 
     /// <summary>Draws the read-out of the player who is down.</summary>

@@ -49,7 +49,8 @@ public sealed class AllyTagScreenshots
                 ];
                 foreach ((float x, float y, string name, double metres) in allies)
                 {
-                    AllyTag.Draw(painter, typography.Body, new UiVec2(width * x, height * y), name, metres);
+                    // Jones is hurt: his tag carries a thin bar of what is left.
+                    AllyTag.Draw(painter, typography.Body, new UiVec2(width * x, height * y), name, metres, name == "Jones" ? 0.45f : 1f);
                 }
 
                 renderer.Flush();
@@ -103,5 +104,43 @@ public sealed class AllyTagScreenshots
             using FileStream file = File.Create(Path.Combine(folder, $"revive-{state}-{Width}x{Height}.png"));
             png.SaveTo(file);
         }
+    }
+
+    [Fact]
+    public void Draw_pings()
+    {
+        string? folder = Environment.GetEnvironmentVariable("OPENIGI_SHELL_SHOTS");
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(folder);
+        using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
+        using SkiaImageStore images = new();
+        using SkiaFontCache fonts = new();
+        UiPicture? level = MultiplayerScreenshots.Picture(images, [], 1);
+        const int Width = 1920;
+        const int Height = 1080;
+        using SKSurface surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        MultiplayerScreenshots.DrawGround(surface.Canvas, Width, Height);
+        using (SkiaUiRenderer renderer = new(surface.Canvas, images, fonts))
+        {
+            var painter = new UiPainter(renderer, new LayoutContext(Width, Height));
+            level?.DrawCover(painter, new UiRect(0f, 0f, Width, Height));
+
+            // One ping at three moments of its landing, one settled, and one out of view waiting on the edge.
+            PingMark.Draw(painter, typography.Body, new UiVec2(Width * 0.30f, Height * 0.62f), "Anya", 31, 0.08f, 1f);
+            PingMark.Draw(painter, typography.Body, new UiVec2(Width * 0.42f, Height * 0.62f), "Anya", 31, 0.35f, 1f);
+            PingMark.Draw(painter, typography.Body, new UiVec2(Width * 0.54f, Height * 0.62f), "Anya", 31, 0.7f, 1f);
+            PingMark.Draw(painter, typography.Body, new UiVec2(Width * 0.66f, Height * 0.42f), "Jones", 74, 4f, 1f);
+            PingMark.Draw(painter, typography.Body, new UiVec2(64f, Height * 0.5f), "Priboi", 140, 4f, 1f, new UiVec2(-1f, 0.1f));
+            renderer.Flush();
+        }
+
+        using SKImage image = surface.Snapshot();
+        using SKData png = image.Encode(SKEncodedImageFormat.Png, 90);
+        using FileStream file = File.Create(Path.Combine(folder, $"pings-{Width}x{Height}.png"));
+        png.SaveTo(file);
     }
 }

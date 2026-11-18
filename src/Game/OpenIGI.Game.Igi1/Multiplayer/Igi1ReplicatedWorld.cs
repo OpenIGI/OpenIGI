@@ -127,6 +127,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
                 Revive = e.p.IsDead && Game.Multiplayer.Modes.PlayerSides.Revivable(VersusMode) ? ReviveProgressOf(e.p.Entity) : null,
                 Model = PlayerSkins.Of(e.p.Skin).Model,
                 CarriesBomb = e.Slot == _bombCarrier,
+                Health = e.p.IsDead ? null : e.p.Health.RemainingFraction,
             })];
     }
 

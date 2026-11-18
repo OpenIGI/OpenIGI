@@ -152,7 +152,7 @@ public sealed partial class GameHost
         return (
             ChatShown(now),
             ChatEntryShown(now),
-            [.. _coopMarks.Select(m => new HudMark(m.Metres, m.Name, Fade(now - m.At, MarkMilliseconds)))]);
+            [.. _coopMarks.Select(m => new HudMark(m.Metres, m.Name, Fade(now - m.At, MarkMilliseconds), (now - m.At) / 1000f))]);
     }
 
     // The point the crosshair is on, in metres: the first thing the view meets, or a way out into the open.

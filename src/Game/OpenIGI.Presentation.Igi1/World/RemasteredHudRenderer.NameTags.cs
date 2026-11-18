@@ -40,7 +40,7 @@ internal sealed partial class RemasteredHudRenderer
             if (canvas.DistanceMetres <= AllyTag.ReachMetres && canvas.TryProject(0f, 0f, out float headX, out float headY)
                 && headX >= 0f && headX <= screenWidth && headY >= 0f && headY <= screenHeight)
             {
-                AllyTag.Draw(painter, font, new UiVec2(headX, headY), tag.Name, canvas.DistanceMetres);
+                AllyTag.Draw(painter, font, new UiVec2(headX, headY), tag.Name, canvas.DistanceMetres, tag.Health);
             }
         }
     }

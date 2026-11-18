@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit.Hud;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -19,14 +20,13 @@ internal sealed partial class RemasteredHudRenderer
     // The connection warning's mark: amber, a caution rather than a failure.
     private static readonly Bgra32 WarningInk = Bgra32.FromRgb(232, 170, 60);
 
-    // A mark's diamond, and its label's size.
-    private const float MarkSize = 9f;
+    // The connection warning's size.
     private const float MarkLabelSize = 14f;
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Who is talking sits above the lower readouts at the left, and the chat above them (<see cref="DrawChat"/>). A mark is a diamond where it was put, its marker and distance
-    /// beside it, and -- unlike a name tag -- it is kept on the edge of the screen when it is behind or beside the view.
+    /// Who is talking sits above the lower readouts at the left, and the chat above them (<see cref="DrawChat"/>). A mark is a pin where it was put (<see cref="PingMark"/>), kept
+    /// on the edge of the screen pointing the way when it is behind or beside the view.
     /// </remarks>
     public void DrawCoopTalk(
         SpriteBatch batch,
@@ -55,7 +55,7 @@ internal sealed partial class RemasteredHudRenderer
 
         foreach (HudMark mark in marks)
         {
-            DrawMark(painter, context, font, rounded, mark, eye, horizontalTangent, aspectRatio, screenWidth, screenHeight);
+            DrawMark(painter, context, font, mark, eye, horizontalTangent, aspectRatio, screenWidth, screenHeight);
         }
 
         // A word about the connection, top and centre, small: the game goes on, but the player knows why it stutters.
@@ -89,11 +89,11 @@ internal sealed partial class RemasteredHudRenderer
         DrawChat(painter, context, chat, entry, y, x);
     }
 
+    // A ping where it was put, or waiting on the screen's edge pointing the way (PingMark).
     private static void DrawMark(
         UiPainter painter,
         LayoutContext context,
         UiFont font,
-        NineSlice rounded,
         HudMark mark,
         in Camera3D eye,
         float horizontalTangent,
@@ -102,37 +102,8 @@ internal sealed partial class RemasteredHudRenderer
         int screenHeight)
     {
         WorldCanvas canvas = new(mark.AnchorMetres, eye, horizontalTangent, aspectRatio, screenWidth, screenHeight, MetresPerUnit);
-        float edge = context.Px(48f);
-        float x;
-        float y;
-        if (!canvas.TryProject(0f, 0f, out x, out y) || x < edge || x > screenWidth - edge || y < edge || y > screenHeight - edge)
-        {
-            // Out of the view: held on its edge, on the side it lies.
-            Core.Numerics.Vector3f look = eye.Orientation.Row3;
-            Core.Numerics.Vector3d to = mark.AnchorMetres - eye.Position;
-            double right = (to.X * look.Y) - (to.Y * look.X);
-            x = right > 0 ? screenWidth - edge : edge;
-            y = Math.Clamp(canvas.TryProject(0f, 0f, out _, out float projectedY) ? projectedY : screenHeight * 0.5f, edge, screenHeight - edge);
-        }
-
-        byte alpha = (byte)(255 * Math.Clamp(mark.Opacity, 0f, 1f));
-        float half = context.Px(MarkSize);
-
-        // A diamond: four triangles about its centre, by two rotated squares' worth of rects at small size reading as one.
-        for (float d = 0f; d <= half; d += 1f)
-        {
-            float w = half - d;
-            painter.FillRect(new UiRect(x - w, y - d, w * 2f, 1f), Accent.WithAlpha(alpha));
-            painter.FillRect(new UiRect(x - w, y + d, w * 2f, 1f), Accent.WithAlpha(alpha));
-        }
-
-        string label = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{mark.Name}  {canvas.DistanceMetres:0} m");
-        float size = context.Px(MarkLabelSize);
-        float height = size * 1.6f;
-        float width = font.MeasureWidth(label, size) + (size * 1.2f);
-        float left = Math.Clamp(x - (width * 0.5f), 0f, screenWidth - width);
-        var plate = new UiRect(left, y - half - height - context.Px(4f), width, height);
-        painter.FillRoundedRect(plate, rounded, UiPalette.InkAt(0.82f).WithAlpha((byte)(190 * mark.Opacity)), height * 0.22f);
-        painter.DrawLabel(font, label, new UiVec2(plate.X + (size * 0.6f), UiRowStyle.CapsCenterY(font, size, plate)), size, Text.WithAlpha(alpha), 0.02f);
+        bool inView = canvas.PinToScreen(context.Px(64f), out float x, out float y);
+        UiVec2? pointing = inView ? null : new UiVec2(x - (screenWidth * 0.5f), y - (screenHeight * 0.5f));
+        PingMark.Draw(painter, font, new UiVec2(x, y), mark.Name, canvas.DistanceMetres, mark.AgeSeconds, mark.Opacity, pointing);
     }
 }
