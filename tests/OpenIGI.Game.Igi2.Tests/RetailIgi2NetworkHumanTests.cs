@@ -55,6 +55,28 @@ public sealed class RetailIgi2NetworkHumanTests
     }
 
     /// <summary>
+    /// A player joining stands beside the host where the host can see it and with ground under its feet: it was stood two metres
+    /// along the world's first axis whatever lay there.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_joiner_stands_beside_the_host_in_sight_and_on_the_ground()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        for (int tick = 0; tick < 300; tick++)
+        {
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+
+        Igi2ReplicatedWorld world = new(level);
+        Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Vector3d host = level.Human.Position, joined = world.PlayerOf(0)!.Human.Position;
+        Vector3d up = new(0, 0, 4096);
+
+        Assert.False(level.CollisionWorld.Cast(host + up, joined + up, out _), $"the host cannot see the joiner at {joined} from {host}");
+        Assert.True(level.CollisionWorld.Cast(joined + up, joined - new Vector3d(0, 0, 8192), out _), $"no ground under the joiner at {joined}");
+    }
+
+    /// <summary>
     /// A dedicated server's level player, whom nobody plays, is out of the level's world -- unseen, unhunted -- and the scripts
     /// weigh it only until a player joins. The guards hunted it at the spawn.
     /// </summary>

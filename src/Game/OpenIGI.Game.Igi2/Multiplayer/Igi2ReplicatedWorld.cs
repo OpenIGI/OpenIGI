@@ -212,6 +212,40 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         return -1;
     }
 
+    // How high a body's chest is over its feet, and how far below its feet a spot's ground may lie: a metre, a metre and a half.
+    private const double ChestHeight = 4096;
+    private const double GroundReach = 6144;
+
+    // Where a player joining the host's side stands: the first of eight spots about the host, two metres out, that the host can
+    // see in a straight line at chest height and that has ground under it within a metre and a half, stood as high over it as
+    // the host stands over its own; the host's own spot when none has. A joiner was once stood two metres along the world's
+    // first axis whatever lay there -- inside a wall, over a drop -- and stuck or fell.
+    private Vector3d BesideHost(Igi2HumanPlayer host, int slot)
+    {
+        Collision.Igi2CollisionWorld world = _level.CollisionWorld;
+        Vector3d chest = host.Position + new Vector3d(0, 0, ChestHeight);
+        double over = world.Cast(chest, host.Position - new Vector3d(0, 0, GroundReach), out OpenIGI.Game.World.WorldRayHit under)
+            ? host.Position.Z - under.Position.Z
+            : 0;
+        for (int i = 0; i < 8; i++)
+        {
+            double angle = host.Gamma + ((slot + i) * Math.PI / 4);
+            Vector3d spot = host.Position + new Vector3d(Math.Cos(angle) * SpawnSpacing, Math.Sin(angle) * SpawnSpacing, 0);
+            Vector3d spotChest = spot + new Vector3d(0, 0, ChestHeight);
+            if (world.Cast(chest, spotChest, out _))
+            {
+                continue;
+            }
+
+            if (world.Cast(spotChest, spot - new Vector3d(0, 0, GroundReach), out OpenIGI.Game.World.WorldRayHit ground))
+            {
+                return new Vector3d(spot.X, spot.Y, ground.Position.Z + over);
+            }
+        }
+
+        return host.Position;
+    }
+
     private int? Place(int slot, int? team)
     {
         Igi2HumanPlayer host = _level.Human;
@@ -220,7 +254,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             return null;
         }
 
-        Vector3d at = host.Position + new Vector3d(SpawnSpacing * (slot + 1), 0, 0);
+        Vector3d at = BesideHost(host, slot);
         float gamma = host.Gamma;
         int side = team ?? host.Team;
         Igi2SpawnAreaTask[] areas = [.. _level.LevelTasks().OfType<Igi2SpawnAreaTask>()];
