@@ -153,6 +153,12 @@
       "id": 64,
       "default": 1,
       "hlslOffset": 0
+    },
+    {
+      "name": "cSamplerDecodes",
+      "id": 66,
+      "default": 0,
+      "hlslOffset": 4
     }
   ],
   "globals": null,
@@ -166,6 +172,11 @@
       "texture": "uDiffuse",
       "sampler": "uDiffuseSampler",
       "unit": 0
+    },
+    {
+      "texture": "uLightmap",
+      "sampler": "uLightmapSampler",
+      "unit": 1
     }
   ]
 }

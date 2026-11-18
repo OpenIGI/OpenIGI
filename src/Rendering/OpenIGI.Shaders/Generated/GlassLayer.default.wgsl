@@ -112,7 +112,7 @@ fn fragmentMain( _S5 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) 
 {
     var alpha_0 : f32 = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S5.diffuseUv_3))).w * _S5.color_1.w;
     var _S6 : bool;
-    if(alpha_0 >= 0.5f)
+    if(alpha_0 >= 0.98039215803146362f)
     {
         _S6 = true;
     }

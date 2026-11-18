@@ -6,8 +6,8 @@
 const int cClipYDown = SPIRV_CROSS_CONSTANT_ID_64;
 const bool _89 = (cClipYDown != 0);
 
-layout(binding = 0) uniform sampler2D _408;
-layout(binding = 1) uniform sampler2D _411;
+layout(binding = 0) uniform sampler2D _409;
+layout(binding = 1) uniform sampler2D _412;
 
 layout(location = 0) in vec2 input_diffuseUv;
 layout(location = 2) in vec4 input_color;
@@ -17,10 +17,10 @@ layout(location = 0) out vec4 entryPointParam_fragmentMain;
 
 void main()
 {
-    vec4 sampled = texture(_408, input_diffuseUv);
+    vec4 sampled = texture(_409, input_diffuseUv);
     float alpha = sampled.w * input_color.w;
     bool _194;
-    if (alpha >= 0.5)
+    if (alpha >= 0.980392158031463623046875)
     {
         _194 = true;
     }
@@ -32,7 +32,7 @@ void main()
     {
         discard;
     }
-    if (gl_FragCoord.z < texelFetch(_411, ivec3(ivec2(gl_FragCoord.xy), 0).xy, 0).x)
+    if (gl_FragCoord.z < texelFetch(_412, ivec3(ivec2(gl_FragCoord.xy), 0).xy, 0).x)
     {
         discard;
     }
