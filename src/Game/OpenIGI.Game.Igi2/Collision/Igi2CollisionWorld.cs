@@ -799,7 +799,7 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
         {
             foreach (Igi2BoneCollider body in _bodies)
             {
-                if ((groups & (body.Group | EveryTypeGroup)) != 0)
+                if ((groups & (body.Group | EveryTypeGroup)) != 0 && Reaches(body.Body))
                 {
                     body.TraceLines(trace);
                 }
@@ -812,6 +812,21 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
                     other.TraceLines(trace);
                 }
             }
+        }
+
+        // Whether the lines' box comes near a boned body. The original reaches one only through the cube tree's cells along the
+        // lines (World_TriggerQTaskEventAlongLineSpecificTree), the body filed there by its root's length plus its radius
+        // (BoneDynCubeObj_GetRadius) -- and its handler poses the whole skeleton before its own sphere test. Asked
+        // of every body on the map, as before, that posed every soldier for every line. The extent is doubled: the cells are
+        // coarser than the extent, and the pose the handler brings up to date may move the root this very tick.
+        bool Reaches(IIgi2BonedBody bonedBody)
+        {
+            Vector3f root = bonedBody.RootTranslation;
+            double r = 2.0 * (Math.Sqrt((root.X * (double)root.X) + (root.Y * (double)root.Y) + (root.Z * (double)root.Z)) + bonedBody.ModelRadius);
+            Vector3d p = bonedBody.Position;
+            return max.X >= p.X - r && min.X <= r + p.X
+                && max.Y >= p.Y - r && min.Y <= r + p.Y
+                && p.Z - r <= max.Z && min.Z <= r + p.Z;
         }
 
         void Grow(Vector3d v)
