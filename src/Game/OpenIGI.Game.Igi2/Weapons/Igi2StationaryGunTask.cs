@@ -429,7 +429,11 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         _runTick = tick;
         Ticks = tick;
         firing.RunGunShot();
-        if (IsPuppet)
+
+        // A co-op client's copy is pointed as the server's is -- unless this client's own player works it, which it is only
+        // then: it is aimed and fired here from the player's own controls, at once, as the player's own body is predicted, its
+        // rounds harmless (the server's do the harm). Held to the server's aim, it trailed the mouse by the round trip.
+        if (IsPuppet && Operator is null)
         {
             RunPuppet(level, firing, tick);
             return;

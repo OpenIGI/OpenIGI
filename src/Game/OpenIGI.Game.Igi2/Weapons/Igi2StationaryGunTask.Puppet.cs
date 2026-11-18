@@ -21,6 +21,13 @@ public sealed partial class Igi2StationaryGunTask
     {
         IsPuppet = true;
         _firing?.IsReplica = true;
+
+        // Worked by this client's own player, it is aimed here, and the server's word on it waits until the player lets go.
+        if (Operator is not null)
+        {
+            return;
+        }
+
         _tilt = aim.Tilt;
         _turn = aim.Turn;
         _finalTilt = aim.Tilt;

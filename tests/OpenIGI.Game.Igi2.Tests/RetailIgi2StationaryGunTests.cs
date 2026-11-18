@@ -45,6 +45,41 @@ public sealed class RetailIgi2StationaryGunTests
     /// within its limits, the fire key fires its weapon; pressed afresh, the activate key lets it go and the view is the player's own.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
+    public void A_co_op_clients_copy_of_a_gun_its_own_player_works_turns_at_once()
+    {
+        (Igi2Level level, Igi2Session session, Igi2StationaryGunTask gun) = Gun();
+        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), Igi2Gameplay.TerrainOwner);
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(level);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
+        Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
+        Formats.World.MefModel body = level.ModelFor(point.Model)!;
+        Igi2PlayerTuning tuning = session.Require<Igi2PlayerTuning>();
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(session.Session.Services, level.Root, tuning, clips)!;
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, tuning.General, gun.ActivatePosition(out _), 0f, AiDifficulty.Easy, clips, body.BoneHierarchy, weapons);
+        player.Human.ModelRadius = body.NativeMarkerBound;
+        player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
+        Flow.Igi2LevelRun run = Bare();
+
+        // A client's copy, held to the server's aim; then its own player works it.
+        gun.Hold(new Igi2GunAim(0f, 0f, 0));
+        player.Human.ScriptActivate(gun);
+        player.Tick(RetailIgi2Mission1.Idle);
+        gun.Run(run);
+        Assert.Same(player.Human, gun.Operator);
+
+        for (int tick = 0; tick < 30; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle with { MouseX = 1f });
+            gun.Run(run);
+
+            // The server's word, a round trip behind, does not pull it back while the player works it.
+            gun.Hold(new Igi2GunAim(0f, 0f, 0));
+        }
+
+        Assert.NotEqual(0f, gun.Turn);
+    }
+
+    [RequiresTitleDataFact("igi2")]
     public void The_player_works_a_gun()
     {
         (Igi2Level level, Igi2Session session, Igi2StationaryGunTask gun) = Gun();

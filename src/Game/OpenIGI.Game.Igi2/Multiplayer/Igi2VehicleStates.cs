@@ -78,7 +78,9 @@ internal sealed class Igi2VehicleStates
     /// <returns>The weapon.</returns>
     public Igi2WeaponFiring? WeaponOf(int source) => source switch
     {
-        >= MountedSource when source - MountedSource < _mounted.Length => _mounted[source - MountedSource].Firing,
+        // A gun this client's own player works fired its rounds here as it fired them (Igi2StationaryGunTask.Run): the
+        // server's are not fired again over them.
+        >= MountedSource when source - MountedSource < _mounted.Length => _mounted[source - MountedSource] is { Operator: null } gun ? gun.Firing : null,
         >= TurretSource and < MountedSource when source - TurretSource < _turrets.Length => _turrets[source - TurretSource].Gun?.Firing,
         >= CarSource and < TurretSource when source - CarSource < _cars.Length => _cars[source - CarSource].Gun?.Firing,
         _ => null,
