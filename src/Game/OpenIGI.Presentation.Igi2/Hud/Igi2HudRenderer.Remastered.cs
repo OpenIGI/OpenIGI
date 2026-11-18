@@ -14,20 +14,36 @@ namespace OpenIGI.Presentation.Igi2.Hud;
 /// (<see cref="Igi2HudTheme"/>), in place of the retail status display, inventory, action row and messages. The computer, the
 /// cutscene framing, the scopes and the aim's sight stay the original's.
 /// </content>
-public sealed partial class Igi2HudRenderer : ITouchHudSource
+public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
 {
     private readonly HudModel _model = new();
     private RemasteredHud? _remastered;
     private Igi2HudIcons? _icons;
 
+    // The level's weapon types as the player's inventory last held them: what a kill's weapon key is looked up in.
+    private Igi2WeaponTables? _weaponTables;
+
     /// <inheritdoc/>
     public HudTheme Theme => Igi2HudTheme.Theme;
 
-    /// <inheritdoc/>
-    public IHudIconSource? Icons => _icons;
+    /// <inheritdoc cref="ITouchHudSource.Icons"/>
+    public IHudIconSource? Icons => _icons ??= new Igi2HudIcons(() => _assets);
 
     /// <inheritdoc/>
     public HudModel Model => _model;
+
+    /// <inheritdoc/>
+    public bool WeaponsFaceLeft => false;
+
+    /// <inheritdoc/>
+    public HudIcon WeaponIcon(string weaponKey) => WeaponTypeOf(weaponKey) is { WeaponSprite.Length: > 0 } type ? new HudIcon(type.WeaponSprite) : HudIcon.None;
+
+    /// <inheritdoc/>
+    public string WeaponName(string weaponKey) => WeaponTypeOf(weaponKey)?.WeaponName ?? string.Empty;
+
+    private Igi2WeaponTypeTask? WeaponTypeOf(string weaponKey) =>
+        string.IsNullOrEmpty(weaponKey) ? null
+        : _weaponTables?.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, weaponKey, StringComparison.Ordinal));
 
     /// <summary>Gets a value indicating whether the remastered display draws this frame: chosen, and able to.</summary>
     private bool RemasteredChosen => HudCVars.RemasteredHud.Value && (_remastered ??= CreateRemastered()).IsReady;

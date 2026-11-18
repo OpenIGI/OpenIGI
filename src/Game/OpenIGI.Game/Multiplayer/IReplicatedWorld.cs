@@ -318,7 +318,12 @@ public interface IReplicatedWorld
 /// <summary>A player killed in the level.</summary>
 /// <param name="Victim">The entity id of the player killed.</param>
 /// <param name="Killer">The entity id of its killer, or -1 when nobody killed it.</param>
-public readonly record struct WorldDeath(int Victim, int Killer);
+/// <param name="Weapon">The title's key for the weapon that killed (an I.G.I. script id), or empty.</param>
+/// <param name="Cause">What killed.</param>
+/// <param name="Headshot">Whether the killing round struck the head.</param>
+/// <param name="Backstab">Whether it was a blade in an unaware back.</param>
+public readonly record struct WorldDeath(
+    int Victim, int Killer, string Weapon = "", Modes.KillCause Cause = Modes.KillCause.Weapon, bool Headshot = false, bool Backstab = false);
 
 /// <summary>A title's player that can host a session: it hands the session the level as an <see cref="IReplicatedWorld"/>.</summary>
 public interface IReplicatedTitle

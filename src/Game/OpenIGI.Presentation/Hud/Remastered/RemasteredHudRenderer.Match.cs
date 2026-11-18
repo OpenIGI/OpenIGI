@@ -51,50 +51,7 @@ public sealed partial class RemasteredHudRenderer
         }
     }
 
-    /// <inheritdoc/>
-    public void DrawKillFeed(SpriteBatch batch, IReadOnlyList<KillNote> kills, int screenWidth, int screenHeight)
-    {
-        ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(kills);
-        if (_theme is not { } type || kills.Count == 0)
-        {
-            return;
-        }
-
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float Px(float units) => context.Px(units);
-        float size = Px(16f);
-        float gap = Px(10f);
-        float right = context.SafeRect.X + context.SafeRect.Width - Px(16f);
-        float y = context.SafeRect.Y + Px(64f);
-        foreach (KillNote kill in kills)
-        {
-            // Killer, then what happened, then victim; a death with no killer reads as the victim's own: "Joe died".
-            bool own = kill.Killer.Length == 0;
-            (string Text, Bgra32 Colour)[] parts = own
-                ? [(kill.Victim, SideColour(kill.VictimTeam)), ("died", UiPalette.TextBody)]
-                : [(kill.Killer, SideColour(kill.KillerTeam)), ("killed", UiPalette.TextBody), (kill.Victim, SideColour(kill.VictimTeam))];
-            float width = gap;
-            foreach ((string text, _) in parts)
-            {
-                width += type.Body.MeasureWidth(text, size) + gap;
-            }
-
-            var row = new UiRect(right - width, y, width, Px(28f));
-            painter.FillRoundedRect(row, _surfaces?.Rounded ?? default, BoardFace, Px(6f));
-            float x = row.X + gap;
-            foreach ((string text, Bgra32 colour) in parts)
-            {
-                painter.DrawLabel(type.Body, text, new UiVec2(x, y + Px(5f)), size, colour, 0f);
-                x += type.Body.MeasureWidth(text, size) + gap;
-            }
-
-            y += Px(32f);
-        }
-    }
-
-    // A team's colour in the feed: the accent for one side, the warning red for the other, white for nobody's.
+    // A team's colour on the team menu: the accent for one side, the warning red for the other, white for nobody's.
     private static Bgra32 SideColour(int team) =>
         team == Game.Multiplayer.TeamRoster.Good ? Accent : team == Game.Multiplayer.TeamRoster.Bad ? Bad : UiPalette.TextBright;
 }

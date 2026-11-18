@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Game.Player;
 using OpenIGI.Net;
 
@@ -56,8 +57,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     // The players whose clients dropped, kept aside out of the level by their parked keys.
     private readonly Dictionary<int, Igi1NetworkPlayer> _parked = [];
 
-    // The player whose round last hurt each player, by entity, and the tick it did: the death that follows is its kill.
-    private readonly Dictionary<int, (ShotTally By, long Tick)> _lastHurtBy = [];
+    // The other player whose harm last reached each player, by entity -- with what and how -- and the tick it did: the death
+    // that follows is its kill.
+    private readonly Dictionary<int, (PlayerHarmNote Note, int By, long Tick)> _lastHurtBy = [];
+
+    // The last harm of any kind to each player, by entity, and whether it was the player's own: what a death nobody is
+    // credited with is put down to.
+    private readonly Dictionary<int, (PlayerHarmNote Note, bool Own)> _lastHarm = [];
 
     // How long after a player's round hurt another its death is still that player's kill, in ticks (Source credits the last
     // attacker the same way).
@@ -105,7 +111,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 
         // With friendly fire on, a player's round meets the other players as it meets the guards.
         _game.World.Bodies.Add(new CoopPlayerBodies(_game, this));
-        _game.Harm.RoundTaken = NoteHurt;
+        _game.Harm.HarmTaken = NoteHurt;
 
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>
@@ -363,7 +369,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             }
             else if (_dead.Add(entity))
             {
-                deaths.Add(new WorldDeath(entity, KillerOf(entity)));
+                deaths.Add(DeathOf(entity));
             }
         }
 
@@ -380,32 +386,43 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         return deaths;
     }
 
-    // A round from a player's gun hurt a player: noted against the one it hurt, if a player fired it, and whether in the head.
-    private void NoteHurt(IHarmedPlayer hurt, ShotTally? by, bool head)
+    // Harm to a player: noted against the one it hurt -- who is credited, with what, how -- and a hit shown to the two in it.
+    private void NoteHurt(IHarmedPlayer hurt, PlayerHarmNote harm)
     {
         if (EntityOf(hurt.Rig) is not { } entity)
         {
             return;
         }
 
-        int? attacker = by is not null ? EntityOf(by) : null;
-        if (by is not null && attacker != entity)
+        int? attacker = harm.Credit is { } by ? EntityOf(by) : null;
+        bool own = attacker == entity;
+        if (attacker is { } other && !own)
         {
-            _lastHurtBy[entity] = (by, CurrentTick);
+            _lastHurtBy[entity] = (harm, other, CurrentTick);
         }
 
-        NoteCombat(hurt, entity, attacker == entity ? null : attacker, head);
+        _lastHarm[entity] = (harm, own);
+        if (harm.Lands)
+        {
+            NoteCombat(hurt, entity, own ? null : attacker, harm.Head);
+        }
     }
 
-    // The player who killed one that just died: the last whose round hurt it, lately enough; -1 for the level (a guard, a fall).
-    private int KillerOf(int entity)
+    // How a player that just died was killed: by the last other player whose harm reached it, lately enough, with that
+    // player's weapon; else by its own hand, or by the level's last harm to it (a guard, a fall, a fence).
+    private WorldDeath DeathOf(int entity)
     {
-        if (!_lastHurtBy.Remove(entity, out (ShotTally By, long Tick) last) || CurrentTick - last.Tick > KillCreditTicks)
+        bool lastKnown = _lastHarm.Remove(entity, out (PlayerHarmNote Note, bool Own) last);
+        if (_lastHurtBy.Remove(entity, out (PlayerHarmNote Note, int By, long Tick) credited) && CurrentTick - credited.Tick <= KillCreditTicks)
         {
-            return -1;
+            // The marks of the blow are the killing one's only: shot in the head and then fallen is no headshot.
+            bool killing = lastKnown && last.Note == credited.Note;
+            return new WorldDeath(entity, credited.By, credited.Note.Weapon, credited.Note.Cause, killing && credited.Note.Head, killing && credited.Note.Backstab);
         }
 
-        return EntityOf(last.By) ?? -1;
+        return !lastKnown ? new WorldDeath(entity, -1, string.Empty, KillCause.World)
+            : last.Own ? new WorldDeath(entity, -1, last.Note.Weapon, KillCause.Suicide)
+            : new WorldDeath(entity, -1, string.Empty, last.Note.Cause == KillCause.Weapon ? KillCause.World : last.Note.Cause);
     }
 
     // The entity of a player of the session by its rig, or by the tally its rounds count on.

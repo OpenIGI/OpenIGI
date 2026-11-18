@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -18,7 +19,7 @@ public sealed partial class RemasteredHudRenderer
     private static Bgra32 DamageRed => Bgra32.FromRgb(232, 40, 32);
 
     /// <inheritdoc/>
-    public void DrawSpectating(SpriteBatch batch, SpectateTarget watched, int screenWidth, int screenHeight)
+    public void DrawSpectating(SpriteBatch batch, SpectateTarget watched, KillFeedView? feed, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (_theme is not { } type)
@@ -37,10 +38,31 @@ public sealed partial class RemasteredHudRenderer
         string next = watched.Killer ? "FIRE: WATCH YOUR SIDE" : "FIRE: NEXT PLAYER";
         float big = Px(22f);
         float small = Px(12f);
-        float width = Math.Max(UiPainter.MeasureLabel(type.Heading, line, big, 0.08f), UiPainter.MeasureLabel(type.Mono, next, small, 0.14f));
+
+        // The killer's weapon and how it struck, after the line.
+        FeedPart? picture = null;
+        bool head = false;
+        float extra = watched.Killer ? KilledByWidth(feed, context, out picture, out head) : 0f;
+        float lineWidth = UiPainter.MeasureLabel(type.Heading, line, big, 0.08f) + extra;
+        float width = Math.Max(lineWidth, UiPainter.MeasureLabel(type.Mono, next, small, 0.14f));
         var plate = new UiRect(centre - (width * 0.5f) - Px(22f), safe.Bottom - Px(150f), width + Px(44f), Px(64f));
         Band(painter, plate, StripFace);
-        painter.DrawLabel(type.Heading, line, new UiVec2(centre - (UiPainter.MeasureLabel(type.Heading, line, big, 0.08f) * 0.5f), plate.Y + Px(9f)), big, watched.Killer ? Enemy : UiPalette.TextBright, 0.08f);
+        float x = centre - (lineWidth * 0.5f);
+        painter.DrawLabel(type.Heading, line, new UiVec2(x, plate.Y + Px(9f)), big, watched.Killer ? Enemy : UiPalette.TextBright, 0.08f);
+        x += lineWidth - extra;
+        float middle = plate.Y + Px(9f) + (type.Heading.LineHeight(big) * 0.5f);
+        if (picture is { } shown)
+        {
+            x += Px(14f);
+            DrawPart(batch, painter, shown, x, middle, 1f);
+            x += shown.Width;
+        }
+
+        if (head)
+        {
+            KitIcons.Draw(painter, KitIcon.Headshot, new UiVec2(x + Px(10f) + Px(10f), middle), Px(20f), HeadshotColour);
+        }
+
         painter.DrawLabel(type.Mono, next, new UiVec2(centre - (UiPainter.MeasureLabel(type.Mono, next, small, 0.14f) * 0.5f), plate.Y + Px(40f)), small, UiPalette.TextMuted, 0.14f);
     }
 

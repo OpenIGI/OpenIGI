@@ -481,6 +481,8 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         _theme = null;
         _surfaces?.Dispose();
         _surfaces = null;
+        _silhouettes?.Dispose();
+        _silhouettes = null;
         _badge?.Dispose();
         _badge = null;
     }

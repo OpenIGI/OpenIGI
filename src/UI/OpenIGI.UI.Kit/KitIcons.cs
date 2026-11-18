@@ -168,6 +168,24 @@ public enum KitIcon
 
     /// <summary>A keyboard: type a code.</summary>
     Keyboard,
+
+    /// <summary>A head in a sight: a kill by a round to the head.</summary>
+    Headshot,
+
+    /// <summary>A skull: a death by the player's own hand or the level's.</summary>
+    Skull,
+
+    /// <summary>A burst: a kill by a blast.</summary>
+    Explosion,
+
+    /// <summary>An arrow onto the ground: a death by a fall.</summary>
+    Fall,
+
+    /// <summary>A blade: a kill by a knife.</summary>
+    Knife,
+
+    /// <summary>One of one's own, struck through: a kill of a teammate.</summary>
+    TeamKill,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
@@ -306,6 +324,10 @@ public static partial class KitIcons
                 painter.StrokeLine(At(8f, 22f), At(16f, 22f), stroke, color);
                 break;
             }
+
+            case var combat when IsCombatIcon(combat):
+                DrawCombatIcon(painter, combat, center, size, stroke, color);
+                break;
 
             default:
                 DrawEditorIcon(painter, icon, center, size, stroke, color);

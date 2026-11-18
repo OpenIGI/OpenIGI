@@ -86,13 +86,17 @@ public sealed record Igi1WeaponHit(
 /// <param name="DamageFactor">Its damage.</param>
 /// <param name="KilledBy">The weapon category a death it causes is reported under.</param>
 /// <param name="SparesPlayers">Whether the players are left out of it: a match's bomb, whose own wave hurts them.</param>
+/// <param name="Credit">The player who threw, laid or fired what went off, for a session's kill credit; <see langword="null"/> for the level's.</param>
+/// <param name="Weapon">That player's weapon's script id, or <see langword="null"/>.</param>
 public sealed record Igi1ExplosionHit(
     Vector3d Position,
     float RadiusUnits,
     float FalloffUnits,
     float DamageFactor,
     WeaponCategory KilledBy = WeaponCategory.Grenade,
-    bool SparesPlayers = false)
+    bool SparesPlayers = false,
+    ShotTally? Credit = null,
+    string? Weapon = null)
 {
     /// <summary>The blast as either game's targets read it.</summary>
     /// <returns>The shared explosion, this as its context.</returns>

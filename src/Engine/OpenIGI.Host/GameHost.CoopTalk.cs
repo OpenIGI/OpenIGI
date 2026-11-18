@@ -77,6 +77,23 @@ public sealed partial class GameHost
             });
 
         console.Commands.Add(
+            "killfeed_sample",
+            "Lists a sample of every kind of kill feed row in every player's feed: 1 the host's kills and the weapons, 2 the marks.",
+            context =>
+            {
+                int set = context.Rest(0) is "2" ? 2 : 1;
+                if (TickObserver is not Multiplayer.HostedSession hosted || !hosted.SampleKillFeed(set))
+                {
+                    context.Error("Only a session's host can do that.");
+                    return;
+                }
+
+                // It is there to be looked at: the team menu a team match opens with is put away.
+                CloseTeamMenu();
+            },
+            "[1|2]");
+
+        console.Commands.Add(
             "coop_mark",
             "Marks the place under the crosshair for the others in the co-op room.",
             context =>

@@ -451,7 +451,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     private string? _levelMode;
 
     /// <inheritdoc/>
-    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+    public IReadOnlyList<Game.Multiplayer.Modes.KillFeedEntry> KillFeed => _session?.Feed.Entries(_clock.Elapsed.TotalSeconds, LocalEntity ?? -1) ?? [];
 
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchBanner? Banner =>

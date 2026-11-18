@@ -480,7 +480,12 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
     // eighteen sprites. The names are the archive's own; matching on the weapon's script id is this
     // port's shortcut for the original's hard-coded case labels, and it gives the same answer for every
     // shipped weapon.
-    internal static string IconFor(WeaponType weapon) => weapon.ScriptId switch
+    internal static string IconFor(WeaponType weapon) => IconFor(weapon.ScriptId);
+
+    /// <summary>The status screen's picture for a weapon, by its script id.</summary>
+    /// <param name="scriptId">The weapon's script id.</param>
+    /// <returns>The sprite's name.</returns>
+    internal static string IconFor(string scriptId) => scriptId switch
     {
         "WEAPON_ID_AK47" => "ak47.spr",
         "WEAPON_ID_BINOCULARS" => "binoculars.spr",

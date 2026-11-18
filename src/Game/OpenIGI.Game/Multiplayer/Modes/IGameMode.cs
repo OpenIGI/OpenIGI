@@ -24,9 +24,10 @@ public interface IModeHost
     int SlotOf(int entity);
 
     /// <summary>Lists a counted death in every player's kill feed.</summary>
+    /// <param name="death">The death, as the world told it: its weapon and cause.</param>
     /// <param name="victim">The victim's slot.</param>
     /// <param name="killer">The killer's slot, or -1 for none.</param>
-    void Announce(int victim, int killer)
+    void Announce(WorldDeath death, int victim, int killer)
     {
     }
 

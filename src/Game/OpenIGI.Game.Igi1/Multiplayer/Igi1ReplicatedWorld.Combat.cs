@@ -30,7 +30,8 @@ public sealed partial class Igi1ReplicatedWorld
             if (tally.SoldierHits > hits || tally.SoldierKills > kills)
             {
                 bool killed = tally.SoldierKills > kills;
-                _combat.Add(new CombatNote(entity, -1, 0f, killed, killed ? tally.LastKillHead : tally.LastHitHead, rig.Body.Position));
+                _combat.Add(new CombatNote(
+                    entity, -1, 0f, killed, killed ? tally.LastKillHead : tally.LastHitHead, rig.Body.Position, rig.Weapons?.InHand?.Weapon.ScriptId ?? string.Empty));
             }
 
             _tallied[tally] = (tally.SoldierHits, tally.SoldierKills);
@@ -52,8 +53,10 @@ public sealed partial class Igi1ReplicatedWorld
         float now = hurt.Health.RemainingFraction;
         float before = _healthSeen.TryGetValue(victim, out float seen) && seen >= now ? seen : 1f;
         _healthSeen[victim] = now;
-        Vector3d from = attacker is { } shooter && RigOf(shooter) is { } rig ? rig.Body.Position : hurt.Rig?.Body.Position ?? default;
-        _combat.Add(new CombatNote(attacker ?? -1, victim, Math.Clamp(before - now, 0f, 1f), hurt.Health.IsDead, head, from));
+        PlayerCamera? shooterRig = attacker is { } shooter ? RigOf(shooter) : null;
+        Vector3d from = shooterRig?.Body.Position ?? hurt.Rig?.Body.Position ?? default;
+        _combat.Add(new CombatNote(
+            attacker ?? -1, victim, Math.Clamp(before - now, 0f, 1f), hurt.Health.IsDead, head, from, shooterRig?.Weapons?.InHand?.Weapon.ScriptId ?? string.Empty));
     }
 
     // Every player of the session by entity, with its rig.

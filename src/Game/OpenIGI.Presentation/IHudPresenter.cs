@@ -331,9 +331,11 @@ public interface IRemasteredHudPresenter : IDisposable
     /// the kill cam's moment, named in red with how far off it stood.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="watched">The watched player.</param>
+    /// <param name="feed">The kill feed, whose newest kill of the player shows the killer's weapon and how it struck; or <see langword="null"/>.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawSpectating(SpriteBatch batch, Game.Multiplayer.Modes.SpectateTarget watched, int screenWidth, int screenHeight)
+    void DrawSpectating(
+        SpriteBatch batch, Game.Multiplayer.Modes.SpectateTarget watched, Hud.Remastered.KillFeedView? feed, int screenWidth, int screenHeight)
     {
     }
 
@@ -374,12 +376,15 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
-    /// <summary>Draws the kills of late down the top right corner, each killer and victim in its team's colour.</summary>
+    /// <summary>
+    /// Draws the kills of late down the top right corner -- killer, weapon, how it struck, victim, each side in its colour as
+    /// the player sees the sides -- and the player's own newest kill announced low in the middle.
+    /// </summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="kills">The kills, oldest first.</param>
+    /// <param name="feed">The feed as the player sees it.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawKillFeed(SpriteBatch batch, IReadOnlyList<Game.Multiplayer.Modes.KillNote> kills, int screenWidth, int screenHeight)
+    void DrawKillFeed(SpriteBatch batch, Hud.Remastered.KillFeedView feed, int screenWidth, int screenHeight)
     {
     }
 

@@ -352,9 +352,9 @@ public sealed partial class RemasteredHudRenderer
     }
 
     // A string cut to a width, with an ellipsis.
-    private static string Clip(UiFont font, string text, float size, float width)
+    private static string Clip(UiFont font, string text, float size, float width, float tracking = 0.14f)
     {
-        if (UiPainter.MeasureLabel(font, text, size, 0.14f) <= width)
+        if (UiPainter.MeasureLabel(font, text, size, tracking) <= width)
         {
             return text;
         }
@@ -362,7 +362,7 @@ public sealed partial class RemasteredHudRenderer
         for (int length = text.Length - 1; length > 1; length--)
         {
             string cut = string.Concat(text.AsSpan(0, length), "…");
-            if (UiPainter.MeasureLabel(font, cut, size, 0.14f) <= width)
+            if (UiPainter.MeasureLabel(font, cut, size, tracking) <= width)
             {
                 return cut;
             }

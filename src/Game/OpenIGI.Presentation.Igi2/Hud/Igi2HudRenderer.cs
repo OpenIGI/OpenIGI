@@ -35,6 +35,7 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (player is not Igi2TitlePlayer title || screenWidth <= 0 || screenHeight <= 0) { return; }
+        _weaponTables = title.Inventory?.Tables ?? _weaponTables;
         // The status art by the interface scale every title's is drawn at (UiScale), for the display I.G.I. 2's was laid out at:
         // retail places it in the display's own pixels, so it lays out here in the pixels of a display that many times smaller.
         // World-space sights and view flashes stay in pixels.

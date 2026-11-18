@@ -224,10 +224,50 @@ public sealed class GameModeTests
         Assert.Equal("k6", Assert.Single(feed.Shown(6 + KillFeed.ShownSeconds - 0.5)).Killer);
 
         OpenIGI.Net.BitWriter writer = new();
-        KillNote note = new("Anya", TeamRoster.Good, "Joe", -1);
+        KillNote note = new("Anya", TeamRoster.Good, "Joe", -1, 3, 7, "WEAPON_ID_AK47", KillCause.Explosive, KillMarks.Headshot | KillMarks.TeamKill);
         note.Write(writer);
         OpenIGI.Net.BitReader reader = new(writer.AsSpan());
         Assert.Equal(note, KillNote.Read(ref reader));
+    }
+
+    [Fact]
+    public void A_players_own_rows_are_listed_longer_than_the_rest()
+    {
+        KillFeed feed = new();
+        feed.Add(new KillNote("Anya", 0, "Joe", 1, KillerEntity: 1, VictimEntity: 2), 0);
+        feed.Add(new KillNote("Bob", 0, "Cy", 1, KillerEntity: 3, VictimEntity: 4), 0);
+
+        double later = KillFeed.ShownSeconds + 1;
+        Assert.Equal("Anya", Assert.Single(feed.Entries(later, own: 1)).Note.Killer);
+        Assert.Empty(feed.Entries(later, own: 9));
+        Assert.Empty(feed.Entries(KillFeed.OwnShownSeconds + 0.1, own: 1));
+    }
+
+    [Fact]
+    public void A_kill_note_carries_the_weapon_and_how_it_struck_and_names_a_suicide_and_a_team_kill()
+    {
+        Match match = new(new MultiplayerRules());
+        MatchPlayer anya = match.Join(0, "Anya", TeamRoster.Good);
+        MatchPlayer joe = match.Join(1, "Joe", TeamRoster.Bad);
+        MatchPlayer kim = match.Join(2, "Kim", TeamRoster.Good);
+
+        KillNote headshot = KillNote.Of(new WorldDeath(11, 10, "WEAPON_ID_AK47", KillCause.Weapon, Headshot: true), joe, anya, teams: true);
+        Assert.Equal(("Anya", "Joe", "WEAPON_ID_AK47", KillCause.Weapon, KillMarks.Headshot), (headshot.Killer, headshot.Victim, headshot.Weapon, headshot.Cause, headshot.Marks));
+        Assert.Equal((10, 11), (headshot.KillerEntity, headshot.VictimEntity));
+
+        KillNote teamKill = KillNote.Of(new WorldDeath(12, 10, "WEAPON_ID_GRENADE", KillCause.Explosive), kim, anya, teams: true);
+        Assert.Equal(KillMarks.TeamKill, teamKill.Marks);
+        Assert.Equal(KillCause.Explosive, teamKill.Cause);
+
+        // In a free-for-all nobody is on anyone's side.
+        Assert.Equal(KillMarks.None, KillNote.Of(new WorldDeath(12, 10), kim, anya, teams: false).Marks);
+
+        // One's own grenade is nobody's kill, and no headshot.
+        KillNote own = KillNote.Of(new WorldDeath(10, -1, "WEAPON_ID_GRENADE", KillCause.Suicide), anya, null, teams: true);
+        Assert.Equal((false, KillCause.Suicide, -1), (own.HasKiller, own.Cause, own.KillerEntity));
+
+        KillNote guard = KillNote.OfGuard(anya, 10, "WEAPON_ID_MP5SD", head: true);
+        Assert.Equal((KillNote.GuardName, KillMarks.Guard | KillMarks.Headshot, -1), (guard.Victim, guard.Marks, guard.VictimEntity));
     }
 
     [Fact]

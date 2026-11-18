@@ -35,7 +35,7 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm) 
     public void ExplosionHit(HumanTask human, in ExplosionHit hit)
     {
         Igi1ExplosionHit blast = hit.Context as Igi1ExplosionHit ?? Igi1ExplosionHit.FromShared(hit);
-        harm.BlastPlayer(harm.Own, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
+        harm.BlastPlayer(harm.Own, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy, blast.Credit, blast.Weapon);
     }
 
     /// <summary>A round's hit on the mission's own player.</summary>

@@ -123,7 +123,7 @@ public static class GameModes
             int victim = host.SlotOf(death.Victim);
             int killer = death.Killer < 0 ? -1 : host.SlotOf(death.Killer);
             host.Match.Kill(victim, killer, seconds);
-            host.Announce(victim, killer);
+            host.Announce(death, victim, killer);
             counted.Add((victim, killer));
         }
 

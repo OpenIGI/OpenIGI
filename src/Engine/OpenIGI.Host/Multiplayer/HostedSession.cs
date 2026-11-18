@@ -126,6 +126,49 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     /// <inheritdoc/>
     public bool Relayed => _room?.Relayed == true;
 
+    /// <summary>
+    /// Lists a sample of every kind of kill feed row, through the session as real kills go (the host's feed and every
+    /// client's): the <c>killfeed_sample</c> development command, for seeing the feed without a fight.
+    /// </summary>
+    /// <param name="set">Which sample: 1 the host's own kills and the weapons; 2 the marks -- team kill, suicide, fall, guard, the host killed.</param>
+    /// <returns><see langword="true"/> when there was a session to list them in.</returns>
+    public bool SampleKillFeed(int set)
+    {
+        if (_session is not { } session)
+        {
+            return false;
+        }
+
+        string own = session.Match.Players.GetValueOrDefault(ServerSession.HostSlot)?.Name ?? "Jones";
+        int ownTeam = session.Match.Players.GetValueOrDefault(ServerSession.HostSlot)?.Team ?? Game.Multiplayer.TeamRoster.Good;
+        int enemy = ownTeam == Game.Multiplayer.TeamRoster.Good ? Game.Multiplayer.TeamRoster.Bad : Game.Multiplayer.TeamRoster.Good;
+        const int Host = ServerSession.HostEntity;
+        Game.Multiplayer.Modes.KillNote[] notes = set == 2
+            ?
+            [
+                new("Kim", ownTeam, "Anya", ownTeam, 61, 62, "WEAPON_ID_UZI", Marks: Game.Multiplayer.Modes.KillMarks.TeamKill),
+                new(string.Empty, -1, "Dmitri", enemy, -1, 63, "WEAPON_ID_GRENADE", Game.Multiplayer.Modes.KillCause.Suicide),
+                new(string.Empty, -1, "Kim", ownTeam, -1, 61, string.Empty, Game.Multiplayer.Modes.KillCause.Fall),
+                new("Anya", ownTeam, Game.Multiplayer.Modes.KillNote.GuardName, -1, 62, -1, "WEAPON_ID_MP5SD",
+                    Marks: Game.Multiplayer.Modes.KillMarks.Guard | Game.Multiplayer.Modes.KillMarks.Headshot),
+                new("Viktor_Sniper_Longname", enemy, own, ownTeam, 65, Host, "WEAPON_ID_DRAGUNOV", Marks: Game.Multiplayer.Modes.KillMarks.Headshot),
+            ]
+            :
+            [
+                new("Anya", ownTeam, "Viktor", enemy, 62, 65, "WEAPON_ID_GRENADE", Game.Multiplayer.Modes.KillCause.Explosive),
+                new("Dmitri", enemy, "Kim", ownTeam, 63, 61, "WEAPON_ID_KNIFE", Game.Multiplayer.Modes.KillCause.Melee, Game.Multiplayer.Modes.KillMarks.Backstab),
+                new("Viktor", enemy, "Anya", ownTeam, 65, 62, "WEAPON_ID_SPAS12"),
+                new(own, ownTeam, "Dmitri", enemy, Host, 63, "WEAPON_ID_AK47"),
+                new(own, ownTeam, "Boris", enemy, Host, 66, "WEAPON_ID_M16A2", Marks: Game.Multiplayer.Modes.KillMarks.Headshot),
+            ];
+        foreach (Game.Multiplayer.Modes.KillNote note in notes)
+        {
+            session.AnnounceKill(note);
+        }
+
+        return true;
+    }
+
     /// <summary>Ends the host's own player in a versus game, as the <c>kill</c> command does.</summary>
     /// <returns><see langword="true"/> when there was one to end.</returns>
     public bool KillOwn()
@@ -306,7 +349,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     public string Mode => _mode;
 
     /// <inheritdoc/>
-    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+    public IReadOnlyList<Game.Multiplayer.Modes.KillFeedEntry> KillFeed => _session?.Feed.Entries(_clock.Elapsed.TotalSeconds, LocalEntity ?? -1) ?? [];
 
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchBanner? Banner =>

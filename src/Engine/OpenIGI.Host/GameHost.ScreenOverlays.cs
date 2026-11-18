@@ -485,7 +485,7 @@ public sealed partial class GameHost
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            spectateHud.DrawSpectating(state.Batch, watched, SafeWindowWidth, SafeWindowHeight);
+            spectateHud.DrawSpectating(state.Batch, watched, KillFeedShown(), SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 
@@ -508,12 +508,12 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // The kills of late, down the top right corner.
-        if (TickObserver is ISessionScoreboard { KillFeed: { Count: > 0 } kills } && _remasteredHud is { IsReady: true } feedHud)
+        // The kills of late, down the top right corner, and the player's own announced.
+        if (HudCVars.KillFeed.Value && KillFeedShown() is { } feed && _remasteredHud is { IsReady: true } feedHud)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            feedHud.DrawKillFeed(state.Batch, kills, SafeWindowWidth, SafeWindowHeight);
+            feedHud.DrawKillFeed(state.Batch, feed, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 

@@ -174,6 +174,10 @@ public static class HudCVars
     public static readonly BoolCVar CrosshairDynamic = CVar.Bool(
         "r_crosshair_dynamic", true, CVarOptions.Archive, "The crosshair opens as you move and fire, showing the weapon's spread; off, it holds still.");
 
+    /// <summary>Whether a session lists its kills in the corner and announces the player's own.</summary>
+    public static readonly BoolCVar KillFeed = CVar.Bool(
+        "hud_killfeed", true, CVarOptions.Archive, "In multiplayer and co-op, list the kills in the top right corner and announce your own.");
+
     /// <summary>Whether the crosshair marks a hit and confirms a kill.</summary>
     public static readonly BoolCVar HitMarkers = Presets.Define(
         CVar.Bool(

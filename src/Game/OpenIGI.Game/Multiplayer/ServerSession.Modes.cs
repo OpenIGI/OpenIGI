@@ -117,15 +117,18 @@ public sealed partial class ServerSession
     public KillFeed Feed { get; } = new();
 
     /// <inheritdoc/>
-    void IModeHost.Announce(int victim, int killer)
+    void IModeHost.Announce(WorldDeath death, int victim, int killer)
     {
         MatchPlayer? by = killer < 0 ? null : Match.Players.GetValueOrDefault(killer);
         MatchPlayer? dead = Match.Players.GetValueOrDefault(victim);
-        KillNote note = new(
-            by is null || killer == victim ? string.Empty : by.Name,
-            by?.Team ?? -1,
-            dead?.Name ?? string.Empty,
-            dead?.Team ?? -1);
+        AnnounceKill(KillNote.Of(death, dead, by, Mode.IsTeamMode));
+    }
+
+    /// <summary>Lists a kill in the host's own feed and every client's, as the session lists a counted death.</summary>
+    /// <param name="note">The kill.</param>
+    /// <remarks>What the modes' deaths go through; a development command uses it to show the feed's every kind of row.</remarks>
+    public void AnnounceKill(KillNote note)
+    {
         Feed.Add(note, _now);
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.KillNote, 8);
@@ -199,6 +202,13 @@ public sealed partial class ServerSession
         {
             int shooter = note.Attacker >= 0 ? SlotOf(note.Attacker) : -1;
             int victim = note.Victim >= 0 ? SlotOf(note.Victim) : -1;
+
+            // Co-op: a player's kill of one of the level's soldiers goes in everyone's feed.
+            if (note is { Killed: true, Victim: < 0 } && Mode is CoopMode && Match.Players.GetValueOrDefault(shooter) is { } killer)
+            {
+                AnnounceKill(KillNote.OfGuard(killer, note.Attacker, note.Weapon, note.Head));
+            }
+
             foreach (int slot in shooter == victim ? [shooter] : (int[])[shooter, victim])
             {
                 if (slot == HostSlot)
