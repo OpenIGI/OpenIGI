@@ -12,8 +12,8 @@ namespace OpenIGI.Presentation.Igi1.World;
 internal sealed partial class RemasteredHudRenderer
 {
     // The name's size up close, in layout pixels; a tag across the yard is drawn at NameTagFarScale of it.
-    private const float NameTagSize = 17f;
-    private const float NameTagFarScale = 0.78f;
+    private const float NameTagSize = 14f;
+    private const float NameTagFarScale = 0.85f;
 
     // Out to here a tag keeps its full size; by NameTagReachMetres it has shrunk to the far scale.
     private const double NameTagNearMetres = 8.0;
@@ -27,11 +27,11 @@ internal sealed partial class RemasteredHudRenderer
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each name is a plate on the screen, not a sign in the level: the point over the player's head is projected through
-    /// the frame's eye and the name is set there flat, on a dark rounded backing with the accent down its side, as a modern
-    /// shooter's tag is. A sign turned to the eye was thin, low-contrast against the sky, and shrank to nothing across the
-    /// compound. It still shrinks a little and fades towards <see cref="NameTagReachMetres"/>, so the nearest reads first.
-    /// Not the original's: it had no other players to name.
+    /// Each name is set flat on the screen over the player's head, as a modern shooter marks its allies, and kept spare: the
+    /// name in small white type with a soft shadow under it to read against sky and wall alike, a small marker in the accent
+    /// pointing down at the player, and -- far off -- how far, quieter beside it. No plate behind it: across a compound of
+    /// allies, plates were a wall of boxes. It shrinks a little and fades towards <see cref="NameTagReachMetres"/>, so the
+    /// nearest reads first. Not the original's: it had no other players to name.
     /// </remarks>
     public void DrawNameTags(
         SpriteBatch batch,
@@ -51,8 +51,6 @@ internal sealed partial class RemasteredHudRenderer
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         var painter = UiPainter.Create(batch, context);
-        NineSlice rounded = _surfaces?.Rounded ?? default;
-        NineSlice shadow = _surfaces?.Shadow ?? default;
 
         foreach (WorldNameTag tag in tags)
         {
@@ -73,29 +71,42 @@ internal sealed partial class RemasteredHudRenderer
             float fade = (float)Math.Clamp((NameTagReachMetres - distance) / NameTagFadeMetres, 0.0, 1.0);
 
             float size = context.Px(NameTagSize * scale);
-            float padX = size * 0.62f;
-            float bar = MathF.Max(2f, size * 0.16f);
-            // Far off, how far: a teammate across the compound is found by the number as much as the name.
-            string label = distance > NameTagDistanceMetres ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{tag.Name}  {distance:0} m") : tag.Name;
-            float width = font.MeasureWidth(label, size) + (padX * 2f) + bar;
-            float height = size * 1.75f;
-            var plate = new UiRect(headX - (width * 0.5f), headY - height - context.Px(6f * scale), width, height);
-            if (plate.Right < 0f || plate.X > screenWidth || plate.Bottom < 0f || plate.Y > screenHeight)
+            float marker = context.Px(5f * scale);
+            float shadowOffset = MathF.Max(1f, context.Px(1f));
+            Bgra32 shade = Bgra32.FromRgba(0, 0, 0, (byte)(170 * fade));
+
+            // The marker: a small triangle pointing down at the head, in the accent.
+            float tipY = headY - context.Px(4f * scale);
+            painter.FillTriangle(
+                new UiVec2(headX - marker, tipY - marker),
+                new UiVec2(headX + marker, tipY - marker),
+                new UiVec2(headX, tipY),
+                Accent.WithAlpha((byte)(235 * fade)));
+
+            // The name over it, and far off how far, quieter; each a hair of shadow under it.
+            string? howFar = distance > NameTagDistanceMetres ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{distance:0} m") : null;
+            float farSize = size * 0.82f;
+            float gap = size * 0.45f;
+            float nameWidth = font.MeasureWidth(tag.Name, size);
+            float farWidth = howFar is null ? 0f : font.MeasureWidth(howFar, farSize);
+            float total = nameWidth + (howFar is null ? 0f : gap + farWidth);
+            float lineHeight = size * 1.2f;
+            var line = new UiRect(headX - (total * 0.5f), tipY - marker - context.Px(3f * scale) - lineHeight, total, lineHeight);
+            if (line.Right < 0f || line.X > screenWidth || line.Bottom < 0f || line.Y > screenHeight)
             {
                 continue;
             }
 
-            float radius = height * 0.22f;
-            painter.DrawShadow(plate, shadow, Bgra32.FromRgba(0, 0, 0, (byte)(110 * fade)), context.Px(6f), new UiVec2(0f, context.Px(1.5f)));
-            painter.FillRoundedRect(plate, rounded, UiPalette.InkAt(0.82f).WithAlpha((byte)(205 * fade)), radius);
-            painter.FillRect(new UiRect(plate.X, plate.Y + (height * 0.2f), bar, height * 0.6f), Accent.WithAlpha((byte)(255 * fade)));
-            painter.DrawLabel(
-                font,
-                label,
-                new UiVec2(plate.X + bar + padX, UiRowStyle.CapsCenterY(font, size, plate)),
-                size,
-                Text.WithAlpha((byte)(255 * fade)),
-                0.02f);
+            float baseline = UiRowStyle.CapsCenterY(font, size, line);
+            painter.DrawLabel(font, tag.Name, new UiVec2(line.X + shadowOffset, baseline + shadowOffset), size, shade, 0.02f);
+            painter.DrawLabel(font, tag.Name, new UiVec2(line.X, baseline), size, Text.WithAlpha((byte)(245 * fade)), 0.02f);
+            if (howFar is not null)
+            {
+                float farX = line.X + nameWidth + gap;
+                float farY = UiRowStyle.CapsCenterY(font, farSize, line);
+                painter.DrawLabel(font, howFar, new UiVec2(farX + shadowOffset, farY + shadowOffset), farSize, shade, 0.02f);
+                painter.DrawLabel(font, howFar, new UiVec2(farX, farY), farSize, UiPalette.TextMuted.WithAlpha((byte)(230 * fade)), 0.02f);
+            }
         }
     }
 }
