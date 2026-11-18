@@ -5,34 +5,29 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <content>A co-op client's copy of another player: posed by the server's, its own controls never run.</content>
 public sealed partial class Igi2HumanPlayer
 {
-    /// <summary>
-    /// One tick of a player another game runs: put in the locomotion state the server's copy is in, its clip played on, and
-    /// stood where the server's stands, facing and looking as it does.
-    /// </summary>
+    /// <summary>One tick of a player another game runs, its upper body as the server's copy has it.</summary>
     /// <param name="state">The server's copy's locomotion state.</param>
-    /// <param name="rearmed">
-    /// Whether the state's entry must run even if the state is unchanged: a weapon was put in its hand this tick (its clips are
-    /// the weapon's), or this is its first pose.
-    /// </param>
+    /// <param name="rearmed">Whether the state's entry must run even if the state is unchanged.</param>
+    /// <param name="upperBody">The upper-body mode, 0 to 12.</param>
+    /// <param name="fireType">The fire type it fires with.</param>
+    /// <param name="upperBodySequence">The count of upper-body clips set on the server's copy.</param>
     /// <param name="position">Where its feet stand, in world units.</param>
     /// <param name="speed">Its speed.</param>
     /// <param name="gamma">Its heading.</param>
     /// <param name="pitch">Its view's pitch.</param>
     /// <remarks>
     /// <para>
-    /// The locomotion states are never ticked here, as a soldier's puppet's are not (<see cref="Soldiers.Igi2HumanSoldier"/>): a
-    /// state's tick reads the controls, and a copy has none. Ticked with empty controls, every gait let go of its keys and went
-    /// to standing, the next snapshot put it back in the gait, and the gait's clip started over from its first frame -- the
-    /// body slid over the ground in one frozen frame.
+    /// The locomotion states are never ticked here, as a soldier's puppet's are not: a state's tick reads the controls, and a copy
+    /// has none. Ticked with empty controls, every gait let go of its keys and went to standing, the next snapshot put it back in
+    /// the gait, and the gait's clip started over from its first frame -- the body slid over the ground in one frozen frame.
+    /// Nor are its action states: the upper body is the server's copy's (<see cref="PoseUpperBodyAsPuppet"/>).
     /// </para>
-    /// <para>
-    /// The action states still run, on empty controls, so the upper body takes up the clip the state asks for. A run's clip
-    /// steps at the rate its tick would set (<see cref="Humans.Igi2Human.ControlGait"/>); every other state keeps what its entry set.
-    /// </para>
+    /// <para>A run's clip steps at the rate its tick would set (<see cref="Humans.Igi2Human.ControlGait"/>); every other state keeps what its entry set.</para>
     /// </remarks>
-    public void PoseAsPuppet(int state, bool rearmed, Vector3d position, Vector3f speed, float gamma, float pitch)
+    public void PoseAsPuppet(int state, bool rearmed, int upperBody, int fireType, byte upperBodySequence, Vector3d position, Vector3f speed, float gamma, float pitch)
     {
-        if (rearmed || Locomotion.CurrentState != state)
+        bool entered = rearmed || Locomotion.CurrentState != state;
+        if (entered)
         {
             Locomotion.Enter(state, this);
         }
@@ -43,7 +38,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Channels.Accept(NoChannels);
-        Action.Tick(this);
+        PoseUpperBodyAsPuppet(upperBody, fireType, upperBodySequence, again: entered);
         Position = position;
         Speed = speed;
         Gamma = gamma;

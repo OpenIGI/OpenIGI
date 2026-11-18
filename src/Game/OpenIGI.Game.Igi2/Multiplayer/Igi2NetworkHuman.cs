@@ -230,6 +230,9 @@ public sealed class Igi2NetworkHuman
         Human.PoseAsPuppet(
             target.State,
             rearmed,
+            target.Action & 0xF,
+            (target.Action >> 4) & 0xF,
+            target.ActionSequence,
             target.Position.ToVector(),
             target.Velocity,
             Quantize.AngleFromBits(target.Yaw),

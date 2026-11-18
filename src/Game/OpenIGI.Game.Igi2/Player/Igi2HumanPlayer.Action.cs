@@ -202,10 +202,68 @@ public sealed partial class Igi2HumanPlayer
         }
 
         IsForceNetUpdate = true;
+        UpperBodySequence = unchecked((byte)(UpperBodySequence + 1));
+
+        // A primary shot's first-person clip starts up to 0.175 s in, drawn before the body's clip is set, as the original draws it.
+        int firstPersonTime = mode == 6
+            ? Fpu.ToInt32(((Fpu)Random.NextDouble() * FireStartSpread) * Igi2HumanAnimation.BlendTicksPerSecond)
+            : 0;
+        (Igi2WeaponAnimRequest firstPerson, bool reverse) = PoseUpperBody(mode);
+        SetWeaponTypeAnim(firstPerson, firstPersonTime, reverse);
+    }
+
+    /// <summary>
+    /// Gets how many upper-body clips have been set (mode nought apart), counted round in a byte: a co-op server sends it with
+    /// the mode, so a second shot or reload step on the same mode plays again on the others' screens.
+    /// </summary>
+    public byte UpperBodySequence { get; private set; }
+
+    /// <summary>
+    /// A co-op client's copy of another player takes the upper body the server's copy has: its mode, the fire type it fires
+    /// with, and the count that says a clip began again (<see cref="UpperBodySequence"/>), as the original's remote human takes
+    /// <c>eUpperBody</c> (<c>HumanRemote_HandleUpdate</c>).
+    /// </summary>
+    /// <param name="mode">The upper-body mode, 0 to 12.</param>
+    /// <param name="fireType">The fire type it fires with.</param>
+    /// <param name="sequence">The count of clips set on the server's copy.</param>
+    /// <param name="again">Whether the clip is set again whatever came: the copy's state was entered anew, which played its clip.</param>
+    /// <remarks>
+    /// The copy's own action states once ran on empty controls: it never fired, reloaded or drew on the others' screens, and a
+    /// spent mine or rocket launcher put itself away and back every tick.
+    /// </remarks>
+    public void PoseUpperBodyAsPuppet(int mode, int fireType, byte sequence, bool again)
+    {
+        if (!again && mode == CurrentUpperBody && sequence == _puppetSequence)
+        {
+            return;
+        }
+
+        _puppetSequence = sequence;
+        FireType = fireType;
+        CurrentUpperBody = mode;
+        RequestedUpperBody = mode;
+        if (mode is <= 0 or > 12)
+        {
+            Animation.ClearUpperBody(0.4f);
+            return;
+        }
+
+        PoseUpperBody(mode);
+    }
+
+    private byte _puppetSequence;
+
+    /// <summary>
+    /// The body's half of <see cref="SetUpperBody"/>: the clip the upper body (or, lying flat, the whole body) plays for a mode,
+    /// and the first-person clip that goes with it.
+    /// </summary>
+    /// <param name="mode">The mode, one or more.</param>
+    /// <returns>The first-person clip, and whether it plays backwards.</returns>
+    private (Igi2WeaponAnimRequest FirstPerson, bool Reverse) PoseUpperBody(int mode)
+    {
         bool lying = Pose == Igi2HumanPose.LyingFlat;
         int state = lying ? 75 : 0;
         Igi2WeaponAnimRequest firstPerson = Igi2WeaponAnimRequest.FirstStand;
-        int firstPersonTime = 0;
         bool reverse = false;
         bool secondaryFire = false;
         switch (mode)
@@ -215,8 +273,6 @@ public sealed partial class Igi2HumanPlayer
                 firstPerson = Igi2WeaponAnimRequest.FirstMove;
                 break;
             case 6:
-                firstPersonTime = Fpu.ToInt32(((Fpu)Random.NextDouble() * FireStartSpread) * Igi2HumanAnimation.BlendTicksPerSecond);
-                goto case 7;
             case 7:
                 secondaryFire = FireType != 0;
                 firstPerson = Igi2WeaponAnimRequest.FirstFire;
@@ -254,7 +310,7 @@ public sealed partial class Igi2HumanPlayer
             SetStandingUpperBody(mode, state, secondaryFire);
         }
 
-        SetWeaponTypeAnim(firstPerson, firstPersonTime, reverse);
+        return (firstPerson, reverse);
     }
 
     private void SetLyingUpperBody(int mode, int state)

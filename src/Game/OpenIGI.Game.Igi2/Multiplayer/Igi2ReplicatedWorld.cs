@@ -396,12 +396,14 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             Quantize.AngleToBits(human.Gamma),
             Quantize.AngleToBits(human.View.Pitch),
             (ushort)Math.Clamp(human.Locomotion.CurrentState, 0, ushort.MaxValue),
-            (ushort)Math.Clamp(human.ActionState, 0, ushort.MaxValue),
+            // The upper body as the original's remote human is sent it (eUpperBody), with the fire type above it.
+            (ushort)((human.CurrentUpperBody & 0xF) | ((human.FireType & 0xF) << 4)),
             human.Weapon.Inventory?.HeldForSnapshot ?? 0,
             (byte)Math.Round(left * 255),
             (byte)Math.Clamp(human.Team, 0, 255),
             condition,
-            unchecked((byte)shots));
+            unchecked((byte)shots),
+            ActionSequence: human.UpperBodySequence);
     }
 
     private sealed class RewindScope(List<(Igi2Human Human, Vector3d Was, Matrix3f Turned)> moved) : IDisposable

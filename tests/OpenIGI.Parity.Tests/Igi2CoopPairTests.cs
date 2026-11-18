@@ -227,6 +227,34 @@ public sealed class Igi2CoopPairTests
         Assert.True(target.Explosive.Model == target.DestroyedModel && target.Explosive.Model != whole, $"{target.Name} kept its whole model");
     }
 
+    /// <summary>
+    /// The joiner's copy of a firing host fires: its upper body plays the shot as the host's does, the gun still hung in its
+    /// hands. The copy's own action states once ran on empty controls, and it never fired, reloaded or drew on the joiner's screen.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_a_firing_host_fires()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Igi2NetworkHuman copy = Assert.Single(pair.Joiner!.NetworkHumans);
+        pair.RunUntil(() => false, 30);
+
+        bool fired = false;
+        pair.HostInput.Mouse.SetButton(MouseButton.Left, true);
+        for (int i = 0; i < 60 && !fired; i++)
+        {
+            pair.RunUntil(() => false, 1);
+            fired = copy.Human.CurrentUpperBody is 6 or 7;
+        }
+
+        pair.HostInput.Mouse.SetButton(MouseButton.Left, false);
+        Assert.True(fired, $"the copy's upper body stayed at {copy.Human.CurrentUpperBody} while the host fired");
+
+        string? gun = copy.Weapons?.Inventory.Current?.WeaponType.FixedModel;
+        IReadOnlyList<TitleWorldModel> drawn = Igi2BodyFrame.Build(copy.Human, copy.Human.BodyPose(), copy.Human.Model!.Name, gun, 0);
+        Assert.Contains(drawn, part => string.Equals(part.Model, gun, StringComparison.OrdinalIgnoreCase));
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void The_joiners_copy_of_the_host_is_no_target_of_its_soldiers_and_the_hosts_partner_is()
     {
