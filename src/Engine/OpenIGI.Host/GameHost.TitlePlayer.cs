@@ -347,12 +347,15 @@ public sealed partial class GameHost
     /// Escape held until the skip ring fills (<see cref="Services.CutsceneSkipHold"/>), then read as held until the cutscene
     /// ends, as retail's <c>LevelFlow_GetBreakCutSceneKey</c> reads the key's state. With cinematics off it is held, the same
     /// path the host's own intro skip takes: the level's scripts end every cutscene the way the key does.
-    /// <c>OPENIGI_BREAK_CUTSCENE=1</c> holds it too, for a lockstep run.
+    /// <c>OPENIGI_BREAK_CUTSCENE=1</c> holds it too, for a lockstep run. A co-op client never holds it: its host's skip ends the
+    /// scene for everyone, and a client that ended its own (cinematics off, or its own hold) played on while its host watched,
+    /// until the host's state took the scene back.
     /// </remarks>
     private bool TitleBreakKey() =>
-        !_options.PlayCutscenes
+        TickObserver is not Multiplayer.ISessionFollower
+        && (!_options.PlayCutscenes
         || _cutsceneSkip.Breaking
-        || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal);
+        || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal));
 
     /// <summary>Registers the console's hold on the title player's controls, for a capture to drive it without keys.</summary>
     /// <param name="console">The console to register with.</param>

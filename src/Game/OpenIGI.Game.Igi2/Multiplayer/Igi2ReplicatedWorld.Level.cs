@@ -72,6 +72,6 @@ public sealed partial class Igi2ReplicatedWorld
             _variablesMade = true;
         }
 
-        return Igi2LevelState.Capture(_guns, _variables, CurrentTick, _blasts);
+        return Igi2LevelState.Capture(_guns, _variables, CurrentTick, _blasts, _level.Flow?.IsBreakKeyDown == true);
     }
 }

@@ -62,6 +62,11 @@ internal static class Igi2NetworkHumanFactory
         human.Collider = new Igi2BoneCollider(human, human);
         kit.World.AddBody(human.Collider);
         human.Pickups = level.Human.Pickups;
+
+        // The documents, key cards and disks are the level's, for every player to collect: without them the server never let a
+        // client's player take one (the client hid it, the objective waiting on it never moved). And the level's clock.
+        human.GenericPickups = level.Human.GenericPickups;
+        human.LevelTick = level.Human.LevelTick;
         human.AnimTriggers = level.Human.AnimTriggers;
         human.WhizzbyClock = level.Human.WhizzbyClock;
         human.DeadBodySounds = level.Human.DeadBodySounds;

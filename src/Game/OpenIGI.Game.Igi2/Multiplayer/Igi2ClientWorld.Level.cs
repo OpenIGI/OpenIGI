@@ -19,7 +19,9 @@ public sealed partial class Igi2ClientWorld
             : _vehicles.WeaponOf(entity) ?? _puppets.GetValueOrDefault(entity)?.Weapons?.Firing;
 
     /// <inheritdoc/>
-    public void ApplyLevel(byte[] state) => Igi2LevelState.Apply(_guns, _variables, state, _blasts, _ownEntity, _level.Explosions);
+    /// <remarks>The server's cutscene key comes with it: a client's scenes end when its host skips them, and never on their own.</remarks>
+    public void ApplyLevel(byte[] state) =>
+        _level.FollowedBreakKey = Igi2LevelState.Apply(_guns, _variables, state, _blasts, _ownEntity, _level.Explosions);
 
     // The level's verdicts and counters are the server's from now on (LevelRun.IsReplica): this client's scripts read the
     // server's variables, and its flow never decides the mission on its own.

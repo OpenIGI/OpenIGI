@@ -40,7 +40,8 @@ public sealed partial class GameHost
             && _mission.Scenes is { IsPlaying: true } scenes
             && (scenes.CanBreak || _cutsceneSkip.Breaking)
             && TickObserver is not Multiplayer.ISessionFollower;
-        bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true };
+        // Another game's scenes the same: a client's skip ended its own scene while its host's played on.
+        bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true } && TickObserver is not Multiplayer.ISessionFollower;
         // On a touch screen the whole screen is the key: a finger held anywhere fills the ring.
         // And a play-test's skip holds it for the player, until the scene is over.
         _playtestSkipping &= hostCutscene || titleCutscene;

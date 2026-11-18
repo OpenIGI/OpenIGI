@@ -54,6 +54,23 @@ public sealed partial class Igi2HumanPlayer
         TouchPose();
         UpdateViewBody(updateAnimation: false);
         Weapon.UpdateStatus();
+        RunPuppetBody();
+    }
+
+    /// <summary>
+    /// The body's own run, as a soldier's puppet's runs in its delayed half: the human's part (<c>Human_RunHandler</c>), then the
+    /// controllers that step themselves and the blends between clips.
+    /// </summary>
+    /// <remarks>
+    /// Left out, every blend a state's entry started stood at its first tick and drew the clip it blends from, frozen: a
+    /// partner that set off slid along in its standing pose, one that stopped held its stride, and one that fell stayed upright.
+    /// Retail's remote human runs <c>Human_RunHandler</c> every tick (<c>HumanRemote_RunDelayedHandler</c>).
+    /// </remarks>
+    public void RunPuppetBody()
+    {
+        RunHuman();
+        Animation.AutoStep();
+        TouchPose();
     }
 
     private static readonly float[] NoChannels = new float[Humans.Igi2HumanChannels.Count];

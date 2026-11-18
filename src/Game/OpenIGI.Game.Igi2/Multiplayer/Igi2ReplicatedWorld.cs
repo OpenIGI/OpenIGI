@@ -40,6 +40,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         _level.NetworkRewind = RewindFor;
         _level.Marks = this;
         _level.Human.Spares = by => Spared(_level.Human, by);
+        _level.Human.KeepsWeaponsWhenDown = HoldsTheDead;
 
         // Every explosion the level sets off is told to the clients, who show what their own players did not set off.
         _level.Explosions?.Started = request => _blasts.Note(EntityOf(request.Owner), request);
@@ -235,6 +236,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         _bySlot[slot] = human;
         Igi2HumanPlayer struck = human.Human;
         struck.Spares = by => Spared(struck, by);
+        struck.KeepsWeaponsWhenDown = HoldsTheDead;
         Arm(human);
         HearLaunches(human.Weapons?.Firing, () => EntityOf(human.Human));
     }
@@ -268,6 +270,10 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         Teams.Remove(slot);
         _names.Remove(slot);
         _looks.Remove(slot);
+
+        // Its revival and its fall go with it, as a parked player's do: the next player in the slot inherited both.
+        _squad.Forget(slot + 1);
+        _dead.Remove(slot + 1);
         if (_bySlot.Remove(slot, out Igi2NetworkHuman? human))
         {
             _level.RemoveNetworkHuman(human);

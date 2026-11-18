@@ -48,6 +48,10 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
         }
 
         _level.Marks = this;
+
+        // The client's own player falls when the server's does and stands again when revived: what it carries is the server's
+        // to take, not the fall's, so its HUD and its predicted shots keep the kit through it.
+        _level.Human.KeepsWeaponsWhenDown = true;
         _vehicles = new Igi2VehicleStates(_level);
         _vehicles.Puppet();
         BindLevelState();

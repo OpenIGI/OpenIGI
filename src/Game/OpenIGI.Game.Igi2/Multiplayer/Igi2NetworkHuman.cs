@@ -107,15 +107,26 @@ public sealed class Igi2NetworkHuman
             return;
         }
 
-        bool first = true;
-        for (int due = Commands.Due(); due > 0 && Commands.TryTake(_command); due--)
+        int due = Commands.Due();
+        for (int run = 0; run < due; run++)
         {
-            if (!first)
+            // The last command's shots are traced before the next is taken: taking it sets the view tick the rewind reads, and
+            // the first command's rounds were put back where the second's client saw the others.
+            if (run > 0)
             {
+                if (Commands.Buffered == 0)
+                {
+                    break;
+                }
+
                 betweenCommands?.Invoke(this);
             }
 
-            first = false;
+            if (!Commands.TryTake(_command))
+            {
+                break;
+            }
+
             RunCommand(tick);
         }
     }
@@ -177,6 +188,7 @@ public sealed class Igi2NetworkHuman
             }
 
             Human.Update(_frame);
+            Human.RunPuppetBody();
             return;
         }
 

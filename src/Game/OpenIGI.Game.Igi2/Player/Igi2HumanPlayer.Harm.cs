@@ -163,7 +163,12 @@ public sealed partial class Igi2HumanPlayer
             ImpactSpeed = default;
         }
 
-        Weapon.ClearAllWeapons();
+        // A co-op player down waits to be revived with what it carried; elsewhere death empties the inventory.
+        if (!KeepsWeaponsWhenDown)
+        {
+            Weapon.ClearAllWeapons();
+        }
+
         Locomotion.Current = (_, _) => NoteDeathAnimation();
     }
 

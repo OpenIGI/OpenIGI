@@ -35,6 +35,39 @@ public sealed class Igi2CoopPairTests
         Assert.True(apart < 1024, $"the host's player is {apart} units from where the joiner shows it");
     }
 
+    /// <summary>
+    /// The joiner's copy of the host walks as the host walks: its body's pose moves from tick to tick. Its clip's blends once
+    /// never stepped, and a partner that set off slid over the ground in the pose it stood in.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_the_walking_host_moves_its_limbs()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Igi2NetworkHuman host = Assert.Single(pair.Joiner!.NetworkHumans);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 60);
+
+        HashSet<string> poses = [];
+        for (int i = 0; i < 30; i++)
+        {
+            pair.RunUntil(() => false, 1);
+            if (host.Human.BodyPose() is { } pose)
+            {
+                System.Text.StringBuilder key = new();
+                foreach (Matrix3f r in pose.Pose.Rotations)
+                {
+                    key.Append(System.Globalization.CultureInfo.InvariantCulture, $"{r.M11:F3}{r.M12:F3}{r.M21:F3};");
+                }
+
+                poses.Add(key.ToString());
+            }
+        }
+
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, false);
+        Assert.True(poses.Count > 10, $"the copy of the walking host took {poses.Count} distinct poses in 30 ticks");
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void Every_soldier_is_sent_and_the_joiner_poses_its_copies_where_the_hosts_stand()
     {
@@ -145,15 +178,24 @@ public sealed class Igi2CoopPairTests
     {
         using Igi2CoopPair pair = Joined();
         Igi2NetworkHuman partner = Assert.Single(pair.Host!.NetworkHumans);
+        string? carried = partner.Weapons?.Inventory.Current?.WeaponType.WeaponId;
+        Assert.NotNull(carried);
         partner.Human.Damage.Damage = partner.Human.Damage.MaxDamage + 1f;
         partner.Human.UpdateDie();
         Assert.True(pair.RunUntil(() => pair.Joiner!.Human.IsDead, 300) >= 0, "the joiner's own player never fell");
+
+        // Lying long enough for the death to settle, where it once emptied the inventory.
+        pair.RunUntil(() => partner.Human.IsDeathAnimationDone && pair.Joiner!.Human.IsDeathAnimationDone, 300);
 
         // The host walks to it: put beside it, and held there as long as a revival takes.
         pair.Host.Human.Position = partner.Human.Position + new Vector3d(2048, 0, 0);
         Assert.True(
             pair.RunUntil(() => !partner.Human.IsDead && !pair.Joiner!.Human.IsDead, CoopSquad.ReviveTicks * 4 + 300) >= 0,
             $"not revived: on the host {partner.Human.IsDead}, on the joiner {pair.Joiner!.Human.IsDead}");
+
+        // Revived with what it carried, on the server and on its own game: a revived partner once stood up empty-handed.
+        Assert.Equal(carried, partner.Weapons?.Inventory.Current?.WeaponType.WeaponId);
+        Assert.Equal(carried, pair.Joiner!.Weapons?.Inventory.Current?.WeaponType.WeaponId);
     }
 
     [RequiresTitleDataFact("igi2")]

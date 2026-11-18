@@ -60,6 +60,12 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
     /// <inheritdoc/>
     public IReplicatedClientWorld CreateClientWorld() => new Igi2ClientWorld(this);
 
+    /// <summary>
+    /// Gets or sets the server's cutscene key, on a co-op client: its scenes end when its host skips them, and its own key is
+    /// not read. <see langword="null"/> elsewhere, where the player's own key is.
+    /// </summary>
+    internal bool? FollowedBreakKey { get; set; }
+
     /// <summary>Gets the channel frame the level's own player ran on in its last tick: on a client, the command sent up.</summary>
     public ReadOnlySpan<float> LastFrame => _frame;
 

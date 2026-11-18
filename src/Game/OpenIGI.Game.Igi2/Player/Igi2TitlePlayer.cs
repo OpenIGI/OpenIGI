@@ -635,7 +635,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         TakeWheelPick();
         if (Level is { } level)
         {
-            Flow?.IsBreakKeyDown = input.BreakCutscene;
+            Flow?.IsBreakKeyDown = FollowedBreakKey ?? input.BreakCutscene;
             level.Tick();
 
             // The glass container is the level's last child, made as the first pane was: its panes' glass tick follows the level's.

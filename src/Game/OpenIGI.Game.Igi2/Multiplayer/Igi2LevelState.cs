@@ -40,10 +40,12 @@ internal static class Igi2LevelState
     /// <param name="mirror">The level's mirror, or <see langword="null"/>.</param>
     /// <param name="tick">The tick.</param>
     /// <param name="blasts">The explosions lately set off.</param>
+    /// <param name="breakingCutscene">Whether the server's cutscene key is held: its skip, which every client's scene follows.</param>
     /// <returns>The state: never nothing, so a client knows the server's word has come.</returns>
-    public static byte[] Capture(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, long tick, Igi2BlastLog blasts)
+    public static byte[] Capture(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, long tick, Igi2BlastLog blasts, bool breakingCutscene)
     {
         BitWriter writer = new(1024);
+        writer.WriteBool(breakingCutscene);
         writer.WriteBool(mirror is not null);
         if (mirror is not null)
         {
@@ -67,14 +69,16 @@ internal static class Igi2LevelState
     /// <param name="blasts">The explosions shown so far.</param>
     /// <param name="ownEntity">This client's own entity, or <see langword="null"/>.</param>
     /// <param name="explosions">Where explosions go off here, or <see langword="null"/>.</param>
+    /// <returns>Whether the server's cutscene key is held.</returns>
     /// <remarks>
     /// A weapon another player took is taken out of this level, nobody's: this player's own pickups go by its own copy's
     /// walking over them, which the server's copy does too.
     /// </remarks>
-    public static void Apply(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, byte[] state, Igi2BlastLog blasts, int? ownEntity, Weapons.Igi2ExplosionWorld? explosions)
+    public static bool Apply(Igi2GunPickupTask[] guns, ScriptVariableMirror? mirror, byte[] state, Igi2BlastLog blasts, int? ownEntity, Weapons.Igi2ExplosionWorld? explosions)
     {
         ArgumentNullException.ThrowIfNull(state);
         BitReader reader = new(state);
+        bool breakingCutscene = reader.ReadBool();
         if (reader.ReadBool())
         {
             byte[] variables = reader.ReadBytes(1 << 20);
@@ -98,6 +102,8 @@ internal static class Igi2LevelState
         {
             blasts.Show(ref reader, ownEntity, explosions);
         }
+
+        return breakingCutscene;
     }
 
     /// <summary>Gets the weapons the level lays out, in its tree's order, which every machine playing it shares.</summary>
