@@ -395,6 +395,56 @@ public sealed class Igi2CoopPairTests
     private const int TrainMission = 12;
     private const int TurretMission = 17;
 
+    /// <summary>
+    /// A host alone in a campaign mission played together who falls fails the mission, as the level's own "player dead" flow
+    /// fails it (HumanPlayer_0.isDead), and is not told to wait for a teammate who is not there.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_host_alone_who_falls_fails_the_mission_and_waits_for_nobody()
+    {
+        using Igi2CoopPair pair = new([], [], joinLater: true);
+        Assert.True(pair.RunUntil(() => pair.Host is not null, 4000) >= 0, "the host's level never came up");
+        pair.RunUntil(() => false, 60);
+
+        pair.Host!.Human.Damage.Damage = pair.Host.Human.Damage.MaxDamage + 1f;
+        pair.Host.Human.UpdateDie();
+        pair.RunUntil(() => false, 30);
+        Assert.Null(pair.Session.OwnRevive);
+        Assert.True(
+            pair.RunUntil(() => pair.Host.Outcome == OpenIGI.Game.Player.TitleMissionOutcome.Failed, 3000) >= 0,
+            "the mission never failed on its only player's death");
+    }
+
+    /// <summary>A host down while its partner stands waits to be revived, and the mission goes on.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_host_down_while_its_partner_stands_waits_for_it_and_the_mission_goes_on()
+    {
+        using Igi2CoopPair pair = Joined();
+        pair.Host!.Human.Damage.Damage = pair.Host.Human.Damage.MaxDamage + 1f;
+        pair.Host.Human.UpdateDie();
+        pair.RunUntil(() => false, 30);
+        Assert.NotNull(pair.Session.OwnRevive);
+        Assert.Equal(-1, pair.RunUntil(() => pair.Host.Outcome == OpenIGI.Game.Player.TitleMissionOutcome.Failed, 900));
+    }
+
+    /// <summary>
+    /// Each player wears the look it chose: the joiner's body on the host is its look's, borrowed from the multiplayer game's pack
+    /// as the first mission does not ship it, and the joiner draws the host in the host's.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Each_player_wears_its_look_on_the_others_game_a_body_the_level_lacks_borrowed()
+    {
+        using Igi2CoopPair pair = new("chn3", "igiagent2");
+        Assert.True(
+            pair.RunUntil(() => pair.Joined && pair.Host!.NetworkHumans.Count == 1 && pair.Joiner!.NetworkHumans.Count == 1, 4000) >= 0,
+            "the joiner was never welcomed, or never drew the host");
+        pair.RunUntil(() => false, 30);
+
+        Assert.Equal("igiagent2_1", Assert.Single(pair.Host!.NetworkHumans).Human.Model?.Name);
+        Assert.Equal("chn3_1", Assert.Single(pair.Joiner!.NetworkHumans).Human.Model?.Name);
+        Assert.NotEmpty(Assert.Single(pair.Host.NetworkHumans).Human.Model!.BoneNames);
+    }
+
     internal static Igi2CoopPair Joined(params string[] hostArgs) => JoinedOn(Igi2CoopPair.FirstMission, hostArgs);
 
     internal static Igi2CoopPair JoinedOn(int mission, params string[] hostArgs)

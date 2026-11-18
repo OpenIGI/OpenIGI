@@ -32,7 +32,7 @@ public static class RoomSessions
             return new SessionClient(
                 room,
                 RoomTransport.HostAddress,
-                new JoinRequest(session.PlayerName, version, session.Password, content, Skin(session, titleId)),
+                new JoinRequest(session.PlayerName, version, session.Password, content, session.LookFor(titleId)),
                 titleId,
                 logger,
                 reopen: () => RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger))
@@ -49,7 +49,7 @@ public static class RoomSessions
         string map = mission.ToString(CultureInfo.InvariantCulture);
         int players = Math.Clamp(session.MaxPlayers, 1, 31);
         HostedSessionOptions options = new(
-            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content, Skin(session, titleId));
+            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content, session.LookFor(titleId));
         RoomRequest request = new(
             titleId,
             MultiplayerProtocol.IdFor(titleId).ToString("x16", CultureInfo.InvariantCulture),
@@ -63,8 +63,4 @@ public static class RoomSessions
             session.Instance);
         return new HostedSession(RoomTransport.Host(RoomTransport.DefaultMaster, request, peers, logger), options, titleId, GameClock.DefaultTickRate, logger);
     }
-
-    // The look asked for on the command line, else the one saved.
-    private static string Skin(SessionArguments session, string titleId) =>
-        PlayerSkins.For(titleId) is var looks && session.Skin is { Length: > 0 } asked ? looks.Of(asked).Id : looks.Own.Id;
 }

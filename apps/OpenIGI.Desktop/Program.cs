@@ -63,7 +63,7 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
         return RoomSessions.Start(session, title.Id, options.StartMission, version, new DataChannelPeerFactory(logger), logger);
     }
 
-    JoinRequest join = new(session.PlayerName, version, session.Password);
+    JoinRequest join = new(session.PlayerName, version, session.Password, Skin: session.LookFor(title.Id));
     if (session.Demo is { } demo)
     {
         try
@@ -100,7 +100,7 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
         string map = options.StartMission.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return new HostedSession(
             UdpTransport.Open(session.Port),
-            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName),
+            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, HostSkin: session.LookFor(title.Id)),
             title.Id,
             OpenIGI.Engine.Time.GameClock.DefaultTickRate,
             logger);

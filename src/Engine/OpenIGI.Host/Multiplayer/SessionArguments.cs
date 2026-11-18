@@ -36,13 +36,22 @@ public sealed record SessionArguments(
     /// <summary>The UDP port a server listens on unless told otherwise, as the original's <c>svport</c>.</summary>
     public const int DefaultPort = 26001;
 
+    /// <summary>Gets the look played in for a game: the one asked for on the command line, else the one saved for that game.</summary>
+    /// <param name="titleId">The game being played.</param>
+    /// <returns>A <see cref="OpenIGI.Game.Multiplayer.PlayerSkins"/> id.</returns>
+    public string LookFor(string titleId)
+    {
+        OpenIGI.Game.Multiplayer.PlayerLooks looks = OpenIGI.Game.Multiplayer.PlayerSkins.For(titleId);
+        return Skin.Length > 0 ? looks.Of(Skin).Id : looks.Own.Id;
+    }
+
     /// <summary>The usage text.</summary>
     public const string Usage =
         "Multiplayer options:\n" +
         "  -host                   host a room on the mission being played; friends join by its code\n" +
         "  -public                 list the hosted room in the server browser\n" +
         "  -instance <id>          host the room of a Discord Activity instance, carried by the room itself\n" +
-        "  -skin <id>              the look played in co-op: jones, anya, ekk, priboi, ...\n" +
+        "  -skin <id>              the look played in co-op, from the game's own list (coop_skin, coop_skin_igi2)\n" +
         "  -join <code>            join a room by its code\n" +
         "  -connect <host[:port]>  join a server by address (LAN or dedicated)\n" +
         "  -listen                 host a listen server on a UDP port, for LAN\n" +

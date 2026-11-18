@@ -50,10 +50,13 @@ internal abstract class CoopPair<TLevel> : IDisposable
     /// <param name="mode">The session's mode.</param>
     /// <param name="joinerMode">The mode the joiner believes it joins.</param>
     /// <param name="dedicated">Whether the server plays no part itself.</param>
+    /// <param name="joinerLook">The look the joiner asks to play in, a <see cref="OpenIGI.Game.Multiplayer.PlayerSkins"/> id; empty for none.</param>
+    /// <param name="hostLook">The host's own look; empty for none.</param>
     protected CoopPair(
         GameDataSource data, GameTitle title, string titleId,
-        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null, bool dedicated = false)
+        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null, bool dedicated = false, string joinerLook = "", string hostLook = "")
     {
+        _joinerLook = joinerLook;
         _data = data;
         _title = title;
         _titleId = titleId;
@@ -64,7 +67,7 @@ internal abstract class CoopPair<TLevel> : IDisposable
         string[] skip = hostSkipsIntro ? ["-skipcutscene"] : [];
         _session = new HostedSession(
             _network.Open(26001),
-            new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: !dedicated),
+            new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: !dedicated, HostSkin: hostLook),
             titleId,
             30,
             NullLogger.Instance);
@@ -192,7 +195,7 @@ internal abstract class CoopPair<TLevel> : IDisposable
     private SessionClient NewClient()
     {
         JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0);
-        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), _titleId, NullLogger.Instance, _joinerIdentity,
+        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty, Skin: _joinerLook), _titleId, NullLogger.Instance, _joinerIdentity,
             reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0))
         {
             Mode = _joinerMode,
@@ -205,6 +208,9 @@ internal abstract class CoopPair<TLevel> : IDisposable
     private readonly string _titleId;
 
     // The joiner's identity, kept across its reconnections as its game keeps its key file.
+    // The look the joiner asks to play in.
+    private readonly string _joinerLook;
+
     private readonly OpenIGI.Net.Identity.EcdsaPlayerIdentity _joinerIdentity = OpenIGI.Net.Identity.EcdsaPlayerIdentity.CreateEphemeral();
 
     // Frames run, the clock the joiner's line keeps.
