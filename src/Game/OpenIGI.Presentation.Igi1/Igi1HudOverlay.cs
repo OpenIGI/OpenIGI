@@ -188,7 +188,10 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model, messages: frame.TacticalMessages);
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        HudProjector? projector = modernPlayer.View is { } view
+        // Through the camera the frame was drawn from, between ticks, so a marker stays on what it marks as the view glides.
+        HudProjector? projector = frame.Eye is { } drawn
+            ? HudProjector.FromCamera(drawn, frame.HorizontalTangent, frame.Width, frame.Height)
+            : modernPlayer.View is { } view
             ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, WidescreenLens.HorizontalTangent(view.TanX, frame.Width, frame.Height), frame.Width, frame.Height)
             : null;
         _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 8f) with

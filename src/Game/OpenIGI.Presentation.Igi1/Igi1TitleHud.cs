@@ -75,6 +75,12 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
     /// <inheritdoc/>
     public void ShowMissionMessages(IReadOnlyList<StatusMessageDisplay> messages) => _messages = messages ?? [];
 
+    // The camera the frame was drawn from, when the host gave it: see ShowView.
+    private (Camera3D Eye, float TanX)? _view;
+
+    /// <inheritdoc/>
+    public void ShowView(Camera3D eye, float horizontalTangent) => _view = (eye, horizontalTangent);
+
     /// <inheritdoc/>
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic)
     {
@@ -140,9 +146,11 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
             Igi1HudTheme.Build(
                 rig, igi1.Human.Life.Health.RemainingFraction, _soldiers(), _messages.Where(static message => !message.IsCutscene), null,
                 worldPrompt: false, StatusScreenRenderer.IconFor, _model);
-            HudProjector? projector = rig.View is { } view
-                ? HudProjector.FromYawPitch(rig.Body.Eye, rig.Yaw, rig.Pitch, view.TanX, width, height)
-                : null;
+            HudProjector? projector = _view is { } drawn
+                ? HudProjector.FromCamera(drawn.Eye, drawn.TanX, width, height)
+                : rig.View is { } view
+                    ? HudProjector.FromYawPitch(rig.Body.Eye, rig.Yaw, rig.Pitch, view.TanX, width, height)
+                    : null;
             _remastered.Draw(batch, _model, Igi1HudTheme.Theme, _hud, HudFrame.FromSettings(width, height, scale, igi1.Ticks / 30f, crosshairSpread: 8f) with
             {
                 Projector = projector,

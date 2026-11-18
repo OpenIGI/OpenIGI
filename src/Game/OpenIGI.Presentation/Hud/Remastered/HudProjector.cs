@@ -30,6 +30,18 @@ public readonly record struct HudProjector(Vector3d Eye, Vector3f Right, Vector3
         return z > 0.0;
     }
 
+    /// <summary>
+    /// The view a frame was drawn from: the camera between ticks, as the picture under the display has it. A marker placed
+    /// through the tick's camera instead held still for a tick while the world slid under it, and jumped at the next.
+    /// </summary>
+    /// <param name="eye">The frame's camera, in metres; its rows are right, up and forward.</param>
+    /// <param name="tanX">The tangent of half the width the frame was projected through.</param>
+    /// <param name="width">The screen's width in pixels.</param>
+    /// <param name="height">The screen's height in pixels.</param>
+    /// <returns>The projector.</returns>
+    public static HudProjector FromCamera(in OpenIGI.Core.Graphics.Camera3D eye, float tanX, float width, float height) =>
+        new(eye.Position * WorldUnits.PerMetre, eye.Orientation.Row1, eye.Orientation.Row2, eye.Orientation.Row3, tanX, width, height);
+
     /// <summary>A view from yaw and pitch, as Project I.G.I.'s camera faces: forward is (sin yaw, cos yaw) on the ground.</summary>
     /// <param name="eye">Where the view is from.</param>
     /// <param name="yaw">The view's turn, in radians.</param>

@@ -37,6 +37,16 @@ public interface ITitleHudPresenter : IDisposable
     void ShowMissionMessages(IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> messages)
     {
     }
+
+    /// <summary>
+    /// Gives the display the camera the frame was drawn from, between ticks, so what it marks in the world is placed where the
+    /// picture shows it. Set before each <see cref="Draw"/>.
+    /// </summary>
+    /// <param name="eye">The frame's camera, in metres.</param>
+    /// <param name="horizontalTangent">The tangent of half the width the frame was projected through.</param>
+    void ShowView(Camera3D eye, float horizontalTangent)
+    {
+    }
 }
 
 /// <summary>Draws a title's heads-up display, in the shape the original drew it.</summary>

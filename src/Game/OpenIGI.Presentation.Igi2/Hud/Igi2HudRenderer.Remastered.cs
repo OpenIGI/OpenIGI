@@ -53,9 +53,11 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
         _model.AddMissionMessages(_missionMessages, firstKey: MissionMessageKeys);
         _icons ??= new Igi2HudIcons(() => _assets);
         float seconds = title.Human.Ticks / 30f;
-        // The player's view as the host draws it: the eye, the view's rows (right, up, forward) and its half width.
+        // The player's view as the host drew this frame, between ticks; the tick's own view only where the host gave none.
         OpenIGI.Core.Numerics.Matrix3f rows = title.ViewOrientation;
-        HudProjector projector = new(title.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(title.FieldOfViewScale, screenWidth, screenHeight), screenWidth, screenHeight);
+        HudProjector projector = _view is { } drawn
+            ? HudProjector.FromCamera(drawn.Eye, drawn.TanX, screenWidth, screenHeight)
+            : new(title.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(title.FieldOfViewScale, screenWidth, screenHeight), screenWidth, screenHeight);
         hud.Draw(batch, _model, Igi2HudTheme.Theme, _icons, HudFrame.FromSettings(screenWidth, screenHeight, requestedScale, seconds, crosshairSpread: 0f) with
         {
             Projector = projector,

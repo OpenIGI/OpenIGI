@@ -155,7 +155,9 @@ public sealed partial class GameHost
             UiScale.Resolve(
                 _options.UiScale != UiScale.Automatic ? _options.UiScale : HudCVars.RetailHudScale.Value,
                 _window.Width,
-                _window.Height));
+                _window.Height),
+            _inspectorEye,
+            _inspectorTangent);
     }
 
     /// <summary>The mission's status messages, for a title's player standing in it in the mission's own player's stead.</summary>
@@ -256,6 +258,7 @@ public sealed partial class GameHost
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             titleHud.ShowMissionMessages(GuestMissionMessages());
+            titleHud.ShowView(_inspectorEye, _inspectorTangent);
             titleHud.Draw(state.Batch, titleHudPlayer, _window.Width, _window.Height, _options.UiScale);
             state.Batch.End();
         }

@@ -24,6 +24,12 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
     /// <inheritdoc/>
     public void ShowMissionMessages(IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> messages) => _missionMessages = messages ?? [];
 
+    // The camera the frame was drawn from, when the host gave it: see ShowView.
+    private (OpenIGI.Core.Graphics.Camera3D Eye, float TanX)? _view;
+
+    /// <inheritdoc/>
+    public void ShowView(OpenIGI.Core.Graphics.Camera3D eye, float horizontalTangent) => _view = (eye, horizontalTangent);
+
     /// <inheritdoc/>
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic)
     {
