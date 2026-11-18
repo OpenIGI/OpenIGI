@@ -184,7 +184,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;
-        StatusMessageStep step = Step(_flow?.Tick ?? 0, () =>
+        StatusMessageStep step = Step(_flow?.Tick ?? 0, level.IsReplica ? SentByServer : () =>
         {
             _send ??= Igi2LevelExpressions.Create(SendScript, Name, level.Natives);
             return !_send.IsEmpty && level.Evaluate(_send) != 0.0;
@@ -198,6 +198,35 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
             level.RunChildren(this);
         }
     }
+
+    // On a co-op client: whether the server sent the line since this client last showed it. Its own send script weighed this
+    // client's world alone, and the lines shown on the two screens differed. A line the server had sent before this client
+    // joined is not shown again; one whose isSendt a script set back is shown again when the server sends it anew.
+    private bool SentByServer()
+    {
+        if (!_replicaPrimed)
+        {
+            _replicaPrimed = true;
+            _replicaShown = _isSent != 0;
+        }
+
+        if (_isSent == 0)
+        {
+            _replicaShown = false;
+            return false;
+        }
+
+        if (_replicaShown)
+        {
+            return false;
+        }
+
+        _replicaShown = true;
+        return true;
+    }
+
+    private bool _replicaPrimed;
+    private bool _replicaShown;
 
     /// <summary>A tick of the line itself, <c>StatusMessage_RunHandler</c>'s own part, on whichever clock it is shown by.</summary>
     /// <param name="now">The tick it is shown at: the level flow's, or the player's own where there is no level flow.</param>

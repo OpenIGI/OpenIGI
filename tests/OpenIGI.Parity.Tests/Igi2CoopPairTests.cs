@@ -1,9 +1,12 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Flow;
 using OpenIGI.Game.Igi2.Multiplayer;
+using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -158,6 +161,73 @@ public sealed class Igi2CoopPairTests
         Igi2NetworkHuman partner = Assert.Single(pair.Host.NetworkHumans);
         Assert.Equal(own, Carried(partner.Weapons!.Inventory));
         Assert.Equal(own, Carried(pair.Joiner!.Weapons!.Inventory));
+    }
+
+    /// <summary>
+    /// The mission's state on the joiner is the host's: every conditional container, area, cutscene and alarm holds what the
+    /// host's does once both have stood a moment. The joiner once worked each out from its own world -- its own player alone in
+    /// its areas, its own cameras, its own scripts -- and a trigger a partner set off fired on the host only.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_mission_state_is_the_hosts()
+    {
+        using Igi2CoopPair pair = Joined();
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 240);
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        pair.RunUntil(() => false, 45);
+
+        NativeRegistry hostNatives = pair.Host!.Level!.Natives;
+        NativeRegistry joinerNatives = pair.Joiner!.Level!.Natives;
+        string[] fields = [".isRun", ".nActive", ".isAlarm", ".isTrigger"];
+        List<string> differ = [];
+        int compared = 0;
+        foreach (string name in hostNatives.Names.Where(n => fields.Any(f => n.EndsWith(f, StringComparison.Ordinal))).Order(StringComparer.Ordinal))
+        {
+            if (!hostNatives.TryResolve(name, out QvmSymbol? host) || host.Variable is not { } hostVariable
+                || !joinerNatives.TryResolve(name, out QvmSymbol? joiner) || joiner.Variable is not { } joinerVariable)
+            {
+                continue;
+            }
+
+            compared++;
+            int there = hostVariable.Read().ToInt32(), here = joinerVariable.Read().ToInt32();
+            if (there != here)
+            {
+                differ.Add($"{name}: host {there}, joiner {here}");
+            }
+        }
+
+        Assert.True(compared > 10, $"only {compared} variables compared");
+        Assert.True(differ.Count == 0, string.Join("; ", differ));
+    }
+
+    /// <summary>
+    /// The joiner's containers and areas take the values their server's mirror writes, and act on them, rather than working
+    /// them out afresh from the joiner's own world: a container told it no longer runs takes its children out, and an area keeps
+    /// the count it was given.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_containers_and_areas_follow_the_values_the_server_writes()
+    {
+        using Igi2CoopPair pair = Joined();
+        pair.RunUntil(() => false, 30);
+        Igi2TitlePlayer joiner = pair.Joiner!;
+        ConditionalContainerTask container = joiner.LevelTasks().OfType<ConditionalContainerTask>()
+            .First(static c => c.IsRun && c.IsActive && c.Condition.Length > 0);
+        AreaActivateTask area = joiner.LevelTasks().OfType<AreaActivateTask>().First();
+
+        NativeRegistry natives = joiner.Level!.Natives;
+        Assert.True(natives.TryResolve($"{container.Name}.isRun", out QvmSymbol? isRun));
+        Assert.True(natives.TryResolve($"{area.Name}.nActive", out QvmSymbol? active));
+        isRun!.Variable!.TryWrite(QvmValue.FromInt32(0), out _);
+        pair.RunUntil(() => false, 1);
+        Assert.False(container.IsActive, $"{container.Name} kept its children in though its server said it no longer runs");
+
+        // The area's own run, straight after the write: a tick of the pair may already bring the server's next word.
+        active!.Variable!.TryWrite(QvmValue.FromInt32(7), out _);
+        area.Run(joiner.Level);
+        Assert.Equal(7, area.Active);
     }
 
     [RequiresTitleDataFact("igi2")]

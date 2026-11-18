@@ -261,8 +261,11 @@ public sealed partial class Igi2AlarmControlTask
             return;
         }
 
+        // A co-op client's alarm is the server's (isTrigger and isAlarm mirrored): weighed here it heard this client's own
+        // cameras and soldiers, which see this client's player alone, and blinked on and off at each mirror. Its sounding and
+        // falling silent are still told from here.
         _triggerExpression ??= Igi2LevelExpressions.Create(TriggerScript, Name, level.Natives);
-        if (!_triggerExpression.IsEmpty)
+        if (!level.IsReplica && !_triggerExpression.IsEmpty)
         {
             _isTrigger = (sbyte)LevelExpression.Truncate(level.Evaluate(_triggerExpression));
         }
@@ -273,7 +276,7 @@ public sealed partial class Igi2AlarmControlTask
         }
 
         _alarmExpression ??= Igi2LevelExpressions.Create(AlarmScript, Name, level.Natives);
-        if (!_alarmExpression.IsEmpty)
+        if (!level.IsReplica && !_alarmExpression.IsEmpty)
         {
             _isAlarm = (sbyte)LevelExpression.Truncate(level.Evaluate(_alarmExpression));
         }
