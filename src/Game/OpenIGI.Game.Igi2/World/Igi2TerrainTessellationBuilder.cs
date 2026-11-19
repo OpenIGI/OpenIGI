@@ -41,8 +41,10 @@ internal sealed class Igi2TerrainTessellationBuilder
     private readonly List<Bgra32> _lights = [];
     private readonly List<bool> _discarded = [];
     private readonly List<float> _weights = [];
-    private readonly Dictionary<long, int> _vertices = new(PackedKeyComparer.Instance);
-    private readonly Dictionary<long, EdgeDecision> _edges = new(PackedKeyComparer.Instance);
+    private readonly PackedKeyIntMap _vertices = new();
+
+    // Each edge's decision, packed (see EdgeDecision.Packed).
+    private readonly PackedKeyIntMap _edges = new();
     private readonly List<List<int>> _indices = [];
     private readonly List<List<int>> _baseIndices = [];
 
@@ -236,7 +238,7 @@ internal sealed class Igi2TerrainTessellationBuilder
         }
 
         int index = _positions.Count;
-        _vertices[key] = index;
+        _vertices.Set(key, index);
 
         Vector3d position = _owner.PositionOf(x, y);
         double trueZ = position.Z;
@@ -271,7 +273,7 @@ internal sealed class Igi2TerrainTessellationBuilder
         }
 
         int index = _positions.Count;
-        _vertices[key] = index;
+        _vertices.Set(key, index);
 
         double trueZ = _owner.HeightAt(x, y);
 
@@ -308,13 +310,13 @@ internal sealed class Igi2TerrainTessellationBuilder
     private EdgeDecision Decide(Square square, int edge, int a, int b)
     {
         long key = EdgeKey(a, b);
-        if (_edges.TryGetValue(key, out EdgeDecision cached))
+        if (_edges.TryGetValue(key, out int cached))
         {
-            return cached;
+            return EdgeDecision.Unpack(cached);
         }
 
         EdgeDecision decision = Evaluate(square, edge, a, b);
-        _edges[key] = decision;
+        _edges.Set(key, decision.Packed);
         return decision;
     }
 
@@ -581,5 +583,13 @@ internal sealed class Igi2TerrainTessellationBuilder
         };
     }
 
-    private readonly record struct EdgeDecision(bool Split, float Morph);
+    private readonly record struct EdgeDecision(bool Split, float Morph)
+    {
+        // An edge left whole always carries a morph of nought (Evaluate), so -1 stands for it, and a split edge is its morph's
+        // bits, which are never negative: the morph is at least nought.
+        public int Packed => Split ? BitConverter.SingleToInt32Bits(Morph) : -1;
+
+        public static EdgeDecision Unpack(int packed) =>
+            packed < 0 ? new EdgeDecision(false, 0f) : new EdgeDecision(true, BitConverter.Int32BitsToSingle(packed));
+    }
 }

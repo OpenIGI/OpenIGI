@@ -103,6 +103,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly List<ushort> _compact = [];
 
     private readonly List<(Tile Tile, Igi2TerrainTessellation Tessellation, Matrix4f ModelView)> _ready = [];
+
+    // The draws the last streamed frame issued, in order, which a frame tessellating to the same geometry issues again.
+    private readonly List<StreamedDraw> _streamedDraws = [];
+    private bool _streamedDrawsKnown;
+    private int _streamingTile;
+    private ChunkPass _streamingPass;
     private int _poolSlot;
     private int _poolUsed;
     private bool _disposed;
@@ -204,7 +210,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 tile.Centre,
                 CreateLightmap(device, tile),
                 tile.LightmapProjection(),
-                resolved));
+                resolved,
+                new Igi2TerrainStreamedGeometry()));
         }
 
         // The quadtree reads heights as it splits, every frame, so an edit shows on the next one; only its height bounds are
@@ -358,13 +365,9 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             frame.VerticalFieldOfView,
             frame.AspectRatio);
 
-        // Onto the pool the frames still in flight are not reading -- see ChunkPoolSlots.
-        _poolSlot = (_poolSlot + 1) % ChunkPoolSlots;
-        _poolUsed = 0;
-
-        int triangles = 0;
         int drawn = 0;
         int culled = 0;
+        bool unchanged = _streamedDrawsKnown;
 
         _ready.Clear();
         foreach (Tile tile in _tiles)
@@ -372,8 +375,53 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             Igi2TerrainTessellation tessellation = tile.Lod.TessellateFrame(view, _settings);
             drawn += tessellation.SquaresDrawn;
             culled += tessellation.SquaresCulled;
+            unchanged = unchanged && tile.Streamed.Matches(tessellation.Mesh);
             _ready.Add((tile, tessellation, frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity)));
         }
+
+        SquaresDrawn = drawn;
+        SquaresCulled = culled;
+
+        // The same ground as the last frame streamed: its chunks are still on the device, untouched, so they are drawn again
+        // from where the camera is now. The pool slot stays where it is -- nothing is written -- and the next frame that does
+        // stream moves on to a slot that was last read before this one's, so ChunkPoolSlots still holds.
+        if (unchanged)
+        {
+            ReplayStreamedDraws();
+        }
+        else
+        {
+            StreamGround();
+        }
+
+        _device.SetDepthState(DepthState.TestAndWrite);
+        _ready.Clear();
+    }
+
+    private void ReplayStreamedDraws()
+    {
+        ChunkPass? state = null;
+        foreach (StreamedDraw draw in _streamedDraws)
+        {
+            if (state != draw.Pass)
+            {
+                state = draw.Pass;
+                _device.SetDepthState(draw.Pass == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
+                _device.SetFogTarget(FogTargetOf(draw.Pass));
+            }
+
+            _device.DrawMesh(draw.Mesh, 0, draw.IndexCount, _ready[draw.Tile].ModelView, draw.Diffuse, draw.Detail, draw.Blend);
+        }
+    }
+
+    private void StreamGround()
+    {
+        // Onto the pool the frames still in flight are not reading -- see ChunkPoolSlots.
+        _poolSlot = (_poolSlot + 1) % ChunkPoolSlots;
+        _poolUsed = 0;
+        _streamedDraws.Clear();
+
+        int triangles = 0;
 
         // The original's three passes, in its order: every tile's bases, then every tile's overlays,
         // then every tile's lightmap. Globally rather than per tile -- an opaque base written after a
@@ -382,10 +430,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         for (int phase = 0; phase < 3; phase++)
         {
             ChunkPass which = (ChunkPass)phase;
+            _streamingPass = which;
             _device.SetDepthState(which == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
             _device.SetFogTarget(FogTargetOf(which));
-            foreach ((Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) in _ready)
+            for (int index = 0; index < _ready.Count; index++)
             {
+                (Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) = _ready[index];
+                _streamingTile = index;
                 if (which == ChunkPass.Lightmap)
                 {
                     if (tile.Lightmap.IsValid)
@@ -416,13 +467,25 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             }
         }
 
-        _device.SetDepthState(DepthState.TestAndWrite);
-        _ready.Clear();
+        foreach ((Tile tile, Igi2TerrainTessellation tessellation, _) in _ready)
+        {
+            tile.Streamed.Remember(tessellation.Mesh);
+        }
 
+        _streamedDrawsKnown = true;
         TriangleCount = triangles;
         ChunkCount = _poolUsed;
-        SquaresDrawn = drawn;
-        SquaresCulled = culled;
+    }
+
+    // An edit changes what the ground streams in ways the geometry copy may not see (a texture behind a material id), so
+    // every tile streams afresh.
+    private void ForgetStreamedDraws()
+    {
+        _streamedDrawsKnown = false;
+        foreach (Tile each in _tiles)
+        {
+            each.Streamed.Forget();
+        }
     }
 
     /// <inheritdoc/>
@@ -482,6 +545,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             each.Lod.ForgetFrame();
         }
+
+        ForgetStreamedDraws();
     }
 
     // Paint changed a tile's material ids; the quadtree reads them as it splits, so only the set of materials it draws passes
@@ -492,6 +557,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             _tiles[tile].Lod.RefreshMaterials();
         }
+
+        ForgetStreamedDraws();
     }
 
     /// <summary>Uploads the full-detail lightmap pass: every triangle once, at the tile's projection.</summary>
@@ -764,6 +831,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             texture.Diffuse,
             texture.Detail,
             blend);
+        _streamedDraws.Add(new StreamedDraw(_streamingTile, _streamingPass, mesh, _compact.Count, texture.Diffuse, texture.Detail, blend));
 
         int triangles = _compact.Count / 3;
         _remap.Clear();
@@ -880,5 +948,16 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         Vector3d Centre,
         TextureHandle Lightmap,
         (float ScaleX, float ScaleY, float OffsetX, float OffsetY) Projection,
-        Dictionary<int, (TextureHandle Diffuse, TextureHandle Detail)> Textures);
+        Dictionary<int, (TextureHandle Diffuse, TextureHandle Detail)> Textures,
+        Igi2TerrainStreamedGeometry Streamed);
+
+    // One chunk draw of a streamed frame: the tile whose model-view it takes, the pass whose depth and fog state it needs.
+    private readonly record struct StreamedDraw(
+        int Tile,
+        ChunkPass Pass,
+        MeshHandle Mesh,
+        int IndexCount,
+        TextureHandle Diffuse,
+        TextureHandle Detail,
+        BlendMode Blend);
 }

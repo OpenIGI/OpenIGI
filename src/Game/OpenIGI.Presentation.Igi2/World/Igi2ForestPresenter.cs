@@ -139,6 +139,9 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 [.. trunk],
                 [.. leaves],
                 [.. stand.Trees],
+                [.. stand.Trees.Select(static tree => OrientationOf(tree))],
+                new TextureHandle[stand.Trees.Count],
+                new TextureHandle[stand.Trees.Count],
                 Igi2ForestBsp.Build(stand.Trees, stand.Centre, stand.HalfExtent, height),
                 stand.Centre,
                 centre,
@@ -231,8 +234,9 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         // multiplied up. So the eye is converted rather than the forest -- the same division of labour
         // the ground's quadtree makes, and for the same reason.
         Camera3D view = new(WorldScene.ToUnits(camera.Position), camera.Orientation);
-        float biasScale = MathF.Sqrt(Igi2ForestLod.BiasSquaredOf(LodBias));
-        float biasInverse = Igi2ForestLod.BiasInverseOf(LodBias);
+        _cullEye = view.Position;
+        _cullBiasScale = MathF.Sqrt(Igi2ForestLod.BiasSquaredOf(LodBias));
+        _cullBiasInverse = Igi2ForestLod.BiasInverseOf(LodBias);
 
         for (int s = 0; s < _stands.Count; s++)
         {
@@ -248,14 +252,14 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 (float)(stand.Centre.Y - view.Position.Y),
                 (float)(stand.Centre.Z - view.Position.Z));
 
-            int index = s;
+            _cullStand = s;
             stand.Bsp.Cull(
                 planes,
                 offset,
                 stand.Margin,
                 stand.Radius,
                 stand.Height,
-                tree => Accept(index, tree, view, biasScale, biasInverse));
+                _accept ??= Accept);
         }
 
         VisibleTreeCount = _visible.Count;
@@ -278,7 +282,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 return;
             }
 
-            _visible.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
+            SortFarthestFirst();
             _blendedReference = RetailBlendedAlphaReference;
             return;
         }
@@ -298,9 +302,76 @@ public sealed class Igi2ForestPresenter : IForestPresenter
 
         // Back to front, which is what SortRender_AllocItem's key buys: it takes the view-space depth of
         // the face group's first vertex and the sort renderer replays the items in that order.
-        _visible.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
+        SortFarthestFirst();
         _blendedReference = IGraphicsDevice.DefaultAlphaReference;
     }
+
+    // The sort's working arrays, kept between frames.
+    private float[] _sortKeys = [];
+    private int[] _sortOrder = [];
+    private readonly List<Visible> _sorted = [];
+
+    /// <summary>Orders depths farthest first, as sorting with <c>(a, b) =&gt; b.CompareTo(a)</c> would, ties included.</summary>
+    /// <param name="depths">The depths, which the call overwrites; at least <paramref name="count"/> long.</param>
+    /// <param name="order">Receives the places of the depths in the order, farthest first.</param>
+    /// <param name="count">How many depths there are.</param>
+    /// <remarks>
+    /// The same introspective sort, run over the negated depths with their places carried beside them: comparing two negated
+    /// floats is the comparison exactly, so every step of the sort goes the same way.
+    /// </remarks>
+    public static void OrderFarthestFirst(float[] depths, int[] order, int count)
+    {
+        ArgumentNullException.ThrowIfNull(depths);
+        ArgumentNullException.ThrowIfNull(order);
+
+        for (int i = 0; i < count; i++)
+        {
+            depths[i] = -depths[i];
+            order[i] = i;
+        }
+
+        Array.Sort(depths, order, 0, count);
+    }
+
+    /// <summary>Puts the visible trees farthest first, the order the sort renderer replays blended foliage in.</summary>
+    /// <remarks>
+    /// The same introspective sort a comparison would run, over the negated depths with the trees' places carried beside
+    /// them: a compare of two negated floats is the comparison's <c>b.Depth.CompareTo(a.Depth)</c> exactly, so the order
+    /// comes out the same, ties included. Without a delegate call per compare, which was most of the sort in a browser.
+    /// </remarks>
+    private void SortFarthestFirst()
+    {
+        int count = _visible.Count;
+        if (_sortKeys.Length < count)
+        {
+            _sortKeys = new float[Math.Max(count, _sortKeys.Length * 2)];
+            _sortOrder = new int[_sortKeys.Length];
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            _sortKeys[i] = _visible[i].Depth;
+        }
+
+        OrderFarthestFirst(_sortKeys, _sortOrder, count);
+
+        _sorted.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            _sorted.Add(_visible[_sortOrder[i]]);
+        }
+
+        _visible.Clear();
+        _visible.AddRange(_sorted);
+    }
+
+    // What the cull's visitor reads: the stand being walked and the frame's eye and bias. Fields behind one delegate rather than
+    // a closure per stand per frame.
+    private Action<int>? _accept;
+    private int _cullStand;
+    private Vector3d _cullEye;
+    private float _cullBiasScale;
+    private float _cullBiasInverse;
 
     // The alpha cut the leaves left to blend are drawn at, or null when this frame's leaves were all cut out where the trunks are.
     private byte? _blendedReference;
@@ -454,19 +525,21 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         return (centre, MathF.Sqrt(furthest), max.Z - min.Z);
     }
 
-    private void Accept(int stand, int tree, in Camera3D camera, float biasScale, float biasInverse)
+    private void Accept(int tree)
     {
+        int stand = _cullStand;
         Stand owner = _stands[stand];
         ref readonly Igi2Tree placed = ref owner.Trees[tree];
+        Vector3d eye = _cullEye;
 
         // The model's centre is added to the camera-relative offset without being rotated by the tree,
         // which is what ForestRender_GetLOD does -- it takes the mesh centre straight off the model.
         Vector3f delta = new(
-            (float)(placed.Position.X - camera.Position.X) + owner.ModelCentre.X,
-            (float)(placed.Position.Y - camera.Position.Y) + owner.ModelCentre.Y,
-            (float)(placed.Position.Z - camera.Position.Z) + owner.ModelCentre.Z);
+            (float)(placed.Position.X - eye.X) + owner.ModelCentre.X,
+            (float)(placed.Position.Y - eye.Y) + owner.ModelCentre.Y,
+            (float)(placed.Position.Z - eye.Z) + owner.ModelCentre.Z);
 
-        float distance = delta.Length * biasScale;
+        float distance = delta.Length * _cullBiasScale;
         if (owner.Cutoff > 0f)
         {
             float scale = Math.Max(placed.Scale.X, Math.Max(placed.Scale.Y, placed.Scale.Z));
@@ -475,7 +548,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 scale,
                 [owner.Cutoff],
                 1,
-                biasInverse);
+                _cullBiasInverse);
 
             if (choice.Level == Igi2ForestLod.NotDrawn)
             {
@@ -506,31 +579,19 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     // grey. The grey rides as the length of the sun's direction in the tree's own frame.
     private void IssueLitTrunks(in Camera3D camera)
     {
-        foreach (Visible visible in _visible)
-        {
-            Stand stand = _stands[visible.Stand];
-            if (stand.Trunk.Length == 0)
-            {
-                continue;
-            }
-
-            ref readonly Igi2Tree tree = ref stand.Trees[visible.Tree];
-            Matrix3f orientation = OrientationOf(tree);
-            float grey = ((float)tree.Light.R + tree.Light.G + tree.Light.B) / (3f * 255f);
-            Vector3f sun = orientation.Transform(_towardsSun).NormalizedOrSelf() * grey;
-            _device.SetVertexSun(sun);
-            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), orientation);
-            foreach (Part part in stand.Trunk)
-            {
-                _device.DrawMesh(stand.Mesh, part.Subset.IndexOffset, part.Subset.IndexCount, modelView, part.Texture, TextureHandle.None, BlendMode.Opaque);
-            }
-        }
-
+        IssueTrees(camera, static s => s.Trunk, BlendMode.Opaque, doubled: false, lit: true);
         _device.SetVertexSun(Vector3f.Zero);
     }
 
-    private void IssueTrees(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled)
+    // Every visible tree's parts, in the visible order. Consecutive trees of one stand go to the device as a run of copies
+    // (DrawMeshInstances), which draws exactly what a draw per tree would: a lit tree carries its sun and no bake, any other
+    // tree its bake and the sun already set.
+    private void IssueTrees(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled, bool lit = false)
     {
+        int runStand = -1;
+        int count = 0;
+        Part[] runParts = [];
+
         foreach (Visible visible in _visible)
         {
             Stand stand = _stands[visible.Stand];
@@ -540,23 +601,70 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 continue;
             }
 
+            if (visible.Stand != runStand)
+            {
+                IssueRun(runStand, runParts, count, blend, lit);
+                runStand = visible.Stand;
+                runParts = parts;
+                count = 0;
+            }
+
             ref readonly Igi2Tree tree = ref stand.Trees[visible.Tree];
+            Matrix3f orientation = stand.Orientations[visible.Tree];
+
             // Drawn in metres: the frame's camera is, and so are the mesh's own vertices now.
-            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), OrientationOf(tree));
-            TextureHandle bake = BakeOf(tree.Light, doubled);
+            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), orientation);
+            MeshInstance instance;
+            if (lit)
+            {
+                float grey = ((float)tree.Light.R + tree.Light.G + tree.Light.B) / (3f * 255f);
+                instance = new MeshInstance(modelView, TextureHandle.None, orientation.Transform(_towardsSun).NormalizedOrSelf() * grey);
+            }
+            else
+            {
+                instance = new MeshInstance(modelView, BakeOf(stand, visible.Tree, doubled));
+            }
+
+            if (count == _instances.Length)
+            {
+                Array.Resize(ref _instances, count * 2);
+            }
+
+            _instances[count++] = instance;
+        }
+
+        IssueRun(runStand, runParts, count, blend, lit);
+    }
+
+    // One run of a stand's trees. With one part, that part across the run is the order a draw per tree gives; with more, each
+    // tree's parts must stay together, so the run goes tree by tree.
+    private void IssueRun(int stand, Part[] parts, int count, BlendMode blend, bool lit)
+    {
+        if (count == 0)
+        {
+            return;
+        }
+
+        MeshHandle mesh = _stands[stand].Mesh;
+        ReadOnlySpan<MeshInstance> run = _instances.AsSpan(0, count);
+        if (parts.Length == 1)
+        {
+            Part only = parts[0];
+            _device.DrawMeshInstances(mesh, only.Subset.IndexOffset, only.Subset.IndexCount, only.Texture, blend, run, lit);
+            return;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
             foreach (Part part in parts)
             {
-                _device.DrawMesh(
-                    stand.Mesh,
-                    part.Subset.IndexOffset,
-                    part.Subset.IndexCount,
-                    modelView,
-                    part.Texture,
-                    bake,
-                    blend);
+                _device.DrawMeshInstances(mesh, part.Subset.IndexOffset, part.Subset.IndexCount, part.Texture, blend, run.Slice(i, 1), lit);
             }
         }
     }
+
+    // The run being gathered, kept between frames.
+    private MeshInstance[] _instances = new MeshInstance[256];
 
     /// <summary>Gets the single-texel texture holding one tree's baked colour, doubled.</summary>
     /// <remarks>
@@ -583,6 +691,19 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// are all well under half.
     /// </para>
     /// </remarks>
+    private TextureHandle BakeOf(Stand stand, int tree, bool doubled)
+    {
+        // Each tree's handle is kept beside it after the first look-up: the bakes never change, and a dictionary probe for every
+        // visible tree every frame is not free in the browser.
+        TextureHandle[] kept = doubled ? stand.DoubledBakes : stand.Bakes;
+        if (!kept[tree].IsValid)
+        {
+            kept[tree] = BakeOf(stand.Trees[tree].Light, doubled);
+        }
+
+        return kept[tree];
+    }
+
     private TextureHandle BakeOf(Bgra32 light, bool doubled)
     {
         uint key = ((uint)light.R << 16) | ((uint)light.G << 8) | light.B | (doubled ? 0x8000_0000u : 0u);
@@ -616,6 +737,11 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         // An array, read in place: the trees are structs, and a tree read through IReadOnlyList for every visible tree every frame is
         // a copy and a call the browser's ahead-of-time compiler leaves to its interpreter.
         Igi2Tree[] Trees,
+        // Each tree's OrientationOf, made once: the trees never move, and the angles cost three sines and cosines a tree a frame.
+        Matrix3f[] Orientations,
+        // Each tree's bake texture, plain and doubled, filled in as BakeOf first meets it.
+        TextureHandle[] Bakes,
+        TextureHandle[] DoubledBakes,
         Igi2ForestBsp Bsp,
         Vector3d Centre,
         Vector3f ModelCentre,

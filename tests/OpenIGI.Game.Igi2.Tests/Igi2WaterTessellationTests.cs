@@ -93,6 +93,33 @@ public sealed class Igi2WaterTessellationTests
         Assert.Contains(vertices, static v => v.Position.X > 1f && v.DiffuseU == 0f);
     }
 
+    [Fact]
+    public void A_frame_from_remembered_ground_is_the_frame_from_asked_ground()
+    {
+        // A sloping shore, asked for once per point and counted: a second frame from a nearby eye reads most of its points
+        // from the memo, and must come out exactly as a tessellation that asks the ground for every one.
+        Igi2WaterSheet sheet = Sheet(200f, new Igi2WaterWave(8f, 0.5f, 1f, 0f)) with { AbsorptionLength = 4f };
+        int asked = 0;
+        Func<double, double, double?> ground = (x, _) =>
+        {
+            asked++;
+            return (x * 0.01) - (2.0 * Metre);
+        };
+
+        Igi2WaterTessellation kept = new();
+        Matrix3f view = Camera3D.LookRotation(0f, -0.3f);
+        kept.Build(sheet, Igi2WaterWaveField.For(sheet), 0.0, new Vector3f(0f, 0f, 3f * Metre), view, Projection, ground);
+        int first = asked;
+
+        Vector3f moved = new(0.25f * Metre, 0f, 3f * Metre);
+        kept.Build(sheet, Igi2WaterWaveField.For(sheet), 0.5, moved, view, Projection, ground);
+        Assert.True(asked - first < first / 2, $"the second frame asked for {asked - first} of {first} points again.");
+
+        Igi2WaterTessellation fresh = Build(sheet, moved, -0.3f, seconds: 0.5, ground: ground);
+        Assert.Equal(fresh.Vertices.ToArray(), kept.Vertices.ToArray());
+        Assert.Equal(fresh.Indices.ToArray(), kept.Indices.ToArray());
+    }
+
     private static Igi2WaterTessellation Build(
         Igi2WaterSheet sheet,
         Vector3f eye,
