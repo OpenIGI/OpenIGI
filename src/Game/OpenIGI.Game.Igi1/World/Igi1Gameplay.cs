@@ -74,6 +74,9 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <inheritdoc/>
     public ShotTally? PlayerShots => World.Player?.Shots;
 
+    /// <inheritdoc/>
+    public string PlayerWeapon => World.Player?.Weapons?.InHand?.Weapon.ScriptId ?? string.Empty;
+
     /// <summary>Gets what the mission's player is hurt and dies in.</summary>
     public Igi1MissionPlayerSurroundings PlayerSurroundings { get; }
 

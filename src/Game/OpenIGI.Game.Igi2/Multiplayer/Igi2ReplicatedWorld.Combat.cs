@@ -19,7 +19,7 @@ public sealed partial class Igi2ReplicatedWorld
     // Each player's health as last seen, to tell how much a hit took; each shooter's soldier hits and kills as last counted; and
     // the weapon and the head of each player's killing blow, for its death's line in the feed.
     private readonly Dictionary<int, float> _healthSeen = [];
-    private readonly Dictionary<ShotTally, (int Hits, int Kills)> _tallied = new(ReferenceEqualityComparer.Instance);
+    private readonly ShotTallyWatch _tallied = new();
     private readonly Dictionary<int, (string Weapon, bool Head)> _killingBlow = [];
 
     /// <inheritdoc/>
@@ -27,16 +27,10 @@ public sealed partial class Igi2ReplicatedWorld
     {
         foreach ((int entity, Igi2HumanPlayer human) in Players())
         {
-            ShotTally tally = human.Shots;
-            (int hits, int kills) = _tallied.GetValueOrDefault(tally, (tally.SoldierHits, tally.SoldierKills));
-            if (tally.SoldierHits > hits || tally.SoldierKills > kills)
+            if (_tallied.Take(human.Shots) is { } news)
             {
-                bool killed = tally.SoldierKills > kills;
-                _combat.Add(new CombatNote(
-                    entity, -1, 0f, killed, killed ? tally.LastKillHead : tally.LastHitHead, human.Position, WeaponOf(human)));
+                _combat.Add(new CombatNote(entity, -1, 0f, news.Killed, news.Head, human.Position, WeaponOf(human)));
             }
-
-            _tallied[tally] = (tally.SoldierHits, tally.SoldierKills);
         }
 
         if (_combat.Count == 0)

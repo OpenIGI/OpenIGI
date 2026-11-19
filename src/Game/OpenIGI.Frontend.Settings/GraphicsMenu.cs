@@ -574,6 +574,14 @@ public static class GraphicsMenu
             "Hit Sounds",
             "A short tick when a round hits and a deeper one when it kills."),
         new GraphicsSetting(
+            "hud_killfeed",
+            "Kill Feed",
+            "In multiplayer and co-op, the kills listed in the top right corner, with the weapon, and your own announced."),
+        new GraphicsSetting(
+            "hud_killfeed_singleplayer",
+            "Kill Feed in Single Player",
+            "The kill feed in single player too: each guard you kill listed in the top right corner, with the weapon and any headshot."),
+        new GraphicsSetting(
             "r_scope_glint",
             "Scope Glint",
             "A sniper who has you in his sights shows the glint of his scope, a flash of light where he is."),

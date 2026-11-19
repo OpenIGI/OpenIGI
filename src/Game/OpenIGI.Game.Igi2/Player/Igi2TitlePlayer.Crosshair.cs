@@ -19,6 +19,9 @@ public sealed partial class Igi2TitlePlayer
 
     /// <inheritdoc/>
     public ShotTally? PlayerShots => Human.Shots;
+
+    /// <inheritdoc/>
+    public string PlayerWeapon => Weapons?.Inventory.Current?.WeaponType.WeaponId ?? string.Empty;
     private long _shotsFired;
     private int _bulletsSeen = -1;
 

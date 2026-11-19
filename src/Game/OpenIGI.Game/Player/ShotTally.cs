@@ -66,4 +66,7 @@ public interface IShotTallySource
 {
     /// <summary>Gets the player's tally, or <see langword="null"/> while there is no player.</summary>
     ShotTally? PlayerShots { get; }
+
+    /// <summary>Gets the key of the weapon in the player's hands, as the kill feed draws it, or empty.</summary>
+    string PlayerWeapon => string.Empty;
 }

@@ -127,7 +127,9 @@ public sealed partial class GameHost
     /// </summary>
     private void PlayHitSounds()
     {
-        ShotTally? tally = (TitlePlayer as IShotTallySource)?.PlayerShots ?? (_hosted as IShotTallySource)?.PlayerShots;
+        IShotTallySource? source = TitlePlayer is IShotTallySource { PlayerShots: not null } own ? own : _hosted as IShotTallySource;
+        ShotTally? tally = source?.PlayerShots;
+        NoteSoloKills(source, tally);
 
         // A session's hits on its other players come from its server: counted into the same tally, so they mark and sound as a
         // soldier's do, in either display.

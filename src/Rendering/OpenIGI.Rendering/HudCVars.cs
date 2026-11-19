@@ -178,6 +178,13 @@ public static class HudCVars
     public static readonly BoolCVar KillFeed = CVar.Bool(
         "hud_killfeed", true, CVarOptions.Archive, "In multiplayer and co-op, list the kills in the top right corner and announce your own.");
 
+    /// <summary>Whether a single-player mission lists the player's kills of the level's soldiers as a session's feed does.</summary>
+    public static readonly BoolCVar KillFeedSinglePlayer = CVar.Bool(
+        "hud_killfeed_singleplayer",
+        false,
+        CVarOptions.Archive,
+        "In single player too, list your kills of the level's soldiers in the top right corner, with the weapon and any headshot.");
+
     /// <summary>Whether the crosshair marks a hit and confirms a kill.</summary>
     public static readonly BoolCVar HitMarkers = Presets.DefineInterface(
         CVar.Bool(
