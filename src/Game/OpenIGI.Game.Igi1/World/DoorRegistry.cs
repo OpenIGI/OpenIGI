@@ -286,29 +286,8 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
 
     /// <summary>The door nearest a point — the walker's query, with no radius cap.</summary>
     /// <param name="near">Where to search from, in world units.</param>
-    /// <returns>The nearest door's state, or <see langword="null"/> when the level ships none.</returns>
-    public DoorState? Nearest(Vector3d near)
-    {
-        DoorState? best = null;
-        double bestDistance = -1.0;
-
-        foreach (PlacedDoor door in _doors)
-        {
-            double dx = door.Position.X - near.X;
-            double dy = door.Position.Y - near.Y;
-            double dz = door.Position.Z - near.Z;
-            double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-
-            // The sentinel starts negative, so the first answer always wins -- sub_446470's test.
-            if (bestDistance < 0.0 || distance < bestDistance)
-            {
-                bestDistance = distance;
-                best = door.State;
-            }
-        }
-
-        return best;
-    }
+    /// <returns>The nearest door, or <see langword="null"/> when the level ships none.</returns>
+    public IAiDoor? Nearest(Vector3d near) => IAiDoor.Nearest(_doors, near);
 
     /// <summary>Gets the live draw transform for a door placement.</summary>
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation)

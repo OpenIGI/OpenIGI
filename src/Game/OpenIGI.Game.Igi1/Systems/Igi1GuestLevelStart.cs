@@ -51,6 +51,9 @@ public sealed record Igi1GuestLevelStart(IHostCollisionWorld World, IAiPlayer Pl
     /// <summary>Gets what the soldiers' rounds' damage is multiplied by as it strikes what the level holds.</summary>
     public float DamageToHost { get; init; } = 1f;
 
+    /// <summary>Gets the level's doors, which a soldier walking its graph opens and waits on as it does its own game's.</summary>
+    public IReadOnlyList<IAiDoor> Doors { get; init; } = [];
+
     /// <summary>Gets what the soldiers' sounds play through, or <see langword="null"/> for silence.</summary>
     public ITitleAudio? Audio { get; init; }
 

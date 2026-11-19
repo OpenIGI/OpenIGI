@@ -41,6 +41,9 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
     /// <summary>Gets or sets what an AI's input-channel activation reaches in the live world.</summary>
     public Action<int>? TaskActivator { get; set; }
 
+    /// <summary>Gets or sets the doors of another game's level the soldiers stand in, or <see langword="null"/> in the game's own.</summary>
+    public IReadOnlyList<IAiDoor>? HostDoors { get; set; }
+
     /// <summary>Gets or sets the level's live StationaryGun tasks, which gunner AIs are connected to.</summary>
     public WorldInteractionRegistry? Interactions { get => _context.Interactions; set => _context.Interactions = value; }
 
@@ -182,6 +185,11 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                 if (doors is { } levelDoors)
                 {
                     brain.SetDoorQuery(levelDoors.Nearest);
+                }
+                else if (HostDoors is { } hostDoors)
+                {
+                    // Another game's level, whose doors a soldier opens as it opens its own.
+                    brain.SetDoorQuery(near => IAiDoor.Nearest(hostDoors, near));
                 }
                 if (levelRoot is not null)
                 {

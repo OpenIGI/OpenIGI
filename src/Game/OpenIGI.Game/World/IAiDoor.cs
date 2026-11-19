@@ -30,4 +30,32 @@ public interface IAiDoor
 
     /// <summary>Opens it, as a soldier at it does.</summary>
     void OpenForSoldier();
+
+    /// <summary>The door nearest a point, as a walking soldier asks once a hop (<c>sub_446470</c>): of all of them, with no radius cap.</summary>
+    /// <param name="doors">The level's doors.</param>
+    /// <param name="near">Where to search from, in world units.</param>
+    /// <returns>The nearest door, or <see langword="null"/> when the level holds none.</returns>
+    static IAiDoor? Nearest(IEnumerable<IAiDoor> doors, Vector3d near)
+    {
+        ArgumentNullException.ThrowIfNull(doors);
+        IAiDoor? best = null;
+        double bestDistance = -1.0;
+        foreach (IAiDoor door in doors)
+        {
+            Vector3d at = door.DoorPosition;
+            double dx = at.X - near.X;
+            double dy = at.Y - near.Y;
+            double dz = at.Z - near.Z;
+            double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+
+            // The sentinel starts negative, so the first answer always wins -- sub_446470's test.
+            if (bestDistance < 0.0 || distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = door;
+            }
+        }
+
+        return best;
+    }
 }

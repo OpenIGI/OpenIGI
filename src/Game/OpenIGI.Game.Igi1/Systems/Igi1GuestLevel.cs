@@ -154,7 +154,28 @@ public sealed class Igi1GuestLevel
         }
 
         Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
-        rig.Humans = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
+        // Its rounds meet the level's humans body by body; one they do not stop is the level's to take -- its glass, its cameras,
+        // its barrels -- through the level's own collision.
+        HumanShot bodies = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
+        Igi1HostStrikes strikes = new(world);
+        float toHost = start.DamageToHost;
+        rig.Humans = (
+            Core.Numerics.Vector3d origin,
+            Core.Numerics.Vector3d end,
+            float damageFactor,
+            Game.Weapons.WeaponCategory category,
+            double stopDistance,
+            bool alreadyHeard,
+            out HumanHit hit) =>
+        {
+            if (bodies(origin, end, damageFactor, category, stopDistance, alreadyHeard, out hit))
+            {
+                return true;
+            }
+
+            strikes.Strike(origin, end, damageFactor * toHost, start.Task, category);
+            return false;
+        };
 
         if (start.Surroundings is Igi1GuestPlayerSurroundings heard)
         {
@@ -266,6 +287,7 @@ public sealed class Igi1GuestLevel
         };
 
         IReadOnlyList<SoldierLoadedGroup> groups = soldiers.Load(_content.Mission, Root, world.Ground, world.Cast);
+        soldiers.UseHostDoors(start.Doors);
         soldiers.Animate(
             start.Graphs,
             sight,

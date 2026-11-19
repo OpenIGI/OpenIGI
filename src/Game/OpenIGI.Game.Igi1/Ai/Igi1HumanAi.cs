@@ -564,10 +564,10 @@ public sealed partial class Igi1HumanAi
     /// radius cap</b>. The search runs once per door hop (<c>ai+15946</c>) and the handle is dropped
     /// when the waypoint is reached.
     /// </remarks>
-    public delegate DoorState? DoorQuery(Vector3d near);
+    public delegate IAiDoor? DoorQuery(Vector3d near);
 
     private DoorQuery? _doors;
-    private DoorState? _doorAtHop;
+    private IAiDoor? _doorAtHop;
     private bool _doorSearched;
 
     /// <summary>Gives the walker its door lookup.</summary>

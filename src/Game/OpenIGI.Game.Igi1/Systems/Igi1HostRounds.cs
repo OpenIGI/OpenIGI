@@ -114,16 +114,14 @@ internal sealed class Igi1HostRounds(
                     soldier.View, soldier.Hit, round.Origin, end, round.Weapon, round.DamageFactor, round.Shooter as SoldierView);
                 break;
             case LevelContact { Collider.Handler: IWeaponHitTarget target } level:
-                float length = MathF.Sqrt((travel.X * travel.X) + (travel.Y * travel.Y) + (travel.Z * travel.Z));
-                Vector3f along = length > 0f ? new Vector3f(travel.X / length, travel.Y / length, travel.Z / length) : default;
-                target.WeaponHit(new WeaponHit(
+                Igi1HostStrikes.Deliver(
+                    target,
                     level.Position,
                     level.Normal,
                     round.DamageFactor * DamageScale,
-                    along,
+                    travel,
                     (round.Shooter as SoldierView)?.Soldier,
-                    Context: null,
-                    round.Weapon.Category));
+                    round.Weapon.Category);
                 break;
         }
     }

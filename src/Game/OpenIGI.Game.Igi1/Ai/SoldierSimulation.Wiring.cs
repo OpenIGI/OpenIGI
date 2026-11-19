@@ -359,6 +359,13 @@ public sealed partial class SoldierSimulation
         // placement here can mistake a nearby dormant vehicle for the actor's support.
     }
 
+    /// <summary>
+    /// Gives the soldiers the doors of another game's level they stand in, which each opens and waits on as it walks its graph
+    /// (<see cref="IAiDoor"/>); the game's own levels give their doors through <see cref="SetDoors"/>.
+    /// </summary>
+    /// <param name="doors">The level's doors.</param>
+    public void UseHostDoors(IReadOnlyList<IAiDoor> doors) => _brains.HostDoors = doors is { Count: > 0 } ? doors : null;
+
     /// <summary>Gives the renderer the level's moving elevators.</summary>
     /// <param name="elevators">The elevator registry, or <see langword="null"/>.</param>
     public void SetElevators(ElevatorRegistry? elevators) => _elevators = elevators;

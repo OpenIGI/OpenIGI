@@ -27,4 +27,7 @@ public sealed record Igi1GuestPlayerStart(HumanPlayerTask Task, ObjectCollisionI
 
     /// <summary>Gets the level's material row for a human, which a line going into the player enters.</summary>
     public int HumanMaterial { get; init; }
+
+    /// <summary>Gets what its rounds' damage is multiplied by as it strikes what the level holds.</summary>
+    public float DamageToHost { get; init; } = 1f;
 }
