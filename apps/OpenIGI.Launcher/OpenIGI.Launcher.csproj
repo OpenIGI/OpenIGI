@@ -9,6 +9,8 @@
          draw, through Skia onto a plain OpenGL window, and references none of the game itself. -->
     <OutputType>WinExe</OutputType>
     <AssemblyName>OpenIGI.Launcher</AssemblyName>
+    <!-- The file description Windows shows beside the signature (Properties, SmartScreen, the UAC prompt). -->
+    <AssemblyTitle>OpenIGI Launcher</AssemblyTitle>
     <ApplicationIcon>..\..\src\Platform\OpenIGI.Platform.Desktop\Assets\openigi-launcher.ico</ApplicationIcon>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- The window is sized to the screen through GLFW directly, whose calls take native pointers. -->

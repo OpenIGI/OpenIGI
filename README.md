@@ -170,6 +170,9 @@ checks as git hooks.
 OpenIGI is licensed under the [GNU General Public License v3.0](LICENSE). Third-party components are listed in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
+Free code signing for the Windows builds is provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). [Code signing policy](https://openigi.com/code-signing/).
+
 OpenIGI is a clean-room reimplementation for use with game data you already own. It is not affiliated with or endorsed
 by the owners of _Project I.G.I._ or _I.G.I. 2_. All trademarks belong to their respective owners. The repository
 contains no game assets, original source code or decompiler output, and contributions that include them are not

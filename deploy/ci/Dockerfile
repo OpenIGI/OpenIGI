@@ -13,8 +13,9 @@ ARG GH_VERSION=2.102.0
 # zip for the Windows archives; openssh-client and rsync for the VM deploys; libopenal1 because the
 # OpenAL backend's tests load it; jq for the workflows' small JSON reads. Mesa's software OpenGL (llvmpipe),
 # a virtual X server and the X libraries GLFW opens, so the OpenGL backend's tests draw on a runner with no GPU.
+# osslsigncode checks the Authenticode signatures on the Windows downloads (release.yml).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends zip unzip xz-utils jq openssh-client rsync libopenal1 python3 \
+ && apt-get install -y --no-install-recommends zip unzip xz-utils jq openssh-client rsync libopenal1 python3 osslsigncode \
       libgl1 libgl1-mesa-dri libglx-mesa0 libegl1 xvfb xauth \
       libx11-6 libxrandr2 libxi6 libxcursor1 libxinerama1 libxext6 \
  && rm -rf /var/lib/apt/lists/*

@@ -21,6 +21,9 @@
 # finds the Vulkan loader. A loose executable on macOS is treated as a background process; the bundle is
 # ad-hoc signed (codesign on a Mac, rcodesign elsewhere), because Apple silicon runs nothing unsigned.
 #
+# The Windows executables leave here unsigned: release.yml has them Authenticode-signed by SignPath before
+# their hashes go into the manifest (tools/release/signpath/release.xml says what gets signed).
+#
 # The web build is not a download: it is packed into artifacts/web for the site deploy.
 set -euo pipefail
 
@@ -136,8 +139,14 @@ if [[ "$RID" == osx-* ]]; then
     mv "$APP/Contents/MacOS/libvulkan.1.dylib" "$APP/Contents/Frameworks/libvulkan.1.dylib"
   fi
 
+  # Ad-hoc, without the hardened runtime: that needs JIT entitlements for .NET and buys nothing unnotarized.
+  # Inside out, as Apple asks (codesign --deep is deprecated): every native library, then the bundle, which seals
+  # the main executable and the managed assemblies beside it. rcodesign walks the bundle the same way itself.
+  # release.yml's macos job checks the result with codesign --verify --strict on a Mac.
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP"
+    find "$APP/Contents" -type f \( -name '*.dylib' -o -name '*.so' \) -print0 \
+      | while IFS= read -r -d '' library; do codesign --force --sign - --timestamp=none "$library"; done
+    codesign --force --sign - --timestamp=none "$APP"
   elif command -v rcodesign >/dev/null 2>&1; then
     rcodesign sign "$APP"
   else

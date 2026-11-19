@@ -89,6 +89,9 @@ internal static class SiteWriter
 
         // What signing in with Discord keeps, and how to have it removed.
         Text(output, "privacy/index.html", PrivacyPage.Html);
+
+        // Who signs the Windows downloads and how, as SignPath Foundation requires of the projects it signs for.
+        Text(output, "code-signing/index.html", CodeSigningPage.Html);
         Text(output, "healthz", $"ok {releases.Count} release(s) {content.Count} content version(s)\n");
     }
 
