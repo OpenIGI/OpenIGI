@@ -349,6 +349,31 @@ internal sealed class DebugOverlays(
             device.EndStageTiming();
         }
 
+        // The live sight tuning's panel (g_ads_tune): the held weapon's changes and the keys, and a reticle on the screen's
+        // middle, where the sights belong.
+        if (Game.Player.Aim.AdsTuningCVars.Tune.Value && !state.ShowDebug && host.Overlay is { IsReady: true } tuningOverlay)
+        {
+            device.BeginStageTiming(RenderStage.DebugRendering);
+            device.Set2DProjection(host.SafeWindowWidth, host.SafeWindowHeight);
+            state.Batch.Begin();
+            debugPanelHeight = tuningOverlay.Draw(state.Batch, [.. Game.Player.Aim.AdsLiveTuning.Describe()], window.Width, window.Height);
+            float mx = window.Width * 0.5f;
+            float my = window.Height * 0.5f;
+            static Bgra32 Red() => new(255, 60, 60, 200);
+            void Line(float x0, float y0, float x1, float y1) => state.Batch.DrawQuad(
+                TextureHandle.None,
+                new Vertex2D(x0, y0, 0f, 0f, Red()),
+                new Vertex2D(x1, y0, 1f, 0f, Red()),
+                new Vertex2D(x1, y1, 1f, 1f, Red()),
+                new Vertex2D(x0, y1, 0f, 1f, Red()));
+            Line(mx - 14f, my - 0.5f, mx - 4f, my + 0.5f);
+            Line(mx + 4f, my - 0.5f, mx + 14f, my + 0.5f);
+            Line(mx - 0.5f, my - 14f, mx + 0.5f, my - 4f);
+            Line(mx - 0.5f, my + 4f, mx + 0.5f, my + 14f);
+            state.Batch.End();
+            device.EndStageTiming();
+        }
+
         // r_perflog, its own overlay rather than a section of F12's: it answers a different question
         // and is read while the game is being played rather than while it is being inspected. Top
         // right, so the two can be up together. When F12 is also enabled, place this panel below

@@ -2,7 +2,8 @@
 //
 // rear / front: the rear sight and the tip of the front post, in metres in the frame of the bone the weapon hangs on
 // (x right, y along the barrel, z up), measured off each shipped model's mesh at its stand pose.
-// relief: how far ahead of the eye the rear sight sits when aimed, in metres.
+// relief: how far ahead of the eye the rear sight sits when aimed, in metres. A weapon tuned in game (g_ads_tune, the numpad)
+// carries its own relief, view-model tangent and zoom over its class's.
 // in / out: seconds to come up to the eye and to go back down.
 // zoom: magnification through the sights. viewModelTan: the arms' and weapon's half-angle tangent there (hip: 0.577).
 // spread / recoil / move / sway: what the full aim makes of the hip's cone, kick, speed and sway.
@@ -13,37 +14,37 @@
 {
   "classes": {
     "pistol": {
-      "in": 0.15, "out": 0.12, "zoom": 1.10, "viewModelTan": 0.55, "relief": 0.30,
+      "in": 0.15, "out": 0.12, "zoom": 1.10, "viewModelTan": 0.58, "relief": 0.30,
       "spread": 0.35, "recoil": 0.80, "move": 0.85, "sway": 0.30, "steady": 0.60,
       "kick": { "back": 0.014, "up": 0.006, "pitch": 3.0, "yaw": 0.8, "roll": 2.0 }, "aimedKick": 0.60,
       "mount": false
     },
     "smg": {
-      "in": 0.20, "out": 0.15, "zoom": 1.25, "viewModelTan": 0.50, "relief": 0.20,
+      "in": 0.20, "out": 0.15, "zoom": 1.25, "viewModelTan": 0.60, "relief": 0.27,
       "spread": 0.30, "recoil": 0.70, "move": 0.75, "sway": 0.25, "steady": 0.70,
       "kick": { "back": 0.010, "up": 0.003, "pitch": 1.4, "yaw": 0.5, "roll": 1.0 }, "aimedKick": 0.55,
       "mount": true
     },
     "rifle": {
-      "in": 0.26, "out": 0.18, "zoom": 1.35, "viewModelTan": 0.48, "relief": 0.16,
+      "in": 0.26, "out": 0.18, "zoom": 1.35, "viewModelTan": 0.60, "relief": 0.20,
       "spread": 0.22, "recoil": 0.65, "move": 0.65, "sway": 0.20, "steady": 0.75,
       "kick": { "back": 0.012, "up": 0.004, "pitch": 1.8, "yaw": 0.6, "roll": 1.2 }, "aimedKick": 0.55,
       "mount": true
     },
     "lmg": {
-      "in": 0.38, "out": 0.26, "zoom": 1.30, "viewModelTan": 0.50, "relief": 0.17,
+      "in": 0.38, "out": 0.26, "zoom": 1.30, "viewModelTan": 0.62, "relief": 0.22,
       "spread": 0.30, "recoil": 0.70, "move": 0.50, "sway": 0.25, "steady": 0.75,
       "kick": { "back": 0.012, "up": 0.005, "pitch": 1.5, "yaw": 0.7, "roll": 1.0 }, "aimedKick": 0.55,
       "mount": true
     },
     "shotgun": {
-      "in": 0.26, "out": 0.18, "zoom": 1.15, "viewModelTan": 0.52, "relief": 0.20,
+      "in": 0.26, "out": 0.18, "zoom": 1.15, "viewModelTan": 0.62, "relief": 0.22,
       "spread": 0.80, "recoil": 0.80, "move": 0.70, "sway": 0.30, "steady": 0.65,
       "kick": { "back": 0.025, "up": 0.010, "pitch": 5.0, "yaw": 1.2, "roll": 2.5 }, "aimedKick": 0.65,
       "mount": true
     },
     "launcher": {
-      "in": 0.42, "out": 0.30, "zoom": 1.40, "viewModelTan": 0.50, "relief": 0.12,
+      "in": 0.42, "out": 0.30, "zoom": 1.40, "viewModelTan": 0.62, "relief": 0.22,
       "spread": 0.60, "recoil": 0.85, "move": 0.50, "sway": 0.25, "steady": 0.75,
       "kick": { "back": 0.030, "up": 0.012, "pitch": 4.0, "yaw": 1.0, "roll": 1.5 }, "aimedKick": 0.70,
       "mount": true
@@ -57,18 +58,18 @@
     }
   },
   "weapons": {
-    "WEAPON_ID_GLOCK":       { "class": "pistol",   "rear": [0.0020, -0.070, 0.0377], "front": [0.0003, 0.117, 0.0348] },
-    "WEAPON_ID_COLT":        { "class": "pistol",   "rear": [0.0000,  0.000, 0.0634], "front": [-0.0010, 0.213, 0.0687] },
-    "WEAPON_ID_DESERTEAGLE": { "class": "pistol",   "rear": [0.0014, -0.059, 0.0360], "front": [-0.0016, 0.133, 0.0365],
+    "WEAPON_ID_GLOCK":       { "class": "pistol", "rear": [0.0000, -0.0700, 0.0397], "front": [-0.0017, 0.1170, 0.0344], "relief": 0.280, "viewModelTan": 0.530, "zoom": 1.10 },
+    "WEAPON_ID_COLT":        { "class": "pistol", "rear": [0.0020, 0.0000, 0.0774], "front": [0.0010, 0.2130, 0.0678], "relief": 0.370, "viewModelTan": 0.520, "zoom": 1.10 },
+    "WEAPON_ID_DESERTEAGLE": { "class": "pistol", "rear": [0.0014, -0.0590, 0.0400], "front": [-0.0016, 0.1330, 0.0338], "relief": 0.310, "viewModelTan": 0.590, "zoom": 1.10,
                                "kick": { "back": 0.020, "up": 0.010, "pitch": 5.0, "yaw": 1.2, "roll": 3.0 } },
-    "WEAPON_ID_UZI":         { "class": "smg",      "rear": [0.0000, -0.130, 0.0578], "front": [0.0000, 0.190, 0.0535] },
-    "WEAPON_ID_MP5SD":       { "class": "smg",      "rear": [0.0047,  0.050, 0.0340], "front": [0.0003, 0.300, 0.0340], "zoom": 1.6 },
-    "WEAPON_ID_AK47":        { "class": "rifle",    "rear": [0.0026,  0.220, 0.0439], "front": [-0.0017, 0.670, 0.0561] },
-    "WEAPON_ID_M16A2":       { "class": "rifle",    "rear": [0.0000, -0.016, 0.0845], "front": [0.0000, 0.395, 0.0780] },
+    "WEAPON_ID_UZI":         { "class": "smg", "rear": [0.0000, -0.1300, 0.0578], "front": [0.0000, 0.1900, 0.0381], "relief": 0.270, "viewModelTan": 0.530, "zoom": 1.25 },
+    "WEAPON_ID_MP5SD":       { "class": "smg", "rear": [0.0047, 0.0500, 0.0420], "front": [0.0003, 0.3000, 0.0420], "relief": 0.270, "viewModelTan": 0.420, "zoom": 1.60 },
+    "WEAPON_ID_AK47":        { "class": "rifle", "rear": [-0.0010, 0.2200, 0.0579], "front": [-0.0010, 0.6700, 0.0406], "relief": 0.200, "viewModelTan": 0.780, "zoom": 1.35 },
+    "WEAPON_ID_M16A2":       { "class": "rifle", "rear": [0.0000, -0.0160, 0.1045], "front": [0.0000, 0.3950, 0.0765], "relief": 0.200, "viewModelTan": 0.600, "zoom": 1.35 },
     "WEAPON_ID_MINIMI":      { "class": "lmg",      "rear": [0.0000, -0.057, 0.0796], "front": [0.0003, 0.454, 0.0779] },
-    "WEAPON_ID_SPAS12":      { "class": "shotgun",  "rear": [0.0010,  0.220, 0.0900], "front": [0.0010, 0.730, 0.0900] },
+    "WEAPON_ID_SPAS12":      { "class": "shotgun", "rear": [0.0010, 0.2200, 0.1200], "front": [0.0010, 0.7300, 0.0461], "relief": 0.260, "viewModelTan": 0.620, "zoom": 1.15 },
     "WEAPON_ID_JACKHAMMER":  { "class": "shotgun",  "rear": [0.0000, -0.060, 0.1207], "front": [0.0000, 0.255, 0.1207] },
-    "WEAPON_ID_RPG18":       { "class": "launcher", "rear": [-0.0630, -0.134, 0.1846], "front": [-0.0630, 0.440, 0.1846] },
+    "WEAPON_ID_RPG18":       { "class": "launcher", "rear": [0.0000, -0.1340, 0.2650], "front": [0.0000, 0.4400, 0.2399], "relief": 0.180, "viewModelTan": 0.620, "zoom": 1.40 },
     "WEAPON_ID_UZIX2":       { "class": "dual" }
   }
 }

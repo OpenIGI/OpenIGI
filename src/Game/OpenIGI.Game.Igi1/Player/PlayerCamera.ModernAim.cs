@@ -46,8 +46,14 @@ public sealed partial class PlayerCamera
     // The frame as the original's machines are to see it. For a weapon with sights, the alternate-fire button is the sights' and
     // the underbarrel key takes its place, so the M16's launcher fires from it; any other weapon -- the Dragunov's scope, the
     // binoculars -- keeps its own. Read here, before the machines run, so the aim and the launcher answer the same tick.
-    private PlayerInputFrame TakeModernAimInput(in PlayerInputFrame frame)
+    private PlayerInputFrame TakeModernAimInput(in PlayerInputFrame given)
     {
+        PlayerInputFrame frame = given;
+        if (AdsTuningCVars.Fire.Value)
+        {
+            frame[(int)PlayerInputSlot.Fire] = (ulong)PlayerAction.Fire;
+        }
+
         _lastRawFrame = frame;
         _modernAim = ModernAimSource?.Invoke() ?? ModernAimOptions.Current;
         _aimWasHeld = _aimHeld;
@@ -58,7 +64,7 @@ public sealed partial class PlayerCamera
         }
 
         PlayerInputFrame taken = frame;
-        _aimHeld = taken.IsSet(PlayerInputSlot.AlternateFire);
+        _aimHeld = taken.IsSet(PlayerInputSlot.AlternateFire) || AdsTuningCVars.Force.Value;
         taken[(int)PlayerInputSlot.AlternateFire] = taken.IsSet(PlayerInputSlot.Underbarrel)
             ? (ulong)PlayerAction.AlternateFire
             : 0f;
@@ -69,8 +75,9 @@ public sealed partial class PlayerCamera
     // sights up only with a ready weapon in hands that are free, on feet that are on the ground.
     private void TickAds()
     {
+        TakeDebugWeapon();
         AdsProfile? profile = _modernAim.Enabled && AimProfiles.TryGet(_weapons?.InHand?.Weapon.ScriptId, out AdsProfile found)
-            ? found
+            ? AdsLiveTuning.Apply(found)
             : null;
         bool free = !_ladder.IsOnLadder
             && _interaction.Active is null
@@ -84,7 +91,7 @@ public sealed partial class PlayerCamera
         _ads.Tick(_modernAim, profile, aimHeld, _aimHeld && !_aimWasHeld, canAim);
         TickLean(free);
 
-        if (!ReferenceEquals(profile, _adsReferenceFor))
+        if (!Equals(profile, _adsReferenceFor))
         {
             _adsReferenceFor = profile;
             _adsReference = profile is not null && _firstPerson.Rig is { } rig && _weapons?.InHand?.Weapon is { } weapon
@@ -103,6 +110,26 @@ public sealed partial class PlayerCamera
                 * AimDownSights.Blend(1f, WeaponMount.SpreadScale, braced);
             _weapons.AimRecoilScale = (profile is null ? 1f : AimDownSights.Blend(1f, profile.RecoilScale, progress))
                 * AimDownSights.Blend(1f, WeaponMount.RecoilScale, braced);
+        }
+    }
+
+    // g_ads_debug_weapon: the named weapon taken in hand, when it is carried and not already there (a developer's capture).
+    private void TakeDebugWeapon()
+    {
+        string wanted = AdsTuningCVars.Weapon.Value;
+        if (wanted.Length == 0 || _weapons is null
+            || string.Equals(_weapons.InHand?.Weapon.ScriptId, wanted, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        foreach (CarriedWeapon carried in _weapons.Carried)
+        {
+            if (string.Equals(carried.Weapon.ScriptId, wanted, StringComparison.OrdinalIgnoreCase))
+            {
+                _weapons.RequestWeapon(carried.Weapon.WeaponId);
+                return;
+            }
         }
     }
 

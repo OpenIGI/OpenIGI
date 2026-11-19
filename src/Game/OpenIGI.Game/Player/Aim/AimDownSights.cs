@@ -65,11 +65,12 @@ public sealed class AimDownSights
             return;
         }
 
-        if (!ReferenceEquals(profile, Profile))
+        if (!string.Equals(profile.ScriptId, Profile?.ScriptId, StringComparison.Ordinal))
         {
-            Profile = profile;
             Wanted = false;
         }
+
+        Profile = profile;
 
         Wanted = options.Toggle ? Wanted ^ aimPressed : aimHeld;
         IsRaising = Wanted && canAim;
