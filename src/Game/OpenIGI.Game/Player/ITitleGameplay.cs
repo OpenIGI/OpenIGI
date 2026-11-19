@@ -153,6 +153,12 @@ public interface ITitlePlayer
     /// <summary>Gets a value indicating whether the title hides the weather, as a screen of its own over the view does.</summary>
     bool IsWeatherHidden => false;
 
+    /// <summary>
+    /// Gets a value indicating whether the weapon in hand's second trigger steps it through its fire modes -- single, burst,
+    /// automatic -- rather than aiming or firing something else; a touch screen's sight button shows as much.
+    /// </summary>
+    bool AlternateFireSwitchesMode => false;
+
     /// <summary>Gets where the title's own objects move what they placed, or <see langword="null"/> when nothing it placed moves.</summary>
     IPlacementMotion? Motions => null;
 

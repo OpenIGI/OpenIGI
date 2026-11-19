@@ -145,6 +145,11 @@ public sealed partial class Igi2HumanPlayer
         float gamma = firing.GammaKickback;
         CrossHairDamping = firing.CrossHairDamping;
         ActualWeaponPrecision = ((((Fpu)alpha + gamma) * KickbackSpread) + ActualWeaponPrecision).F;
+        if (IsRecoilless)
+        {
+            return;
+        }
+
         View.PitchOffset = (((Fpu)alpha * DegreesToRadians) + View.PitchOffset).F;
         View.YawOffset = (((Fpu)gamma * DegreesToRadians) + View.YawOffset).F;
         View.OffsetDamping = firing.KickbackDamping;
@@ -217,7 +222,7 @@ public sealed partial class Igi2HumanPlayer
             else if (inventory.Status == Igi2WeaponStatus.Empty)
             {
                 IsFirstFire = false;
-                if (IsUnlimitedAmmo)
+                if (IsUnlimitedAmmo || ReloadsOnEmpty(inventory))
                 {
                     firing.Reload();
                     SendHandleWeaponAiEvent();

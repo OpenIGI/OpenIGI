@@ -541,6 +541,12 @@ public sealed partial class Igi2WeaponFiring
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether a shot spends nothing, its load and what is carried kept as they were: the
+    /// player's infinite-ammunition cheat. <b>Not retail.</b>
+    /// </summary>
+    public bool KeepsLoaded { get; set; }
+
     /// <summary>Clears the kick once the holder has taken it.</summary>
     public void TakeKickback() => IsKickback = false;
 
@@ -604,13 +610,17 @@ public sealed partial class Igi2WeaponFiring
             {
                 if (carried is not null)
                 {
-                    carried.Spend(fired);
+                    if (!KeepsLoaded)
+                    {
+                        carried.Spend(fired);
+                    }
+
                     CountShots(fireType, fired);
                 }
             }
             else
             {
-                int left = item.Loaded(fireType) - fired;
+                int left = KeepsLoaded ? item.Loaded(fireType) : item.Loaded(fireType) - fired;
                 item.SetLoaded(fireType, left <= 0 ? 0 : left);
                 trigger.RoundsFired += fired;
                 CountShots(fireType, fired);
@@ -657,14 +667,14 @@ public sealed partial class Igi2WeaponFiring
             if (weaponType.IsForceReload(fireType))
             {
                 Igi2FireTypeRounds rounds = _inventory.FireTypeRounds(_inventory.Current, fireType);
-                if (rounds.AmmoType is { } ammoType)
+                if (rounds.AmmoType is { } ammoType && !KeepsLoaded)
                 {
                     _inventory.FindAmmo(ammoType.AmmoId)?.Spend(fired);
                 }
             }
             else
             {
-                int left = item.Loaded(fireType) - fired - fired;
+                int left = KeepsLoaded ? item.Loaded(fireType) : item.Loaded(fireType) - fired - fired;
                 item.SetLoaded(fireType, left <= 0 ? 0 : left);
                 _fireTypes[fireType].RoundsFired += fired;
             }

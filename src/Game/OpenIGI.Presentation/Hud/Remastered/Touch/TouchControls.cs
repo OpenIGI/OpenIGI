@@ -265,6 +265,15 @@ public sealed class TouchControls
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the sight button steps the weapon in hand through its fire modes (I.G.I. 2's
+    /// rifles), and is drawn so.
+    /// </summary>
+    public bool ScopeSwitchesMode { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the crouch button holds the body down by itself, latched by a tap.</summary>
+    public bool CrouchLatched { get; set; }
+
     /// <summary>Gets or sets how far a drag turns the view against the shipped rate (<see cref="LookCountsPerPixel"/>).</summary>
     public float LookScale { get; set; } = 1f;
 

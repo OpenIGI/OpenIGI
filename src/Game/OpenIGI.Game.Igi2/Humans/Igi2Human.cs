@@ -136,6 +136,9 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2Morph
     /// <summary>Gets or sets the speed the body carries from the ground into the air, <c>Human_s.tAccumulatedSpeed</c>.</summary>
     public Vector3f AccumulatedSpeed { get; set; }
 
+    /// <summary>Gets or sets what the body's own steps across the ground are scaled by: the speed cheat's, one unchanged. <b>Not retail.</b></summary>
+    public float MoveScale { get; set; } = 1f;
+
     /// <summary>Gets or sets the speed an impact gave the body, <c>Human_s.tImpactSpeed</c>.</summary>
     public Vector3f ImpactSpeed { get; set; }
 

@@ -36,6 +36,11 @@ public sealed partial class GameHost
     private ulong _touchTitleHeld;
     private ulong _touchTitleHeldLast;
 
+    // A title whose crouch is held (I.G.I. 2's) has its touch button latch it instead: one tap down, the next back up.
+    private bool _touchCrouchDown;
+    private bool _touchCrouchLatched;
+    private ITitlePlayer? _touchCrouchPlayer;
+
     /// <summary>The action each button holds, as the profile names it.</summary>
     private static string? TouchAction(TouchButton button) => button switch
     {
@@ -129,6 +134,37 @@ public sealed partial class GameHost
         return mask;
     }
 
+    /// <summary>
+    /// Steps the touch crouch's latch for a title whose crouch is held (I.G.I. 2's: <c>HumanPlayer_StateSignalHandler</c> reads
+    /// it held): a tap crouches, the next stands, and a jump, going prone or another level lets it go. A thumb cannot hold a
+    /// button down and still move and look, so the button is a switch where the key is held.
+    /// </summary>
+    /// <param name="mode">What the controls are showing.</param>
+    /// <returns>The title's crouch bits, or nought where the title has no held crouch of its own and the button is the shared one.</returns>
+    private ulong LatchTouchCrouch(TouchControlMode mode)
+    {
+        ulong bits = TitleTouchMask(TouchButton.Crouch);
+        bool down = mode == TouchControlMode.Play && _touchControls.Held.Contains(TouchButton.Crouch);
+        if (bits == 0 || !ReferenceEquals(_touchCrouchPlayer, TitlePlayer))
+        {
+            _touchCrouchLatched = false;
+            _touchCrouchPlayer = TitlePlayer;
+        }
+        else if (down && !_touchCrouchDown)
+        {
+            _touchCrouchLatched = !_touchCrouchLatched;
+        }
+        else if (mode == TouchControlMode.Play
+            && (_touchControls.Held.Contains(TouchButton.Jump) || _touchControls.Held.Contains(TouchButton.Prone)))
+        {
+            _touchCrouchLatched = false;
+        }
+
+        _touchCrouchDown = down;
+        _touchControls.CrouchLatched = _touchCrouchLatched;
+        return bits;
+    }
+
     /// <summary>The buttons the title being played offers of its own, by the touch controls its bindings name.</summary>
     private TouchTitleButtons CurrentTitleButtons()
     {
@@ -204,6 +240,7 @@ public sealed partial class GameHost
         _touchControls.MatchButtons = CurrentMatchButtons();
         _touchControls.TitleButtons = CurrentTitleButtons();
         _touchControls.SavesShown = MissionSaveGames is not null;
+        _touchControls.ScopeSwitchesMode = TitlePlayer?.AlternateFireSwitchesMode == true;
         _touchControls.LookScale = TouchCVars.LookSensitivity.Value;
         _touchControls.Update(input.Touch, mode, layout);
         _touchKeysWanted.Clear();
@@ -247,11 +284,16 @@ public sealed partial class GameHost
 
         _touchChatHeld = chatHeld;
 
+        ulong crouchBits = LatchTouchCrouch(mode);
         if (mode == TouchControlMode.Play)
         {
             foreach (TouchButton button in _touchControls.Held)
             {
-                if (button == TouchButton.Pause)
+                if (button == TouchButton.Crouch && crouchBits != 0)
+                {
+                    // Latched below: holding the button is not what keeps the body down.
+                }
+                else if (button == TouchButton.Pause)
                 {
                     _touchKeysWanted.Add(KeyCode.Escape);
                 }
@@ -272,6 +314,11 @@ public sealed partial class GameHost
                 {
                     Want(profile, action);
                 }
+            }
+
+            if (_touchCrouchLatched)
+            {
+                _touchTitleHeld |= crouchBits;
             }
 
             // A title's control is pressed on the frame its button comes down, as a key going down is (GatherTitleInput).

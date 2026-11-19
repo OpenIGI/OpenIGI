@@ -635,6 +635,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public void Tick(in TitlePlayerInput input)
     {
         ViewError.Tick();
+        TakeCheats();
         Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);
         Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
