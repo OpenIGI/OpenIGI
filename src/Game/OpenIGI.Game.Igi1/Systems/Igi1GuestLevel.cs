@@ -344,6 +344,7 @@ public sealed class Igi1GuestLevel
         if (_player is { } player)
         {
             HearPlayer(hosted, player.Rig, player.Surroundings, steps);
+            RunClimbs(hosted, player.Rig, world.Ground);
         }
 
         return hosted;
@@ -368,6 +369,44 @@ public sealed class Igi1GuestLevel
             }
 
             heard?.Sounds.PlayPlayerImpacts();
+        });
+    }
+
+    // The player's climbs and its work by hand, which the game's own mission runs beside the rig each tick
+    // (Igi1MissionTick.TickClimbsAndInteractions): the ladder's rungs and slide, and the clip that carries the body over a fence
+    // or along a wire. The body is one only the simulation keeps, as a headless run's is; nothing here draws it.
+    private static void RunClimbs(Igi1HostedLevel hosted, PlayerCamera rig, IGroundHeightField? ground)
+    {
+        LadderClimb climb = new();
+        InteractionMotion motion = new();
+        ILadderBody? body = null;
+        hosted.EachTick(() =>
+        {
+            if (rig.IsOnLadder && ground is not null)
+            {
+                body ??= rig.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
+                PlayerInputFrame frame = rig.LastFrame;
+                climb.Tick(
+                    rig,
+                    body,
+                    frame[(int)PlayerInputSlot.MoveUp] > 0.5f,
+                    frame[(int)PlayerInputSlot.MoveDown] > 0.5f,
+                    frame[(int)PlayerInputSlot.Activate] > 0.5f,
+                    ground,
+                    static _ => { });
+            }
+
+            if (rig.IsInWorldInteraction)
+            {
+                body ??= rig.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
+                motion.Tick(rig, body);
+            }
+
+            if (!rig.IsOnLadder && !rig.IsInWorldInteraction && (climb.IsActive || motion.IsActive))
+            {
+                climb.Reset();
+                motion.Reset();
+            }
         });
     }
 
