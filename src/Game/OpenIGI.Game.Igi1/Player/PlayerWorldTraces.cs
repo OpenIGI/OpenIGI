@@ -17,6 +17,10 @@ internal static class PlayerWorldTraces
         _ => null,
     };
 
+    // The cast a lean sweeps the eye along (0x464BD0): the same world as the view model's probe, or none when there is none.
+    internal static WorldRayCast? Eye(ObjectCollisionIndex? walls, WorldTraceCast? terrain) =>
+        walls is null && terrain is null ? null : ViewModel(walls, terrain);
+
     // The cast the view model's forward clearance probe sweeps: the normal placed-object level and the terrain.
     internal static WorldRayCast ViewModel(ObjectCollisionIndex? walls, WorldTraceCast? terrain)
     {

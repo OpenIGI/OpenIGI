@@ -459,7 +459,8 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public void AcknowledgePose() => PoseChanged = false;
 
     // Binds the rig to the body; see PlayerFirstPersonView.Sync.
-    private void SyncView() => _firstPerson.Sync(AimPitch, _weapons);
+    private void SyncView() =>
+        _firstPerson.Sync(AimPitch, _weapons, _firstPerson.IsLeaning ? PlayerWorldTraces.Eye(_walls, TerrainTrace) : null);
 
     /// <summary>Gets whether the cursor should be held while the view is being turned.</summary>
     public bool IsCapturingMouse => _firstPerson.IsCapturingMouse;
@@ -612,8 +613,8 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// <summary>Gets where the player is standing, in the game's world units, for the debug overlay.</summary>
     public Vector3d PositionUnits => _body.Position;
 
-    /// <summary>Gets the eye position, in world units.</summary>
-    public Vector3d EyeUnits => _body.Eye;
+    /// <summary>Gets the eye position, in world units: the body's, moved by any lean.</summary>
+    public Vector3d EyeUnits => _body.Eye + _firstPerson.LeanOffsetUnits;
 
     /// <summary>Gets which way the body faces, in radians.</summary>
     public float Yaw => _body.Yaw;

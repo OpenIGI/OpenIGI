@@ -209,7 +209,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         HudProjector? projector = frame.Eye is { } drawn
             ? HudProjector.FromCamera(drawn, frame.HorizontalTangent, frame.Width, frame.Height)
             : modernPlayer.View is { } view
-            ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, WidescreenLens.HorizontalTangent(view.TanX, frame.Width, frame.Height), frame.Width, frame.Height)
+            ? HudProjector.FromYawPitch(modernPlayer.EyeUnits, modernPlayer.Yaw, modernPlayer.Pitch, WidescreenLens.HorizontalTangent(view.TanX, frame.Width, frame.Height), frame.Width, frame.Height)
             : null;
         _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 8f) with
         {

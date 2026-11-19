@@ -105,7 +105,19 @@ public sealed partial class PlayerCamera
         TickWeapons();
         TickDrop();
 
+        // The weapon machine's lean (0x40F370) forces the body into state 44 and its exit (0x40F3F0) puts it back in state 0,
+        // both before the body's own machine runs this tick.
+        command = command with { Lean = _weapons?.State == HumanWeaponState.Peeking };
         _locomotion.Move(command, terrain);
+
+        // State 44's per-tick (0x40DFC0) eases the lean from the move keys, which no longer move the body.
+        _firstPerson.AdvanceLean(
+            _locomotion.State == HumanBodyStateMachine.Lean,
+            _input.IsSet(PlayerInputSlot.MoveLeft),
+            _input.IsSet(PlayerInputSlot.MoveRight),
+            _input.IsSet(PlayerInputSlot.MoveUp),
+            _body.IsCrouched,
+            _body.Parameters);
 
         _interaction.TouchFences(_interactions, previousPosition);
 
