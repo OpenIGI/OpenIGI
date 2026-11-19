@@ -200,7 +200,7 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     private (float Gamma, float Pitch) Turn(float mouseX, float mouseY, float sensitivity, bool invertMouse, float yaw, float pitch)
     {
         MouseLookSettings settings = MouseLookSettings.FromSensitivity(sensitivity, invertMouse);
-        float zoom = Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f;
+        float zoom = (Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f) * Human.Rig.AimLookScale;
         return (yaw + (settings.YawDelta(mouseX) * zoom),
             Math.Clamp(pitch + (settings.PitchDelta(mouseY) * zoom), -PlayerBody.PitchLimit, PlayerBody.PitchLimit));
     }

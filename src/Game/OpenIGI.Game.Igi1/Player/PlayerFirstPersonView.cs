@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Player.Aim;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -50,6 +51,9 @@ internal sealed class PlayerFirstPersonView
     /// takes effect on the next one. See <see cref="MouseLookSettings"/> for why the rate is what it is.
     /// </remarks>
     internal MouseLookSettings LookSettings { get; set; } = MouseLookSettings.Default;
+
+    /// <summary>Gets or sets what the sights make of the look's speed, on top of the zoom's own scale; one at the hip.</summary>
+    internal float AimLookScale { get; set; } = 1f;
 
     /// <summary>Gets where the held weapon's model goes, in engine units, or <see langword="null"/>.</summary>
     internal BoneAttachment? HeldWeapon => Rig is null ? null : Rig.HeldWeapon;
@@ -205,9 +209,9 @@ internal sealed class PlayerFirstPersonView
                 return gun;
             }
 
-            float zoomLook = Rig is { } zoomView
+            float zoomLook = (Rig is { } zoomView
                 ? MouseLookSettings.ZoomSensitivityScale(zoomView.TanX)
-                : 1f;
+                : 1f) * AimLookScale;
             _body.Yaw += LookSettings.YawDelta(deltaX) * zoomLook;
             _body.Pitch = Math.Clamp(
                 _body.Pitch + (LookSettings.PitchDelta(deltaY) * zoomLook),
@@ -399,9 +403,9 @@ internal sealed class PlayerFirstPersonView
         Matrix3f Orientation,
         BoneAttachment? HeldWeapon,
         BoneAttachment? Magazine,
-        BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha)
+        BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha, in RigAim aim)
     {
         (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
-        return _pair.SmoothedRig(Rig, heading, bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha);
+        return _pair.SmoothedRig(Rig, heading, bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha, aim);
     }
 }

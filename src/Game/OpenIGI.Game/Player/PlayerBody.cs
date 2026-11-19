@@ -200,7 +200,11 @@ public sealed partial class PlayerBody
     /// <remarks><see cref="HumanPlayerParameters.DeltaTranslationScale"/> — argument 0, 1.75 in retail.</remarks>
     public float DeltaTranslationScale =>
         (Parameters?.DeltaTranslationScale ?? HumanMotion.DefaultDeltaTranslationScale)
-        * Cheats.SpeedMultiplier;
+        * Cheats.SpeedMultiplier
+        * AimSpeedScale;
+
+    /// <summary>Gets or sets what aiming down the sights makes of the walk: one, the original's, unless modern aim has the sights up.</summary>
+    public float AimSpeedScale { get; set; } = 1f;
 
     /// <summary>How far the pitch may travel from level, in radians.</summary>
     public const float PitchLimit = 1.5533431f;

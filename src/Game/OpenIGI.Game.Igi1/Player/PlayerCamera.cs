@@ -7,6 +7,7 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Player.Aim;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
@@ -218,6 +219,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public void ResetOptics()
     {
         _optics.Reset();
+        ResetAds();
         _firstPerson.ResetZoom();
     }
 
@@ -995,7 +997,19 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         BoneAttachment? HeldWeapon,
         BoneAttachment? Magazine,
         BoneAttachment? MovingPart) SmoothedRig(float alpha) =>
-        _firstPerson.SmoothedRig(AimPitch, alpha);
+        _firstPerson.SmoothedRig(AimPitch, alpha, RigAim.None);
+
+    /// <summary>The rig for a frame between two ticks, with modern aim's sights and the frame's motion laid over it.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <param name="motion">The frame's view-model motion (<see cref="ViewModelMotion"/>), or the identity for none.</param>
+    /// <returns>As <see cref="SmoothedRig(float)"/>.</returns>
+    public (
+        Vector3d OriginUnits,
+        Matrix3f Orientation,
+        BoneAttachment? HeldWeapon,
+        BoneAttachment? Magazine,
+        BoneAttachment? MovingPart) SmoothedRig(float alpha, RigOffset motion) =>
+        _firstPerson.SmoothedRig(AimPitch, alpha, AimRig(alpha, motion));
 
     /// <inheritdoc cref="PlayerLadderController.DecideStep"/>
     public LadderStepResult DecideLadderStep(bool up, bool down, bool slide) =>
@@ -1059,6 +1073,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         if (view is not null)
         {
             _optics.Tick(_weapons, view, _input);
+            ApplyAdsOptics(view);
         }
 
         if (_weapons is null || view is null)

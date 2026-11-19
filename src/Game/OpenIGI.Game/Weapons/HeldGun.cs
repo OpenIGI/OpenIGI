@@ -63,6 +63,17 @@ public sealed class HeldGun
     /// </summary>
     public bool MadeAtRunTime { get; init; }
 
+    /// <summary>Gets or sets what the cone a round strays in is multiplied by: one, the original's, unless the sights are up.</summary>
+    /// <remarks>
+    /// Never nought: a cone of exactly nought fires down the barrel without sampling (see <see cref="Fire"/>), which would take
+    /// draws out of the random stream that the original makes.
+    /// </remarks>
+    public float SpreadScale
+    {
+        get;
+        set => field = Math.Clamp(value, 0.01f, 1f);
+    } = 1f;
+
     /// <summary>Initializes a new instance of the <see cref="HeldGun"/> class.</summary>
     /// <param name="weapon">The roster record this gun is.</param>
     /// <param name="ammo">
@@ -247,7 +258,7 @@ public sealed class HeldGun
 
         _projectiles.Clear();
 
-        float cone = GunFiring.ConeAngle(Weapon, State.RoundsThisBurst);
+        float cone = GunFiring.ConeAngle(Weapon, State.RoundsThisBurst) * SpreadScale;
         float range = GunShotBallistics.RangeInUnits(Weapon);
 
         for (int i = 0; i < Weapon.BulletsPerRound; i++)

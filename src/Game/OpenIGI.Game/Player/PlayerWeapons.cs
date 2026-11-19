@@ -228,6 +228,12 @@ public sealed class PlayerWeapons
     /// <summary>Gets the accumulated view kick in pitch, in radians — <c>HumanView+296</c>.</summary>
     public float RecoilPitch { get; private set; }
 
+    /// <summary>Gets or sets what the sights make of a round's cone: one, the original's, unless modern aim has them up.</summary>
+    public float AimSpreadScale { get; set; } = 1f;
+
+    /// <summary>Gets or sets what the sights make of a round's kick: one, the original's, unless modern aim has them up.</summary>
+    public float AimRecoilScale { get; set; } = 1f;
+
     /// <summary>Gets whether the gun's trigger stood held this tick, after its burst and magazine gates (<c>0x478BA0</c>).</summary>
     /// <remarks>What an automatic's fire loop follows: it runs while this holds and ends, with its tail, the tick it does not.</remarks>
     public bool TriggerHeldThisTick { get; private set; }
@@ -726,6 +732,7 @@ public sealed class PlayerWeapons
 
         held.Gun.Tick(_machine.WantFire);
 
+        held.Gun.SpreadScale = AimSpreadScale;
         GunFireResult result = held.Gun.Fire(_machine.WantFire, eye, forward, right, up, _random);
         _firedThisTick = result.Fired;
 
@@ -746,6 +753,7 @@ public sealed class PlayerWeapons
         // The scale is the Dragunov's scoped 0.05, or one. It multiplies the ROUND'S OWN kick and
         // not the accumulated angles, exactly where 0x472E50 applies it -- damping what is already
         // accumulated would make opening the scope mid-burst yank the view back down.
+        recoilScale *= AimRecoilScale;
         if (_cheats.NoRecoil)
         {
             recoilScale = 0f;

@@ -49,7 +49,9 @@ public sealed partial class PlayerCamera
             _wheelChoice = -1;
         }
 
-        _input.Accept(taken);
+        // Modern aim takes the alternate-fire button for the sights before the original's machines read the frame.
+        _input.Accept(TakeModernAimInput(taken));
+        TickAds();
 
         // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them. The
         // level's switches and fences still pulse, and what the player threw before still flies and goes off.
@@ -170,6 +172,7 @@ public sealed partial class PlayerCamera
         [
             PlayerInputSlot.MoveLeft, PlayerInputSlot.MoveRight, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown,
             PlayerInputSlot.Fire, PlayerInputSlot.AlternateFire, PlayerInputSlot.Activate, PlayerInputSlot.Jump, PlayerInputSlot.Peek,
+            PlayerInputSlot.Underbarrel, PlayerInputSlot.LeanLeft, PlayerInputSlot.LeanRight, PlayerInputSlot.Mount,
         ];
         foreach (PlayerInputSlot slot in let)
         {

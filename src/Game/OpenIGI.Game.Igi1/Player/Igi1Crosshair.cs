@@ -78,6 +78,9 @@ public static class Igi1Crosshair
             onEnemy = soldiers.EnemyUnderAim(view.Eye, new Vector3f(m.M12, m.M22, m.M32));
         }
 
-        return PlayerAimFeedback.Of(shape, spread, onEnemy, weapons.ShotSequence, player.Shots);
+        return PlayerAimFeedback.Of(shape, spread * weapons.AimSpreadScale, onEnemy, weapons.ShotSequence, player.Shots) with
+        {
+            Sights = player.ModernAim.Enabled ? OpenIGI.Game.Player.Aim.AimDownSights.Shape(player.Ads.Progress) : 0f,
+        };
     }
 }
