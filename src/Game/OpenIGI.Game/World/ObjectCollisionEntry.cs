@@ -75,6 +75,9 @@ internal sealed class ObjectCollisionEntry
 
     public bool IsDynamic { get; private set; }
 
+    /// <summary>Gets or sets a value indicating whether the placement is out of the world, and stops nothing until it is put back.</summary>
+    public bool IsAway { get; set; }
+
     /// <summary>Gets where the mesh's origin sits now, in world units.</summary>
     public Vector3d PoseOrigin { get; private set; }
 

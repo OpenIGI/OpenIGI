@@ -307,7 +307,7 @@ internal sealed class PlayerInteractionDriver
                 _host.OnTaskActivated(interaction.Task.Id);
                 break;
             case InteractionAction.OpenDoor:
-                interaction.Door?.Toggle();
+                interaction.ToggleDoor(_body.Position);
                 _host.OnAiNoise(AiEvent.Door);
                 _host.OnTaskActivated(interaction.Task.Id);
                 break;
@@ -684,8 +684,8 @@ internal sealed class PlayerInteractionDriver
                 _completedActionState = LocomotionState;
             }
 
-            interaction.CompleteUse();
-            if (interaction.Door is not null)
+            interaction.CompleteUse(_body.Position);
+            if (interaction.Door is not null || interaction.Hosted is { IsPickable: true } or { IsLocked: true })
             {
                 // A finished pick unlocks and toggles the door, and posts the same noise (0x40C160).
                 _host.OnAiNoise(AiEvent.Door);

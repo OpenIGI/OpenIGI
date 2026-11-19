@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// </remarks>
 public abstract class HumanTask
-    : ContainerTask, Level.ILevelTicked, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable, IHostedHuman
+    : ContainerTask, Level.ILevelTicked, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable, IHostedHuman, IScriptedHuman
 {
     /// <summary>
     /// Gets or sets the live body the human's game keeps for it: where it stands, its eyes and its stance; <see langword="null"/>
@@ -44,6 +44,10 @@ public abstract class HumanTask
     /// in for it; <see langword="null"/> while nothing does.
     /// </summary>
     public Level.ITaskRun<HumanTask>? Runner { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>The human's body is what is moved, by the game that holds it (<see cref="IHumanBodyState.Place"/>).</remarks>
+    public void PopPosition(Vector3d position) => Body?.Place(position);
 
     /// <summary>Runs the human for one tick, where the level's walk reaches it.</summary>
     /// <param name="level">The level's run.</param>
@@ -201,6 +205,11 @@ public interface IHumanBodyState
 
     /// <summary>Gets a value indicating whether it takes part in the level, <c>Human+3318</c>.</summary>
     bool IsActive { get; }
+
+    /// <summary>Puts the body at a spot, as a level's script does (<c>Human_PopPosition</c>): its feet there, off whatever it stood on.</summary>
+    /// <param name="feet">Where its feet go, in world units.</param>
+    /// <returns><see langword="false"/> where the body cannot be put anywhere: nothing holds it yet, or its game moves it some other way.</returns>
+    bool Place(Vector3d feet) => false;
 }
 
 /// <summary>The player's character — the original's <c>HumanPlayer</c>.</summary>

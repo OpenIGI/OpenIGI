@@ -37,11 +37,16 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     private Func<float, Vector3d>? _presentedOffset;
     private Vector3d _offset;
     private readonly PlacedDoor? _placedDoor;
+    private readonly bool _isPickable;
+    private bool _isLocked;
+
+    // The ticks a human has worked on another game's thing since it set to (IHostedInteraction.Use).
+    private int _hostedUseTicks;
     private readonly Vector3d _authoredMarker;
     private readonly Vector3d _markerLocal;
 
     public WorldInteraction(
-        DeclaredTask task,
+        GameTask task,
         InteractionActivateType type,
         Vector3d anchor,
         Vector3d end,
@@ -76,7 +81,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         Facing = facing;
         DurationTicks = durationTicks;
         ActionSprite = actionSprite;
-        IsPickable = isPickable;
+        _isPickable = isPickable;
         StationaryGun = stationaryGun;
         LocalBoundsMinimum = localBoundsMinimum;
         LocalBoundsMaximum = localBoundsMaximum;
@@ -187,9 +192,16 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         Vector3d? PlacedPosition,
         Matrix3f PlacedOrientation);
 
-    public DeclaredTask Task { get; }
+    public GameTask Task { get; }
     public InteractionActivateType Type { get; }
-    public Vector3d Anchor => _authoredAnchor + _offset;
+
+    /// <summary>
+    /// Gets what the interaction stands for where another game's level keeps the thing itself (<see cref="IHostedInteraction"/>);
+    /// <see langword="null"/> for a task of the game's own, whose state the interaction holds.
+    /// </summary>
+    public IHostedInteraction? Hosted { get; init; }
+
+    public Vector3d Anchor => Hosted?.Anchor ?? (_authoredAnchor + _offset);
     public Vector3d End => _authoredEnd + _offset;
     public Matrix3f Orientation { get; }
     public float Facing { get; }
@@ -197,7 +209,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     public string ActionSprite { get; }
     public DoorState? Door => _placedDoor?.State;
     /// <summary>Whether a locked door allows the player to pick its lock.</summary>
-    public bool IsPickable { get; }
+    public bool IsPickable => Hosted?.IsPickable ?? _isPickable;
     public AiStationaryGun? StationaryGun { get; }
     public Vector3d LocalBoundsMinimum { get; }
     public Vector3d LocalBoundsMaximum { get; }
@@ -218,7 +230,11 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     public bool CompletedThisTick { get; private set; }
     public bool IsSearched { get; set; }
     public bool IsPicked { get; private set; }
-    public bool IsLocked { get; private set; }
+    public bool IsLocked
+    {
+        get => Hosted?.IsLocked ?? _isLocked;
+        private set => _isLocked = value;
+    }
     public bool IsDestroyed { get; set; }
 
     /// <summary>
@@ -309,7 +325,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     public Matrix3f PlacedOrientation { get; private set; } = Matrix3f.Identity;
 
     /// <summary>Gets a value indicating whether the task is in the world: every conditional container above it is active.</summary>
-    public bool IsInWorld => ConditionalContainerGate.IsTaskActive(Task);
+    public bool IsInWorld => Hosted?.IsInWorld ?? ConditionalContainerGate.IsTaskActive(Task);
 
     /// <summary>Whether the task still offers itself to the retail activation scan.</summary>
     /// <remarks>
@@ -623,6 +639,12 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     /// <summary>Applies the task-specific front/side gate before the shared aim resolver.</summary>
     public bool CanOfferFrom(Vector3d from)
     {
+        // Another game's thing is offered by that game's own rule, which says where too.
+        if (Hosted is { } hosted)
+        {
+            return hosted.Offer(from);
+        }
+
         if (Type == InteractionActivateType.Door)
         {
             Vector3d local = Orientation.Transform(from - Anchor);
@@ -716,6 +738,23 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         _pressStamp = Clock();
         _ownPressStamp = _pressStamp;
         _onPress?.Invoke();
+        Hosted?.Press();
+    }
+
+    /// <summary>
+    /// A human opens or closes the door (<c>0x446D10</c>'s toggle): the placed door swings, or the level that keeps the door is
+    /// told.
+    /// </summary>
+    /// <param name="from">Where the human stands, in world units.</param>
+    public void ToggleDoor(Vector3d from)
+    {
+        if (Hosted is { } hosted)
+        {
+            hosted.Toggle(from);
+            return;
+        }
+
+        Door?.Toggle();
     }
 
     /// <summary>
@@ -731,6 +770,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
     {
         InUse.Value = true;
         _useStamp = Clock();
+        Hosted?.Use(_hostedUseTicks++);
     }
 
     // The types whose isInUse their own update clears on its stamp, rather than their human as it lets go.
@@ -746,12 +786,15 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
             return false;
         }
 
+        _hostedUseTicks = 0;
+        Hosted?.Begin();
         Use();
         return true;
     }
 
     public void CancelUse()
     {
+        Hosted?.Cancel();
         StationaryGun?.Dismount(_userOccupant);
         if (!UseDecays)
         {
@@ -759,12 +802,19 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         }
     }
 
-    public void CompleteUse()
+    /// <summary>The human's work is done, where it stands (<see cref="CompleteUse(Vector3d)"/>).</summary>
+    public void CompleteUse() => CompleteUse(Anchor);
+
+    /// <summary>The human's work is done: the task finishes as its type does.</summary>
+    /// <param name="from">Where the human stands, in world units: a picked door swings away from it.</param>
+    public void CompleteUse(Vector3d from)
     {
-        if (Type == InteractionActivateType.Generic && IsCompleted)
+        if (Type == InteractionActivateType.Generic && IsCompleted && Hosted is null)
         {
             return;
         }
+
+        Hosted?.Complete();
         StationaryGun?.Dismount(_userOccupant);
         if (!UseDecays)
         {
@@ -781,7 +831,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
                 break;
             case InteractionActivateType.Door:
                 IsPicked = true;
-                Door?.Toggle();
+                ToggleDoor(from);
                 break;
             default:
                 // A GenericTBA or PlaceExplosiveTBA finishing (0x443EA0) sets isFinished and isFinishedThisTick

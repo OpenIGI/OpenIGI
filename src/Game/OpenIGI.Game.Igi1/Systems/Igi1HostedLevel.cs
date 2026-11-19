@@ -26,6 +26,10 @@ public sealed class Igi1HostedLevel
     private readonly IHostCollisionWorld _world;
     private readonly IAiPlayer _player;
     private readonly HostedLevelHooks _hooks = new();
+
+    // Each soldier standing for a human of the host's level, with that human's task, and whether the host has it in the world.
+    private readonly Dictionary<HumanSoldierTask, GameTask> _hosts = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<HumanSoldierTask, bool> _inWorld = new(ReferenceEqualityComparer.Instance);
     private bool _left;
 
     internal Igi1HostedLevel(
@@ -88,6 +92,11 @@ public sealed class Igi1HostedLevel
 
         host.Driver = GameTitle.Igi1;
         host.StandIn = standIn;
+        if (host is GameTask task)
+        {
+            _hosts[soldier] = task;
+            Follow(soldier, task, initial: true);
+        }
     }
 
     /// <summary>
@@ -110,6 +119,45 @@ public sealed class Igi1HostedLevel
         Soldiers.Humans.AddRange(hostHumans);
     }
 
+    /// <summary>
+    /// Gives the player standing in the host's level what of that level it works by hand and climbs: the host's switches, doors,
+    /// terminals and the like, each an interaction standing for the host's own (<see cref="WorldInteraction.Hosted"/>), and its
+    /// ladders. The interactions are run each tick as the level's closes.
+    /// </summary>
+    /// <param name="player">The player.</param>
+    /// <param name="interactions">The host's things a human works by hand.</param>
+    /// <param name="ladders">The host's ladders.</param>
+    /// <returns>The interactions as the player finds them.</returns>
+    public WorldInteractionRegistry GivePlayer(
+        Player.Igi1TitlePlayer player, IEnumerable<WorldInteraction> interactions, IReadOnlyList<LadderPlacement> ladders)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(interactions);
+        ArgumentNullException.ThrowIfNull(ladders);
+        WorldInteractionRegistry registry = WorldInteractionRegistry.OfHosted(interactions);
+        registry.Clock = () => Ticks;
+        player.Human.Rig.UseInteractions(registry);
+        player.Human.Rig.UseLadders(ladders);
+        EachTick(registry.Tick);
+        return registry;
+    }
+
+    /// <summary>
+    /// Has the object collision the guests walk kept where the host's objects stand, each tick as the level's closes: the host
+    /// collides in a world of its own, and moves nothing in this one.
+    /// </summary>
+    /// <param name="solids">The collision the guests walk.</param>
+    /// <param name="placements">The host's placements, which it was built from.</param>
+    /// <param name="motions">What moves the host's placements, or <see langword="null"/> where nothing does.</param>
+    /// <param name="presence">What takes them out of the host's world, or <see langword="null"/> where nothing does.</param>
+    public void KeepSolids(
+        ObjectCollisionIndex solids, IReadOnlyList<WorldPlacement> placements, IPlacementMotion? motions, IPlacementPresence? presence)
+    {
+        PlacementCollisionFollower follower = new(solids, placements, motions, presence);
+        follower.Follow();
+        EachTick(follower.Follow);
+    }
+
     /// <summary>Has something done at the end of each of the level's ticks.</summary>
     /// <param name="action">What is done.</param>
     public void EachTick(Action action) => _hooks.EachTick(action);
@@ -129,6 +177,7 @@ public sealed class Igi1HostedLevel
             return;
         }
 
+        FollowWorld();
         Soldiers.BeginTick(Enemy);
         _walker.Tick();
         Soldiers.EndTick();
@@ -157,6 +206,28 @@ public sealed class Igi1HostedLevel
         if (Root.Parent is not null)
         {
             _tasks.Delete(Root);
+        }
+    }
+
+    // A soldier is in the world while the host's human it stands for is, as the host's containers put that one in and take it
+    // out: a guard the level has not brought on yet stands nowhere, sees nothing and is not seen.
+    private void FollowWorld()
+    {
+        foreach ((HumanSoldierTask soldier, GameTask host) in _hosts)
+        {
+            Follow(soldier, host, initial: false);
+        }
+    }
+
+    // Written as the host's answer changes, not each tick: between changes the soldier's own update may take its body out of the
+    // world (a dead guard's, once it has lain long enough out of sight), and that stands.
+    private void Follow(HumanSoldierTask soldier, GameTask host, bool initial)
+    {
+        bool now = ConditionalContainerGate.IsTaskActive(host);
+        if (initial || _inWorld.GetValueOrDefault(soldier) != now)
+        {
+            _inWorld[soldier] = now;
+            soldier.IsOutOfWorld = !now;
         }
     }
 

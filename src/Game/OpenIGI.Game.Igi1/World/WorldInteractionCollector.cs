@@ -143,7 +143,7 @@ internal static class WorldInteractionCollector
                         : elevators.GetCurrentDisplacementInUnits(item.Task));
                 if (type == InteractionActivateType.Switch)
                 {
-                    item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
+                    item.SetPressHandler(() => elevators.RequestFromSwitch(declared));
                 }
             }
             string onExpression = (declared as WorldInteractionTask)?.OnExpression ?? string.Empty;

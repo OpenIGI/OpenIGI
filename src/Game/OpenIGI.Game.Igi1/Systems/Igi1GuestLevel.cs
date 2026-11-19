@@ -172,7 +172,14 @@ public sealed class Igi1GuestLevel
         // world, AI and scripts meet.
         HumanPlayerTask task = start.Task;
         task.Driver = Core.Titles.GameTitle.Igi1;
-        task.Body = new Igi1PlayerBody(() => rig, task);
+        task.Body = new Igi1PlayerBody(() => rig, task)
+        {
+            // The host's scripts put its player where they will (Human_PopPosition): the rig goes there, onto the ground below.
+            Placement = (held, feet) => held.Place(
+                world.Ground,
+                new Core.Numerics.Vector3d(feet.X, feet.Y, feet.Z + PlayerBody.StandingEyeHeight) / WorldScene.UnitsPerMetre,
+                held.Yaw),
+        };
         task.Events = human;
         task.StandIn = task;
         world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
