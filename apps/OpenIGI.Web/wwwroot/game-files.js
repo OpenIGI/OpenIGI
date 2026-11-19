@@ -40,8 +40,8 @@ const SIGNATURES = [
  * played only from the person's own installation.
  */
 export const TITLES = {
-  igi1: { name: 'Project I.G.I.', exe: 'IGI.exe', hosted: true },
-  igi2: { name: 'I.G.I. 2: Covert Strike', exe: 'igi2.exe', hosted: false },
+  igi1: { name: 'Project I.G.I.', hosted: true },
+  igi2: { name: 'I.G.I. 2: Covert Strike', hosted: false },
 };
 
 /**
@@ -103,8 +103,8 @@ async function locate(picked, candidates, wanted) {
   }
   if (other) return other;
 
-  const { name, exe } = TITLES[wanted];
-  throw new InstallationError(`No ${name} installation in /${picked}. Choose the folder with ${exe} in it.`);
+  const { name } = TITLES[wanted];
+  throw new InstallationError(`No ${name} installation in /${picked}. Choose the folder the game is installed in.`);
 }
 
 /**

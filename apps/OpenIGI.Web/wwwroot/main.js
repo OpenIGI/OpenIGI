@@ -102,7 +102,7 @@ function showGame(id) {
 }
 showGame(game);
 
-const hint = () => `The folder with ${files.TITLES[game].exe} in it${game === 'igi1' ? ', usually pc inside the installation' : ''}.`;
+const hint = () => `The folder ${files.TITLES[game].name} is installed in${game === 'igi1' ? ' (usually the pc folder inside it)' : ''}.`;
 
 // --- Inside a Discord Activity --------------------------------------------------------------------------
 //
@@ -369,7 +369,7 @@ async function chooseSource() {
   let ready = null;
   let remembered = await files.rememberedFolder(game);
   const offerFolder = () => {
-    if (remembered) offer('Play game', `Game folder: /${remembered.name}`, 'neutral', true);
+    if (remembered) offer('Play now', `Game folder: /${remembered.name}`, 'neutral', true);
     else if (hosted === null && siteServes()) offer('Choose game folder', `The game's files could not be reached. ${hint()}`);
     else offer('Choose game folder', hint());
     own.hidden = true;
@@ -455,7 +455,7 @@ async function chooseSource() {
           } catch (error) {
             if (!(error instanceof files.InstallationError)) throw error;
             if (error.permission) {
-              offer('Play game', error.message, 'error', true);
+              offer('Play now', error.message, 'error', true);
               return;
             }
             // Gone, or no longer the game: forgotten, and the person picks again.
@@ -475,7 +475,7 @@ async function chooseSource() {
           }
           ready = picked;
           if (picked.handle) await files.rememberFolder(picked.title, picked.handle);
-          offer('Play game', `Found ${files.TITLES[picked.title].name} in /${picked.name}. Ready.`, 'ok', true);
+          offer('Play now', `Found ${files.TITLES[picked.title].name} in /${picked.name}. Ready.`, 'ok', true);
         }
       } catch (error) {
         if (!(error instanceof files.InstallationError)) {
@@ -483,7 +483,7 @@ async function chooseSource() {
           return;
         }
         if (!folderMode) offer('Play now', error.message, 'error');
-        else offer(ready || remembered ? 'Play game' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
+        else offer(ready || remembered ? 'Play now' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
       } finally {
         busy = false;
         play.disabled = false;
