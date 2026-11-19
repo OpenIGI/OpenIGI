@@ -16,6 +16,7 @@ public sealed partial class PlayerCamera
     private bool _aimHeld;
     private RigOffset _adsReference = RigOffset.Identity;
     private AdsProfile? _adsReferenceFor;
+    private PlayerInputFrame _lastRawFrame;
 
     /// <summary>Gets or sets where the tick reads modern aim's settings, or <see langword="null"/> for the variables.</summary>
     /// <remarks>A session's server hands its players its own, so a client and the server play by the same.</remarks>
@@ -47,6 +48,7 @@ public sealed partial class PlayerCamera
     // binoculars -- keeps its own. Read here, before the machines run, so the aim and the launcher answer the same tick.
     private PlayerInputFrame TakeModernAimInput(in PlayerInputFrame frame)
     {
+        _lastRawFrame = frame;
         _modernAim = ModernAimSource?.Invoke() ?? ModernAimOptions.Current;
         _aimWasHeld = _aimHeld;
         _aimHeld = false;

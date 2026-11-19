@@ -149,7 +149,11 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public PlayerBody Body => _body;
 
     /// <summary>Gets the input frame the last tick ran on: on a co-op client, the command sent up for it.</summary>
-    public PlayerInputFrame LastFrame => _input.Current;
+    /// <remarks>
+    /// As the controls gave it, before modern aim took the alternate-fire button for the sights: a server that runs it takes the
+    /// button again by its own rules, as a replay does.
+    /// </remarks>
+    public PlayerInputFrame LastFrame => _lastRawFrame;
 
     /// <summary>Gets the heading the last tick ran with, before anything in it turned the body.</summary>
     /// <remarks>
@@ -572,6 +576,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
             PlayerInputFrame keyHeld = _input.Current;
             keyHeld[(int)PlayerInputSlot.MapComputer] = 1f;
             _input.Accept(keyHeld);
+            _lastRawFrame = keyHeld;
         }
 
         _locomotion.Animator?.Enter(open ? 45 : HumanLocomotionStates.Idle);
@@ -903,7 +908,8 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         // Map controls are consumed by ComputerMap, not HumanPlayer, and the weapon machine waits out state 11 whatever is
         // held. Without the host's input the frame is empty, which keeps the machine's clock.
         _input.Accept(input is null ? default : PlayerInputSampler.SampleFrame(input, InputProfile));
-        bool close = input is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
+        _lastRawFrame = _input.Current;
+        bool close =input is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
         _locomotion.Animator?.Enter(45);
         TickWeapons();
         _firstPerson.Rig?.Tick();
