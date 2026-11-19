@@ -64,6 +64,16 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Gets the posture a timed action was started from, which it returns to, <c>tActivateContext.ePrevStance</c>.</summary>
     public Igi2HumanPose PreviousStance { get; private set; }
 
+    // The sphere whatever the player can activate must meet: the length of its root bone's translation plus its model's radius.
+    private float ActivateRadius
+    {
+        get
+        {
+            Vector3f r = RootTranslation;
+            return (Fpu.Sqrt((((Fpu)r.X * r.X) + ((Fpu)r.Y * r.Y)) + ((Fpu)r.Z * r.Z)) + ModelRadius).F;
+        }
+    }
+
     /// <summary>
     /// Looks for something to activate, <c>Human_UpdateActivate</c> (<c>igi2 0x500D10</c>), once a tick in the update after the
     /// death check.
@@ -86,9 +96,7 @@ public sealed partial class Igi2HumanPlayer
             {
                 Activator = this,
             };
-            Vector3f r = RootTranslation;
-            float radius = (Fpu.Sqrt((((Fpu)r.X * r.X) + ((Fpu)r.Y * r.Y)) + ((Fpu)r.Z * r.Z)) + ModelRadius).F;
-            foreach (IIgi2Activatable candidate in Surroundings.FindActivatables(Position, radius))
+            foreach (IIgi2Activatable candidate in Surroundings.FindActivatables(Position, ActivateRadius))
             {
                 candidate.EvaluateActivate(context);
             }

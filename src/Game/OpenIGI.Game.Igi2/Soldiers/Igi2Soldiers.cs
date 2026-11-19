@@ -170,10 +170,6 @@ public sealed class Igi2Soldiers
             }
 
             soldier.Model = look;
-            if (animation is Igi2HumanAnimation layer)
-            {
-                layer.SetBranches(look.BoneNames);
-            }
 
             soldier.Collider = new Igi2BoneCollider(soldier, soldier);
             task.Body = soldier;

@@ -480,9 +480,10 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
             unchecked((byte)shots),
             ActionSequence: human.UpperBodySequence,
 
-            // Fallen, the death clip it plays: each game once drew its own, and the partner fell one way on its own screen and
-            // another on the others'.
-            ClipTime: human.IsDead ? (ushort)Math.Clamp(human.Animation.LastState, 0, ushort.MaxValue) : (ushort)0);
+            // The state its main clip was last set from, as the original's player sends it
+            // (iStateLastUsedToSetMainAnimation): fallen, the death it fell in -- each game once drew its own, and the partner
+            // fell one way on its own screen and another on the others' -- and at work, the clip of what it works.
+            ClipTime: (ushort)Math.Clamp(human.Animation.LastState, 0, ushort.MaxValue));
     }
 
     private sealed class RewindScope(List<(Igi2Human Human, Vector3d Was, Matrix3f Turned)> moved) : IDisposable

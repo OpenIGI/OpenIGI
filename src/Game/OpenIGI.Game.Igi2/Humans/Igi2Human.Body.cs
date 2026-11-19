@@ -16,8 +16,29 @@ public abstract partial class Igi2Human : IIgi2BonedBody
     private Igi2BoneBuffer? _bones;
     private bool _isPoseStale = true;
 
+    private Igi2BodyModel? _model;
+
     /// <summary>Gets or sets what the human's model gives its body: bone names, collision, damage zones.</summary>
-    public Igi2BodyModel? Model { get; set; }
+    /// <remarks>
+    /// A boned model given to any human marks the branches its clips animate, as <c>Human_UpdateInternalDataHandler</c>
+    /// (<c>igi2 0x4FF2F0</c>) calls <c>HumanAnim_Init</c> for every human once its model is set: the main clip over the whole
+    /// body, the upper body's from the lower back up. Left unmarked, an upper-body clip posed every bone: a player's body, which
+    /// always holds its weapon's clip, stood in that clip's legs whatever its gait played beneath, and slid over the ground.
+    /// </remarks>
+    public Igi2BodyModel? Model
+    {
+        get => _model;
+        set
+        {
+            _model = value;
+            if (value is { BoneNames.Count: > 0 } && Animation is Igi2HumanAnimation layer)
+            {
+                layer.SetBranches(value.BoneNames);
+            }
+
+            TouchPose();
+        }
+    }
 
     /// <summary>Gets or sets the human's collider in the level's collision world, or <see langword="null"/> when not placed in one.</summary>
     public Igi2BoneCollider? Collider { get; set; }

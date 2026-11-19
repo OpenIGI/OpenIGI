@@ -46,6 +46,10 @@ internal static class Igi2NetworkHumanFactory
             Gamma = gamma,
             IdealGamma = gamma,
             Team = team,
+
+            // Nobody looks through its eyes: its weapon is the one on its body (Human_GetWeaponObjectHandler's body branch),
+            // which is where its shots flash. Left in first person it had no view clip, so no weapon object, and no flash.
+            IsThirdPerson = true,
         };
         surroundings.Owner = human;
         animation.TriggerTarget = human.BodyTriggers;
@@ -82,7 +86,16 @@ internal static class Igi2NetworkHumanFactory
 
         if (weapons is not null)
         {
-            weapons.Effects = new Igi2LevelWeaponEffects(kit.Sounds, () => human.View.Position, level.Ai);
+            // Its casings fly from the gun in its body's hands, as a soldier's do.
+            Igi2PlayerWeapons arms = weapons;
+            weapons.Effects = new Igi2LevelWeaponEffects(kit.Sounds, () => human.View.Position, level.Ai, casing =>
+            {
+                if (level.Casings is { } casings && human.Model is { } dress && arms.Inventory.Current?.WeaponType.FixedModel is { } gun)
+                {
+                    Igi2TitlePlayer.EjectFrom(
+                        casings, casing, ViewModel.Igi2BodyFrame.Build(human, human.BodyPose(), dress.Name, gun, 0), gun, human.TotalSpeed);
+                }
+            });
             if (level.Weapons is { } own)
             {
                 weapons.ImpactEffects = own.ImpactEffects;

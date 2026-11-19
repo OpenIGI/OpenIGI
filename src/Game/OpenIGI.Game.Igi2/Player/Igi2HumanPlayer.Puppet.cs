@@ -15,6 +15,7 @@ public sealed partial class Igi2HumanPlayer
     /// <param name="speed">Its speed.</param>
     /// <param name="gamma">Its heading.</param>
     /// <param name="pitch">Its view's pitch.</param>
+    /// <param name="animation">The state the server's copy's main clip was last set from, or 0 when not known.</param>
     /// <remarks>
     /// <para>
     /// The locomotion states are never ticked here, as a soldier's puppet's are not: a state's tick reads the controls, and a copy
@@ -24,14 +25,15 @@ public sealed partial class Igi2HumanPlayer
     /// </para>
     /// <para>A run's clip steps at the rate its tick would set (<see cref="Humans.Igi2Human.ControlGait"/>); every other state keeps what its entry set.</para>
     /// </remarks>
-    public void PoseAsPuppet(int state, bool rearmed, int upperBody, int fireType, byte upperBodySequence, Vector3d position, Vector3f speed, float gamma, float pitch)
+    public void PoseAsPuppet(int state, bool rearmed, int upperBody, int fireType, byte upperBodySequence, Vector3d position, Vector3f speed, float gamma, float pitch, int animation = 0)
     {
         bool entered = rearmed || Locomotion.CurrentState != state;
         if (entered)
         {
             Locomotion.Enter(state, this);
-            PlayWorkAsPuppet(state);
         }
+
+        PlayWorkAsPuppet(state, animation, entered, position);
 
         if (Array.Find(Gaits, g => g.State == state) is { TimeScale: float timeScale })
         {
@@ -59,16 +61,56 @@ public sealed partial class Igi2HumanPlayer
     /// a gun stood there with its gun up. The original's remote human plays the state's own clip
     /// (<c>HumanAnim_SetAnimationAndTimeFromState</c> from <c>HumanRemote_UpdateAnim</c>), the upper body let go.
     /// </summary>
-    /// <param name="state">The state entered.</param>
-    private void PlayWorkAsPuppet(int state)
+    /// <param name="state">The state the copy is in.</param>
+    /// <param name="animation">The state the server's copy's main clip was last set from, or 0 when not known.</param>
+    /// <param name="entered">Whether the state was entered this tick.</param>
+    /// <param name="position">Where the copy stands this tick.</param>
+    /// <remarks>
+    /// The clip is the one the server's copy plays, by the state it was set from, whenever that is known: a timed action names
+    /// its own clip (a gate's lock picked, a code pad hacked), which no state's entry here could tell, and a copy at one stood
+    /// still; and work that goes from one clip to the next (a cabinet opened, searched and shut) goes with it.
+    /// </remarks>
+    private void PlayWorkAsPuppet(int state, int animation, bool entered, Vector3d position)
     {
         if (state is not (Igi2PlayerState.ActivateDoor or Igi2PlayerState.ActivateTerminal or Igi2PlayerState.ActivateGenericTba
             or Igi2PlayerState.ActivateCabinet or Igi2PlayerState.ActivateStationaryGun or Igi2PlayerState.SilentKill))
         {
+            _puppetWork = 0;
             return;
         }
 
+        bool known = animation > 0 && animation != Humans.Igi2HumanAnimation.NamedStateFallback;
+        if (!entered && (!known || animation == _puppetWork))
+        {
+            return;
+        }
+
+        _puppetWork = known ? animation : 0;
         Animation.ClearUpperBody(0f);
+
+        // A timed action's clip is its own, by name, and a name no state plays cannot be told by a state: it is read from the
+        // action the copy stands at.
+        if (state == Igi2PlayerState.ActivateGenericTba && NearestTimedAction(position) is { ActivateAnimation.Length: > 0 } action)
+        {
+            if (entered)
+            {
+                Animation.PlayNamed(action.ActivateAnimation, 0, StateBlendSeconds);
+            }
+
+            return;
+        }
+
+        if (known)
+        {
+            Animation.PlayState(animation, 0, StateBlendSeconds);
+            if (animation == SearchLoopClip)
+            {
+                Animation.LoopMain();
+            }
+
+            return;
+        }
+
         switch (state)
         {
             case Igi2PlayerState.ActivateDoor:
@@ -108,6 +150,31 @@ public sealed partial class Igi2HumanPlayer
         Animation.AutoStep();
         TouchPose();
     }
+
+    // The timed action nearest the copy among those within its reach, or null.
+    private Interaction.IIgi2TimedAction? NearestTimedAction(Vector3d position)
+    {
+        Interaction.IIgi2TimedAction? nearest = null;
+        double least = double.MaxValue;
+        foreach (Interaction.IIgi2Activatable candidate in Surroundings.FindActivatables(position, ActivateRadius))
+        {
+            if (candidate is Interaction.IIgi2TimedAction action)
+            {
+                Vector3d off = action.Centre - position;
+                double distance = (off.X * off.X) + (off.Y * off.Y) + (off.Z * off.Z);
+                if (distance < least)
+                {
+                    least = distance;
+                    nearest = action;
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    // The server's copy's clip a copy at work last played.
+    private int _puppetWork;
 
     private static readonly float[] NoChannels = new float[Humans.Igi2HumanChannels.Count];
 }

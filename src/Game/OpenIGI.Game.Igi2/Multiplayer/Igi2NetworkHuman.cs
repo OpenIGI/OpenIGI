@@ -253,6 +253,7 @@ public sealed class Igi2NetworkHuman
             target.Position.ToVector(),
             target.Velocity,
             Quantize.AngleFromBits(target.Yaw),
-            Quantize.AngleFromBits(target.Pitch));
+            Quantize.AngleFromBits(target.Pitch),
+            target.ClipTime);
     }
 }

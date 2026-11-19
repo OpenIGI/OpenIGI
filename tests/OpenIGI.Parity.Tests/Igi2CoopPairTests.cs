@@ -68,7 +68,168 @@ public sealed class Igi2CoopPairTests
         }
 
         Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, false);
-        Assert.True(poses.Count > 10, $"the copy of the walking host took {poses.Count} distinct poses in 30 ticks");
+        Assert.True(poses.Count > 10, $"the copy of the walking host took {poses.Count} distinct leg poses in 30 ticks");
+    }
+
+    /// <summary>
+    /// The host's copy of a walking joiner moves its legs, as the joiner's copy of the host does: the gait's clip poses the
+    /// legs, and the weapon's upper-body clip only the bones from the lower back up.
+    /// </summary>
+    [RequiresTitleDataTheory("igi2")]
+    [InlineData("", "")]
+    [InlineData("priboi", "priboi")]
+    public void Each_sides_copy_of_the_other_walking_moves_its_legs(string hostLook, string joinerLook)
+    {
+        using Igi2CoopPair pair = hostLook.Length == 0 ? Joined() : new(hostLook, joinerLook);
+        Assert.True(
+            pair.RunUntil(() => pair.Joined && pair.Joiner!.NetworkHumans.Count == 1 && pair.Host!.NetworkHumans.Count == 1, 4000) >= 0,
+            "the two never drew each other");
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 60);
+        HashSet<string> onHost = [], onJoiner = [];
+        for (int i = 0; i < 30; i++)
+        {
+            pair.RunUntil(() => false, 1);
+            onHost.Add(PoseKey(Assert.Single(pair.Host!.NetworkHumans)));
+            onJoiner.Add(PoseKey(Assert.Single(pair.Joiner!.NetworkHumans)));
+        }
+
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, false);
+        Assert.True(onHost.Count > 10, $"the host's copy of the walking joiner took {onHost.Count} distinct leg poses in 30 ticks");
+        Assert.True(onJoiner.Count > 10, $"the joiner's copy of the walking host took {onJoiner.Count} distinct leg poses in 30 ticks");
+    }
+
+    /// <summary>
+    /// After the mission's intro has played on both games (as a real session starts, not skipped on the command line), each
+    /// side's copy of the other walks with moving legs.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void After_the_intro_each_sides_copy_of_the_other_walking_moves_its_legs()
+    {
+        using Igi2CoopPair pair = new(withIntro: true);
+        Assert.True(
+            pair.RunUntil(() => pair.Joined && pair.Joiner!.NetworkHumans.Count == 1 && pair.Host!.NetworkHumans.Count == 1, 4000) >= 0,
+            "the two never drew each other");
+        pair.RunUntil(() => false, 200);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.Escape, true);
+        pair.RunUntil(() => false, 3);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.Escape, false);
+        Assert.True(pair.RunUntil(() => pair.Host!.Level?.CutsceneView is null && pair.Joiner!.Level?.CutsceneView is null, 6000) >= 0, "the intro never ended");
+        pair.RunUntil(() => false, 60);
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 60);
+        HashSet<string> onHost = [], onJoiner = [];
+        for (int i = 0; i < 30; i++)
+        {
+            pair.RunUntil(() => false, 1);
+            onHost.Add(PoseKey(Assert.Single(pair.Host!.NetworkHumans)));
+            onJoiner.Add(PoseKey(Assert.Single(pair.Joiner!.NetworkHumans)));
+        }
+
+        Igi2CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        Igi2CoopPair.Hold(pair.HostInput, KeyCode.W, false);
+        Igi2NetworkHuman h = Assert.Single(pair.Host!.NetworkHumans), j = Assert.Single(pair.Joiner!.NetworkHumans);
+        Assert.True(onHost.Count > 10 && onJoiner.Count > 10, $"host's copy {onHost.Count} poses (state {h.Human.Locomotion.CurrentState}), joiner's copy {onJoiner.Count} poses (state {j.Human.Locomotion.CurrentState})");
+    }
+
+    /// <summary>
+    /// A player who looks up and then turns on the spot keeps its spine on its aim in the other's game: the spine follows the
+    /// upper body's state (held up or firing), as the original's lower back reads it, not the state the body moves in.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_a_host_looking_up_keeps_its_spine_up_while_the_host_turns()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 4000) >= 0, "the joiner never drew the host");
+        for (int i = 0; i < 40; i++)
+        {
+            pair.HostInput.Mouse.AddMotion(0f, -12f);
+            pair.RunUntil(() => false, 1);
+        }
+
+        pair.RunUntil(() => false, 60);
+        Igi2NetworkHuman copy = Assert.Single(pair.Joiner!.NetworkHumans);
+        float pitch = copy.Human.View.Pitch;
+        Assert.True(Math.Abs(pitch) > 0.2f, $"the host never looked away from level: its copy's pitch is {pitch}");
+        Assert.True(
+            Math.Abs(copy.Human.View.ShouldersPitch - pitch) < 0.02f,
+            $"the copy standing still bends {copy.Human.View.ShouldersPitch} for a look of {pitch}");
+        bool turned = false;
+        for (int i = 0; i < 60; i++)
+        {
+            pair.HostInput.Mouse.AddMotion(6f, 0f);
+            pair.RunUntil(() => false, 1);
+            _ = copy.Human.BodyPose();
+            turned |= copy.Human.Locomotion.CurrentState == Igi2PlayerState.StandTurn;
+            Assert.True(
+                Math.Abs(copy.Human.View.ShouldersPitch - copy.Human.View.Pitch) < 0.05f,
+                $"turning, the copy bends {copy.Human.View.ShouldersPitch} for a look of {copy.Human.View.Pitch} (tick {i})");
+        }
+
+        Assert.True(turned, "the host's copy never turned on the spot");
+    }
+
+    /// <summary>
+    /// A partner at a timed action -- a gate's lock picked, a code pad hacked -- is shown at it: the action names its own clip,
+    /// which the copy reads from the action it stands at. It once played nothing, and the partner stood there with its gun up.
+    /// </summary>
+    [RequiresTitleDataTheory("igi2")]
+    [InlineData("pick_lock")]
+    [InlineData("tba_hack_code_pad")]
+    public void The_joiners_copy_of_a_host_at_a_timed_action_plays_the_actions_clip(string clip)
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 4000) >= 0, "the joiner never drew the host");
+        pair.RunUntil(() => false, 30);
+        Game.Igi2.Interaction.Igi2GenericTbaTask action = pair.Host!.LevelTasks().OfType<Game.Igi2.Interaction.Igi2GenericTbaTask>()
+            .First(t => string.Equals(t.ActivateAnimation, clip, StringComparison.Ordinal));
+
+        // The host is put at the action and into its work, as its activate key would put it.
+        const System.Reflection.BindingFlags Members =
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+        Igi2HumanPlayer host = pair.Host.Human;
+        Igi2HumanPlayer copy = Assert.Single(pair.Joiner!.NetworkHumans).Human;
+        bool shown = false;
+        for (int i = 0; i < 90 && !shown; i++)
+        {
+            if (host.Locomotion.CurrentState != Igi2PlayerState.ActivateGenericTba)
+            {
+                host.Position = action.Centre;
+                typeof(Igi2HumanPlayer).GetProperty(nameof(Igi2HumanPlayer.ActivatingTarget), Members)!.SetValue(host, action);
+                typeof(Igi2HumanPlayer).GetProperty(nameof(Igi2HumanPlayer.IsActivating), Members)!.SetValue(host, true);
+                typeof(Igi2HumanPlayer).GetMethod("Go", Members)!.Invoke(host, [Igi2PlayerState.ActivateGenericTba]);
+            }
+
+            pair.RunUntil(() => false, 1);
+            shown = copy.Locomotion.CurrentState == Igi2PlayerState.ActivateGenericTba
+                && string.Equals(((OpenIGI.Game.Igi2.Humans.Igi2HumanAnimation)copy.Animation).Main.Clip?.Name, clip, StringComparison.Ordinal);
+        }
+
+        Assert.True(
+            shown,
+            $"the copy is in state {copy.Locomotion.CurrentState} playing {((OpenIGI.Game.Igi2.Humans.Igi2HumanAnimation)copy.Animation).Main.Clip?.Name}, not {clip}");
+    }
+
+    // A body's legs as its pose has them: what a gait moves and an upper-body clip must leave alone.
+    private static string PoseKey(Igi2NetworkHuman other)
+    {
+        System.Text.StringBuilder key = new();
+        if (other.Human is { Model: { } model } human && human.BodyPose() is { } pose)
+        {
+            for (int bone = 0; bone < pose.Pose.BoneCount && bone < model.BoneNames.Count; bone++)
+            {
+                if (model.BoneNames[bone].Contains("leg", StringComparison.Ordinal))
+                {
+                    Matrix3f r = pose.Pose.Rotations[bone];
+                    key.Append(System.Globalization.CultureInfo.InvariantCulture, $"{r.M11:F3}{r.M12:F3}{r.M21:F3};");
+                }
+            }
+        }
+
+        return key.ToString();
     }
 
     /// <summary>
@@ -229,7 +390,8 @@ public sealed class Igi2CoopPairTests
 
     /// <summary>
     /// The joiner's copy of a firing host fires: its upper body plays the shot as the host's does, the gun still hung in its
-    /// hands. The copy's own action states once ran on empty controls, and it never fired, reloaded or drew on the joiner's screen.
+    /// hands, and the gun flashes. The copy's own action states once ran on empty controls, and it never fired, reloaded or drew
+    /// on the joiner's screen.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void The_joiners_copy_of_a_firing_host_fires()
@@ -240,15 +402,20 @@ public sealed class Igi2CoopPairTests
         pair.RunUntil(() => false, 30);
 
         bool fired = false;
+        bool flashed = false;
         pair.HostInput.Mouse.SetButton(MouseButton.Left, true);
-        for (int i = 0; i < 60 && !fired; i++)
+        for (int i = 0; i < 60 && !(fired && flashed); i++)
         {
             pair.RunUntil(() => false, 1);
-            fired = copy.Human.CurrentUpperBody is 6 or 7;
+            fired |= copy.Human.CurrentUpperBody is 6 or 7;
+            flashed |= pair.Joiner.WorldModels.Any(static m => m.MuzzleFlashes is { Count: > 0 });
         }
 
         pair.HostInput.Mouse.SetButton(MouseButton.Left, false);
         Assert.True(fired, $"the copy's upper body stayed at {copy.Human.CurrentUpperBody} while the host fired");
+
+        // Its gun flashes in its body's hands: nobody looks through a copy's eyes, so its weapon object is the body's.
+        Assert.True(flashed, "the copy's gun never flashed while the host fired");
 
         string? gun = copy.Weapons?.Inventory.Current?.WeaponType.FixedModel;
         IReadOnlyList<TitleWorldModel> drawn = Igi2BodyFrame.Build(copy.Human, copy.Human.BodyPose(), copy.Human.Model!.Name, gun, 0);

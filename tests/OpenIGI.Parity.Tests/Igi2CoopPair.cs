@@ -31,6 +31,14 @@ internal sealed class Igi2CoopPair : CoopPair<Igi2TitlePlayer>
     {
     }
 
+    /// <summary>Starts both games on a mission with its intro playing, as a real session does: neither skips it at start.</summary>
+    /// <param name="withIntro">Ignored; tells this overload apart.</param>
+    /// <param name="mission">The mission both play.</param>
+    public Igi2CoopPair(bool withIntro, int mission = FirstMission)
+        : base(GameDataSource.Igi2, GameTitle.Igi2, "igi2", null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro: !withIntro)
+    {
+    }
+
     /// <summary>Starts both games on a mission, each playing in a look of its own.</summary>
     /// <param name="hostLook">The host's look, a <see cref="OpenIGI.Game.Multiplayer.PlayerSkins"/> id.</param>
     /// <param name="joinerLook">The joiner's look.</param>
