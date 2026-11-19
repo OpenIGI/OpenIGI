@@ -455,6 +455,12 @@ public interface IReplicatedClientWorld
     /// <summary>Gets whether the client's own player holds the mode's bomb in hand, or <see langword="null"/> where the title never holds one.</summary>
     bool? HoldsBomb => null;
 
+    /// <summary>
+    /// Gets whether the height the client's own player stands at now is the world's to set and not its commands': afloat on
+    /// water that swells by the level's clock, say. No error in it is the prediction's, and none is put right.
+    /// </summary>
+    bool LocalHeightIsWorlds => false;
+
     /// <summary>Gets the platform -- a lift -- the client's own player stands on now, and where this client's car stands.</summary>
     /// <remarks>
     /// Its prediction is weighed on the platform: the server carries the player each of its ticks and runs its commands as

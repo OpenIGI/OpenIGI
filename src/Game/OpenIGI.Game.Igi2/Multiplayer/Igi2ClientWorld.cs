@@ -24,8 +24,13 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
     private const int HealthPatience = 60;
 
     private readonly Igi2TitlePlayer _level;
+    // The applies in a row this player may hang on a ladder or a wire its server has it off before it lets go: two seconds,
+    // longer than its getting on takes to reach the server and come back.
+    private const int ClimbPatience = 60;
+
     private readonly Dictionary<int, Igi2NetworkHuman> _puppets = [];
     private int _healthBehind;
+    private int _offClimbThere;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ClientWorld"/> class.</summary>
     /// <param name="level">The client's level, as its own player holds it.</param>
@@ -83,6 +88,14 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Afloat, the player is put at the water's height every tick, and the water's swell is the level's clock's, not the
+    /// command's: the server ran the same command a few ticks of swell away, and every third tick its word moved this player
+    /// by the difference. Fallen, its body settles on the ground under it here.
+    /// </remarks>
+    public bool LocalHeightIsWorlds => _level.Human.IsSwimming || _level.Human.IsDead;
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// The soldiers' rounds land on the server's copy of this player, so this one is told how hurt it is and takes the
     /// difference; a fall the server's took is this one's fall, and the server standing it up again (a revival, a retry from
     /// the checkpoint) stands this one up where the server's stands. Healthier there for longer than a round trip -- a hurt
@@ -109,6 +122,16 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
             own.Revive(self.Position.ToVector(), Quantize.AngleFromBits(self.Yaw));
             _healthBehind = 0;
             return;
+        }
+
+        // On a ladder or a wire here and off it on the server for longer than getting on takes to go there and come back:
+        // the server's copy never got on, or has let go. This one lets go too, as Project I.G.I.'s does, rather than be held
+        // there while every snapshot pulls it to where the server has it standing or falling.
+        _offClimbThere = own.ClimbMode != 0 && Igi2PlayerState.ClimbModeOf(self.State) == 0 ? _offClimbThere + 1 : 0;
+        if (_offClimbThere > ClimbPatience)
+        {
+            _offClimbThere = 0;
+            own.LetGoOfClimb();
         }
 
         float max = own.Damage.MaxDamage;

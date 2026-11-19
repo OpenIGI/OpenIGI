@@ -168,6 +168,26 @@ public sealed class Igi2NetworkHuman
             Human.IsWalk = left.Walk;
             Human.View.FieldOfView = left.FieldOfView;
             Human.View.ObjectFieldOfView = left.ObjectFieldOfView;
+            FollowClimb(left.Climb);
+        }
+    }
+
+    /// <summary>How many commands running it may hang on a ladder or a wire its client says it is off before it lets go.</summary>
+    internal const int ClimbPatience = 8;
+
+    // The commands in a row it has hung on something its client did not.
+    private int _climbApart;
+
+    // The command says what its client hung on after it, and this copy has just run the same command: the two agree unless a
+    // command was lost between them. Hanging on a ladder its client has left, it lets go, and the client's player is then put
+    // where this one falls -- held there instead, every snapshot pulled the client's player back to the ladder for good.
+    private void FollowClimb(int clientClimb)
+    {
+        _climbApart = Human.ClimbMode != 0 && clientClimb == 0 ? _climbApart + 1 : 0;
+        if (_climbApart > ClimbPatience)
+        {
+            _climbApart = 0;
+            Human.LetGoOfClimb();
         }
     }
 

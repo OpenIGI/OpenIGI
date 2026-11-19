@@ -374,7 +374,7 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
 
     /// <summary>Gets what the level's own player's last tick left it with, which a client's command carries.</summary>
     internal Igi2CommandEnd CommandEnd =>
-        new(Human.ChosenWeaponNumber, Human.IsWalk, Human.View.FieldOfView, Human.View.ObjectFieldOfView);
+        new(Human.ChosenWeaponNumber, Human.IsWalk, Human.View.FieldOfView, Human.View.ObjectFieldOfView, Human.ClimbMode);
 
     /// <summary>
     /// Gets or sets whether the level's own player's stream is set from each tick's command seed: on a co-op client, whose

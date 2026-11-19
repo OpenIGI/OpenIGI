@@ -17,7 +17,8 @@ public readonly record struct Igi2CommandStart(float IdealGamma, float IdealPitc
 /// <param name="Walk">Whether it walks rather than runs.</param>
 /// <param name="FieldOfView">The view's field of view, which the look's turn is scaled by.</param>
 /// <param name="ObjectFieldOfView">The first-person weapon's field of view.</param>
-public readonly record struct Igi2CommandEnd(int Chosen, bool Walk, float FieldOfView, float ObjectFieldOfView);
+/// <param name="Climb">What it hangs on, <see cref="Player.Igi2HumanPlayer.ClimbMode"/>: nought for nothing.</param>
+public readonly record struct Igi2CommandEnd(int Chosen, bool Walk, float FieldOfView, float ObjectFieldOfView, int Climb = 0);
 
 /// <summary>
 /// An I.G.I. 2 client's command as it goes to the server: the player's channel frame, how the player stood as it began, and what
@@ -62,6 +63,10 @@ public static class Igi2Command
     private const int InvertMouseFlag = 8;
     private const int WalkFlag = 16;
 
+    // What the player hangs on after the command, two bits from here up.
+    private const int ClimbShift = 5;
+    private const int ClimbMask = 3;
+
     // The keys that step the weapon from what is in hand, which the chosen weapon stands in for on the server.
     private static readonly Igi2HumanChannel[] WeaponSteps =
     [
@@ -91,7 +96,8 @@ public static class Igi2Command
             | (start.Unfiltered ? UnfilteredLook : 0)
             | (start.SteadyTurns ? SteadyTurnsFlag : 0)
             | (start.InvertMouse ? InvertMouseFlag : 0)
-            | (end.Walk ? WalkFlag : 0);
+            | (end.Walk ? WalkFlag : 0)
+            | ((end.Climb & ClimbMask) << ClimbShift);
         command[Chosen] = end.Chosen < 0 ? 0f : end.Chosen + 1;
         command[SeedAt] = start.Seed & SeedLimit;
         command[FieldOfViewAt] = end.FieldOfView;
@@ -138,7 +144,8 @@ public static class Igi2Command
                 float.IsFinite(chosen) && chosen >= 0f ? (int)chosen : -1,
                 (flags & WalkFlag) != 0,
                 Math.Clamp(fieldOfView, MinFieldOfView, MaxFieldOfView),
-                Math.Clamp(objectFieldOfView, MinFieldOfView, MaxFieldOfView));
+                Math.Clamp(objectFieldOfView, MinFieldOfView, MaxFieldOfView),
+                (flags >> ClimbShift) & ClimbMask);
         }
 
         return new Igi2CommandStart(

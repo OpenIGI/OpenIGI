@@ -67,7 +67,7 @@ public static class ClientReplication
             ReplicatedLift[]? serverLifts = newest.Lifts;
             Func<int, Core.Numerics.Vector3d?> serverPlatform = index =>
                 serverLifts is not null && (uint)index < (uint)serverLifts.Length ? serverLifts[index].Position.ToVector() : null;
-            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector(), serverPlatform) is { } correction)
+            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector(), serverPlatform, world.LocalHeightIsWorlds) is { } correction)
             {
                 world.MoveLocal(correction, (own.Flags & ReplicatedHumanCondition.OnGround) != 0);
             }

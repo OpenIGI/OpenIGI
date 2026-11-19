@@ -26,6 +26,24 @@ public sealed class Igi2CommandTests
         Assert.Equal(frame, read);
     }
 
+    /// <summary>What the client's player hung on after the command comes with it, for the server's copy to be weighed against.</summary>
+    /// <param name="climb">What it hung on.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void What_the_player_hangs_on_comes_with_the_command(int climb)
+    {
+        float[] command = new float[Igi2Command.ChannelCount];
+        Igi2Command.Pack(new float[Igi2HumanChannels.Count], default, new Igi2CommandEnd(-1, Walk: true, 0.5f, 0.6f, climb), command);
+
+        Igi2CommandStart? start = Igi2Command.Unpack(command, new float[Igi2HumanChannels.Count], out Igi2CommandEnd? end);
+
+        Assert.Equal(default(Igi2CommandStart), start);
+        Assert.Equal(new Igi2CommandEnd(-1, true, 0.5f, 0.6f, climb), end);
+    }
+
     [Fact]
     public void A_chosen_weapon_is_the_pick_and_the_weapon_keys_are_taken_out()
     {

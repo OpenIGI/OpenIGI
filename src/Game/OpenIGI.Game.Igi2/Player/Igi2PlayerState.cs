@@ -13,6 +13,17 @@ public static class Igi2PlayerState
     /// <summary>The number of slots in the table.</summary>
     public const int Count = 109;
 
+    /// <summary>What a player in a state hangs on, as <see cref="Igi2HumanPlayer.ClimbMode"/> counts it. Not retail.</summary>
+    /// <param name="state">The state.</param>
+    /// <returns>Nought for nothing, one a ladder, two a wire climbed, three a wire ridden down.</returns>
+    public static int ClimbModeOf(int state) => state switch
+    {
+        ClimbLadder or ClimbLadderGetOnTop or ClimbLadderGetOffTop or ClimbLadderSlideDown => 1,
+        ClimbWire => 2,
+        SlideWire => 3,
+        _ => 0,
+    };
+
     /// <summary>Standing still.</summary>
     public const int Stand = 0;
 

@@ -117,8 +117,12 @@ public sealed class PredictionReconciler
     /// Where the server's copy of a platform stood in the same snapshot, by its index, or <see langword="null"/> when it has
     /// none: a prediction made on a platform is compared with the server's word as places on it.
     /// </param>
+    /// <param name="heightIsWorlds">
+    /// Whether the player's height is the world's to set, not its commands' (afloat, say): the error is then weighed, and put
+    /// right, level only.
+    /// </param>
     /// <returns>How far to move the player now, or <see langword="null"/> when the prediction agreed or was already checked.</returns>
-    public Vector3d? Check(long commandTick, Vector3d server, Func<int, Vector3d?>? serverPlatform = null)
+    public Vector3d? Check(long commandTick, Vector3d server, Func<int, Vector3d?>? serverPlatform = null, bool heightIsWorlds = false)
     {
         if (commandTick <= _lastChecked || !_predicted.TryGetValue(commandTick, out Vector3d predicted))
         {
@@ -141,6 +145,11 @@ public sealed class PredictionReconciler
         if (_platforms.TryGetValue(commandTick, out PlatformFrame frame) && serverPlatform?.Invoke(frame.Index) is { } origin)
         {
             error = (server - origin) - (predicted - frame.Origin);
+        }
+
+        if (heightIsWorlds)
+        {
+            error = new Vector3d(error.X, error.Y, 0);
         }
 
         LastError = error.Length;
