@@ -45,7 +45,7 @@ internal static class PlayerInputSampler
     {
         if (down && PlayerInputBindings.TryGetAction(slot, out PlayerAction action))
         {
-            frame[(int)slot] = (uint)action;
+            frame[(int)slot] = (ulong)action;
         }
     }
 

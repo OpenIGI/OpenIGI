@@ -9,11 +9,13 @@ namespace OpenIGI.Game.Tests;
 public sealed class PlayerInputTests
 {
     [Fact]
-    public void AFrameIsTheOriginalsHundredAndSixtyBytes()
+    public void AFrameIsTheOriginalsHundredAndSixtyBytesAndTheRemastersSlotsAfterThem()
     {
-        Assert.Equal(40, PlayerInputFrame.SlotCount);
-        Assert.Equal(160, PlayerInputFrame.SizeInBytes);
-        Assert.Equal(160, System.Runtime.InteropServices.Marshal.SizeOf<PlayerInputFrame>());
+        Assert.Equal(40, PlayerInputFrame.RetailSlotCount);
+        Assert.Equal(PlayerInputFrame.RetailSlotCount, (int)PlayerInputSlot.Underbarrel);
+        Assert.Equal(44, PlayerInputFrame.SlotCount);
+        Assert.Equal(176, PlayerInputFrame.SizeInBytes);
+        Assert.Equal(176, System.Runtime.InteropServices.Marshal.SizeOf<PlayerInputFrame>());
     }
 
     [Fact]

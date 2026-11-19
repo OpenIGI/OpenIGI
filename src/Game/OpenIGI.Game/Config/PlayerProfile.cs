@@ -24,9 +24,10 @@ public sealed class PlayerProfile
     /// <summary>The number of key bindings a profile carries.</summary>
     /// <remarks>
     /// The <see cref="RetailBindingCount"/> the original writes, plus the remaster's flashlight, weapon wheel, multiplayer
-    /// scoreboard, buy menu and weapon drop — the five actions the original does not have.
+    /// scoreboard, buy menu and weapon drop, and modern aim's underbarrel, two leans and mount — the nine actions the original
+    /// does not have.
     /// </remarks>
-    public const int BindingCount = RetailBindingCount + 5;
+    public const int BindingCount = RetailBindingCount + 9;
 
     /// <summary>The number of key bindings the original's profile carries.</summary>
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
@@ -80,6 +81,10 @@ public sealed class PlayerProfile
         new(ScoreboardAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_TAB"),
         new(BuyMenuAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_G"),
         new(nameof(Player.PlayerAction.DropWeapon), "INPUTPORT_DEVICE_KEYBOARD", "KEY_X"),
+        new(nameof(Player.PlayerAction.Underbarrel), "INPUTPORT_DEVICE_KEYBOARD", "KEY_V"),
+        new(nameof(Player.PlayerAction.LeanLeft), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Q"),
+        new(nameof(Player.PlayerAction.LeanRight), "INPUTPORT_DEVICE_KEYBOARD", "KEY_R"),
+        new(nameof(Player.PlayerAction.Mount), "INPUTPORT_DEVICE_KEYBOARD", UnboundKey),
     ];
 
     /// <summary>What a fresh profile's bindings were before <see cref="GameConfig.CurrentControlsVersion"/> two, where they differ from today's.</summary>

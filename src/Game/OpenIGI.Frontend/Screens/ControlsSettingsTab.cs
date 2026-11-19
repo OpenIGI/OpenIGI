@@ -292,7 +292,8 @@ internal static class ControlsSettingsTab
             || action.Contains("Weapon", StringComparison.OrdinalIgnoreCase)
             || action.Contains("Reload", StringComparison.OrdinalIgnoreCase)
             || action.Contains("Grenade", StringComparison.OrdinalIgnoreCase)
-            || action.Contains("Knife", StringComparison.OrdinalIgnoreCase))
+            || action.Contains("Knife", StringComparison.OrdinalIgnoreCase)
+            || action is "Underbarrel" or "Mount")
         {
             return "Combat";
         }
@@ -321,6 +322,8 @@ internal static class ControlsSettingsTab
             "MoveDown" => "Move back",
             "ToggleWalkRun" => "Walk / run",
             "PrevWeapon" => "Previous weapon",
+            "Underbarrel" => "Underbarrel launcher",
+            "Mount" => "Mount weapon",
             _ => string.Empty,
         };
         if (known.Length > 0)
