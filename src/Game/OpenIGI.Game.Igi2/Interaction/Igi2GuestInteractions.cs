@@ -18,8 +18,9 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// and the states it enters).
 /// </para>
 /// <para>
-/// The kinds a human climbs, rides or mans -- ladders, wires, fences, mounted guns -- are not among them: those are places a
-/// body goes, which each game moves through in its own way.
+/// A wire and a fence are given the shape Project I.G.I.'s own have -- the cable's two ends and its origin, the fence's
+/// model box -- since that game rides and climbs them by its own rule once it is on. Ladders are handed over apart
+/// (<see cref="Ladders"/>); mounted guns are not offered.
 /// </para>
 /// </remarks>
 public static class Igi2GuestInteractions
@@ -30,6 +31,8 @@ public static class Igi2GuestInteractions
     private const string CabinetSprite = "action_searchcab.spr";
     private const string TerminalSprite = "action_comput.spr";
     private const string ActionSprite = "a_c4.spr";
+    private const string WireSprite = "a_wire.spr";
+    private const string FenceSprite = "a_fence.spr";
 
     private static readonly float[] Upright = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
 
@@ -81,6 +84,16 @@ public static class Igi2GuestInteractions
     // The interaction a thing is worked through, or none for a kind a human does not work by hand.
     private static WorldInteraction? For(GameTask task, IIgi2Activatable target)
     {
+        if (target is IIgi2Wire wire)
+        {
+            return ForWire(task, wire);
+        }
+
+        if (target is Igi2FenceTask fence)
+        {
+            return ForFence(fence);
+        }
+
         (InteractionActivateType type, IReadOnlyList<float> frame, float seconds, string sprite)? shape = target switch
         {
             IIgi2Pressable => (InteractionActivateType.Switch, Upright, 0f, SwitchSprite),
@@ -122,11 +135,93 @@ public static class Igi2GuestInteractions
         };
     }
 
-    // One thing of the level, as the interaction standing for it asks after it and tells it.
-    private sealed class Thing(GameTask task, IIgi2Activatable target) : IHostedInteraction
+    // A wire: the cable between its two magic vertices, measured from the model's origin along its own Y, as Project I.G.I.
+    // measures its own (Wire_GetMatrix).
+    private static WorldInteraction? ForWire(GameTask task, IIgi2Wire wire)
+    {
+        IReadOnlyList<float> frame = wire.Frame;
+        if (frame.Count < 9)
+        {
+            return null;
+        }
+
+        Vector3f first = wire.LocalMagicVertex(0);
+        Vector3f second = wire.LocalMagicVertex(1);
+        Vector3d start = wire.World(new Vector3d(first.X, first.Y, first.Z));
+        Vector3d end = wire.World(new Vector3d(second.X, second.Y, second.Z));
+        Vector3d origin = wire.World(default);
+        return new WorldInteraction(
+            task,
+            InteractionActivateType.Wire,
+            start,
+            end,
+            Matrix(frame),
+            Igi2Pose.Gamma(frame[0], frame[3]),
+            durationTicks: 1,
+            WireSprite,
+            door: null,
+            isPickable: false,
+            stationaryGun: null,
+            localBoundsMinimum: default,
+            localBoundsMaximum: default,
+            hasLocalBounds: false,
+            markerPoint: origin,
+            markerLocal: default)
+        {
+            Hosted = new Thing(task, wire, start),
+            TaskPosition = origin,
+            WireOriginAuthored = origin,
+            WireStartLocalY = first.Y,
+            WireEndLocalY = second.Y,
+        };
+    }
+
+    // A fence: its model's box in its own frame, which it is offered along, mounted beside and touched within.
+    private static WorldInteraction? ForFence(Igi2FenceTask fence)
+    {
+        IReadOnlyList<float> frame = fence.Frame;
+        if (frame.Count < 9 || fence.Models?.Invoke(fence.Model) is not { } model)
+        {
+            return null;
+        }
+
+        (Vector3d minimum, Vector3d maximum, bool hasBounds) = MefModelBounds.Of(model);
+        WorldInteraction interaction = new(
+            fence,
+            InteractionActivateType.Fence,
+            fence.Position,
+            fence.Position,
+            Matrix(frame),
+            Igi2Pose.Gamma(frame[0], frame[3]),
+            WorldInteraction.FenceTraversalTicks,
+            FenceSprite,
+            door: null,
+            isPickable: false,
+            stationaryGun: null,
+            minimum,
+            maximum,
+            hasBounds,
+            markerPoint: fence.Position,
+            markerLocal: default)
+        {
+            Hosted = new Thing(fence, fence, fence.Position),
+            TaskPosition = fence.Position,
+        };
+
+        // Live while the level's own expression says so: not offered then, and whoever walks into it is shocked.
+        interaction.SetConditions(on: null, locked: null, electric: () => fence.IsElectric);
+        return interaction;
+    }
+
+    private static Matrix3f Matrix(IReadOnlyList<float> frame) =>
+        new(frame[0], frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8]);
+
+    // One thing of the level, as the interaction standing for it asks after it and tells it. A thing with a place of its own --
+    // a wire's end, a fence's origin -- keeps it; another is wherever it last offered itself.
+    private sealed class Thing(GameTask task, IIgi2Activatable target, Vector3d? place = null) : IHostedInteraction
     {
         /// <inheritdoc/>
-        public Vector3d Anchor { get; private set; } = target.Centre;
+        public Vector3d Anchor { get; private set; } = place ?? target.Centre;
 
         /// <inheritdoc/>
         public bool IsInWorld => ConditionalContainerGate.IsTaskActive(task);
@@ -139,27 +234,39 @@ public static class Igi2GuestInteractions
 
         /// <inheritdoc/>
         /// <remarks>
-        /// The view is turned level at the thing from the eye, and the reach is another human's, any angle: the thing's own gate is
-        /// what is asked for here, not how well it is aimed at.
+        /// The view is the human's own -- its right level, its forward the way it looks, its up square to both -- and the reach is
+        /// another human's, any angle: the thing's own gate is what is asked for here -- its front, its width, for a fence the way it
+        /// is faced, for a wire that it is ahead -- not how well it is aimed at.
         /// </remarks>
-        public bool Offer(Vector3d eye)
+        public bool Offer(Vector3d eye, Vector3d look)
         {
             Vector3d centre = target.Centre;
-            double dx = centre.X - eye.X;
-            double dy = centre.Y - eye.Y;
-            double flat = Math.Sqrt((dx * dx) + (dy * dy));
-            float fx = flat > 0.0 ? (float)(dx / flat) : 0f;
-            float fy = flat > 0.0 ? (float)(dy / flat) : 1f;
+            double length = look.Length;
+            Vector3d forward = length > 0.0 ? look / length : new Vector3d(0.0, 1.0, 0.0);
+            double flat = Math.Sqrt((forward.X * forward.X) + (forward.Y * forward.Y));
+            Vector3d right = flat > 1e-6 ? new Vector3d(forward.Y / flat, -forward.X / flat, 0.0) : new Vector3d(1.0, 0.0, 0.0);
+            Vector3d up = Vector3d.Cross(right, forward);
 
             // Its columns the right, forward and up axes, as the view's are.
-            Igi2EvaluateActivate context = new(eye, [fy, fx, 0f, -fx, fy, 0f, 0f, 0f, 1f], isPlayer: false);
+            Igi2EvaluateActivate context = new(
+                eye,
+                [
+                    (float)right.X, (float)forward.X, (float)up.X,
+                    (float)right.Y, (float)forward.Y, (float)up.Y,
+                    (float)right.Z, (float)forward.Z, (float)up.Z,
+                ],
+                isPlayer: false);
             target.EvaluateActivate(context);
             if (!ReferenceEquals(context.Best, target))
             {
                 return false;
             }
 
-            Anchor = context.BestPosition ?? centre;
+            if (place is null)
+            {
+                Anchor = context.BestPosition ?? centre;
+            }
+
             return true;
         }
 
@@ -196,6 +303,12 @@ public static class Igi2GuestInteractions
         }
 
         /// <inheritdoc/>
-        public void Cancel() => (target as IIgi2Cabinet)?.SnapDrawerClosed();
+        public void Cancel()
+        {
+            (target as IIgi2Cabinet)?.SnapDrawerClosed();
+
+            // A wire is let go of as its rider leaves it (Wire_Release).
+            (target as IIgi2Wire)?.Release();
+        }
     }
 }

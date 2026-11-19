@@ -147,6 +147,9 @@ public sealed class Igi1GuestLevel
 
         Igi1HumanPlayer human = new(rig, life, start.Surroundings);
         rig.UseHealth(life.Health);
+
+        // A live fence of the level's it walks into shocks it, as the game's own does.
+        rig.ElectrifiedFenceTouched += human.Shock;
         rig.Body.SetFallImpactSink(human.Land);
         if (animations.ViewRig is { } viewRig)
         {

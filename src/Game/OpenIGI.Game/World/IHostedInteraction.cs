@@ -27,8 +27,9 @@ public interface IHostedInteraction
 
     /// <summary>Asks the thing whether it offers itself to a human looking from a point, by its own level's rule.</summary>
     /// <param name="eye">Where the human looks from, in world units.</param>
+    /// <param name="look">The way the human looks; any length.</param>
     /// <returns><see langword="true"/> when it does; <see cref="Anchor"/> is then where.</returns>
-    bool Offer(Vector3d eye);
+    bool Offer(Vector3d eye, Vector3d look);
 
     /// <summary>A human presses it: a switch.</summary>
     void Press();

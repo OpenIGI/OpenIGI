@@ -637,12 +637,17 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         : x;
 
     /// <summary>Applies the task-specific front/side gate before the shared aim resolver.</summary>
-    public bool CanOfferFrom(Vector3d from)
+    public bool CanOfferFrom(Vector3d from) => CanOfferFrom(from, Anchor - from);
+
+    /// <summary>Applies the task-specific front/side gate before the shared aim resolver, for a human looking a given way.</summary>
+    /// <param name="from">Where the human looks from, in world units.</param>
+    /// <param name="look">The way it looks; any length. The game's own tasks gate on where the human stands alone.</param>
+    public bool CanOfferFrom(Vector3d from, Vector3d look)
     {
         // Another game's thing is offered by that game's own rule, which says where too.
         if (Hosted is { } hosted)
         {
-            return hosted.Offer(from);
+            return hosted.Offer(from, look);
         }
 
         if (Type == InteractionActivateType.Door)

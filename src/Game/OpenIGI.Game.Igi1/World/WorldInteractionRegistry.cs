@@ -448,7 +448,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
 
         foreach (WorldInteraction item in _items)
         {
-            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye))
+            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye, look))
             {
                 continue;
             }
