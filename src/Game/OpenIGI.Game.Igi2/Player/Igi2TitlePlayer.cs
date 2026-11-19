@@ -200,6 +200,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets the collision world the player moves through.</summary>
     public Igi2CollisionWorld CollisionWorld => _surroundings.World;
 
+    /// <inheritdoc/>
+    ICollisionWorld? ITitlePlayer.Collision => CollisionWorld;
+
     /// <summary>Gets the level's conveyor belts the player may stand on, by level id.</summary>
     public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors => _surroundings.Conveyors;
 
