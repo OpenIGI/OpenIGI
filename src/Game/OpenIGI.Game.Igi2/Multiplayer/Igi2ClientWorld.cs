@@ -171,9 +171,16 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
             return;
         }
 
+        // A copy standing in its side's body while the pack with its look's was fetched is made again in its look's once it is in.
+        if (_awaitedLooks.TryGetValue(human.Id, out string? wanted) && _level.CanWear(wanted))
+        {
+            Hide(human.Id);
+        }
+
         if (!_puppets.TryGetValue(human.Id, out Igi2NetworkHuman? puppet))
         {
-            if (_level.PlayerBodyFor(human.Team, _looks.GetValueOrDefault(human.Id)) is not { } body
+            string? look = _looks.GetValueOrDefault(human.Id);
+            if (_level.PlayerBodyFor(human.Team, look) is not { } body
                 || _level.AddPartnerPuppet(body, human.Position.ToVector(), Quantize.AngleFromBits(human.Yaw), human.Team) is not { } made)
             {
                 return;
@@ -182,6 +189,10 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
             puppet = made;
             puppet.Weapons?.Firing.IsReplica = true;
             _puppets[human.Id] = puppet;
+            if (_level.AwaitedLook(look, body) is { } awaited)
+            {
+                _awaitedLooks[human.Id] = awaited;
+            }
         }
 
         puppet.PuppetTarget = human;
@@ -189,6 +200,9 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
 
     // The look each other player chose, by entity, a PlayerSkins id, from the server's scoreboard.
     private readonly Dictionary<int, string> _looks = [];
+
+    // The copies standing in their side's body while the pack that ships their look's is fetched, by entity, with that body.
+    private readonly Dictionary<int, string> _awaitedLooks = [];
 
     /// <inheritdoc/>
     /// <remarks>A copy already made in another body is let go, and made again in the look's at the next snapshot.</remarks>
@@ -211,6 +225,7 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
     /// <remarks>A soldier the snapshots leave out (its container out of the world on the server) keeps its last pose.</remarks>
     public void Hide(int id)
     {
+        _awaitedLooks.Remove(id);
         if (_puppets.Remove(id, out Igi2NetworkHuman? puppet))
         {
             _level.RemoveNetworkHuman(puppet);

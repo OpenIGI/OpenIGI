@@ -282,6 +282,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
 
         Teams.Assign(slot, side);
         Seat(slot, human);
+        NoteAwaitedLook(slot, human);
         return slot + 1;
     }
 
@@ -315,16 +316,57 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
     public void SetSkin(int slot, string skin)
     {
         _looks[slot] = skin;
+        Dress(slot);
+    }
+
+    // The slots whose players stand in their side's body while the pack that ships their look's is fetched, with that body.
+    private readonly Dictionary<int, string> _awaitedLooks = [];
+
+    // A player made again where it stands in the body of its look, when that is not the body it wears.
+    private void Dress(int slot)
+    {
+        _awaitedLooks.Remove(slot);
         if (!_bySlot.TryGetValue(slot, out Igi2NetworkHuman? worn)
-            || _level.PlayerBodyFor(Teams.TeamOf(slot), skin) is not { } body
-            || string.Equals(worn.Human.Model?.Name, body, StringComparison.OrdinalIgnoreCase)
-            || _level.AddNetworkHuman(body, worn.Human.Position, worn.Human.Gamma, worn.Human.Team) is not { } dressed)
+            || _level.PlayerBodyFor(Teams.TeamOf(slot), _looks.GetValueOrDefault(slot)) is not { } body)
         {
             return;
         }
 
-        _level.RemoveNetworkHuman(worn);
-        Seat(slot, dressed);
+        if (!string.Equals(worn.Human.Model?.Name, body, StringComparison.OrdinalIgnoreCase)
+            && _level.AddNetworkHuman(body, worn.Human.Position, worn.Human.Gamma, worn.Human.Team) is { } dressed)
+        {
+            _level.RemoveNetworkHuman(worn);
+            Seat(slot, dressed);
+            worn = dressed;
+        }
+
+        NoteAwaitedLook(slot, worn);
+    }
+
+    private void NoteAwaitedLook(int slot, Igi2NetworkHuman worn)
+    {
+        if (_level.AwaitedLook(_looks.GetValueOrDefault(slot), worn.Human.Model?.Name) is { } wanted)
+        {
+            _awaitedLooks[slot] = wanted;
+        }
+    }
+
+    // Each player whose look's pack has arrived since it was made, dressed in it: a browser host fetches another location's
+    // pack only once a player wears a look from it, and the player stood in the mission's Jones until then -- for good, once.
+    private void DressAwaitedLooks()
+    {
+        if (_awaitedLooks.Count == 0)
+        {
+            return;
+        }
+
+        foreach ((int slot, string wanted) in _awaitedLooks.ToArray())
+        {
+            if (_level.CanWear(wanted))
+            {
+                Dress(slot);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -333,6 +375,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         Teams.Remove(slot);
         _names.Remove(slot);
         _looks.Remove(slot);
+        _awaitedLooks.Remove(slot);
 
         // Its revival and its fall go with it, as a parked player's do: the next player in the slot inherited both.
         _squad.Forget(slot + 1);
@@ -350,6 +393,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
     public Snapshot Capture(long tick)
     {
         KeepStartKit();
+        DressAwaitedLooks();
         _scratch.Clear();
         if (IncludesHost)
         {

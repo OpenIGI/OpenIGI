@@ -422,6 +422,9 @@ public sealed partial class GameHost : IDisposable
         _worldBuilder = binding.WorldBuilder;
         _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
+
+        // A level reaching beyond its own folders (a co-op look borrowed from another location's pack) asks the gate first.
+        _fileSystem.Arrival = loadGate;
         _options = options;
         _gamePath = gamePath;
         _logger = logger;

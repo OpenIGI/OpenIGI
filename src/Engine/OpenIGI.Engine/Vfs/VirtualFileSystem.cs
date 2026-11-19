@@ -82,6 +82,14 @@ public sealed class VirtualFileSystem
     /// <remarks>Above the content layers and the installation alike, and for the <c>LOCAL</c> device only.</remarks>
     public IReadOnlyDictionary<string, string>? Pins { get; set; }
 
+    /// <summary>Gets or sets what says whether a folder fetched only when wanted is in place; <see langword="null"/> for one whose folders always are.</summary>
+    public IFolderArrival? Arrival { get; set; }
+
+    /// <summary>Gets whether a folder of the installation is in place now; asking starts fetching it where folders are fetched when wanted.</summary>
+    /// <param name="directory">The folder, relative to the installation, such as <c>missions/multiplayer/common</c>.</param>
+    /// <returns><see langword="true"/> when its files can be read.</returns>
+    public bool IsFolderInPlace(string directory) => Arrival?.IsInPlace(directory) ?? true;
+
     /// <summary>Finds a registered device by name.</summary>
     /// <param name="name">The device name, with or without its trailing colon.</param>
     /// <param name="device">Receives the device, or <see langword="null"/> when none is registered.</param>

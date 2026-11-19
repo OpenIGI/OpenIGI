@@ -411,7 +411,8 @@ public sealed partial class GameHost
             _worldBuilder,
             _device.Capabilities.SupportsCompute,
             _titleRuntime.Title.Id,
-            _device.Capabilities.SupportsBlockCompression);
+            _device.Capabilities.SupportsBlockCompression,
+            _loadGate);
     }
 
     /// <summary>The campaign as the shell lists it, for the title running now.</summary>

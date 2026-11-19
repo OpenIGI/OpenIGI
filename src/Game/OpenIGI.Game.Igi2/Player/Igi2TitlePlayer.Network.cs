@@ -160,9 +160,28 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
     /// <param name="look">The look it chose, a <see cref="PlayerSkins"/> id, or <see langword="null"/>.</param>
     /// <returns>The model's name, or <see langword="null"/> when the level's player has none.</returns>
     internal string? PlayerBodyFor(int team, string? look) =>
-        !IsMultiplayerMap && PlayerSkins.Igi2.Of(look).Model is { Length: > 0 } worn && SpawnKit?.Looks(worn) is not null
+        !IsMultiplayerMap && PlayerSkins.Igi2.Of(look).Model is { Length: > 0 } worn && CanWear(worn)
             ? worn
             : PlayerBodyFor(team);
+
+    /// <summary>
+    /// Gets the body of the co-op look a player chose that it is not wearing: the pack that ships it is still being fetched (a
+    /// browser reads another location's pack only when it is wanted), and its side's body stands in meanwhile.
+    /// </summary>
+    /// <param name="look">The look it chose, a <see cref="PlayerSkins"/> id, or <see langword="null"/>.</param>
+    /// <param name="wearing">The body it wears now.</param>
+    /// <returns>The look's model, or <see langword="null"/> when it wears its look or its look is not worn here.</returns>
+    internal string? AwaitedLook(string? look, string? wearing) =>
+        PlayerSkins.Igi2.Of(look).Model is { Length: > 0 } wanted
+            && !string.Equals(wanted, wearing, StringComparison.OrdinalIgnoreCase) && !IsMultiplayerMap
+            ? wanted
+            : null;
+
+    /// <summary>Gets whether a body can be worn now: the level ships it, or the pack that does is open.</summary>
+    /// <param name="model">The body's model.</param>
+    /// <returns><see langword="true"/> when it can.</returns>
+    /// <remarks>Asking starts fetching a look's pack, where packs are fetched only when wanted.</remarks>
+    internal bool CanWear(string model) => SpawnKit?.Looks(model) is not null;
 
     // Whether the level is a multiplayer map (its spawn areas), whose sides' bodies are its own, rather than a campaign mission.
     private bool IsMultiplayerMap => LevelTasks().OfType<Igi2SpawnAreaTask>().Any();

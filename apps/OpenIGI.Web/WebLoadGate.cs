@@ -37,6 +37,14 @@ internal sealed partial class WebLoadGate : ILoadGate
         return false;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>The page knows a location's shared pack, or a mission's folder, by its path; any other folder is read up front.</remarks>
+    public bool IsInPlace(string directory)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(directory);
+        return MissionReady(directory);
+    }
+
     [JSImport("missionReady", ModuleName)]
     private static partial bool MissionReady(string directory);
 }

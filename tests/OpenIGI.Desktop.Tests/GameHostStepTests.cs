@@ -243,6 +243,8 @@ public sealed class GameHostStepTests : IDisposable
             waitingFor = ready ? null : "the test";
             return ready;
         }
+
+        public bool IsInPlace(string directory) => true;
     }
 
     private sealed class RecordingAudioFactory : IAudioDeviceFactory

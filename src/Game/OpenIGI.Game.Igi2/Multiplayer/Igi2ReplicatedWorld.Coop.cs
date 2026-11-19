@@ -106,6 +106,7 @@ public sealed partial class Igi2ReplicatedWorld
 
         _level.RemoveNetworkHuman(human);
         _looks.Remove(slot);
+        _awaitedLooks.Remove(slot);
         _squad.Forget(slot + 1);
         _dead.Remove(slot + 1);
         _parked[parked] = (human, Teams.TeamOf(slot));

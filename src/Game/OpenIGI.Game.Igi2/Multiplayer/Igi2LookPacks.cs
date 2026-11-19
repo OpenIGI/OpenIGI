@@ -113,14 +113,31 @@ public static class Igi2LookPacks
         Dictionary<string, Opened?> opened = OpenedBy.GetValue(resources, static _ => new(StringComparer.OrdinalIgnoreCase));
         lock (opened)
         {
-            if (!opened.TryGetValue(source.Name, out Opened? pack))
+            if (opened.TryGetValue(source.Name, out Opened? pack))
             {
-                pack = TryOpen(source, resources, logger ?? NullLogger.Instance);
-                opened[source.Name] = pack;
+                return pack;
             }
 
+            // A browser reads a location's pack only once it is wanted: until it is in place there is nothing to open yet,
+            // and nothing is remembered, so the look is had once it arrives. Opened before then, it failed for good and
+            // every look fell back to the mission's Jones.
+            if (!resources.FileSystem.IsFolderInPlace(FolderOf(source)))
+            {
+                return null;
+            }
+
+            pack = TryOpen(source, resources, logger ?? NullLogger.Instance);
+            opened[source.Name] = pack;
             return pack;
         }
+    }
+
+    // A pack's folder as the installation names it: "LOCAL:missions/multiplayer/common/" is missions/multiplayer/common.
+    private static string FolderOf(PackReference source)
+    {
+        string directory = source.Directory;
+        int device = directory.IndexOf(':', StringComparison.Ordinal);
+        return directory[(device + 1)..].TrimEnd('/');
     }
 
     private static Opened? TryOpen(PackReference source, ResourceRegistry resources, IOpenIgiLogger logger)
