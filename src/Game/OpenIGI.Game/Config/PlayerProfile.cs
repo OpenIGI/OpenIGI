@@ -44,7 +44,7 @@ public sealed partial class PlayerProfile
     /// <remarks>
     /// The port keeps the retail action set on the layout shooters with a lean have settled on, every key within reach of a hand
     /// on WASD: the sight (alternate fire) on the right mouse button, the weapons on the wheel, reload on R, use on F, the
-    /// leans on Q and E, crouch on the left Ctrl, the flashlight on T, the original's peek on the left Alt and the zoom beside
+    /// leans on Q and E, crouch on the left Ctrl, the flashlight on L, the original's peek on the left Alt and the zoom beside
     /// the digits. They must live in the model rather than the Controls screen: a profile created before that page is opened
     /// still has to serialize to a complete configuration and provide usable input to the game. <see cref="AdoptCurrentLayout"/>
     /// brings a profile still on an older layout's keys onto these.
@@ -78,7 +78,7 @@ public sealed partial class PlayerProfile
         new("WeaponCategory7", "INPUTPORT_DEVICE_KEYBOARD", "KEY_7"),
         new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
         new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
-        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_T"),
+        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_L"),
         new("WeaponWheel", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_3"),
         new(ScoreboardAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_TAB"),
         new(BuyMenuAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_G"),

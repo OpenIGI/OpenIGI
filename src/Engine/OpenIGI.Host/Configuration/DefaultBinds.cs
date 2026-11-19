@@ -34,7 +34,8 @@ public static class DefaultBinds
         // level's textures, so it costs a hitch each way; r_pbr is a multiplier the shader reads every
         // frame and is instant. Neither is archived -- see above.
         ("f8", "toggle r_overrides"),
-        ("f9", "toggle r_pbr"),
+        // Not F9, which quick-loads.
+        ("scrolllock", "toggle r_pbr"),
 
         // Rebuilds the game over the next graphics API -- Direct3D 12, Vulkan, WebGPU -- and puts the player back
         // where they stood, so the two can be compared on one view. A command, not a setting: the API a game
@@ -45,13 +46,15 @@ public static class DefaultBinds
         // The wall switch for whichever of the level's lamps the crosshair is on, and the fault. Neither
         // writes a setting -- they act on the level that is loaded and nothing survives it -- so the rule
         // this table exists for has nothing to check on them.
-        ("l", "lamp_switch"),
-        ("k", "lamp_break"),
+        // Beside the letters a hand on WASD plays with, which are the game's: L is the flashlight and K the voice key.
+        ("semicolon", "lamp_switch"),
+        ("apostrophe", "lamp_break"),
 
         // Swaps between looking through the player's eyes and looking over their shoulder. It obeys the
         // rule above rather than being an exception to it: g_thirdperson is deliberately NOT archived, so
         // a view flipped to while lining up a jump is not what the game starts as tomorrow.
-        ("v", "toggle g_thirdperson"),
+        // P, for perspective: V is the underbarrel launcher's.
+        ("p", "toggle g_thirdperson"),
 
         // Co-op talk: the place under the crosshair marked for the others, a line typed to them, and four said at a press.
         // Each does nothing outside a co-op room.
@@ -129,6 +132,7 @@ public static class DefaultBinds
     public static void Apply(OpenIGI.Core.Configuration.ConsoleSystem console)
     {
         ArgumentNullException.ThrowIfNull(console);
+        Migrate(console);
 
         foreach ((string key, string statement) in All)
         {
@@ -155,4 +159,67 @@ public static class DefaultBinds
             ? parts[1]
             : null;
     }
+
+    /// <summary>The default binds an earlier layout put elsewhere: the statement, the key it had, and the key it has now.</summary>
+    /// <remarks>
+    /// The modern layout gave the letters around WASD to the game's own actions -- V to the underbarrel launcher, L to the
+    /// flashlight, K to the voice key -- and F9 is the quick load. A bind still on its old key there is moved once
+    /// (<see cref="KeyLayoutCVars.Revision"/>), where its new key is free; one its player moved is theirs and stays.
+    /// </remarks>
+    public static IReadOnlyList<(string Statement, string From, string To)> Moved { get; } =
+    [
+        ("toggle g_thirdperson", "v", "p"),
+        ("lamp_switch", "l", "semicolon"),
+        ("lamp_break", "k", "apostrophe"),
+        ("toggle r_pbr", "f9", "scrolllock"),
+    ];
+
+    /// <summary>The revision of the default keys a settings file has been brought to.</summary>
+    public const int CurrentRevision = 1;
+
+    /// <summary>Moves the binds and the voice key an earlier layout gave keys the game's actions now have, once.</summary>
+    /// <param name="console">The console whose binds are moved.</param>
+    public static void Migrate(OpenIGI.Core.Configuration.ConsoleSystem console)
+    {
+        ArgumentNullException.ThrowIfNull(console);
+        if (KeyLayoutCVars.Revision.Value >= CurrentRevision)
+        {
+            return;
+        }
+
+        foreach ((string statement, string from, string to) in Moved)
+        {
+            if (console.Binds.TryGetValue(from, out string? bound)
+                && string.Equals(bound.Trim(), statement, StringComparison.OrdinalIgnoreCase))
+            {
+                console.SetBind(from, string.Empty);
+                if (!console.Binds.TryGetValue(to, out string? taken) || string.IsNullOrWhiteSpace(taken))
+                {
+                    console.SetBind(to, statement);
+                }
+            }
+        }
+
+        // Push-to-talk was on V, which the underbarrel launcher has now: K, as the team shooters put it.
+        if (string.Equals(CoopVoiceCVars.Key.Value, "v", StringComparison.OrdinalIgnoreCase))
+        {
+            CoopVoiceCVars.Key.Value = "k";
+        }
+
+        KeyLayoutCVars.Revision.Value = CurrentRevision;
+    }
+}
+
+/// <summary>The revision of the game's own default keys a settings file has been brought to (<see cref="DefaultBinds.Migrate"/>).</summary>
+[OpenIGI.Core.Configuration.CVarContainer]
+public static class KeyLayoutCVars
+{
+    /// <summary>The revision, nought for a settings file from before the modern layout.</summary>
+    public static readonly OpenIGI.Core.Configuration.NumericCVar<int> Revision = OpenIGI.Core.Configuration.CVar.Int(
+        "cl_keys_revision",
+        0,
+        0,
+        int.MaxValue,
+        OpenIGI.Core.Configuration.CVarOptions.Archive | OpenIGI.Core.Configuration.CVarOptions.Hidden,
+        "The revision of the game's default keys this settings file has been brought to. Not for setting by hand.");
 }

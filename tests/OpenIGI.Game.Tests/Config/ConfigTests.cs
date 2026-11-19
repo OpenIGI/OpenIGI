@@ -430,16 +430,16 @@ public sealed class ConfigTests
     {
         GameConfig partial = new();
         PlayerProfile joe = new() { Name = "Joe" };
-        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_T"));
+        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_L"));
         partial.Add(joe);
 
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal("KEY_T", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
+        Assert.Equal("KEY_L", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
         Assert.Contains(loaded.Active.Bindings, binding => binding.Action == "Binoculars");
 
-        // The flashlight's own default is T, which this player gave to MoveLeft: it comes back without a key
+        // The flashlight's own default is L, which this player gave to MoveLeft: it comes back without a key
         // rather than making one key drive two actions.
         InputBinding flashlight = loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight");
         Assert.Equal(PlayerProfile.UnboundKey, flashlight.Key);
@@ -447,7 +447,7 @@ public sealed class ConfigTests
     }
 
     [Fact]
-    public void A_profile_saved_before_the_flashlight_gains_it_on_T()
+    public void A_profile_saved_before_the_flashlight_gains_it_on_L()
     {
         GameConfig partial = new();
         PlayerProfile joe = new() { Name = "Joe" };
@@ -457,7 +457,7 @@ public sealed class ConfigTests
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal("KEY_T", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
+        Assert.Equal("KEY_L", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
     }
 
     [Fact]

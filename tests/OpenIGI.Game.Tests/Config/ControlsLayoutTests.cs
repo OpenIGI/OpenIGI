@@ -28,7 +28,7 @@ public sealed class ControlsLayoutTests
         Assert.Equal("KEY_Q", Key("LeanLeft"));
         Assert.Equal("KEY_E", Key("LeanRight"));
         Assert.Equal("KEY_LEFT_CTRL", Key("Crouch"));
-        Assert.Equal("KEY_T", Key("Flashlight"));
+        Assert.Equal("KEY_L", Key("Flashlight"));
         Assert.Equal("KEY_LEFT_ALT", Key("Peek"));
         Assert.Equal("MOUSE_WHEEL_DOWN", Key("NextWeapon"));
     }
@@ -64,14 +64,17 @@ public sealed class ControlsLayoutTests
         Assert.Equal("KEY_LEFT_ALT", Key(profile, "Peek"));
         Assert.Equal("KEY_EQUALS", Key(profile, "ZoomIn"));
         Assert.Equal("KEY_F", Key(profile, "Activate"));
-        Assert.Equal("KEY_T", Key(profile, "Flashlight"));
+        Assert.Equal("KEY_L", Key(profile, "Flashlight"));
         Assert.Equal("KEY_Q", Key(profile, "LeanLeft"));
         Assert.Equal("KEY_E", Key(profile, "LeanRight"));
         Assert.Equal("KEY_Z", Key(profile, "Mount"));
         Assert.Equal("KEY_R", Key(profile, "Reload"));
 
-        // The other title's own rows are its player's and are left exactly as they were.
-        Assert.Equal("KEY_Q", Key(profile, "Title_igi2_RaiseStance"));
+        // I.G.I. 2's own rows still on the keys the layout before gave them come over too: the goggles off the co-op mark's T,
+        // the stance steps off the leans' Q and prone's Z.
+        Assert.Equal("KEY_N", Key(profile, "Title_igi2_Thermal"));
+        Assert.Equal("KEY_INSERT", Key(profile, "Title_igi2_RaiseStance"));
+        Assert.Equal("KEY_DELETE", Key(profile, "Title_igi2_LowerStance"));
         Assert.Equal(3, config.ControlsVersion);
         Assert.False(config.MigrateControls());
     }
@@ -84,13 +87,13 @@ public sealed class ControlsLayoutTests
         Set(profile, "Activate", "KEY_E");
         Set(profile, "Flashlight", "KEY_F");
         Set(profile, "LeanRight", "KEY_R");
-        Set(profile, "Binoculars", "KEY_T");
+        Set(profile, "Binoculars", "KEY_L");
 
         Assert.False(profile.AdoptCurrentLayout());
 
-        // The binoculars were the player's own choice of T, so the flashlight cannot have it and stays on F -- and use, which
+        // The binoculars were the player's own choice of L, so the flashlight cannot have it and stays on F -- and use, which
         // would have moved onto F, stays on E, and the right lean with it on R, and reload on Return.
-        Assert.Equal("KEY_T", Key(profile, "Binoculars"));
+        Assert.Equal("KEY_L", Key(profile, "Binoculars"));
         Assert.Equal("KEY_F", Key(profile, "Flashlight"));
         Assert.Equal("KEY_E", Key(profile, "Activate"));
         Assert.Equal("KEY_R", Key(profile, "LeanRight"));
