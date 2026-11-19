@@ -296,7 +296,7 @@ public sealed partial class GameHost
 
         // The mission's look beyond its air -- its painted sky and its brightness -- from the same entry.
         // Vanilla draws the original's picture and takes none of it.
-        _missionLook = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla
+        _missionLook = GraphicsPresetRegistry.Default.IsVanillaLook
             ? MissionLook.Empty
             : state.FogPresets.LookFor(fogMission, fogTitle);
         ExposureCVars.MissionExposureStops.Value = _missionLook.ExposureStops ?? 0f;

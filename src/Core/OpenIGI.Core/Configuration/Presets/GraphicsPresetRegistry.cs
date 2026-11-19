@@ -19,6 +19,8 @@ namespace OpenIGI.Core.Configuration.Presets;
 public sealed class GraphicsPresetRegistry
 {
     private readonly Dictionary<ICVar, string?[]> _managed = [];
+    private readonly HashSet<ICVar> _interface = [];
+    private GraphicsPreset _look = GraphicsPreset.Custom;
     private bool _applying;
 
     /// <summary>Occurs after <see cref="Current"/> changes.</summary>
@@ -29,6 +31,24 @@ public sealed class GraphicsPresetRegistry
 
     /// <summary>Gets the preset the settings currently correspond to.</summary>
     public GraphicsPreset Current { get; private set; } = GraphicsPreset.Custom;
+
+    /// <summary>Gets the preset the picture is: what a look that is the original's or the remaster's asks.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not <see cref="Current"/>, which reads Custom the moment any managed variable leaves the preset -- the interface's
+    /// included. A player on Vanilla who turned the remastered heads-up display on lost every look that asked for
+    /// Vanilla with it: the forest's blended leaves and fog, the sky turned to its sun, the lens flares, the original's
+    /// texture storage. The interface (<see cref="DefineInterface"/>) draws over the picture and is left out here.
+    /// </para>
+    /// <para>
+    /// A build that ships a single picture (<see cref="LockedPreset"/>, the browser's Vanilla) is that picture whatever
+    /// the console has done since.
+    /// </para>
+    /// </remarks>
+    public GraphicsPreset Look => LockedPreset ?? _look;
+
+    /// <summary>Gets whether the picture is the original's (<see cref="Look"/> is <see cref="GraphicsPreset.Vanilla"/>).</summary>
+    public bool IsVanillaLook => Look == GraphicsPreset.Vanilla;
 
     /// <summary>Gets the one preset that may be applied, or <see langword="null"/> when any may be.</summary>
     /// <remarks>
@@ -62,6 +82,23 @@ public sealed class GraphicsPresetRegistry
             variable.Changed += OnManagedVariableChanged;
         }
 
+        return variable;
+    }
+
+    /// <summary>Declares what the four presets set an interface variable to: one drawn over the picture, not part of it.</summary>
+    /// <param name="variable">The variable to manage.</param>
+    /// <param name="vanilla">The value under <see cref="GraphicsPreset.Vanilla"/>.</param>
+    /// <param name="enhanced">The value under <see cref="GraphicsPreset.Enhanced"/>.</param>
+    /// <param name="high">The value under <see cref="GraphicsPreset.High"/>.</param>
+    /// <param name="ultra">The value under <see cref="GraphicsPreset.Ultra"/>.</param>
+    /// <returns><paramref name="variable"/>.</returns>
+    /// <remarks>Counted for <see cref="Current"/> like any other, and left out of <see cref="Look"/>.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="variable"/> is <see langword="null"/>.</exception>
+    public TVar DefineInterface<TVar>(TVar variable, string? vanilla, string? enhanced, string? high, string? ultra)
+        where TVar : ICVar
+    {
+        Define(variable, vanilla, enhanced, high, ultra);
+        _interface.Add(variable);
         return variable;
     }
 
@@ -210,7 +247,11 @@ public sealed class GraphicsPresetRegistry
     public GraphicsPreset Recognise(Func<ICVar, string, bool> holds)
     {
         ArgumentNullException.ThrowIfNull(holds);
+        return Recognise(holds, pictureOnly: false);
+    }
 
+    private GraphicsPreset Recognise(Func<ICVar, string, bool> holds, bool pictureOnly)
+    {
         for (int index = 0; index < 4; index++)
         {
             bool matches = true;
@@ -220,6 +261,11 @@ public sealed class GraphicsPresetRegistry
                 // MatchesText rather than a comparison against ValueText: a float renders as its own
                 // shortest round trip, so a preset declaring 0.70 would never be recognised again once
                 // it had been applied and read back as 0.7.
+                if (pictureOnly && _interface.Contains(variable))
+                {
+                    continue;
+                }
+
                 if (values[index] is { } expected && !holds(variable, expected))
                 {
                     matches = false;
@@ -273,6 +319,8 @@ public sealed class GraphicsPresetRegistry
 
     private void SetCurrent(GraphicsPreset preset)
     {
+        // Every path that settles Current comes through here, so the picture's preset is read again with it.
+        _look = Recognise(static (variable, expected) => variable.MatchesText(expected), pictureOnly: true);
         if (Current == preset)
         {
             return;

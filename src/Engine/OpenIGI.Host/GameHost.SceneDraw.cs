@@ -47,6 +47,10 @@ public sealed partial class GameHost
         return share * (1f - (t * t * (3f - (2f * t))));
     }
 
+    /// <summary>Gets the flat light the level's models without a lightmap are lit by: the level's own under baked light, else none.</summary>
+    private Vector3f LevelModelAmbient =>
+        _gi.EffectiveLighting == LightingModel.Baked ? _globalLight.ObjectAmbient : GlobalLightSettings.DefaultAmbient;
+
     /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
     /// <summary>Gets the ground, unless the title's culling leaves the world outside its buildings out of this frame.</summary>
     /// <remarks>The cascades take it from here too, so a ground the eye cannot see out to casts nothing into the room.</remarks>
@@ -90,20 +94,17 @@ public sealed partial class GameHost
             detailedWorld.Lod = ActiveModelLod();
 
             // The original's face groups on its own look: the opaque ones without an alpha test, the sorted ones blended after.
-            detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.IsVanillaLook;
 
             // The glows the models carry, drawn as the original draws them on its own look. The other looks light the
             // lamps those glows mark instead (GlowLamps), and a sprite over a lit lamp would be the lamp twice.
-            detailedWorld.CollectGlows = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            detailedWorld.CollectGlows = GraphicsPresetRegistry.Default.IsVanillaLook;
         }
 
         // None of it over the remastered computer's map, which is read in clear air (ComputerMapClear).
         bool retailFog = FogCVars.RetailFog.Value && !ComputerMapClear;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
-        _device.SetModelAmbient(
-            _gi.EffectiveLighting == LightingModel.Baked
-                ? _globalLight.ObjectAmbient
-                : GlobalLightSettings.DefaultAmbient);
+        _device.SetModelAmbient(LevelModelAmbient);
 
         if (mapScene is null || _computerFlight.IsFlying)
         {
@@ -140,13 +141,18 @@ public sealed partial class GameHost
 
             // The original draws its whole sky unfogged: the dome (SkyDome_Draw) and the cloud layers' strips, whose QVertex
             // states turn fog off (Direct3DQVertex_SetGenericState). Added clouds fogged here dimmed toward black.
-            bool unfoggedSky = retailFog && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            bool unfoggedSky = retailFog && GraphicsPresetRegistry.Default.IsVanillaLook;
             if (unfoggedSky)
             {
                 _device.SetFog(SceneFog.None);
             }
 
+            // Unlit as well: SkyDome_Draw turns D3DRS_LIGHTING off and selects the vertex colour alone (COLOROP SELECTARG2,
+            // DIFFUSE). A dome has no lightmap, so the device would otherwise tint it by the level's flat model light, which
+            // on a night level drew mission 1's sky at a third of its authored colour.
+            _device.SetModelAmbient(Vector3f.One);
             _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
+            _device.SetModelAmbient(LevelModelAmbient);
             if (unfoggedSky)
             {
                 _device.SetFog(RetailAir(_globalLight.ObjectFog));
@@ -243,7 +249,7 @@ public sealed partial class GameHost
         {
             // The original fogs its trees in the objects' colour at four fifths of the ground's density
             // (ForestRender_SetGenericState_*), on its own look.
-            bool retailForest = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            bool retailForest = GraphicsPresetRegistry.Default.IsVanillaLook;
             if (retailForest && retailFog && _forest is not null)
             {
                 _device.SetFog(RetailAir(_globalLight.ObjectFog) with
@@ -401,7 +407,7 @@ public sealed partial class GameHost
         }
 
         bool retailFog = FogCVars.RetailFog.Value && !ComputerMapClear;
-        bool retailForest = retailFog && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+        bool retailForest = retailFog && GraphicsPresetRegistry.Default.IsVanillaLook;
         if (retailForest)
         {
             _device.SetFog(RetailAir(_globalLight.ObjectFog) with
@@ -528,7 +534,7 @@ public sealed partial class GameHost
                 eye,
                 projection,
                 captured ? resolution.RenderHeight : _window.Height,
-                GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla);
+                GraphicsPresetRegistry.Default.IsVanillaLook);
         }
 
         // A multiplayer mode's places -- the bomb sites -- on the ground, over the lit scene like the tracers.
@@ -619,7 +625,7 @@ public sealed partial class GameHost
                 // units, so the drops never sink below a faint grey whatever the night.
                 RainVeilDisplay / MathF.Max(_device.SceneExposure, 1e-3f));
         }
-        else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
+        else if (GraphicsPresetRegistry.Default.IsVanillaLook && _retailWeather is { } retailWeather)
         {
             // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
             // Smooth motion draws each drop partway through its last tick's fall, as everything else between ticks is drawn.
@@ -647,7 +653,7 @@ public sealed partial class GameHost
         // Snow uses the same authored building shells and weather band, but renders small,
         // drifting flakes instead of rain droplets.
         if (_snow is { IsWeatherEnabled: true } snow
-            && !(GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is not null))
+            && !(GraphicsPresetRegistry.Default.IsVanillaLook && _retailWeather is not null))
         {
             snow.Indoors = cameraIndoors;
             snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);

@@ -222,13 +222,20 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
 
     /// <summary>
     /// The dome's turn about the vertical, <c>SkyDome_Draw</c>: <c>atan2(x, y) + π/2</c> of its Dirlight's direction, so the dome's
-    /// own north and south horizon colours lie to either side of the sun.
+    /// own north and south horizon colours lie to either side of the sun -- and half a turn more in this port's space.
     /// </summary>
     /// <param name="towardsSun">The Dirlight's direction.</param>
     /// <returns>The dome's orientation: a model point (x, y) is carried to (x·cos + y·sin, −x·sin + y·cos).</returns>
+    /// <remarks>
+    /// The half turn is measured, not read: against retail captures of missions 1 and 35 the original's angle alone put mission
+    /// 35's sunset glow on the wrong side of the screen (the sky off by 33 levels a channel on average), and the half turn more
+    /// brought both to within 5 and 9. The dome's colours are mirror-symmetric about its own X axis (north at nought, a triangle
+    /// wave round the compass), and for such a pattern a half turn is the same as mirroring X -- which is what Direct3D's
+    /// left-handed view is against this port's.
+    /// </remarks>
     public static Matrix3f DomeOrientation(Vector3f towardsSun)
     {
-        float angle = MathF.Atan2(towardsSun.X, towardsSun.Y) + 1.5707964f;
+        float angle = MathF.Atan2(towardsSun.X, towardsSun.Y) + 1.5707964f + MathF.PI;
         float c = MathF.Cos(angle), s = MathF.Sin(angle);
         return Matrix3f.FromRows(new Vector3f(c, s, 0f), new Vector3f(-s, c, 0f), new Vector3f(0f, 0f, 1f));
     }
@@ -250,7 +257,7 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
         // The sky follows the camera, so its model position is the camera's and only the rotation
         // remains in the model-view.
         Matrix4f modelView = camera.CreateModelView(camera.Position);
-        Matrix4f domeView = TowardsSun is { } sun && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla
+        Matrix4f domeView = TowardsSun is { } sun && GraphicsPresetRegistry.Default.IsVanillaLook
             ? camera.CreateModelView(camera.Position, DomeOrientation(sun()))
             : modelView;
         _device.DrawMesh(

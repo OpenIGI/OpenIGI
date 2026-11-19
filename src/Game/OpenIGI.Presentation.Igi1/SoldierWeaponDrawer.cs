@@ -164,7 +164,7 @@ internal sealed class SoldierWeaponDrawer(
                 LightModel(member.DrawnOrientation);
 
                 // 0x49F700 fogs the body along its sphere: its origin's depth, either side by the mesh's radius (Fog_SetRange).
-                if (OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla
+                if (OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.IsVanillaLook
                     && group.Body.Model is { } fogged)
                 {
                     Vector3d offset = member.DrawnWhere - camera.Position;

@@ -189,11 +189,12 @@ public sealed class RetailIgi2SkyPresenterTests
     }
 
     [Fact]
-    public void The_dome_turns_to_its_sun_as_the_originals_world_matrix_does()
+    public void The_dome_turns_to_its_sun_as_the_originals_world_matrix_does_half_a_turn_round()
     {
         // SkyDome_Draw: angle atan2(x, y) + pi/2, and the row-vector world matrix [c -s; s c] carries (x, y) to (x c + y s, -x s + y c).
+        // Half a turn more in the port's space, as retail captures of missions 1 and 35 measure it (see DomeOrientation).
         OpenIGI.Core.Numerics.Vector3f sun = new(0.6f, 0.7f, 0.2f);
-        float angle = MathF.Atan2(sun.X, sun.Y) + (MathF.PI / 2f);
+        float angle = MathF.Atan2(sun.X, sun.Y) + (MathF.PI / 2f) + MathF.PI;
         float c = MathF.Cos(angle), s = MathF.Sin(angle);
         OpenIGI.Core.Graphics.Camera3D eye = new(OpenIGI.Core.Numerics.Vector3d.Zero, OpenIGI.Core.Numerics.Matrix3f.Identity);
         OpenIGI.Core.Numerics.Matrix4f view = eye.CreateModelView(OpenIGI.Core.Numerics.Vector3d.Zero, OpenIGI.Presentation.Igi2.World.Igi2SkyPresenter.DomeOrientation(sun));

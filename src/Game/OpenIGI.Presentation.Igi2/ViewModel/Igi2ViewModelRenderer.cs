@@ -246,8 +246,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _worldFrame++;
         float between = Math.Clamp(blend, 0f, 1f);
         models = LevelsOf(models, camera, projection);
-        bool retailFog = OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current
-            == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla;
+        bool retailFog = OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.IsVanillaLook;
         PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
