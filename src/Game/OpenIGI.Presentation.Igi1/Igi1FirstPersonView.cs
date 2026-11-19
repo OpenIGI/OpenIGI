@@ -249,7 +249,9 @@ internal sealed class Igi1FirstPersonView(
             player.StrafeInput,
             player.ShotSequence,
             player.Ads.Profile,
-            AimDownSights.Shape(player.Ads.Smoothed(blend))));
+            AimDownSights.Shape(player.Ads.Smoothed(blend)),
+            player.Mount.IsMounted,
+            player.Mount.Sequence));
     }
 
     // What one frame draws from: the player and the solids its binoculars range on.

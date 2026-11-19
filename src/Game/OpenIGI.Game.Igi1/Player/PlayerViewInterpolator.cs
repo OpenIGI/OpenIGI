@@ -39,6 +39,8 @@ internal sealed class PlayerViewInterpolator
     private float _tickViewModelTanX = HumanView.DefaultViewModelTanX;
     private (float Pitch, float Roll, float Yaw) _prevTickShake;
     private (float Pitch, float Roll, float Yaw) _tickShake;
+    private float _prevTickLeanRoll;
+    private float _tickLeanRoll;
 
     /// <summary>Initializes the interpolator over the view's hit shake.</summary>
     /// <param name="viewShake">The shake whose angles are folded into the camera and the rig.</param>
@@ -76,8 +78,12 @@ internal sealed class PlayerViewInterpolator
     /// <param name="swayYaw">The weapon sway's yaw this tick.</param>
     /// <param name="recoilPitch">The view kick this tick.</param>
     /// <param name="rigDipUnits">The landing dip's extra share the rig alone takes, in world units.</param>
-    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits)
+    /// <param name="leanRoll">Modern aim's lean roll this tick, in the engine's sense.</param>
+    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits, float leanRoll)
     {
+        _prevTickLeanRoll = HasPair ? _tickLeanRoll : leanRoll;
+        _tickLeanRoll = leanRoll;
+
         _prevTickEye = HasPair ? _tickEye : eye;
         _tickEye = eye;
 
@@ -145,6 +151,13 @@ internal sealed class PlayerViewInterpolator
     internal float SmoothedAimPitch(float bodyPitch, float aimPitch, float alpha) => HasPair
         ? bodyPitch + _prevTickRecoilPitch + ((_tickRecoilPitch - _prevTickRecoilPitch) * alpha)
         : aimPitch;
+
+    /// <summary>Modern aim's lean roll blended between its last two tick values.</summary>
+    /// <param name="current">The roll this tick, for a rig without a pair.</param>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <returns>The roll, in the engine's sense.</returns>
+    internal float SmoothedLeanRoll(float current, float alpha) =>
+        HasPair ? _prevTickLeanRoll + ((_tickLeanRoll - _prevTickLeanRoll) * alpha) : current;
 
     // The shake's three angles blended between their last two tick values.
     internal (float Pitch, float Roll, float Yaw) SmoothedShake(float alpha) => HasPair
@@ -230,7 +243,9 @@ internal sealed class PlayerViewInterpolator
         // aim pitch. The mouse-driven part of the pitch and the yaw are this frame's own.
         (float shakePitch, float shakeRoll, float shakeYaw) = SmoothedShake(alpha);
         Matrix3f eyeLook = Matrix3f.FromEngineEulerAngles(
-            SmoothedAimPitch(bodyPitch, aimPitch, alpha) + shakePitch, shakeRoll, -bodyYaw + shakeYaw);
+            SmoothedAimPitch(bodyPitch, aimPitch, alpha) + shakePitch,
+            shakeRoll + SmoothedLeanRoll(0f, alpha),
+            -bodyYaw + shakeYaw);
         Matrix3f look = eyeLook * Matrix3f.FromEngineEulerAngles(
                 Interpolation.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
                 0f,

@@ -63,19 +63,24 @@ public sealed partial class PlayerCamera
         return taken;
     }
 
-    // Steps the aim from this tick's button, as the weapon stood at the end of the last: up only with a ready weapon in hands
-    // that are free, on feet that are on the ground.
+    // Steps the aim, the lean and the brace from this tick's keys, as the weapon and the body stood at the end of the last: the
+    // sights up only with a ready weapon in hands that are free, on feet that are on the ground.
     private void TickAds()
     {
         AdsProfile? profile = _modernAim.Enabled && AimProfiles.TryGet(_weapons?.InHand?.Weapon.ScriptId, out AdsProfile found)
             ? found
             : null;
-        bool canAim = _weapons is { IsWeaponReady: true, State: not HumanWeaponState.Peeking }
-            && !_ladder.IsOnLadder
+        bool free = !_ladder.IsOnLadder
             && _interaction.Active is null
             && !HandsOnBomb
+            && _weapons is not { State: HumanWeaponState.Peeking }
             && _locomotion.State is not (HumanBodyStateMachine.Jump or HumanBodyStateMachine.Fall or HumanBodyStateMachine.Lean);
-        _ads.Tick(_modernAim, profile, _aimHeld, _aimHeld && !_aimWasHeld, canAim);
+        bool canAim = free && _weapons is { IsWeaponReady: true };
+
+        TickMount(profile, canAim);
+        bool aimHeld = _aimHeld || (_mountedByKey && _mount.IsMounted);
+        _ads.Tick(_modernAim, profile, aimHeld, _aimHeld && !_aimWasHeld, canAim);
+        TickLean(free);
 
         if (!ReferenceEquals(profile, _adsReferenceFor))
         {
@@ -86,12 +91,16 @@ public sealed partial class PlayerCamera
         }
 
         float progress = _ads.Progress;
+        float braced = _mount.IsMounted ? 1f : 0f;
         _firstPerson.AimLookScale = AimLookScale;
-        _body.AimSpeedScale = profile is null ? 1f : AimDownSights.Blend(1f, profile.MoveScale, progress);
+        _body.AimSpeedScale = (profile is null ? 1f : AimDownSights.Blend(1f, profile.MoveScale, progress))
+            * (_lean.Amount != 0f ? LeaningSpeedScale : 1f);
         if (_weapons is not null)
         {
-            _weapons.AimSpreadScale = profile is null ? 1f : AimDownSights.Blend(1f, profile.SpreadScale, progress);
-            _weapons.AimRecoilScale = profile is null ? 1f : AimDownSights.Blend(1f, profile.RecoilScale, progress);
+            _weapons.AimSpreadScale = (profile is null ? 1f : AimDownSights.Blend(1f, profile.SpreadScale, progress))
+                * AimDownSights.Blend(1f, WeaponMount.SpreadScale, braced);
+            _weapons.AimRecoilScale = (profile is null ? 1f : AimDownSights.Blend(1f, profile.RecoilScale, progress))
+                * AimDownSights.Blend(1f, WeaponMount.RecoilScale, braced);
         }
     }
 
@@ -122,10 +131,15 @@ public sealed partial class PlayerCamera
     private void ResetAds()
     {
         _ads.Reset();
+        _lean.Reset();
+        _mount.Reset();
+        _mountedByKey = false;
         _aimHeld = false;
         _aimWasHeld = false;
         _body.AimSpeedScale = 1f;
         _firstPerson.AimLookScale = 1f;
+        _firstPerson.ModernLean = EyeLean.None;
+        _firstPerson.LookLimit = null;
         if (_weapons is not null)
         {
             _weapons.AimSpreadScale = 1f;
