@@ -83,6 +83,37 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
         return true;
     }
 
+    /// <summary>Records the range of the last <see cref="Draw"/> again, with its own material and block.</summary>
+    /// <param name="pass">The pass the last draw went into.</param>
+    /// <param name="call">The same mesh, range and state as that draw; only its lightmap may differ.</param>
+    /// <param name="push">This copy's block.</param>
+    /// <remarks>
+    /// The rest of a run of copies (<c>IGraphicsDevice.DrawMeshInstances</c>): the pipeline, the pass's group and the buffers
+    /// the first copy bound are still bound, so a copy sets its material only when its textures differ, then its block, and
+    /// draws. Nothing may be recorded into the pass between the first copy and the last.
+    /// </remarks>
+    public void Redraw(IRhiRenderPassEncoder pass, in MeshDrawCall call, ReadOnlySpan<byte> push)
+    {
+        ArgumentNullException.ThrowIfNull(pass);
+
+        IRhiBindGroup material = Material(call.Diffuse, call.Lightmap, call.Detail);
+        if (!ReferenceEquals(material, _boundMaterial))
+        {
+            pass.SetBindGroup(0, material);
+            _boundMaterial = material;
+        }
+
+        if (!push.IsEmpty)
+        {
+            pass.SetPushData(push);
+        }
+
+        pass.DrawIndexed(call.IndexCount, 1, call.IndexOffset);
+    }
+
+    // The material Bind last set, which Redraw leaves in place for a copy with the same textures.
+    private IRhiBindGroup? _boundMaterial;
+
     /// <summary>Records several ranges of one mesh, binding its state once.</summary>
     /// <param name="pass">The pass to record into.</param>
     /// <param name="pipeline">The pipeline the draws go through.</param>
@@ -240,7 +271,8 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
 
         pass.SetPipeline(pipeline);
 
-        pass.SetBindGroup(0, Material(call.Diffuse, call.Lightmap, call.Detail));
+        _boundMaterial = Material(call.Diffuse, call.Lightmap, call.Detail);
+        pass.SetBindGroup(0, _boundMaterial);
 
         if (frameGroup is not null)
         {

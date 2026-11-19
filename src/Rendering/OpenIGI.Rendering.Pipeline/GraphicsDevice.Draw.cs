@@ -12,10 +12,13 @@ namespace OpenIGI.Rendering.Pipeline;
 public sealed partial class GraphicsDevice : ISdfTextDevice
 {
     private readonly TextureTable _textures;
-    private readonly Dictionary<uint, RhiMesh> _meshTable = [];
+    // The live meshes, indexed by id. Ids only ever count up from one, so an array is the table: every draw resolves its mesh,
+    // and a dictionary probe for each was a measurable part of a browser's frame.
+    private RhiMesh?[] _meshTable = new RhiMesh?[256];
 
-    // Each diffuse's derived detail map, by texture id; see SetTextureDetail.
-    private readonly Dictionary<uint, uint> _textureDetail = [];
+    // Each diffuse's derived detail map, indexed by the diffuse's texture id, nought for none; see SetTextureDetail. An array
+    // for the same reason: every draw asks it. Texture ids count up from one as mesh ids do.
+    private uint[] _textureDetail = new uint[256];
 
     // The other direction: which diffuse textures each detail map is paired with, so destroying a map finds
     // its pairings without walking every one. See SetTextureDetail.
@@ -127,7 +130,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             {
                 foreach (uint diffuse in diffuses)
                 {
-                    _textureDetail.Remove(diffuse);
+                    _textureDetail[diffuse] = 0;
                 }
             }
 
@@ -151,6 +154,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     private void PairDetail(uint diffuse, uint detail)
     {
         UnpairDetail(diffuse);
+        if (diffuse >= _textureDetail.Length)
+        {
+            Array.Resize(ref _textureDetail, (int)Math.Max(diffuse + 1, (uint)_textureDetail.Length * 2));
+        }
+
         _textureDetail[diffuse] = detail;
 
         if (!_detailUsers.TryGetValue(detail, out HashSet<uint>? users))
@@ -165,8 +173,14 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     /// <summary>Drops a diffuse texture's pairing, if it has one, from both directions.</summary>
     private void UnpairDetail(uint diffuse)
     {
-        if (_textureDetail.Remove(diffuse, out uint detail)
-            && _detailUsers.TryGetValue(detail, out HashSet<uint>? users))
+        uint detail = diffuse < _textureDetail.Length ? _textureDetail[diffuse] : 0;
+        if (detail == 0)
+        {
+            return;
+        }
+
+        _textureDetail[diffuse] = 0;
+        if (_detailUsers.TryGetValue(detail, out HashSet<uint>? users))
         {
             users.Remove(diffuse);
             if (users.Count == 0)
@@ -272,8 +286,9 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     {
         ThrowIfDisposed();
 
-        if (_meshTable.Remove(mesh.Id, out RhiMesh? resource))
+        if (mesh.Id < _meshTable.Length && _meshTable[mesh.Id] is { } resource)
         {
+            _meshTable[mesh.Id] = null;
             if (_lastMeshId == mesh.Id)
             {
                 _lastMesh = null;
@@ -553,7 +568,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
     /// <summary>The detail map a diffuse was paired with, or the neutral one where it has none.</summary>
     private TextureHandle DetailFor(TextureHandle diffuse) =>
-        _textureDetail.TryGetValue(diffuse.Id, out uint detail)
+        diffuse.Id < _textureDetail.Length && _textureDetail[diffuse.Id] is var detail and not 0
             ? new TextureHandle(detail)
             : _textures.NeutralDetail;
 
@@ -623,6 +638,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         ThrowIfDisposed();
 
         uint id = _nextMesh++;
+        if (id >= _meshTable.Length)
+        {
+            Array.Resize(ref _meshTable, _meshTable.Length * 2);
+        }
+
         _meshTable[id] = mesh;
         return new MeshHandle(id);
     }
@@ -638,7 +658,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             return last;
         }
 
-        if (!_meshTable.TryGetValue(mesh.Id, out RhiMesh? resource))
+        if (mesh.Id >= _meshTable.Length || _meshTable[mesh.Id] is not { } resource)
         {
             throw new ArgumentException($"There is no mesh {mesh.Id}.", nameof(mesh));
         }
@@ -650,12 +670,12 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
     private void DisposeMeshes()
     {
-        foreach (RhiMesh mesh in _meshTable.Values)
+        foreach (RhiMesh? mesh in _meshTable)
         {
-            mesh.Dispose();
+            mesh?.Dispose();
         }
 
-        _meshTable.Clear();
+        Array.Clear(_meshTable);
         _lastMesh = null;
     }
 }

@@ -104,6 +104,35 @@ public interface IGraphicsDevice :
         _ = towardsSun;
     }
 
+    /// <summary>Draws one range of a mesh many times over: a run of copies sharing the mesh, its texture and the state.</summary>
+    /// <param name="mesh">The mesh.</param>
+    /// <param name="indexOffset">The range's first index.</param>
+    /// <param name="indexCount">How many indices it has.</param>
+    /// <param name="diffuse">The texture every copy samples.</param>
+    /// <param name="blend">How every copy blends.</param>
+    /// <param name="instances">The copies, drawn in this order.</param>
+    /// <param name="setsVertexSun">
+    /// Whether each copy brings its own <see cref="MeshInstance.VertexSun"/>; when it does, the device's sun is the last
+    /// copy's afterwards. Otherwise every copy is lit by the sun already set.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// The same picture as a <see cref="SetVertexSun"/> and a <see cref="IMeshDrawDevice.DrawMesh"/> per copy, in order, which
+    /// is what this default does. A backend overrides it to do the work the copies share once: resolving the mesh and the
+    /// state, choosing the pipeline, binding the buffers. A forest is thousands of copies of a few trees, and that shared
+    /// work was most of what drawing one cost.
+    /// </para>
+    /// </remarks>
+    void DrawMeshInstances(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        TextureHandle diffuse,
+        BlendMode blend,
+        ReadOnlySpan<MeshInstance> instances,
+        bool setsVertexSun = false) =>
+        MeshInstances.DrawEach(this, mesh, indexOffset, indexCount, diffuse, blend, instances, setsVertexSun);
+
     /// <summary>Makes the following draws multiply their lightmap texture into the base colour.</summary>
     /// <param name="modulate">Whether the lightmap slot is a colour to modulate rather than a bake.</param>
     /// <remarks>

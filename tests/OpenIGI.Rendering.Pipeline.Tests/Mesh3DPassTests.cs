@@ -158,6 +158,47 @@ public sealed class Mesh3DPassTests
         Assert.Single(harness.Device.Resources.OfType<RecordedBindGroup>());
     }
 
+    [Fact]
+    public void A_copy_of_the_last_draw_sets_only_its_block_and_draws()
+    {
+        // The rest of a run of copies: the pipeline, the streams and a material the copy shares are still bound.
+        using Harness harness = new();
+        using RhiMesh mesh = RhiMesh.CreateStatic(harness.Device, Pose(0f), [0, 1, 2], "tree");
+
+        harness.Record(pass =>
+        {
+            harness.Pass.Draw(pass, harness.Pipeline, Call(mesh), Push, 1);
+            harness.Pass.Redraw(pass, Call(mesh), Push);
+            harness.Pass.Redraw(pass, Call(mesh), Push);
+        });
+
+        Assert.Single(harness.Device.CommandsOf<RecordedRhiCommand.SetPipeline>());
+        Assert.Single(harness.Device.CommandsOf<RecordedRhiCommand.SetBindGroup>());
+        Assert.Equal(3, harness.Device.CommandsOf<RecordedRhiCommand.SetPushData>().Count);
+        Assert.Equal(3, harness.Device.CommandsOf<RecordedRhiCommand.Draw>().Count);
+    }
+
+    [Fact]
+    public void A_copy_with_other_textures_binds_its_own_material_and_the_next_keeps_it()
+    {
+        using Harness harness = new();
+        using RhiMesh mesh = RhiMesh.CreateStatic(harness.Device, Pose(0f), [0, 1, 2], "tree");
+        MeshDrawCall unlit = Call(mesh) with { Lightmap = TextureHandle.None };
+
+        harness.Record(pass =>
+        {
+            harness.Pass.Draw(pass, harness.Pipeline, Call(mesh), Push, 1);
+            harness.Pass.Redraw(pass, unlit, Push);
+            harness.Pass.Redraw(pass, unlit, Push);
+            harness.Pass.Redraw(pass, Call(mesh), Push);
+        });
+
+        Assert.Equal(
+            ["material-1-2-0", "material-1-0-0", "material-1-2-0"],
+            harness.Device.CommandsOf<RecordedRhiCommand.SetBindGroup>().Select(static c => c.Label));
+        Assert.Equal(4, harness.Device.CommandsOf<RecordedRhiCommand.Draw>().Count);
+    }
+
     private static readonly byte[] Push = new byte[Mesh3DPipelineCache.PushDataBytes];
 
     private static T Single<T>(Harness harness)
