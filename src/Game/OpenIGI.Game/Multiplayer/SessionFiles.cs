@@ -1,5 +1,5 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
 using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;
@@ -28,10 +28,10 @@ public sealed record SessionFileList(string Map, IReadOnlyList<SessionFile> File
     public const int MaxPathBytes = 160;
 
     /// <summary>The longest file a server sends or a client takes.</summary>
-    public const long MaxFileSize = 64L * 1024 * 1024;
+    public const long MaxFileSize = 128L * 1024 * 1024;
 
     /// <summary>The most bytes a list's files may come to.</summary>
-    public const long MaxTotalSize = 256L * 1024 * 1024;
+    public const long MaxTotalSize = 512L * 1024 * 1024;
 
     /// <summary>Gets the bytes of every file.</summary>
     public long TotalSize => Files.Sum(static f => f.Size);
@@ -96,8 +96,8 @@ public sealed record SessionFileList(string Map, IReadOnlyList<SessionFile> File
 /// <summary>Where a session reads the files it compares and sends: the installation as the session plays it.</summary>
 public interface ISessionFileSource
 {
-    /// <summary>Gets the game the files are of.</summary>
-    string TitleId { get; }
+    /// <summary>Gets which of the game's files a map plays from.</summary>
+    GameplayFileRules Rules { get; }
 
     /// <summary>Lists the files under a folder of the installation, at any depth.</summary>
     /// <param name="directory">The folder, as a list path.</param>
@@ -110,97 +110,10 @@ public interface ISessionFileSource
     byte[]? Read(string path);
 }
 
-/// <summary>
-/// Which of a game's files decide how it plays -- the scripts, the shapes, the ground, the AI's graphs, the weapons -- and
-/// so must be a server's own on every player's machine, as against those that only change how it looks or sounds.
-/// </summary>
-/// <remarks>
-/// Textures, lightmaps, sounds and sprites are left out: a player with a texture pack plays the same game as one without.
-/// Only Project I.G.I. is described so far, the one game played together; another game has no files to compare.
-/// </remarks>
-public static partial class GameplayFiles
+/// <summary>How a list writes a path, and which paths it may write at all.</summary>
+/// <remarks>Which files a game compares is its own (<see cref="GameplayFileLayout"/>, <see cref="GameplayFileRules"/>).</remarks>
+public static class GameplayFiles
 {
-    // Folders every level of the first game plays from, whole.
-    private static readonly string[] Igi1SharedFolders =
-        ["ammo", "weapons", "humanplayer", "physicsobj", "magicobj", "material", "animtrigger", "common/anims", "common/ai", "missions/location0/common/models"];
-
-    // Files of their own.
-    private static readonly string[] Igi1SharedFiles =
-        ["lod.qvm", "common/common.dat", "common/common.mtp", "missions/location0/common/location0.dat", "missions/location0/common/location0.mtp"];
-
-    // A level's folder below which only what is seen or heard is left out.
-    private static readonly string[] LevelLooks = ["textures/", "lightmaps/", "sounds/"];
-
-    // Never a level's to play from, wherever they lie: pictures, notes, the original's text sources.
-    private static readonly string[] NeverExtensions = [".tex", ".qsc", ".bmp", ".tga", ".txt", ".log", ".bak", ".exe", ".dll", ".lnk"];
-
-    /// <summary>Gets whether a path is one a level of a game plays from.</summary>
-    /// <param name="titleId">The game.</param>
-    /// <param name="path">The path under the installation, any case, either slash.</param>
-    /// <returns><see langword="true"/> when it is.</returns>
-    public static bool IsGameplay(string titleId, string path)
-    {
-        if (!string.Equals(titleId, "igi1", StringComparison.Ordinal) || string.IsNullOrEmpty(path))
-        {
-            return false;
-        }
-
-        string p = Normalize(path);
-        if (NeverExtensions.Any(e => p.EndsWith(e, StringComparison.Ordinal)))
-        {
-            return false;
-        }
-
-        if (Igi1SharedFiles.Contains(p, StringComparer.Ordinal) || Igi1SharedFolders.Any(f => p.StartsWith(f + "/", StringComparison.Ordinal)))
-        {
-            return true;
-        }
-
-        System.Text.RegularExpressions.Match level = LevelFolder().Match(p);
-        return level.Success && !LevelLooks.Any(l => p[level.Length..].StartsWith(l, StringComparison.Ordinal));
-    }
-
-    /// <summary>Gets the list a server plays a map from.</summary>
-    /// <param name="map">The map, as the session names it: the mission's number.</param>
-    /// <param name="source">The installation as the server plays it.</param>
-    /// <returns>The list; empty for a game or map whose files are not compared.</returns>
-    public static SessionFileList Build(string map, ISessionFileSource source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        List<SessionFile> files = [];
-        if (string.Equals(source.TitleId, "igi1", StringComparison.Ordinal)
-            && int.TryParse(map, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int mission))
-        {
-            SortedSet<string> paths = new(StringComparer.Ordinal);
-            foreach (string folder in Igi1SharedFolders.Append($"missions/location0/level{mission}"))
-            {
-                paths.UnionWith(source.ListFiles(folder).Select(Normalize));
-            }
-
-            paths.UnionWith(Igi1SharedFiles);
-            foreach (string path in paths.Where(p => IsGameplay(source.TitleId, p) && IsSafePath(p) && BelongsTo(p, mission)))
-            {
-                if (source.Read(path) is { } data && data.Length <= SessionFileList.MaxFileSize)
-                {
-                    files.Add(new SessionFile(path, data.Length, SHA256.HashData(data)));
-                }
-            }
-        }
-
-        return new SessionFileList(map, files);
-    }
-
-    /// <summary>Gets whether a list of a map may name a path: a file that map's level plays from, or one every level does.</summary>
-    /// <param name="titleId">The game.</param>
-    /// <param name="map">The map, as the session names it.</param>
-    /// <param name="path">The path, as a list writes it.</param>
-    /// <returns><see langword="true"/> when it may; a list naming anything else is no list of a level's files at all.</returns>
-    public static bool IsListable(string titleId, string map, string path) =>
-        IsSafePath(path)
-        && IsGameplay(titleId, path)
-        && int.TryParse(map, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int mission)
-        && BelongsTo(path, mission);
-
     /// <summary>Gets whether a path is one a list may name: relative, inside the installation, with nothing odd in it.</summary>
     /// <param name="path">The path, as a list writes it.</param>
     /// <returns><see langword="true"/> when it is.</returns>
@@ -216,20 +129,222 @@ public static partial class GameplayFiles
     /// <param name="path">The path.</param>
     /// <returns>It, normalised.</returns>
     public static string Normalize(string path) => path.Replace('\\', '/').TrimStart('/').ToLowerInvariant();
-
-    // A level's folder: missions/location0/level<n>/.
-    [GeneratedRegex(@"^missions/location0/level(\d+)/")]
-    private static partial Regex LevelFolder();
-
-    // Only the map's own level's files, besides the shared ones.
-    private static bool BelongsTo(string path, int mission) =>
-        LevelFolder().Match(path) is not { Success: true } level
-        || level.Groups[1].Value == mission.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
 
-/// <summary>A piece of a file a server sent.</summary>
+/// <summary>A piece of a file a server sent: one of the pieces its table cut it into (<see cref="ContentChunks"/>).</summary>
 /// <param name="Map">The map of the list the file is in.</param>
 /// <param name="Index">The file, by place in that list.</param>
-/// <param name="Offset">Where in the file the piece begins.</param>
-/// <param name="Data">The piece.</param>
-public sealed record FilePiece(string Map, int Index, long Offset, byte[] Data);
+/// <param name="Chunk">The piece, by place in the file's table; 0 for a file sent whole.</param>
+/// <param name="Deflated">Whether <paramref name="Data"/> is deflated.</param>
+/// <param name="Data">The piece, as sent.</param>
+public sealed record FilePiece(string Map, int Index, int Chunk, bool Deflated, byte[] Data)
+{
+    /// <summary>Writes the piece after its message kind.</summary>
+    /// <param name="writer">Where it is written.</param>
+    public void Write(BitWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteBits((uint)SessionMessage.FilePart, 8);
+        writer.WriteString(Map, 64);
+        writer.WriteVarUInt((uint)Index);
+        writer.WriteVarUInt((uint)Chunk);
+        writer.WriteBool(Deflated);
+        writer.WriteBytes(Data);
+    }
+
+    /// <summary>Reads a piece after its message kind.</summary>
+    /// <param name="reader">Where it is read from.</param>
+    /// <returns>The piece, or <see langword="null"/> when it is malformed.</returns>
+    public static FilePiece? Read(ref BitReader reader)
+    {
+        string map = reader.ReadString(64);
+        uint index = reader.ReadVarUInt();
+        uint chunk = reader.ReadVarUInt();
+        bool deflated = reader.ReadBool();
+        byte[] data = reader.ReadBytes(ContentChunks.MaxLength + 64);
+        return reader.IsOverflowed || index >= SessionFileList.MaxFiles || chunk >= ContentChunks.MaxCount
+            ? null
+            : new FilePiece(map, (int)index, (int)chunk, deflated, data);
+    }
+}
+
+/// <summary>The pieces a server's file is cut into, sent before any of them so a client asks only for those it lacks.</summary>
+/// <param name="Map">The map of the list the file is in.</param>
+/// <param name="Index">The file, by place in that list.</param>
+/// <param name="Chunks">Its pieces, in order.</param>
+public sealed record FileChunkTable(string Map, int Index, IReadOnlyList<ContentChunk> Chunks)
+{
+    /// <summary>Writes the table after its message kind.</summary>
+    /// <param name="writer">Where it is written.</param>
+    public void Write(BitWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteBits((uint)SessionMessage.FileChunks, 8);
+        writer.WriteString(Map, 64);
+        writer.WriteVarUInt((uint)Index);
+        writer.WriteVarUInt((uint)Chunks.Count);
+        foreach (ContentChunk chunk in Chunks)
+        {
+            writer.WriteVarUInt((uint)chunk.Length);
+            writer.WriteBits((uint)chunk.Hash, 32);
+            writer.WriteBits((uint)(chunk.Hash >> 32), 32);
+        }
+    }
+
+    /// <summary>Reads a table after its message kind.</summary>
+    /// <param name="reader">Where it is read from.</param>
+    /// <returns>The table, or <see langword="null"/> when it is malformed.</returns>
+    public static FileChunkTable? Read(ref BitReader reader)
+    {
+        string map = reader.ReadString(64);
+        uint index = reader.ReadVarUInt();
+        uint count = reader.ReadVarUInt();
+        if (reader.IsOverflowed || index >= SessionFileList.MaxFiles || count is 0 or > ContentChunks.MaxCount)
+        {
+            return null;
+        }
+
+        ContentChunk[] chunks = new ContentChunk[count];
+        for (int i = 0; i < chunks.Length; i++)
+        {
+            uint length = reader.ReadVarUInt();
+            ulong low = reader.ReadBits(32);
+            ulong high = reader.ReadBits(32);
+            if (reader.IsOverflowed || length is 0 or > ContentChunks.MaxLength)
+            {
+                return null;
+            }
+
+            chunks[i] = new ContentChunk((int)length, low | (high << 32));
+        }
+
+        return new FileChunkTable(map, (int)index, chunks);
+    }
+}
+
+/// <summary>A client's ask for some pieces of a file whose table it was sent: runs of them, by place in the table.</summary>
+/// <param name="Map">The map of the list the file is in.</param>
+/// <param name="Index">The file, by place in that list.</param>
+/// <param name="Runs">The runs of pieces: the first's place and how many follow it.</param>
+public sealed record ChunkWant(string Map, int Index, IReadOnlyList<(int Start, int Count)> Runs)
+{
+    /// <summary>The most runs one ask carries.</summary>
+    public const int MaxRuns = 4096;
+
+    /// <summary>Writes the ask after its message kind.</summary>
+    /// <param name="writer">Where it is written.</param>
+    public void Write(BitWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteBits((uint)SessionMessage.ChunkWant, 8);
+        writer.WriteString(Map, 64);
+        writer.WriteVarUInt((uint)Index);
+        writer.WriteVarUInt((uint)Runs.Count);
+        foreach ((int start, int count) in Runs)
+        {
+            writer.WriteVarUInt((uint)start);
+            writer.WriteVarUInt((uint)count);
+        }
+    }
+
+    /// <summary>Reads an ask after its message kind.</summary>
+    /// <param name="reader">Where it is read from.</param>
+    /// <returns>The ask, or <see langword="null"/> when it is malformed.</returns>
+    public static ChunkWant? Read(ref BitReader reader)
+    {
+        string map = reader.ReadString(64);
+        uint index = reader.ReadVarUInt();
+        uint runs = reader.ReadVarUInt();
+        if (reader.IsOverflowed || index >= SessionFileList.MaxFiles || runs > MaxRuns)
+        {
+            return null;
+        }
+
+        List<(int, int)> read = new((int)runs);
+        for (int i = 0; i < runs; i++)
+        {
+            uint start = reader.ReadVarUInt();
+            uint count = reader.ReadVarUInt();
+            if (reader.IsOverflowed || start >= ContentChunks.MaxCount || count is 0 || count > ContentChunks.MaxCount - start)
+            {
+                return null;
+            }
+
+            read.Add(((int)start, (int)count));
+        }
+
+        return new ChunkWant(map, (int)index, read);
+    }
+
+    /// <summary>Gathers places into runs.</summary>
+    /// <param name="places">The places, in rising order.</param>
+    /// <returns>The runs.</returns>
+    public static IReadOnlyList<(int Start, int Count)> RunsOf(IEnumerable<int> places)
+    {
+        ArgumentNullException.ThrowIfNull(places);
+        List<(int Start, int Count)> runs = [];
+        foreach (int place in places)
+        {
+            if (runs.Count > 0 && runs[^1].Start + runs[^1].Count == place)
+            {
+                runs[^1] = (runs[^1].Start, runs[^1].Count + 1);
+            }
+            else
+            {
+                runs.Add((place, 1));
+            }
+        }
+
+        return runs;
+    }
+}
+
+/// <summary>A piece's bytes as they travel: deflated where that makes them smaller, as they are where it does not.</summary>
+public static class ChunkCodec
+{
+    /// <summary>Makes a piece ready to send.</summary>
+    /// <param name="data">The piece.</param>
+    /// <returns>Whether it is deflated, and the bytes to send.</returns>
+    public static (bool Deflated, byte[] Data) Pack(ReadOnlySpan<byte> data)
+    {
+        using MemoryStream packed = new();
+        using (DeflateStream deflate = new(packed, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            deflate.Write(data);
+        }
+
+        return packed.Length < data.Length ? (true, packed.ToArray()) : (false, data.ToArray());
+    }
+
+    /// <summary>Gets a piece's bytes back, refusing any that do not come to the length its table gave.</summary>
+    /// <param name="deflated">Whether the bytes are deflated.</param>
+    /// <param name="data">The bytes as sent.</param>
+    /// <param name="length">The piece's length.</param>
+    /// <returns>The piece, or <see langword="null"/> when the bytes are not a piece of that length.</returns>
+    public static byte[]? Unpack(bool deflated, byte[] data, int length)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (!deflated)
+        {
+            return data.Length == length ? data : null;
+        }
+
+        try
+        {
+            using DeflateStream inflate = new(new MemoryStream(data), CompressionMode.Decompress);
+            byte[] piece = new byte[length];
+            int got = 0;
+            for (int read = 1; got < length && read > 0; got += read)
+            {
+                read = inflate.Read(piece, got, length - got);
+            }
+
+            // Never more than the table said: a stream that goes on is no piece of that length.
+            return got == length && inflate.ReadByte() < 0 ? piece : null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+    }
+}

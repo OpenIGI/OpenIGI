@@ -87,9 +87,14 @@ public sealed partial class ServerSession
         return new NextMapVote(_mapChoices, counts, Match.Players.Keys.Count(static voter => voter >= 0), _mapPicks.TryGetValue(slot, out int own) ? own : -1);
     }
 
-    // Every joined player told the vote as it sees it -- or that there is none.
+    // Every joined player told the vote as it sees it -- or that there is none -- and sent the files of the map leading it.
     private void TellMapVote()
     {
+        if (VoteSeenBy(HostSlot) is { Leading: >= 0 and var leading })
+        {
+            Foresee(_mapChoices[leading].Mission.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         foreach (int slot in _clients.Keys)
         {
             _writer.Reset();

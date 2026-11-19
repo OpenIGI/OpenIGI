@@ -22,16 +22,23 @@ public sealed partial class GameHost
     // The session's client-side files, while a client session is set.
     private SessionFileSync? _sessionFiles;
 
+    // Which of the running title's files a session compares: the title's own description, set with the title.
+    private GameplayFileLayout _gameplayFiles = GameplayFileLayout.None;
+
+    // The rules for the running title, made with the mission table they read a map's folders from.
+    private GameplayFileRules? _gameplayRules;
+    private Engine.Titles.IMissionCatalogue<Game.World.MissionDescriptor>? _gameplayRulesMissions;
+
     /// <summary>Gets the folder the servers' files are kept in, by hash.</summary>
     public static string SessionFileCache => Path.Combine(Core.Configuration.SettingsPaths.GetUserDirectory(), "cache", "mp");
 
     // A session set, or gone: the shield on the level's files raised or lowered, and the session given the files it reads.
     private void AttachSessionFiles(IHostTickObserver? session)
     {
-        string title = _titleRuntime.Title.Id;
+        GameplayFileRules rules = GameplayRules;
         if (session is null)
         {
-            bool shared = _sessionFiles?.Pins.Keys.Any(static p => !p.StartsWith("missions/location0/level", StringComparison.Ordinal)) == true;
+            bool shared = _sessionFiles?.Pins.Keys.Any(p => !rules.IsLevelFile(p)) == true;
             _sessionFiles = null;
             _fileSystem.Pins = null;
             if (_overrides is not null)
@@ -61,16 +68,20 @@ public sealed partial class GameHost
 
         if (session is HostedSession hosted)
         {
-            hosted.Files ??= new HostSessionFiles(_fileSystem, title, withoutPins: false);
+            hosted.Files ??= new HostSessionFiles(_fileSystem, () => GameplayRules, withoutPins: false);
         }
         else if (session is SessionClient { Playback: null } client)
         {
-            client.Files ??= new SessionFileSync(new HostSessionFiles(_fileSystem, title, withoutPins: true), SessionFileCache, _logger);
+            client.Files ??= NewSessionFileSync();
             client.MapFilesInPlace ??= MapFilesInPlace;
             _sessionFiles = client.Files;
             _fileSystem.Pins = _sessionFiles.Pins;
         }
     }
+
+    // This game's side of a server's files: the installation's own as compared, the servers' kept in the shared cache.
+    private SessionFileSync NewSessionFileSync() =>
+        new(new HostSessionFiles(_fileSystem, () => GameplayRules, withoutPins: true), SessionFileCache, _logger);
 
     // Whether a map's level is where the game reads it: the load gate's word, which on a browser is also what fetches it.
     private bool MapFilesInPlace(string map) =>
@@ -80,7 +91,41 @@ public sealed partial class GameHost
         || _loadGate.IsReady(mission, out _);
 
     // The files no content layer stands in for while a session lasts.
-    private bool WithheldInSession(string path) => GameplayFiles.IsGameplay(_titleRuntime.Title.Id, path);
+    private bool WithheldInSession(string path) => GameplayRules.IsGameplay(path);
+
+    // The running title's rules, made again when the title or its mission table changes.
+    private GameplayFileRules GameplayRules
+    {
+        get
+        {
+            if (_gameplayRules is null || !ReferenceEquals(_gameplayRules.Layout, _gameplayFiles) || !ReferenceEquals(_gameplayRulesMissions, _missions))
+            {
+                Engine.Titles.IMissionCatalogue<Game.World.MissionDescriptor> missions = _missions;
+                _gameplayRulesMissions = missions;
+                _gameplayRules = new GameplayFileRules(_gameplayFiles, map => MapFolders(missions, map));
+            }
+
+            return _gameplayRules;
+        }
+    }
+
+    // The folders a map plays from, as a list writes them: those its mission names, from this machine's own table.
+    private static IReadOnlyList<string>? MapFolders(Engine.Titles.IMissionCatalogue<Game.World.MissionDescriptor>? missions, string map)
+    {
+        if (missions is null
+            || !int.TryParse(map, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int id)
+            || !missions.TryGet(id, out Game.World.MissionDescriptor? mission)
+            || mission is null)
+        {
+            return null;
+        }
+
+        return [.. new[] { mission.MissionDirectory, mission.CommonPackDirectory, mission.LevelPackDirectory }
+            .Where(static d => !string.IsNullOrWhiteSpace(d))
+            .Select(static d => GameplayFiles.Normalize(d).TrimEnd('/'))
+            .Where(static d => d.Length > 0 && GameplayFiles.IsSafePath(d))
+            .Distinct(StringComparer.Ordinal)];
+    }
 
     /// <summary>Reads the running game's tables again -- the whole game, as a change of game does -- at the next frame boundary.</summary>
     /// <remarks>For a server's shared files put in place, or taken out of it: the weapons and the rest are read once a game.</remarks>

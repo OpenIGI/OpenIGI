@@ -8,17 +8,28 @@ namespace OpenIGI.Game.Multiplayer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A file fetched is kept by its hash under <see cref="CacheDirectory"/>, never in the game's own folder, so the next server
-/// with the same file costs nothing and the installation is left as it was. What is put in place lasts for the session:
+/// Only what differs travels. A small file comes whole; a larger one's table of pieces comes first
+/// (<see cref="ContentChunks"/>), this game's own copy is cut the same way, and only the pieces it lacks are asked for --
+/// deflated where that is smaller. A retail copy joining a host with a few meshes changed in an archive fetches those
+/// meshes' pieces, not the archive.
+/// </para>
+/// <para>
+/// A file put together is kept by its hash under <see cref="CacheDirectory"/>, never in the game's own folder, so the next
+/// server with the same file costs nothing and the installation is left as it was. The folder is kept to
+/// <see cref="MaxCacheBytes"/>, the longest unused going first. What is put in place lasts for the session:
 /// <see cref="Pins"/> is what the file system reads in place of the installation's own, and is emptied as the session goes.
 /// </para>
 /// <para>
-/// Nothing a server sends is trusted. A list may name only paths a level plays from (<see cref="GameplayFiles.IsSafePath"/>),
-/// within a size; a file is taken only whole, in order, and only if its hash is the one the list gave.
+/// Nothing a server sends is trusted. A list may name only paths its map plays from (<see cref="GameplayFileRules.IsListable"/>),
+/// within a size; a table must add up to the file; a piece must be the length and hash its table gave; and a file is taken
+/// only if the whole of it hashes to what the list said.
 /// </para>
 /// </remarks>
 public sealed class SessionFileSync
 {
+    /// <summary>The most bytes of servers' files kept between sessions.</summary>
+    public const long MaxCacheBytes = 512L * 1024 * 1024;
+
     private const string LogCategory = "Files";
 
     private readonly ISessionFileSource _local;
@@ -54,9 +65,15 @@ public sealed class SessionFileSync
     /// <summary>Gets why the files could not be made the server's, or <see langword="null"/>.</summary>
     public string? Failure { get; private set; }
 
-    /// <summary>Gets the bytes that have come and the bytes of every file being fetched.</summary>
+    /// <summary>Gets the bytes of the server's that have come, and those to come in all; the whole file until its table says.</summary>
     public (long Received, long Total) Progress =>
-        (_incoming.Values.Sum(static i => i.Received), _incoming.Values.Sum(static i => i.File.Size));
+        (_incoming.Values.Sum(static i => i.Received), _incoming.Values.Sum(static i => i.ToFetch));
+
+    /// <summary>Gets the bytes of files this game had of its own and so did not fetch, across every file put together.</summary>
+    public long BytesReused { get; private set; }
+
+    /// <summary>Gets the bytes of pieces fetched, as put together; deflated on the line, they were fewer.</summary>
+    public long BytesFetched { get; private set; }
 
     /// <summary>Gets whether a file put in place since <see cref="TakeChanges"/> was last called is one read once a game.</summary>
     public bool SharedChanged { get; private set; }
@@ -85,9 +102,9 @@ public sealed class SessionFileSync
         _incoming.Clear();
         Failure = null;
 
-        // A server names only the files of the map's level and those every level plays from, each one this game has: never
+        // A server names only the files of the map's folders and those every map plays from, each one this game has: never
         // a file of another kind, of another map, or one the installation lacks, which no level of it reads.
-        if (list.Files.FirstOrDefault(f => !GameplayFiles.IsListable(_local.TitleId, list.Map, f.Path)) is { } stray)
+        if (list.Files.FirstOrDefault(f => !_local.Rules.IsListable(list.Map, f.Path)) is { } stray)
         {
             Fail($"its list names {stray.Path}, which isn't a file map {list.Map} plays from");
             return;
@@ -124,11 +141,12 @@ public sealed class SessionFileSync
             string cached = CachePath(file);
             if (CachedMatches(cached, file, Signature(own)))
             {
+                Touch(cached);
                 Pin(file.Path, cached);
                 continue;
             }
 
-            _incoming[i] = new Incoming(file, Signature(own));
+            _incoming[i] = new Incoming(file, own);
             wanted.Add(i);
         }
 
@@ -136,13 +154,61 @@ public sealed class SessionFileSync
         {
             _logger.Information(
                 LogCategory,
-                $"{wanted.Count} of the {list.Files.Count} files map {list.Map} plays from differ here; fetching {list.Files.Where((_, i) => _incoming.ContainsKey(i)).Sum(static f => f.Size) / 1024} KiB from the server: "
+                $"{wanted.Count} of the {list.Files.Count} files map {list.Map} plays from differ here; fetching only their differing pieces: "
                     + string.Join(", ", wanted.Take(6).Select(i => list.Files[i].Path)) + (wanted.Count > 6 ? ", ..." : string.Empty) + ".");
             want(list.Map, wanted);
         }
         else
         {
             _logger.Information(LogCategory, $"The {list.Files.Count} files map {list.Map} plays from are the server's.");
+        }
+    }
+
+    /// <summary>Takes tables of pieces the server sent, and asks for the pieces this game's own copies lack.</summary>
+    /// <param name="tables">The tables.</param>
+    /// <param name="wantChunks">Sends the request for pieces of a file.</param>
+    public void TakeTables(IReadOnlyList<FileChunkTable> tables, Action<ChunkWant> wantChunks)
+    {
+        ArgumentNullException.ThrowIfNull(tables);
+        ArgumentNullException.ThrowIfNull(wantChunks);
+        foreach (FileChunkTable table in tables)
+        {
+            if (Failure is not null || _list is null || table.Map != _list.Map || !_incoming.TryGetValue(table.Index, out Incoming? incoming)
+                || incoming.Table is not null || incoming.File.Size <= ContentChunks.MaxLength)
+            {
+                continue;
+            }
+
+            // The pieces must add up to the file the list named, or the table is of some other file.
+            if (table.Chunks.Sum(static c => (long)c.Length) != incoming.File.Size)
+            {
+                Fail($"the server's table of {incoming.File.Path} doesn't add up to the file");
+                return;
+            }
+
+            List<int> missing = incoming.Plan(table.Chunks);
+            BytesReused += incoming.File.Size - incoming.ToFetch;
+            if (missing.Count == 0)
+            {
+                Finish(table.Index, incoming);
+                if (Failure is not null)
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            IReadOnlyList<(int Start, int Count)> runs = ChunkWant.RunsOf(missing);
+            if (runs.Count > ChunkWant.MaxRuns)
+            {
+                // Scattered past what one ask carries: the whole table, at the cost of a few pieces this game had.
+                BytesReused -= incoming.File.Size - incoming.ToFetch;
+                incoming.ForgetOwn();
+                runs = [(0, table.Chunks.Count)];
+            }
+
+            wantChunks(new ChunkWant(table.Map, table.Index, runs));
         }
     }
 
@@ -153,73 +219,138 @@ public sealed class SessionFileSync
         ArgumentNullException.ThrowIfNull(pieces);
         foreach (FilePiece piece in pieces)
         {
-            if (_list is null || piece.Map != _list.Map || !_incoming.TryGetValue(piece.Index, out Incoming? incoming))
+            if (Failure is not null || _list is null || piece.Map != _list.Map || !_incoming.TryGetValue(piece.Index, out Incoming? incoming))
             {
                 continue;
             }
 
-            // In order and within the file, or the file is not the one the list named.
-            if (piece.Offset != incoming.Received || incoming.Received + piece.Data.Length > incoming.File.Size)
+            if (incoming.Expected(piece.Chunk) is not { } expected)
             {
-                Fail($"the server's {incoming.File.Path} came out of order");
-                return;
-            }
-
-            piece.Data.CopyTo(incoming.Data, incoming.Received);
-            incoming.Received += piece.Data.Length;
-            if (incoming.Received < incoming.File.Size)
-            {
+                // A piece of no table this game was sent, or one it has already: passed by.
                 continue;
             }
 
-            if (!incoming.File.Matches(incoming.Data))
+            if (ChunkCodec.Unpack(piece.Deflated, piece.Data, expected.Length) is not { } data
+                || (expected.Hash is { } hash && ContentChunks.HashOf(data) != hash))
             {
-                Fail($"the server's {incoming.File.Path} didn't arrive whole");
+                Fail($"a piece of the server's {incoming.File.Path} didn't arrive whole");
                 return;
             }
 
-            if (!Signature(incoming.Data).AsSpan().SequenceEqual(incoming.Signature))
+            incoming.Put(piece.Chunk, data);
+            BytesFetched += data.Length;
+            if (incoming.Complete)
             {
-                Fail($"the server's {incoming.File.Path} is a different kind of file from this game's");
-                return;
-            }
-
-            string kept = CachePath(incoming.File);
-            try
-            {
-                Directory.CreateDirectory(CacheDirectory);
-                string temporary = kept + ".part";
-                File.WriteAllBytes(temporary, incoming.Data);
-                File.Move(temporary, kept, overwrite: true);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                Fail($"the server's {incoming.File.Path} couldn't be kept: {ex.Message}");
-                return;
-            }
-
-            _incoming.Remove(piece.Index);
-            Pin(incoming.File.Path, kept);
-            if (_incoming.Count == 0)
-            {
-                _logger.Information(LogCategory, $"Map {_list.Map}'s files are the server's now.");
+                Finish(piece.Index, incoming);
+                if (Failure is not null)
+                {
+                    return;
+                }
             }
         }
+    }
+
+    /// <summary>Lets go of the list being checked and whatever of it was coming, keeping every file already in place.</summary>
+    /// <remarks>For a list sent ahead of its map that could not be taken: the map's own list, when it goes there, decides.</remarks>
+    public void Abandon()
+    {
+        _incoming.Clear();
+        _list = null;
+        Failure = null;
     }
 
     /// <summary>Takes every file out of place, as the session goes.</summary>
     public void Clear()
     {
         Changed |= _pins.Count > 0;
-        SharedChanged |= _pins.Keys.Any(static p => !IsLevelFile(p));
+        SharedChanged |= _pins.Keys.Any(p => !_local.Rules.IsLevelFile(p));
         _pins.Clear();
         _incoming.Clear();
         _list = null;
         Failure = null;
     }
 
-    // A file a level plays from, as against one every level does.
-    private static bool IsLevelFile(string path) => path.StartsWith("missions/location0/level", StringComparison.Ordinal);
+    // A file whose every piece is in: checked whole, kept, and put in place.
+    private void Finish(int index, Incoming incoming)
+    {
+        byte[] data = incoming.Assemble();
+        if (!incoming.File.Matches(data))
+        {
+            Fail($"the server's {incoming.File.Path} didn't arrive whole");
+            return;
+        }
+
+        if (!Signature(data).AsSpan().SequenceEqual(incoming.Signature))
+        {
+            Fail($"the server's {incoming.File.Path} is a different kind of file from this game's");
+            return;
+        }
+
+        string kept = CachePath(incoming.File);
+        try
+        {
+            Directory.CreateDirectory(CacheDirectory);
+            string temporary = kept + ".part";
+            File.WriteAllBytes(temporary, data);
+            File.Move(temporary, kept, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Fail($"the server's {incoming.File.Path} couldn't be kept: {ex.Message}");
+            return;
+        }
+
+        _incoming.Remove(index);
+        Pin(incoming.File.Path, kept);
+        if (_incoming.Count == 0)
+        {
+            _logger.Information(
+                LogCategory,
+                $"Map {_list!.Map}'s files are the server's now: {BytesFetched / 1024} KiB fetched, {BytesReused / 1024} KiB of this game's own reused.");
+            PruneCache();
+        }
+    }
+
+    // The kept files past the cache's size let go, the longest unused first; never one in place now.
+    private void PruneCache()
+    {
+        try
+        {
+            if (!Directory.Exists(CacheDirectory))
+            {
+                return;
+            }
+
+            HashSet<string> inUse = new(_pins.Values.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+            FileInfo[] kept = [.. new DirectoryInfo(CacheDirectory).EnumerateFiles().OrderByDescending(static f => f.LastWriteTimeUtc)];
+            long total = 0;
+            foreach (FileInfo file in kept)
+            {
+                total += file.Length;
+                if (total > MaxCacheBytes && !inUse.Contains(file.FullName))
+                {
+                    file.Delete();
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning(LogCategory, $"The kept servers' files couldn't be trimmed: {ex.Message}");
+        }
+    }
+
+    // A kept file used again: the newest, so the trim keeps it longest.
+    private static void Touch(string path)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Kept as it was; at worst it goes sooner.
+        }
+    }
 
     private void Pin(string path, string kept)
     {
@@ -230,7 +361,7 @@ public sealed class SessionFileSync
 
         _pins[path] = kept;
         Changed = true;
-        SharedChanged |= !IsLevelFile(path);
+        SharedChanged |= !_local.Rules.IsLevelFile(path);
     }
 
     private void Unpin(string path)
@@ -238,7 +369,7 @@ public sealed class SessionFileSync
         if (_pins.Remove(path))
         {
             Changed = true;
-            SharedChanged |= !IsLevelFile(path);
+            SharedChanged |= !_local.Rules.IsLevelFile(path);
         }
     }
 
@@ -276,18 +407,117 @@ public sealed class SessionFileSync
         }
     }
 
-    // A file being fetched: what the list said it is, and what of it has come.
-    private sealed class Incoming(SessionFile file, byte[] signature)
+    // A file being fetched: what the list said it is, this game's own copy to take pieces from, and the pieces so far.
+    private sealed class Incoming
     {
-        public SessionFile File { get; } = file;
+        private byte[]? _own;
+        private byte[]?[] _pieces = new byte[]?[1];
+        private int[] _offsets = [0];
+        private int _missing = 1;
 
-        public byte[] Signature { get; } = signature;
+        public Incoming(SessionFile file, byte[] own)
+        {
+            File = file;
+            _own = own;
+            Signature = SessionFileSync.Signature(own);
+            ToFetch = file.Size;
+        }
 
-        // Made as the first piece comes, so a list asks no memory of this game before its server sends anything.
-        public byte[] Data => _data ??= new byte[File.Size];
+        public SessionFile File { get; }
 
-        private byte[]? _data;
+        public byte[] Signature { get; }
 
-        public int Received { get; set; }
+        public IReadOnlyList<ContentChunk>? Table { get; private set; }
+
+        public long Received { get; private set; }
+
+        public long ToFetch { get; private set; }
+
+        public bool Complete => _missing == 0;
+
+        // The table come: every piece this game's own copy has taken from it, and the places of those it lacks.
+        public List<int> Plan(IReadOnlyList<ContentChunk> table)
+        {
+            Table = table;
+            _pieces = new byte[]?[table.Count];
+            _offsets = new int[table.Count];
+            for (int i = 1; i < table.Count; i++)
+            {
+                _offsets[i] = _offsets[i - 1] + table[i - 1].Length;
+            }
+
+            Dictionary<(ulong, int), int> own = [];
+            if (_own is { } bytes)
+            {
+                int at = 0;
+                foreach (ContentChunk chunk in ContentChunks.Cut(bytes))
+                {
+                    own.TryAdd((chunk.Hash, chunk.Length), at);
+                    at += chunk.Length;
+                }
+            }
+
+            List<int> missing = [];
+            long toFetch = 0;
+            for (int i = 0; i < table.Count; i++)
+            {
+                if (_own is not null && own.TryGetValue((table[i].Hash, table[i].Length), out int offset))
+                {
+                    _pieces[i] = _own.AsSpan(offset, table[i].Length).ToArray();
+                }
+                else
+                {
+                    missing.Add(i);
+                    toFetch += table[i].Length;
+                }
+            }
+
+            _missing = missing.Count;
+            ToFetch = toFetch;
+            _own = null;
+            return missing;
+        }
+
+        // Asked for every piece after all: those taken from this game's copy are fetched again with the rest.
+        public void ForgetOwn()
+        {
+            Array.Clear(_pieces);
+            _missing = _pieces.Length;
+            ToFetch = File.Size;
+        }
+
+        // What a piece at a place must be: its length and, from a table, its hash; null for one not wanted.
+        public (int Length, ulong? Hash)? Expected(int chunk)
+        {
+            if (Table is null)
+            {
+                return File.Size <= ContentChunks.MaxLength && chunk == 0 && _pieces[0] is null ? ((int)File.Size, null) : null;
+            }
+
+            return chunk < Table.Count && _pieces[chunk] is null ? (Table[chunk].Length, Table[chunk].Hash) : null;
+        }
+
+        public void Put(int chunk, byte[] data)
+        {
+            _pieces[chunk] = data;
+            _missing--;
+            Received += data.Length;
+        }
+
+        public byte[] Assemble()
+        {
+            if (Table is null)
+            {
+                return _pieces[0]!;
+            }
+
+            byte[] data = new byte[File.Size];
+            for (int i = 0; i < _pieces.Length; i++)
+            {
+                _pieces[i]!.CopyTo(data, _offsets[i]);
+            }
+
+            return data;
+        }
     }
 }

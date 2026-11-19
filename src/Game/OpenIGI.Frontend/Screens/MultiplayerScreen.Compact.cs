@@ -64,6 +64,7 @@ public sealed partial class MultiplayerScreen
         List<CoopRoomInfo> passing = Passing(all);
         List<CoopRoomInfo> shown = Order([.. passing.Where(r => KindShown(r, _kind))]);
         CoopRoomInfo? picked = shown.FirstOrDefault(r => r.Code == _selectedCode);
+        coop.Prefetch(_sheet && picked is { } line && Joinable(line) ? line.Code : null);
 
         _browseTab = BuildCompactBrowse(theme, coop, all, passing, shown);
         _hostTab = BuildCompactHost(theme, coop);

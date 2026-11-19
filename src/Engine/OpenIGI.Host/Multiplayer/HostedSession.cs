@@ -201,6 +201,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     }
 
     /// <inheritdoc/>
+    public void Foresee(string map) => _session?.Foresee(map);
+
+    /// <inheritdoc/>
     public bool HoldsLevel =>
         _session is { EveryoneReady: false } && _goingSince is { } since && _clock.Elapsed.TotalSeconds - since < LongestWaitSeconds;
 

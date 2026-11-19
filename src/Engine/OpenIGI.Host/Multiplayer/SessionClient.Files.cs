@@ -1,27 +1,24 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
-using OpenIGI.Net;
-using OpenIGI.Net.Rooms;
 
 namespace OpenIGI.Host.Multiplayer;
 
 /// <content>
-/// The server's files, made this game's before it plays: a connection of their own before the join, then each list that
-/// comes with a new map while it plays.
+/// The server's files, made this game's before it plays: a connection of their own before the join (<see cref="ServerFileFetch"/>),
+/// then each list that comes with a new map while it plays.
 /// </content>
 public sealed partial class SessionClient
 {
-    // The longest the files before the join are waited for, in seconds; as long as the server keeps such a connection.
-    private const double LongestSyncSeconds = ServerSession.SyncSeconds;
+    // How long the files may take before the player is told they are coming: most joins find them in place, or nearly.
+    private const double QuietFilesSeconds = 1;
 
-    // The connection the files come on before the join, while it lasts, and when it began.
-    private NetClient? _syncNet;
-    private ClientSession? _syncSession;
-    private double _syncSince;
+    // The files before the join, while they come, and when they began.
+    private ServerFileFetch? _fetch;
+    private double? _fetchSince;
     private bool _synced;
 
-    // A list that came for a map whose files are not yet where the game reads them, kept until they are.
-    private SessionFileList? _heldList;
+    // A list that came while playing for a map whose files are not yet where the game reads them, kept until they are.
+    private HeldFileList? _held;
 
     /// <summary>Gets or sets the client's side of the server's files, or <see langword="null"/> to take the game's own as they are.</summary>
     /// <remarks>Set by the host as the session begins, before anything is loaded: until the files are in, the join waits.</remarks>
@@ -30,21 +27,32 @@ public sealed partial class SessionClient
     /// <summary>Gets or sets whether a map's own files are where the game reads them, or <see langword="null"/> when they always are.</summary>
     /// <remarks>
     /// A browser holds a level's large files only once that level has been asked for, and asking is what fetches them. A list
-    /// is checked against this game's files, so one that came for a map not yet fetched waits here rather than being refused
-    /// for a file the game is still to be given.
+    /// is checked against this game's files, so one that came for a map not yet fetched waits rather than being refused for a
+    /// file the game is still to be given.
     /// </remarks>
     public Func<string, bool>? MapFilesInPlace { get; set; }
 
     /// <summary>Gets whether the server's files are in -- or none are compared -- so the level may be loaded and the join made.</summary>
     public bool FilesReady => Files is null || _synced || _ended is not null;
 
-    /// <summary>Gets a line on how the files are coming, while they are, or <see langword="null"/>.</summary>
-    public string? FilesStatus => Files is { } files && !FilesReady && files.Progress is { Total: > 0 } progress
-        ? $"Getting the server's files: {progress.Received * 100 / progress.Total}% of {progress.Total / 1024} KiB"
-        : Files is not null && !FilesReady ? "Checking the server's files" : null;
+    /// <summary>Gets a line on how the files are coming, once they have taken long enough to be worth a word, or <see langword="null"/>.</summary>
+    public string? FilesStatus
+    {
+        get
+        {
+            if (Files is not { } files || FilesReady || _fetchSince is not { } since || _clock.Elapsed.TotalSeconds - since < QuietFilesSeconds)
+            {
+                return null;
+            }
 
-    // Before the join: the files on a connection of their own, which is let go once they are in, so the join that follows
-    // loads the level -- and the tables a game reads once -- from the server's.
+            return files.Progress is { Total: > 0 } progress
+                ? $"Getting the server's files: {progress.Received * 100 / progress.Total}% of {progress.Total / 1024} KiB"
+                : "Checking the server's files";
+        }
+    }
+
+    // Before the join: the files on a connection of their own over the same line, let go once they are in, so the join that
+    // follows loads the level -- and the tables a game reads once -- from the server's.
     private void SyncBeforeJoin(double now)
     {
         if (Files is not { } files || _synced || _ended is not null || _session is not null)
@@ -52,76 +60,27 @@ public sealed partial class SessionClient
             return;
         }
 
-        if (_transport is RoomTransport { Status: not RoomStatus.Open } room)
+        _fetchSince ??= now;
+        _fetch ??= new ServerFileFetch(_transport, ownsTransport: false, _server, _request, _titleId, files, MapFilesInPlace, _logger, _identity);
+        _fetch.Poll(now, Where);
+        if (_fetch.Ended is { } ended)
         {
-            room.Poll();
-            if (room.Status == RoomStatus.Closed)
-            {
-                _ended = room.Error ?? "the room closed";
-                _logger.Warning(LogCategory, $"Could not reach {Where} for its files: {_ended}.");
-            }
-
-            return;
+            _ended = ended;
+            _logger.Warning(LogCategory, $"The join to {Where} stopped: {ended}.");
+            EndFetch();
         }
-
-        if (_syncSession is null)
+        else if (_fetch.Done)
         {
-            _syncNet = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId), MultiplayerProtocol.Version);
-            _syncSession = new ClientSession(_syncNet, 1, _identity, MultiplayerProtocol.IdFor(_titleId));
-            _syncSession.Connect(_server, _request with { Sync = true }, now);
-            _syncSince = now;
-            _logger.Information(LogCategory, $"Checking {Where}'s files before joining.");
-        }
-
-        _syncSession.Poll(now);
-        _syncSession.Receive(now);
-        CheckList(files, _syncSession.TakeFileList(), _syncSession.WantFiles);
-
-        files.Take(_syncSession.TakeFilePieces());
-        _syncSession.Flush(now);
-
-        if (files.Failure is { } failure)
-        {
-            EndSync(now);
-            _ended = $"couldn't get the server's files: {failure}";
-            _logger.Warning(LogCategory, $"The join to {Where} stopped: {_ended}.");
-        }
-        else if (files.Settled)
-        {
-            EndSync(now);
             _synced = true;
-        }
-        else if (_syncSession.EndReason is { } reason)
-        {
-            EndSync(now);
-            _ended = reason;
-            _logger.Warning(LogCategory, $"{Where} would not give its files: {reason}.");
-        }
-        else if (now - _syncSince > LongestSyncSeconds)
-        {
-            EndSync(now);
-            _ended = "the server's files took too long to come";
-            _logger.Warning(LogCategory, $"The join to {Where} stopped: {_ended}.");
-        }
-    }
-
-    // A list checked once its map's files are in place: the newest that came, kept while they are still being fetched.
-    private void CheckList(SessionFileSync files, SessionFileList? came, Action<string, IReadOnlyCollection<int>> want)
-    {
-        _heldList = came ?? _heldList;
-        if (_heldList is { } list && MapFilesInPlace?.Invoke(list.Map) != false)
-        {
-            _heldList = null;
-            files.Accept(list, want);
+            EndFetch();
         }
     }
 
     // The files' own connection let go; the line it ran on stays for the join.
-    private void EndSync(double now)
+    private void EndFetch()
     {
-        _syncNet?.Disconnect("files in", now);
-        _syncNet = null;
-        _syncSession = null;
+        _fetch?.Dispose();
+        _fetch = null;
     }
 
     // While playing: a list come with a new map checked, what differs fetched, and a level loaded from files no longer the
@@ -133,11 +92,21 @@ public sealed partial class SessionClient
             return;
         }
 
-        CheckList(files, session.TakeFileList(), session.WantFiles);
+        _held ??= new HeldFileList(MapFilesInPlace);
+        _held.Check(files, session.TakeFileList(), session.WantFiles);
 
+        files.TakeTables(session.TakeFileTables(), session.WantChunks);
         files.Take(session.TakeFilePieces());
         if (files.Failure is { } failure && _ended is null)
         {
+            // A list sent ahead of the next map is only a head start: the map's own list, as the server goes there, decides.
+            if (files.Map is { } ahead && ahead != session.Map && ahead != session.GoingTo)
+            {
+                _logger.Information(LogCategory, $"The files of map {ahead}, sent ahead, are left for when the server goes there: {failure}.");
+                files.Abandon();
+                return;
+            }
+
             _ended = $"couldn't get the server's files: {failure}";
             _logger.Warning(LogCategory, $"Left {Where}: {_ended}.");
             return;
@@ -162,6 +131,7 @@ public sealed partial class SessionClient
         }
     }
 
-    // Whether the level to go to waits for its files.
-    private bool FilesBusy => Files is { Settled: false, Failure: null, Map: not null };
+    // Whether the level to go to waits for its files: those of the map the server is going on to, not a list sent ahead of a
+    // later one, which only ever gives a head start.
+    private bool FilesBusy => Files is { Settled: false, Failure: null, Map: { } map } && (map == _session?.GoingTo || map == _session?.Map);
 }

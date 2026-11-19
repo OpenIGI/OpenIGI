@@ -79,6 +79,97 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <summary>Gets or sets what reads the game's tables again, for a server's shared files put in place before the join.</summary>
     public Action? ReloadTables { get; set; }
 
+    /// <summary>Gets or sets what makes this game's side of a server's files, for a line's files fetched ahead of a join.</summary>
+    public Func<SessionFileSync>? NewFileSync { get; set; }
+
+    /// <summary>Gets or sets whether a map's own files are where the game reads them (<see cref="SessionClient.MapFilesInPlace"/>).</summary>
+    public Func<string, bool>? MapFilesInPlace { get; set; }
+
+    // How long a line stays picked before its files are fetched: a player scrolling the list starts nothing.
+    private const double PrefetchAfterSeconds = 1.5;
+
+    // The line picked and since when, and the fetch of its files once begun.
+    private (string Code, double Since)? _prefetchWanted;
+    private (string Code, ServerFileFetch Fetch)? _prefetch;
+
+    /// <inheritdoc/>
+    public void Prefetch(string? code)
+    {
+        if (code == _prefetchWanted?.Code)
+        {
+            return;
+        }
+
+        _prefetchWanted = code is null ? null : (code, _clock.Elapsed.TotalSeconds);
+        if (_prefetch is { } running && running.Code != code)
+        {
+            EndPrefetch();
+        }
+    }
+
+    // The picked line's files: begun once it has stayed picked a moment, polled while they come, let go once in or not to be had.
+    private void PumpPrefetch()
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        if (_session is not null || _finding is not null || _waitingFor is not null)
+        {
+            // Joining or playing: the session fetches what it needs itself.
+            EndPrefetch();
+            return;
+        }
+
+        if (_prefetch is null && _prefetchWanted is { } wanted && now - wanted.Since >= PrefetchAfterSeconds && NewFileSync is { } newSync
+            && OpenFetch(wanted.Code, newSync) is { } fetch)
+        {
+            _prefetch = (wanted.Code, fetch);
+        }
+
+        if (_prefetch is not { } running)
+        {
+            return;
+        }
+
+        running.Fetch.Poll(now, running.Code);
+        if (running.Fetch.Done || running.Fetch.Ended is not null)
+        {
+            if (running.Fetch.Done)
+            {
+                _logger.Information(LogCategory, $"The files of {running.Code} are ready ahead of a join.");
+            }
+
+            // Kept from being begun again for the same line: the cache holds what came.
+            _prefetchWanted = (running.Code, double.PositiveInfinity);
+            EndPrefetch();
+        }
+    }
+
+    // A connection that asks only for a line's files: to a server by its address, or through its room; none for a line this
+    // game could not join anyway.
+    private ServerFileFetch? OpenFetch(string code, Func<SessionFileSync> newSync)
+    {
+        if (_browser?.Servers.FirstOrDefault(s => s.Key == code) is not { } line
+            || line.Info.Passworded || !line.Info.Compatible || line.Info.Players >= line.Info.MaxPlayers)
+        {
+            return null;
+        }
+
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id);
+        if (line.Address is { } address && line.Answered && OpenUdp is { } open)
+        {
+            return new ServerFileFetch(open(0), ownsTransport: true, address, request, _titleId(), newSync(), MapFilesInPlace, _logger);
+        }
+
+        return line.Room is { } room
+            ? new ServerFileFetch(RoomTransport.Join(RoomTransport.DefaultMaster, room, _peers, _logger), ownsTransport: true, RoomTransport.HostAddress, request, _titleId(), newSync(), MapFilesInPlace, _logger)
+            : null;
+    }
+
+    private void EndPrefetch()
+    {
+        _prefetch?.Fetch.Dispose();
+        _prefetch = null;
+    }
+
     // A joined server's mission, started once the server's files are in: the mission and difficulty, and whether the tables
     // have been asked to be read again for it.
     private (int Mission, int Difficulty, bool Reloaded)? _startWhenReady;
@@ -255,6 +346,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <inheritdoc/>
     public void Leave()
     {
+        EndPrefetch();
         _waitingFor = null;
         _finding = null;
         _findingCode = null;
@@ -488,6 +580,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     public void Update()
     {
         StartWhenFilesReady();
+        PumpPrefetch();
 
         if (_waitingFor is { } waiting && _browser is { } asked)
         {

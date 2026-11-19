@@ -168,6 +168,7 @@ public sealed partial class GameHost
         ReleaseTitleScopedPresentation();
 
         _titleRuntime = binding.Runtime;
+        _gameplayFiles = binding.GameplayFiles ?? Game.Multiplayer.GameplayFileLayout.None;
         _presentation = binding.Presentation;
         _hudOverlay = null;
         _firstPerson = null;

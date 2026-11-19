@@ -5,17 +5,20 @@ namespace OpenIGI.Host.Multiplayer;
 
 /// <summary>The installation as a session plays it, through the game's own file system: what a server lists and sends, and what a client compares.</summary>
 /// <param name="files">The game's file system.</param>
-/// <param name="titleId">The game.</param>
+/// <param name="rules">
+/// Which of the game's files a map plays from, as the host has them now: asked each time, since a session can be set before
+/// the title's mission table is made.
+/// </param>
 /// <param name="withoutPins">
 /// Whether a server's files put in place are passed over, so the installation's own are read: what a client compares a list
 /// against, which tells a file that is its own again from one that only is while the server's stands in.
 /// </param>
-internal sealed class HostSessionFiles(VirtualFileSystem files, string titleId, bool withoutPins) : ISessionFileSource
+internal sealed class HostSessionFiles(VirtualFileSystem files, Func<GameplayFileRules> rules, bool withoutPins) : ISessionFileSource
 {
     private const string Device = LocalFileDevice.DeviceName + ":";
 
     /// <inheritdoc/>
-    public string TitleId { get; } = titleId;
+    public GameplayFileRules Rules => rules();
 
     /// <inheritdoc/>
     public IEnumerable<string> ListFiles(string directory)

@@ -558,7 +558,7 @@ public enum SessionMessage : byte
     /// <summary>Client to server, reliable: the files of a list it was sent that it lacks, by place in the list.</summary>
     FileWant = 23,
 
-    /// <summary>Server to client, reliable: a piece of a file asked for.</summary>
+    /// <summary>Server to client, reliable: a piece of a file asked for (<see cref="FilePiece"/>), deflated where that is smaller.</summary>
     FilePart = 24,
 
     /// <summary>
@@ -566,6 +566,15 @@ public enum SessionMessage : byte
     /// shielded changes. A client that does not know it passes it by.
     /// </summary>
     Shields = 25,
+
+    /// <summary>
+    /// Server to client, reliable: the pieces a file asked for is cut into (<see cref="FileChunkTable"/>), so the client asks for
+    /// only those its own copy lacks. A file no longer than one piece is sent whole instead.
+    /// </summary>
+    FileChunks = 26,
+
+    /// <summary>Client to server, reliable: the pieces of a file it lacks, by place in its table (<see cref="ChunkWant"/>).</summary>
+    ChunkWant = 27,
 }
 
 /// <summary>A player spawn protection shields: who, and for how many ticks more at most (firing ends it sooner).</summary>

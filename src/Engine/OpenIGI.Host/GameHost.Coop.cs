@@ -95,6 +95,14 @@ public sealed partial class GameHost
             return;
         }
 
+        // The server's shared files went in: the game's tables are read again at this frame's end, and the level gone to after.
+        if (follower.TakeTablesReload())
+        {
+            _logger.Information("Coop", "The server's shared files are in; the game's tables are read again before its level.");
+            ReloadTitleTables();
+            return;
+        }
+
         if (follower.TakeTravel() is { } map
             && int.TryParse(map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int missionId))
         {
@@ -128,6 +136,8 @@ public sealed partial class GameHost
             OpenUdp = OpenUdp,
             Instance = DiscordInstance,
             ReloadTables = ReloadTitleTables,
+            NewFileSync = NewSessionFileSync,
+            MapFilesInPlace = MapFilesInPlace,
             Arenas = HasArena,
             GamePath = () => _gamePath,
             BookPath = OpenUdp is null ? null : Core.Configuration.SettingsPaths.GetFilePath("servers.json"),

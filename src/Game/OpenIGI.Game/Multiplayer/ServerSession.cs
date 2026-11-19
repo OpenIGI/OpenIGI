@@ -203,10 +203,7 @@ public sealed partial class ServerSession : IModeHost
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _syncing.ContainsKey(e.Peer):
                     BitReader syncReader = new(e.Message.Data);
-                    if ((SessionMessage)syncReader.ReadBits(8) == SessionMessage.FileWant)
-                    {
-                        ReadFileWant(e.Peer, ref syncReader);
-                    }
+                    ReadFileMessage(e.Peer, (SessionMessage)syncReader.ReadBits(8), ref syncReader);
 
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _pending.TryGetValue(e.Peer, out PendingJoin? pending):
@@ -819,6 +816,7 @@ public sealed partial class ServerSession : IModeHost
     {
         ArgumentNullException.ThrowIfNull(map);
         _going++;
+        _foreseen = null;
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Going, 8);
         _writer.WriteBits(_going, 8);
@@ -954,7 +952,8 @@ public sealed partial class ServerSession : IModeHost
     private void ReadMessage(int slot, ClientState client, byte[] data)
     {
         BitReader reader = new(data);
-        switch ((SessionMessage)reader.ReadBits(8))
+        SessionMessage kind = (SessionMessage)reader.ReadBits(8);
+        switch (kind)
         {
             // Said or marked by a client: told to everyone, under its own entity whatever it claimed, and only as fast as its
             // budget allows -- what one client sends, every other is sent.
@@ -982,8 +981,8 @@ public sealed partial class ServerSession : IModeHost
             case SessionMessage.Rcon:
                 ReadRcon(slot, client, ref reader);
                 return;
-            case SessionMessage.FileWant:
-                ReadFileWant(slot, ref reader);
+            case SessionMessage.FileWant or SessionMessage.ChunkWant:
+                ReadFileMessage(slot, kind, ref reader);
                 return;
             case SessionMessage.Ready:
                 byte ready = (byte)reader.ReadBits(8);

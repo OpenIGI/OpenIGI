@@ -15,6 +15,12 @@ public interface ISessionHold
     {
     }
 
+    /// <summary>Tells the others the mission likely next, for those whose files differ to fetch them while they play: the host's to say.</summary>
+    /// <param name="map">The mission's map.</param>
+    void Foresee(string map)
+    {
+    }
+
     /// <summary>Keeps the session talking on a tick the held level doesn't run: what came is read, what waits is sent.</summary>
     /// <param name="title">What would have ticked, or <see langword="null"/> between levels.</param>
     void Pump(object? title);

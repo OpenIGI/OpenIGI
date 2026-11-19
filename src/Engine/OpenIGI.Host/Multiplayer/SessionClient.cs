@@ -335,6 +335,17 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     // A map to load again because the files came after it was loaded, until taken.
     private string? _reloadAfterSync;
 
+    // Whether the server's shared files went in after the game's tables were read, until taken.
+    private bool _tablesAfterSync;
+
+    /// <inheritdoc/>
+    public bool TakeTablesReload()
+    {
+        bool reload = _tablesAfterSync;
+        _tablesAfterSync = false;
+        return reload;
+    }
+
     // Whether a level has been up here, while there was no session yet.
     private bool _levelSeen;
 
@@ -462,9 +473,11 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     {
         bool before = FilesReady;
         SyncBeforeJoin(_clock.Elapsed.TotalSeconds);
-        if (!before && _synced && _levelSeen && Files is { } files && files.TakeChanges().Changed && files.Map is { } map)
+        // The command line's level came up before the files were in (the menu's waits for them, and reads the tables itself):
+        // loaded again from the server's, the tables a game reads once read again first when the shared ones went in.
+        if (!before && _synced && _levelSeen && Files is { } files && files.Map is { } map && files.TakeChanges() is { Changed: true } changes)
         {
-            // The command line's level came up before the files were in: loaded again, from the server's.
+            _tablesAfterSync = changes.Shared;
             _reloadAfterSync = map;
         }
 
@@ -674,7 +687,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
         }
 
         _disposed = true;
-        _syncNet?.Disconnect("client closed", 0);
+        EndFetch();
         Files?.Clear();
         if (_netClient is { } client)
         {

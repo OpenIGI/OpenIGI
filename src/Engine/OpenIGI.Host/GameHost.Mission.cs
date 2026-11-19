@@ -42,6 +42,13 @@ public sealed partial class GameHost
         if (TickObserver is Multiplayer.ISessionHold hosting)
         {
             hosting.AnnounceGoing(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            // And the mission after it, whose files a player's copy may differ in: fetched while this one is played, so going on
+            // to it waits for nothing.
+            if (_missions.TryGet(chosen.NextMissionId, out MissionDescriptor? next) && next is not null)
+            {
+                hosting.Foresee(next.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
         }
 
         // The hold starts before anything blocks, and so does the panel. Everything below this line

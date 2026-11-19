@@ -63,6 +63,9 @@ public sealed partial class MultiplayerScreen
         CoopRoomInfo? picked = shown.FirstOrDefault(r => r.Code == _selectedCode) ?? shown.FirstOrDefault();
         _selectedCode = picked?.Code;
 
+        // The line looked at has its files made ready meanwhile, so joining it waits for none.
+        coop.Prefetch(picked is { } line && Joinable(line) ? line.Code : null);
+
         var layout = new Grid { ColumnSpacing = PanelGap };
         layout.RowDefinitions.Add(GridLength.Star);
         layout.ColumnDefinitions.Add(GridLength.Star);

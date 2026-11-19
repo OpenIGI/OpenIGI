@@ -417,6 +417,7 @@ public sealed partial class GameHost : IDisposable
         _loadGate = loadGate;
         _titles = titles;
         _titleRuntime = binding.Runtime;
+        _gameplayFiles = binding.GameplayFiles ?? Game.Multiplayer.GameplayFileLayout.None;
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
         _missionCatalogue = binding.Missions;

@@ -87,6 +87,9 @@ public sealed class ClientSession
     /// <summary>Gets whether a level the server is going on to is loaded or loading here, waiting for the server to begin it.</summary>
     public bool WaitingForServer => _going is not null;
 
+    /// <summary>Gets the map the server said it is going on to, until it begins it, or <see langword="null"/>.</summary>
+    public string? GoingTo => _going;
+
     /// <summary>Gets whether the server has begun a level this client has still to load, its snapshots not for the one here.</summary>
     /// <remarks>
     /// A restart, or a level gone on to unannounced: until the client is there, the server's soldiers would be posed on the
@@ -250,6 +253,7 @@ public sealed class ClientSession
     // The server's newest list of files, and the pieces of files that came, until taken.
     private SessionFileList? _fileList;
     private readonly List<FilePiece> _filePieces = [];
+    private readonly List<FileChunkTable> _fileTables = [];
 
     /// <summary>Takes the list of files the server last sent, if one came since the last call.</summary>
     /// <returns>The list, or <see langword="null"/>.</returns>
@@ -267,6 +271,25 @@ public sealed class ClientSession
         FilePiece[] pieces = [.. _filePieces];
         _filePieces.Clear();
         return pieces;
+    }
+
+    /// <summary>Takes the tables of files that came since the last call.</summary>
+    /// <returns>The tables, in the order they came.</returns>
+    public IReadOnlyList<FileChunkTable> TakeFileTables()
+    {
+        FileChunkTable[] tables = [.. _fileTables];
+        _fileTables.Clear();
+        return tables;
+    }
+
+    /// <summary>Asks the server for pieces of a file whose table it sent.</summary>
+    /// <param name="ask">The pieces.</param>
+    public void WantChunks(ChunkWant ask)
+    {
+        ArgumentNullException.ThrowIfNull(ask);
+        _writer.Reset();
+        ask.Write(_writer);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
     /// <summary>Asks the server for files of a list it sent.</summary>
@@ -788,14 +811,17 @@ public sealed class ClientSession
             case SessionMessage.Files when SessionFileList.Read(ref reader) is { } list:
                 _fileList = list;
                 break;
-            case SessionMessage.FilePart:
-                string pieceMap = reader.ReadString(64);
-                int pieceIndex = (int)reader.ReadVarUInt();
-                long pieceOffset = reader.ReadVarUInt();
-                byte[] pieceData = reader.ReadBytes(ServerSession.FilePieceSize);
-                if (!reader.IsOverflowed && _filePieces.Count < 4096)
+            case SessionMessage.FilePart when FilePiece.Read(ref reader) is { } filePiece:
+                if (_filePieces.Count < 4096)
                 {
-                    _filePieces.Add(new FilePiece(pieceMap, pieceIndex, pieceOffset, pieceData));
+                    _filePieces.Add(filePiece);
+                }
+
+                break;
+            case SessionMessage.FileChunks when FileChunkTable.Read(ref reader) is { } table:
+                if (_fileTables.Count < SessionFileList.MaxFiles)
+                {
+                    _fileTables.Add(table);
                 }
 
                 break;
