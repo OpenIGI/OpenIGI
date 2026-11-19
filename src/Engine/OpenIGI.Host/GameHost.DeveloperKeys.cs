@@ -8,6 +8,8 @@ public sealed partial class GameHost
     /// <summary>Reads the developer keys: captures, overrides, the debug view and the view toggle.</summary>
     private void HandleDeveloperKeys(FrameLoopState state)
     {
+        HandleAdsTuningKeys();
+
         // The camera is advanced on every pass of the loop, not only on the passes that render. The
         // pump clears the mouse's motion accumulator, and the loop pumps several times per rendered
         // frame — so consuming it only on a render threw most of the mouse movement away and made the

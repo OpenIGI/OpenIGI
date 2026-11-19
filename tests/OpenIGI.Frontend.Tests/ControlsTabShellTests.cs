@@ -117,7 +117,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
             crouch.Activate();
             Assert.True(crouch.TryCaptureKey(KeyCode.RightControl));
-            Assert.Equal("KEY_RIGHT_CTRL", host.Profile!.Bindings.Single(b => b.Action == "Crouch").Key);
+            Assert.Equal("KEY_LEFT_CTRL", host.Profile!.Bindings.Single(b => b.Action == "Crouch").Key);
             Assert.Equal("KEY_LEFT_SHIFT", host.Profile.Bindings.Single(b => b.Action == "ToggleWalkRun").Key);
             walk.Activate();
             Assert.True(walk.TryCaptureKey(KeyCode.RightControl));
@@ -126,7 +126,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Find<Button>(screen, b => b.Text == "RESET BINDINGS")!.Activate();
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
             Assert.Equal(KeyCode.CapsLock, walk.BoundKey);
-            Assert.Equal("KEY_RIGHT_CTRL", host.Profile.Bindings.Single(b => b.Action == "Crouch").Key);
+            Assert.Equal("KEY_LEFT_CTRL", host.Profile.Bindings.Single(b => b.Action == "Crouch").Key);
         }
         finally
         {
@@ -223,7 +223,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
                 .Single(row => row.Action == "Jump").BoundKey);
             Assert.Equal(KeyCode.C, screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Map computer").BoundKey);
-            Assert.Equal(KeyCode.E, screen.Root.Descendants().OfType<KeyBindingRow>()
+            Assert.Equal(KeyCode.F, screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Activate").BoundKey);
         }
         finally

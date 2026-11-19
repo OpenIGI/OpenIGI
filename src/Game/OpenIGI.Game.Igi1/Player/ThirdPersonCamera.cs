@@ -200,7 +200,9 @@ public sealed class ThirdPersonCamera
             return firstPerson;
         }
 
-        Matrix3f orientation = firstPerson.Orientation;
+        // Over the shoulder the horizon stays level: a roll the eye takes -- a lean's, a hit's -- is the body's to show, and a
+        // camera rolling with it would cancel the lean on the screen. The forward, and so the crosshair's ray, is the eye's.
+        Matrix3f orientation = Level(firstPerson.Orientation);
         Vector3d right = new(orientation.M11, orientation.M12, orientation.M13);
         Vector3d up = new(orientation.M21, orientation.M22, orientation.M23);
         Vector3d forward = new(orientation.M31, orientation.M32, orientation.M33);
@@ -257,7 +259,7 @@ public sealed class ThirdPersonCamera
         _showsBody = OffsetInMetres >= (_showsBody ? BodyHiddenInMetres : BodyShownInMetres);
         _showsViewModel = OffsetInMetres < (_showsViewModel ? ArmsAwayInMetres : ArmsBackInMetres);
 
-        // The orientation is the first-person one, untouched. That is not a shortcut: it is what keeps
+        // The orientation is the first-person one, levelled and otherwise untouched. That is not a shortcut: it is what keeps
         // the crosshair's ray, the world's motion vectors and the player's own aim in one frame during
         // the move, and what makes the move a dolly rather than a swing.
         _camera = new Camera3D(eye, orientation);
@@ -283,6 +285,22 @@ public sealed class ThirdPersonCamera
 
     private static Vector3d ToUnits(Vector3d metres) =>
         new(metres.X * UnitsPerMetre, metres.Y * UnitsPerMetre, metres.Z * UnitsPerMetre);
+
+    // The same forward with the roll taken out: the right across the world's up, the up from the two. A view looking
+    // straight up or down keeps its own axes.
+    private static Matrix3f Level(in Matrix3f orientation)
+    {
+        Vector3f forward = new(orientation.M31, orientation.M32, orientation.M33);
+        Vector3f right = Vector3f.Cross(forward, new Vector3f(0f, 0f, 1f));
+        if (right.Length < 1e-3f)
+        {
+            return orientation;
+        }
+
+        right /= right.Length;
+        Vector3f up = Vector3f.Cross(right, forward);
+        return Matrix3f.FromRows(right, up, forward);
+    }
 
     private static Vector3d FromUnits(Vector3d units) =>
         new(units.X / UnitsPerMetre, units.Y / UnitsPerMetre, units.Z / UnitsPerMetre);

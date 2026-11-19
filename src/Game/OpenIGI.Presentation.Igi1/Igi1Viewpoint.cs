@@ -97,7 +97,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
     public Vector3d? BodyPositionUnits => gameplay.World.Player?.Body.Position;
 
     /// <inheritdoc/>
-    public Vector3d? EyeUnits => gameplay.World.Player?.Body.Eye;
+    public Vector3d? EyeUnits => gameplay.World.Player?.EyeUnits;
 
     /// <inheritdoc/>
     public IReadOnlyList<string>? DebugLines()

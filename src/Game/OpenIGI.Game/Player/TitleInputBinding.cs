@@ -83,6 +83,13 @@ public static class TitleInputBindings
             if (string.Equals(binding.Default.Action, action, StringComparison.OrdinalIgnoreCase)) { return binding.Label ?? action; }
             if (binding.Replaces != 0 && string.Equals(PlayerInputBindings.ConfigName(binding.Replaces), action, StringComparison.OrdinalIgnoreCase)) { return null; }
         }
+        // A title with rows of its own is I.G.I. 2, which reads neither Project I.G.I.'s flashlight nor modern aim's leans, brace
+        // and launcher: their rows are not its controls, so its page does not list them and they hold no key from its own.
+        if (bindings.Count > 0 && PlayerProfile.TitlesSkip(action))
+        {
+            return null;
+        }
+
         return action.StartsWith("Title_", StringComparison.OrdinalIgnoreCase) ? null : action;
     }
 

@@ -182,7 +182,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                best = new SoldierEnemy(other.Player.Body.Eye, true, other.Player.Body.Position, other.Player.IsCrouched, other);
+                best = new SoldierEnemy(other.Player.SeenEyeUnits, true, other.Player.Body.Position, other.Player.IsCrouched, other);
             }
         }
 
@@ -226,7 +226,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     // player standing in its stead.
     private Vector3d PlayerEye => PlayerEyeIfAny ?? default;
 
-    private Vector3d? PlayerEyeIfAny => mission.Player?.Body.Eye ?? mission.PlayerStandIn?.Eyes;
+    private Vector3d? PlayerEyeIfAny => mission.Player?.SeenEyeUnits ?? mission.PlayerStandIn?.Eyes;
 
     private Vector3d PlayerFeet => mission.Player?.Body.Position ?? mission.PlayerStandIn?.Feet ?? default;
 
@@ -1290,12 +1290,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                     -walkingBody.Body.Yaw,
                     walkingBody.LocomotionAnimation,
                     walkingBody.LocomotionAnimationLoops,
-                    new PlayerBodyPose(
-                        walkingBody.UpperBodyAnimation,
-                        walkingBody.UpperBodyAnimationLoops,
-                        walkingBody.UpperBodyBlendSeconds,
-                        walkingBody.UpperBodySequence,
-                        walkingBody.AimPitch));
+                    walkingBody.BodyPose());
             }
             else
             {

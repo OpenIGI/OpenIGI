@@ -65,6 +65,9 @@ public sealed class ClientSession
     /// <summary>Gets the mode the server plays, once welcomed, or <see langword="null"/>.</summary>
     public string? ServerMode { get; private set; }
 
+    /// <summary>Gets whether the server plays with modern aim (<c>g_modern_aim</c>), once welcomed: every player then does.</summary>
+    public bool ServerModernAim { get; private set; }
+
     /// <summary>Has the map loaded again, as the server's Travel to it does: for a level brought up under the wrong mode.</summary>
     public void ReloadMap()
     {
@@ -734,6 +737,7 @@ public sealed class ClientSession
                 Map = reader.ReadString(64);
                 Epoch = (byte)reader.ReadBits(8);
                 ServerMode = reader.ReadString(16);
+                ServerModernAim = reader.ReadBits(1) != 0;
                 ForgetEvents();
                 Clock = new TickClockSync(Math.Max(1, TickRate));
                 break;

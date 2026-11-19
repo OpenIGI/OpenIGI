@@ -100,12 +100,19 @@ public sealed class HumanLocomotionAnimator
     /// Whether the new clip starts as far through itself as the old one was, the entries' <c>Anim_SetTime(length · phase)</c>,
     /// so a turn between two gaits keeps the feet in step.
     /// </param>
-    public void Play(int state, float blendSeconds, bool keepPhase)
+    public void Play(int state, float blendSeconds, bool keepPhase) => Play(state, state, blendSeconds, keepPhase);
+
+    /// <summary>Enters a state while playing another state's slot, as the lean's entry (<c>0x40DF70</c>) plays the crouch's.</summary>
+    /// <param name="state">The locomotion state entered.</param>
+    /// <param name="slot">The state whose clip it plays.</param>
+    /// <param name="blendSeconds">How long the new clip fades in over the old.</param>
+    /// <param name="keepPhase">Whether the new clip starts as far through itself as the old one was.</param>
+    public void Play(int state, int slot, float blendSeconds, bool keepPhase)
     {
         float phase = Phase;
         State = state;
         HasStarted = true;
-        HumanLocomotionState binding = HumanLocomotionStates.For(state);
+        HumanLocomotionState binding = HumanLocomotionStates.For(slot);
         AnimationId = binding.AnimationId;
         Loops = binding.Mode == 1;
 

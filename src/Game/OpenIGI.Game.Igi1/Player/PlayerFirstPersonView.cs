@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Player.Aim;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -25,6 +26,7 @@ internal sealed class PlayerFirstPersonView
     private readonly HumanViewShake _viewShake = new();
     private readonly PlayerViewInterpolator _pair;
     private bool _wasCapturing;
+    private Vector3d _leanOffset;
 
     /// <summary>Initializes the view over one body.</summary>
     /// <param name="body">The body whose eye the view is.</param>
@@ -49,6 +51,9 @@ internal sealed class PlayerFirstPersonView
     /// takes effect on the next one. See <see cref="MouseLookSettings"/> for why the rate is what it is.
     /// </remarks>
     internal MouseLookSettings LookSettings { get; set; } = MouseLookSettings.Default;
+
+    /// <summary>Gets or sets what the sights make of the look's speed, on top of the zoom's own scale; one at the hip.</summary>
+    internal float AimLookScale { get; set; } = 1f;
 
     /// <summary>Gets where the held weapon's model goes, in engine units, or <see langword="null"/>.</summary>
     internal BoneAttachment? HeldWeapon => Rig is null ? null : Rig.HeldWeapon;
@@ -77,6 +82,25 @@ internal sealed class PlayerFirstPersonView
 
     /// <summary>Gets the shake the last hit put in the view.</summary>
     internal HumanViewShake ViewShake => _viewShake;
+
+    /// <summary>Gets the lean locomotion state 44 has eased the eye by (<c>HumanView+412..+420</c>).</summary>
+    internal HumanBodyOffsets Lean { get; private set; }
+
+    /// <summary>Gets or sets modern aim's lean and brace this tick, on top of the original's (<see cref="Lean"/>).</summary>
+    /// <remarks>
+    /// Its roll is in the engine's own sense -- positive tips the top of the view to the right -- which the eye's orientation
+    /// takes as it is and the camera's <see cref="Shaken"/>, whose roll runs the other way, takes negated.
+    /// </remarks>
+    internal EyeLean ModernLean { get; set; }
+
+    /// <summary>Gets or sets the sector a braced weapon holds the look to, or <see langword="null"/> for none.</summary>
+    internal MountLookLimit? LookLimit { get; set; }
+
+    /// <summary>Gets whether the eye stands leaned off the body's.</summary>
+    internal bool IsLeaning => Lean != default || ModernLean.Moves;
+
+    /// <summary>Gets how far the lean, swept against the world, moved the eye at the last commit, in world units.</summary>
+    internal Vector3d LeanOffsetUnits => _leanOffset;
 
     /// <summary>The landing dip as a world-space displacement, in units — <c>0x464BD0</c> adds it to Z.</summary>
     private Vector3d LandingKickOffsetUnits => new(0.0, 0.0, _landingKick.OffsetUnits);
@@ -110,6 +134,25 @@ internal sealed class PlayerFirstPersonView
     {
         _viewShake.Advance(random);
         _landingKick.Advance();
+    }
+
+    /// <summary>Steps the lean one tick: <c>0x40DFC0</c> while the body is in state 44, all three put down otherwise.</summary>
+    /// <param name="inLean">Whether the body is in state 44.</param>
+    /// <param name="left">Whether strafe-left is held.</param>
+    /// <param name="right">Whether strafe-right is held.</param>
+    /// <param name="forward">Whether forward is held.</param>
+    /// <param name="crouched">Whether the crouch byte is set.</param>
+    /// <param name="parameters">The script's tuning, or <see langword="null"/> before it is read.</param>
+    /// <remarks>The weapon state's exit (<c>0x40F3F0</c>) zeroes the lean outright rather than easing it home.</remarks>
+    internal void AdvanceLean(bool inLean, bool left, bool right, bool forward, bool crouched, HumanPlayerParameters? parameters)
+    {
+        Lean = inLean && parameters is not null
+            ? HumanBodyOffset.Advance(Lean, left, right, forward, crouched, parameters)
+            : default;
+        if (Lean == default && !ModernLean.Moves)
+        {
+            _leanOffset = default;
+        }
     }
 
     /// <summary>Puts the dip and the shake down, for a teleport that leaves the ground they belong to.</summary>
@@ -176,14 +219,18 @@ internal sealed class PlayerFirstPersonView
                 return gun;
             }
 
-            float zoomLook = Rig is { } zoomView
+            float zoomLook = (Rig is { } zoomView
                 ? MouseLookSettings.ZoomSensitivityScale(zoomView.TanX)
-                : 1f;
+                : 1f) * AimLookScale;
             _body.Yaw += LookSettings.YawDelta(deltaX) * zoomLook;
             _body.Pitch = Math.Clamp(
                 _body.Pitch + (LookSettings.PitchDelta(deltaY) * zoomLook),
                 -PlayerBody.PitchLimit,
                 PlayerBody.PitchLimit);
+            if (LookLimit is { } limit)
+            {
+                (_body.Yaw, _body.Pitch) = limit.Clamp(_body.Yaw, _body.Pitch);
+            }
         }
 
         return null;
@@ -239,16 +286,22 @@ internal sealed class PlayerFirstPersonView
     // immediately before this final binding. What is transcribed here is the attachment's eye transform,
     // built from the aim angles with 0x4B38E0's own Euler order, and the fact that 0x4D38C0 poses the
     // rig with a zero root and the object's own 3x3 above it.
-    internal void Sync(float aimPitch, PlayerWeapons? weapons)
+    internal void Sync(float aimPitch, PlayerWeapons? weapons, WorldRayCast? walls)
     {
         if (Rig is not { } view)
         {
+            _leanOffset = default;
             return;
         }
 
-        view.Eye = _body.Eye;
         view.EyeOrientation = Matrix3f.FromEngineEulerAngles(
-            aimPitch + _viewShake.Pitch, _viewShake.Roll, -_body.Yaw + _viewShake.Yaw);
+            aimPitch + _viewShake.Pitch, _viewShake.Roll + ModernLean.Roll, -_body.Yaw + _viewShake.Yaw);
+
+        // 0x464BD0 builds the eye orientation first, then moves the body's eye by the lean in that frame and sweeps it. Modern
+        // aim's lean and brace ride the same move and the same sweep.
+        view.Eye = HumanLeanEye.Place(
+            _body.Eye, view.EyeOrientation, Lean.Sideways + ModernLean.Across, 0f, Lean.Up + ModernLean.Up, walls);
+        _leanOffset = view.Eye - _body.Eye;
 
         // 0x464BD0 composes the object's orientation as the eye's TIMES the weapon sway, dotting the
         // eye's rows with the sway's columns. The sway is the two angles a weapon change tips the rig
@@ -267,8 +320,8 @@ internal sealed class PlayerFirstPersonView
     internal Camera3D Camera(float aimPitch, AiStationaryGun? mounted) => mounted is { } gun
         ? GunSight(gun)
         : new(
-            WorldScene.ToMetres(_body.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits),
-            Shaken(_body.Yaw, aimPitch, _viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw));
+            WorldScene.ToMetres(_body.Eye + _leanOffset + LandingKickOffsetUnits + ViewShakeOffsetUnits),
+            Shaken(_body.Yaw, aimPitch, _viewShake.Pitch, _viewShake.Roll - ModernLean.Roll, _viewShake.Yaw));
 
     // The camera 0x45FCD0 builds in mode 4: the gun's point and orientation used outright. The eye's
     // right, forward and up are the orientation's columns 0, 1 and 2, as they are for the walking eye.
@@ -320,7 +373,8 @@ internal sealed class PlayerFirstPersonView
             weapons?.Sway.Pitch ?? 0f,
             weapons?.Sway.Yaw ?? 0f,
             weapons?.RecoilPitch ?? 0f,
-            _landingKick.ViewModelOffsetUnits);
+            _landingKick.ViewModelOffsetUnits,
+            ModernLean.Roll);
     }
 
     /// <summary>The camera's orientation for a frame between two ticks — the kick glides, the look is now.</summary>
@@ -334,7 +388,12 @@ internal sealed class PlayerFirstPersonView
     {
         (float pitch, float roll, float yaw) = _pair.SmoothedShake(alpha);
         (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
-        return Shaken(heading, _pair.SmoothedAimPitch(bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha), pitch, roll, yaw);
+        return Shaken(
+            heading,
+            _pair.SmoothedAimPitch(bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha),
+            pitch,
+            roll - _pair.SmoothedLeanRoll(ModernLean.Roll, alpha),
+            yaw);
     }
 
     /// <summary>
@@ -355,7 +414,7 @@ internal sealed class PlayerFirstPersonView
     /// and blended from the same tick pair the view uses so a source does not step across the stereo
     /// image at 30 Hz under a camera that glides.
     /// </remarks>
-    internal Vector3d SmoothedEyeMetres(float alpha) => WorldScene.ToMetres(_pair.SmoothedEye(_body.Eye, alpha));
+    internal Vector3d SmoothedEyeMetres(float alpha) => WorldScene.ToMetres(_pair.SmoothedEye(_body.Eye + _leanOffset, alpha));
 
     /// <inheritdoc cref="PlayerViewInterpolator.SmoothedSightZoom"/>
     internal SightZoomFrame SmoothedSightZoom(float alpha) => _pair.SmoothedSightZoom(Rig, alpha);
@@ -366,9 +425,9 @@ internal sealed class PlayerFirstPersonView
         Matrix3f Orientation,
         BoneAttachment? HeldWeapon,
         BoneAttachment? Magazine,
-        BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha)
+        BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha, in RigAim aim)
     {
         (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
-        return _pair.SmoothedRig(Rig, heading, bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha);
+        return _pair.SmoothedRig(Rig, heading, bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha, aim);
     }
 }

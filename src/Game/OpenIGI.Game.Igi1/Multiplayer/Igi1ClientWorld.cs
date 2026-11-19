@@ -56,6 +56,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
     private readonly Dictionary<int, ReplicatedHuman> _shown = [];
 
+    // Whether the server plays with modern aim, which the client's own player then plays by.
+    private bool _serverModernAim;
+
     // This client's own entity, as the server's snapshots name it.
     private int _ownEntity = -1;
 
@@ -144,7 +147,14 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                     : null;
             bodies.Add(new Ai.PartnerBody(
                 h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(h.Action - 1, (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
+                new Ai.PlayerBodyPose(
+                    h.Action - 1,
+                    (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0,
+                    0f,
+                    h.ActionSequence,
+                    Quantize.AngleFromBits(h.Pitch),
+                    Game.Player.Aim.CombatLean.Eye(h.Lean / 100f).Roll,
+                    h.Aim / 100f),
                 gun,
                 h.Shots,
                 fired,
@@ -234,9 +244,24 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             if (_game.World.Player is { } player)
             {
                 Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels, player.FrameAim, player.Weapons?.ChosenWeaponId ?? -1);
+                Igi1Command.PackAimPreferences(_channels, player.ModernAim);
             }
 
             return _channels;
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Modern aim changes where rounds go and how fast a body walks, so the client's own player plays with it exactly when the
+    /// server does; the player's own settings -- toggle, brace, zoom, look speed -- stay its own, and go up with each command.
+    /// </remarks>
+    public void ApplyServerRules(bool modernAim)
+    {
+        _serverModernAim = modernAim;
+        if (_game.World.Player is { } player)
+        {
+            player.ModernAimSource ??= () => Game.Player.Aim.ModernAimOptions.Current with { Enabled = _serverModernAim };
         }
     }
 

@@ -31,6 +31,9 @@ public static class HumanBodyStateMachine
     /// <summary>The fall, state 29.</summary>
     public const int Fall = HumanLocomotionGraph.Falling;
 
+    /// <summary>The lean, state 44: the body held still while the peek slides the eye (<c>0x40DF70</c>, <c>0x40DFC0</c>).</summary>
+    public const int Lean = 44;
+
     /// <summary>The speed the jump's clip plays at, <c>Anim_SetSpeed(0.4)</c> in its entry (<c>0x40BA70</c>).</summary>
     public const float JumpClipSpeed = 0.4f;
 
@@ -55,8 +58,32 @@ public static class HumanBodyStateMachine
     /// <param name="input">The input word, <c>0x4105C0</c>'s.</param>
     /// <param name="jumpPressed">Whether jump went down this tick, the per-ticks' edge on input slot 11.</param>
     /// <returns>The state after this tick's per-tick.</returns>
-    public static int Next(int state, HumanMotionState input, bool jumpPressed)
+    public static int Next(int state, HumanMotionState input, bool jumpPressed) => Next(state, input, jumpPressed, leaning: false);
+
+    /// <summary>The state this tick moves the body to, with the weapon machine's lean in force or not.</summary>
+    /// <param name="state">The state the body is in.</param>
+    /// <param name="input">The input word, <c>0x4105C0</c>'s.</param>
+    /// <param name="jumpPressed">Whether jump went down this tick.</param>
+    /// <param name="leaning">Whether the weapon machine holds its lean (weapon state 5).</param>
+    /// <returns>The state after this tick.</returns>
+    /// <remarks>
+    /// The lean is not reached through this machine's own tests. The weapon state's entry (<c>0x40F370</c>) forces the body into
+    /// state 44, whose per-tick (<c>0x40DFC0</c>) only eases the lean and never leaves -- not even for the fall. Its exit
+    /// (<c>0x40F3F0</c>) forces state 0, and the machine's update that follows in the same tick runs state 0's per-tick, so a
+    /// crouch or a step held through the lean is taken at once.
+    /// </remarks>
+    public static int Next(int state, HumanMotionState input, bool jumpPressed, bool leaning)
     {
+        if (leaning)
+        {
+            return Lean;
+        }
+
+        if (state == Lean)
+        {
+            state = Stand;
+        }
+
         bool has(HumanMotionState bit) => (input & bit) != 0;
 
         // Losing the ground comes first in every state but the two airborne ones, which wait for it (0x4087B0 and on). The two
@@ -95,6 +122,17 @@ public static class HumanBodyStateMachine
     /// <param name="state">The state.</param>
     /// <returns><see langword="true"/> for a crouched state.</returns>
     public static bool Crouches(int state) => state is >= Crouch and <= 27;
+
+    /// <summary>The slot a state's entry plays: the lean's own, or the crouch's when the body is crouched (<c>0x40DF70</c>).</summary>
+    /// <param name="state">The state entered.</param>
+    /// <param name="crouched">Whether the crouch byte is set as it is entered.</param>
+    /// <returns>The state whose clip plays.</returns>
+    public static int SlotFor(int state, bool crouched) => state == Lean && crouched ? Crouch : state;
+
+    /// <summary>Whether entering a state leaves the crouch byte as it was: the lean's entry, unlike every other, does not set it.</summary>
+    /// <param name="state">The state entered.</param>
+    /// <returns><see langword="true"/> for the lean.</returns>
+    public static bool KeepsCrouch(int state) => state == Lean;
 
     /// <summary>How long a state's entry fades its clip in, given the state it came from.</summary>
     /// <param name="state">The state entered.</param>

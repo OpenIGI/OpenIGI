@@ -26,12 +26,48 @@ public static class Igi1Command
     private const int Look = PlayerInputFrame.SlotCount;
     private const int Aim = Look + 2;
     private const int Chosen = Aim + 6;
+    private const int AimPrefs = Chosen + 1;
 
     /// <summary>
-    /// The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray, and the weapon its
-    /// player had chosen once the tick ran.
+    /// The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray, the weapon its
+    /// player had chosen once the tick ran, and how its player likes modern aim to behave.
     /// </summary>
-    public const int ChannelCount = Chosen + 1;
+    public const int ChannelCount = AimPrefs + 1;
+
+    /// <summary>Writes how a player likes modern aim to behave into a command: toggle, brace, zoom and look speed.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <param name="options">The player's own settings; whether modern aim is on at all is the server's to say, not theirs.</param>
+    /// <remarks>One channel, a whole number a float holds exactly: two flags, then the zoom and the look speed in hundredths.</remarks>
+    public static void PackAimPreferences(Span<float> channels, in Game.Player.Aim.ModernAimOptions options)
+    {
+        int zoom = (int)MathF.Round(Math.Clamp(options.Zoom, 0f, 1f) * 100f);
+        int speed = (int)MathF.Round(Math.Clamp(options.Sensitivity, 0f, 2.55f) * 100f);
+        channels[AimPrefs] = (options.Toggle ? 1 : 0) | (options.AutoMount ? 2 : 0) | (zoom << 2) | (speed << 9);
+    }
+
+    /// <summary>Reads a player's modern aim settings back out of a command, under the server's own switch.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <param name="enabled">Whether the server plays with modern aim.</param>
+    /// <returns>The settings the server runs the player's tick with; a value that is no packing reads as the defaults.</returns>
+    public static Game.Player.Aim.ModernAimOptions UnpackAimPreferences(ReadOnlySpan<float> channels, bool enabled)
+    {
+        float value = channels[AimPrefs];
+        Game.Player.Aim.ModernAimOptions defaults = Game.Player.Aim.ModernAimOptions.Off with { Enabled = enabled };
+        if (!float.IsFinite(value) || value < 0f || value >= 1 << 17)
+        {
+            return defaults;
+        }
+
+        int packed = (int)value;
+        float speed = (packed >> 9) / 100f;
+        return defaults with
+        {
+            Toggle = (packed & 1) != 0,
+            AutoMount = (packed & 2) != 0,
+            Zoom = Math.Clamp(((packed >> 2) & 0x7F) / 100f, 0f, 1f),
+            Sensitivity = speed is >= 0.2f and <= 2f ? speed : 1f,
+        };
+    }
 
     /// <summary>The farthest a crosshair's ray may start from the eye, in world units: the over-the-shoulder camera's reach and some.</summary>
     /// <remarks>
@@ -130,6 +166,9 @@ public static class Igi1Command
 public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) : World.IHarmedPlayer
 {
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
+
+    // Modern aim as the last command asked for it, under the server's own switch.
+    private Game.Player.Aim.ModernAimOptions _aimOptions = Game.Player.Aim.ModernAimOptions.Off;
     private bool _down;
 
     /// <summary>Gets the rig.</summary>
@@ -284,6 +323,10 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
 
         // Its rounds converge where its crosshair was, as on its client's own game.
         Player.AimConvergenceRay = Igi1Command.UnpackAim(_channels) is { } aim ? (Player.Body.Eye + aim.EyeOffset, aim.Direction) : null;
+
+        // Modern aim as this server plays it, with its client's own toggle, brace, zoom and look speed.
+        _aimOptions = Igi1Command.UnpackAimPreferences(_channels, Game.Player.Aim.ModernAimCVars.Enabled.Value);
+        Player.ModernAimSource ??= () => _aimOptions;
         Player.TickFrame(frame, ground);
         KeepChosenWeapon(Igi1Command.UnpackChosen(_channels));
         _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;

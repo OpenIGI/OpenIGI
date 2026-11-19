@@ -75,6 +75,9 @@ public static class ClientReplication
             world.ApplyOwn(own);
         }
 
+        // The server's rules the client's own player plays by, as the server's copy of it does.
+        world.ApplyServerRules(session.ServerModernAim);
+
         ReadOnlySpan<float> frame = world.LocalFrame;
         // The use key, or fire with the bomb in hand: what plants it.
         int use = (int)Player.PlayerInputSlot.Activate;

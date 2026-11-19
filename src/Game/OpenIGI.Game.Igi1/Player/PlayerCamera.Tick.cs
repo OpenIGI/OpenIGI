@@ -49,7 +49,9 @@ public sealed partial class PlayerCamera
             _wheelChoice = -1;
         }
 
-        _input.Accept(taken);
+        // Modern aim takes the alternate-fire button for the sights before the original's machines read the frame.
+        _input.Accept(TakeModernAimInput(taken));
+        TickAds();
 
         // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them. The
         // level's switches and fences still pulse, and what the player threw before still flies and goes off.
@@ -98,6 +100,12 @@ public sealed partial class PlayerCamera
 
         PlayerCommand command = PlayerInputSampler.Command(_input, _locomotion.Running, CanJump);
 
+        // A brace on a top lower than a standing body can bend to is held from a crouch.
+        if (MountCrouches)
+        {
+            command = command with { Crouch = true };
+        }
+
         Vector3d previousPosition = _body.Position;
 
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in
@@ -105,7 +113,19 @@ public sealed partial class PlayerCamera
         TickWeapons();
         TickDrop();
 
+        // The weapon machine's lean (0x40F370) forces the body into state 44 and its exit (0x40F3F0) puts it back in state 0,
+        // both before the body's own machine runs this tick.
+        command = command with { Lean = _weapons?.State == HumanWeaponState.Peeking };
         _locomotion.Move(command, terrain);
+
+        // State 44's per-tick (0x40DFC0) eases the lean from the move keys, which no longer move the body.
+        _firstPerson.AdvanceLean(
+            _locomotion.State == HumanBodyStateMachine.Lean,
+            _input.IsSet(PlayerInputSlot.MoveLeft),
+            _input.IsSet(PlayerInputSlot.MoveRight),
+            _input.IsSet(PlayerInputSlot.MoveUp),
+            _body.IsCrouched,
+            _body.Parameters);
 
         _interaction.TouchFences(_interactions, previousPosition);
 
@@ -158,6 +178,7 @@ public sealed partial class PlayerCamera
         [
             PlayerInputSlot.MoveLeft, PlayerInputSlot.MoveRight, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown,
             PlayerInputSlot.Fire, PlayerInputSlot.AlternateFire, PlayerInputSlot.Activate, PlayerInputSlot.Jump, PlayerInputSlot.Peek,
+            PlayerInputSlot.Underbarrel, PlayerInputSlot.LeanLeft, PlayerInputSlot.LeanRight, PlayerInputSlot.Mount,
         ];
         foreach (PlayerInputSlot slot in let)
         {

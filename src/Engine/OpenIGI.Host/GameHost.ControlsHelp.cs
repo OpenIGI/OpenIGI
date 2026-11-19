@@ -107,7 +107,13 @@ public sealed partial class GameHost
 
         Add(move, Bound(PlayerAction.Jump), "Jump");
         Add(move, Bound(PlayerAction.Crouch), "Crouch");
-        Add(move, Bound(PlayerAction.Peek), "Lean out");
+        bool modernAim = Game.Player.Aim.ModernAimCVars.Enabled.Value;
+        Add(move, Bound(PlayerAction.Peek), modernAim ? "Peek (weapon down)" : "Lean out");
+        if (modernAim && Bound(PlayerAction.LeanLeft) is { } leanLeft && Bound(PlayerAction.LeanRight) is { } leanRight)
+        {
+            move.Add(new ControlsLine([leanLeft, leanRight], "Lean left / right"));
+        }
+
         Add(move, Bound(PlayerAction.ToggleWalkRun), "Walk / run");
         Add(move, BoundCommand("toggle g_thirdperson"), "Third-person view");
         Add(move, Bound(PlayerAction.Binoculars), "Binoculars");
@@ -118,7 +124,13 @@ public sealed partial class GameHost
 
         List<ControlsLine> combat = [];
         Add(combat, Bound(PlayerAction.Fire), "Fire");
-        Add(combat, Bound(PlayerAction.AlternateFire), "Aim / second fire");
+        Add(combat, Bound(PlayerAction.AlternateFire), modernAim ? "Aim down sights / scope" : "Aim / second fire");
+        if (modernAim)
+        {
+            Add(combat, Bound(PlayerAction.Underbarrel), "Underbarrel launcher (M16)");
+            Add(combat, Bound(PlayerAction.Mount), "Mount weapon (or aim at a ledge)");
+        }
+
         Add(combat, Bound(PlayerAction.Reload), "Reload");
         Add(combat, Bound(PlayerAction.NextWeapon), "Next weapon");
         Add(combat, Bound(PlayerAction.PreviousWeapon), "Previous weapon");

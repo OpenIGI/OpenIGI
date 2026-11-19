@@ -90,7 +90,15 @@ public static class HudCrosshair
         UiPainter painter = context.Painter;
         UiVec2 c = new(MathF.Round(context.Width * 0.5f) + 0.5f, MathF.Round(context.Height * 0.5f) + 0.5f);
         float u = MathF.Max(0.75f, context.Px(1f));
-        Paint(painter, c, u, shape, SpreadPixels(state.Spread, frame) * SpreadShare, CrosshairStyle.Current);
+
+        // Through the sights the sights are the crosshair: it fades out as the weapon comes up, and is gone on them.
+        float hip = 1f - Math.Clamp(model.Aim.Sights, 0f, 1f);
+        if (hip > 0.01f)
+        {
+            CrosshairStyle style = CrosshairStyle.Current;
+            Paint(painter, c, u, shape, SpreadPixels(state.Spread, frame) * SpreadShare, style with { Ink = HudDrawContext.Fade(style.Ink, hip) });
+        }
+
         if (HudCVars.ShowsHitMarkers)
         {
             Marks(painter, c, u, MathF.Max(1.1f, 1.25f * u), state);

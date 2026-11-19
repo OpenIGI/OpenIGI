@@ -200,9 +200,12 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     private (float Gamma, float Pitch) Turn(float mouseX, float mouseY, float sensitivity, bool invertMouse, float yaw, float pitch)
     {
         MouseLookSettings settings = MouseLookSettings.FromSensitivity(sensitivity, invertMouse);
-        float zoom = Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f;
-        return (yaw + (settings.YawDelta(mouseX) * zoom),
+        float zoom = (Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f) * Human.Rig.AimLookScale;
+        (float Yaw, float Pitch) turned = (yaw + (settings.YawDelta(mouseX) * zoom),
             Math.Clamp(pitch + (settings.PitchDelta(mouseY) * zoom), -PlayerBody.PitchLimit, PlayerBody.PitchLimit));
+
+        // A braced weapon holds the look to its sector between ticks as on them, or the frames would show a turn the tick takes back.
+        return Human.Rig.LookLimit is { } limit ? limit.Clamp(turned.Yaw, turned.Pitch) : turned;
     }
 
     // The eye of a body standing on these feet, which the death camera orbits and looks at.

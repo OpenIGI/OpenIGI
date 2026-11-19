@@ -358,6 +358,12 @@ public interface IReplicatedClientWorld
     {
     }
 
+    /// <summary>Puts the server's rules on the client's own player, so it plays as the server's copy of it does.</summary>
+    /// <param name="modernAim">Whether the server plays with modern aim (<see cref="ClientSession.ServerModernAim"/>).</param>
+    void ApplyServerRules(bool modernAim)
+    {
+    }
+
     /// <summary>Puts the server's kit on the client's own player, after the server re-armed its copy (a respawn).</summary>
     /// <param name="kit">Each weapon's script id and the rounds of its ammunition.</param>
     /// <param name="fresh">Whether the server armed its copy from nothing, a respawn after a death.</param>

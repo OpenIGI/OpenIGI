@@ -87,6 +87,8 @@ public static class ReplicatedEntity
 /// The lift it rides, its index in the snapshot's lifts plus one, or 0: a client draws it on its own copy of that car, which
 /// stands ahead of the moment the human is drawn at.
 /// </param>
+/// <param name="Lean">Modern aim's lean with the weapon up, hundredths, minus a hundred (full left) to a hundred (full right).</param>
+/// <param name="Aim">How far its weapon is up on its sights, hundredths, eased.</param>
 public readonly record struct ReplicatedHuman(
     int Id,
     Int3 Position,
@@ -103,7 +105,9 @@ public readonly record struct ReplicatedHuman(
     byte ActionSequence = 0,
     ushort ClipTime = 0,
     ushort Source = 0,
-    byte Platform = 0);
+    byte Platform = 0,
+    sbyte Lean = 0,
+    byte Aim = 0);
 
 /// <summary>A point in whole world units.</summary>
 /// <param name="X">X.</param>

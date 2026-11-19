@@ -123,6 +123,10 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
     private string _modelName = string.Empty;
     private MaterialLibrary _materials = MaterialLibrary.Empty;
     private Matrix3f _gunFlameRotation = Matrix3f.Identity;
+
+    /// <summary>Gets or sets how big the gun flame is drawn: one, the original's, unless modern aim's sights shrink it.</summary>
+    /// <remarks>Through the sights the flame stands in front of the very thing being aimed at; it is drawn smaller there.</remarks>
+    public float FlameScale { get; set; } = 1f;
     private int _lastShotSequence = -1;
     private bool _disposed;
 
@@ -366,6 +370,11 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
             if (part.IsGunFlame)
             {
                 partOrientation = _gunFlameRotation * partOrientation;
+                if (FlameScale != 1f)
+                {
+                    float s = FlameScale;
+                    partOrientation = Matrix3f.FromRows(partOrientation.Row1 * s, partOrientation.Row2 * s, partOrientation.Row3 * s);
+                }
             }
             Matrix3f modelOrientation = partAttachment.Rotation * partOrientation;
             Matrix4f modelView = camera.CreateModelView(position, modelOrientation);

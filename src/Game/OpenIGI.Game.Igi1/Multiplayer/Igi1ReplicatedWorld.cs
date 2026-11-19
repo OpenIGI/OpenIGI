@@ -574,7 +574,9 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             condition,
             unchecked((byte)(player.Weapons?.ShotSequence ?? 0)),
             unchecked((byte)player.UpperBodySequence),
-            clip is null ? (ushort)0 : PackClipTime(ladderTime ?? 0f));
+            clip is null ? (ushort)0 : PackClipTime(ladderTime ?? 0f),
+            Lean: (sbyte)Math.Clamp(MathF.Round(player.CombatLean.Amount * 100f), -100f, 100f),
+            Aim: (byte)Math.Clamp(MathF.Round(player.BodyAim * 100f), 0f, 100f));
     }
 
     /// <summary>The level's doors as a snapshot carries them: one bit each, set where the door is commanded open.</summary>

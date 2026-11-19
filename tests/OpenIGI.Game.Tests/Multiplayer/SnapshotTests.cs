@@ -188,6 +188,18 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void A_players_lean_and_sights_ride_a_delta_either_way()
+    {
+        Snapshot before = new(10, [Human(1, 0, 0)]);
+        ReplicatedHuman leaning = Human(1, 0, 0) with { Lean = -100, Aim = 87 };
+        Assert.True(RoundTrip(new Snapshot(11, [leaning]), before, out Snapshot? read));
+        Assert.Equal(leaning, Assert.Single(read!.Humans));
+        ReplicatedHuman right = leaning with { Lean = 64 };
+        Assert.True(RoundTrip(new Snapshot(12, [right]), new Snapshot(11, [leaning]), out Snapshot? turned));
+        Assert.Equal(right, Assert.Single(turned!.Humans));
+    }
+
+    [Fact]
     public void A_lifts_car_is_sampled_between_snapshots()
     {
         SnapshotInterpolator remote = new();

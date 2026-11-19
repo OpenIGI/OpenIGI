@@ -79,15 +79,15 @@ public sealed class DefaultBindTests
     {
         ConsoleSystem console = new(new CVarRegistry());
         DefaultBinds.Apply(console);
-        Assert.Equal("v", DefaultBinds.KeyOf(console.Binds, "toggle g_thirdperson"));
+        Assert.Equal("p", DefaultBinds.KeyOf(console.Binds, "toggle g_thirdperson"));
 
-        DefaultBinds.Rebind(console, "toggle g_thirdperson", "p");
-        Assert.False(console.Binds.ContainsKey("v"));
+        DefaultBinds.Rebind(console, "toggle g_thirdperson", "o");
+        Assert.False(console.Binds.ContainsKey("p"));
 
         // The next start: the saved binds are there, then the defaults are offered.
         DefaultBinds.Apply(console);
-        Assert.Equal("p", DefaultBinds.KeyOf(console.Binds, "toggle g_thirdperson"));
-        Assert.False(console.Binds.ContainsKey("v"));
+        Assert.Equal("o", DefaultBinds.KeyOf(console.Binds, "toggle g_thirdperson"));
+        Assert.False(console.Binds.ContainsKey("p"));
     }
 
     /// <summary>Every row the Controls page lists is a statement a default key runs.</summary>

@@ -149,7 +149,7 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
             HudProjector? projector = _view is { } drawn
                 ? HudProjector.FromCamera(drawn.Eye, drawn.TanX, width, height)
                 : rig.View is { } view
-                    ? HudProjector.FromYawPitch(rig.Body.Eye, rig.Yaw, rig.Pitch, view.TanX, width, height)
+                    ? HudProjector.FromYawPitch(rig.EyeUnits, rig.Yaw, rig.Pitch, view.TanX, width, height)
                     : null;
             _remastered.Draw(batch, _model, Igi1HudTheme.Theme, _hud, HudFrame.FromSettings(width, height, scale, igi1.Ticks / 30f, crosshairSpread: 8f) with
             {

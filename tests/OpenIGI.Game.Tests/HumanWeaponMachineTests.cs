@@ -116,17 +116,17 @@ public sealed class HumanWeaponMachineTests
     {
         PlayerAction[] declared = Enum.GetValues<PlayerAction>();
 
-        // Twenty-seven rows in the binding table and the remaster's flashlight, weapon wheel, scoreboard, buy menu and weapon drop:
-        // thirty-two bound slots.
-        Assert.Equal(32, declared.Length);
-        Assert.Equal(32, PlayerInputBindings.All.Count);
+        // Twenty-seven rows in the binding table, the remaster's flashlight, weapon wheel, scoreboard, buy menu and weapon drop,
+        // and modern aim's underbarrel, two leans and mount: thirty-six bound slots.
+        Assert.Equal(36, declared.Length);
+        Assert.Equal(36, PlayerInputBindings.All.Count);
 
         foreach (PlayerAction action in declared)
         {
             Assert.True(PlayerInputBindings.TryGetSlot(action, out _), $"{action} is sampled into no slot.");
         }
 
-        Assert.Equal(32, PlayerInputBindings.All.Select(b => b.Slot).Distinct().Count());
+        Assert.Equal(36, PlayerInputBindings.All.Select(b => b.Slot).Distinct().Count());
     }
 
     [Fact]

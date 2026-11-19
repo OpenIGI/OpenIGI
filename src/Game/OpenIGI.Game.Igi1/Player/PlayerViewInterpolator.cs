@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Player.Aim;
 
 namespace OpenIGI.Game.Igi1.Player;
 
@@ -38,6 +39,8 @@ internal sealed class PlayerViewInterpolator
     private float _tickViewModelTanX = HumanView.DefaultViewModelTanX;
     private (float Pitch, float Roll, float Yaw) _prevTickShake;
     private (float Pitch, float Roll, float Yaw) _tickShake;
+    private float _prevTickLeanRoll;
+    private float _tickLeanRoll;
 
     /// <summary>Initializes the interpolator over the view's hit shake.</summary>
     /// <param name="viewShake">The shake whose angles are folded into the camera and the rig.</param>
@@ -75,8 +78,12 @@ internal sealed class PlayerViewInterpolator
     /// <param name="swayYaw">The weapon sway's yaw this tick.</param>
     /// <param name="recoilPitch">The view kick this tick.</param>
     /// <param name="rigDipUnits">The landing dip's extra share the rig alone takes, in world units.</param>
-    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits)
+    /// <param name="leanRoll">Modern aim's lean roll this tick, in the engine's sense.</param>
+    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits, float leanRoll)
     {
+        _prevTickLeanRoll = HasPair ? _tickLeanRoll : leanRoll;
+        _tickLeanRoll = leanRoll;
+
         _prevTickEye = HasPair ? _tickEye : eye;
         _tickEye = eye;
 
@@ -145,6 +152,13 @@ internal sealed class PlayerViewInterpolator
         ? bodyPitch + _prevTickRecoilPitch + ((_tickRecoilPitch - _prevTickRecoilPitch) * alpha)
         : aimPitch;
 
+    /// <summary>Modern aim's lean roll blended between its last two tick values.</summary>
+    /// <param name="current">The roll this tick, for a rig without a pair.</param>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <returns>The roll, in the engine's sense.</returns>
+    internal float SmoothedLeanRoll(float current, float alpha) =>
+        HasPair ? _prevTickLeanRoll + ((_tickLeanRoll - _prevTickLeanRoll) * alpha) : current;
+
     // The shake's three angles blended between their last two tick values.
     internal (float Pitch, float Roll, float Yaw) SmoothedShake(float alpha) => HasPair
         ? (Interpolation.LerpAngle(_prevTickShake.Pitch, _tickShake.Pitch, alpha),
@@ -190,6 +204,7 @@ internal sealed class PlayerViewInterpolator
     /// <param name="bodyPitch">The mouse-driven pitch, this frame's own.</param>
     /// <param name="aimPitch">The un-smoothed aim pitch.</param>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <param name="aim">Modern aim's moves of the rig this frame; <see cref="RigAim.None"/> for the original's.</param>
     /// <returns>
     /// The rig origin in engine units, its orientation, and the three weapon attachments — the body's
     /// bone, the magazine's and the moving part's — when those bones exist.
@@ -210,7 +225,8 @@ internal sealed class PlayerViewInterpolator
             float bodyYaw,
             float bodyPitch,
             float aimPitch,
-            float alpha)
+            float alpha,
+            in RigAim aim)
     {
         if (view is null || !HasPair)
         {
@@ -227,7 +243,9 @@ internal sealed class PlayerViewInterpolator
         // aim pitch. The mouse-driven part of the pitch and the yaw are this frame's own.
         (float shakePitch, float shakeRoll, float shakeYaw) = SmoothedShake(alpha);
         Matrix3f eyeLook = Matrix3f.FromEngineEulerAngles(
-            SmoothedAimPitch(bodyPitch, aimPitch, alpha) + shakePitch, shakeRoll, -bodyYaw + shakeYaw);
+            SmoothedAimPitch(bodyPitch, aimPitch, alpha) + shakePitch,
+            shakeRoll + SmoothedLeanRoll(0f, alpha),
+            -bodyYaw + shakeYaw);
         Matrix3f look = eyeLook * Matrix3f.FromEngineEulerAngles(
                 Interpolation.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
                 0f,
@@ -235,9 +253,14 @@ internal sealed class PlayerViewInterpolator
 
         Vector3d eye = Vector3d.Lerp(_prevTickEye, _tickEye, alpha);
 
+        // Modern aim moves the whole rig in the eye's frame -- its hold offset with it -- so the arms and everything hung off
+        // them follow the weapon onto the sights. The original's draw is this with the identity move.
+        Vector3f hold = Vector3f.Lerp(_prevTickRootMotion, _tickRootMotion, alpha);
+        RigOffset move = Move(aim, hold, alpha);
+        Matrix3f rig = look * move.Rotation;
+
         // M · v — the palette's own convention — is the transpose of the row-vector Transform.
-        Vector3f held = look.Transposed().Transform(
-            Vector3f.Lerp(_prevTickRootMotion, _tickRootMotion, alpha));
+        Vector3f held = look.Transposed().Transform(move.Apply(hold));
         double wallPullback = _prevTickWallPullback + ((_tickWallPullback - _prevTickWallPullback) * alpha);
         Vector3d origin = new(
             eye.X + held.X + (eyeLook.M12 * wallPullback),
@@ -246,10 +269,31 @@ internal sealed class PlayerViewInterpolator
 
         return (
             origin,
-            look,
-            _weaponBone.Smoothed(origin, look, alpha),
-            _magazineBone.Smoothed(origin, look, alpha),
-            _movingPartBone.Smoothed(origin, look, alpha));
+            rig,
+            _weaponBone.Smoothed(origin, rig, alpha),
+            _magazineBone.Smoothed(origin, rig, alpha),
+            _movingPartBone.Smoothed(origin, rig, alpha));
+    }
+
+    // The sights' move at this frame's progress -- held this steady against the clip's own motion -- then the motion over it.
+    private RigOffset Move(in RigAim aim, Vector3f hold, float alpha)
+    {
+        RigOffset move = RigOffset.Identity;
+        if (aim.Profile is { } profile && aim.Amount > 0f)
+        {
+            RigOffset steady = aim.Reference;
+            if (_weaponBone.TrySample(alpha, out Vector3f bonePosition, out Matrix3f boneRotation))
+            {
+                steady = RigOffset.Blend(
+                    aim.Reference,
+                    SightAlignment.Solve(profile, hold, bonePosition, boneRotation),
+                    profile.Steadiness);
+            }
+
+            move = RigOffset.Blend(RigOffset.Identity, steady, aim.Amount);
+        }
+
+        return move.Then(aim.Motion);
     }
 
     /// <summary>One view-rig attachment bone over the last two ticks, ready to interpolate.</summary>
@@ -288,6 +332,18 @@ internal sealed class PlayerViewInterpolator
 
         /// <summary>Drops the pair, so the next capture starts a fresh one from where the rig now is.</summary>
         public void Forget() => _hasPair = false;
+
+        /// <summary>The bone, unrotated, for a frame between the two ticks.</summary>
+        /// <param name="alpha">How far the frame sits between the ticks, 0 to 1.</param>
+        /// <param name="position">Its position from the rig's origin.</param>
+        /// <param name="rotation">Its rotation.</param>
+        /// <returns>Whether the rig has the bone.</returns>
+        public readonly bool TrySample(float alpha, out Vector3f position, out Matrix3f rotation)
+        {
+            position = Vector3f.Lerp(_previousPosition, _position, alpha);
+            rotation = Interpolation.InterpolateRotation(_previousRotation, _rotation, alpha);
+            return _hasPair;
+        }
 
         /// <summary>Resolves the attachment for a frame between the two ticks.</summary>
         /// <param name="origin">The rig origin the frame drew at, in engine units.</param>
