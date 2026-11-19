@@ -571,7 +571,13 @@ public sealed class ClientSession
         _writer.WriteBits((uint)_newestReceived, 32);
         _writer.WriteBits((uint)(_newestReceived >> 32), 32);
         _codec.Write(_writer, _sent.ToArray().AsSpan(first), _newestReceived);
-        _net.Send(NetChannel.Sequenced, _writer.AsSpan());
+
+        // Unordered, not sequenced as they once went: a sequenced channel throws away a packet a newer one overtook, and a
+        // client that ran several ticks in one frame (a slow page, a hitch) sent as many packets in one instant, which arrive
+        // in any order. All but the newest and the few commands it repeated were thrown away then, and the server never ran
+        // them: its copy of a player on a ladder hung steps below a client that had already climbed off. The server's queue
+        // keeps each command once and in order whatever order they come in.
+        _net.Send(NetChannel.Unreliable, _writer.AsSpan());
         _lastSentTick = tick;
         return tick;
     }

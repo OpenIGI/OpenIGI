@@ -149,7 +149,7 @@ public sealed class UserCommandTests
     }
 
     [Fact]
-    public void Queue_CatchesUpTwoATickWhenTheClientRunsAhead()
+    public void Queue_CatchesUpOnWhatItSavedWhenTheClientRunsAhead()
     {
         UserCommandBuffer queue = new(Channels) { TargetDepth = 1, MaxDepth = 3 };
 
@@ -161,7 +161,8 @@ public sealed class UserCommandTests
             queue.Push(Command(tick));
         }
 
-        Assert.Equal(2, queue.Due());
+        // Three runs saved -- the two dry ticks' and this one's -- and four waiting over the depth: all three are given.
+        Assert.Equal(3, queue.Due());
     }
 
     [Fact]

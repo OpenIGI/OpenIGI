@@ -62,6 +62,37 @@ public sealed class CommandTrustTests
         Assert.Equal(next - 1 - queue.Buffered, ran);
     }
 
+    /// <summary>
+    /// A client that stalled for a second and then sent the thirty commands it ran has every one of them run: a page taking in
+    /// a new part of a level stalls that long. The credit once paid for a third of a second, the rest were dropped as run, and
+    /// the server's copy of a player on a ladder hung steps below where its client had climbed to.
+    /// </summary>
+    [Fact]
+    public void A_client_that_stalled_for_a_second_has_every_command_it_sent_run()
+    {
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        int ran = 0;
+        for (int tick = 0; tick < 200; tick++)
+        {
+            int arriving = tick == 100 ? 31 : tick is >= 70 and < 100 ? 0 : 1;
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+                ran++;
+            }
+        }
+
+        Assert.Equal(0, queue.Dropped);
+        Assert.True(queue.Buffered <= queue.MaxDepth, $"still {queue.Buffered} queued");
+        Assert.Equal(next - 1 - queue.Buffered, ran);
+    }
+
     [Fact]
     public void A_client_that_stalled_and_sent_two_seconds_at_once_is_not_run_that_late_ever_after()
     {

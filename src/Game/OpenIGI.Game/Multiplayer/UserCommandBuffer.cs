@@ -56,8 +56,16 @@ public sealed class UserCommandBuffer
     /// <summary>Gets or sets past how many waiting commands the queue gives two a tick.</summary>
     public int MaxDepth { get; set; } = 6;
 
-    /// <summary>Gets or sets the most commands' runs a client may save up to catch up with: a third of a second at the original's tick.</summary>
-    public int MaxCredit { get; set; } = 10;
+    /// <summary>Gets or sets the most commands' runs a client may save up to catch up with: a second at the original's tick.</summary>
+    /// <remarks>
+    /// A third of a second once. A client that stalls for longer than that and then runs the ticks it owes -- a browser's page
+    /// taking in a new part of a level, a collection, a held line let go -- sends a second's commands together; what the credit
+    /// could not pay was dropped as run, and its player here was left on a ladder its client had already climbed off.
+    /// </remarks>
+    public int MaxCredit { get; set; } = 30;
+
+    /// <summary>Gets or sets the most commands the queue gives in one tick while it is over <see cref="MaxDepth"/>.</summary>
+    public int MaxPerTick { get; set; } = 4;
 
     /// <summary>Gets or sets how many ticks running a backlog over <see cref="MaxDepth"/> the credit cannot pay off waits before it is dropped: half a second.</summary>
     public int StaleBacklogTicks { get; set; } = 15;
@@ -158,7 +166,7 @@ public sealed class UserCommandBuffer
     }
 
     /// <summary>Gets how many commands to run this tick, and counts a tick the queue is dry.</summary>
-    /// <returns>Nought, one, or two while catching up.</returns>
+    /// <returns>Nought, one, or up to <see cref="MaxPerTick"/> while catching up.</returns>
     /// <remarks>Called once a server tick: that is what earns the client its runs.</remarks>
     public int Due()
     {
@@ -194,7 +202,9 @@ public sealed class UserCommandBuffer
             _backlogTicks = 0;
         }
 
-        int wanted = _pending.Count > MaxDepth ? 2 : 1;
+        // Over its depth it gives what brings it back to the depth it keeps, a few a tick: at two a tick a second's backlog
+        // took a second to run, and the commands still arriving kept it over its depth until the credit was gone.
+        int wanted = _pending.Count > MaxDepth ? Math.Clamp(_pending.Count - TargetDepth, 2, Math.Max(2, MaxPerTick)) : 1;
         int due = Math.Min(wanted, (int)Math.Floor(_credit));
         if (due < wanted)
         {

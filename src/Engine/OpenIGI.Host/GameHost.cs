@@ -247,14 +247,17 @@ public sealed partial class GameHost : IDisposable
     /// that ran several times too fast until it had caught up: guards sprinting, a cutscene over before it was seen.
     /// </para>
     /// <para>
-    /// Not in a session, whose clock is everyone's: there the page keeps stepping from a worker while it is hidden, and a
-    /// player who does fall behind has to catch up with the others. Not under lockstep, whose clock only the frames move.
-    /// The desktop never leaves its loop, so this finds nothing there.
+    /// Not hosting a session, whose clock is everyone's: there the page keeps stepping from a worker while it is hidden, and
+    /// a host that does fall behind has to catch up with the others. A session's client forgets it as a player alone does:
+    /// its world is its server's, shown from the snapshots whenever they come, and the ticks it ran to catch up were a
+    /// second and more of commands sent together -- more than its server lets one player run at once, so what was over was
+    /// dropped there and its player went on from somewhere its server never had it. Not under lockstep, whose clock only the
+    /// frames move. The desktop never leaves its loop, so this finds nothing there.
     /// </para>
     /// </remarks>
     private void ForgetTimeAway(int leftAt)
     {
-        if (_options.Lockstep || TickObserver is not null)
+        if (_options.Lockstep || (TickObserver is not null && TickObserver is not Multiplayer.ISessionFollower))
         {
             return;
         }
