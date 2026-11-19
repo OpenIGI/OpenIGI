@@ -447,6 +447,26 @@ public sealed class Igi2CoopPairTests
         }
     }
 
+    /// <summary>
+    /// A host hit while standing flinches on the joiner's screen with the server's clip: the copy is never hit itself, and its
+    /// flinch's entry once read its zone table at no zone and stopped the joiner's game.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_joiners_copy_of_a_hit_host_flinches_with_the_servers_clip()
+    {
+        using Igi2CoopPair pair = Joined();
+        Assert.True(pair.RunUntil(() => pair.Joiner!.NetworkHumans.Count == 1, 300) >= 0, "the joiner never drew the host");
+        Igi2HumanPlayer copy = Assert.Single(pair.Joiner!.NetworkHumans).Human;
+        Assert.Equal(OpenIGI.Game.Igi2.Humans.Igi2DamagePart.None, copy.Damage.LastPart);
+        foreach (int clip in new[] { 58, 61, 62, 63, 64, 0 })
+        {
+            copy.PoseAsPuppet(Igi2PlayerState.Stand, false, 0, 0, 0, copy.Position, default, copy.Gamma, 0f);
+            copy.Damage.LastPart = OpenIGI.Game.Igi2.Humans.Igi2DamagePart.None;
+            copy.PoseAsPuppet(Igi2PlayerState.Hit, false, 0, 0, 0, copy.Position, default, copy.Gamma, 0f, clip);
+            Assert.Equal(clip == 0 ? 64 : clip, ((OpenIGI.Game.Igi2.Humans.Igi2HumanAnimation)copy.Animation).LastState);
+        }
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void The_joiners_copy_of_the_host_is_no_target_of_its_soldiers_and_the_hosts_partner_is()
     {

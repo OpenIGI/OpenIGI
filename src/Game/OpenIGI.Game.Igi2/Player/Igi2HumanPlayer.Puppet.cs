@@ -30,6 +30,13 @@ public sealed partial class Igi2HumanPlayer
         bool entered = rearmed || Locomotion.CurrentState != state;
         if (entered)
         {
+            // A copy is never hit itself, so it has no zone for the flinch's entry to pick its clip by, and the entry read
+            // its table at no zone and threw: the zone is read back from the flinch the server's copy plays.
+            if (state == Igi2PlayerState.Hit)
+            {
+                Damage.LastPart = FlinchPart(animation);
+            }
+
             Locomotion.Enter(state, this);
         }
 
