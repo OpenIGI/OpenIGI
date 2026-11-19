@@ -60,6 +60,12 @@ public sealed partial class GameHost
     private float _titleWheel;
     private TitleRawKeys _titleScriptRaw;
     private PlayerAction _titleScriptHeld;
+
+    // A script's holds of the title's own controls, and both kinds of hold as the last tick saw them: a hold is pressed on the
+    // tick it starts, as a key going down is.
+    private ulong _titleScriptTitleHeld;
+    private PlayerAction _titleScriptHeldLast;
+    private ulong _titleScriptTitleHeldLast;
     private double _titleTickMilliseconds;
     private double _titleTickMaximumMilliseconds;
     private int _titleMeasuredTicks;
@@ -248,6 +254,10 @@ public sealed partial class GameHost
         }
 
         held |= _titleScriptHeld;
+        PlayerAction scriptPressed = _titleScriptHeld & ~_titleScriptHeldLast;
+        ulong titleScriptPressed = _titleScriptTitleHeld & ~_titleScriptTitleHeldLast;
+        _titleScriptHeldLast = _titleScriptHeld;
+        _titleScriptTitleHeldLast = _titleScriptTitleHeld;
 
         // The weapon wheel holds the player still while it is open: nothing it was given goes through. So does the mission's
         // computer, while it serves this player.
@@ -261,6 +271,10 @@ public sealed partial class GameHost
         PlayerProfile? profile = _configuration.Active;
         PlayerAction replaced = Gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
         ulong titleHeld = !still && Gameplay is { } sampled ? TitleInputBindings.Sample(profile, TitleInput, sampled.InputBindings, pressed: false) : 0;
+        if (!still)
+        {
+            titleHeld |= _titleScriptTitleHeld;
+        }
 
         // Crouch, held or toggled as the player has it: a shared action, or the title's own bit that stands for it.
         ulong titleCrouch = Gameplay is { } crouching ? crouching.InputBindings.Where(static b => b.Replaces == PlayerAction.Crouch).Aggregate(0UL, static (mask, b) => mask | b.Mask) : 0;
@@ -283,13 +297,13 @@ public sealed partial class GameHost
             _titleMouseX,
             _titleMouseY,
             held & ~replaced,
-            _titlePressed & ~replaced,
+            (_titlePressed | (still ? default : scriptPressed)) & ~replaced,
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
             TitleHeld: titleHeld,
-            TitlePressed: _titleExtraPressed,
+            TitlePressed: _titleExtraPressed | (still ? 0UL : titleScriptPressed),
             Raw: SampleRawKeys())));
         observer?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
@@ -419,10 +433,11 @@ public sealed partial class GameHost
 
         console.Commands.Add(
             "title_hold",
-            "Holds the title player's controls as if their keys were down: action names (Fire, Reload, MoveUp, ...), the fixed keys a title's screens read (Up, Enter, MouseLeft, WheelUp, ...) or none. Not in the original.",
+            "Holds the title player's controls as if their keys were down, pressed on the tick the hold starts: action names (Fire, Reload, MoveUp, ...), the title's own controls by their bound names (Title_igi2_Thermal, ...), the fixed keys a title's screens read (Up, Enter, MouseLeft, WheelUp, ...) or none. Not in the original.",
             context =>
             {
                 PlayerAction held = default;
+                ulong titleHeld = 0;
                 TitleRawKeys raw = TitleRawKeys.None;
                 for (int i = 0; i < context.Count; i++)
                 {
@@ -439,16 +454,21 @@ public sealed partial class GameHost
                     {
                         raw |= key;
                     }
+                    else if (Gameplay?.InputBindings.FirstOrDefault(b => string.Equals(b.Default.Action, context[i], StringComparison.OrdinalIgnoreCase)) is { Mask: not 0 } own)
+                    {
+                        titleHeld |= own.Mask;
+                    }
                     else
                     {
-                        context.Warn($"'{context[i]}' is neither a player action nor a fixed key.");
+                        context.Warn($"'{context[i]}' is neither a player action, a control of the title's nor a fixed key.");
                         return;
                     }
                 }
 
                 _titleScriptHeld = held;
+                _titleScriptTitleHeld = titleHeld;
                 _titleScriptRaw = raw;
-                context.Print($"Title player holds {held}, keys {raw}.");
+                context.Print($"Title player holds {held}, the title's own 0x{titleHeld:X}, keys {raw}.");
             },
             "<action ...|none>");
     }

@@ -21,6 +21,13 @@ public sealed class Igi2StanceBindingTests
     [InlineData(KeyCode.RightControl, Igi2HumanChannel.Crouch)]
     [InlineData(KeyCode.CapsLock, Igi2HumanChannel.ToggleWalkRun)]
     [InlineData(KeyCode.End, Igi2HumanChannel.ToggleWalkRun)]
+    [InlineData(KeyCode.T, Igi2HumanChannel.Thermal)]
+    [InlineData(KeyCode.PageUp, Igi2HumanChannel.Thermal)]
+    [InlineData(KeyCode.D0, Igi2HumanChannel.Inventory)]
+    [InlineData(KeyCode.NumpadDivide, Igi2HumanChannel.Inventory)]
+    [InlineData(KeyCode.Numpad1, Igi2HumanChannel.WeaponCategory1 + 2)]
+    [InlineData(KeyCode.Numpad3, Igi2HumanChannel.WeaponCategory1)]
+    [InlineData(KeyCode.Numpad9, Igi2HumanChannel.WeaponCategory9)]
     public void Profile_keys_reach_the_title_player(KeyCode key, Igi2HumanChannel channel)
     {
         PlayerProfile profile = PlayerProfile.CreateDefault();
@@ -39,6 +46,24 @@ public sealed class Igi2StanceBindingTests
         player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false, TitleHeld: held, TitlePressed: pressed));
         Assert.Equal(1f, player.Human.Channels[channel]);
         player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
+        Assert.Equal(0f, player.Human.Channels[channel]);
+    }
+
+    /// <summary>The shared number keys select the categories the original's config.qvm puts on those keys: 1 and 3 swapped.</summary>
+    [Theory]
+    [InlineData(PlayerAction.WeaponCategory1, Igi2HumanChannel.WeaponCategory1 + 2)]
+    [InlineData(PlayerAction.WeaponCategory2, Igi2HumanChannel.WeaponCategory1 + 1)]
+    [InlineData(PlayerAction.WeaponCategory3, Igi2HumanChannel.WeaponCategory1)]
+    [InlineData(PlayerAction.WeaponCategory4, Igi2HumanChannel.WeaponCategory1 + 3)]
+    [InlineData(PlayerAction.WeaponCategory7, Igi2HumanChannel.WeaponCategory1 + 6)]
+    [InlineData(PlayerAction.WeaponCategory9, Igi2HumanChannel.WeaponCategory9)]
+    public void Number_keys_reach_the_retail_weapon_categories(PlayerAction key, Igi2HumanChannel channel)
+    {
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
+            Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0f, Game.Ai.AiDifficulty.Normal);
+        player.Tick(new TitlePlayerInput(0f, 0f, key, key, 0.4f, false));
+        Assert.Equal(1f, player.Human.Channels[channel]);
+        player.Tick(new TitlePlayerInput(0f, 0f, key, default, 0.4f, false));
         Assert.Equal(0f, player.Human.Channels[channel]);
     }
 

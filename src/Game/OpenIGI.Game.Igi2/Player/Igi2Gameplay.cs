@@ -40,7 +40,11 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
     public const string FirstPersonFallbackModel = "005_01_1";
 
     /// <inheritdoc/>
-    /// <remarks>config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.</remarks>
+    /// <remarks>
+    /// config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.
+    /// The thermal goggles and the inventory have no shared action, and take the keys the original's config.qvm gives them; so do
+    /// the weapon categories' numpad alternates, the number row being the shared actions'.
+    /// </remarks>
     public IReadOnlyList<TitleInputBinding> InputBindings { get; } =
     [
         new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Z"), "Lower stance"),
@@ -52,6 +56,18 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_CrouchAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_RIGHT_CTRL"), "Crouch (alternate)"),
         new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRun", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_CAPITAL"), "Toggle walk/run", PlayerAction.ToggleWalkRun),
         new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRunAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_END"), "Toggle walk/run (alternate)"),
+        new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_Thermal", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_T"), "Thermal goggles"),
+        new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_ThermalAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_PAGEUP"), "Thermal goggles (alternate)"),
+        new((ulong)Igi2PlayerAction.Inventory, new("Title_igi2_Inventory", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_0"), "Show/hide inventory"),
+        new((ulong)Igi2PlayerAction.Inventory, new("Title_igi2_InventoryAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DIVIDE"), "Show/hide inventory (alternate)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory3, new("Title_igi2_WeaponCategory3Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD1"), "Main weapons (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory2, new("Title_igi2_WeaponCategory2Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD2"), "Pistols (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory1, new("Title_igi2_WeaponCategory1Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD3"), "Knife (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory4, new("Title_igi2_WeaponCategory4Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD4"), "Weapon category 4 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory5, new("Title_igi2_WeaponCategory5Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD5"), "Weapon category 5 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory6, new("Title_igi2_WeaponCategory6Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD6"), "Weapon category 6 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory7, new("Title_igi2_WeaponCategory7Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD7"), "Weapon category 7 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory9, new("Title_igi2_WeaponCategory9Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD9"), "Weapon category 9 (numpad)"),
     ];
 
     /// <inheritdoc/>

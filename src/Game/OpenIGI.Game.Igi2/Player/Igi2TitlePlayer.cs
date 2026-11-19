@@ -45,6 +45,17 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         (PlayerAction.ToggleWalkRun, Igi2PlayerAction.ToggleWalkRun),
         (PlayerAction.Binoculars, Igi2PlayerAction.Binoculars),
         (PlayerAction.MapComputer, Igi2PlayerAction.ComputerMap),
+
+        // The number keys, as the original's config.qvm binds them: 1 is its third category and 3 its first, 4 to 7 their
+        // own, 9 the ninth; it binds nothing to 8.
+        (PlayerAction.WeaponCategory1, Igi2PlayerAction.WeaponCategory3),
+        (PlayerAction.WeaponCategory2, Igi2PlayerAction.WeaponCategory2),
+        (PlayerAction.WeaponCategory3, Igi2PlayerAction.WeaponCategory1),
+        (PlayerAction.WeaponCategory4, Igi2PlayerAction.WeaponCategory4),
+        (PlayerAction.WeaponCategory5, Igi2PlayerAction.WeaponCategory5),
+        (PlayerAction.WeaponCategory6, Igi2PlayerAction.WeaponCategory6),
+        (PlayerAction.WeaponCategory7, Igi2PlayerAction.WeaponCategory7),
+        (PlayerAction.WeaponCategory9, Igi2PlayerAction.WeaponCategory9),
     ];
 
     private readonly Igi2PlayerInputReader _reader = new();
