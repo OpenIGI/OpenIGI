@@ -125,6 +125,18 @@ public interface ITitleWorldModelPresenter
     {
     }
 
+    /// <summary>
+    /// Draws the bodies of the models drawn last as the title's infrared view sees them, over the finished scene and through what
+    /// stands before them (<see cref="ITitlePlayerOptics.IsInfraredView"/>); a presenter whose title has no such view draws nothing.
+    /// </summary>
+    /// <param name="models">The models the world draw drew.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The world's projection, as the world draw was given it.</param>
+    /// <param name="blend">Where between the last two ticks the world draw stood.</param>
+    void DrawWorldInfrared(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f)
+    {
+    }
+
     /// <summary>Draws the models, between the last two ticks.</summary>
     /// <param name="models">The models and where they stand.</param>
     /// <param name="camera">Where they are seen from, in metres.</param>

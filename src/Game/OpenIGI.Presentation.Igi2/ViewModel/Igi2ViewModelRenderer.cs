@@ -402,28 +402,12 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         foreach (TitleWorldModel wanted in models)
         {
             if (wanted.Instance is not { } instance || !marked.TryGetValue(instance, out OpenIGI.Game.Player.BinocularMarkerColor marker)
-                || !_bodies.TryGetValue(new BodyKey(instance, wanted.Model), out Part? part) || part is null || part.Tick != wanted.Tick)
-            {
-                continue;
-            }
-
-            _outlineRanges.Clear();
-            foreach ((MeshSubset subset, _) in part.Subsets)
-            {
-                if (subset.IndexCount > 0)
-                {
-                    _outlineRanges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
-                }
-            }
-
-            if (_outlineRanges.Count == 0)
+                || DrawnBody(wanted) is not { } part || !PoseDrawnBody(part, wanted, between))
             {
                 continue;
             }
 
             (Vector3d at, Matrix3f orientation, _) = Placed(wanted, between);
-            bool poseBetween = between < 1f && part.SkinTick == wanted.Tick && part.PreviousSkinTick == wanted.Tick - 1;
-            _device.SetPoseInterpolation(poseBetween ? 1f - between : 0f, poseBetween ? part.LastPoseBlend : 0f);
             OpenIGI.Presentation.Rendering.BinocularMarking.Draw(
                 _device,
                 part.Mesh,
@@ -434,6 +418,35 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         }
 
         _device.ClearPoseInterpolation();
+    }
+
+    // The body a world draw drew this tick for a model the title names, or null where none was.
+    private Part? DrawnBody(TitleWorldModel wanted) =>
+        wanted.Instance is { } instance && _bodies.TryGetValue(new BodyKey(instance, wanted.Model), out Part? part)
+        && part is not null && part.Tick == wanted.Tick
+            ? part
+            : null;
+
+    // A drawn body's index ranges into the outline's list, and its pose set as the world draw posed it; false with nothing to draw.
+    private bool PoseDrawnBody(Part part, TitleWorldModel wanted, float between)
+    {
+        _outlineRanges.Clear();
+        foreach ((MeshSubset subset, _) in part.Subsets)
+        {
+            if (subset.IndexCount > 0)
+            {
+                _outlineRanges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+            }
+        }
+
+        if (_outlineRanges.Count == 0)
+        {
+            return false;
+        }
+
+        bool poseBetween = between < 1f && part.SkinTick == wanted.Tick && part.PreviousSkinTick == wanted.Tick - 1;
+        _device.SetPoseInterpolation(poseBetween ? 1f - between : 0f, poseBetween ? part.LastPoseBlend : 0f);
+        return true;
     }
 
     private void DrawPart(Part part, in Matrix4f modelView, Matrix3f orientation)

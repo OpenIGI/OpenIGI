@@ -682,6 +682,9 @@ public sealed partial class GameHost
         // Every other player spawn protection shields, in the shielded look over the finished scene, seen through walls.
         _soldiers?.DrawShieldedPartners(eye);
 
+        // The title's thermal goggles: its people in heat colours, through walls, in the forward pass with the tracers.
+        DrawTitleInfrared(eye, projection);
+
         // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD
         // pass and for the same reason as the inspector selection below: submitted from the world
         // pass it would be lit and fogged into a smear. Here it composites over the finished

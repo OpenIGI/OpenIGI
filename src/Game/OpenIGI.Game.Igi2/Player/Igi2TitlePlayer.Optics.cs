@@ -20,7 +20,21 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
     private long _contactsTick = -1;
 
     /// <inheritdoc/>
-    public bool IsBinocularsOpen => !IsCutscenePlaying && !Human.IsDead && ZoomOverlay == BinocularOverlayType;
+    /// <remarks>
+    /// Not while the view is infrared: the binoculars' overlay then draws the thermal goggles' frame alone, with no range, compass
+    /// or marks (<c>BinocularOverlay_Draw</c>).
+    /// </remarks>
+    public bool IsBinocularsOpen => !IsCutscenePlaying && !Human.IsDead && ZoomOverlay == BinocularOverlayType && !Human.IsInfraEnabled;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>isDrawInfra</c>: the binoculars' overlay up while the player sees in infrared -- the thermal goggles raised
+    /// (<c>BinocularOverlay_Draw</c>) -- a scope that sees in infrared up (<c>SniperOverlay_CreateHandler</c>), or an overlay the
+    /// scripts put up whose infrared expression holds (<c>OverlayHolder_RunHandler</c>). Never in a cutscene, which turns it off
+    /// (<c>CutScene</c>), nor for a dead player.
+    /// </remarks>
+    public bool IsInfraredView => !IsCutscenePlaying && !Human.IsDead
+        && (ScreenOverlay?.IsInfrared == true || IsInfraredScope || (Human.IsInfraEnabled && ZoomOverlay == BinocularOverlayType));
 
     /// <inheritdoc/>
     /// <remarks>The bearing of the view's forward across the ground, as the retail compass reads it (<c>BinocularOverlay_DrawCompass</c>).</remarks>

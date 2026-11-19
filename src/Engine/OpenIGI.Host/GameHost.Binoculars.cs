@@ -75,6 +75,23 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>
+    /// Draws the people in the title's infrared view -- I.G.I. 2's thermal goggles -- in its heat colours and through walls, over
+    /// the finished scene: retail, in every look.
+    /// </summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    private void DrawTitleInfrared(in Camera3D eye, in Matrix4f projection)
+    {
+        if (!_playerMode || TitleOptics is not { IsInfraredView: true } || _computerOpen
+            || _titleFeatures?.WorldModels is not { } owned || TitleWorldModelPresenter is not { } models)
+        {
+            return;
+        }
+
+        models.DrawWorldInfrared(owned.WorldModels, eye, projection, _titlePresentationBlend);
+    }
+
     /// <summary>Draws the remastered binoculars' interface over the frame, for whichever player is looking.</summary>
     /// <param name="state">The frame loop's state, whose batch it draws into.</param>
     /// <param name="view">The frame's view.</param>

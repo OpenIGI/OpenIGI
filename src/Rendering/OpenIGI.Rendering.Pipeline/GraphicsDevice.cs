@@ -470,6 +470,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeBackdrop();
         DisposeDeferred();
         DisposeTracers();
+        DisposeInfrared();
         DisposeModePoints();
         DisposeBlastVolume();
         DisposeCompute();

@@ -251,6 +251,20 @@ public interface IGraphicsDevice :
             TextureHandle.None,
             style == TracerStyle.Retail ? BlendMode.AlphaBlend : BlendMode.Additive);
 
+    /// <summary>Draws a body in a heat ramp's colours, as I.G.I. 2's infrared view does, through the infrared shader.</summary>
+    /// <param name="mesh">The body's mesh, drawn in the pose currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">The body's transform into view space; the caller draws <see cref="InfraredDraw.SeenThrough"/> nearer.</param>
+    /// <param name="ramp">The heat ramp, looked up across its first row by how squarely each part faces the eye.</param>
+    /// <param name="draw">Which of the two draws.</param>
+    /// <remarks>
+    /// Unlit and unfogged, drawn from both sides, tested against the scene's depth and never writing it; over the finished
+    /// scene, in the pass the tracers draw in. A device without the shader draws nothing.
+    /// </remarks>
+    void DrawInfrared(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, TextureHandle ramp, InfraredDraw draw)
+    {
+    }
+
     /// <summary>Draws a place a multiplayer mode plays for -- a bomb site -- through the mode point shader: a disc and a low wall.</summary>
     /// <param name="mesh">The point's disc (lightmap u 0, diffuse uv -1..1 across it) and wall (lightmap u 1, v up it).</param>
     /// <param name="indexOffset">The first index to draw.</param>

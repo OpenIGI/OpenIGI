@@ -18,6 +18,9 @@ public sealed partial class Igi2TitlePlayer
     /// <summary>How far the binoculars range, in world units: a thousand metres (<c>BinocularOverlay_Draw</c>).</summary>
     public const double BinocularReach = 4096000.0;
 
+    /// <summary>The plain sniper scope's overlay task type's name, the only scope that may see in infrared.</summary>
+    public const string SniperOverlayType = "SniperOverlay";
+
     /// <summary>The laser designator's overlay task type's name.</summary>
     public const string LaserDesignatorOverlayType = "LaserDesignatorOverlay";
 
@@ -49,10 +52,16 @@ public sealed partial class Igi2TitlePlayer
     /// <see langword="null"/> with none.
     /// </summary>
     public string? ZoomOverlay =>
-        Weapons is { Firing.OverlayStatus: Igi2WeaponOverlayStatus.WithOverlay, Effects: Igi2LevelWeaponEffects { Overlay: { } zoom } }
-        && OverlayTypeNames is { } names && names.TryGetValue(zoom.OverlayQTaskType, out string? name)
+        ZoomWithOverlay is { } zoom && OverlayTypeNames is { } names && names.TryGetValue(zoom.OverlayQTaskType, out string? name)
             ? name
             : null;
+
+    /// <summary>Gets a value indicating whether the zoom's overlay up is a sniper scope that sees in infrared, the thermal Barrett's.</summary>
+    public bool IsInfraredScope => ZoomOverlay == SniperOverlayType && ZoomWithOverlay is { IsInfrared: true };
+
+    // The zoom whose overlay is up, or null with none.
+    private Igi2ZoomTask? ZoomWithOverlay =>
+        Weapons is { Firing.OverlayStatus: Igi2WeaponOverlayStatus.WithOverlay, Effects: Igi2LevelWeaponEffects { Overlay: { } zoom } } ? zoom : null;
 
     /// <summary>
     /// Gets the distance to what the zoom's overlay is trained on, in world units, or <see langword="null"/> when nothing is within
@@ -74,7 +83,10 @@ public sealed partial class Igi2TitlePlayer
     private void ReadBinoculars()
     {
         string? overlay = ZoomOverlay;
-        if (overlay is null)
+        bool binoculars = overlay == BinocularOverlayType;
+
+        // Seeing in infrared, the binoculars' overlay is the thermal goggles' frame and reads nothing off the world.
+        if (overlay is null || (binoculars && Human.IsInfraEnabled))
         {
             ZoomRange = null;
             return;
@@ -83,7 +95,6 @@ public sealed partial class Igi2TitlePlayer
         Vector3d eye = Human.View.Position;
         Matrix3f view = Human.View.Orientation;
         Vector3f forward = new(view.M12, view.M22, view.M32);
-        bool binoculars = overlay == BinocularOverlayType;
         WorldLineTrace trace = new(1)
         {
             Includes = owner => !ReferenceEquals(owner, Human),

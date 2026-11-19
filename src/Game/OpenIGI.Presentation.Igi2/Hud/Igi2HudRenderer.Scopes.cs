@@ -73,7 +73,8 @@ public sealed partial class Igi2HudRenderer
         // SniperOverlay_DrawRangeMeter and SniperOverlay_DrawCompass.
         Text(batch, RangeText(title), MathF.Floor(width * 0.365f), MathF.Floor(height * 0.52f), Black);
         DrawCompass(batch, title, width * 0.325f, height * 0.56f, width * 0.35f, Black, Black);
-        if (title.ScreenOverlay?.IsInfrared == true)
+        // SniperOverlay_Draw: a scope made infrared (the thermal Barrett's) lays the infrared frame over its reticle.
+        if (title.IsInfraredScope)
         {
             DrawBinocularFrame(batch, InfraredSprite, width, height);
         }

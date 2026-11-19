@@ -23,6 +23,12 @@ public interface ITitlePlayerOptics
 
     /// <summary>Gets whom the binoculars have picked out, each as it is drawn.</summary>
     IReadOnlyList<TitleBinocularContact> BinocularContacts { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the view is drawn infrared: the people in it drawn in the title's heat colours and seen
+    /// through what stands before them, by the title's world-model presenter. A title without thermal optics never is.
+    /// </summary>
+    bool IsInfraredView => false;
 }
 
 /// <summary>One person a title's binoculars picked out.</summary>

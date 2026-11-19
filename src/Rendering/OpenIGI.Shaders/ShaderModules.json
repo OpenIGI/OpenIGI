@@ -614,6 +614,10 @@
     {
       "id": "BlastVolume",
       "source": "World/BlastVolume.slang"
+    },
+    {
+      "id": "Infrared",
+      "source": "World/Infrared.slang"
     }
   ]
 }
