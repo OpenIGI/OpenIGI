@@ -33,7 +33,8 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
     public HudModel Model => _model;
 
     /// <inheritdoc/>
-    public bool WeaponsFaceLeft => false;
+    /// <remarks>The inventory's weapon sprites are drawn muzzle to the left, as I.G.I.'s are.</remarks>
+    public bool WeaponsFaceLeft => true;
 
     /// <inheritdoc/>
     public HudIcon WeaponIcon(string weaponKey) => WeaponTypeOf(weaponKey) is { WeaponSprite.Length: > 0 } type ? new HudIcon(type.WeaponSprite) : HudIcon.None;
