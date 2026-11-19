@@ -35,10 +35,24 @@ const SIGNATURES = [
   { title: 'igi1', file: 'config.qvm' },
 ];
 
-/** The games, by id, as the page names them. */
+/**
+ * The games, by id, as the page names them. hosted: whether the site serves the game's files; a game it does not is
+ * played only from the person's own installation.
+ */
 export const TITLES = {
-  igi1: { name: 'Project I.G.I.', exe: 'IGI.exe' },
-  igi2: { name: 'I.G.I. 2: Covert Strike', exe: 'igi2.exe' },
+  igi1: { name: 'Project I.G.I.', exe: 'IGI.exe', hosted: true },
+  igi2: { name: 'I.G.I. 2: Covert Strike', exe: 'igi2.exe', hosted: false },
+};
+
+/**
+ * How each game's own folder is split into what is read up front and what waits, as tools/web-data/pack.py splits the
+ * hosted files -- keep the two in step. shared: files every mission waits for and the menu does not. locationPacks:
+ * whether a location's shared folder (missions/<location>/common) waits for the first of its missions, as I.G.I. 2's
+ * do; read up front, every location's would be in memory at once.
+ */
+const SPLITS = {
+  igi1: { shared: [], locationPacks: false },
+  igi2: { shared: ['common/sounds/sounds.res'], locationPacks: true },
 };
 
 /** A folder the game cannot be played from, with what to tell the person. */
@@ -254,6 +268,15 @@ export async function forgetFolder(title) {
     await transact('readwrite', store => store.delete(folderKey(title)));
   } catch {
     // Nothing was remembered, or nothing can be.
+  }
+}
+
+/** Whether a remembered folder can be read without asking: the browser kept the permission, so no click is needed. */
+export async function readable(handle) {
+  try {
+    return (await handle.queryPermission({ mode: 'read' })) === 'granted';
+  } catch {
+    return false;
   }
 }
 
@@ -620,14 +643,37 @@ function missionFolders(files) {
     .map(f => key(f.path.slice(0, f.path.lastIndexOf('/')))));
 }
 
-/** The mission folder a large file waits for, or null for one read up front. */
-function deferredTo(file, folders) {
-  if (file.size < LARGE) return null;
-  for (let at = file.path.lastIndexOf('/'); at > 0; at = file.path.lastIndexOf('/', at - 1)) {
-    const folder = key(file.path.slice(0, at));
-    if (folders.has(folder)) return folder;
+/**
+ * The groups of a source that says nothing of its own about what waits (a folder, or an index older than pack.py's
+ * "for"): each file's group put on it as file.group, and the folders each group waits for -- pack.py's split, made here.
+ * @returns {Object<string, string[]>} Group name -> the folders that wait for it ("*" for any mission).
+ */
+function folderGroups(files, title) {
+  const split = SPLITS[title] ?? SPLITS.igi1;
+  const missions = missionFolders(files);
+  const packs = split.locationPacks
+    ? new Set([...missions].map(folder => `${folder.slice(0, folder.lastIndexOf('/'))}/common`))
+    : new Set();
+  const waitsFor = {};
+  for (const file of files) {
+    const path = key(file.path);
+    file.group = null;
+    if (split.shared.includes(path)) {
+      file.group = 'shared';
+      waitsFor.shared = ['*'];
+      continue;
+    }
+    if (file.size < LARGE) continue;
+    for (let at = path.lastIndexOf('/'); at > 0; at = path.lastIndexOf('/', at - 1)) {
+      const folder = path.slice(0, at);
+      if (missions.has(folder) || packs.has(folder)) {
+        file.group = folder;
+        waitsFor[folder] = [folder];
+        break;
+      }
+    }
   }
-  return null;
+  return waitsFor;
 }
 
 function write(file, bytes) {
@@ -687,24 +733,15 @@ export async function load(from, fileSystem, at, progress) {
   root = at;
 
   const files = (await source.list()).filter(wanted);
+  // Hosted data names its groups (bundles) and what waits for them; anything else is split here the same way.
+  const waitsFor = source.waitsFor ?? folderGroups(files, source.title);
+  const groupOf = source.waitsFor ? file => file.bundle : file => file.group;
+  for (const [group, folders] of Object.entries(waitsFor)) folders.forEach(folder => need(folder, group));
   const now = [];
-  if (source.waitsFor) {
-    for (const [group, folders] of Object.entries(source.waitsFor)) folders.forEach(folder => need(folder, group));
-    for (const file of files) {
-      if (source.waitsFor[file.bundle]?.length) defer(file.bundle, file);
-      else now.push(file);
-    }
-  } else {
-    const folders = missionFolders(files);
-    for (const file of files) {
-      const mission = deferredTo(file, folders);
-      if (mission === null) {
-        now.push(file);
-        continue;
-      }
-      defer(mission, file);
-      need(mission, mission);
-    }
+  for (const file of files) {
+    const group = groupOf(file);
+    if (group && waitsFor[group]?.length) defer(group, file);
+    else now.push(file);
   }
 
   await readAll(now, progress);

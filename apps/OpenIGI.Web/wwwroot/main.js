@@ -91,6 +91,9 @@ function showGame(id) {
   game = id;
   $('game-name').textContent = files.TITLES[id].name;
   for (const button of $('games').querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.game === id));
+  $('files-point').textContent = files.TITLES[id].hosted
+    ? "Nothing to install: the game's files download once and are kept for the next visit."
+    : 'Plays from your own copy of the game: choose its folder once and it is remembered.';
   try {
     localStorage.setItem(GAME_KEY, id);
   } catch {
@@ -111,6 +114,15 @@ const hint = () => `The folder with ${files.TITLES[game].exe} in it${game === 'i
 
 const DISCORD_APP = '1534229764519497768';
 
+/** The Discord SDK once the Activity is set up: the frame opens another site only through it. */
+let discordSdk = null;
+
+$('elsewhere').addEventListener('click', event => {
+  if (!discordSdk) return;
+  event.preventDefault();
+  discordSdk.commands.openExternalLink({ url: event.currentTarget.href }).catch(error => console.warn('Discord link', error));
+});
+
 async function enterDiscord() {
   const { DiscordSDK, patchUrlMappings } = await import('./discord-sdk.js');
   patchUrlMappings([
@@ -119,6 +131,7 @@ async function enterDiscord() {
   ]);
   const sdk = new DiscordSDK(DISCORD_APP);
   await sdk.ready();
+  discordSdk = sdk;
   const instance = sdk.instanceId;
 
   // Who is playing: Discord asks once to share the player's name, then never again. They play under it; without it, as
@@ -176,8 +189,16 @@ if (IN_DISCORD) {
  * Where the site hosts a game's files (tools/web-data/pack.py), a folder per game; ?data-host=<url> points
  * elsewhere, with {game} standing for the game's id (a URL without it is taken for the chosen game's folder).
  */
-const hostedData = () => new URL((query.get('data-host') ?? 'https://data.openigi.com/{game}/').replaceAll('{game}', game), location.href)
+const hostedData = (id = game) => new URL((query.get('data-host') ?? 'https://data.openigi.com/{game}/').replaceAll('{game}', id), location.href)
   .href.replace(/\/?$/, '/');
+
+/** Whether the chosen game's files come from the site; a game it does not serve is played from the person's own folder. */
+const siteServes = () => files.TITLES[game].hosted;
+
+// Files an earlier page downloaded for a game the site no longer serves, let go: I.G.I. 2 was hosted for a while.
+for (const [id, title] of Object.entries(files.TITLES)) {
+  if (!title.hosted) files.clearHosted(hostedData(id)).catch(() => {});
+}
 
 // --- The landing page ----------------------------------------------------------------------------------
 
@@ -258,7 +279,8 @@ async function pickFolder() {
       return await files.fromDirectory(await window.showDirectoryPicker({ id: game === 'igi1' ? 'openigi-game' : `openigi-${game}`, mode: 'read' }), game);
     } catch (error) {
       if (error.name === 'AbortError') return null;
-      throw error;
+      // A frame of another site (Discord's) may not show the picker: the plain file input below may still be allowed.
+      if (error.name !== 'SecurityError') throw error;
     }
   }
 
@@ -334,8 +356,11 @@ async function chooseSource() {
 
   const own = $('own');
   const clear = $('clear');
-  // Each of these is the chosen game's, and is read again when the switch changes it.
-  let hosted = await files.hostedStatus(hostedData());
+  const elsewhere = $('elsewhere');
+  // Each of these is the chosen game's, and is read again when the switch changes it. A game the site does not serve
+  // has no hosted status: its own folder is the only way to play it.
+  const statusOfSite = async () => (siteServes() ? files.hostedStatus(hostedData()) : null);
+  let hosted = await statusOfSite();
   // The site's files unless the person chooses their own folder.
   let ownChosen = false;
   let folderMode = hosted === null;
@@ -345,22 +370,41 @@ async function chooseSource() {
   let remembered = await files.rememberedFolder(game);
   const offerFolder = () => {
     if (remembered) offer('Play game', `Game folder: /${remembered.name}`, 'neutral', true);
-    else offer('Choose game folder', hosted === null ? `The game's files could not be reached. ${hint()}` : hint());
+    else if (hosted === null && siteServes()) offer('Choose game folder', `The game's files could not be reached. ${hint()}`);
+    else offer('Choose game folder', hint());
     own.hidden = true;
+    clear.hidden = true;
+    // Discord's frame may refuse a folder picker of any kind; the site in a browser of its own always offers one.
+    elsewhere.hidden = !IN_DISCORD;
+    elsewhere.href = `https://openigi.com/?game=${game}`;
   };
   const offerHosted = status => {
     offer('Play now', hostedLine(status), status.start === 0 ? 'ok' : 'neutral');
     own.hidden = false;
     clear.hidden = status.all === status.total;
+    elsewhere.hidden = true;
   };
   if (folderMode) offerFolder();
   else offerHosted(hosted);
 
   // Inside a Discord Activity the voice channel came to play, and a game's switcher has just sent the page here
-  // (?play): straight in with the site's files, no Play to press.
-  if ((IN_DISCORD || SWITCHED) && !folderMode) {
-    lockGame();
-    return files.fromHosted(hostedData());
+  // (?play): straight in, no Play to press -- with the site's files, or a remembered folder the browser still lets the
+  // page read (asking again needs a click, which only Play can give).
+  if (IN_DISCORD || SWITCHED) {
+    if (!folderMode) {
+      lockGame();
+      return files.fromHosted(hostedData());
+    }
+    if (remembered && await files.readable(remembered)) {
+      try {
+        const source = await files.reopen(remembered, game);
+        lockGame();
+        return source;
+      } catch (error) {
+        if (!(error instanceof files.InstallationError)) throw error;
+        // Gone or changed: Play below asks again.
+      }
+    }
   }
 
   return new Promise((settle, fail) => {
@@ -378,7 +422,7 @@ async function chooseSource() {
       play.disabled = true;
       try {
         showGame(id);
-        hosted = await files.hostedStatus(hostedData());
+        hosted = await statusOfSite();
         remembered = await files.rememberedFolder(game);
         ready = null;
         folderMode = ownChosen || hosted === null;
@@ -460,7 +504,7 @@ async function chooseSource() {
     clear.addEventListener('click', async () => {
       await files.clearHosted(hostedData());
       clear.hidden = true;
-      if (!folderMode) offerHosted((await files.hostedStatus(hostedData())) ?? hosted);
+      if (!folderMode) offerHosted((await statusOfSite()) ?? hosted);
     }, { signal: listening.signal });
   });
 }
