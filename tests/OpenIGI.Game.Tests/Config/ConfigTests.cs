@@ -398,7 +398,7 @@ public sealed class ConfigTests
         Assert.Contains(new InputBinding("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_D"), joe.Bindings);
         Assert.Contains(new InputBinding("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_S"), joe.Bindings);
         Assert.Contains(new InputBinding("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"), joe.Bindings);
-        Assert.Contains(new InputBinding("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"), joe.Bindings);
+        Assert.Contains(new InputBinding("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"), joe.Bindings);
         Assert.Contains(new InputBinding("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"), joe.Bindings);
         Assert.Contains(new InputBinding("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_B"), joe.Bindings);
         Assert.Contains(new InputBinding("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_SHIFT"), joe.Bindings);
@@ -430,16 +430,16 @@ public sealed class ConfigTests
     {
         GameConfig partial = new();
         PlayerProfile joe = new() { Name = "Joe" };
-        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_F"));
+        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_T"));
         partial.Add(joe);
 
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
+        Assert.Equal("KEY_T", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
         Assert.Contains(loaded.Active.Bindings, binding => binding.Action == "Binoculars");
 
-        // The flashlight's own default is F, which this player gave to MoveLeft: it comes back without a key
+        // The flashlight's own default is T, which this player gave to MoveLeft: it comes back without a key
         // rather than making one key drive two actions.
         InputBinding flashlight = loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight");
         Assert.Equal(PlayerProfile.UnboundKey, flashlight.Key);
@@ -447,7 +447,7 @@ public sealed class ConfigTests
     }
 
     [Fact]
-    public void A_profile_saved_before_the_flashlight_gains_it_on_F()
+    public void A_profile_saved_before_the_flashlight_gains_it_on_T()
     {
         GameConfig partial = new();
         PlayerProfile joe = new() { Name = "Joe" };
@@ -457,7 +457,7 @@ public sealed class ConfigTests
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
+        Assert.Equal("KEY_T", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
     }
 
     [Fact]

@@ -21,7 +21,7 @@ public static class ModernAimCVars
         "g_modern_aim",
         false,
         CVarOptions.Archive,
-        "Modern aiming: the right mouse button aims down the sights, Q and R lean with the weapon up, and the weapon braces on "
+        "Modern aiming: the right mouse button aims down the sights, Q and E lean with the weapon up, and the weapon braces on "
         + "ledges and tables. Off plays the original's sight, zoom and peek.");
 
     /// <summary>Whether a press of the aim button stays aimed until the next, rather than for as long as it is held.</summary>

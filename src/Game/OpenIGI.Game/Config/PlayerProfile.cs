@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Config;
 /// and <c>config.qvm</c> — which is the save file — is keyed by name, not by offset.
 /// </para>
 /// </remarks>
-public sealed class PlayerProfile
+public sealed partial class PlayerProfile
 {
     /// <summary>The number of key bindings a profile carries.</summary>
     /// <remarks>
@@ -42,10 +42,12 @@ public sealed class PlayerProfile
 
     /// <summary>The bindings a fresh profile starts with.</summary>
     /// <remarks>
-    /// The port keeps the retail action set on a layout a hand on WASD and one on the mouse can reach: the sight (alternate
-    /// fire) on the right mouse button, the weapons on the wheel, leaning out on the left Alt and the zoom beside the digits.
-    /// They must live in the model rather than the Controls screen: a profile created before that page is opened
-    /// still has to serialize to a complete configuration and provide usable input to the game.
+    /// The port keeps the retail action set on the layout shooters with a lean have settled on, every key within reach of a hand
+    /// on WASD: the sight (alternate fire) on the right mouse button, the weapons on the wheel, reload on R, use on F, the
+    /// leans on Q and E, crouch on the left Ctrl, the flashlight on T, the original's peek on the left Alt and the zoom beside
+    /// the digits. They must live in the model rather than the Controls screen: a profile created before that page is opened
+    /// still has to serialize to a complete configuration and provide usable input to the game. <see cref="AdoptCurrentLayout"/>
+    /// brings a profile still on an older layout's keys onto these.
     /// </remarks>
     public static IReadOnlyList<InputBinding> DefaultBindings { get; } =
     [
@@ -54,9 +56,9 @@ public sealed class PlayerProfile
         new("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"),
         new("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_S"),
         new("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"),
-        new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RETURN"),
-        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
-        new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_CTRL"),
+        new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_R"),
+        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"),
+        new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_CTRL"),
         new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
         new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_WHEEL_DOWN"),
         new("PrevWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_WHEEL_UP"),
@@ -76,15 +78,15 @@ public sealed class PlayerProfile
         new("WeaponCategory7", "INPUTPORT_DEVICE_KEYBOARD", "KEY_7"),
         new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
         new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
-        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"),
+        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_T"),
         new("WeaponWheel", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_3"),
         new(ScoreboardAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_TAB"),
         new(BuyMenuAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_G"),
         new(nameof(Player.PlayerAction.DropWeapon), "INPUTPORT_DEVICE_KEYBOARD", "KEY_X"),
         new(nameof(Player.PlayerAction.Underbarrel), "INPUTPORT_DEVICE_KEYBOARD", "KEY_V"),
         new(nameof(Player.PlayerAction.LeanLeft), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Q"),
-        new(nameof(Player.PlayerAction.LeanRight), "INPUTPORT_DEVICE_KEYBOARD", "KEY_R"),
-        new(nameof(Player.PlayerAction.Mount), "INPUTPORT_DEVICE_KEYBOARD", UnboundKey),
+        new(nameof(Player.PlayerAction.LeanRight), "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
+        new(nameof(Player.PlayerAction.Mount), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Z"),
     ];
 
     /// <summary>What a fresh profile's bindings were before <see cref="GameConfig.CurrentControlsVersion"/> two, where they differ from today's.</summary>
@@ -393,9 +395,8 @@ public sealed class PlayerProfile
                 continue;
             }
 
-            bool taken = Bindings.Exists(existing =>
-                string.Equals(existing.Device, binding.Device, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(existing.Key, binding.Key, StringComparison.OrdinalIgnoreCase));
+            // A title's own row is live only while that title plays, so it takes nothing from a shared action.
+            bool taken = Bindings.Exists(existing => !IsTitleRow(existing) && SameControl(existing, binding));
             Bindings.Add(taken ? binding with { Key = UnboundKey } : binding);
         }
     }
