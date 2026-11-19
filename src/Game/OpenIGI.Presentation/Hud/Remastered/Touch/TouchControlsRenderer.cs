@@ -64,7 +64,9 @@ public static class TouchControlsRenderer
         {
             float opacity = spot.Hidden ? HiddenOpacity : spot.Opacity;
             painter.PushOpacity(opacity);
-            DrawSpot(painter, batch, context, spot, controls.Held.Contains(spot.Button), offered, accent, icons, model, font, rim, stroke, opacity);
+            bool held = controls.Held.Contains(spot.Button) || (spot.Button == TouchButton.Crouch && controls.CrouchLatched);
+            bool fireMode = spot.Button == TouchButton.Scope && controls.ScopeSwitchesMode;
+            DrawSpot(painter, batch, context, spot, held, fireMode, offered, accent, icons, model, font, rim, stroke, opacity);
             painter.PopOpacity();
         }
     }
@@ -73,7 +75,7 @@ public static class TouchControlsRenderer
     private const float HiddenOpacity = 0.28f;
 
     private static void DrawSpot(
-        UiPainter painter, SpriteBatch batch, LayoutContext context, TouchButtonSpot spot, bool held, bool offered, Bgra32 accent,
+        UiPainter painter, SpriteBatch batch, LayoutContext context, TouchButtonSpot spot, bool held, bool fireMode, bool offered, Bgra32 accent,
         IHudIconSource? icons, HudModel? model, UiFont? font, float rim, float stroke, float opacity)
     {
         // The title's own pictures are drawn by the batch, not the painter, and so take the opacity in their colour.
@@ -96,7 +98,25 @@ public static class TouchControlsRenderer
 
         float size = spot.Radius * (spot.Button == TouchButton.Fire ? 0.5f : 0.46f);
         Bgra32 ink = spot.Button == TouchButton.Use && !offered && !held ? InkFaint : Ink;
+        if (fireMode)
+        {
+            DrawFireModeGlyph(painter, spot.Centre, size, ink);
+            return;
+        }
+
         DrawGlyph(painter, spot.Button, spot.Centre, size, spot.Radius > context.Px(80f) ? stroke * 1.3f : stroke, ink);
+    }
+
+    // Three rounds side by side: the button steps the weapon through single, burst and automatic fire.
+    private static void DrawFireModeGlyph(UiPainter painter, UiVec2 c, float size, Bgra32 ink)
+    {
+        UiVec2 P(float x, float y) => new(c.X + (x * size), c.Y + (y * size));
+        for (int i = -1; i <= 1; i++)
+        {
+            float x = i * 0.58f;
+            painter.FillQuad(P(x - 0.18f, -0.3f), P(x + 0.18f, -0.3f), P(x + 0.18f, 0.85f), P(x - 0.18f, 0.85f), ink);
+            painter.FillTriangle(P(x - 0.18f, -0.36f), P(x + 0.18f, -0.36f), P(x, -0.85f), ink);
+        }
     }
 
     private static void Disc(UiPainter painter, UiVec2 centre, float radius, Bgra32 fill, Bgra32 edge, float thickness)

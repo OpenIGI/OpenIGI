@@ -34,7 +34,7 @@ public sealed partial class Igi2HumanPlayer
         Surroundings.PlaySound("jump_1");
 
         Vector3f carried = AccumulatedSpeed;
-        Speed = new Vector3f(carried.X, carried.Y, ((Fpu)General.UpwardJumpSpeed + carried.Z).F);
+        Speed = new Vector3f(carried.X, carried.Y, ((Fpu)(General.UpwardJumpSpeed * JumpScale) + carried.Z).F);
         Signal &= ~Igi2PlayerSignal.Grounded;
         LeaveGround();
         GroundTolerance = 0f;

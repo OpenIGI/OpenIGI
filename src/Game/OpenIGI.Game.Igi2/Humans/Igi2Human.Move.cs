@@ -157,6 +157,11 @@ public abstract partial class Igi2Human
         if (!IsDisableDeltaTranslation)
         {
             Vector3f delta = DeltaTranslation;
+            if (MoveScale != 1f)
+            {
+                delta = new Vector3f(delta.X * MoveScale, delta.Y * MoveScale, delta.Z);
+            }
+
             x += delta.X;
             y = ((Fpu)y + delta.Y).F;
             z = ((Fpu)z + delta.Z).F;

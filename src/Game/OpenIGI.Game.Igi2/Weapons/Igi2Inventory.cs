@@ -232,13 +232,25 @@ public sealed class Igi2Inventory : ISavedState
     /// which never do (categories 12 and 11).
     /// </para>
     /// </remarks>
-    public bool EnableWeaponType(string weaponId, bool addAmmo)
-    {
-        if (FindWeapon(weaponId) is not { } item)
-        {
-            return false;
-        }
+    public bool EnableWeaponType(string weaponId, bool addAmmo) => FindWeapon(weaponId) is { } item && Enable(item, addAmmo);
 
+    /// <summary>
+    /// Carries every weapon the session knows that a player can hold, each with a load's worth of rounds: the all-weapons
+    /// cheat. <b>Not retail.</b> The C4 is left out (no single-player mission hands it out) and so is what has no category.
+    /// </summary>
+    public void EnableEveryWeapon()
+    {
+        foreach (Igi2WeaponItem item in _weapons)
+        {
+            if (!item.IsActive && item.WeaponType.WeaponCategory is not (0 or Igi2WeaponCategory.C4))
+            {
+                Enable(item, addAmmo: true);
+            }
+        }
+    }
+
+    private bool Enable(Igi2WeaponItem item, bool addAmmo)
+    {
         bool added = !item.IsActive;
         item.IsActive = true;
         if (added)
@@ -687,6 +699,9 @@ internal static class Igi2WeaponCategory
 
     /// <summary><c>WEAPONCATEGORY_MEDIPACK</c>.</summary>
     public const int Medipack = 8;
+
+    /// <summary><c>WEAPONCATEGORY_C4</c>.</summary>
+    public const int C4 = 9;
 
     /// <summary>
     /// Gets whether a category is carried as rounds of itself, with no load to fill: the thrown weapons, the mine and the
