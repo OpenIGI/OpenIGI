@@ -15,6 +15,10 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// count moved.
 /// </param>
 /// <param name="AimPitch">Where the player is looking, in radians, positive up.</param>
+/// <param name="LeanRoll">
+/// Modern aim's lean, radians, positive to the right: the torso rolls out from the hips with it (<see cref="Player.SoldierView.LeanAlong"/>).
+/// </param>
+/// <param name="Aim">How far the weapon is up on its sights, nought to one: the head settles onto the stock.</param>
 /// <remarks>
 /// <para>
 /// Carried as one value rather than five arguments because the five are one thing — the state of the
@@ -32,4 +36,6 @@ public readonly record struct PlayerBodyPose(
     bool UpperBodyLoops,
     float UpperBodyBlendSeconds,
     int UpperBodySequence,
-    float AimPitch);
+    float AimPitch,
+    float LeanRoll = 0f,
+    float Aim = 0f);

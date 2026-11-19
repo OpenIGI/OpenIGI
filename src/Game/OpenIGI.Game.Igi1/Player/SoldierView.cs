@@ -315,19 +315,55 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
     /// <summary>Gets the pitch the body looks along — see <see cref="LookAlong"/>.</summary>
     public float LookPitch { get; private set; }
 
+    /// <summary>Gets the roll the torso leans out by, radians, positive to the right — see <see cref="LeanAlong"/>.</summary>
+    public float LeanRoll { get; private set; }
+
+    /// <summary>Gets how far the weapon is up on its sights, nought to one — see <see cref="LeanAlong"/>.</summary>
+    public float AimRaise { get; private set; }
+
+    /// <summary>Leans the torso and settles the head onto the stock, as modern aim's lean and sights hold a player.</summary>
+    /// <param name="roll">The lean, radians, positive to the right; the torso rolls out from the hips about the body's forward.</param>
+    /// <param name="aim">How far the weapon is up on its sights, nought to one.</param>
+    /// <remarks>
+    /// <b>Not retail.</b> Laid over the pose after the look (<see cref="LookAlong"/>), so a player leaning round a corner and
+    /// looking down it shows both: the torso and everything it carries -- the head, the arms, the weapon -- roll out over the
+    /// hips, and on the sights the head tips onto the stock, toward the shoulder the weapon is on.
+    /// </remarks>
+    public void LeanAlong(float roll, float aim)
+    {
+        if (roll == LeanRoll && aim == AimRaise)
+        {
+            return;
+        }
+
+        LeanRoll = roll;
+        AimRaise = aim;
+        _pose = null;
+        _unrotatedPose = null;
+    }
+
+    // How far the head tips onto the stock on the sights: towards the right shoulder, and down along the weapon.
+    private const float CheekRoll = 0.20f;
+    private const float CheekDip = 0.10f;
+
     // 0x489F70 on a built pose: the turn about the body's side, its column 0 (the rig's own +X when unrotated).
     private BonePose Looked(BonePose pose, Matrix3f? root)
     {
-        if (LookPitch == 0f)
+        if (LookPitch == 0f && LeanRoll == 0f && AimRaise == 0f)
         {
             return pose;
         }
 
         Vector3f side = root is { } body ? new Vector3f(body.M11, body.M21, body.M31) : new Vector3f(1f, 0f, 0f);
+        Vector3f ahead = root is { } facing ? new Vector3f(facing.M12, facing.M22, facing.M32) : new Vector3f(0f, 1f, 0f);
         float chest = Math.Clamp(LookPitch, -HumanUpperBody.LookLimitRadians, HumanUpperBody.LookLimitRadians);
         return pose
             .TurnSubtree(HumanUpperBody.Bone, side, chest)
-            .TurnSubtree(HumanUpperBody.NeckBone, side, LookPitch - chest);
+            .TurnSubtree(HumanUpperBody.NeckBone, side, LookPitch - chest - (AimRaise * CheekDip))
+            // A turn about the body's forward by a positive angle tips its top to the left, so a lean to the right turns by
+            // the roll negated.
+            .TurnSubtree(HumanUpperBody.Bone, ahead, -LeanRoll)
+            .TurnSubtree(HumanUpperBody.NeckBone, ahead, -AimRaise * CheekRoll);
     }
 
     /// <summary>Starts one of the three authored ladder animations.</summary>

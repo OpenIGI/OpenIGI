@@ -147,7 +147,14 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                     : null;
             bodies.Add(new Ai.PartnerBody(
                 h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(h.Action - 1, (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
+                new Ai.PlayerBodyPose(
+                    h.Action - 1,
+                    (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0,
+                    0f,
+                    h.ActionSequence,
+                    Quantize.AngleFromBits(h.Pitch),
+                    Game.Player.Aim.CombatLean.Eye(h.Lean / 100f).Roll,
+                    h.Aim / 100f),
                 gun,
                 h.Shots,
                 fired,

@@ -60,6 +60,9 @@ public sealed class WeaponMount
     /// <summary>Gets a value indicating whether the weapon is braced.</summary>
     public bool IsMounted => Kind != MountKind.None;
 
+    /// <summary>Gets a value indicating whether the body crouches to the brace, a top lower than it can bend to.</summary>
+    public bool Crouches { get; private set; }
+
     /// <summary>Gets the profile of the weapon that was braced.</summary>
     public AdsProfile? Profile { get; private set; }
 
@@ -91,6 +94,7 @@ public sealed class WeaponMount
     {
         ArgumentNullException.ThrowIfNull(profile);
         Kind = surface.Kind;
+        Crouches = surface.Crouch;
         Profile = profile;
         _raiseTarget = surface.Raise;
         Limit = new MountLookLimit(yaw, YawHalfWidthDegrees * Degrees, -30f * Degrees, 45f * Degrees);
@@ -104,6 +108,7 @@ public sealed class WeaponMount
     public void Dismount()
     {
         Kind = MountKind.None;
+        Crouches = false;
         Profile = null;
         _raiseTarget = 0f;
     }
@@ -120,7 +125,7 @@ public sealed class WeaponMount
     public void Tick()
     {
         PreviousRaise = Raise;
-        float step = MountProbe.MaxDropMetres * (float)WorldScene.UnitsPerMetre * AimDownSights.TickSeconds / SettleSeconds;
+        float step = MountProbe.MaxRaiseMetres * (float)WorldScene.UnitsPerMetre * AimDownSights.TickSeconds / SettleSeconds;
         Raise = Raise < _raiseTarget ? MathF.Min(_raiseTarget, Raise + step) : MathF.Max(_raiseTarget, Raise - step);
     }
 

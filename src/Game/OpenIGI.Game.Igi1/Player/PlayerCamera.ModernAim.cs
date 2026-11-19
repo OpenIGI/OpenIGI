@@ -54,6 +54,17 @@ public sealed partial class PlayerCamera
             frame[(int)PlayerInputSlot.Fire] = (ulong)PlayerAction.Fire;
         }
 
+        if (AdsTuningCVars.Lean.Value != 0)
+        {
+            PlayerInputSlot lean = AdsTuningCVars.Lean.Value < 0 ? PlayerInputSlot.LeanLeft : PlayerInputSlot.LeanRight;
+            frame[(int)lean] = (ulong)(lean == PlayerInputSlot.LeanLeft ? PlayerAction.LeanLeft : PlayerAction.LeanRight);
+        }
+
+        if (AdsTuningCVars.Mount.Value)
+        {
+            frame[(int)PlayerInputSlot.Mount] = (ulong)PlayerAction.Mount;
+        }
+
         _lastRawFrame = frame;
         _modernAim = ModernAimSource?.Invoke() ?? ModernAimOptions.Current;
         _aimWasHeld = _aimHeld;
@@ -101,6 +112,11 @@ public sealed partial class PlayerCamera
 
         float progress = _ads.Progress;
         float braced = _mount.IsMounted ? 1f : 0f;
+        if (AdsTuningCVars.Tune.Value)
+        {
+            AdsLiveTuning.Status = FormattableString.Invariant(
+                $"state ads {progress:0.00} lean {_lean.Amount:+0.00;-0.00;0.00} mount {_mount.Kind} raise {_mount.Raise / 4096f:+0.00;-0.00;0.00} m  body {_locomotion.State}");
+        }
         _firstPerson.AimLookScale = AimLookScale;
         _body.AimSpeedScale = (profile is null ? 1f : AimDownSights.Blend(1f, profile.MoveScale, progress))
             * (_lean.Amount != 0f ? LeaningSpeedScale : 1f);

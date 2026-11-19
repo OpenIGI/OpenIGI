@@ -31,6 +31,12 @@ public static class AdsLiveTuning
     private static readonly Dictionary<string, AdsTune> Tunes = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object Gate = new();
 
+    /// <summary>Gets or sets what the last search for a place to brace found, for the panel.</summary>
+    public static string Found { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a line on the player's aim, lean and brace as of its last tick, for the panel.</summary>
+    public static string Status { get; set; } = string.Empty;
+
     /// <summary>Gets the script id of the weapon the player held at its last tick, or empty.</summary>
     public static string Held { get; private set; } = string.Empty;
 
@@ -118,7 +124,7 @@ public static class AdsLiveTuning
 
         if (tuned is null)
         {
-            return ["ADS TUNING -- hold an aimable weapon"];
+            return ["ADS TUNING -- hold an aimable weapon", Status, Found];
         }
 
         AdsTune tune = Of(held);
@@ -130,6 +136,8 @@ public static class AdsLiveTuning
             FormattableString.Invariant($"now   relief {tuned.EyeReliefMetres:0.000} m  arms tan {tuned.ViewModelTanX:0.000}  zoom {tuned.Magnification:0.00}x"),
             "Num 4/6 left/right  8/2 up/down  9/3 away/near  7/1 smaller/bigger",
             "Num +/- zoom  * / tilt  0 reset  Enter save   (Shift = fine)",
+            Status,
+            Found,
         ];
     }
 

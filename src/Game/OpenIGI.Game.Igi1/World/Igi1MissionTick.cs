@@ -1290,12 +1290,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                     -walkingBody.Body.Yaw,
                     walkingBody.LocomotionAnimation,
                     walkingBody.LocomotionAnimationLoops,
-                    new PlayerBodyPose(
-                        walkingBody.UpperBodyAnimation,
-                        walkingBody.UpperBodyAnimationLoops,
-                        walkingBody.UpperBodyBlendSeconds,
-                        walkingBody.UpperBodySequence,
-                        walkingBody.AimPitch));
+                    walkingBody.BodyPose());
             }
             else
             {

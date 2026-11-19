@@ -22,8 +22,12 @@ public enum MountKind
 /// <summary>Something in front the weapon can be braced on.</summary>
 /// <param name="Kind">How it is braced.</param>
 /// <param name="SurfaceZ">For a top, the height of the top, in world units.</param>
-/// <param name="Raise">How far the eye must rise (or, negative, drop) to lay the sights just over the top, in world units.</param>
-public readonly record struct MountSurface(MountKind Kind, double SurfaceZ, float Raise);
+/// <param name="Raise">
+/// How far the eye must rise (or, negative, drop) to lay the sights just over the top, in world units -- from the crouched eye
+/// when <paramref name="Crouch"/>.
+/// </param>
+/// <param name="Crouch">Whether the top is low enough that the body crouches to it, as a player does behind low cover.</param>
+public readonly record struct MountSurface(MountKind Kind, double SurfaceZ, float Raise, bool Crouch = false);
 
 /// <summary>Looks for something in front of the eye a weapon can be braced on, with a handful of rays.</summary>
 /// <remarks>
@@ -31,7 +35,8 @@ public readonly record struct MountSurface(MountKind Kind, double SurfaceZ, floa
 /// <b>A top</b> is found by dropping rays a short way ahead of the eye, nearest first: the first that lands on a level
 /// surface between hip and a little over the eye, with a face under its front edge -- something to lean over, not a floor
 /// sloping away -- and with nothing between the eye and the drop, is it. The eye then rises or drops so the sights clear the
-/// top by <see cref="SightClearanceMetres"/>, within what a body can reach by stretching up or bending down.
+/// top by <see cref="SightClearanceMetres"/>, within what a body can reach by stretching up or bending down. A top lower than a
+/// standing body can bend to is braced on from a crouch, the crouched eye rising to it -- the peek over low cover.
 /// </para>
 /// <para>
 /// <b>A corner</b> is a wall square in front of the eye with open space beside it: the eye leans out into the open side.
@@ -45,11 +50,12 @@ public static class MountProbe
     /// <summary>How far the eye may rise to see over a top, in metres.</summary>
     public const float MaxRaiseMetres = 0.30f;
 
-    /// <summary>How far the eye may drop to lay the weapon on a low top, in metres.</summary>
-    public const float MaxDropMetres = 0.55f;
+    /// <summary>How far the eye may drop to lay the weapon on a low top, in metres: further, and the body crouches instead.</summary>
+    public const float MaxDropMetres = 0.25f;
 
     private static readonly float[] TopReach = [0.30f, 0.42f, 0.55f, 0.70f];
     private const float CornerReachMetres = 0.70f;
+    private const float OverTopClearMetres = 1.5f;
     private const float CornerSideMetres = 0.40f;
     private const float CornerOpenMetres = 1.0f;
     private const float LevelNormal = 0.7f;
@@ -59,17 +65,18 @@ public static class MountProbe
     /// <param name="eye">The body's eye, in world units.</param>
     /// <param name="yaw">The body's heading, radians; its forward is (sin, cos).</param>
     /// <param name="walls">The world the rays are cast against.</param>
+    /// <param name="crouchDrop">How far the eye drops when the body crouches, in world units; nought for a body that is crouched.</param>
     /// <returns>The surface, or <see langword="null"/> for none.</returns>
-    public static MountSurface? Find(Vector3d eye, float yaw, WorldRayCast walls)
+    public static MountSurface? Find(Vector3d eye, float yaw, WorldRayCast walls, float crouchDrop = 0f)
     {
         ArgumentNullException.ThrowIfNull(walls);
         double unitsPerMetre = WorldScene.UnitsPerMetre;
         Vector3d forward = new(Math.Sin(yaw), Math.Cos(yaw), 0.0);
         Vector3d right = new(forward.Y, -forward.X, 0.0);
-        return Top(eye, forward, walls, unitsPerMetre) ?? Corner(eye, forward, right, walls, unitsPerMetre);
+        return Top(eye, forward, walls, unitsPerMetre, crouchDrop) ?? Corner(eye, forward, right, walls, unitsPerMetre);
     }
 
-    private static MountSurface? Top(Vector3d eye, Vector3d forward, WorldRayCast walls, double unitsPerMetre)
+    private static MountSurface? Top(Vector3d eye, Vector3d forward, WorldRayCast walls, double unitsPerMetre, float crouchDrop)
     {
         Vector3d high = eye + new Vector3d(0.0, 0.0, MaxRaiseMetres * unitsPerMetre);
         foreach (float reach in TopReach)
@@ -81,13 +88,20 @@ public static class MountProbe
                 return null;
             }
 
-            Vector3d floor = ahead - new Vector3d(0.0, 0.0, (MaxRaiseMetres + 0.9) * unitsPerMetre);
+            Vector3d floor = ahead - new Vector3d(0.0, 0.0, ((MaxRaiseMetres + 0.9) * unitsPerMetre) + crouchDrop);
             if (!walls(ahead, floor, out WorldRayHit top) || top.Normal.Z < LevelNormal)
             {
                 continue;
             }
 
             float raise = (float)(top.Position.Z + (SightClearanceMetres * unitsPerMetre) - eye.Z);
+            bool crouch = false;
+            if (raise < -MaxDropMetres * unitsPerMetre && crouchDrop > 0f)
+            {
+                raise += crouchDrop;
+                crouch = true;
+            }
+
             if (raise > MaxRaiseMetres * unitsPerMetre || raise < -MaxDropMetres * unitsPerMetre)
             {
                 continue;
@@ -95,9 +109,12 @@ public static class MountProbe
 
             // A face just under the front edge: the top is something's top, not the floor running on.
             Vector3d under = new(eye.X, eye.Y, top.Position.Z - (0.05 * unitsPerMetre));
-            if (walls(under, under + (forward * ((reach + 0.1) * unitsPerMetre)), out WorldRayHit face) && MathF.Abs(face.Normal.Z) < UprightNormal)
+            // And room to look over it: a step at a wall's foot is a top, but sights laid on it look at the wall.
+            Vector3d sights = new(eye.X, eye.Y, top.Position.Z + (SightClearanceMetres * unitsPerMetre));
+            if (walls(under, under + (forward * ((reach + 0.1) * unitsPerMetre)), out WorldRayHit face) && MathF.Abs(face.Normal.Z) < UprightNormal
+                && !walls(sights, sights + (forward * ((reach + OverTopClearMetres) * unitsPerMetre)), out _))
             {
-                return new MountSurface(MountKind.Top, top.Position.Z, raise);
+                return new MountSurface(MountKind.Top, top.Position.Z, raise, crouch);
             }
         }
 

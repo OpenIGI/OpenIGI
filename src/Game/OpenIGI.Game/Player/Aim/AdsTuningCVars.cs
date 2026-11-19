@@ -29,6 +29,16 @@ public static class AdsTuningCVars
     /// <summary>Holds the trigger whatever the button, for a capture of the weapon firing on its sights.</summary>
     public static readonly BoolCVar Fire = CVar.Bool("g_ads_debug_fire", false, Flags, "Hold the trigger (developer).");
 
+    /// <summary>Holds a lean key: minus one the left, one the right, nought neither.</summary>
+    public static readonly NumericCVar<int> Lean = CVar.Int("g_ads_debug_lean", 0, -1, 1, Flags, "Hold a lean key: -1 left, 1 right (developer).");
+
+    /// <summary>Holds the mount key.</summary>
+    public static readonly BoolCVar Mount = CVar.Bool("g_ads_debug_mount", false, Flags, "Hold the mount key (developer).");
+
+    /// <summary>Asks the player to find the nearest place to brace a weapon and stand there, facing it; cleared once done.</summary>
+    public static readonly BoolCVar FindMount = CVar.Bool(
+        "g_ads_debug_findmount", false, Flags, "Stand the player at the nearest ledge, table or corner to brace on (developer).");
+
     /// <summary>The weapon to take in hand, by script id, or empty.</summary>
     public static readonly StringCVar Weapon = CVar.Text("g_ads_debug_weapon", string.Empty, Flags, "Take this weapon in hand, by script id (developer).");
 }

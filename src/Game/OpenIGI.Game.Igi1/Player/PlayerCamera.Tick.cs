@@ -100,6 +100,12 @@ public sealed partial class PlayerCamera
 
         PlayerCommand command = PlayerInputSampler.Command(_input, _locomotion.Running, CanJump);
 
+        // A brace on a top lower than a standing body can bend to is held from a crouch.
+        if (MountCrouches)
+        {
+            command = command with { Crouch = true };
+        }
+
         Vector3d previousPosition = _body.Position;
 
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in

@@ -62,12 +62,7 @@ public readonly record struct PartnerBody(
             clip?.Facing ?? -player.Body.Yaw,
             clip?.Animation ?? player.LocomotionAnimation,
             clip is not null || player.LocomotionAnimationLoops,
-            new PlayerBodyPose(
-                player.UpperBodyAnimation,
-                player.UpperBodyAnimationLoops,
-                player.UpperBodyBlendSeconds,
-                player.UpperBodySequence,
-                player.AimPitch),
+            player.BodyPose(),
             player.Weapons?.InHand?.Weapon,
             player.Weapons?.ShotSequence ?? 0,
             player.FiredThisTick,

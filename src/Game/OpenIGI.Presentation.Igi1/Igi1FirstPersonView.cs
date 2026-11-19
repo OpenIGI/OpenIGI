@@ -178,6 +178,12 @@ internal sealed class Igi1FirstPersonView(
                 FollowHeldWeapon(heldToFollow, missionForWeapon);
             }
 
+            // Through the sights the flame is drawn a third of its size, so it does not hide what the round is aimed at.
+            if (frame.Held is World.HeldWeaponRenderer flame)
+            {
+                flame.FlameScale = modernAim ? 1f - (0.65f * AimDownSights.Shape(mission.Player.Ads.Smoothed(rigBlend))) : 1f;
+            }
+
             if (mission.Player.Weapons?.HideFirstPersonWeapon != true
                 && !mission.Player.HandsOnBomb
                 && !mission.Player.HoldsBomb

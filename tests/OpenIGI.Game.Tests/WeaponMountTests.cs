@@ -25,14 +25,39 @@ public sealed class WeaponMountTests
     }
 
     [Fact]
-    public void ALowTableBendsTheEyeDownToIt()
+    public void AChestHighSillBendsAStandingEyeDownToIt()
     {
         Vector3d standing = new(0.0, 0.0, 1.6 * M);
-        WorldRayCast table = Boxes(new Box(-0.6, 0.35, 0, 0.6, 1.2, 1.15));
-        MountSurface surface = Assert.IsType<MountSurface>(MountProbe.Find(standing, 0f, table));
+        WorldRayCast sill = Boxes(new Box(-0.6, 0.35, 0, 0.6, 0.6, 1.40));
+        MountSurface surface = Assert.IsType<MountSurface>(MountProbe.Find(standing, 0f, sill, CrouchDrop));
         Assert.Equal(MountKind.Top, surface.Kind);
-        Assert.True(surface.Raise < 0f, "A top below the eye should bend the eye down to it.");
+        Assert.False(surface.Crouch);
+        Assert.True(surface.Raise < 0f, "A top just below the eye should bend the eye down to it.");
     }
+
+    [Fact]
+    public void ALowTableIsBracedOnFromACrouch()
+    {
+        Vector3d standing = new(0.0, 0.0, 1.6 * M);
+        WorldRayCast table = Boxes(new Box(-0.6, 0.35, 0, 0.6, 1.2, 0.75));
+        MountSurface surface = Assert.IsType<MountSurface>(MountProbe.Find(standing, 0f, table, CrouchDrop));
+        Assert.True(surface.Crouch);
+        Assert.Equal((float)((0.75 + MountProbe.SightClearanceMetres - 1.6) * M) + CrouchDrop, surface.Raise, 0);
+
+        // Without a crouch to take, the same table is too low to bend to.
+        Assert.Null(MountProbe.Find(standing, 0f, table));
+    }
+
+    [Fact]
+    public void AStepAtAWallsFootIsNoBraceForTheSightsLookAtTheWall()
+    {
+        Vector3d crouched = new(0.0, 0.0, 1.0 * M);
+        WorldRayCast stepAndWall = Boxes(new Box(-1, 0.4, 0, 1, 0.8, 0.9), new Box(-1, 0.8, 0, 1, 1.0, 3.0));
+        Assert.NotEqual(MountKind.Top, MountProbe.Find(crouched, 0f, stepAndWall)?.Kind);
+    }
+
+    // How far a standing eye drops into a crouch: 1.64 m to 0.78 m.
+    private static readonly float CrouchDrop = (float)(Player.PlayerBody.StandingEyeHeight - Player.PlayerBody.CrouchingEyeHeight);
 
     [Fact]
     public void AWallTallerThanTheReachIsNoTop()
