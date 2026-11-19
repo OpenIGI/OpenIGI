@@ -65,8 +65,22 @@ public sealed class LevelJoiners
     }
 
     /// <summary>Empties the lists, as a level is left.</summary>
+    /// <summary>
+    /// Gets or sets a value indicating whether another game's player stands for the level's own, which then is no human of the
+    /// level's game.
+    /// </summary>
+    public bool PlayerStandsIn { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether any human of another game stands in the level: its player, or a soldier that hears its
+    /// events. Their state is their own game's, which the level's save does not carry.
+    /// </summary>
+    public bool HasGuests => PlayerStandsIn || _humans.Count > 0;
+
+    /// <summary>Forgets everyone who joined, as the level is left.</summary>
     public void Clear()
     {
+        PlayerStandsIn = false;
         ExplosionDamageScale = 1f;
         _explosionTargets.Clear();
         _humans.Clear();

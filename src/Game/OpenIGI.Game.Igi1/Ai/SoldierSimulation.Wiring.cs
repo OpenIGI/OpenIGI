@@ -366,6 +366,18 @@ public sealed partial class SoldierSimulation
     /// <param name="doors">The level's doors.</param>
     public void UseHostDoors(IReadOnlyList<IAiDoor> doors) => _brains.HostDoors = doors is { Count: > 0 } ? doors : null;
 
+    /// <summary>
+    /// Gives the soldiers the tasks of another game's level their orders name: whether an alarm sounds, by its control's id, and
+    /// where a task stands, by its id -- the button a soldier runs to and presses (<see cref="SetAiTaskActivator"/>).
+    /// </summary>
+    /// <param name="alarmIsOn">Whether an alarm sounds, or <see langword="null"/> where the level has none.</param>
+    /// <param name="taskPosition">Where a task stands, in world units, or <see langword="null"/> where the level names none.</param>
+    public void UseHostTasks(Func<int, bool>? alarmIsOn, Func<int, Vector3d?>? taskPosition)
+    {
+        _brains.HostAlarmIsOn = alarmIsOn;
+        _brains.HostTaskPosition = taskPosition;
+    }
+
     /// <summary>Gives the renderer the level's moving elevators.</summary>
     /// <param name="elevators">The elevator registry, or <see langword="null"/>.</param>
     public void SetElevators(ElevatorRegistry? elevators) => _elevators = elevators;

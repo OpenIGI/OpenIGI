@@ -580,6 +580,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         }
 
         Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
+        level.Joined.PlayerStandsIn = player.StoodFor is not null;
         Igi2LevelBuild build = new(request, player, level, natives, functions, task, Models(request.World));
         if (systems is null)
         {

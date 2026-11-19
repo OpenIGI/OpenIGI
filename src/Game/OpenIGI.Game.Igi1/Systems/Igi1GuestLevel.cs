@@ -288,6 +288,8 @@ public sealed class Igi1GuestLevel
 
         IReadOnlyList<SoldierLoadedGroup> groups = soldiers.Load(_content.Mission, Root, world.Ground, world.Cast);
         soldiers.UseHostDoors(start.Doors);
+        soldiers.UseHostTasks(start.AlarmIsOn, start.TaskPosition);
+        soldiers.SetAiTaskActivator(start.ActivateTask);
         soldiers.Animate(
             start.Graphs,
             sight,

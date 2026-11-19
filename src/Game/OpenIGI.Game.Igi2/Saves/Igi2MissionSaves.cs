@@ -34,8 +34,12 @@ public sealed class Igi2MissionSaves : MissionSaves
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked.</remarks>
-    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed;
+    /// <remarks>
+    /// <c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked. Nor while another game's humans stand in the
+    /// level (<see cref="OpenIGI.Game.World.LevelJoiners.HasGuests"/>): what they are is their own game's to keep, and a save
+    /// without it would bring back a level they no longer fit.
+    /// </remarks>
+    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed && !_level.HostsGuests;
 
     /// <summary>Gets where the slots are kept, with the load list and the carry-overs that are this game's own.</summary>
     public new Igi2SaveSlots SlotStore => _slots;
@@ -120,6 +124,8 @@ public sealed class Igi2MissionSaves : MissionSaves
         public Igi2StatusMessageScreen? StatusMessages { get; set; }
 
         public GameTask Root => level.Root;
+
+        public bool HostsGuests => level.Joined.HasGuests;
 
         public int MissionTime => player.MissionTime;
 
