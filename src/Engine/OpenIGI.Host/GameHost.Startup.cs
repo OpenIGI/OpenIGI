@@ -69,6 +69,7 @@ public sealed partial class GameHost
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
+        RegisterThermalCommands(state.Console.System);
         RegisterDemoCommands(state.Console.System);
         RegisterInviteCommand(state.Console.System);
         RegisterPartyCommands(state.Console.System);

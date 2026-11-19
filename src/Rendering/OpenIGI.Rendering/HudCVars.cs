@@ -381,6 +381,49 @@ public static class HudCVars
         high: "250",
         ultra: "250");
 
+    /// <summary>Whether a title's thermal optics are seen through the remastered sensor rather than the original's heat ramp.</summary>
+    /// <remarks>
+    /// On, the world is re-imaged as heat under a vector eyepiece (<see cref="ThermalDisplaySettings"/>); off, the original's
+    /// infrared view, its bodies in the heat ramp and its frame over them. Off under vanilla, where the original is the gate.
+    /// Needs the offscreen scene; without it the original's view is drawn whatever this says.
+    /// </remarks>
+    public static readonly BoolCVar ThermalRemastered = Presets.DefineInterface(
+        CVar.Bool(
+            "r_thermal_remastered",
+            true,
+            CVarOptions.Archive,
+            "See through thermal optics with the remastered sensor: the world as heat, people glowing. Off is the original's view."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How the remastered thermal sensor colours heat.</summary>
+    public static readonly EnumCVar<ThermalPalette> ThermalPalette = Presets.DefineInterface(
+        CVar.Choice(
+            "r_thermal_palette",
+            global::OpenIGI.Rendering.ThermalPalette.WhiteHot,
+            CVarOptions.Archive,
+            "How the remastered thermal sensor colours heat: whitehot, blackhot, ironbow or rainbow."),
+        vanilla: "whitehot",
+        enhanced: "whitehot",
+        high: "whitehot",
+        ultra: "whitehot");
+
+    /// <summary>How strong the remastered thermal sensor's grain and fixed-pattern noise are.</summary>
+    public static readonly NumericCVar<float> ThermalNoise = Presets.DefineInterface(
+        CVar.Float(
+            "r_thermal_noise",
+            1f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "Strength of the remastered thermal sensor's grain and fixed-pattern noise; 0 is a clean picture."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>Whether the mission's status messages are drawn as the remaster's comms cards.</summary>
     /// <remarks>
     /// <para>

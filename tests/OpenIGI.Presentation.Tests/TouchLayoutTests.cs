@@ -163,6 +163,29 @@ public sealed class TouchLayoutTests
     }
 
     [Fact]
+    public void A_titles_own_buttons_show_only_while_a_title_offers_them()
+    {
+        TouchControls shared = new();
+        shared.Update(new TouchState(), TouchControlMode.Play, Phone);
+        Assert.DoesNotContain(shared.Layout, static s => s.Id is TouchControlId.Thermal or TouchControlId.Prone);
+
+        TouchControls igi2 = new() { TitleButtons = TouchTitleButtons.Thermal | TouchTitleButtons.Prone };
+        igi2.Update(new TouchState(), TouchControlMode.Play, Phone);
+        Assert.Equal(TouchButton.Thermal, Spot(igi2, TouchControlId.Thermal).Button);
+        Assert.Equal(TouchButton.Prone, Spot(igi2, TouchControlId.Prone).Button);
+
+        // The goggles stand in the corner's row after the binoculars, and every button of a title's is clear of fire and crouch.
+        Assert.True(Spot(igi2, TouchControlId.Thermal).Centre.X < Spot(igi2, TouchControlId.Binoculars).Centre.X);
+        TouchButtonSpot prone = Spot(igi2, TouchControlId.Prone);
+        foreach (TouchControlId other in (TouchControlId[])[TouchControlId.Fire, TouchControlId.Crouch])
+        {
+            TouchButtonSpot near = Spot(igi2, other);
+            float apart = MathF.Sqrt(MathF.Pow(prone.Centre.X - near.Centre.X, 2) + MathF.Pow(prone.Centre.Y - near.Centre.Y, 2));
+            Assert.True(apart > (prone.Radius + near.Radius) * 1.15f, $"Prone laps {other}.");
+        }
+    }
+
+    [Fact]
     public void The_top_rows_close_up_over_a_button_the_session_does_not_offer()
     {
         TouchControls controls = new() { ChatShown = true };

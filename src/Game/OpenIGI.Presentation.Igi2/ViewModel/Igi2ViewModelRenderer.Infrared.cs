@@ -47,23 +47,8 @@ public sealed partial class Igi2ViewModelRenderer
             return;
         }
 
-        float between = Math.Clamp(blend, 0f, 1f);
-
-        // The levels the world draw drew each body at, from the same eye.
-        foreach (TitleWorldModel wanted in LevelsOf(models, camera, projection))
+        foreach ((Part part, Matrix4f modelView, _) in PosedBodies(models, camera, projection, blend))
         {
-            if (wanted.Pose is null || DrawnBody(wanted) is not { } part || !PoseDrawnBody(part, wanted, between))
-            {
-                continue;
-            }
-
-            (Vector3d at, Matrix3f orientation, _) = Placed(wanted, between);
-            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
-            if (wanted.Scale != 1f)
-            {
-                modelView = modelView.WithAxesScaled(wanted.Scale);
-            }
-
             ReadOnlySpan<MeshDrawRange> ranges = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_outlineRanges);
             float distance = MathF.Sqrt((modelView.M14 * modelView.M14) + (modelView.M24 * modelView.M24) + (modelView.M34 * modelView.M34));
             _device.DrawInfrared(part.Mesh, ranges, TowardEye(modelView, distance, BodyPullMetres), ramp, InfraredDraw.Body);

@@ -137,6 +137,19 @@ public sealed class Igi2StanceBindingTests
         }
     }
 
+    /// <summary>A touch screen offers I.G.I. 2's goggles, its prone stance and its own crouch, each as the bit the title reads.</summary>
+    [Fact]
+    public void The_title_offers_its_own_touch_buttons()
+    {
+        IReadOnlyList<TitleInputBinding> bindings = new Igi2Gameplay().InputBindings;
+        ulong Of(TitleTouchControl control) => bindings.Where(b => b.Touch == control).Aggregate(0UL, static (m, b) => m | b.Mask);
+
+        Assert.Equal((ulong)Igi2PlayerAction.Thermal, Of(TitleTouchControl.Thermal));
+        Assert.Equal((ulong)Igi2PlayerAction.ToggleStandLie, Of(TitleTouchControl.Prone));
+        Assert.Equal((ulong)Igi2PlayerAction.Crouch, Of(TitleTouchControl.Crouch));
+        Assert.Equal(1, bindings.Count(b => b.Touch == TitleTouchControl.Thermal));
+    }
+
     /// <summary>Title controls are persisted separately, and resetting or changing them preserves IGI1's assignments.</summary>
     [Fact]
     public void Retail_stance_controls_are_scoped_to_igi2()

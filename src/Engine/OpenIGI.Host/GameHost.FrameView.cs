@@ -229,6 +229,12 @@ public sealed partial class GameHost
         view.MapScene = mapScene;
     }
 
+    /// <summary>
+    /// The bloom threshold the thermal sensor's picture is bloomed from at most: the palette's hottest is a little brighter
+    /// than white (<c>Post/Thermal.slang</c>), so a body and a blaze glow on the sensor as heat does.
+    /// </summary>
+    private const float ThermalBloomThreshold = 1f;
+
     /// <summary>Settles the resolve's settings, and the map's own lens where the map owns the frame.</summary>
     private void ResolvePostProcess(ref FrameView view)
     {
@@ -261,6 +267,11 @@ public sealed partial class GameHost
         // the lens carries chromatic aberration that ramps in with the glass.
         float binocularAberration = binocularDisplay.Amount * 2f;
 
+        // The remastered thermal sensor, raised on the same clock. While it is up the picture is the palette's, so the grade
+        // the player chose for the world is eased out as the sensor comes in: a graded palette is no longer its own colours.
+        ThermalDisplaySettings thermal = UpdateThermal(binocularElapsed);
+        float sensor = thermal.Amount;
+
         // The bomb's concussion, measured at last frame's eye: the flash whites the picture out, the stun after it drains its
         // colour, closes its edges in and splits it.
         BlastConcussion concussion = _earCamera is { } concussed
@@ -275,15 +286,15 @@ public sealed partial class GameHost
             // able to edit, and then have to put back, the setting the player chose.
             ExposureCVars.EffectiveExposure * (1f + (concussion.Flash * 3f)),
             PostCVars.Bloom.Value,
-            PostCVars.BloomThreshold.Value,
+            float.Lerp(PostCVars.BloomThreshold.Value, MathF.Min(PostCVars.BloomThreshold.Value, ThermalBloomThreshold), sensor),
             ExposureCVars.WhitePoint.Value,
             // The dynamic model now composites in linear space -- albedo decoded before the multiply
             // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
             // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
             // display-encoded and has to be decoded before the tone map.
             SceneIsDisplayEncoded: _gi.EffectiveLighting != LightingModel.Dynamic,
-            Contrast: PostCVars.Contrast.Value * (1f - (concussion.Stun * 0.18f)),
-            Saturation: PostCVars.Saturation.Value * (1f - (concussion.Stun * 0.75f)),
+            Contrast: float.Lerp(PostCVars.Contrast.Value, 1f, sensor) * (1f - (concussion.Stun * 0.18f)),
+            Saturation: float.Lerp(PostCVars.Saturation.Value, 1f, sensor) * (1f - (concussion.Stun * 0.75f)),
             Vignette: PostCVars.Vignette.Value + (concussion.Stun * 0.9f),
             Grain: PostCVars.Grain.Value,
             ChromaticAberration: MathF.Max(PostCVars.ChromaticAberration.Value, binocularAberration) + (concussion.Stun * 2.5f),
@@ -291,10 +302,11 @@ public sealed partial class GameHost
             MotionBlur: MathF.Max(PostCVars.MotionBlur.Value, computerFlightBlur),
             SpatialAa: PostCVars.SpatialAa.Value,
             SpatialAaThreshold: PostCVars.SpatialAaThreshold.Value,
-            ColourLookup: PostCVars.ColourLookup.Value,
+            ColourLookup: PostCVars.ColourLookup.Value * (1f - sensor),
             AutoExposure: ExposureCVars.AutoExposure.Value,
             GreenPhosphor: false,
             Binocular: binocularDisplay,
+            Thermal: thermal,
 
             // Fast while the GI is still filling in after a load, slow once it has settled. Counted
             // down here so a frame that never reaches the cache update (a menu, a paused load) does
@@ -310,7 +322,7 @@ public sealed partial class GameHost
             // The eye's night vision, only as deep as the night: a day is untouched.
             // Only once the sun is some six degrees under (Nightfall past about 0.45): dusk keeps its
             // colour, and the eye's night vision takes over only as real night does.
-            NightShift: PostCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(ExposureCVars.Nightfall.Value));
+            NightShift: PostCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(ExposureCVars.Nightfall.Value) * (1f - sensor));
 
         if (_gi.ExposureWarmup > 0)
         {

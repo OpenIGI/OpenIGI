@@ -37,6 +37,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
         && (ScreenOverlay?.IsInfrared == true || IsInfraredScope || (Human.IsInfraEnabled && ZoomOverlay == BinocularOverlayType));
 
     /// <inheritdoc/>
+    /// <remarks>The infrared view with no thermal scope up: the goggles raised, or an infrared overlay the scripts put up.</remarks>
+    public bool IsThermalGoggles => IsInfraredView && !IsInfraredScope;
+
+    /// <inheritdoc/>
     /// <remarks>The bearing of the view's forward across the ground, as the retail compass reads it (<c>BinocularOverlay_DrawCompass</c>).</remarks>
     public float BinocularHeadingRadians
     {

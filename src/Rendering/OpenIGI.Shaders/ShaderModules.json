@@ -618,6 +618,14 @@
     {
       "id": "Infrared",
       "source": "World/Infrared.slang"
+    },
+    {
+      "id": "ThermalMask",
+      "source": "World/ThermalMask.slang"
+    },
+    {
+      "id": "Thermal",
+      "source": "Post/Thermal.slang"
     }
   ]
 }

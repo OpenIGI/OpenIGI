@@ -266,6 +266,7 @@ public sealed partial class GameHost
         MissionHudFrame hudFrame = HudFrame(remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
         _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
         DrawRemasteredBinoculars(state, view, binocularRangeMetres);
+        DrawRemasteredThermal(state);
 
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
         DrawModHudOverlays(state, view);

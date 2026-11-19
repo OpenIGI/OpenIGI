@@ -98,6 +98,10 @@
 /// The remastered first-person binocular's glass lens transform, carried on continuous parameters so
 /// the optics fade in as the device is raised; see <see cref="BinocularDisplaySettings"/>.
 /// </param>
+/// <param name="Thermal">
+/// The remastered thermal sensor's picture, which replaces the scene's colours with heat while the goggles are up; see
+/// <see cref="ThermalDisplaySettings"/>.
+/// </param>
 /// <param name="ExposureRate">
 /// How fast the adapted exposure eases towards the scene's brightness each frame, from 0 to 1, when
 /// <paramref name="AutoExposure"/> is on. The small default is a slow eye-adaptation. The game raises it
@@ -133,6 +137,7 @@ public readonly record struct PostProcessSettings(
     bool AutoExposure = false,
     bool GreenPhosphor = false,
     BinocularDisplaySettings Binocular = default,
+    ThermalDisplaySettings Thermal = default,
     float ExposureRate = 0.04f,
     float FrameDeltaSeconds = 1f / 60f,
     float NightShift = 0f)
@@ -187,7 +192,8 @@ public readonly record struct PostProcessSettings(
         || WantsColourLookup
         || GreenPhosphor
         || NightShift > 0f
-        || Binocular.IsActive;
+        || Binocular.IsActive
+        || Thermal.IsActive;
 
     /// <summary>The steady exposure rate <see cref="ExposureRate"/> is measured against.</summary>
     public const float SteadyExposureRate = 0.04f;

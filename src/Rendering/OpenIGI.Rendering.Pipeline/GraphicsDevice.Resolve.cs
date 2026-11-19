@@ -33,8 +33,13 @@ public sealed partial class GraphicsDevice
 
         // The mods' scene passes next, on the smeared picture, so the lens and the tone map see what they leave.
         colour = RecordModPasses(scene, colour) ?? colour;
-        IRhiTextureView? bloom = RecordBloom(scene, colour, post);
+
+        // Metered off the lit scene itself, whatever is made of it below; read here so the thermal sensor's gain is this frame's.
         float adapted = MeterExposure(scene, post);
+
+        // The remastered thermal sensor, where it is up: the scene re-imaged as heat, which the lens then blooms and tone maps.
+        colour = RecordThermal(scene, colour, post, post.Exposure * adapted) ?? colour;
+        IRhiTextureView? bloom = RecordBloom(scene, colour, post);
 
         Span<float> push = stackalloc float[ResolvePushBlock.Floats];
 

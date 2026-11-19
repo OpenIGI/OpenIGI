@@ -612,6 +612,20 @@ public static class GraphicsMenu
             "Draws that highlight as a soft outline over a faint fill, red for enemies, seen through walls "
                 + "and fading towards the edges of the view. Off, it is a coloured glow."),
         new GraphicsSetting(
+            "r_thermal_remastered",
+            "Thermal Optics",
+            "Sees through the thermal goggles and the thermal scope with a modern sensor: the whole world as "
+                + "heat, people glowing and seen through thin cover, the dead cooling. Off is the original's view."),
+        new GraphicsSetting(
+            "r_thermal_palette",
+            "Thermal Palette",
+            "How the thermal sensor colours heat: White Hot, Black Hot, Ironbow or Rainbow. The palette key "
+                + "steps through them while the goggles are up."),
+        new GraphicsSetting(
+            "r_thermal_noise",
+            "Thermal Sensor Noise",
+            "How much grain and fixed-pattern noise the thermal sensor shows. Nought is a clean picture."),
+        new GraphicsSetting(
             "r_weather_enabled",
             "Weather",
             "Draws the rain or snow the level authors gave each mission."),

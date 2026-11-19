@@ -738,6 +738,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
         _parts.Clear();
         _bodies.Clear();
+        _cooling.Forget();
         _textures = null;
         _table = null;
         _models = null;

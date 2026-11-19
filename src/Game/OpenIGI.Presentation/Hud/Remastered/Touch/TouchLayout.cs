@@ -87,6 +87,12 @@ public enum TouchControlId
 
     /// <summary>A quick load. Off the screen until the player adds it.</summary>
     QuickLoad,
+
+    /// <summary>The thermal goggles, where the title being played has them.</summary>
+    Thermal,
+
+    /// <summary>Going prone, where the title being played has the stance.</summary>
+    Prone,
 }
 
 /// <summary>Where a control stands, how large, how faint, and whether it is on the screen at all.</summary>
@@ -154,7 +160,7 @@ public sealed class TouchLayout
 
     // The rows along the top, which close up over what is not offered: the corner's from the right, a match's from the left.
     private static readonly TouchControlId[] CornerRow =
-        [TouchControlId.Pause, TouchControlId.Map, TouchControlId.Binoculars, TouchControlId.Talk, TouchControlId.Chat];
+        [TouchControlId.Pause, TouchControlId.Map, TouchControlId.Binoculars, TouchControlId.Thermal, TouchControlId.Talk, TouchControlId.Chat];
 
     private static readonly TouchControlId[] MatchRow = [TouchControlId.Scoreboard, TouchControlId.Buy, TouchControlId.Team];
 
@@ -223,7 +229,7 @@ public sealed class TouchLayout
         TouchControlId.Fire => 110f,
         TouchControlId.FireLeft => 68f,
         TouchControlId.Scope or TouchControlId.Reload or TouchControlId.Jump => 62f,
-        TouchControlId.Crouch or TouchControlId.Peek or TouchControlId.Use or TouchControlId.Drop => 50f,
+        TouchControlId.Crouch or TouchControlId.Peek or TouchControlId.Use or TouchControlId.Drop or TouchControlId.Prone => 50f,
         TouchControlId.Weapon => 52f,
         TouchControlId.Scoreboard or TouchControlId.Buy or TouchControlId.Team => MatchRadius,
         TouchControlId.Flashlight or TouchControlId.WalkRun => 46f,
@@ -267,6 +273,8 @@ public sealed class TouchLayout
         TouchControlId.WeaponWheel => TouchButton.WeaponWheel,
         TouchControlId.QuickSave => TouchButton.QuickSave,
         TouchControlId.QuickLoad => TouchButton.QuickLoad,
+        TouchControlId.Thermal => TouchButton.Thermal,
+        TouchControlId.Prone => TouchButton.Prone,
         _ => null,
     };
 
@@ -301,6 +309,7 @@ public sealed class TouchLayout
         TouchControlId.WeaponWheel => "Weapon wheel",
         TouchControlId.QuickSave => "Quick save",
         TouchControlId.QuickLoad => "Quick load",
+        TouchControlId.Thermal => "Thermal goggles",
         _ => id.ToString(),
     };
 
@@ -340,6 +349,9 @@ public sealed class TouchLayout
             case TouchControlId.Reload: return Right(505f, 190f);
             case TouchControlId.Jump: return Right(300f, 430f);
             case TouchControlId.Crouch: return Right(110f, 170f);
+
+            // Prone in the stances' column, beside crouch, where a title has it.
+            case TouchControlId.Prone: return Right(205f, 60f);
             case TouchControlId.Peek: return Right(110f, 315f);
             case TouchControlId.ZoomIn: return Right(110f, 600f);
             case TouchControlId.ZoomOut: return Right(110f, 495f);

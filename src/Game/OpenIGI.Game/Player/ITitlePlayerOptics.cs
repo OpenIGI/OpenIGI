@@ -29,6 +29,13 @@ public interface ITitlePlayerOptics
     /// through what stands before them, by the title's world-model presenter. A title without thermal optics never is.
     /// </summary>
     bool IsInfraredView => false;
+
+    /// <summary>
+    /// Gets a value indicating whether the infrared view is the player's own thermal goggles (or an overlay the title's scripts
+    /// put up) rather than a scope that sees in infrared, which keeps its own reticle: the remastered sensor's eyepiece is drawn
+    /// over the goggles alone. Never without <see cref="IsInfraredView"/>.
+    /// </summary>
+    bool IsThermalGoggles => false;
 }
 
 /// <summary>One person a title's binoculars picked out.</summary>

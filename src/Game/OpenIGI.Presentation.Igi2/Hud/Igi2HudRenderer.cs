@@ -53,9 +53,10 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         DrawCutsceneFraming(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawZoomOverlay(batch, title, width, height); }
         // The remastered display in place of the status display, inventory, action row and messages, where it is chosen. Neither
-        // through the remastered binoculars, whose view is the optics' alone, as Project I.G.I.'s is.
+        // through the remastered binoculars or thermal goggles, whose view is the optics' alone, as Project I.G.I.'s is.
         bool remastered = RemasteredChosen;
-        bool optics = title.IsBinocularsOpen && RemasteredHudPresentation.UsesRemasteredTitleOptics;
+        bool optics = (title.IsBinocularsOpen && RemasteredHudPresentation.UsesRemasteredTitleOptics)
+            || (title.IsThermalGoggles && RemasteredHudPresentation.UsesRemasteredTitleThermal);
         if (remastered && !optics)
         {
             DrawRemastered(batch, title, screenWidth, screenHeight, requestedScale);

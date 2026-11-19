@@ -12,17 +12,28 @@ public sealed partial class GraphicsDevice
     private SilhouettePass? _silhouette;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The buffers are taken now rather than when the highlight is drawn, so the mask is the pose that was drawn whatever the
-    /// pose ring does in between. Not under a card capture, which records the world and not what is marked in it.
-    /// </remarks>
+    /// <remarks>Not under a card capture, which records the world and not what is marked in it.</remarks>
     public void DrawSilhouette(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, SilhouetteGroup group)
     {
         ThrowIfDisposed();
+        if (TakeBody(mesh, ranges, modelView) is { } body)
+        {
+            _silhouetteDraws.Add(new SilhouetteDraw(body, group));
+        }
+    }
+
+    /// <summary>Takes a body as it was drawn, for a mask laid over the finished picture later in the frame.</summary>
+    /// <param name="mesh">The body's mesh, in the pose currently set.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">Its transform into view space.</param>
+    /// <returns>The body, or null where there is nothing to take: no ranges, or a card capture.</returns>
+    /// <exception cref="ArgumentException">A range lies outside the mesh.</exception>
+    private PosedBody? TakeBody(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView)
+    {
         RhiMesh resource = Resolve(mesh);
         if (ranges.IsEmpty || CapturingCards)
         {
-            return;
+            return null;
         }
 
         foreach (MeshDrawRange range in ranges)
@@ -42,14 +53,13 @@ public sealed partial class GraphicsDevice
         Matrix4f steady = _temporalProjection;
 
         resource.MarkPoseSlotsBound(_frameCounter);
-        _silhouetteDraws.Add(new SilhouetteDraw(
+        return new PosedBody(
             resource.VertexBuffer,
             resource.PreviousVertexBuffer,
             resource.IndexBuffer,
             ranges.ToArray(),
             steady * modelView,
-            _poseBlend,
-            group));
+            _poseBlend);
     }
 
     /// <summary>Lays the frame's highlight over its finished picture, where anything was marked.</summary>

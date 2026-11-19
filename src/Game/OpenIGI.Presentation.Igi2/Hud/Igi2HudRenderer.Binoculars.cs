@@ -45,9 +45,10 @@ public sealed partial class Igi2HudRenderer
 
         switch (title.ZoomOverlay)
         {
-            // The remastered binoculars are the host's, drawn for whichever player looks through them; the thermal goggles keep the
-            // original's frame, which the remastered binoculars have no counterpart for.
+            // The remastered binoculars are the host's, drawn for whichever player looks through them; so is the remastered thermal
+            // sensor's eyepiece. The original's thermal frame stays where the remastered sensor is not chosen.
             case Igi2TitlePlayer.BinocularOverlayType when RemasteredHudPresentation.UsesRemasteredTitleOptics && !title.IsInfraredView:
+            case Igi2TitlePlayer.BinocularOverlayType when title.IsInfraredView && RemasteredHudPresentation.UsesRemasteredTitleThermal:
                 break;
             case Igi2TitlePlayer.BinocularOverlayType:
                 DrawBinoculars(batch, title, width, height);

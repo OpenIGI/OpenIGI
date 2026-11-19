@@ -105,6 +105,19 @@ public sealed partial class RecordingGraphicsDevice
         LastSilhouetteGroup = group;
     }
 
+    /// <summary>Gets how many bodies have been handed to the thermal sensor.</summary>
+    public int ThermalBodyDrawCount { get; private set; }
+
+    /// <summary>Gets the last body's heat the thermal sensor was handed.</summary>
+    public float LastThermalHeat { get; private set; }
+
+    /// <inheritdoc/>
+    public void DrawThermalBody(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, float heat)
+    {
+        ThermalBodyDrawCount++;
+        LastThermalHeat = heat;
+    }
+
     /// <summary>Gets how many mesh ranges were drawn in batches.</summary>
     public int MeshBatchDrawCount { get; private set; }
 }

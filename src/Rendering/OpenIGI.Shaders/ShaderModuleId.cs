@@ -244,6 +244,12 @@ public enum ShaderModuleId
     /// <summary>World: a body as I.G.I. 2's thermal goggles see it, in the colours of a heat ramp looked up by how it faces the eye (<c>World/Infrared.slang</c>).</summary>
     Infrared,
 
+    /// <summary>World: the bodies the remastered thermal sensor sees, drawn into its heat mask (<c>World/ThermalMask.slang</c>).</summary>
+    ThermalMask,
+
+    /// <summary>Post: the remastered thermal sensor, the lit scene re-imaged as heat before the tone map (<c>Post/Thermal.slang</c>).</summary>
+    Thermal,
+
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is
     /// labelled so; the catalogue gives each one an id of its own as it is registered (<see cref="ShaderCatalog.Register"/>).

@@ -364,6 +364,25 @@ public static class TouchControlsRenderer
                 Line(-0.75f, 0.82f, 0.75f, 0.82f);
                 Line(0.75f, 0.82f, 0.75f, 0.1f);
                 break;
+            case TouchButton.Prone:
+                // A figure flat on the ground, its head up.
+                Dot(-0.68f, 0.18f, 0.2f);
+                Line(-0.45f, 0.36f, 0.85f, 0.42f);
+                Line(-0.2f, 0.38f, 0.1f, 0.05f);
+                Line(0.1f, 0.05f, 0.5f, 0.05f);
+                Line(-0.95f, 0.72f, 0.95f, 0.72f);
+                break;
+            case TouchButton.Thermal:
+                // Goggles, and the heat they see: two lenses, a band, and a warm wave rising.
+                Ring(-0.44f, 0.22f, 0.34f);
+                Ring(0.44f, 0.22f, 0.34f);
+                Line(-0.1f, 0.22f, 0.1f, 0.22f);
+                Line(-0.95f, 0.1f, -0.78f, 0.1f);
+                Line(0.78f, 0.1f, 0.95f, 0.1f);
+                Line(-0.3f, -0.45f, -0.1f, -0.75f);
+                Line(-0.1f, -0.75f, 0.1f, -0.45f);
+                Line(0.1f, -0.45f, 0.3f, -0.75f);
+                break;
             case TouchButton.Drop:
                 // Down, onto the ground.
                 Line(0f, -0.85f, 0f, 0.3f);

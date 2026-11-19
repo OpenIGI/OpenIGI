@@ -62,6 +62,10 @@ public static class DefaultBinds
         ("f2", "coop_say Hold position."),
         ("f3", "coop_say Enemy spotted."),
         ("f4", "coop_say Need help here!"),
+
+        // The remastered thermal sensor's palette, stepped while it is up. Beside Page Up, the goggles' own alternate key in
+        // I.G.I. 2. It writes no setting: the palette it picks lasts the session, and r_thermal_palette stays the player's.
+        ("pagedown", "thermal_palette"),
     ];
 
     /// <summary>The statements a player rebinds from the Controls page, each with the row's name there.</summary>
@@ -76,6 +80,7 @@ public static class DefaultBinds
         ("coop_mark", "CoopMark"),
         ("coop_chat", "CoopChat"),
         ("coop_chat team", "CoopTeamChat"),
+        ("thermal_palette", "ThermalPalette"),
     ];
 
     /// <summary>The key a statement is bound to, by its bind name.</summary>

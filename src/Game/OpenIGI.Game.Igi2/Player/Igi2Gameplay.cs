@@ -43,7 +43,8 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
     /// <remarks>
     /// config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.
     /// The thermal goggles and the inventory have no shared action, and take the keys the original's config.qvm gives them; so do
-    /// the weapon categories' numpad alternates, the number row being the shared actions'.
+    /// the weapon categories' numpad alternates, the number row being the shared actions'. A touch screen offers the goggles, going
+    /// prone and the title's own crouch as buttons of their own.
     /// </remarks>
     public IReadOnlyList<TitleInputBinding> InputBindings { get; } =
     [
@@ -51,12 +52,12 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DELETE"), "Lower stance (alternate)"),
         new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Q"), "Raise stance"),
         new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_INSERT"), "Raise stance (alternate)"),
-        new((ulong)Igi2PlayerAction.ToggleStandLie, new("Title_igi2_ToggleStandLie", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.PlayerProfile.UnboundKey), "Toggle stand/prone"),
-        new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_Crouch", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_SHIFT"), "Crouch", PlayerAction.Crouch),
+        new((ulong)Igi2PlayerAction.ToggleStandLie, new("Title_igi2_ToggleStandLie", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.PlayerProfile.UnboundKey), "Toggle stand/prone", Touch: TitleTouchControl.Prone),
+        new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_Crouch", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_SHIFT"), "Crouch", PlayerAction.Crouch, TitleTouchControl.Crouch),
         new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_CrouchAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_RIGHT_CTRL"), "Crouch (alternate)"),
         new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRun", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_CAPITAL"), "Toggle walk/run", PlayerAction.ToggleWalkRun),
         new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRunAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_END"), "Toggle walk/run (alternate)"),
-        new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_Thermal", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_T"), "Thermal goggles"),
+        new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_Thermal", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_T"), "Thermal goggles", Touch: TitleTouchControl.Thermal),
         new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_ThermalAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_PAGEUP"), "Thermal goggles (alternate)"),
         new((ulong)Igi2PlayerAction.Inventory, new("Title_igi2_Inventory", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_0"), "Show/hide inventory"),
         new((ulong)Igi2PlayerAction.Inventory, new("Title_igi2_InventoryAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DIVIDE"), "Show/hide inventory (alternate)"),

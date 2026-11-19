@@ -137,6 +137,18 @@ public interface ITitleWorldModelPresenter
     {
     }
 
+    /// <summary>
+    /// Hands the bodies of the models drawn last to the remastered thermal sensor, each with how hot it is
+    /// (<see cref="OpenIGI.Rendering.IGraphicsDevice.DrawThermalBody"/>); a presenter whose title has no thermal view hands none.
+    /// </summary>
+    /// <param name="models">The models the world draw drew.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The world's projection, as the world draw was given it.</param>
+    /// <param name="blend">Where between the last two ticks the world draw stood.</param>
+    void DrawWorldThermal(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f)
+    {
+    }
+
     /// <summary>Draws the models, between the last two ticks.</summary>
     /// <param name="models">The models and where they stand.</param>
     /// <param name="camera">Where they are seen from, in metres.</param>

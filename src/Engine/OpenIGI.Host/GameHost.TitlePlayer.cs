@@ -273,7 +273,7 @@ public sealed partial class GameHost
         ulong titleHeld = !still && Gameplay is { } sampled ? TitleInputBindings.Sample(profile, TitleInput, sampled.InputBindings, pressed: false) : 0;
         if (!still)
         {
-            titleHeld |= _titleScriptTitleHeld;
+            titleHeld |= _titleScriptTitleHeld | _touchTitleHeld;
         }
 
         // Crouch, held or toggled as the player has it: a shared action, or the title's own bit that stands for it.

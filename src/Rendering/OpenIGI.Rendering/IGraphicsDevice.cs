@@ -265,6 +265,19 @@ public interface IGraphicsDevice :
     {
     }
 
+    /// <summary>Hands the remastered thermal sensor a body to see as heat this frame (<see cref="ThermalDisplaySettings"/>).</summary>
+    /// <param name="mesh">The body's mesh, drawn in the pose currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">The body's transform into view space, in metres.</param>
+    /// <param name="heat">How hot the body is: one for the living, less as a body cools.</param>
+    /// <remarks>
+    /// Seen through the frame's sensor only while <see cref="PostProcessSettings.Thermal"/> is active. Drawn where it stands, seen
+    /// through a little cover, and never into the scene itself. A device without the sensor ignores it.
+    /// </remarks>
+    void DrawThermalBody(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, float heat)
+    {
+    }
+
     /// <summary>Draws a place a multiplayer mode plays for -- a bomb site -- through the mode point shader: a disc and a low wall.</summary>
     /// <param name="mesh">The point's disc (lightmap u 0, diffuse uv -1..1 across it) and wall (lightmap u 1, v up it).</param>
     /// <param name="indexOffset">The first index to draw.</param>

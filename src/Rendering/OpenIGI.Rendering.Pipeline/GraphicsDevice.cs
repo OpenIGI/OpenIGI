@@ -471,6 +471,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeDeferred();
         DisposeTracers();
         DisposeInfrared();
+        DisposeThermal();
         DisposeModePoints();
         DisposeBlastVolume();
         DisposeCompute();
@@ -616,6 +617,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _inFrame = true;
         EndHudLayer();
         _silhouetteDraws.Clear();
+        _thermalDraws.Clear();
         _backdropFresh = false;
         ReleaseWorldIfAsked();
 
