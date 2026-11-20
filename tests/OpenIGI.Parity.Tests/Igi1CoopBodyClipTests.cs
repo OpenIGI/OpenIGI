@@ -49,21 +49,21 @@ public sealed class Igi1CoopBodyClipTests
                 rig.Body.Yaw = (float)Math.Atan2(toward.X, toward.Y);
             });
 
-            Igi1CoopPair.Hold(input, KeyCode.E, true);
+            Igi1CoopPair.Hold(input, DefaultControls.Use, true);
             if (pair.RunUntil(() => actor.PlaysInteractionClip, 20) >= 0)
             {
                 task = candidate;
                 break;
             }
 
-            Igi1CoopPair.Hold(input, KeyCode.E, false);
+            Igi1CoopPair.Hold(input, DefaultControls.Use, false);
             pair.RunUntil(() => false, 2);
             tried.Add($"{candidate.Task.Name}: pose {at}, feet {actor.Body.Position}, offered {actor.ActionSprite}");
         }
 
         Assert.True(task is not null, $"the {(hostActs ? "host" : "joiner")} began at no {type}: {string.Join(" | ", tried)}");
         DrawnAsOwn(pair, partner, hostActs, 75, $"{task.Task.Name} by the {(hostActs ? "host" : "joiner")}", () => actor.PlaysInteractionClip);
-        Igi1CoopPair.Hold(input, KeyCode.E, false);
+        Igi1CoopPair.Hold(input, DefaultControls.Use, false);
     }
 
     [RequiresGameDataTheory]
@@ -91,9 +91,9 @@ public sealed class Igi1CoopBodyClipTests
 
         InputState input = hostActs ? pair.HostInput : pair.JoinerInput;
         Game.Igi1.Player.PlayerCamera actor = hostActs ? pair.Host.World.Player! : own;
-        Igi1CoopPair.Hold(input, KeyCode.E, true);
+        Igi1CoopPair.Hold(input, DefaultControls.Use, true);
         bool mounted = pair.RunUntil(() => actor.IsOnLadder, 20) >= 0;
-        Igi1CoopPair.Hold(input, KeyCode.E, false);
+        Igi1CoopPair.Hold(input, DefaultControls.Use, false);
         Assert.True(mounted, $"the {(hostActs ? "host" : "joiner")} never got on the ladder");
 
         // The top clip, then a few rungs down.

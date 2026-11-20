@@ -150,7 +150,7 @@ public sealed class PlayerCameraWireTests
         // A fresh press of Use lets go (0x411AE0); the press does not take hold again, and state 29 drops the
         // origin's standing height first, so the feet start under where the origin hung.
         input.BeginFrame();
-        input.Keyboard.SetKey(KeyCode.E, down: true);
+        input.Keyboard.SetKey(DefaultControls.Use, down: true);
         camera.Tick(input, terrain: null);
         Assert.False(camera.IsInWorldInteraction);
         Assert.True(camera.Body.Position.Z <= hung.Z - PlayerBody.StandingOriginHeight + 1.0);
@@ -170,7 +170,7 @@ public sealed class PlayerCameraWireTests
 
         InputState input = new();
         input.BeginFrame();
-        input.Keyboard.SetKey(KeyCode.E, down: true);
+        input.Keyboard.SetKey(DefaultControls.Use, down: true);
         camera.Tick(input, terrain: null);
         return camera;
     }

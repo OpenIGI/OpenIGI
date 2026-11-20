@@ -600,8 +600,9 @@ public sealed partial class GameHost : IDisposable
             LoadTitleResources();
 
         // Settings load from the retail config.qvm, and from our own file in preference to it when one
-        // exists. Nothing here ever writes into the original installation.
-        _configuration = HostConfiguration.Load(_fileSystem, _logger);
+        // exists -- the player's own only where the run plays as the player (HostOptions.ReadsUserProfiles). Nothing here
+        // ever writes into the original installation.
+        _configuration = HostConfiguration.Load(_fileSystem, _logger, _options.ReadsUserProfiles);
         RestoreTitleInputBindings();
         _menuDisplay = new RetailMenuDisplay(
             () => _device.Capabilities.Renderer,

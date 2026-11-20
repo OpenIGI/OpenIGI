@@ -408,17 +408,17 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => own.Weapons?.HasWeapon(bomb) == true && planter.Weapons?.HasWeapon(bomb) == true, 30 * 2) >= 0,
             "the carrier was never given the bomb to carry");
         Assert.False(OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Holds(planter));
-        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, true);
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, DefaultControls.Use, true);
         pair.RunUntil(() => false, (int)(30 * new BombSettings().PlantSeconds) + 15);
         Assert.Null(mode.PlantedAt);
-        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, false);
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, DefaultControls.Use, false);
 
         // Picked off the weapon wheel on the carrier's own game, it comes up in hand there and -- the pick carried in its
         // commands -- on the server; then the use key held plants it.
         own.ChooseFromWheel(bomb.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.True(pair.RunUntil(() => OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Holds(own) && OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Holds(planter), 30 * 3) >= 0,
             "the bomb never came up in hand");
-        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, true);
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, DefaultControls.Use, true);
 
         // The planter kneels over it -- the bomb's plant clip, on the server's body of it -- and stands once it is down.
         bool knelt = false;
@@ -434,7 +434,7 @@ public sealed class Igi1VersusTests
             "the planter still carried the bomb once it was down");
         Assert.True(pair.RunUntil(() => own.Weapons?.HasWeapon(bomb) == false && planter.Weapons?.HasWeapon(bomb) == false, 30 * 2) >= 0,
             "the bomb stayed in the planter's weapons once it was down");
-        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, false);
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, DefaultControls.Use, false);
         Assert.True(pair.RunUntil(() => pair.Client.Banner?.Headline?.StartsWith("BOMB PLANTED AT A", StringComparison.Ordinal) == true, 30 * 3) >= 0,
             "the joiner was never told of the plant");
 

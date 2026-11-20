@@ -23,6 +23,15 @@ public sealed class HostOptionsNoSaveTests
     }
 
     [Fact]
+    public void A_lockstep_run_neither_reads_nor_writes_the_players_profiles()
+    {
+        HostOptions options = HostOptions.Parse(["-mission", "1", "-lockstep"]);
+        Assert.False(options.ReadsUserProfiles);
+        Assert.False(options.SavesUserFiles);
+        Assert.True(HostOptions.Parse(["-mission", "1"]).ReadsUserProfiles);
+    }
+
+    [Fact]
     public void A_benchmark_saves_nothing_either()
     {
         HostOptions options = HostOptions.Parse(["-benchmark", Path.Combine(Path.GetTempPath(), "openigi-nosave-bench.json")]);

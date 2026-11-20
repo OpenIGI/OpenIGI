@@ -30,15 +30,17 @@ internal static class HostConfiguration
     /// <summary>Loads the configuration, preferring the player's own file over the installation's.</summary>
     /// <param name="fileSystem">The virtual file system the installation is read through.</param>
     /// <param name="logger">The log read failures are reported to.</param>
+    /// <param name="readPlayerFiles">Whether the player's own files are read, or the original's and the defaults alone.</param>
     /// <returns>The loaded configuration, or a fresh default when none can be read.</returns>
     /// <remarks>
     /// In order: the player's own file, then one an earlier build left inside the installation, then the
     /// retail file, then defaults. The second of those is only ever read — the next save moves it out to
-    /// the per-user location, so profiles made before this moved survive rather than appearing lost.
+    /// the per-user location, so profiles made before this moved survive rather than appearing lost. A run that does not play
+    /// as the player (<paramref name="readPlayerFiles"/> false) skips the first two.
     /// </remarks>
-    public static GameConfig Load(VirtualFileSystem fileSystem, IOpenIgiLogger logger)
+    public static GameConfig Load(VirtualFileSystem fileSystem, IOpenIgiLogger logger, bool readPlayerFiles = true)
     {
-        GameConfig config = Read(fileSystem, logger);
+        GameConfig config = Read(fileSystem, logger, readPlayerFiles);
 
         // A file with no profiles in it -- I.G.I. 2's own config.qvm -- leaves the player as nobody: they play as the
         // original's default operative until they make their own.
@@ -59,11 +61,11 @@ internal static class HostConfiguration
         return config;
     }
 
-    private static GameConfig Read(VirtualFileSystem fileSystem, IOpenIgiLogger logger)
+    private static GameConfig Read(VirtualFileSystem fileSystem, IOpenIgiLogger logger, bool readPlayerFiles)
     {
         string userPath = SettingsPaths.GetFilePath(FileName);
 
-        if (File.Exists(userPath))
+        if (readPlayerFiles && File.Exists(userPath))
         {
             try
             {
@@ -78,7 +80,9 @@ internal static class HostConfiguration
         // ConfigScript.OpenIgiPath resolves into the installation, which is where builds before this one
         // wrote. Kept as a read so an existing set of profiles is picked up exactly once and then
         // written out where it should have been.
-        foreach (string path in new[] { ConfigScript.OpenIgiPath, ConfigScript.RetailPath })
+        // Only the original's own file where the player's are not to be read: the copy an older build wrote into the
+        // installation is the player's too.
+        foreach (string path in readPlayerFiles ? [ConfigScript.OpenIgiPath, ConfigScript.RetailPath] : (string[])[ConfigScript.RetailPath])
         {
             if (!fileSystem.Exists(path))
             {

@@ -55,7 +55,7 @@ public sealed class PlayerCameraStationaryGunTests
         InputState input = new();
 
         input.BeginFrame();
-        input.Keyboard.SetKey(KeyCode.E, down: true);
+        input.Keyboard.SetKey(DefaultControls.Use, down: true);
         camera.Tick(input, terrain: null);
 
         Assert.True(camera.IsMountedStationaryGun);
@@ -77,7 +77,7 @@ public sealed class PlayerCameraStationaryGunTests
 
         // The look turns the gun, and 0x4748B0 holds it at the authored 25 degrees.
         input.BeginFrame();
-        input.Keyboard.SetKey(KeyCode.E, down: false);
+        input.Keyboard.SetKey(DefaultControls.Use, down: false);
         camera.Look(input, seconds: 1f / 60f);
         input.BeginFrame();
         input.Mouse.AddMotion(0f, -100000f);
@@ -138,7 +138,7 @@ public sealed class PlayerCameraStationaryGunTests
 
         input.BeginFrame();
         input.Mouse.SetButton(MouseButton.Left, down: false);
-        input.Keyboard.SetKey(KeyCode.E, down: true);
+        input.Keyboard.SetKey(DefaultControls.Use, down: true);
         camera.Tick(input, terrain: null);
 
         Assert.False(camera.IsInWorldInteraction);
@@ -170,7 +170,7 @@ public sealed class PlayerCameraStationaryGunTests
         PlaceAt(camera, interaction, gun, behind: false);
         InputState input = new();
         input.BeginFrame();
-        input.Keyboard.SetKey(KeyCode.E, down: true);
+        input.Keyboard.SetKey(DefaultControls.Use, down: true);
         camera.Tick(input, terrain: null);
 
         Assert.False(camera.IsInWorldInteraction);

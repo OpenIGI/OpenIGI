@@ -877,9 +877,9 @@ public sealed class Igi1CoopPairTests
         }
 
         pair.RunUntil(() => false, 10);
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, true);
         bool mounted = pair.RunUntil(() => own.IsOnLadder && partner.Player.IsOnLadder, 30) >= 0;
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, false);
         Assert.True(mounted, $"the joiner never got on: own {own.IsOnLadder}, on the host {partner.Player.IsOnLadder}");
         Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
         pair.RunUntil(() => false, 90);
@@ -936,9 +936,9 @@ public sealed class Igi1CoopPairTests
         }
 
         pair.RunUntil(() => false, 10);
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, true);
         bool mounted = pair.RunUntil(() => own.IsOnLadder && partner.Player.IsOnLadder, 30) >= 0;
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, false);
         Assert.True(mounted, $"the joiner never got on: own {own.IsOnLadder}, on the host {partner.Player.IsOnLadder}");
 
         // Up a good way: the joiner's climb is the one its commands run on the host, rung for rung, so it is seldom put back.
@@ -957,7 +957,7 @@ public sealed class Igi1CoopPairTests
 
         // Then slide to the ground.
         long correctionsBefore = session.Reconciler.Corrections;
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, true);
         List<string> phases = [];
         string last = string.Empty;
         bool off = pair.RunUntil(
@@ -973,7 +973,7 @@ public sealed class Igi1CoopPairTests
                 return !own.IsOnLadder && !partner.Player.IsOnLadder;
             },
             600) >= 0;
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, false);
         Assert.True(off, $"still on the ladder after sliding: own {own.LadderPhase}, on the host {partner.Player.LadderPhase}; climbed {high}; {string.Join(" | ", phases)}");
 
         // Standing at the foot on both, and staying there: no fall, no putting back.
@@ -1047,7 +1047,7 @@ public sealed class Igi1CoopPairTests
 
         pair.RunUntil(() => false, 30);
         string near = $"own eye {own.Body.Eye} host eye {partner.Player.Body.Eye} top {ladder.ActivationTop}; own yaw {own.Body.Yaw} host yaw {partner.Player.Body.Yaw}";
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, true);
         List<string> phases = [];
         string last = string.Empty;
         pair.RunUntil(
@@ -1063,7 +1063,7 @@ public sealed class Igi1CoopPairTests
                 return false;
             },
             20);
-        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Igi1CoopPair.Hold(pair.JoinerInput, DefaultControls.Use, false);
         Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.S, true);
         pair.RunUntil(
             () =>

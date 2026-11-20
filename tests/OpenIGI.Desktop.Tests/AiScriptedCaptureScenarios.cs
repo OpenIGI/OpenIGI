@@ -220,7 +220,7 @@ public sealed class AiScriptedCaptureScenarios : IDisposable
                 player.Body.Health.Reset();
             }
 
-            scripted.Keyboard.SetKey(KeyCode.E, down: tick + 1 < useUntil);
+            scripted.Keyboard.SetKey(DefaultControls.Use, down: tick + 1 < useUntil);
             if (!host.Step())
             {
                 log.AppendLine(CultureInfo.InvariantCulture, $"the host ended at step {step}");

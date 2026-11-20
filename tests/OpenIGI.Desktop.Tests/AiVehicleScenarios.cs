@@ -461,7 +461,7 @@ public sealed class AiVehicleScenarios : IDisposable
             }
 
             vehicleInput.Mouse.SetButton(MouseButton.Left, down: tick < vehicleFireUntil);
-            vehicleInput.Keyboard.SetKey(KeyCode.E, down: tick < vehicleUseUntil);
+            vehicleInput.Keyboard.SetKey(DefaultControls.Use, down: tick < vehicleUseUntil);
             if (player.FiredThisTick)
             {
                 log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} FIRED {player.HeldWeaponType?.ScriptId}");

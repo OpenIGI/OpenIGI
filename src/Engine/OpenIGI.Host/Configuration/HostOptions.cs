@@ -368,8 +368,17 @@ public readonly record struct HostOptions(
     /// profile and save it, and save the settings as it stops.</remarks>
     public bool NoSave { get; init; }
 
+    /// <summary>Gets a value indicating whether the run plays as the player's own profiles, their controls among them.</summary>
+    /// <remarks>
+    /// Not under <c>-lockstep</c>, which depends on its arguments alone: its settings are not read from the player's file, and
+    /// so neither are its profiles -- a capture or a test plays on the shipped controls whoever's machine runs it, where it
+    /// once pressed whatever key the machine's owner had rebound.
+    /// </remarks>
+    public bool ReadsUserProfiles => !Lockstep;
+
     /// <summary>Gets a value indicating whether the run saves the player's profiles and settings.</summary>
-    public bool SavesUserFiles => !IsBenchmark && !NoSave;
+    /// <remarks>Never a run that did not read them: what it would write back is not the player's.</remarks>
+    public bool SavesUserFiles => !IsBenchmark && !NoSave && ReadsUserProfiles;
 
     /// <summary>
     /// Gets a value indicating whether every mission's global-illumination probe field is traced and

@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
+using OpenIGI.TestSupport;
 
 namespace OpenIGI.Desktop.Tests.Completion;
 
@@ -12,7 +13,7 @@ internal sealed partial class MissionSolver
 {
     private void Act(Goal goal)
     {
-        _input.Keyboard.SetKey(KeyCode.E, down: false);
+        _input.Keyboard.SetKey(DefaultControls.Use, down: false);
         switch (goal.Kind)
         {
             case GoalKind.Stand or GoalKind.Ride:
@@ -135,7 +136,7 @@ internal sealed partial class MissionSolver
 
         if (phase == 5 && _useStep == 1)
         {
-            _input.Keyboard.SetKey(KeyCode.E, down: true);
+            _input.Keyboard.SetKey(DefaultControls.Use, down: true);
             _useStep = 2;
             Note($"pressed use at {Fmt(_player.Body.Position)} yaw {_player.Body.Yaw:0.00} pitch {_player.Body.Pitch:0.00}, {interaction.Type}, {interaction.DurationTicks} ticks");
             return;
@@ -145,7 +146,7 @@ internal sealed partial class MissionSolver
         // and tries again from the next place if nothing came of it.
         if (_useStep == 2 && phase <= 5 + interaction.DurationTicks + 15)
         {
-            _input.Keyboard.SetKey(KeyCode.E, down: true);
+            _input.Keyboard.SetKey(DefaultControls.Use, down: true);
         }
 
         if (_useStep == 2 && phase > 5 + Math.Max(interaction.DurationTicks, 30) + 90)

@@ -129,8 +129,8 @@ public sealed class Igi2CoopClientMoveTests
         Put(pair, new Vector3d(foot.X + (m[1] * 2500.0), foot.Y + (m[4] * 2500.0), foot.Z + 200.0), Igi2Pose.Gamma(m[0], m[3]) + MathF.PI);
 
         Igi2HumanPlayer own = pair.Joiner.Human, copy = pair.Host!.NetworkHumans[0].Human;
-        // The use key, wherever the profile the test runs under has it.
-        KeyCode[] use = [KeyCode.E, KeyCode.F, KeyCode.RightShift];
+        // The use key: the shipped controls', which a lockstep game plays on.
+        KeyCode[] use = [DefaultControls.Use];
         Array.ForEach(use, key => Igi2CoopPair.Hold(pair.JoinerInput, key, true));
         pair.RunUntil(() => false, 4);
         Array.ForEach(use, key => Igi2CoopPair.Hold(pair.JoinerInput, key, false));
