@@ -184,7 +184,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;
-        StatusMessageStep step = Step(_flow?.Tick ?? 0, level.IsReplica ? SentByServer : () =>
+        StatusMessageStep step = Step(_flow?.Tick ?? 0, level.MirrorsTaskState ? SentByServer : () =>
         {
             _send ??= Igi2LevelExpressions.Create(SendScript, Name, level.Natives);
             return !_send.IsEmpty && level.Evaluate(_send) != 0.0;

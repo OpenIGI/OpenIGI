@@ -29,13 +29,15 @@ public sealed partial class Igi2ClientWorld
     public void ApplyLevel(byte[] state) =>
         _level.FollowedBreakKey = Igi2LevelState.Apply(_guns, _variables, state, _blasts, _ownEntity, _level.Explosions, (_dropped, _level.Human.Pickups), (_mines, _level.Mines, _level.Weapons?.Inventory.Tables));
 
-    // The level's verdicts and counters are the server's from now on (LevelRun.IsReplica): this client's scripts read the
-    // server's variables, and its flow never decides the mission on its own.
+    // The level's verdicts and counters are the server's from now on (LevelRun.IsReplica), and so is every task's own running
+    // state, mirrored with the variables (LevelRun.MirrorsTaskState): this client's scripts read the server's variables, and
+    // its flow never decides the mission on its own.
     private void BindLevelState()
     {
         _variables = Igi2LevelState.MirrorOf(_level);
         _guns = Igi2LevelState.LaidOutGuns(_level);
         _level.Level?.IsReplica = true;
+        _level.Level?.MirrorsTaskState = true;
 
         // Only the server's guns are laid here: a guard's copy dying, or this player's swap, throws nothing down of its own.
         _level.Human.Pickups?.IsReplica = true;

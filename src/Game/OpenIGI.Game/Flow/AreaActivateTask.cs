@@ -84,7 +84,7 @@ public partial class AreaActivateTask : TickedTask, IExchangedState
 
         // A co-op client's level keeps the server's count, mirrored with the level's variables: counted here it saw this
         // client's own player alone, and an area a partner stood in stood empty.
-        if (!level.IsReplica)
+        if (!level.MirrorsTaskState)
         {
             Recount(level);
         }

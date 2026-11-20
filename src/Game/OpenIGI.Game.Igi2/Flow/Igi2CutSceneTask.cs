@@ -160,7 +160,7 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
         level.RunChildren(this);
         // A co-op client's scenes run when the server's do (isRun mirrored): decided here, a scene a partner set off played on
         // the host alone, and the host stood frozen in it while the client played on.
-        if (!level.IsReplica)
+        if (!level.MirrorsTaskState)
         {
             _isRun = _run!.IsEmpty ? (byte)1 : (byte)LevelExpression.Truncate(level.Evaluate(_run));
         }

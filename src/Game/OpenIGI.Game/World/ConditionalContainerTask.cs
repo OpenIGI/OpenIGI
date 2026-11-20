@@ -162,7 +162,7 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
         // A co-op client's level keeps the server's isRun, mirrored with the level's variables: decided here it followed this
         // client's own world -- its players alone, its own soldiers' state -- and a container a partner opened stayed shut.
         // What follows from it, the children in or out and the start and stop scripts, still happens here.
-        if (!level.IsReplica && rules.Condition(this) is { } holds)
+        if (!level.MirrorsTaskState && rules.Condition(this) is { } holds)
         {
             _isRun = holds ? (byte)1 : (byte)0;
         }
