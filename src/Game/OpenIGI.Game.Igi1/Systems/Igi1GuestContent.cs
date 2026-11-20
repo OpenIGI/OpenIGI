@@ -27,6 +27,9 @@ public sealed class Igi1GuestContent
     /// <summary>The directory sound banks are mounted from.</summary>
     public const string SoundDirectory = MissionLoader.CommonSoundDirectory;
 
+    /// <summary>The body the game's player wears, which is seen as it dies and the camera pulls back from it.</summary>
+    public const string PlayerModel = "000_01_1";
+
     private Igi1PlayerAnimations? _playerAnimations;
     private readonly string _dataRoot;
     private readonly IOpenIgiLogger _logger;

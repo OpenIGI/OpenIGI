@@ -74,6 +74,15 @@ public sealed class Igi1HostedLevel
     /// <summary>Gets how many of the soldiers have a brain: a mind of a kind the game knows, on a graph the host ships.</summary>
     public int Thinking => Soldiers.Brains.Count;
 
+    /// <summary>
+    /// Gets or sets what draws the level's humans, once something does: the player's own body is thrown down and stood up
+    /// again through it. <see langword="null"/> in a level nothing draws.
+    /// </summary>
+    public ISoldierPresenter? Presenter { get; set; }
+
+    /// <summary>Gets the rig of the player standing in the host's level, or <see langword="null"/> where the host's own plays.</summary>
+    public Player.PlayerCamera? PlayerRig { get; internal set; }
+
     /// <summary>Gets the ticks the level has run.</summary>
     public int Ticks { get; private set; }
 

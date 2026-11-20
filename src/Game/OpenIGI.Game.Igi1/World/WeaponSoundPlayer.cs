@@ -23,9 +23,9 @@ namespace OpenIGI.Game.Igi1.World;
 /// </remarks>
 public sealed class WeaponSoundPlayer
 {
-    private readonly SoundSystem _sounds;
+    private readonly IWeaponSoundOutput _output;
 
-    private AudioVoiceHandle _loop;
+    private IWeaponVoice? _loop;
     private WeaponType? _looping;
     private int _quietTicks;
     private Vector3d? _positionInUnits;
@@ -34,9 +34,16 @@ public sealed class WeaponSoundPlayer
     /// <param name="sounds">Where sounds are played.</param>
     /// <exception cref="ArgumentNullException"><paramref name="sounds"/> is <see langword="null"/>.</exception>
     public WeaponSoundPlayer(SoundSystem sounds)
+        : this(new SoundSystemOutput(sounds ?? throw new ArgumentNullException(nameof(sounds))))
     {
-        ArgumentNullException.ThrowIfNull(sounds);
-        _sounds = sounds;
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="WeaponSoundPlayer"/> class over whatever plays its sounds.</summary>
+    /// <param name="output">What plays a weapon's sounds: the game's own sound system, or another game's audio in its level.</param>
+    public WeaponSoundPlayer(IWeaponSoundOutput output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        _output = output;
     }
 
     /// <summary>Advances one tick of a weapon's fire sound.</summary>
@@ -79,7 +86,7 @@ public sealed class WeaponSoundPlayer
             if (trigger && _looping is null)
             {
                 _loop = Play(weapon.FireSound, looping: true);
-                _looping = _loop.IsValidHandle ? weapon : null;
+                _looping = _loop is not null ? weapon : null;
             }
             else if (!trigger && _looping is not null)
             {
@@ -100,7 +107,7 @@ public sealed class WeaponSoundPlayer
                 // update handle zero and leaves an automatic weapon permanently silent. The next
                 // fired tick must be allowed to retry; this matters most for the MIL, whose retail
                 // loop is opened while a mission can still be filling the effects pool.
-                if (_loop.IsValidHandle)
+                if (_loop is not null)
                 {
                     _looping = weapon;
                 }
@@ -113,7 +120,7 @@ public sealed class WeaponSoundPlayer
             {
                 // Nothing to re-aim -- the gun is in the listener's own hands. A soldier's weapon will
                 // want a positional voice that follows the shooter, and that is a different caller.
-                _sounds.SetVoiceParameters(_loop, Parameters(weapon.FireSound, looping: true));
+                _loop?.Keep(weapon.FireSound, _positionInUnits);
             }
 
             return;
@@ -128,16 +135,39 @@ public sealed class WeaponSoundPlayer
         }
     }
 
+    /// <summary>
+    /// Sounds the weapon in a player's hands for a tick: its report on the round it fired, or its loop while the trigger is held.
+    /// </summary>
+    /// <param name="player">The player.</param>
+    /// <remarks>
+    /// <para>
+    /// A medipack is not a firearm (<c>FUN_0040FB30</c>/<c>0x40FB90</c> drive its animation tasks directly), so its weapon record
+    /// is never fed through: some live rows carry a legacy gun sound. Passing none also closes an automatic gun's loop when the
+    /// player switches to the syringe.
+    /// </para>
+    /// <para>
+    /// On a stationary gun the hand's trigger is not the one pulled: the gun's own weapon fires (<c>0x474360</c> hands it the fire
+    /// button), so its report runs on the rounds it fires, as a soldier's does. An under-barrel launch is not the rifle's own
+    /// report; whoever plays that one plays it apart.
+    /// </para>
+    /// </remarks>
+    public void TickPlayer(Player.PlayerCamera player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        WeaponType? weapon = player.HeldWeaponType?.Category == WeaponCategory.Medipack ? null : player.HeldWeaponType;
+        bool launched = player.M203LaunchedThisTick;
+        bool? triggerHeld = player.IsMountedStationaryGun
+            ? null
+            : !launched && weapon is not null && player.Weapons?.TriggerHeldThisTick == true;
+        Tick(player.FiredThisTick && !launched && weapon is not null, weapon, triggerHeld: triggerHeld);
+    }
+
     /// <summary>Stops any loop, without playing the tail.</summary>
     /// <remarks>For a mission teardown, where nothing should be left sounding.</remarks>
     public void Reset()
     {
-        if (_loop.IsValidHandle)
-        {
-            _sounds.Stop(_loop);
-        }
-
-        _loop = AudioVoiceHandle.None;
+        _loop?.Silence();
+        _loop = null;
         _looping = null;
         _quietTicks = 0;
         _positionInUnits = null;
@@ -146,12 +176,8 @@ public sealed class WeaponSoundPlayer
     private void EndLoop()
     {
         WeaponType? weapon = _looping;
-        if (_loop.IsValidHandle)
-        {
-            _sounds.Stop(_loop);
-        }
-
-        _loop = AudioVoiceHandle.None;
+        _loop?.Silence();
+        _loop = null;
         _looping = null;
         _quietTicks = 0;
 
@@ -161,82 +187,103 @@ public sealed class WeaponSoundPlayer
         }
     }
 
-    private AudioVoiceHandle Play(string name, bool looping = false)
-    {
-        if (string.IsNullOrEmpty(name))
-        {
-            return AudioVoiceHandle.None;
-        }
+    private IWeaponVoice? Play(string name, bool looping = false) =>
+        string.IsNullOrEmpty(name) ? null : _output.Play(name, _positionInUnits, looping);
 
-        // Weapon rows carry definition names, not guaranteed raw bank keys. This matters for the
-        // MIL: IGI1 defines mil_loop in COMMON/SOUNDS/SOUNDS.QVM, and bypassing that definition can
-        // hand the backend a non-playable/missing bank key and leave the weapon completely silent.
-        if (_sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
-            && definition is { IsPlayable: true })
+    // The game's own sound system as a weapon's sounds play through it.
+    private sealed class SoundSystemOutput(SoundSystem sounds) : IWeaponSoundOutput
+    {
+        public IWeaponVoice? Play(string name, Vector3d? positionInUnits, bool looping)
         {
-            AudioVoiceHandle voice = _sounds.PlayDefinition(
-                name,
-                _positionInUnits,
-                priority: 200,
-                looping: looping);
-            if (voice.IsValidHandle)
+            // Weapon rows carry definition names, not guaranteed raw bank keys. This matters for the
+            // MIL: IGI1 defines mil_loop in COMMON/SOUNDS/SOUNDS.QVM, and bypassing that definition can
+            // hand the backend a non-playable/missing bank key and leave the weapon completely silent.
+            if (sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
+                && definition is { IsPlayable: true })
             {
-                return voice;
+                AudioVoiceHandle voice = sounds.PlayDefinition(
+                    name,
+                    positionInUnits,
+                    priority: 200,
+                    looping: looping);
+                if (voice.IsValidHandle)
+                {
+                    return new Voice(this, voice);
+                }
             }
+
+            // Keep the raw-bank fallback for weapon records that are authored without a sound definition.
+            AudioVoiceHandle raw = sounds.Play(BankKey(name), Parameters(name, positionInUnits, looping));
+            return raw.IsValidHandle ? new Voice(this, raw) : null;
         }
 
-        // Keep the raw-bank fallback for weapon records that are authored without a sound definition.
-        return _sounds.Play(BankKey(name), Parameters(name, looping));
-    }
+        private SoundSystem Sounds => sounds;
 
-    private string BankKey(string name) =>
-        _sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
-            && definition is { IsPlayable: true }
-                ? definition.BankKey
-                : name;
+        private string BankKey(string name) =>
+            sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
+                && definition is { IsPlayable: true }
+                    ? definition.BankKey
+                    : name;
 
-    /// <summary>The voice a shot is played on.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The player's own weapon is NOT positional, and making it so was wrong.</b> The gun is held in
-    /// the player's own hands: its position relative to the head does not change, however much the
-    /// camera turns. Placing it in the world and letting the listener rotate around it made the shot
-    /// slide across the stereo image as the mouse moved, which is exactly the thing that cannot happen
-    /// in reality — the camera moved, the gun did not.
-    /// </para>
-    /// <para>
-    /// It is also what the original does, though by accident rather than intent: it plays the shot at
-    /// the player's own position, and its pan is the lateral offset from the listener, which for a
-    /// source sitting on the listener is zero. A flat centred voice reaches the same place directly.
-    /// </para>
-    /// </remarks>
-    private VoiceParameters Parameters(string name, bool looping)
-    {
-        float gain = 1f;
-        float minimum = 1f;
-        float maximum = 50f;
-        if (_sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
-            && definition is { IsPlayable: true })
+        private VoiceParameters Parameters(string name, Vector3d? positionInUnits, bool looping)
         {
-            gain = definition.Volume;
-            minimum = definition.MinimumDistanceMetres;
-            maximum = definition.MaximumDistanceMetres;
-            looping |= definition.Loop;
+            float gain = 1f;
+            float minimum = 1f;
+            float maximum = 50f;
+            if (sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
+                && definition is { IsPlayable: true })
+            {
+                gain = definition.Volume;
+                minimum = definition.MinimumDistanceMetres;
+                maximum = definition.MaximumDistanceMetres;
+                looping |= definition.Loop;
+            }
+
+            VoiceParameters parameters = VoiceParameters.Default with
+            {
+                Category = SoundCategory.Effects,
+                Gain = gain,
+                Looping = looping,
+
+                // Well above ambience and footsteps. The player's own weapon going silent because a busy
+                // level filled the pool is the single most noticeable way a mix can fail.
+                Priority = 200,
+            };
+
+            return positionInUnits is { } position
+                ? parameters.At(SoundSystem.ToMetres(position), minimum, maximum)
+                : parameters with { IsPositional = false, Pan = 0f };
         }
 
-        VoiceParameters parameters = VoiceParameters.Default with
+        private sealed class Voice(SoundSystemOutput output, AudioVoiceHandle handle) : IWeaponVoice
         {
-            Category = SoundCategory.Effects,
-            Gain = gain,
-            Looping = looping,
+            public void Silence() => output.Sounds.Stop(handle);
 
-            // Well above ambience and footsteps. The player's own weapon going silent because a busy
-            // level filled the pool is the single most noticeable way a mix can fail.
-            Priority = 200,
-        };
-
-        return _positionInUnits is { } position
-            ? parameters.At(SoundSystem.ToMetres(position), minimum, maximum)
-            : parameters with { IsPositional = false, Pan = 0f };
+            public void Keep(string name, Vector3d? positionInUnits) =>
+                output.Sounds.SetVoiceParameters(handle, output.Parameters(name, positionInUnits, looping: true));
+        }
     }
+}
+
+/// <summary>What plays a weapon's sounds for a <see cref="WeaponSoundPlayer"/>: a report, a loop, the loop's tail.</summary>
+public interface IWeaponSoundOutput
+{
+    /// <summary>Plays a sound by the name a weapon's row gives it.</summary>
+    /// <param name="name">The sound's definition, or its bank key where the row names none.</param>
+    /// <param name="positionInUnits">Where it sounds, in world units; <see langword="null"/> for the listener's own hands.</param>
+    /// <param name="looping">Whether it loops until it is stopped.</param>
+    /// <returns>The voice, or <see langword="null"/> when nothing could play it: a full pool, a sound not found.</returns>
+    IWeaponVoice? Play(string name, Vector3d? positionInUnits, bool looping);
+}
+
+/// <summary>A weapon's sound while it plays.</summary>
+public interface IWeaponVoice
+{
+    /// <summary>Silences it.</summary>
+    void Silence();
+
+    /// <summary>Keeps a loop going through another round, where it stands now.</summary>
+    /// <param name="name">The loop's sound.</param>
+    /// <param name="positionInUnits">Where it sounds, or <see langword="null"/> for the listener's own hands.</param>
+    void Keep(string name, Vector3d? positionInUnits);
 }

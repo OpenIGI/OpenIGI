@@ -342,6 +342,15 @@ public sealed class Igi1GuestLevel
             Sound = start.Audio is { } audio ? (name, at) => audio.Play(name, at) : null,
         };
         soldiers.SetGunShotWorld(rounds, new GunShotSoundWindows(), afterMarch: null);
+        // Their weapons' reports, and the player's, through the host's audio by the game's own rule.
+        Igi1GuestWeaponSounds? reports = start.Audio is { } reportsThrough
+            ? new Igi1GuestWeaponSounds(reportsThrough, () => _player?.Rig.EyeUnits ?? default)
+            : null;
+        if (reports is not null)
+        {
+            soldiers.SetWeaponSound(reports.TickSoldier);
+        }
+
         if (start.Audio is { } voices)
         {
             soldiers.SetScriptSound((name, at, _) => voices.Play(name, at));
@@ -356,6 +365,7 @@ public sealed class Igi1GuestLevel
         {
             hosted.PlayerSave = Saves.Igi1PlayerSave.GuestSection(player.Rig, player.Life, arsenal.Weapons, arsenal.Ammunition);
             HearPlayer(hosted, player.Rig, player.Surroundings, steps);
+            KeepPlayer(hosted, player.Rig, player.Life, player.Surroundings, reports);
             RunClimbs(hosted, player.Rig, _playerGround ?? world.Ground);
         }
 
@@ -382,6 +392,30 @@ public sealed class Igi1GuestLevel
 
             heard?.Sounds.PlayPlayerImpacts();
         });
+    }
+
+    // What the game's own mission does for its player as each tick closes (Igi1MissionTick.EndTick and its audio): the weapon in
+    // its hands sounds, the red wash of a hit and a flashbang's white fade, and its body, once it has fallen, plays its fall out.
+    private static void KeepPlayer(
+        Igi1HostedLevel hosted, PlayerCamera rig, Igi1PlayerLife life, IIgi1PlayerSurroundings surroundings, Igi1GuestWeaponSounds? reports)
+    {
+        hosted.PlayerRig = rig;
+        if (surroundings is Igi1GuestPlayerSurroundings own)
+        {
+            own.Bodies = () => hosted.Presenter;
+        }
+
+        hosted.EachTick(() =>
+        {
+            reports?.TickPlayer(rig);
+            life.DamageFlash.Tick();
+            life.FlashbangFlash.Tick();
+            hosted.Presenter?.TickPlayerBody();
+        });
+        if (reports is not null)
+        {
+            hosted.OnLeave(reports.Reset);
+        }
     }
 
     // The player's climbs and its work by hand, which the game's own mission runs beside the rig each tick

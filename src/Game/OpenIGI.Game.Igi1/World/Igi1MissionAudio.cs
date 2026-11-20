@@ -926,21 +926,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
         // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
         // null also closes an automatic gun loop when the player switches to the syringe.
-        WeaponType? weaponForSound = player.HeldWeaponType?.Category == WeaponCategory.Medipack
-            ? null
-            : player.HeldWeaponType;
         bool m203Launched = player.M203LaunchedThisTick;
-
-        // On a stationary gun the hand's trigger is not the one pulled: the gun's own weapon fires (0x474360 hands it the
-        // fire button), so its report runs on the rounds it fires, as a soldier's does. Read from the hand, an automatic
-        // mounted gun's loop never opened and the gun fired in silence.
-        bool? triggerHeld = player.IsMountedStationaryGun
-            ? null
-            : !m203Launched && weaponForSound is not null && player.Weapons?.TriggerHeldThisTick == true;
-        _weaponSounds?.Tick(
-            player.FiredThisTick && !m203Launched && weaponForSound is not null,
-            weaponForSound,
-            triggerHeld: triggerHeld);
+        _weaponSounds?.TickPlayer(player);
         if (m203Launched)
         {
             // GunM16A2's native callback (0x473510) plays this launch report itself; it is
