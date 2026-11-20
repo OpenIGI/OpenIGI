@@ -7,8 +7,8 @@ namespace OpenIGI.Game.Multiplayer.Modes;
 /// <remarks>
 /// The bell is the classic one (damage = peak · e<sup>−d²/2σ²</sup>), its width set so the peak falls to one whole health
 /// at the mode's killing radius. Inside that, nobody lives in the open; a corner or a wall between adds to the effective
-/// distance (<see cref="BlastWaveField"/>) and so takes the player down the bell. Nothing is taken below one percent: like
-/// CS2's since July 2026, a far-off blast leaves no token scratch.
+/// distance (<see cref="BlastWaveField"/>) and so takes the player down the bell. Nothing is taken below one percent: a
+/// far-off blast leaves no token scratch.
 /// </remarks>
 public static class BombDamage
 {

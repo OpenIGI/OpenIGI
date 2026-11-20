@@ -22,8 +22,8 @@ namespace OpenIGI.Game.Multiplayer.Modes;
 /// The distance is then made <em>effective</em>: the detour the wave took beyond the straight line is counted again
 /// (<see cref="DetourWeight"/>), because a wave that turns a corner sheds energy into the corner as well as travelling
 /// further. Standing round a corner from the bomb is worth more than the metres alone say; standing behind a wall worth a
-/// great deal more. This is the shape CS2's July 2026 bomb took (a precomputed propagation, corners dissipating, walls
-/// stifling, the damage arriving as an expanding front); the model here is the port's own.
+/// great deal more: a propagation worked out ahead of the blast, corners dissipating, walls stifling, the damage arriving
+/// as an expanding front.
 /// </para>
 /// <para>
 /// Built a slice at a time (<see cref="Advance"/>), from the plant until the blast, so the server's frame never stalls for

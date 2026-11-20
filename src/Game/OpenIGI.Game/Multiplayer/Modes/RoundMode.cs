@@ -26,7 +26,7 @@ public sealed record RoundSettings
     public double BuySeconds { get; init; } = 20;
 
     /// <summary>Gets the seconds a round of a mode with a buy phase opens on, everyone held where they start to buy and plan
-    /// (Counter-Strike's freeze time); the buy time and the round's clock run from its end.</summary>
+    /// (the freeze time); the buy time and the round's clock run from its end.</summary>
     public double FreezeSeconds { get; init; } = 10;
 
     /// <summary>Gets how far from where it started the round a player may still buy, in metres, on a map without buy zones.</summary>
