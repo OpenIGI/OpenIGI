@@ -52,6 +52,9 @@ public abstract class HumanTask
     /// <inheritdoc/>
     public void HoldAt(Vector3d position) => Body?.Hold(position);
 
+    /// <inheritdoc/>
+    public void DisableAllWeapons() => Body?.Disarm();
+
     /// <summary>Runs the human for one tick, where the level's walk reaches it.</summary>
     /// <param name="level">The level's run.</param>
     /// <remarks>A human nothing runs is run as a type with no handler is, by the title's rule.</remarks>
@@ -218,6 +221,11 @@ public interface IHumanBodyState
     /// <param name="feet">Where its feet are held, in world units.</param>
     /// <returns><see langword="false"/> where the body cannot be held: nothing holds it yet, or its game moves it some other way.</returns>
     bool Hold(Vector3d feet) => false;
+
+    /// <summary>Takes every weapon off the body, as a level's script does (<c>HumanPlayer_DisableAllWeapons</c>).</summary>
+    void Disarm()
+    {
+    }
 }
 
 /// <summary>The player's character — the original's <c>HumanPlayer</c>.</summary>

@@ -35,6 +35,8 @@ internal static class Igi2ScriptSystems
             Dictionary<int, object> placed = b.PlacedById;
             levelNatives.Bind(b.Player.Human, id => placed.GetValueOrDefault(id), b.Root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault());
 
+            levelNatives.StandIn = b.Player.StandIn as OpenIGI.Game.Player.IScriptedHuman;
+
             // The players the scripts weigh (HumanPlayer_isDead: none left alive), which a server's other players join.
             b.Player.ScriptPlayers = levelNatives.Players;
 

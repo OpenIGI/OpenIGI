@@ -60,6 +60,16 @@ public sealed class Igi1PlayerBody(Func<PlayerCamera?> rig, HumanTask task) : IH
         held.Body.Position = feet;
         return true;
     }
+
+    /// <inheritdoc/>
+    /// <remarks>Only where another game's level places it too (<see cref="Placement"/>): the game's own scripts disarm their player themselves.</remarks>
+    public void Disarm()
+    {
+        if (Placement is not null)
+        {
+            rig()?.Weapons?.Disarm();
+        }
+    }
 }
 
 /// <summary>A soldier's live body, as any game's AI perceives the soldier's task.</summary>

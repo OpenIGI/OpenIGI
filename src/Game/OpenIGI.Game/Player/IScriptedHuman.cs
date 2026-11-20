@@ -18,4 +18,7 @@ public interface IScriptedHuman
     /// </summary>
     /// <param name="position">Where its feet are held, in world units.</param>
     void HoldAt(Vector3d position);
+
+    /// <summary>Takes every weapon out of the human's hands and off it (<c>HumanPlayer_DisableAllWeapons</c>).</summary>
+    void DisableAllWeapons();
 }
