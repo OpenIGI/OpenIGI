@@ -150,12 +150,29 @@ public sealed class Igi1HostedLevel
     /// <param name="placements">The host's placements, which it was built from.</param>
     /// <param name="motions">What moves the host's placements, or <see langword="null"/> where nothing does.</param>
     /// <param name="presence">What takes them out of the host's world, or <see langword="null"/> where nothing does.</param>
+    /// <param name="rider">The player standing in the host's level, which rides what it stands on; <see langword="null"/> for none.</param>
     public void KeepSolids(
-        ObjectCollisionIndex solids, IReadOnlyList<WorldPlacement> placements, IPlacementMotion? motions, IPlacementPresence? presence)
+        ObjectCollisionIndex solids,
+        IReadOnlyList<WorldPlacement> placements,
+        IPlacementMotion? motions,
+        IPlacementPresence? presence,
+        Player.Igi1TitlePlayer? rider = null)
     {
         PlacementCollisionFollower follower = new(solids, placements, motions, presence);
         follower.Follow();
-        EachTick(follower.Follow);
+        int carrier = -1;
+        EachTick(() =>
+        {
+            follower.Follow();
+
+            // A lift, a train, a helicopter: the player rides what it stands on as that moves, and turns with it.
+            if (rider?.Human.Rig is { IsOnLadder: false, IsInWorldInteraction: false } rig
+                && follower.TryCarry(ref carrier, rig.Body.Position, out Core.Numerics.Vector3d carried, out float turn))
+            {
+                rig.Body.Position = carried;
+                rig.Body.Yaw += turn;
+            }
+        });
     }
 
     /// <summary>Has something done at the end of each of the level's ticks.</summary>

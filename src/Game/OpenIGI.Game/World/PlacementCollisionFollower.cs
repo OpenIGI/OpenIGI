@@ -27,6 +27,10 @@ public sealed class PlacementCollisionFollower
     private readonly (Vector3d Position, Matrix3f Orientation)?[] _stood;
     private readonly bool[] _away;
 
+    // The placements the last Follow moved, each with where it stood before and stands now.
+    private readonly List<(int Index, (Vector3d Position, Matrix3f Orientation) Before, (Vector3d Position, Matrix3f Orientation) Now)> _moved = [];
+    private readonly Dictionary<WorldPlacement, int> _indexOf = [];
+
     /// <summary>Initializes a new instance of the <see cref="PlacementCollisionFollower"/> class.</summary>
     /// <param name="solids">The collision to keep.</param>
     /// <param name="placements">The level's placements, which the collision was built from.</param>
@@ -44,6 +48,10 @@ public sealed class PlacementCollisionFollower
         _presence = presence;
         _stood = new (Vector3d, Matrix3f)?[placements.Count];
         _away = new bool[placements.Count];
+        for (int i = 0; i < placements.Count; i++)
+        {
+            _indexOf.TryAdd(placements[i], i);
+        }
     }
 
     /// <summary>Gets how many placements the last <see cref="Follow"/> moved or took in or out of the world.</summary>
@@ -53,6 +61,7 @@ public sealed class PlacementCollisionFollower
     public void Follow()
     {
         int changed = 0;
+        _moved.Clear();
         for (int i = 0; i < _placements.Count; i++)
         {
             WorldPlacement placement = _placements[i];
@@ -65,6 +74,7 @@ public sealed class PlacementCollisionFollower
                 if (now != before && _solids.UpdateTransform(placement, position, orientation))
                 {
                     changed++;
+                    _moved.Add((i, before, now));
                 }
 
                 _stood[i] = now;
@@ -81,4 +91,62 @@ public sealed class PlacementCollisionFollower
 
         Changed = changed;
     }
+
+    /// <summary>
+    /// Carries a point that stands on something the last <see cref="Follow"/> moved: where the thing took it, and how far it
+    /// turned it about the upright. A human standing in a lift, on a train or in a helicopter rides it by this
+    /// (<c>Human_UpdatePlatformPos</c>).
+    /// </summary>
+    /// <param name="carrier">
+    /// The placement the point rode last time, as this answered it, or -1 for none: it is kept while the point stays over it, so
+    /// a carrier moving faster than the reach below the feet does not leave its rider behind.
+    /// </param>
+    /// <param name="feet">The point, in world units: a human's feet.</param>
+    /// <param name="carried">Receives where the point is carried to.</param>
+    /// <param name="turn">Receives the turn about the upright, in radians, clockwise from +Y as a heading is.</param>
+    /// <returns><see langword="true"/> when the point was carried; <paramref name="carrier"/> is then what carried it.</returns>
+    public bool TryCarry(ref int carrier, Vector3d feet, out Vector3d carried, out float turn)
+    {
+        carried = feet;
+        turn = 0f;
+
+        // What the point stands on now is what carries it; with nothing under it, what carried it last keeps it for as long as
+        // it goes on moving, so a carrier that outruns the reach below the feet does not drop its rider.
+        int under = Under(feet);
+        if (under >= 0)
+        {
+            carrier = under;
+        }
+
+        foreach ((int index, (Vector3d Position, Matrix3f Orientation) before, (Vector3d Position, Matrix3f Orientation) now) in _moved)
+        {
+            if (index != carrier)
+            {
+                continue;
+            }
+
+            // The point in the placement's own frame as it stood, then out of that frame as it stands.
+            Vector3d local = before.Orientation.Transform(feet - WorldScene.ToUnits(before.Position));
+            carried = WorldScene.ToUnits(now.Position) + now.Orientation.Transposed().Transform(local);
+            Vector3d ahead = now.Orientation.Transposed().Transform(before.Orientation.Transform(new Vector3d(0.0, 1.0, 0.0)));
+            turn = (float)Math.Atan2(ahead.X, ahead.Y);
+            return true;
+        }
+
+        if (under < 0)
+        {
+            carrier = -1;
+        }
+
+        return false;
+    }
+
+    // The placement under a point within a step -- half a metre above the feet to a metre below -- by its place in the list, or -1.
+    private int Under(Vector3d feet) =>
+        _solids.TryIdentify(
+            new Vector3d(feet.X, feet.Y, feet.Z + 2048.0), new Vector3d(feet.X, feet.Y, feet.Z - 4096.0), out _, out WorldPlacement? struck, out _)
+        && struck is not null
+        && _indexOf.TryGetValue(struck, out int index)
+            ? index
+            : -1;
 }

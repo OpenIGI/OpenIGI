@@ -49,6 +49,9 @@ public abstract class HumanTask
     /// <remarks>The human's body is what is moved, by the game that holds it (<see cref="IHumanBodyState.Place"/>).</remarks>
     public void PopPosition(Vector3d position) => Body?.Place(position);
 
+    /// <inheritdoc/>
+    public void HoldAt(Vector3d position) => Body?.Hold(position);
+
     /// <summary>Runs the human for one tick, where the level's walk reaches it.</summary>
     /// <param name="level">The level's run.</param>
     /// <remarks>A human nothing runs is run as a type with no handler is, by the title's rule.</remarks>
@@ -210,6 +213,11 @@ public interface IHumanBodyState
     /// <param name="feet">Where its feet go, in world units.</param>
     /// <returns><see langword="false"/> where the body cannot be put anywhere: nothing holds it yet, or its game moves it some other way.</returns>
     bool Place(Vector3d feet) => false;
+
+    /// <summary>Holds the body where something else carries it: its feet exactly there, on nothing, until it is placed again.</summary>
+    /// <param name="feet">Where its feet are held, in world units.</param>
+    /// <returns><see langword="false"/> where the body cannot be held: nothing holds it yet, or its game moves it some other way.</returns>
+    bool Hold(Vector3d feet) => false;
 }
 
 /// <summary>The player's character — the original's <c>HumanPlayer</c>.</summary>

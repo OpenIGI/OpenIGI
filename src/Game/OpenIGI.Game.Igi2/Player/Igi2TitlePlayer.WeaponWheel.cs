@@ -19,7 +19,7 @@ public sealed partial class Igi2TitlePlayer
     public WeaponWheel Wheel => StandInWheel?.Wheel ?? _wheel;
 
     // The wheel of another game's player standing in.
-    private IWeaponWheelPlayer? StandInWheel => StandInPlayer as IWeaponWheelPlayer;
+    private IWeaponWheelPlayer? StandInWheel => ActingStandIn as IWeaponWheelPlayer;
 
     /// <inheritdoc/>
     /// <remarks>

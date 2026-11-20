@@ -15,7 +15,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerPlacement
     {
         if (StandInPlayer is not null)
         {
-            return StandInPlayer is ITitlePlayerPlacement standIn && standIn.TryPlace(cameraPosition, yaw);
+            // Not off a mounted gun: the body on it is held there.
+            return !MansGunForStandIn && StandInPlayer is ITitlePlayerPlacement standIn && standIn.TryPlace(cameraPosition, yaw);
         }
 
         if (!CanPreviewLook) { return false; }

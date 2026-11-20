@@ -33,6 +33,7 @@ public static class Igi2GuestInteractions
     private const string ActionSprite = "a_c4.spr";
     private const string WireSprite = "a_wire.spr";
     private const string FenceSprite = "a_fence.spr";
+    private const string GunSprite = "stationary.spr";
 
     private static readonly float[] Upright = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
 
@@ -40,13 +41,30 @@ public static class Igi2GuestInteractions
     /// <param name="levelRoot">The level, once its systems have prepared its tasks: each thing's frame is read as it stands.</param>
     /// <returns>The interactions.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
-    public static IReadOnlyList<WorldInteraction> Of(GameTask levelRoot)
+    public static IReadOnlyList<WorldInteraction> Of(GameTask levelRoot) => Of(levelRoot, man: null);
+
+    /// <summary>Makes an interaction for each thing of the level a human works by hand, its mounted guns among them.</summary>
+    /// <param name="levelRoot">The level, once its systems have prepared its tasks: each thing's frame is read as it stands.</param>
+    /// <param name="man">
+    /// What seats the human on a mounted gun, answering whether it is now manned (<c>Igi2TitlePlayer.ManGunForStandIn</c>);
+    /// <see langword="null"/> to leave the guns out.
+    /// </param>
+    /// <returns>The interactions.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
+    public static IReadOnlyList<WorldInteraction> Of(GameTask levelRoot, Func<Weapons.Igi2StationaryGunTask, bool>? man)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         List<WorldInteraction> made = [];
         foreach (GameTask task in levelRoot.Descendants())
         {
-            if (task is IIgi2Activatable target && For(task, target) is { } interaction)
+            if (task is Weapons.Igi2StationaryGunTask gun)
+            {
+                if (man is not null)
+                {
+                    made.Add(ForGun(gun, man));
+                }
+            }
+            else if (task is IIgi2Activatable target && For(task, target) is { } interaction)
             {
                 made.Add(interaction);
             }
@@ -131,6 +149,34 @@ public static class Igi2GuestInteractions
             markerLocal: default)
         {
             Hosted = new Thing(task, target),
+            TaskPosition = centre,
+        };
+    }
+
+    // A mounted gun: got on with one press, as a switch is pressed. The gun is the level's and is worked by a body of the
+    // level's game; the press asks for that.
+    private static WorldInteraction ForGun(Weapons.Igi2StationaryGunTask gun, Func<Weapons.Igi2StationaryGunTask, bool> man)
+    {
+        Vector3d centre = gun.Centre;
+        return new WorldInteraction(
+            gun,
+            InteractionActivateType.Switch,
+            centre,
+            centre,
+            Matrix(Upright),
+            0f,
+            durationTicks: 1,
+            GunSprite,
+            door: null,
+            isPickable: false,
+            stationaryGun: null,
+            localBoundsMinimum: default,
+            localBoundsMaximum: default,
+            hasLocalBounds: false,
+            markerPoint: centre,
+            markerLocal: default)
+        {
+            Hosted = new Thing(gun, gun) { Pressed = () => man(gun) },
             TaskPosition = centre,
         };
     }
@@ -271,7 +317,14 @@ public static class Igi2GuestInteractions
         }
 
         /// <inheritdoc/>
-        public void Press() => (target as IIgi2Pressable)?.Press(0);
+        public void Press()
+        {
+            (target as IIgi2Pressable)?.Press(0);
+            Pressed?.Invoke();
+        }
+
+        /// <summary>Gets what else a press does: a mounted gun is got on.</summary>
+        public Func<bool>? Pressed { get; init; }
 
         /// <inheritdoc/>
         public void Toggle(Vector3d from) => (target as IIgi2Door)?.ToggleOpen(from);

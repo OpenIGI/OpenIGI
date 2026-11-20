@@ -47,6 +47,19 @@ public sealed class Igi1PlayerBody(Func<PlayerCamera?> rig, HumanTask task) : IH
 
     /// <inheritdoc/>
     public bool Place(Vector3d feet) => rig() is { } held && Placement is { } place && place(held, feet);
+
+    /// <inheritdoc/>
+    /// <remarks>Only where another game's level places it too (<see cref="Placement"/>): the game's own never carries its player.</remarks>
+    public bool Hold(Vector3d feet)
+    {
+        if (rig() is not { } held || Placement is null)
+        {
+            return false;
+        }
+
+        held.Body.Position = feet;
+        return true;
+    }
 }
 
 /// <summary>A soldier's live body, as any game's AI perceives the soldier's task.</summary>

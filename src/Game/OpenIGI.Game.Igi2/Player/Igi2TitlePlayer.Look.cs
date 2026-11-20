@@ -50,7 +50,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerLook
         StandInLook?.PreviewLook(mouseX, mouseY, sensitivity, invertMouse) ?? Look.Preview(mouseX, mouseY, sensitivity, invertMouse);
 
     // The look of another game's player standing in, which turns its own head between ticks.
-    private ITitlePlayerLook? StandInLook => StandInPlayer as ITitlePlayerLook;
+    private ITitlePlayerLook? StandInLook => ActingStandIn as ITitlePlayerLook;
 
     // The look between ticks, from where the human faces as of its last.
     private TitleLookPreview Look => _look ??= new(() => CanPreviewLook, () => (Human.Gamma, Human.View.IdealPitch), SmoothAim, Aim);
