@@ -368,12 +368,16 @@ async function chooseSource() {
   // What Play would start now in folder mode: a folder just picked and found to be the game, or one remembered.
   let ready = null;
   let remembered = await files.rememberedFolder(game);
+  // The folder's files as kept in the browser on an earlier visit: played from without the folder being asked for.
+  let keptCopy = await files.keptCopy(game);
   const offerFolder = () => {
-    if (remembered) offer('Play now', `Game folder: /${remembered.name}`, 'neutral', true);
+    if (keptCopy) offer('Play now', `Kept in this browser, from /${keptCopy.name}. Ready.`, 'ok', true);
+    else if (remembered) offer('Play now', `Game folder: /${remembered.name}`, 'neutral', true);
     else if (hosted === null && siteServes()) offer('Choose game folder', `The game's files could not be reached. ${hint()}`);
     else offer('Choose game folder', hint());
     own.hidden = true;
-    clear.hidden = true;
+    clear.hidden = !keptCopy;
+    clear.textContent = 'Delete the kept files';
     // Discord's frame may refuse a folder picker of any kind; the site in a browser of its own always offers one.
     elsewhere.hidden = !IN_DISCORD;
     elsewhere.href = `https://openigi.com/?game=${game}`;
@@ -382,6 +386,7 @@ async function chooseSource() {
     offer('Play now', hostedLine(status), status.start === 0 ? 'ok' : 'neutral');
     own.hidden = false;
     clear.hidden = status.all === status.total;
+    clear.textContent = 'Delete the downloaded files';
     elsewhere.hidden = true;
   };
   if (folderMode) offerFolder();
@@ -394,6 +399,17 @@ async function chooseSource() {
     if (!folderMode) {
       lockGame();
       return files.fromHosted(hostedData());
+    }
+    if (keptCopy) {
+      try {
+        const source = await files.fromKept(game);
+        lockGame();
+        return source;
+      } catch (error) {
+        if (!(error instanceof files.InstallationError)) throw error;
+        keptCopy = null; // Cleared by the browser: the folder below, or Play.
+        offerFolder();
+      }
     }
     if (remembered && await files.readable(remembered)) {
       try {
@@ -424,6 +440,7 @@ async function chooseSource() {
         showGame(id);
         hosted = await statusOfSite();
         remembered = await files.rememberedFolder(game);
+        keptCopy = await files.keptCopy(game);
         ready = null;
         folderMode = ownChosen || hosted === null;
         if (folderMode) offerFolder();
@@ -446,6 +463,18 @@ async function chooseSource() {
 
         if (!choose && ready) {
           resolve(ready);
+          return;
+        }
+
+        if (!choose && keptCopy) {
+          try {
+            resolve(await files.fromKept(game));
+          } catch (error) {
+            if (!(error instanceof files.InstallationError)) throw error;
+            keptCopy = null;
+            offerFolder();
+            offer(remembered ? 'Play now' : 'Choose game folder', error.message, 'error', Boolean(remembered));
+          }
           return;
         }
 
@@ -472,6 +501,7 @@ async function chooseSource() {
           if (picked.title !== game) {
             showGame(picked.title);
             remembered = await files.rememberedFolder(game);
+            keptCopy = await files.keptCopy(game);
           }
           ready = picked;
           if (picked.handle) await files.rememberFolder(picked.title, picked.handle);
@@ -502,6 +532,12 @@ async function chooseSource() {
       offerFolder();
     }, { signal: listening.signal });
     clear.addEventListener('click', async () => {
+      if (folderMode) {
+        await files.forgetKept(game);
+        keptCopy = null;
+        offerFolder();
+        return;
+      }
       await files.clearHosted(hostedData());
       clear.hidden = true;
       if (!folderMode) offerHosted((await statusOfSite()) ?? hosted);
@@ -523,6 +559,22 @@ async function writeHostAssets(fs) {
     fs.mkdirTree(`/${path.slice(0, path.lastIndexOf('/'))}`);
     fs.writeFile(`/${path}`, new Uint8Array(await response.arrayBuffer()));
   }));
+}
+
+/** Copies the folder being played from into the browser (game-files.js keepCopy), saying how far it has got. */
+async function keepOwnFiles(source) {
+  const STEP = 256 * 1048576;
+  let said = 0;
+  try {
+    const whole = await files.keepCopy(source, (done, total) => {
+      if (done - said < STEP && done < total) return;
+      said = done;
+      console.log(`Keeping the game's files in this browser: ${megabytes(done)} of ${megabytes(total)} MB.`);
+    });
+    if (whole) console.log("The game's files are kept in this browser; the next visit plays from them without asking for the folder.");
+  } catch (error) {
+    console.warn(`The game's files could not be kept in this browser: ${error.message}`);
+  }
 }
 
 /** After the game, or instead of it: the page offers a reload, which starts again from the landing page. */
@@ -606,6 +658,10 @@ async function start() {
 
   // The missions' files, downloaded ahead while the menu is up, so the first mission chosen starts at once.
   if (source.hosted) setTimeout(() => source.prefetch(), 3000);
+
+  // A folder's files, copied into the browser while the game is played, so the next visit asks for nothing. ?keep does
+  // the same for a folder served for an automated run, which otherwise is not kept.
+  if (source.own || (query.has('keep') && !source.hosted && !source.kept)) setTimeout(() => keepOwnFiles(source), 5000);
 
   // Everything the page needed has loaded by now: kept for a visit with no network.
   keepShell();

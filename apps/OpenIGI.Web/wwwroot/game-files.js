@@ -185,6 +185,8 @@ export async function fromDirectory(handle, wanted) {
   return {
     name: found ? `${handle.name}/${found}` : handle.name,
     title,
+    /** The person's own folder, whose files can be kept in the browser (keepCopy). */
+    own: true,
     /** The folder the person picked, which can be remembered for their next visit. */
     handle,
     async list() {
@@ -196,7 +198,8 @@ export async function fromDirectory(handle, wanted) {
             if (!prefix && IGNORED_FOLDERS.has(name.toLowerCase())) continue;
             await walk(entry, path);
           } else {
-            files.push({ path, size: (await entry.getFile()).size, entry });
+            const file = await entry.getFile();
+            files.push({ path, size: file.size, modified: file.lastModified, entry });
           }
         }
       };
@@ -308,12 +311,13 @@ export async function reopen(handle, wanted) {
  */
 export async function fromFileList(list, wanted) {
   const picked = list[0]?.webkitRelativePath.split('/')[0] ?? '';
-  const all = [...list].map(f => ({ path: f.webkitRelativePath.split('/').slice(1).join('/'), size: f.size, file: f }));
+  const all = [...list].map(f => ({ path: f.webkitRelativePath.split('/').slice(1).join('/'), size: f.size, modified: f.lastModified, file: f }));
   const { prefix, title } = await locateInList(picked, all, wanted);
   const files = rebase(all, prefix);
   return {
     name: prefix ? `${picked}/${prefix.slice(0, -1)}` : picked,
     title,
+    own: true,
     async list() { return files; },
     async read(file) { return new Uint8Array(await file.file.arrayBuffer()); },
   };
@@ -342,6 +346,171 @@ export async function fromUrl(base, wanted) {
       return new Uint8Array(await reply.arrayBuffer());
     },
   };
+}
+
+// --- The person's own files, kept in the browser -----------------------------------------------------------
+//
+// A remembered folder has to be opened again on every visit, and that is the browser's to allow: some forget the
+// folder or the permission between visits, and some (a phone's, or any without the folder API) never had a folder to
+// remember, only the files picked that once. So the files of a folder played from are copied into the page's Cache
+// Storage while the game is played -- the hosted files' way of being kept -- and the next visit plays from the copy,
+// asking for nothing. The copy is a game's own: kept under its id, replaced when another folder is chosen, and
+// deleted from the landing page.
+//
+// It is whole or it is not used: the list of what it holds is written last, once every file is in, and deleted
+// first whenever the copy is changed. A copy left part-way (the tab closed, the disk full) is picked up where it
+// stopped the next time the game is played from the folder.
+
+const KEPT_CACHE = 'openigi-kept';
+const KEPT_VERSION = 1;
+/** How many files are copied at once: enough to keep the disk busy, few enough to leave the game its frames. */
+const KEPT_COPIERS = 2;
+
+const keptBase = title => new URL(`/openigi-kept/${title}/`, location.origin).href;
+const keptList = title => new URL(`/openigi-kept/${title}.json`, location.origin).href;
+const keptUrl = (title, path) => keptBase(title) + path.split('/').map(encodeURIComponent).join('/');
+
+async function keptCache() {
+  try {
+    return globalThis.caches ? await caches.open(KEPT_CACHE) : null;
+  } catch {
+    return null; // No secure context, or a private window that keeps nothing.
+  }
+}
+
+/** The list a whole copy of a game's files holds -- { name, size, files } -- or null when there is no whole copy. */
+export async function keptCopy(title) {
+  try {
+    const hit = await (await keptCache())?.match(keptList(title));
+    const list = hit ? await hit.json() : null;
+    return list?.version === KEPT_VERSION && list.title === title && Array.isArray(list.files) ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Deletes a game's kept copy. */
+export async function forgetKept(title) {
+  try {
+    const cache = await keptCache();
+    if (!cache) return;
+    await cache.delete(keptList(title));
+    const base = keptBase(title);
+    for (const request of await cache.keys()) {
+      if (request.url.startsWith(base)) await cache.delete(request);
+    }
+  } catch {
+    // Nothing kept, or nothing can be.
+  }
+}
+
+/**
+ * The installation as kept in the browser. Throws an InstallationError when there is no whole copy -- the browser may
+ * have cleared some of it to make room -- after deleting what is left of it.
+ * @param {string} title The game.
+ */
+export async function fromKept(title) {
+  const list = await keptCopy(title);
+  const cache = await keptCache();
+  const base = keptBase(title);
+  const held = cache && list ? (await cache.keys()).filter(request => request.url.startsWith(base)).length : 0;
+  if (!list || held < list.files.length) {
+    await forgetKept(title);
+    throw new InstallationError(`The copy of ${TITLES[title].name} kept in this browser is gone. Choose the game folder again.`);
+  }
+
+  return {
+    name: list.name,
+    title,
+    kept: true,
+    async list() { return list.files.map(file => ({ ...file })); },
+    async read(file) {
+      const hit = await cache.match(keptUrl(title, file.path));
+      if (!hit) throw new Error(`${file.path} is missing from the copy kept in this browser`);
+      return new Uint8Array(await hit.arrayBuffer());
+    },
+  };
+}
+
+/** Whether a kept file is the one in the folder now: the same size and the same time of change. */
+const sameFile = (hit, file) =>
+  hit && hit.headers.get('X-Size') === String(file.size) && hit.headers.get('X-Modified') === String(file.modified ?? 0);
+
+/**
+ * Copies a folder's files into the browser, for the next visit to play from. Files kept already and unchanged are
+ * skipped, and files kept from another folder that this one lacks are deleted.
+ * @param {object} from The source being played: fromDirectory or fromFileList.
+ * @param {(done: number, total: number) => void} progress Bytes in the copy so far, of all of them.
+ * @returns {Promise<boolean>} Whether the copy is whole: false when the browser keeps nothing or has no room.
+ */
+export async function keepCopy(from, progress) {
+  const cache = await keptCache();
+  if (!cache) return false;
+  const { title } = from;
+  const files = (await from.list()).filter(wanted);
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+
+  // Not whole from here until every file is in.
+  await cache.delete(keptList(title));
+
+  const base = keptBase(title);
+  const wantedUrls = new Set(files.map(file => keptUrl(title, file.path)));
+  for (const request of await cache.keys()) {
+    if (request.url.startsWith(base) && !wantedUrls.has(request.url)) await cache.delete(request);
+  }
+
+  let done = 0;
+  const queue = [];
+  for (const file of files) {
+    if (sameFile(await cache.match(keptUrl(title, file.path)), file)) done += file.size;
+    else queue.push(file);
+  }
+  progress?.(done, total);
+
+  const needed = total - done;
+  if (needed > 0) {
+    navigator.storage?.persist?.().catch(() => {});
+    const { quota, usage } = (await Promise.resolve(navigator.storage?.estimate?.()).catch(() => null)) ?? {};
+    if (Number.isFinite(quota) && quota - (usage ?? 0) < needed * 1.1) {
+      console.warn(`The game's files were not kept in this browser: ${Math.ceil(needed / 1048576)} MB would not fit.`);
+      return false;
+    }
+  }
+
+  let stopped = null;
+  const copier = async () => {
+    for (let file = queue.shift(); file && !stopped; file = queue.shift()) {
+      try {
+        const bytes = await from.read(file);
+        await cache.put(keptUrl(title, file.path), new Response(bytes, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Size': String(file.size),
+            'X-Modified': String(file.modified ?? 0),
+          },
+        }));
+        done += file.size;
+        progress?.(done, total);
+      } catch (error) {
+        stopped = error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: KEPT_COPIERS }, copier));
+  if (stopped) {
+    console.warn(`The game's files were not all kept in this browser: ${stopped.message}`);
+    return false;
+  }
+
+  const list = {
+    version: KEPT_VERSION,
+    title,
+    name: from.name,
+    size: total,
+    files: files.map(({ path, size, modified }) => ({ path, size, modified })),
+  };
+  await cache.put(keptList(title), new Response(JSON.stringify(list), { headers: { 'Content-Type': 'application/json' } }));
+  return true;
 }
 
 // --- The hosted installation -------------------------------------------------------------------------------
