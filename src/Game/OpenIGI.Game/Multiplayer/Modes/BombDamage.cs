@@ -29,4 +29,13 @@ public static class BombDamage
         double share = PeakShare * Math.Exp(-(effectiveMetres * effectiveMetres) / twoSigmaSquared);
         return share < LeastShare ? 0f : (float)share;
     }
+
+    /// <summary>How far the bell reaches before it gives out at <see cref="LeastShare"/>.</summary>
+    /// <param name="lethalMetres">The killing radius in the open.</param>
+    /// <returns>The effective distance in metres past which the blast takes nothing.</returns>
+    public static double ReachMetres(double lethalMetres)
+    {
+        double lethal = Math.Max(lethalMetres, 1.0);
+        return lethal * Math.Sqrt(Math.Log(PeakShare / LeastShare) / Math.Log(PeakShare));
+    }
 }

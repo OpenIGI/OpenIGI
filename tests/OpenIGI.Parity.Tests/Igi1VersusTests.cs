@@ -444,6 +444,51 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_bombs_front_that_leaves_a_player_standing_hurts_it_and_shakes_throws_up_and_shoves_its_view()
+    {
+        // The front reaches the joiner 20 m from the bomb and takes 40% of its health: the server's copy is hurt, and the
+        // joiner's own game is told -- its view thrown up and shaken, its body shoved away from the bomb.
+        using Igi1CoopPair pair = Joined(MatchModes.SearchAndDestroy);
+        Landed(pair);
+        pair.RunUntil(() => false, FreezeTicks);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        OpenIGI.Game.Igi1.Player.PlayerCamera joiner = pair.Joiner!.World.Player!;
+        int slot = pair.Session.Session!.Match.Players.Values.Single(p => p.Name == "Anya").Slot;
+        Core.Numerics.Vector3d before = joiner.Body.Position;
+        float pitchBefore = joiner.AimPitch;
+        float healthBefore = partner.Health.RemainingFraction;
+        IReplicatedWorld world = ((IModeHost)pair.Session.Session).World;
+
+        world.BlastPlayer(slot, 0.4f, partner.Player.Body.Position - new Core.Numerics.Vector3d(20 * 4096, 0, 0));
+        Assert.False(partner.IsDead);
+        Assert.True(partner.Health.RemainingFraction < healthBefore, "the server's copy took nothing");
+        Assert.True(pair.RunUntil(() => joiner.AimPitch > pitchBefore + 0.1f, 30) >= 0, "the joiner's view was never thrown up");
+        bool joinerShook = false;
+        pair.RunUntil(() =>
+        {
+            joinerShook |= joiner.ViewShake.RightUnits != 0f || joiner.ViewShake.UpUnits != 0f;
+            return false;
+        }, 25);
+        Assert.True(joinerShook, "the joiner's view never shook");
+        Assert.True(joiner.AimPitch < pitchBefore + 0.02f, "the joiner's thrown-up view never eased back");
+        Assert.True(joiner.Body.Position.X - before.X > 0.3 * 4096, $"the joiner was not shoved away from the bomb: {joiner.Body.Position.X - before.X} units");
+
+        // The same front on the host's own player.
+        OpenIGI.Game.Igi1.Player.PlayerCamera host = pair.Host.World.Player!;
+        float hostPitch = host.AimPitch;
+        world.BlastPlayer(ServerSession.HostSlot, 0.2f, host.Body.Position - new Core.Numerics.Vector3d(0, 20 * 4096, 0));
+        Assert.True(host.AimPitch > hostPitch + 0.1f, "the host's view was not thrown up");
+        bool shook = false;
+        pair.RunUntil(() =>
+        {
+            shook |= host.ViewShake.RightUnits != 0f || host.ViewShake.UpUnits != 0f;
+            return false;
+        }, 25);
+        Assert.True(shook, "the host's view never shook");
+        Assert.True(host.AimPitch < hostPitch + 0.02f, "the host's thrown-up view never eased back");
+    }
+
+    [RequiresGameDataFact]
     public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
     {
         using Igi1CoopPair pair = Joined(MatchModes.FreeForAll);

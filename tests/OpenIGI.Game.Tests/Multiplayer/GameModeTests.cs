@@ -415,6 +415,7 @@ public sealed class GameModeTests
     {
         for (int i = 0; i < ticks; i++)
         {
+            host.Fake.Now = from + i;
             mode.Tick(host, from + i, []);
         }
 
@@ -481,12 +482,52 @@ public sealed class GameModeTests
         host.Using.Clear();
         tick = Run(mode, host, tick, (TickRate * 10) + 1);
         Assert.Single(host.Blasts);
-        Assert.Equal([0], host.Killed);
         Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
         Assert.Equal(SearchAndDestroyMode.Attackers, mode.Flow.Winner);
 
         // The blast's round is held the bomb's own pause (mp_bombendtime, 10 s by default), not the 1 s of any other end.
         Assert.InRange(mode.Flow.SecondsLeft(tick)!.Value, 9.5, 10);
+
+        // Its front is held a moment before it sets out, and only then reaches the attacker beside it.
+        Assert.Empty(host.Killed);
+        tick = Run(mode, host, tick, (int)(TickRate * 1.2));
+        Assert.Equal([0], host.Killed);
+    }
+
+    [Fact]
+    public void The_bomb_front_is_held_a_second_then_felt_by_each_player_as_it_reaches_them()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        host.Using.Add(0);
+        host.Positions[0] = new(102 * Metre, 0, 0);
+        long tick = Run(mode, host, 1, TickRate + 1);
+        Assert.Equal("A", mode.PlantedSite);
+
+        // The planter walks 45 m off the bomb; the defender stands 60 m off it: both hurt, neither killed.
+        host.Using.Clear();
+        host.Positions[0] = new(147 * Metre, 0, 0);
+        host.Positions[1] = new(42 * Metre, 0, 0);
+        long blown = tick;
+        while (!mode.Exploded)
+        {
+            blown = Run(mode, host, blown, 1);
+        }
+
+        blown--;
+        tick = Run(mode, host, blown + 1, TickRate * 3);
+        Assert.Equal(2, host.Fake.BlastHits.Count);
+        foreach ((int slot, float share, long at) in host.Fake.BlastHits)
+        {
+            OpenIGI.Core.Numerics.Vector3d bomb = mode.PlantedAt!.Value + new OpenIGI.Core.Numerics.Vector3d(0, 0, 0.4 * Metre);
+            OpenIGI.Core.Numerics.Vector3d chest = host.Positions[slot] + new OpenIGI.Core.Numerics.Vector3d(0, 0, 1.2 * Metre);
+            double straight = (chest - bomb).Length / Metre;
+            double seconds = (at - blown) / (double)TickRate;
+            Assert.InRange(seconds, BombWave.ArrivalSeconds(straight) - 0.001, BombWave.ArrivalSeconds(straight) + (1.0 / TickRate) + 0.001);
+            Assert.True(share > 0f && share < 1f, $"slot {slot} took {share}");
+        }
+
+        // Nobody was reached in the second the front is held.
+        Assert.All(host.Fake.BlastHits, h => Assert.True(h.Tick - blown >= TickRate));
     }
 
     [Fact]
@@ -765,6 +806,19 @@ public sealed class GameModeTests
         public OpenIGI.Core.Numerics.Vector3d? PositionOf(int slot) => Positions.TryGetValue(slot, out OpenIGI.Core.Numerics.Vector3d at) ? at : null;
 
         public void KillPlayer(int slot) => Killed.Add(slot);
+
+        public List<(int Slot, float Share, long Tick)> BlastHits { get; } = [];
+
+        public long Now { get; set; }
+
+        public void BlastPlayer(int slot, float healthShare, OpenIGI.Core.Numerics.Vector3d from)
+        {
+            BlastHits.Add((slot, healthShare, Now));
+            if (healthShare >= 1f)
+            {
+                KillPlayer(slot);
+            }
+        }
 
         public bool HoldsTheDead => Holds;
 

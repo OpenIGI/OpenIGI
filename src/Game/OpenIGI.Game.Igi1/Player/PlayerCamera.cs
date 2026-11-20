@@ -326,14 +326,18 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     }
 
     /// <summary>
-    /// Gets the pitch the view is actually drawn at — the look, plus the recoil sitting on top of it.
+    /// Gets the pitch the view is actually drawn at — the look, plus the recoil sitting on top of it, plus whatever a blast
+    /// has thrown it up by.
     /// </summary>
     /// <remarks>
     /// <c>0x464800</c> writes <c>view+288 = view+296 + view+292</c>: the accumulated recoil is
     /// <b>added</b> to the mouse-driven pitch rather than folded into it, which is what lets it decay
-    /// back to where you were aiming instead of leaving the view permanently raised.
+    /// back to where you were aiming instead of leaving the view permanently raised. A blast's throw rides the same way.
     /// </remarks>
-    public float AimPitch => _body.Pitch + (_weapons?.RecoilPitch ?? 0f);
+    public float AimPitch => _body.Pitch + (_weapons?.RecoilPitch ?? 0f) + _firstPerson.BlastKickPitch;
+
+    /// <inheritdoc cref="PlayerFirstPersonView.InstallBlastKick"/>
+    public void InstallBlastKick(float pitchRadians) => _firstPerson.InstallBlastKick(pitchRadians);
 
     /// <summary>Gets whether the weapon in hand, or the gun the player is on, fired on the last tick.</summary>
     public bool FiredThisTick => MountedStationaryGun is { } mounted

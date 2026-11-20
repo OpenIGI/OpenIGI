@@ -25,6 +25,11 @@ internal sealed class PlayerFirstPersonView
     private readonly HumanLandingViewKick _landingKick = new();
     private readonly HumanViewShake _viewShake = new();
     private readonly PlayerViewInterpolator _pair;
+
+    // How much of a blast's throw of the view is left after each tick: most of it gone in half a second.
+    private const float BlastKickKeep = 0.8f;
+
+    private float _blastKickPitch;
     private bool _wasCapturing;
     private Vector3d _leanOffset;
 
@@ -83,6 +88,9 @@ internal sealed class PlayerFirstPersonView
     /// <summary>Gets the shake the last hit put in the view.</summary>
     internal HumanViewShake ViewShake => _viewShake;
 
+    /// <summary>Gets how far a blast has thrown the view up, in radians, easing back each tick. <b>Not retail.</b></summary>
+    internal float BlastKickPitch => _blastKickPitch;
+
     /// <summary>Gets the lean locomotion state 44 has eased the eye by (<c>HumanView+412..+420</c>).</summary>
     internal HumanBodyOffsets Lean { get; private set; }
 
@@ -128,12 +136,17 @@ internal sealed class PlayerFirstPersonView
     /// </param>
     internal void InstallLandingViewKick(float amplitudeUnits) => _landingKick.Install(amplitudeUnits);
 
-    /// <summary>Steps the hit shake, then the landing dip, as <c>0x464BD0</c> does.</summary>
+    /// <summary>Throws the view up, as a bomb's front does to a player it leaves standing. <b>Not retail.</b></summary>
+    /// <param name="pitchRadians">How far, in radians; a throw on top of one still easing back adds to what is left.</param>
+    internal void InstallBlastKick(float pitchRadians) => _blastKickPitch += pitchRadians;
+
+    /// <summary>Steps the hit shake, then the landing dip, as <c>0x464BD0</c> does; then eases a blast's throw back.</summary>
     /// <param name="random">The draw the shake jitters with.</param>
     internal void AdvanceKicks(Func<double> random)
     {
         _viewShake.Advance(random);
         _landingKick.Advance();
+        _blastKickPitch = MathF.Abs(_blastKickPitch) < 1e-4f ? 0f : _blastKickPitch * BlastKickKeep;
     }
 
     /// <summary>Steps the lean one tick: <c>0x40DFC0</c> while the body is in state 44, all three put down otherwise.</summary>
@@ -160,6 +173,7 @@ internal sealed class PlayerFirstPersonView
     {
         _landingKick.Reset();
         _viewShake.Reset();
+        _blastKickPitch = 0f;
     }
 
     /// <summary>Restores both first-person FOV tangents and drops the pair's zoom.</summary>

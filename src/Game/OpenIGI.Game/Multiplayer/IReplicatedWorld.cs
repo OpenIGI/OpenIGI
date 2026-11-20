@@ -202,9 +202,12 @@ public interface IReplicatedWorld
     /// <summary>Gets the level's collision, which a bomb's blast wave is spread through; none where the game has none.</summary>
     Game.World.WorldRayCast? Collision => null;
 
-    /// <summary>A bomb's blast wave reaching a player: a share of its health taken, and the flash, the shake and the death.</summary>
+    /// <summary>
+    /// A bomb's blast wave reaching a player: a share of its health taken and the death, or for one left standing the shake,
+    /// the view thrown up and the shove away from the bomb (<see cref="Modes.BombWave"/>).
+    /// </summary>
     /// <param name="slot">The player.</param>
-    /// <param name="healthShare">How much of a whole health it takes; one or more kills.</param>
+    /// <param name="healthShare">How much of a whole health it takes; one or more kills, nought takes nothing but is still felt.</param>
     /// <param name="from">Where the blast was, in world units.</param>
     void BlastPlayer(int slot, float healthShare, Core.Numerics.Vector3d from)
     {

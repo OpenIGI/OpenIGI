@@ -310,23 +310,41 @@ public sealed partial class Igi1ReplicatedWorld
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Through the blast's own share of a player (its shove, shake and flash, <see cref="Igi1Blasts.BlastPlayer"/>'s), then the
-    /// health it takes in whole-health terms, unscaled by difficulty: a match's bomb is the same for everyone.
+    /// The health it takes in whole-health terms, unscaled by difficulty: a match's bomb is the same for everyone. One it
+    /// leaves standing is shaken by how much it took, has the view thrown up and is shoved away from the bomb along the floor,
+    /// into the same slide a blast's shove uses (<see cref="Game.Multiplayer.Modes.BombWave"/>); its client feels each through the senses it is sent.
     /// </remarks>
     public void BlastPlayer(int slot, float healthShare, Vector3d from)
     {
-        PlayerCamera? rig = slot == ServerSession.HostSlot ? _game.World.Player : _bySlot.GetValueOrDefault(slot)?.Player;
-        if (rig is null || _game.Harm.Players.FirstOrDefault(p => ReferenceEquals(p.Rig, rig)) is not { IsDead: false } target)
+        if (LivingRig(slot) is not { } rig || _game.Harm.Players.FirstOrDefault(p => ReferenceEquals(p.Rig, rig)) is not { IsDead: false } target)
         {
             return;
         }
 
-        target.Health.ApplyDirect(Game.Weapons.ExplosionDamage.Zone, healthShare * target.Health.MaximumHealth);
-        target.Senses.HitShake();
-        target.Senses.FlashCorners();
-        if (target.Health.IsDead)
+        if (healthShare > 0f)
         {
-            _game.Harm.BeginPlayerDeath(target, from, Game.Weapons.ExplosionDamage.Zone, bone: -1, Game.Weapons.WeaponCategory.Grenade);
+            target.Health.ApplyDirect(Game.Weapons.ExplosionDamage.Zone, healthShare * target.Health.MaximumHealth);
+            target.Senses.FlashCorners();
+            if (target.Health.IsDead)
+            {
+                _game.Harm.BeginPlayerDeath(target, from, Game.Weapons.ExplosionDamage.Zone, bone: -1, Game.Weapons.WeaponCategory.Grenade);
+                return;
+            }
+        }
+
+        float shake = Game.Multiplayer.Modes.BombWave.ShakeScale(healthShare);
+        target.Senses.Shake(
+            HumanViewShake.HitPositionUnits * shake,
+            HumanViewShake.HitAngleRadians * shake,
+            (int)Math.Round(Game.Multiplayer.Modes.BombWave.ShakeSeconds * HumanPlayerParameters.TicksPerSecond));
+        target.Senses.ViewKick(Game.Multiplayer.Modes.BombWave.KickRadians(healthShare));
+
+        Vector3d away = rig.EyeUnits - from;
+        double along = Math.Sqrt((away.X * away.X) + (away.Y * away.Y));
+        float shove = Igi1PlayerRules.BlastShoveUnitsPerTick * Game.Multiplayer.Modes.BombWave.ShoveShare(healthShare);
+        if (along > 1e-6 && shove > 0f)
+        {
+            target.Shove(rig, (float)(away.X / along * shove), (float)(away.Y / along * shove));
         }
     }
 

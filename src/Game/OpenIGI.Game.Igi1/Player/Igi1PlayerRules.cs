@@ -35,7 +35,7 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
     private const int BluntBackZone = 14;
 
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
-    private const float BlastShoveUnitsPerTick = 758.51849f;
+    internal const float BlastShoveUnitsPerTick = 758.51849f;
 
     // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
     private const int ExplosionShakeTicks = 90;
