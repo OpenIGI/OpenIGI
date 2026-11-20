@@ -93,6 +93,13 @@ public sealed partial class GameHost
             console, captured, view.Eye, view.Projection, view.MapScene, view.Resolution, view.SceneTarget, view.SmoothPresentation,
             view.TickBlend, cameraIndoors, view.RemasteredOptics);
 
+        // Drawn straight to the back buffer there is no resolve to sweep a bomb's after-blast over the picture: it is drawn over
+        // the frame here instead, while the depth still holds the world it places its front by.
+        if (!captured)
+        {
+            _device.DrawAfterBlastOverFrame(view.PostProcess.AfterBlast);
+        }
+
         float? binocularRangeMetres = DrawFirstPersonView(
             view.Eye, view.ShowViewModel, view.Sight, view.SmoothPresentation, view.TickBlend);
 

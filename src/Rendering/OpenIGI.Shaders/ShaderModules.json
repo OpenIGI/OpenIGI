@@ -626,6 +626,10 @@
     {
       "id": "BombAfterBlast",
       "source": "Post/BombAfterBlast.slang"
+    },
+    {
+      "id": "ScreenPicture",
+      "source": "Post/ScreenPicture.slang"
     }
   ]
 }

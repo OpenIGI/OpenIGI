@@ -250,6 +250,9 @@ public enum ShaderModuleId
     /// <summary>Post: a bomb's after-blast, its front sweeping out over the lit scene before the tone map (<c>Post/BombAfterBlast.slang</c>).</summary>
     BombAfterBlast,
 
+    /// <summary>Post: a picture in linear light laid into the back buffer, where the direct path's frame was (<c>Post/ScreenPicture.slang</c>).</summary>
+    ScreenPicture,
+
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is
     /// labelled so; the catalogue gives each one an id of its own as it is registered (<see cref="ShaderCatalog.Register"/>).

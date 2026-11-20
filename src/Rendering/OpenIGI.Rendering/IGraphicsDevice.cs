@@ -257,6 +257,17 @@ public interface IGraphicsDevice :
     /// <exception cref="GraphicsDeviceException">Nothing has been captured this frame.</exception>
     void ResolveScene(in PostProcessSettings post);
 
+    /// <summary>Draws a bomb's after-blast over the frame drawn straight into the back buffer, where its front is out.</summary>
+    /// <param name="afterBlast">The after-blast at this frame; inactive draws nothing.</param>
+    /// <remarks>
+    /// For the direct path, which keeps no picture of its own: after the world and before the first-person view, whose
+    /// drawing clears the depth the after-blast places its front by. A scene drawn offscreen has it drawn in its resolve
+    /// (<see cref="PostProcessSettings.AfterBlast"/>) instead. A device that cannot read its frame back leaves it as it is.
+    /// </remarks>
+    void DrawAfterBlastOverFrame(in BombAfterBlastSettings afterBlast)
+    {
+    }
+
     /// <summary>Draws camera-facing tracer strips through the tracer shader.</summary>
     /// <param name="mesh">The strips: u along each one (0 tail, 1 head), v across it, the vertex colour the tracer's
     /// colour at the display encoding and its alpha the brightness at that end.</param>
