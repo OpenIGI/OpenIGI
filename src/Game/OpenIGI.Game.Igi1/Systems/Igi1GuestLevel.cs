@@ -37,7 +37,7 @@ public sealed class Igi1GuestLevel
     private readonly GuestTaskIds _ids;
 
     // The player standing in the host's level, once one does: its rig and what it is hurt and heard in.
-    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings)? _player;
+    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings, Igi1PlayerLife Life)? _player;
 
     private Igi1GuestLevel(Igi1GuestContent content, LevelTask root)
     {
@@ -185,7 +185,7 @@ public sealed class Igi1GuestLevel
             heard.Stage.Player = rig;
         }
 
-        _player = (rig, start.Surroundings);
+        _player = (rig, start.Surroundings, life);
 
         // It takes the game's guns lying in the level as it reaches them, with the game's cue.
         rig.UseGunPickups(GunPickups);
@@ -344,8 +344,10 @@ public sealed class Igi1GuestLevel
         LevelUpdateWalker walker = new(Root);
         soldiers.AttachTo(walker);
         hosted = new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player, GunPickups);
+        hosted.WeaponAt = index => index >= 0 && index < arsenal.Weapons.Weapons.Count ? arsenal.Weapons.Weapons[index] : null;
         if (_player is { } player)
         {
+            hosted.PlayerSave = Saves.Igi1PlayerSave.GuestSection(player.Rig, player.Life, arsenal.Weapons, arsenal.Ammunition);
             HearPlayer(hosted, player.Rig, player.Surroundings, steps);
             RunClimbs(hosted, player.Rig, world.Ground);
         }

@@ -325,7 +325,7 @@ public sealed partial class Igi2TitlePlayer
         public float BatteryAfterSave => ((OpenIGI.Game.Player.ITitleSaveGames?)player.Saves)?.BatteryAfterSave ?? 0f;
 
         // HumanPlayer_IsSaveAllowed: not while the action is locked, and only in a single player's game.
-        public bool IsSaveAllowed => player.Human.IsSaveAllowed && !SaveGameLock.IsHeld && player.Level?.Joined.HasGuests != true;
+        public bool IsSaveAllowed => player.Human.IsSaveAllowed && !SaveGameLock.IsHeld && player.Level?.Joined.HasUnsavedGuests != true;
 
         public int QuickLoadSlot => player.Human.QuickLoadSlot;
 

@@ -21,6 +21,7 @@ public sealed class LevelJoiners
     private readonly List<IExplosionHitTarget> _explosionTargets = [];
     private readonly List<IHumanAiEventTarget> _humans = [];
     private readonly List<IAiDetectable> _seen = [];
+    private readonly List<Saves.ISaveSection> _saveSections = [];
 
     /// <summary>Gets the explosion targets that joined, in the order they joined.</summary>
     public IReadOnlyList<IExplosionHitTarget> ExplosionTargets => _explosionTargets;
@@ -73,14 +74,36 @@ public sealed class LevelJoiners
 
     /// <summary>
     /// Gets a value indicating whether any human of another game stands in the level: its player, or a soldier that hears its
-    /// events. Their state is their own game's, which the level's save does not carry.
+    /// events. Their state is their own game's, which the level's save carries only where they hand it over
+    /// (<see cref="SaveSections"/>).
     /// </summary>
     public bool HasGuests => PlayerStandsIn || _humans.Count > 0;
+
+    /// <summary>
+    /// Gets what the guests keep of themselves in the level's save: each a section of calls beside the level's own, written by
+    /// the guests' game and read back by it.
+    /// </summary>
+    public IReadOnlyList<Saves.ISaveSection> SaveSections => _saveSections;
+
+    /// <summary>
+    /// Gets a value indicating whether guests stand in the level that keep nothing of themselves in its save: a save would
+    /// bring back a level they no longer fit, so the level is not saved while they stand in it.
+    /// </summary>
+    public bool HasUnsavedGuests => HasGuests && _saveSections.Count == 0;
+
+    /// <summary>Has the guests keep something of themselves in the level's save.</summary>
+    /// <param name="section">What they keep.</param>
+    public void JoinSave(Saves.ISaveSection section)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        _saveSections.Add(section);
+    }
 
     /// <summary>Forgets everyone who joined, as the level is left.</summary>
     public void Clear()
     {
         PlayerStandsIn = false;
+        _saveSections.Clear();
         ExplosionDamageScale = 1f;
         _explosionTargets.Clear();
         _humans.Clear();

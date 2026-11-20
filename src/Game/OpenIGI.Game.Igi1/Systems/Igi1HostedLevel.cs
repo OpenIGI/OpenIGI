@@ -117,6 +117,29 @@ public sealed class Igi1HostedLevel
         }
 
         Soldiers.Humans.AddRange(hostHumans);
+
+        // And what they are goes into the host's save: the soldiers, the guns lying about, and the player.
+        foreach (Game.Saves.ISaveSection section in SaveSections())
+        {
+            joined.JoinSave(section);
+        }
+    }
+
+    /// <summary>Gets or sets the player standing in the host's level, as its save keeps it; <see langword="null"/> where the host's own plays.</summary>
+    internal Game.Saves.ISaveSection? PlayerSave { get; set; }
+
+    /// <summary>Gets or sets the game's weapon by its place in the roster, which a gun lying in the level is saved by.</summary>
+    internal Func<int, Game.Weapons.WeaponType?> WeaponAt { get; set; } = static _ => null;
+
+    // What the level's guests keep of themselves in the host's save.
+    private IEnumerable<Game.Saves.ISaveSection> SaveSections()
+    {
+        yield return new Saves.Igi1GuestSoldiersSave(Soldiers, _hosts);
+        yield return GunPickups.SaveSection(WeaponAt);
+        if (PlayerSave is { } player)
+        {
+            yield return player;
+        }
     }
 
     /// <summary>
