@@ -663,6 +663,20 @@ public sealed partial class GameHost
             state.FlightFrame++;
         }
 
+        // The stills asked for along the way (-shotat), each named for its frame beside the last one's path.
+        if (_options.ShotFrames.Count > 0
+            && _options.ScreenshotPath is { } shotPath
+            && _options.ShotFrames.Contains(_loop.Clock.FrameCount))
+        {
+            Bgra32[] shot = new Bgra32[_window.Width * _window.Height];
+            _device.CaptureFrame(_window.Width, _window.Height, shot);
+            string named = Path.Combine(
+                Path.GetDirectoryName(shotPath) ?? string.Empty,
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Path.GetFileNameWithoutExtension(shotPath)}.f{_loop.Clock.FrameCount:000000}{Path.GetExtension(shotPath)}"));
+            BitmapWriter.Write(named, _window.Width, _window.Height, shot);
+            _logger.Information("Desktop", $"Wrote frame {_loop.Clock.FrameCount} to {named}.");
+        }
+
         // Authored-scene capture: write numbered stills of the requested scene every 90 logic ticks
         // (3 s) up to the still budget. Test-only; driven by environment variables.
         // A chained intro resets its scene-local clock. Do not carry the previous scene's next

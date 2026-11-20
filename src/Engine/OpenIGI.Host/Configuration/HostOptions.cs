@@ -114,6 +114,10 @@ public readonly record struct HostOptions(
     /// </remarks>
     public IReadOnlyList<(int Frame, string Statement)> DeferredCommands { get; init; } = [];
 
+    /// <summary>Gets the frames a still is written on besides the last, beside the <c>-screenshot</c> path (<c>-shotat</c>).</summary>
+    /// <remarks>So one run photographs a moment at several points, instead of a run per point.</remarks>
+    public IReadOnlyList<int> ShotFrames { get; init; } = [];
+
     /// <summary>Gets the content folders named with <c>-content</c>, highest priority first.</summary>
     /// <remarks>
     /// For development: a folder that mirrors the game's paths, stacked above every layer the content
@@ -458,6 +462,8 @@ public readonly record struct HostOptions(
           -runat <n> <cmd> Run one console statement on frame n, once. Unlike +<command>, which runs
                            before any level exists, this reaches a loaded world -- so a capture can fire
                            impact_test or blood_test and photograph the result.
+          -shotat <n>      Also write a still on frame n, beside the -screenshot path as stem.fNNNNNN.bmp.
+                           Repeatable, so one run photographs a moment at several points.
           -benchmark <f>   Run 120 warm-up and 600 measured frames on a deterministic 120 Hz
                            presentation clock with 30 Hz simulation, then write JSON to <f>.
           -cutscene        Play the mission's authored opening cinematic. Cinematics already play by

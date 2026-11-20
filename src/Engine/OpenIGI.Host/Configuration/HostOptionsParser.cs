@@ -66,6 +66,7 @@ internal static class HostOptionsParser
         bool lockstep = false;
         bool noSave = false;
         List<(int Frame, string Statement)> deferredCommands = [];
+        List<int> shotFrames = [];
         List<string> contentDirectories = [];
         string? contentProfile = null;
         string? streamlineDirectory = null;
@@ -277,6 +278,10 @@ internal static class HostOptionsParser
             {
                 int runFrame = NextInt(args, ref i, "runat", 0, "a non-negative frame");
                 deferredCommands.Add((runFrame, Next(args, ref i, "runat")));
+            }
+            else if (arg.Equals("shotat", StringComparison.OrdinalIgnoreCase))
+            {
+                shotFrames.Add(NextInt(args, ref i, "shotat", 1, "a frame from 1"));
             }
             else if (arg.Equals("content", StringComparison.OrdinalIgnoreCase))
             {
@@ -500,6 +505,7 @@ internal static class HostOptionsParser
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             DeferredCommands = deferredCommands,
+            ShotFrames = shotFrames,
             ContentDirectories = contentDirectories,
             ContentProfilePath = contentProfile,
             StreamlineDirectory = streamlineDirectory,
