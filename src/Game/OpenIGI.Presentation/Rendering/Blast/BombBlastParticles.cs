@@ -427,21 +427,21 @@ public sealed partial class BombBlastParticles(IGraphicsDevice device) : IDispos
     {
         float t = Math.Clamp(lived, 0f, 1f);
         float red = s.Red;
-        float green = s.Green * Lerp(1f, 0.32f, Smooth(0.05f, 0.75f, t));
-        float blue = s.Blue * Lerp(1f, 0.08f, Smooth(0f, 0.4f, t));
+        float green = s.Green * float.Lerp(1f, 0.32f, Smooth(0.05f, 0.75f, t));
+        float blue = s.Blue * float.Lerp(1f, 0.08f, Smooth(0f, 0.4f, t));
         return (red, green, blue);
     }
 
     private static (float Red, float Green, float Blue) EmberColour(in BlastSprite s, float lived)
     {
         float cool = Smooth(0.3f, 1f, lived);
-        return (s.Red, s.Green * Lerp(1f, 0.55f, cool), s.Blue * Lerp(1f, 0.3f, cool));
+        return (s.Red, s.Green * float.Lerp(1f, 0.55f, cool), s.Blue * float.Lerp(1f, 0.3f, cool));
     }
 
     private static (float Red, float Green, float Blue) HeatColour(float lived)
     {
         float cool = Smooth(0f, 0.25f, lived);
-        return (1f, Lerp(0.62f, 0.32f, cool), Lerp(0.28f, 0.08f, cool));
+        return (1f, float.Lerp(0.62f, 0.32f, cool), float.Lerp(0.28f, 0.08f, cool));
     }
 
     private static float NearFade(double distanceMetres) =>
@@ -465,8 +465,6 @@ public sealed partial class BombBlastParticles(IGraphicsDevice device) : IDispos
     }
 
     private static Vector3f ToF(Vector3d v) => new((float)v.X, (float)v.Y, (float)v.Z);
-
-    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
 
     private static float Smooth(float from, float to, float x)
     {
