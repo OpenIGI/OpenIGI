@@ -39,6 +39,9 @@ public sealed class Igi1GuestLevel
     // The player standing in the host's level, once one does: its rig and what it is hurt and heard in.
     private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings, Igi1PlayerLife Life)? _player;
 
+    // What the player walks on: the host's ground, or what the host made of it for the player.
+    private IGroundHeightField? _playerGround;
+
     private Igi1GuestLevel(Igi1GuestContent content, LevelTask root)
     {
         _content = content;
@@ -119,6 +122,10 @@ public sealed class Igi1GuestLevel
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(start);
         IOpenIgiLogger log = start.Surroundings.Logger;
+
+        // What it walks on: the level's ground, or what the host makes of it for a human of this game.
+        IGroundHeightField? footing = start.Ground ?? world.Ground;
+        _playerGround = footing;
         PlayerSpawnPoint spawn = PlayerSpawn.Of(start.Task);
 
         // Its grenades and view model meet the host's world; its view model's forward sweep meets the ground alone.
@@ -190,7 +197,7 @@ public sealed class Igi1GuestLevel
         // It takes the game's guns lying in the level as it reaches them, with the game's cue.
         rig.UseGunPickups(GunPickups);
         rig.GunPickedUp += _ => start.Surroundings.PlayDefinition(Igi1MissionAudio.GunPickupSound, Igi1MissionAudio.GunPickupSoundPriority);
-        rig.PlaceAt(world.Ground, spawn, start.Solids.PlayerRegistrationCaster());
+        rig.PlaceAt(footing, spawn, start.Solids.PlayerRegistrationCaster());
 
         // The host's player task stands for it: its body is the rig, its events the player's, and it is the human the host's
         // world, AI and scripts meet.
@@ -200,14 +207,14 @@ public sealed class Igi1GuestLevel
         {
             // The host's scripts put its player where they will (Human_PopPosition): the rig goes there, onto the ground below.
             Placement = (held, feet) => held.Place(
-                world.Ground,
+                footing,
                 new Core.Numerics.Vector3d(feet.X, feet.Y, feet.Z + PlayerBody.StandingEyeHeight) / WorldScene.UnitsPerMetre,
                 held.Yaw),
         };
         task.Events = human;
         task.StandIn = task;
         world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
-        Igi1TitlePlayer player = new(human, world.Ground);
+        Igi1TitlePlayer player = new(human, footing);
 
         // As it dies, the camera pulls back from where it falls, kept off the host's walls.
         if (start.Surroundings is Igi1GuestPlayerSurroundings surroundings)
@@ -349,7 +356,7 @@ public sealed class Igi1GuestLevel
         {
             hosted.PlayerSave = Saves.Igi1PlayerSave.GuestSection(player.Rig, player.Life, arsenal.Weapons, arsenal.Ammunition);
             HearPlayer(hosted, player.Rig, player.Surroundings, steps);
-            RunClimbs(hosted, player.Rig, world.Ground);
+            RunClimbs(hosted, player.Rig, _playerGround ?? world.Ground);
         }
 
         return hosted;
