@@ -592,6 +592,11 @@ public sealed partial class GameHost
         _soldiers?.Dispose();
         DisposeModePoints();
         _menuBackdrop.ReleaseSoldiers();
+
+        // The backdrop's renderer, scene and collision index were just released with the level, so the preview they came
+        // from can no longer be promoted. Left standing, a mission started for the same id took it for a level still up:
+        // a co-op joiner whose tables were read again for the host's files promoted a gutted backdrop and stopped the game.
+        _menuBackdrop.Clear();
         _heldWeapon?.Dispose();
         WorldView?.ReleaseLevel();
         _hud?.Dispose();
