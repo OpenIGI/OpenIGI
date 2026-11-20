@@ -99,7 +99,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
 
         if (!_grenadeCookStarted)
         {
-            _grenadeCookVoice = host.SoundOutput.PlayDefinition("grenade_tick_1", priority: 200);
+            _grenadeCookVoice = host.SoundOutput.PlayDefinition(TimedActionSounds.GrenadeCook, priority: 200);
             _grenadeCookStarted = true;
         }
     }
@@ -149,13 +149,10 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             return;
         }
 
-        foreach (AnimTriggerDefinition trigger in mission.AnimationTriggers.Definitions.Values)
+        foreach (string sound in mission.AnimationTriggers.SoundsCrossed(view.CrossedEvent))
         {
-            if (view.CrossedEvent(trigger.EventId))
-            {
-                // The player's view rig is at the listener, so this is deliberately non-positional.
-                host.SoundOutput.PlayDefinition(trigger.Resource, priority: 180);
-            }
+            // The player's view rig is at the listener, so this is deliberately non-positional.
+            host.SoundOutput.PlayDefinition(sound, priority: 180);
         }
     }
 
@@ -174,12 +171,9 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             return;
         }
 
-        foreach (AnimTriggerDefinition trigger in mission.AnimationTriggers.Definitions.Values)
+        foreach (string sound in mission.AnimationTriggers.SoundsCrossed(body.CrossedEvent))
         {
-            if (body.CrossedEvent(trigger.EventId))
-            {
-                host.SoundOutput.PlayDefinition(trigger.Resource, feet, priority: 180);
-            }
+            host.SoundOutput.PlayDefinition(sound, feet, priority: 180);
         }
     }
 
@@ -330,12 +324,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     private void SoundTimedAction(PlayerCamera player)
     {
         int state = player.InteractionLocomotionState;
-        string? loop = state switch
-        {
-            HumanInteractionDispatch.PickLockState => "picklock_loop",
-            HumanInteractionDispatch.ComputerState => "typecomp_loop",
-            _ => null,
-        };
+        string? loop = TimedActionSounds.LoopOf(state);
 
         if (state != _actionVoiceState)
         {
@@ -351,12 +340,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             output.SetDefinitionVoicePosition(loop!, _actionVoice, player.Body.Position, priority: 200);
         }
 
-        string? end = player.TakeCompletedActionState() switch
-        {
-            HumanInteractionDispatch.PickLockState => "pickloop_end",
-            HumanInteractionDispatch.ComputerState => "typecomp_end",
-            _ => null,
-        };
+        string? end = TimedActionSounds.EndOf(player.TakeCompletedActionState());
 
         if (end is not null)
         {
@@ -939,7 +923,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
                 launchPosition = m203Shots[0].Origin;
             }
 
-            host.SoundOutput?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
+            host.SoundOutput?.PlayDefinition(TimedActionSounds.M203Launch, launchPosition, priority: 250);
         }
 
         // The grenade's cook tick: a looping sound held while the throw charges, stopped the

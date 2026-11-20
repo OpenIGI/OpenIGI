@@ -396,10 +396,11 @@ public sealed class Igi1GuestLevel
 
     // What the game's own mission does for its player as each tick closes (Igi1MissionTick.EndTick and its audio): the weapon in
     // its hands sounds, the red wash of a hit and a flashbang's white fade, and its body, once it has fallen, plays its fall out.
-    private static void KeepPlayer(
+    private void KeepPlayer(
         Igi1HostedLevel hosted, PlayerCamera rig, Igi1PlayerLife life, IIgi1PlayerSurroundings surroundings, Igi1GuestWeaponSounds? reports)
     {
         hosted.PlayerRig = rig;
+        AnimTriggerRegistry? triggers = _content.Guest.Session.Services.TryGet(out AnimTriggerRegistry? table) ? table : null;
         if (surroundings is Igi1GuestPlayerSurroundings own)
         {
             own.Bodies = () => hosted.Presenter;
@@ -407,7 +408,7 @@ public sealed class Igi1GuestLevel
 
         hosted.EachTick(() =>
         {
-            reports?.TickPlayer(rig);
+            reports?.TickPlayer(rig, triggers);
             life.DamageFlash.Tick();
             life.FlashbangFlash.Tick();
             hosted.Presenter?.TickPlayerBody();

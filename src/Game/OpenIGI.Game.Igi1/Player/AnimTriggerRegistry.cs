@@ -50,6 +50,21 @@ public sealed class AnimTriggerRegistry
     /// <summary>Gets the number of entries.</summary>
     public int Count => _byId.Count;
 
+    /// <summary>The sounds of the triggers a clip crossed this tick, in the table's order (<c>Human_FireAnimTrigger</c>, <c>0x4613D0</c>).</summary>
+    /// <param name="crossed">Whether the clip crossed an event, by its id.</param>
+    /// <returns>Each crossed trigger's sound definition.</returns>
+    public IEnumerable<string> SoundsCrossed(Func<int, bool> crossed)
+    {
+        ArgumentNullException.ThrowIfNull(crossed);
+        foreach (AnimTriggerDefinition trigger in _byId.Values)
+        {
+            if (crossed(trigger.EventId))
+            {
+                yield return trigger.Resource;
+            }
+        }
+    }
+
     /// <summary>Registers the <c>DefineAnimTrigger</c> native.</summary>
     /// <param name="natives">The script namespace the trigger script resolves against.</param>
     /// <exception cref="ArgumentNullException"><paramref name="natives"/> is <see langword="null"/>.</exception>
