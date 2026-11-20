@@ -23,6 +23,15 @@ public sealed partial class GameHost
     /// </remarks>
     public Func<int, Net.INetTransport>? OpenUdp { get; set; }
 
+    /// <summary>Gets a value indicating whether this game is in a multiplayer session, or on its way into a room.</summary>
+    /// <remarks>
+    /// Asked by a browser page whose tab is hidden: it gets no animation frames then, and a game in a session must go on being
+    /// stepped -- a host that stopped would stop everyone's game and catch the whole of its time away up on its return, and a
+    /// joiner that stopped would be dropped. However the session began: from the command line, or from the menu's rooms.
+    /// </remarks>
+    public bool InSession =>
+        TickObserver is not null || _coop?.Status.Phase is Frontend.CoopPhase.Connecting or Frontend.CoopPhase.Playing;
+
     /// <summary>Gets or sets the Discord Activity this game runs in, or <see langword="null"/>: the room the menu hosts is then its.</summary>
     /// <remarks>Set by the browser build's composition root, from <c>-instance</c>, before <see cref="Start"/>.</remarks>
     public string? DiscordInstance { get; set; }

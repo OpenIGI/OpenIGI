@@ -161,6 +161,11 @@ public static partial class Program
         return false;
     }
 
+    /// <summary>Whether the game is in a multiplayer session, or on its way into a room: one the page goes on stepping while its tab is hidden.</summary>
+    /// <returns><see langword="true"/> while it is.</returns>
+    [JSExport]
+    public static bool InSession() => _game?.InSession == true;
+
     private static string Version() =>
         typeof(Program).Assembly
             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
