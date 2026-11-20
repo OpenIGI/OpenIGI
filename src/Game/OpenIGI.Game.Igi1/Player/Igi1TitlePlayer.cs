@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
 public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground)
-    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement, IWeaponWheelPlayer, ITitleMatchPlayer
+    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement, IWeaponWheelPlayer, ITitleMatchPlayer, ITitleBinoculars
 {
     private TitleLookPreview? _look;
 
@@ -40,6 +40,9 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
 
     /// <inheritdoc/>
     public Matrix3f LookOrientation => Look.Orientation;
+
+    /// <inheritdoc/>
+    public bool IsBinocularsRaised => !Human.Life.IsDead && Human.Rig.IsBinocularsOpen;
 
     /// <summary>Gets the ticks the player has run.</summary>
     public long Ticks { get; private set; }

@@ -699,6 +699,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 if (StandIn is not { IsDead: true })
                 {
                     Human.OfferGenericPickups(standIn.EyePosition);
+                    DesignateForStandIn(standIn);
                 }
             }
 
