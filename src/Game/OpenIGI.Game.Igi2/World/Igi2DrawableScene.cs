@@ -247,7 +247,20 @@ public static class Igi2DrawableScene
                 }
             }
 
-            foreach (MefAttachment attachment in model.Attachments)
+            // A room of a building's shell -- an attach point that is a sector (SectorObject_CreateAttachObjects).
+            bool IsRoom(MefAttachment attachment) =>
+                depth == 0
+                && key is { Kind: Igi2VisibilityKind.Shell }
+                && Igi2SectorGraph.RoomModel(attachment, magic) is { } roomName
+                && models(roomName) is { IsSector: true };
+
+            // A building's shell walks every attach point that is not a room first, then the rooms, each in file
+            // order. SectorObject_CreateAttachObjects moves each sector it creates out of the magic container and
+            // into the sector container, and RigidDynCubeObj_EnumerateLightmapVirModelsHandler numbers the magic
+            // container's children before the sector container's. Walking the attach points in file order put a
+            // room's number among its siblings' and bound it a bake of another model's size -- a file retail
+            // rejects on its page table -- and the stretched page lit whole rooms past white under the doubled stage.
+            foreach (MefAttachment attachment in model.Attachments.Where(a => !IsRoom(a)).Concat(model.Attachments.Where(IsRoom)))
             {
                 // The magic table decides what the point becomes: its type's model, its own name, or -- for a
                 // shadow volume or a mark -- nothing drawn, which enumerates no lightmap and takes no number.
@@ -267,14 +280,10 @@ public static class Igi2DrawableScene
 
                 // A building's shell makes a room of each attach point that is a sector (SectorObject_CreateAttachObjects);
                 // the room and all it carries are drawn by the room, every other part by the shell.
-                Igi2VisibilityKey? attachedKey = key;
-                if (depth == 0
-                    && key is { Kind: Igi2VisibilityKind.Shell }
-                    && Igi2SectorGraph.RoomModel(attachment, magic) is { } roomName
-                    && models(roomName) is { IsSector: true })
-                {
-                    attachedKey = key with { Kind = Igi2VisibilityKind.Room, Room = rooms++ };
-                }
+                // The rooms come after the other parts but keep their own file order, the order the sector graph numbers them in.
+                Igi2VisibilityKey? attachedKey = IsRoom(attachment)
+                    ? key! with { Kind = Igi2VisibilityKind.Room, Room = rooms++ }
+                    : key;
 
                 bool carries = depth == 0 && placementMountedOn.Length > 0 && magic?.Find(attachment.Name)?.TaskType == placementMountedOn;
                 if (Emit(

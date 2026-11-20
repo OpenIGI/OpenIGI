@@ -224,6 +224,65 @@ public sealed class RetailIgi2LightmapBindingTests
         Assert.True(decoded > 500, $"Only {decoded} lightmaps were decoded.");
     }
 
+    /// <summary>A drawn part is bound the bake made for its own mesh: the same pages, each the same size.</summary>
+    /// <remarks>
+    /// <para>
+    /// The model index in a lightmap's name is a running count over the object's tree, and a building
+    /// counts its rooms after all its other parts: <c>SectorObject_CreateAttachObjects</c> moves each sector into
+    /// the sector container, which <c>RigidDynCubeObj_EnumerateLightmapVirModelsHandler</c> walks after the magic
+    /// container. Counting the attach points in file order instead bound 400_51_1, the dormitory room of
+    /// location 1 level 1, to a bake of another model's size, and the stretched page drew the room's floor and
+    /// ceiling past white. Hundreds of parts in every level were bound that way.
+    /// </para>
+    /// <para>
+    /// What is left is the data's, not the count's -- among them 200_01_1 at model index zero in location 3
+    /// level 3, which no ordering can reach: the shipped bake is simply not of the shipped mesh.
+    /// <c>LightmapInfo_CreateLightmapList</c> checks the page count and the mesh's date and turns such a file
+    /// down.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_drawn_part_is_bound_the_bake_of_its_own_mesh()
+    {
+        Igi2MagicObjTypes magic = Igi2Session.Start().Session.Services.Require<Igi2MagicObjTypes>();
+        int bound = 0;
+        int mismatched = 0;
+
+        foreach (Igi2Level level in Levels())
+        {
+            Dictionary<string, IresEntry> entries = new(StringComparer.OrdinalIgnoreCase);
+            foreach (IresEntry entry in level.LightmapArchive.Entries)
+            {
+                entries[Path.GetFileName(entry.Name)] = entry;
+            }
+
+            foreach (Game.World.WorldPlacement placement in Igi2LevelScene.Build(level, magic).Built.Scene.Placements)
+            {
+                if (placement.LightmapEntry.Length == 0 || !entries.TryGetValue(placement.LightmapEntry, out IresEntry? entry))
+                {
+                    continue;
+                }
+
+                bound++;
+                IReadOnlyList<ObjectLightmapImage> images = ObjectLightmap.Read(entry.Data, AssetFormatProfile.Igi2).Images;
+                IReadOnlyList<MefLightmapPage> pages = placement.Model.LightmapPages;
+                bool matches = images.Count == pages.Count;
+                for (int i = 0; matches && i < pages.Count; i++)
+                {
+                    matches = images[i].Width == pages[i].Width && images[i].Height == pages[i].Height;
+                }
+
+                if (!matches)
+                {
+                    mismatched++;
+                }
+            }
+        }
+
+        Assert.Equal(12_240, bound);
+        Assert.Equal(36, mismatched);
+    }
+
     private static Igi2Placement Place(int taskId) => new(taskId, "probe", "probe", default, default, 0);
 
     private static IEnumerable<Igi2Level> Levels() => Igi2Level.All().Where(static l => l.HasLightmaps);
