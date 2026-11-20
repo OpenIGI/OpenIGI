@@ -59,7 +59,6 @@ public sealed partial class BlastDebris(IGraphicsDevice device, IWorkScheduler w
     ];
 
     private readonly List<DebrisPiece> _pieces = [];
-    private readonly List<CollapseCloud> _clouds = [];
     private Pending? _pending;
     private bool _catchingUp;
     private int _dustThisTick;
@@ -75,14 +74,11 @@ public sealed partial class BlastDebris(IGraphicsDevice device, IWorkScheduler w
     /// <summary>Gets how many pieces are in the world.</summary>
     public int PieceCount => _pieces.Count;
 
-    /// <summary>Gets the dust clouds of the buildings brought down, oldest first.</summary>
-    public IReadOnlyList<CollapseCloud> Clouds => _clouds;
-
     /// <summary>Raised where a piece throws dust up -- landing hard, or shedding it as it falls -- for the particles to show.</summary>
     /// <remarks>Where, in world units; how big the piece is, in metres; and how hard, nought to one.</remarks>
     public event Action<Vector3d, float, float>? Dust;
 
-    /// <summary>Raised as a building starts to come down, for the particles to throw its surge out along the ground.</summary>
+    /// <summary>Raised as a building starts to come down, for the particles to throw its dust up and its surge out along the ground.</summary>
     /// <remarks>Its footprint's middle on the ground, in world units; how far the footprint reaches and how tall it stood, metres; its seed.</remarks>
     public event Action<Vector3d, float, float, uint>? Collapsed;
 
@@ -212,11 +208,6 @@ public sealed partial class BlastDebris(IGraphicsDevice device, IWorkScheduler w
             Step(piece);
         }
 
-        foreach (CollapseCloud cloud in _clouds)
-        {
-            cloud.Tick();
-        }
-
         FoldSettled();
         TickHeaps();
     }
@@ -244,7 +235,6 @@ public sealed partial class BlastDebris(IGraphicsDevice device, IWorkScheduler w
 
         _pieces.Clear();
         ClearSettled();
-        _clouds.Clear();
         ClearHeaps();
         _collision?.Clear();
         _world?.MendShattered();

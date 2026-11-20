@@ -107,7 +107,7 @@ public static class CombatEffectCVars
             0,
             2,
             CVarOptions.Archive,
-            "The search and destroy bomb's blast: 0 the original's rocket fire, 1 adds light, shockwave, shake and debris, 2 the volumetric fireball."),
+            "The search and destroy bomb's blast: 0 the original's rocket fire, 1 adds fire, smoke, light, shake and debris, 2 all the fire and smoke and the after-blast sweeping over the picture."),
         vanilla: "0",
         enhanced: "1",
         high: "2",

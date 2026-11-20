@@ -654,8 +654,9 @@ public static class GraphicsMenu
         new GraphicsSetting(
             "r_blast_quality",
             "Bomb Blast",
-            "How search and destroy's bomb goes off. Original is the original's rocket explosion; Enhanced adds its light, "
-                + "shockwave, shake, and the props and walls it shatters; Full adds the fireball and the smoke column.",
+            "How search and destroy's bomb goes off. Original is the original's rocket explosion; Enhanced adds its fire and "
+                + "smoke, light, shake, and the props and walls it shatters; Full throws all of its fire and smoke and draws its "
+                + "after-blast sweeping over the world.",
             new Dictionary<string, string>
             {
                 ["0"] = "Original",

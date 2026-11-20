@@ -26,12 +26,48 @@ public static class BombSounds
     /// <summary>The name the blast plays by, far off.</summary>
     public const string DistantExplosion = "bomb." + BombKit.DistantExplosionSound;
 
-    /// <summary>Decodes every sound, for registering.</summary>
+    /// <summary>The name the blast's deep thump plays by, far off and under the rest (<see cref="BombSoundDesign.FarThump"/>).</summary>
+    public const string FarThump = "bomb.far_thump";
+
+    /// <summary>The name the front's rush and strike plays by, at the player it reaches (<see cref="BombSoundDesign.FrontRush"/>).</summary>
+    public const string FrontRush = "bomb.front_rush";
+
+    /// <summary>Decodes every sound, and layers the bomb's own two out of its explosions, for registering.</summary>
     /// <param name="logger">Where a sound that does not decode is told.</param>
     /// <returns>Each sound's name, format and PCM.</returns>
     public static IEnumerable<(string Name, AudioFormat Format, byte[] Pcm)> All(IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
+        (string Name, AudioFormat Format, byte[] Pcm)? near = null;
+        (string Name, AudioFormat Format, byte[] Pcm)? distant = null;
+        foreach ((string Name, AudioFormat Format, byte[] Pcm) sound in Kit(logger))
+        {
+            near = sound.Name == Explosion ? sound : near;
+            distant = sound.Name == DistantExplosion ? sound : distant;
+            yield return sound;
+        }
+
+        if (distant is { } far)
+        {
+            byte[] thump = BombSoundDesign.FarThump(far.Format, far.Pcm);
+            if (thump.Length > 0)
+            {
+                yield return (FarThump, far.Format, thump);
+            }
+
+            byte[] rush = near is { } blast && blast.Format == far.Format
+                ? BombSoundDesign.FrontRush(far.Format, far.Pcm, blast.Pcm, (float)BombWave.CueLeadSeconds)
+                : [];
+            if (rush.Length > 0)
+            {
+                yield return (FrontRush, far.Format, rush);
+            }
+        }
+    }
+
+    // The kit's own sounds, decoded.
+    private static IEnumerable<(string Name, AudioFormat Format, byte[] Pcm)> Kit(IOpenIgiLogger logger)
+    {
         foreach (string sound in (string[])[BombKit.PlantSound, BombKit.TickSound, BombKit.LastTickSound, BombKit.DefuseSound, BombKit.ExplosionSound, BombKit.DistantExplosionSound])
         {
             IlsfFile? read = null;

@@ -3,13 +3,15 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Audio;
+using OpenIGI.Presentation.Rendering.Blast;
 
 namespace OpenIGI.Host;
 
 /// <content>
 /// The bomb heard: the plant and the defuse as a player begins them, cut short when it lets go; the planted bomb's tick once a
 /// second, as I.G.I. 2's bomb ticks; and a warning beep over it at the end, once a second in the last ten and twice in the
-/// last five; and the blast when it goes off, I.G.I. 2's bomb's own near it and a far rumble over the whole map.
+/// last five; and the blast when it goes off, I.G.I. 2's bomb's own near it, a far rumble over the whole map and a deep thump
+/// under both -- and a moment later its front, rushing at the ear and striking it.
 /// </content>
 public sealed partial class GameHost
 {
@@ -27,6 +29,9 @@ public sealed partial class GameHost
 
     // Where the planted bomb last lay, for its blast once the report has it gone.
     private Vector3d? _bombLastAt;
+
+    // The blast whose front this machine's ear has heard coming already.
+    private BombBlast? _bombFrontHeard;
 
     // Once a frame.
     private void UpdateBombSounds()
@@ -68,6 +73,9 @@ public sealed partial class GameHost
             {
                 sounds.PlayExternal(BombSounds.Explosion, blown, gain: 1f, priority: 250, minimumDistanceInMetres: 12f, maximumDistanceInMetres: 180f);
                 sounds.PlayExternal(BombSounds.DistantExplosion, blown, gain: 0.8f, priority: 240, minimumDistanceInMetres: 60f, maximumDistanceInMetres: 900f);
+
+                // And the deep thump under both, which carries farthest of all.
+                sounds.PlayExternal(BombSounds.FarThump, blown, gain: 0.9f, priority: 245, minimumDistanceInMetres: 30f, maximumDistanceInMetres: 1500f);
             }
 
             if (report.Reason != RoundEnd.None)
@@ -100,6 +108,43 @@ public sealed partial class GameHost
         {
             _bombLastBeep = beep;
             sounds.PlayExternal(BombSounds.Warning, bomb, gain: 1f, priority: 195, minimumDistanceInMetres: 4f, maximumDistanceInMetres: 60f);
+        }
+    }
+
+    /// <summary>
+    /// The bomb's front heard coming at this machine's own ear, a beat before it gets there (<see cref="BombWave"/>): the rush
+    /// of air and its strike, for anybody near enough for it to matter -- the living it hurts, a camera or the dead alike.
+    /// </summary>
+    /// <remarks>
+    /// Timed here on the blast this machine shows (<see cref="BombBlastEffects"/>), on the same clock the server hits each
+    /// player on, so nothing more need be sent for it; measured from where the ear is each frame, so an ear running from the
+    /// bomb hears it the later for it.
+    /// </remarks>
+    private void UpdateBombFrontSound()
+    {
+        IReadOnlyList<BombBlast> blasts = _effects.Bomb.Blasts;
+        if (blasts.Count == 0 || _earCamera is not { } ear || _audioOut.Sounds is not { } sounds)
+        {
+            _bombFrontHeard = null;
+            return;
+        }
+
+        BombBlast blast = blasts[^1];
+        if (ReferenceEquals(blast, _bombFrontHeard))
+        {
+            return;
+        }
+
+        double distance = (ear.Position - (blast.CentreMetres + new Vector3d(0.0, 0.0, 0.4))).Length;
+        if (distance > BombDamage.ReachMetres(blast.RadiusMetres))
+        {
+            return;
+        }
+
+        if (BombWave.IsHeard(blast.Age(0f), distance))
+        {
+            _bombFrontHeard = blast;
+            sounds.PlayExternal(BombSounds.FrontRush, positionInUnits: null, gain: 1f, priority: 252);
         }
     }
 

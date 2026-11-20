@@ -39,12 +39,12 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
     /// <summary>Gets the bursts where rounds land, and the procedural explosions a mission without the fireball falls back to.</summary>
     public ImpactParticleRenderer? Particles { get; private set; }
 
-    /// <summary>Gets search and destroy's bomb as the remaster shows it: its shake, light, shockwave, fireball and debris.</summary>
+    /// <summary>Gets search and destroy's bomb as the remaster shows it: its shake, light, after-blast and debris.</summary>
     public BombBlastEffects Bomb { get; } = new();
 
     private IMissionImpactView? _retailImpacts;
     private ExplosionEffectRenderer? _explosions;
-    private BlastVolumeRenderer? _blastVolume;
+    private BombBlastParticles? _bombParticles;
     private BlastDebris? _blastDebris;
     private SmokeSpriteRenderer? _smoke;
 
@@ -96,9 +96,9 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _smoke?.Dispose();
         _smoke = new SmokeSpriteRenderer(device, fileSystem, MissionLoader.CommonSpritesArchive, logger);
 
-        // The bomb's fireball, column and shock front, drawn through a shader of their own.
-        _blastVolume?.Dispose();
-        _blastVolume = new BlastVolumeRenderer(device);
+        // The bomb's flash, fire and smoke.
+        _bombParticles?.Dispose();
+        _bombParticles = new BombBlastParticles(device);
 
         // What the bomb shatters and holes, and the pieces it throws.
         _blastDebris?.Dispose();
@@ -106,7 +106,10 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _blastDebris.Dust += (at, size, strength) =>
             Particles?.SpawnRubbleDust(at, size, strength, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
         _blastDebris.Collapsed += (ground, footprint, height, seed) =>
+        {
             Particles?.SpawnCollapseSurge(ground, footprint, height, seed, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
+            _bombParticles?.StartCollapse(ground, footprint, height, seed, light: BombBlastEffects.Quality < 2);
+        };
     }
 
     /// <summary>Frees a mission's effects, as it goes.</summary>
@@ -121,8 +124,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _explosions = null;
         _smoke?.Dispose();
         _smoke = null;
-        _blastVolume?.Dispose();
-        _blastVolume = null;
+        _bombParticles?.Dispose();
+        _bombParticles = null;
         _blastDebris?.Dispose();
         _blastDebris = null;
         Bomb.Clear();
@@ -136,6 +139,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _explosions?.Clear();
         _smoke?.Clear();
         Bomb.Clear();
+        _bombParticles?.Clear();
         _blastDebris?.Clear();
     }
 
@@ -146,7 +150,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         host.ResetTitleImpacts(1);
         _explosions = null;
         _smoke = null;
-        _blastVolume = null;
+        _bombParticles = null;
         _blastDebris = null;
     }
 
@@ -157,6 +161,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _explosions?.Tick();
         _smoke?.Tick();
         Bomb.Tick();
+        _bombParticles?.Tick();
         _blastDebris?.Tick();
     }
 
@@ -196,8 +201,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // The rocket nozzle's glow, over the scene as light.
         _explosions?.Draw(eye, projection, blend);
 
-        // The bomb's fireball, column and shock front last, over everything: the volume writes the scene behind it whole.
-        _blastVolume?.Draw(Bomb.Blasts, _blastDebris?.Clouds ?? [], eye, projection, blend);
+        // The bomb's smoke over all of that, and its fire and flash last, as light over everything.
+        _bombParticles?.Draw(eye, projection, blend);
     }
 
     /// <summary>Sets search and destroy's bomb off as the remaster shows it: its shake, light and fireball, and its ground.</summary>
@@ -216,7 +221,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
             return false;
         }
 
-        Particles?.SpawnBombBlast(atUnits, blast.RadiusMetres, blast.Seed, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
+        _bombParticles?.Start(atUnits, blast.RadiusMetres, blast.Seed, light: BombBlastEffects.Quality < 2);
         _blastDebris?.Begin(blast, scene, world, debrisWorld, BombBlastEffects.Quality);
         return true;
     }

@@ -238,9 +238,6 @@ public enum ShaderModuleId
     /// <summary>World: the original's ground, a draw per texture per pass over an arena of chunks (<c>World/TerrainArena.slang</c>).</summary>
     TerrainArena,
 
-    /// <summary>World: search and destroy's bomb as the remaster draws it -- its fireball and column marched as a volume, and its shock front bending the picture (<c>World/BlastVolume.slang</c>).</summary>
-    BlastVolume,
-
     /// <summary>World: a body as I.G.I. 2's thermal goggles see it, in the colours of a heat ramp looked up by how it faces the eye (<c>World/Infrared.slang</c>).</summary>
     Infrared,
 
@@ -249,6 +246,9 @@ public enum ShaderModuleId
 
     /// <summary>Post: the remastered thermal sensor, the lit scene re-imaged as heat before the tone map (<c>Post/Thermal.slang</c>).</summary>
     Thermal,
+
+    /// <summary>Post: a bomb's after-blast, its front sweeping out over the lit scene before the tone map (<c>Post/BombAfterBlast.slang</c>).</summary>
+    BombAfterBlast,
 
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is

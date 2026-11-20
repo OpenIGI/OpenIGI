@@ -8,9 +8,6 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 /// <summary>A building brought down: the order its slabs go in, and the dust and the heap it leaves.</summary>
 public sealed partial class BlastDebris
 {
-    // A building's collapse starts its dust a few ticks after the blast, as the first slabs land.
-    private const int CloudDelayTicks = 8;
-
     // How far above the ground under it a structure's foot may be and still stand on it; the narrowest footprint that is a
     // building, with a heap and a cloud of its own, rather than a wall or a fence.
     private const double GroundedMetres = 0.6;
@@ -43,13 +40,6 @@ public sealed partial class BlastDebris
         }
 
         groundUnits = new Vector3d(groundUnits.X, groundUnits.Y, Math.Min(groundUnits.Z, groundZ));
-        groundMetres = groundUnits / WorldUnits.PerMetre;
-
-        // The volume of dust only where the fireball is marched too; the particles' surge everywhere.
-        if (_budget.CellScale >= 1f)
-        {
-            _clouds.Add(new CollapseCloud(groundMetres, reach, height, seed, CloudDelayTicks));
-        }
 
         Collapsed?.Invoke(groundUnits, reach, height, seed);
 

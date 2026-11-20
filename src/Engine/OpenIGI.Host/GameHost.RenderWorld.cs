@@ -33,6 +33,10 @@ public sealed partial class GameHost
         ComposeFrameEye(state, console, ref view);
         NoteEditorView(view.Eye, view.UnjitteredProjection);
 
+        // A bomb's after-blast is drawn against this frame's eye, which only now is settled: its front is placed by the
+        // depth this frame draws, and an eye a frame old would set it swimming over the walls as the view turns.
+        view.PostProcess = view.PostProcess with { AfterBlast = _effects.Bomb.AfterBlast(view.Eye, view.TickBlend) };
+
         // The title's own culling, decided once from the eye before the first pass draws: every pass of the frame -- the
         // cascades and the lamps' maps among them -- then leaves out what the eye's place in the level leaves out.
         float tangentHalfFovY = MathF.Tan(view.VerticalFieldOfView * 0.5f);

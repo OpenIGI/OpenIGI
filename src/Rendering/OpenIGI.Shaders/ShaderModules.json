@@ -612,10 +612,6 @@
       "source": "World/TerrainArena.slang"
     },
     {
-      "id": "BlastVolume",
-      "source": "World/BlastVolume.slang"
-    },
-    {
       "id": "Infrared",
       "source": "World/Infrared.slang"
     },
@@ -626,6 +622,10 @@
     {
       "id": "Thermal",
       "source": "Post/Thermal.slang"
+    },
+    {
+      "id": "BombAfterBlast",
+      "source": "Post/BombAfterBlast.slang"
     }
   ]
 }
