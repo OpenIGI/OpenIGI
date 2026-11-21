@@ -26,6 +26,7 @@
 //   last:<player>           the player's latest results' keys, newest first
 
 import { isFlawless, medalsOf } from "./medals.js";
+import { cleanName } from "./names.js";
 import { Refusal, json, signedBy } from "./signed.js";
 
 const RECENT = 50;
@@ -194,7 +195,9 @@ export class Stats {
     for (const [player, total] of byPlayer) {
       const account = accounts[player];
       const who = account ? `account:${account.id}` : `key:${player}`;
-      const row = rows.get(who) ?? { player: account ? account.id : player, account: account ?? null, name: account?.name ?? total.name, ...zero() };
+      // Names leave here masked where they hold a slur (names.js): the board is on the website's front page.
+      const shown = account ? { ...account, name: cleanName(account.name) } : null;
+      const row = rows.get(who) ?? { player: account ? account.id : player, account: shown, name: cleanName(account?.name ?? total.name), ...zero() };
       rows.set(who, sum(row, total));
     }
 
@@ -280,9 +283,13 @@ export class Stats {
     return gone.size;
   }
 
+  // Kept results, their players' names masked where they hold a slur.
   async latest(names) {
     const matches = await this.storage.get(names);
-    return names.map((name) => matches.get(name)).filter(Boolean);
+    return names
+      .map((name) => matches.get(name))
+      .filter(Boolean)
+      .map((match) => ({ ...match, players: match.players.map((line) => ({ ...line, name: cleanName(line.name) })) }));
   }
 
   // The servers whose matches count: listed, added by their key, removed by its id.

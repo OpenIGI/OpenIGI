@@ -197,6 +197,11 @@ assert.equal((await ask(await signed(official, tdm([line(BO, "Bo", 0, 1, 0, true
   const byAssists = await ask2("/v1/leaderboard?period=season&metric=assists");
   assert.deepEqual(byAssists.rows.map((row) => [row.name, row.assists]), [["Bo", 6], ["Cy", 1]]);
 
+  // A hateful name is kept as sent but shown masked, on the board and in the results.
+  assert.equal((await fresh.fetch(await signed(server, tdm([line("dddddddddddddddd", "Gigga N1gga", 0, 1, 0, true), line(CY, "Cy", 1, 0, 1, false)])))).status, 201);
+  assert.ok((await ask2("/v1/leaderboard?period=season&metric=score")).rows.some((row) => row.name === "Operative"));
+  assert.ok(!JSON.stringify(await ask2("/v1/matches")).includes("N1gga"));
+
   // A negative or absurd count is refused like any other.
   assert.throws(() => checkResult(tdm([helped(BO, "Bo", 0, 1, 0, -1, true), line(CY, "Cy", 1, 0, 1, false)])));
 }

@@ -32,6 +32,7 @@ const master :Workerd.Worker = (
     (name = "accounts.js", esModule = embed "../src/accounts.js"),
     (name = "stats.js", esModule = embed "../src/stats.js"),
     (name = "medals.js", esModule = embed "../src/medals.js"),
+    (name = "names.js", esModule = embed "../src/names.js"),
   ],
   compatibilityDate = "2026-10-01",
   globalOutbound = "internet",

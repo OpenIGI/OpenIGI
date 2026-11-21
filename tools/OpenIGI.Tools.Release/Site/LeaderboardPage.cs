@@ -1,15 +1,17 @@
 namespace OpenIGI.Tools.Release;
 
 /// <summary>
-/// <c>/leaderboard/</c>: the best players on the official servers this season or all time, by score, kills, assists, wins,
-/// K/D or matches, read from the master as the page opens; <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page
-/// sends here) is one player's record by their Discord user id or a key's: this season, their medals and their latest
-/// matches. Static like the rest of the site; everything shown is set as text, never as markup.
+/// <c>/leaderboard/</c>: the best players on the official servers this season or all time, by score, kills, assists, K/D,
+/// wins or matches -- the top three on a podium, the rest ranked under them -- read from the master as the page opens;
+/// <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page sends here) is one player's record by their Discord
+/// user id or a key's: their figures this season and all time, their medals and their latest matches. Static like the rest
+/// of the site, in its look (<c>/landing/site.css</c>) and drawn with the home page's own pieces (<c>/landing/board.js</c>);
+/// everything shown is set as text, never as markup.
 /// </summary>
 internal static class LeaderboardPage
 {
     /// <summary>The page.</summary>
-    public const string Html = """
+    public static string Html { get; } = $$"""
         <!doctype html>
         <html lang="en">
         <head>
@@ -20,231 +22,150 @@ internal static class LeaderboardPage
           <title>Leaderboard · OpenIGI</title>
           <meta name="description" content="The best players on OpenIGI's official multiplayer servers, this season and all time.">
           <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+          <link rel="preload" href="/landing/archivo.woff2" as="font" type="font/woff2" crossorigin>
+          <link rel="stylesheet" href="/landing/site.css">
           <style>
-            @font-face { font-family: "Archivo"; src: url("/landing/archivo.woff2") format("woff2"); font-weight: 400 800; font-stretch: 62% 125%; font-display: swap; }
-            @font-face { font-family: "JetBrains Mono"; src: url("/landing/jetbrains-mono.woff2") format("woff2"); font-weight: 400 500; font-display: swap; }
-            :root { --bg: #0b0c0b; --panel: rgba(11, 12, 11, 0.72); --text: #ecebe6; --soft: #c9c7c0; --muted: #b4b2ab; --faint: #8a8882;
-                    --line: rgba(236, 235, 230, 0.14); --accent: #e8a33d;
-                    --sans: "Archivo", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, Consolas, monospace; }
-            * { box-sizing: border-box; }
-            html, body { margin: 0; min-height: 100%; }
             body {
+              min-height: 100vh;
               background:
-                linear-gradient(180deg, rgba(11, 12, 11, 0.55) 0%, rgba(11, 12, 11, 0.92) 55%),
-                url("/landing/bg.webp") center top / cover no-repeat fixed,
+                radial-gradient(70% 50% at 50% 0%, rgba(232, 163, 61, 0.1) 0%, rgba(232, 163, 61, 0) 70%),
+                linear-gradient(180deg, rgba(11, 12, 11, 0.55) 0%, var(--bg) 520px),
+                url("/landing/bg.webp") center top / 100% auto no-repeat,
                 var(--bg);
-              color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased;
-              padding: clamp(16px, 4vw, 48px);
             }
-            main { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-            .mono { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-            h1 { margin: 0; font-size: clamp(38px, 6vw, 64px); line-height: 0.98; font-weight: 700; font-stretch: 80%; letter-spacing: -0.015em; }
-            p { margin: 0; font-size: 16px; line-height: 1.55; color: var(--soft); }
-            nav { display: flex; flex-wrap: wrap; gap: 8px; }
-            nav button, a.button {
-              min-height: 40px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--soft);
-              font: 600 13px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; text-decoration: none;
-              display: inline-flex; align-items: center;
-            }
-            nav button[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-            a.button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-            nav button:focus-visible, a.button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
-            .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-            table { width: 100%; border-collapse: collapse; font-size: 15px; }
-            th, td { padding: 12px 14px; text-align: right; white-space: nowrap; }
-            th { font: 500 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); }
-            th:nth-child(2), td:nth-child(2) { text-align: left; width: 100%; }
-            th:first-child, td:first-child { text-align: left; color: var(--faint); font-family: var(--mono); }
-            tr + tr td { border-top: 1px solid rgba(236, 235, 230, 0.06); }
-            td.key { color: var(--accent); font-weight: 700; }
-            .who { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 600; }
-            .who img { width: 26px; height: 26px; border-radius: 50%; }
-            .medal1 { color: #f2c94c !important; } .medal2 { color: #d0d4d9 !important; } .medal3 { color: #d39b6a !important; }
-            .empty { padding: 28px; color: var(--muted); }
-            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; background: var(--line); }
-            .stat { background: var(--bg); padding: 18px; }
-            .stat b { display: block; font-size: 30px; font-stretch: 80%; }
-            .profile { display: flex; align-items: center; gap: 16px; }
-            .profile img { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--accent); }
-            .medals { display: flex; flex-wrap: wrap; gap: 8px; }
-            .medal { border: 1px solid var(--accent); border-radius: 999px; padding: 6px 12px; font: 600 13px var(--sans); color: var(--accent); background: rgba(232, 163, 61, 0.08); }
-            .medal.none { border-color: var(--line); color: var(--muted); background: none; }
-            h2 { margin: 24px 0 10px; font: 500 11.5px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-            td.won { color: var(--accent); }
-            .narrow-hide { }
-            @media (max-width: 620px) { .narrow-hide { display: none; } th, td { padding: 10px 8px; } }
-            [hidden] { display: none !important; }
+            main.wrap { padding-top: clamp(36px, 6vw, 72px); padding-bottom: 72px; }
+
+            /* The season's banner: what this is, how long it has left, and the period. */
+            .banner { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px 32px; flex-wrap: wrap; margin-bottom: 30px; }
+            .banner .mono { color: var(--accent); }
+            .banner h1 { margin: 10px 0 0; font-size: clamp(44px, 7vw, 84px); line-height: 0.92; font-weight: 700; font-stretch: 76%; letter-spacing: -0.02em; }
+            .banner p { margin: 12px 0 0; max-width: 560px; color: var(--soft); font-size: 16px; line-height: 1.55; }
+            .clock { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--note); font: 12px/1 var(--mono); }
+            .clock b { color: var(--text); font-weight: 500; }
+
+            /* This season or all time: one pill of two halves. */
+            .segmented { display: inline-flex; padding: 4px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); }
+            .segmented button { appearance: none; padding: 9px 18px; border: none; border-radius: 999px; background: none; color: var(--muted); font: 600 13px/1 var(--sans); cursor: pointer; }
+            .segmented button:hover { color: var(--text); }
+            .segmented button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+
+            /* The metric the board is ranked by: a row of tabs, the chosen one underlined in the accent. */
+            .tabs { display: flex; gap: 4px; margin-bottom: 28px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+            .tabs::-webkit-scrollbar { display: none; }
+            .tabs button { appearance: none; flex: none; padding: 12px 16px; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted); font: 600 14px/1 var(--sans); letter-spacing: 0.02em; cursor: pointer; }
+            .tabs button:hover { color: var(--text); }
+            .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+            #ranks { margin-top: 18px; }
+            .podium .skeleton { height: 230px; }
+            .podium .skeleton:nth-child(2) { height: 270px; }
+
+            /* A player's record: who, their figures, their medals and their matches. */
+            .hero { position: relative; display: flex; align-items: center; gap: 24px; padding: 28px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(120deg, rgba(232, 163, 61, 0.16), rgba(14, 16, 14, 0.85) 55%); }
+            .hero .avatar { width: 104px; height: 104px; font-size: 40px; box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent); }
+            .hero h1 { margin: 8px 0 0; font-size: clamp(34px, 5vw, 56px); line-height: 0.95; font-weight: 700; font-stretch: 78%; overflow-wrap: anywhere; }
+            .hero .mono { color: var(--accent); }
+            .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+            .tag { padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--note); font: 12px/1 var(--mono); }
+            .tag.rank { border-color: var(--accent); color: var(--accent); }
+            @media (max-width: 560px) { .hero { flex-direction: column; align-items: flex-start; padding: 22px; } .hero .avatar { width: 80px; height: 80px; font-size: 30px; } }
+
+            .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 16px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--line); }
+            .tiles .figure { padding: 22px; background: var(--panel-solid); }
+            .tiles .figure.lit b { color: var(--accent); }
+            .tiles .bar { margin-top: 10px; }
+            @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+            h2.part { margin: 40px 0 14px; color: var(--muted); font: 500 11.5px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+            .medals { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+            .medal { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid rgba(232, 163, 61, 0.35); border-radius: 12px; background: var(--accent-soft); }
+            .medal .emblem { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffe4a8, var(--accent) 60%, #8a5a17); color: #2a1a05; font: 800 15px/1 var(--sans); }
+            .medal b { display: block; font-size: 15px; }
+            .medal span { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+
+            .matches { display: flex; flex-direction: column; gap: 8px; }
+            .match { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 14px 18px 14px 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+            .match .stripe { align-self: stretch; background: var(--faint); }
+            .match.won .stripe { background: var(--ok); }
+            .match.lost .stripe { background: var(--error); }
+            .match .what b { display: block; font-size: 15px; }
+            .match .what span { display: block; margin-top: 4px; color: var(--faint); font: 12px/1.3 var(--mono); }
+            .match .result { font: 700 13px/1 var(--mono); letter-spacing: 0.1em; }
+            .match.won .result { color: var(--ok); }
+            .match.lost .result { color: var(--error); }
+            @media (max-width: 560px) { .match { grid-template-columns: 4px minmax(0, 1fr) auto; } .match .kda { grid-column: 2; } }
+
+            .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
           </style>
         </head>
         <body>
-          <main>
-            <span class="mono" id="eyebrow">Official servers</span>
-            <h1 id="title">Leaderboard</h1>
-            <p id="lead">Matches on the official servers count. Sign in with Discord on the game's Profile page to be on the board.</p>
+        {{SiteChrome.Nav(SiteChrome.Leaderboard)}}
 
+          <main class="wrap">
             <section id="board">
-              <nav aria-label="Period" id="periods">
-                <button data-period="season" aria-pressed="true">This season</button>
-                <button data-period="all" aria-pressed="false">All time</button>
-              </nav>
-              <nav aria-label="Ranked by" id="metrics" style="margin-top: 8px">
-                <button data-metric="score" aria-pressed="true">Score</button>
-                <button data-metric="kills" aria-pressed="false">Kills</button>
-                <button data-metric="assists" aria-pressed="false">Assists</button>
-                <button data-metric="wins" aria-pressed="false">Wins</button>
-                <button data-metric="kd" aria-pressed="false">K/D</button>
-                <button data-metric="matches" aria-pressed="false">Matches</button>
-              </nav>
-              <div class="panel" style="margin-top: 14px">
-                <table>
-                  <thead><tr><th>#</th><th>Player</th><th>Score</th><th class="narrow-hide">Kills</th><th class="narrow-hide">Assists</th><th class="narrow-hide">Wins</th><th>K/D</th><th class="narrow-hide">Matches</th></tr></thead>
-                  <tbody id="rows"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
-                </table>
+              <div class="banner">
+                <div>
+                  <span class="mono" id="eyebrow">Official servers</span>
+                  <h1>Leaderboard</h1>
+                  <p>Every match on an official server counts: a kill 10, an assist 5, an objective 25, a win 50. Sign in with Discord on the game's Profile page to be on the board under your name.</p>
+                  <span class="clock" id="clock" hidden></span>
+                </div>
+                <div class="segmented" role="group" aria-label="Period" id="periods">
+                  <button type="button" data-period="season" aria-pressed="true">This season</button>
+                  <button type="button" data-period="all" aria-pressed="false">All time</button>
+                </div>
               </div>
+              <div class="tabs" role="tablist" aria-label="Ranked by" id="metrics"></div>
+              <div class="podium" id="podium"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+              <div class="ranks" id="ranks"></div>
             </section>
 
             <section id="record" hidden>
-              <div class="profile"><img id="avatar" alt="" hidden><div><span class="mono" id="season"></span><h1 id="name" style="font-size: 44px"></h1></div></div>
-              <div class="panel stats" id="figures" style="margin-top: 14px"></div>
-              <p id="alltime" style="margin-top: 12px"></p>
-              <h2>Medals</h2>
-              <div class="medals" id="medals"></div>
-              <h2>Latest matches</h2>
-              <div class="panel">
-                <table>
-                  <thead><tr><th>When</th><th>Match</th><th>Kills</th><th>Deaths</th><th>Assists</th><th>Result</th></tr></thead>
-                  <tbody id="matches"></tbody>
-                </table>
+              <div class="hero">
+                <span id="avatar"></span>
+                <div>
+                  <span class="mono" id="season"></span>
+                  <h1 id="name"></h1>
+                  <div class="tags" id="tags"></div>
+                </div>
               </div>
+              <div class="tiles" id="figures"></div>
+              <h2 class="part">Medals</h2>
+              <div class="medals" id="medals"></div>
+              <h2 class="part">Latest matches</h2>
+              <div class="matches" id="matches"></div>
             </section>
 
-            <div style="display: flex; flex-wrap: wrap; gap: 12px">
-              <a class="button primary" href="/">Play free in the browser</a>
+            <div class="actions">
+              <a class="button primary" href="/#play-now">Play free in the browser <span aria-hidden="true">→</span></a>
               <a class="button" href="/leaderboard/" id="back" hidden>The whole board</a>
-              <a class="button" href="/privacy/">Privacy</a>
             </div>
           </main>
-          <script>
-            const master = "https://master.openigi.com";
+
+        {{SiteChrome.Footer}}
+
+          <script type="module">
+            import { METRICS, ask, avatar, daysLeft, el, kda, kdaLine, number, podiumCard, rankHead, rankRow, seasonName, winRate } from "/landing/board.js";
+
             const $ = (id) => document.getElementById(id);
             const params = new URLSearchParams(location.search);
-            const number = (n) => (typeof n === "number" ? n.toLocaleString("en") : "—");
-            const seasonName = (s) => /^\d{4}-\d{2}$/.test(s)
-              ? new Date(Date.UTC(+s.slice(0, 4), +s.slice(5) - 1, 1)).toLocaleString("en", { month: "long", year: "numeric", timeZone: "UTC" })
-              : s;
-            const cell = (text, className) => { const td = document.createElement("td"); td.textContent = text; if (className) td.className = className; return td; };
             let period = "season", metric = "score";
+            const label = () => METRICS.find(([id]) => id === metric)[1];
 
-            async function ask(path) {
-              const answer = await fetch(master + path);
-              if (!answer.ok) throw new Error(String(answer.status));
-              return answer.json();
-            }
-
-            async function showBoard() {
-              const rows = $("rows");
-              try {
-                const board = await ask(`/v1/leaderboard?period=${period}&metric=${metric}`);
-                $("eyebrow").textContent = period === "all" ? "Official servers · all time" : `Official servers · season ${seasonName(board.season)}`;
-                rows.replaceChildren();
-                if (board.rows.length === 0) {
-                  const tr = document.createElement("tr");
-                  tr.append(cell("Nobody yet: play a match on an official server to be the first.", "empty"));
-                  tr.firstChild.colSpan = 8;
-                  rows.append(tr);
-                  return;
-                }
-                for (const row of board.rows) {
-                  const tr = document.createElement("tr");
-                  tr.append(cell(String(row.rank), row.rank <= 3 ? `medal${row.rank}` : ""));
-                  const who = document.createElement("td");
-                  const link = document.createElement("a");
-                  link.className = "who";
-                  link.href = `/leaderboard/?player=${encodeURIComponent(row.account ? row.account.id : row.player)}`;
-                  if (row.account?.avatar) { const img = document.createElement("img"); img.src = row.account.avatar; img.alt = ""; link.append(img); }
-                  link.append(document.createTextNode(row.name));
-                  who.append(link);
-                  tr.append(who);
-                  for (const [key, text, narrow] of [["score", number(row.score)], ["kills", number(row.kills), true], ["assists", number(row.assists ?? 0), true], ["wins", number(row.wins), true], ["kd", row.kd.toFixed(2)], ["matches", number(row.matches), true]]) {
-                    tr.append(cell(text, [key === metric ? "key" : "", narrow ? "narrow-hide" : ""].join(" ").trim()));
-                  }
-                  rows.append(tr);
-                }
-              } catch {
-                rows.replaceChildren();
-                const tr = document.createElement("tr");
-                tr.append(cell("The leaderboard can't be reached right now. Try again in a moment.", "empty"));
-                tr.firstChild.colSpan = 8;
-                rows.append(tr);
-              }
-            }
-
-            async function showRecord(player) {
-              $("board").hidden = true;
-              $("record").hidden = false;
-              $("back").hidden = false;
-              $("title").hidden = true;
-              $("lead").hidden = true;
-              try {
-                const [record, account] = await Promise.all([ask(`/v1/players/${encodeURIComponent(player)}/stats`), ask(`/v1/players/${encodeURIComponent(player)}`).catch(() => null)]);
-                const name = account?.name ?? record.latest?.[0]?.you?.[0]?.name ?? "Operative";
-                document.title = `${name} · OpenIGI`;
-                $("name").textContent = name;
-                $("season").textContent = `Season ${seasonName(record.season)}`;
-                if (account?.avatar) { $("avatar").src = account.avatar; $("avatar").hidden = false; }
-                const s = record.seasonTotals;
-                $("figures").replaceChildren(...[["Matches", number(s.matches)], ["Wins", number(s.wins)], ["Kills", number(s.kills)], ["Deaths", number(s.deaths)], ["Assists", number(s.assists ?? 0)], ["K/D", s.kd.toFixed(2)], ["Score", number(s.score)]].map(([label, value]) => {
-                  const box = document.createElement("div");
-                  box.className = "stat";
-                  const b = document.createElement("b");
-                  b.textContent = value;
-                  const span = document.createElement("span");
-                  span.className = "mono";
-                  span.textContent = label;
-                  box.append(b, span);
-                  return box;
-                }));
-                const a = record.allTime;
-                $("alltime").textContent = `All time: ${number(a.matches)} matches, ${number(a.wins)} wins, ${number(a.kills)} kills, ${number(a.assists ?? 0)} assists, ${a.kd.toFixed(2)} K/D.`;
-                const medals = (record.medals ?? []).map((medal) => {
-                  const chip = document.createElement("span");
-                  chip.className = "medal";
-                  chip.textContent = medal.name;
-                  chip.title = medal.about;
-                  return chip;
-                });
-                if (medals.length === 0) {
-                  const none = document.createElement("span");
-                  none.className = "medal none";
-                  none.textContent = "None yet: a kill on an official server is the first.";
-                  medals.push(none);
-                }
-                $("medals").replaceChildren(...medals);
-                const modes = { tdm: "Team deathmatch", ffa: "Free for all", sd: "Search & destroy", elim: "Elimination" };
-                const matches = (record.latest ?? []).map((match) => {
-                  const you = match.you?.[0];
-                  const tr = document.createElement("tr");
-                  tr.append(
-                    cell(new Date(match.at).toLocaleDateString("en", { day: "numeric", month: "short" })),
-                    cell(`${modes[match.mode] ?? match.mode.toUpperCase()} · map ${match.map}`),
-                    cell(number(you?.kills)),
-                    cell(number(you?.deaths)),
-                    cell(number(you?.assists ?? 0)),
-                    cell(you?.won ? "Won" : "Lost", you?.won ? "won" : ""));
-                  return tr;
-                });
-                if (matches.length === 0) {
-                  const tr = document.createElement("tr");
-                  tr.append(cell("No matches yet.", "empty"));
-                  tr.firstChild.colSpan = 6;
-                  matches.push(tr);
-                }
-                $("matches").replaceChildren(...matches);
-              } catch {
-                $("name").textContent = "No record";
-                $("alltime").textContent = "This player has no matches on the official servers yet, or the stats can't be reached right now.";
-              }
-            }
+            // The metric tabs, from the shared list.
+            $("metrics").replaceChildren(...METRICS.map(([id, text]) => {
+              const tab = el("button", null, text);
+              tab.type = "button";
+              tab.role = "tab";
+              tab.dataset.metric = id;
+              tab.setAttribute("aria-selected", String(id === metric));
+              tab.addEventListener("click", () => {
+                metric = id;
+                for (const other of $("metrics").children) other.setAttribute("aria-selected", String(other === tab));
+                showBoard();
+              });
+              return tab;
+            }));
 
             for (const button of document.querySelectorAll("#periods button")) {
               button.addEventListener("click", () => {
@@ -253,16 +174,118 @@ internal static class LeaderboardPage
                 showBoard();
               });
             }
-            for (const button of document.querySelectorAll("#metrics button")) {
-              button.addEventListener("click", () => {
-                metric = button.dataset.metric;
-                for (const other of document.querySelectorAll("#metrics button")) other.setAttribute("aria-pressed", String(other === button));
-                showBoard();
-              });
+
+            async function showBoard() {
+              const podium = $("podium");
+              const ranks = $("ranks");
+              try {
+                const board = await ask(`/v1/leaderboard?period=${period}&metric=${metric}`);
+                const season = period !== "all";
+                $("eyebrow").textContent = season ? `Season · ${seasonName(board.season)}` : "Official servers · all time";
+                const clock = $("clock");
+                clock.hidden = !season;
+                if (season) {
+                  const left = daysLeft();
+                  clock.replaceChildren("Season ends in ", el("b", null, `${left} ${left === 1 ? "day" : "days"}`));
+                }
+
+                if (board.rows.length === 0) {
+                  podium.replaceChildren(el("div", "empty", "Nobody yet: play a match on an official server to be the first."));
+                  ranks.replaceChildren();
+                  return;
+                }
+
+                podium.replaceChildren(...board.rows.slice(0, 3).map((row) => podiumCard(row, metric, label())));
+                const rest = board.rows.slice(3);
+                ranks.replaceChildren(...(rest.length > 0 ? [rankHead(label()), ...rest.map((row) => rankRow(row, metric))] : []));
+              } catch {
+                podium.replaceChildren(el("div", "empty", "The leaderboard can't be reached right now. Try again in a moment."));
+                ranks.replaceChildren();
+              }
+            }
+
+            // A figure tile: a big number, its label, and a quieter line under it.
+            function tile(labelText, value, sub, lit = false, share = null) {
+              const box = el("div", `figure${lit ? " lit" : ""}`);
+              box.append(el("b", null, value), el("span", null, labelText));
+              if (share !== null) {
+                const bar = el("span", "bar");
+                const fill = el("span");
+                fill.style.width = `${Math.round(share * 100)}%`;
+                bar.append(fill);
+                box.append(bar);
+              }
+
+              if (sub) box.append(el("small", null, sub));
+              return box;
+            }
+
+            const hours = (seconds) => (seconds >= 3600 ? `${(seconds / 3600).toFixed(1)} h` : `${Math.round(seconds / 60)} min`);
+            const percent = (share) => `${Math.round(share * 100)}%`;
+            const modes = { tdm: "Team deathmatch", ffa: "Free for all", sd: "Search & destroy", elim: "Elimination", objective: "Objective" };
+
+            async function showRecord(player) {
+              $("board").hidden = true;
+              $("record").hidden = false;
+              $("back").hidden = false;
+              try {
+                const [record, account, board] = await Promise.all([
+                  ask(`/v1/players/${encodeURIComponent(player)}/stats`),
+                  ask(`/v1/players/${encodeURIComponent(player)}`).catch(() => null),
+                  ask("/v1/leaderboard?period=season&metric=score").catch(() => null),
+                ]);
+                const name = account?.name ?? record.latest?.[0]?.you?.[0]?.name ?? "Operative";
+                document.title = `${name} · OpenIGI`;
+                $("name").textContent = name;
+                $("season").textContent = `Season · ${seasonName(record.season)}`;
+                $("avatar").replaceWith(Object.assign(avatar(name, account?.avatar), { id: "avatar" }));
+
+                const s = record.seasonTotals;
+                const a = record.allTime;
+                const tags = [];
+                const placed = board?.rows.find((row) => row.player === player || row.account?.id === player);
+                if (placed) tags.push(el("span", "tag rank", `#${placed.rank} this season`));
+                if (account) tags.push(el("span", "tag", "Discord linked"));
+                tags.push(el("span", "tag", `${hours(a.seconds ?? 0)} played`));
+                $("tags").replaceChildren(...tags);
+
+                $("figures").replaceChildren(
+                  tile("Score", number(s.score), `${number(a.score)} all time`, true),
+                  tile("Kills", number(s.kills), `${number(a.kills)} all time`),
+                  tile("Deaths", number(s.deaths), `${number(a.deaths)} all time`),
+                  tile("Assists", number(s.assists ?? 0), `${number(a.assists ?? 0)} all time`),
+                  tile("K/D", (s.kd ?? 0).toFixed(2), `${(a.kd ?? 0).toFixed(2)} all time`),
+                  tile("KDA", kda(s).toFixed(2), `${kda(a).toFixed(2)} all time`),
+                  tile("Win rate", percent(winRate(s)), `${number(s.wins)} of ${number(s.matches)} won`, false, winRate(s)),
+                  tile("Matches", number(s.matches), `${number(a.matches)} all time`));
+
+                const medals = (record.medals ?? []).map((medal) => {
+                  const chip = el("div", "medal");
+                  const body = el("div");
+                  body.append(el("b", null, medal.name), el("span", null, medal.about));
+                  chip.append(el("span", "emblem", "★"), body);
+                  return chip;
+                });
+                $("medals").replaceChildren(...(medals.length > 0 ? medals : [el("div", "empty", "None yet: a kill on an official server is the first.")]));
+
+                const matches = (record.latest ?? []).map((match) => {
+                  const you = match.you?.[0];
+                  const card = el("div", `match ${you?.won ? "won" : "lost"}`);
+                  const what = el("div", "what");
+                  const when = new Date(match.at).toLocaleDateString("en", { day: "numeric", month: "short" });
+                  what.append(el("b", null, `${modes[match.mode] ?? match.mode.toUpperCase()} · map ${match.map}`), el("span", null, `${when} · ${match.server ?? "Official"} · ${number(you?.score ?? 0)} points`));
+                  card.append(el("span", "stripe"), what, kdaLine(you ?? {}), el("span", "result", you?.won ? "WON" : "LOST"));
+                  return card;
+                });
+                $("matches").replaceChildren(...(matches.length > 0 ? matches : [el("div", "empty", "No matches yet.")]));
+              } catch {
+                $("name").textContent = "Operative";
+                $("figures").replaceChildren(el("div", "empty", "This player has no matches on the official servers yet, or the stats can't be reached right now."));
+              }
             }
 
             const player = params.get("player");
-            if (player && /^([0-9a-f]{16}|\d{5,25})$/.test(player)) showRecord(player); else showBoard();
+            if (player) showRecord(player); else showBoard();
           </script>
         </body>
         </html>
