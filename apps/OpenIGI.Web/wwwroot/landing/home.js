@@ -16,7 +16,6 @@ async function live() {
       [players, players === 1 ? "Player online" : "Players online"],
       [stats.servers?.open ?? 0, "Dedicated servers"],
       [(rooms.public?.open ?? 0) + (rooms.private?.open ?? 0), "Rooms open"],
-      [Object.values(stats.relays ?? {}).filter((relay) => relay.healthy).length, "Relays up"],
     ];
     $("live-figures").replaceChildren(...figures.map(([value, label]) => {
       const box = el("div", "figure");
