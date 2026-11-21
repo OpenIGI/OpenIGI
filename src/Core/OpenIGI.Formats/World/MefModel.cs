@@ -124,6 +124,13 @@ public sealed class MefModel
     /// <summary>Gets the mesh format, which decides the vertex stride and the draw-record layout.</summary>
     public MefMeshFormat Format { get; }
 
+    /// <summary>Gets the mesh version, <c>Mesh3D_Mesh_t.vVersion</c> at <c>MESH+0</c>.</summary>
+    public float Version { get; private init; }
+
+    /// <summary>Gets when the mesh was exported, <c>Mesh3D_Mesh_t.tTime</c> at <c>MESH+4</c>.</summary>
+    /// <remarks>A baked lightmap older than this is not of this mesh; see <see cref="ObjectLightmap.IsBakeOf"/>.</remarks>
+    public EngineCalendar ExportedAt { get; private init; }
+
     /// <summary>Gets the triangle count the mesh header declares, which equals the sum over the draw records.</summary>
     public int TriangleCount { get; }
 
@@ -360,6 +367,8 @@ public sealed class MefModel
             boneHierarchy,
             boneNames)
         {
+            Version = version,
+            ExportedAt = EngineCalendar.Read(mesh[4..]),
             RenderSphereCentre = renderSphereCentre,
             RenderSphereRadius = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x3C..]),
             BoundingSphereCentre = new Vector3f(

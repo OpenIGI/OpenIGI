@@ -216,37 +216,6 @@ public static class Igi2DrawableScene
                 return true;
             }
 
-            // The model this one carries, on the host's first magic vertex. The vertex is a point in
-            // the host's own space, and RigidDynCubeObj_GetMagicVertexPos (igi2 0x58E430) takes it to
-            // the world exactly as an attachment point is taken: the host's rows dotted with it, plus
-            // the host's position. A host with no magic vertex mounts at its own origin, which is what
-            // that function returns when there is none to read.
-            //
-            // Emitted after the attachments because that is the order the lightmap enumerator walks:
-            // a node's own model, then its attach objects, then its task children -- and the camera body
-            // is a child task of the bracket (SCamera_SCameraLensCreateHandler, 0x48EC90).
-            if (mounted.Length > 0 && (depth > 0 || placementMountedOn.Length == 0 || magic is null))
-            {
-                Vector3d mountPosition = unitsPosition;
-                if (model.TryGetMagicVertex(0, out Vector3f mount))
-                {
-                    Vector3f mountOffset = orientation.Transposed().Transform(mount);
-                    mountPosition = new Vector3d(
-                        unitsPosition.X + mountOffset.X,
-                        unitsPosition.Y + mountOffset.Y,
-                        unitsPosition.Z + mountOffset.Z);
-                }
-
-                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, key, ref index))
-                {
-                    attached++;
-                }
-                else
-                {
-                    attachmentsUnresolved++;
-                }
-            }
-
             // A room of a building's shell -- an attach point that is a sector (SectorObject_CreateAttachObjects).
             bool IsRoom(MefAttachment attachment) =>
                 depth == 0
@@ -258,8 +227,8 @@ public static class Igi2DrawableScene
             // order. SectorObject_CreateAttachObjects moves each sector it creates out of the magic container and
             // into the sector container, and RigidDynCubeObj_EnumerateLightmapVirModelsHandler numbers the magic
             // container's children before the sector container's. Walking the attach points in file order put a
-            // room's number among its siblings' and bound it a bake of another model's size -- a file retail
-            // rejects on its page table -- and the stretched page lit whole rooms past white under the doubled stage.
+            // room's number among its siblings' and bound it a bake of another model's size, and the stretched page
+            // lit whole rooms past white under the doubled stage.
             foreach (MefAttachment attachment in model.Attachments.Where(a => !IsRoom(a)).Concat(model.Attachments.Where(IsRoom)))
             {
                 // The magic table decides what the point becomes: its type's model, its own name, or -- for a
@@ -310,6 +279,40 @@ public static class Igi2DrawableScene
                 {
                     // A model the packs do not hold. It still consumed its index above, so the numbering of
                     // everything after it holds.
+                    attachmentsUnresolved++;
+                }
+            }
+
+            // The model this one carries, on the host's first magic vertex. The vertex is a point in
+            // the host's own space, and RigidDynCubeObj_GetMagicVertexPos (igi2 0x58E430) takes it to
+            // the world exactly as an attachment point is taken: the host's rows dotted with it, plus
+            // the host's position. A host with no magic vertex mounts at its own origin, which is what
+            // that function returns when there is none to read.
+            //
+            // Emitted after the attachments and the rooms because that is the order the lightmap enumerator
+            // walks: RigidDynCubeObj_EnumerateLightmapVirModelsHandler numbers a node's own model, then its
+            // magic container, then its sector container, then its task children -- and the camera body is a
+            // task child of the bracket, made at run time with no level id of its own, so it shares the
+            // bracket's count (SCamera_SCameraLensCreateHandler). Walking it before the attachments gave it
+            // their first number and moved each of theirs up by one.
+            if (mounted.Length > 0 && (depth > 0 || placementMountedOn.Length == 0 || magic is null))
+            {
+                Vector3d mountPosition = unitsPosition;
+                if (model.TryGetMagicVertex(0, out Vector3f mount))
+                {
+                    Vector3f mountOffset = orientation.Transposed().Transform(mount);
+                    mountPosition = new Vector3d(
+                        unitsPosition.X + mountOffset.X,
+                        unitsPosition.Y + mountOffset.Y,
+                        unitsPosition.Z + mountOffset.Z);
+                }
+
+                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, key, ref index))
+                {
+                    attached++;
+                }
+                else
+                {
                     attachmentsUnresolved++;
                 }
             }

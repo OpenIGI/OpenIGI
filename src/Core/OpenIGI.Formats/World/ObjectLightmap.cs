@@ -36,11 +36,21 @@ public sealed class ObjectLightmap
     /// <summary>The file-name extension of a lightmap entry, including the dot.</summary>
     public const string Extension = ".olm";
 
-    private ObjectLightmap(float version, IReadOnlyList<ObjectLightmapImage> images) =>
-        (Version, Images) = (version, images);
+    /// <summary>The value of the first dword of every entry the original accepts: <c>0.12f</c>.</summary>
+    public const uint Magic = 0x3DF5C28F;
 
-    /// <summary>Gets the version from the header, <c>0.12f</c> across the retail corpus.</summary>
+    private ObjectLightmap(float version, float meshVersion, EngineCalendar bakedAt, IReadOnlyList<ObjectLightmapImage> images) =>
+        (Version, MeshVersion, BakedAt, Images) = (version, meshVersion, bakedAt, images);
+
+    /// <summary>Gets the first dword as a float, <c>0.12f</c> across the retail corpus.</summary>
+    /// <remarks>The loaders compare its bits with <see cref="Magic"/> rather than read it as a version.</remarks>
     public float Version { get; }
+
+    /// <summary>Gets the version of the mesh the map was baked for, at <c>+4</c>.</summary>
+    public float MeshVersion { get; }
+
+    /// <summary>Gets when the map was baked, at <c>+8</c>.</summary>
+    public EngineCalendar BakedAt { get; }
 
     /// <summary>Gets the images, in file order. The first is the one a draw record samples.</summary>
     public IReadOnlyList<ObjectLightmapImage> Images { get; }
@@ -122,7 +132,60 @@ public sealed class ObjectLightmap
                 $"An object lightmap's {count} images account for {offset} of {span.Length} bytes.");
         }
 
-        return new ObjectLightmap(version, new ReadOnlyCollection<ObjectLightmapImage>(images));
+        return new ObjectLightmap(
+            version,
+            BinaryPrimitives.ReadSingleLittleEndian(span[4..]),
+            EngineCalendar.Read(span[8..]),
+            new ReadOnlyCollection<ObjectLightmapImage>(images));
+    }
+
+    /// <summary>Whether the original would light <paramref name="mesh"/> with this map.</summary>
+    /// <param name="mesh">The model drawn at the level of detail the map was named for.</param>
+    /// <returns><see langword="true"/> when the loader accepts the file.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="mesh"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// I.G.I. 2's <c>LightmapInfo_CreateLightmapList</c> and Project I.G.I.'s <c>Lightmap_BuildLod</c> take a file
+    /// only when its first dword is <see cref="Magic"/>, the mesh version it records is the mesh's, the mesh was
+    /// exported before the map was baked, and it holds as many pages as the mesh has. Anything else is a bake of
+    /// some other mesh, and they light the model with <see cref="Unbaked"/> pages instead.
+    /// </para>
+    /// <para>
+    /// Neither compares the pages' sizes: an accepted file is drawn at its own.
+    /// </para>
+    /// </remarks>
+    public bool IsBakeOf(MefModel mesh)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+
+        return BitConverter.SingleToUInt32Bits(Version) == Magic
+            && MeshVersion == mesh.Version
+            && mesh.ExportedAt < BakedAt
+            && Images.Count == mesh.LightmapPages.Count;
+    }
+
+    /// <summary>The pages the original lights a mesh with when it has no bake it accepts: every texel white.</summary>
+    /// <param name="mesh">The model to light.</param>
+    /// <returns>One page per lightmap page of the mesh, at the mesh's sizes.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="mesh"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Both loaders fill each page with <c>-1</c>. Under the doubled lightmap stage that draws the surface at
+    /// twice its texture -- which is how the original draws it, so that is what this gives.
+    /// </remarks>
+    public static IReadOnlyList<ObjectLightmapImage> Unbaked(MefModel mesh)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+
+        ObjectLightmapImage[] images = new ObjectLightmapImage[mesh.LightmapPages.Count];
+        for (int i = 0; i < images.Length; i++)
+        {
+            MefLightmapPage page = mesh.LightmapPages[i];
+            byte[] white = new byte[4 * page.Width * page.Height];
+            Array.Fill(white, byte.MaxValue);
+            images[i] = new ObjectLightmapImage(page.Width, page.Height, white);
+        }
+
+        return new ReadOnlyCollection<ObjectLightmapImage>(images);
     }
 
     /// <summary>The letters an I.G.I. 2 entry name uses to separate one task's lightmap groups.</summary>

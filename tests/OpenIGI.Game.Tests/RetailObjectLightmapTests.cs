@@ -149,6 +149,15 @@ public sealed class RetailObjectLightmapTests
                             + $"the entry is {entry.Images[page].Width}x{entry.Images[page].Height}");
                     }
                 }
+
+                // Lightmap_BuildLod takes the file only when it is newer than the mesh and records its version;
+                // a bake of the right model that the loader would still turn down would be drawn white.
+                if (!entry.IsBakeOf(placed.Model))
+                {
+                    failures.Add(
+                        $"{setName}_{index:D00000}: {placed.Name} exported {placed.Model.ExportedAt} at version "
+                        + $"{placed.Model.Version}, the entry baked {entry.BakedAt} for version {entry.MeshVersion}");
+                }
             }
         }
 
