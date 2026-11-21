@@ -73,7 +73,7 @@ public sealed partial class RemasteredHudRenderer
             }
 
             Bgra32 ink = affordable ? o.Ink.Plain : HudOverlay.Fade(o.Quiet, 0.7f);
-            o.Text.DrawAt(o.Text.Capitals(item.Name), capX + o.KeyCapHeight + o.Px(12f), textY, body, ink);
+            o.Text.DrawAt(OverlayText.Capitals(item.Name), capX + o.KeyCapHeight + o.Px(12f), textY, body, ink);
             string price = item.Full ? "FULL" : free ? "FREE" : string.Create(CultureInfo.InvariantCulture, $"${item.Price:N0}");
             o.Text.DrawRightAt(price, rect.Right - o.Px(10f), textY, body, affordable ? o.Ink.Accent : o.Ink.Danger);
             _buyRows.Add((i, rect.X, rect.Y, rect.Width, rect.Height));

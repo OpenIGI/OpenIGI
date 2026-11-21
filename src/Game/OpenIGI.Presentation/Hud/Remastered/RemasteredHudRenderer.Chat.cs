@@ -10,7 +10,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 /// <content>
 /// <para>
 /// The chat, as I.G.I. 2 keeps it (network/client.c <c>Client_Talk</c>, <c>Client_GameMessageChatHandler</c>): each line the
-/// speaker's name and what was said in the status display's type, team talk in the accent where talk to all is plain, the server's
+/// speaker's name and what was said, team talk in the accent where talk to all is plain, the server's
 /// own word in the title's bright ink; and the line being typed after its <c>SAY ALL:</c> or <c>SAY TEAM:</c>, in the same inks.
 /// </para>
 /// <para>
@@ -114,10 +114,10 @@ public sealed partial class RemasteredHudRenderer
                 (_, true) => "*DEAD* ",
                 _ => string.Empty,
             };
-            string who = server ? "SERVER: " : line.Name.Length > 0 ? o.Text.Prose(line.Name) + ": " : string.Empty;
+            string who = server ? "SERVER: " : line.Name.Length > 0 ? OverlayText.Prose(line.Name) + ": " : string.Empty;
             float marksWidth = o.Text.MeasureAt(marks, size);
             float whoWidth = o.Text.MeasureAt(who, size);
-            string text = o.Text.Prose(line.Text);
+            string text = OverlayText.Prose(line.Text);
             List<string> wrapped = o.Text.WrapAt(text, size, area.Width - marksWidth - whoWidth, area.Width);
             if (used + wrapped.Count > rows && used > 0)
             {
@@ -132,7 +132,7 @@ public sealed partial class RemasteredHudRenderer
             // Shut, each line on a wash of its own, the speaker's side's tick at the left.
             if (washed)
             {
-                float longest = wrapped.Max(r => o.Text.MeasureAt(r, size)) + (wrapped.Count == 1 ? marksWidth + whoWidth : 0f);
+                float longest = wrapped.Max(r => o.Text.MeasureProseAt(r, size)) + (wrapped.Count == 1 ? marksWidth + whoWidth : 0f);
                 o.Wash(new UiRect(area.X - o.Px(10f), y, longest + o.Px(70f), rowHeight * wrapped.Count), side, alpha);
             }
 
@@ -149,7 +149,7 @@ public sealed partial class RemasteredHudRenderer
 
             for (int row = 0; row < wrapped.Count; row++)
             {
-                o.Text.DrawAt(wrapped[row], row == 0 ? x : area.X, top + (row * rowHeight), size, HudOverlay.Fade(said, alpha), shadow: washed);
+                o.Text.DrawProseAt(wrapped[row], row == 0 ? x : area.X, top + (row * rowHeight), size, HudOverlay.Fade(said, alpha), shadow: washed);
             }
         }
 
@@ -173,7 +173,7 @@ public sealed partial class RemasteredHudRenderer
 
         // Scrolled so the caret stays on the rule, with a little room after it.
         var text = new UiRect(field.X + promptWidth, field.Y, field.Width - promptWidth - o.Px(60f), field.Height);
-        string typed = o.Text.Prose(entry.Text);
+        string typed = OverlayText.Prose(entry.Text);
         float toCaret = o.Text.MeasureAt(typed[..Math.Min(entry.Caret, typed.Length)], size);
         float shift = Math.Max(0f, toCaret - (text.Width - o.Px(16f)));
         o.Painter.PushClip(text);

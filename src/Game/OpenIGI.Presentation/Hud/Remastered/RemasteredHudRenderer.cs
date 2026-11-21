@@ -48,11 +48,10 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
     private readonly IGraphicsDevice _device;
     private readonly IOpenIgiLogger _logger;
     private readonly HudTheme _look;
-    private readonly ITitleFontSource? _titleFont;
     private UiFont? _body;
     private UiFont? _display;
     private UiTheme? _theme;
-    private TitleText? _text;
+    private OverlayText? _text;
     private UiSurfaces? _surfaces;
     private InteractionBadgeSprite? _badge;
     private bool _disposed;
@@ -61,9 +60,7 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
     /// <param name="device">The graphics device it uploads through.</param>
     /// <param name="logger">Where its load reports.</param>
     /// <param name="look">The played title's look, which the session's overlays are drawn in: its colours, glass and corners.</param>
-    /// <param name="titleFont">The title's own font, which the overlays set their text in; <see langword="null"/> to set it in
-    /// the shared face. The renderer owns it.</param>
-    public RemasteredHudRenderer(IGraphicsDevice device, IOpenIgiLogger logger, HudTheme look, ITitleFontSource? titleFont = null)
+    public RemasteredHudRenderer(IGraphicsDevice device, IOpenIgiLogger logger, HudTheme look)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(logger);
@@ -71,10 +68,9 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         _device = device;
         _logger = logger;
         _look = look;
-        _titleFont = titleFont;
     }
 
-    // One overlay's frame: the painter over the batch, the layout, and the title's text begun on them, in the title's look.
+    // One overlay's frame: the painter over the batch, the layout, and the overlays' text begun on them, in the title's look.
     private HudOverlay? Overlay(SpriteBatch batch, int screenWidth, int screenHeight)
     {
         if (_text is not { } text)
@@ -84,8 +80,7 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         var painter = UiPainter.Create(batch, context);
-        text.Use(_titleFont?.Font, 1);
-        text.Begin(batch, painter, 1f);
+        text.Begin(painter);
         return new HudOverlay(painter, context, _look, text, Environment.TickCount64 / 1000f);
     }
 
@@ -111,7 +106,7 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
             _theme = typography.CreateTheme();
             _body = typography.Body;
             _display = typography.Display;
-            _text = new TitleText(typography.Mono);
+            _text = new OverlayText(typography.Heading, typography.Body);
 
             // The interface's antialiased corner atlas. Every curve this HUD draws over the world -- the
             // interaction badge and its dial -- is a filled rounded rectangle sampled from it, because
@@ -506,7 +501,6 @@ public sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         _display = null;
         _theme = null;
         _text = null;
-        _titleFont?.Dispose();
         _surfaces?.Dispose();
         _surfaces = null;
         _silhouettes?.Dispose();

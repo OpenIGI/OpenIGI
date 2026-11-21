@@ -12,7 +12,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// The kill feed down the top right corner, in the played title's look -- killer, the weapon's own silhouette, how it struck,
-/// victim, the names in the sides' inks and the title's type on a plate of its glass -- with the player's own rows bracketed,
+/// victim, the names in the sides' inks on a plate of the title's glass -- with the player's own rows bracketed,
 /// each sliding in and fading away; the player's own kill announced low in the middle; and the killer's weapon on the card a
 /// dead player watches it from.
 /// </content>
@@ -110,7 +110,7 @@ public sealed partial class RemasteredHudRenderer
         if (note.HasKiller)
         {
             Bgra32 colour = (note.Marks & KillMarks.TeamKill) != 0 ? o.Ink.Accent : NameColour(o, feed, note.KillerEntity, note.KillerTeam, guard: false);
-            parts.Add(FeedPart.Name(o, o.Text.ClipAt(o.Text.Prose(note.Killer), size, widest), size, colour));
+            parts.Add(FeedPart.Name(o, o.Text.ClipAt(OverlayText.Prose(note.Killer), size, widest), size, colour));
         }
 
         // The weapon's own picture where the title has one; else what killed, as a mark; else the weapon's name.
@@ -132,7 +132,7 @@ public sealed partial class RemasteredHudRenderer
             string weaponName = cause == KitIcon.None ? feed.Art?.WeaponName(note.Weapon) ?? string.Empty : string.Empty;
             if (weaponName.Length > 0)
             {
-                parts.Add(FeedPart.Name(o, o.Text.Capitals(weaponName), size, o.Quiet));
+                parts.Add(FeedPart.Name(o, OverlayText.Capitals(weaponName), size, o.Quiet));
             }
             else
             {
@@ -158,7 +158,7 @@ public sealed partial class RemasteredHudRenderer
         }
 
         bool guard = (note.Marks & KillMarks.Guard) != 0;
-        parts.Add(FeedPart.Name(o, o.Text.ClipAt(o.Text.Prose(note.Victim), size, widest), size, NameColour(o, feed, note.VictimEntity, note.VictimTeam, guard)));
+        parts.Add(FeedPart.Name(o, o.Text.ClipAt(OverlayText.Prose(note.Victim), size, widest), size, NameColour(o, feed, note.VictimEntity, note.VictimTeam, guard)));
     }
 
     // A name's ink as the player sees the sides: its own the title's bright ink, its side the ally's, the other the enemy's; in co-op
@@ -252,7 +252,7 @@ public sealed partial class RemasteredHudRenderer
         float glyph = o.Px(22f);
         float gap = o.Px(10f);
         const string Said = "ELIMINATED";
-        string victim = o.Text.ClipAt(o.Text.Capitals(kill.Note.Victim), large, o.Px(320f));
+        string victim = o.Text.ClipAt(OverlayText.Capitals(kill.Note.Victim), large, o.Px(320f));
         float saidWidth = o.Text.MeasureAt(Said, small);
         float victimWidth = o.Text.MeasureAt(victim, large);
         float width = glyph + gap + saidWidth + gap + victimWidth;
@@ -274,7 +274,7 @@ public sealed partial class RemasteredHudRenderer
 
         if (KillFeedView.StreakName(streak) is { Length: > 0 } run)
         {
-            tags.Add((o.Text.Capitals(run), o.Ink.Highlight));
+            tags.Add((OverlayText.Capitals(run), o.Ink.Highlight));
         }
 
         o.Painter.PushOpacity(opacity);

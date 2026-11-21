@@ -50,7 +50,7 @@ public sealed partial class RemasteredHudRenderer
         float headY = top - o.Px(18f) - o.Text.LineHeightAt(large);
         o.Text.DrawAt("CHOOSE YOUR TEAM", left, headY, large, o.Ink.Highlight);
         float small = o.Px(HudOverlay.Small);
-        o.Text.DrawRightAt(o.Text.Capitals(modeTitle), left + rowWidth, headY + o.Text.LineHeightAt(large) - o.Text.LineHeightAt(small), small, o.Ink.Accent);
+        o.Text.DrawRightAt(OverlayText.Capitals(modeTitle), left + rowWidth, headY + o.Text.LineHeightAt(large) - o.Text.LineHeightAt(small), small, o.Ink.Accent);
 
         float x = left;
         for (int i = 0; i < TeamPick.Choices.Count; i++)
@@ -92,7 +92,7 @@ public sealed partial class RemasteredHudRenderer
         float pad = o.Px(16f);
         float y = card.Y + o.Px(18f);
         UiRect cap = o.KeyCap(number.ToString(CultureInfo.InvariantCulture), card.X + pad, y, lit: own);
-        o.Text.DrawAt(o.Text.Capitals(MatchState.TeamName(team)), cap.Right + o.Px(10f), cap.Y + ((cap.Height - o.Text.LineHeightAt(o.Px(HudOverlay.Large))) * 0.5f), o.Px(HudOverlay.Large), open ? ink : HudOverlay.Fade(ink, 0.45f));
+        o.Text.DrawAt(OverlayText.Capitals(MatchState.TeamName(team)), cap.Right + o.Px(10f), cap.Y + ((cap.Height - o.Text.LineHeightAt(o.Px(HudOverlay.Large))) * 0.5f), o.Px(HudOverlay.Large), open ? ink : HudOverlay.Fade(ink, 0.45f));
 
         y = cap.Bottom + o.Px(14f);
         string count = names.Count == 1 ? "1 PLAYER" : string.Create(CultureInfo.InvariantCulture, $"{names.Count} PLAYERS");
@@ -117,7 +117,7 @@ public sealed partial class RemasteredHudRenderer
         {
             string name = i == TeamCardNames - 1 && names.Count > TeamCardNames
                 ? string.Create(CultureInfo.InvariantCulture, $"+{names.Count - TeamCardNames + 1} MORE")
-                : o.Text.ClipAt(o.Text.Prose(names[i]), body, card.Width - (pad * 2f));
+                : o.Text.ClipAt(OverlayText.Prose(names[i]), body, card.Width - (pad * 2f));
             o.Text.DrawAt(name, card.X + pad, y, body, o.Ink.Plain);
             y += o.Text.LineHeightAt(body) + o.Px(6f);
         }

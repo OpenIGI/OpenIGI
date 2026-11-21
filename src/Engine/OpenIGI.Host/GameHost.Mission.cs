@@ -362,7 +362,7 @@ public sealed partial class GameHost
             // The remastered display and the session's overlays on it, for every title: I.G.I. 2 declares no loadout, and made
             // only beside one it never drew a scoreboard, a teammate's name or a fallen teammate's mark.
             _remasteredHud?.Dispose();
-            _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger, _fileSystem));
+            _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
             if (_remasteredHud is not null && !_remasteredHud.Load())
             {
                 _remasteredHud.Dispose();

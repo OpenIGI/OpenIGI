@@ -54,8 +54,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
                 new OpenIGI.Presentation.Hud.Remastered.RemasteredHudRenderer(
                     request.Device,
                     request.Logger,
-                    OpenIGI.Presentation.Igi2.Hud.Igi2HudTheme.Theme,
-                    request.Files is { } files ? new OpenIGI.Presentation.Igi2.Hud.Igi2TitleFont(request.Device, files, request.Logger) : null))
+                    OpenIGI.Presentation.Igi2.Hud.Igi2HudTheme.Theme))
             .Add<ViewModelPresentationRequest, ITitleViewModelPresenter>(CreateTitleViewModel)
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
@@ -72,7 +71,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
                     request.Logger,
                     request.ResolveText,
                     OpenIGI.Presentation.Igi2.Hud.Igi2HudTheme.Theme,
-                    new OpenIGI.Presentation.Igi2.Hud.Igi2TitleFont(request.Device, request.Resources.FileSystem, request.Logger)));
+                    new OpenIGI.Presentation.Igi2.Hud.Igi2ComputerFont(request.Device, request.Resources.FileSystem, request.Logger)));
 
     /// <inheritdoc/>
     public PresenterRegistry Presenters { get; }

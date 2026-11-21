@@ -14,7 +14,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <param name="Theme">The title's look.</param>
 /// <param name="Chrome">This frame's layout.</param>
 /// <param name="Seconds">The display's clock, in seconds.</param>
-internal sealed record ComputerCanvas(UiPainter Painter, TitleText Text, HudTheme Theme, TacticalComputerChrome Chrome, float Seconds)
+internal sealed record ComputerCanvas(UiPainter Painter, ComputerText Text, HudTheme Theme, TacticalComputerChrome Chrome, float Seconds)
 {
     /// <summary>Gets the title's colours.</summary>
     public HudPalette Palette => Theme.Palette;

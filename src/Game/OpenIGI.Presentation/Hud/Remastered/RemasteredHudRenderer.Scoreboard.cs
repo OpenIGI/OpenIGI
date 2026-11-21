@@ -155,11 +155,6 @@ public sealed partial class RemasteredHudRenderer
         x += o.Text.DrawAt(what, x, y, size, o.Ink.Highlight) + o.Px(18f);
         string where = roomCode is null ? "SERVER" : "ROOM " + roomCode;
         x += o.Text.DrawAt(where, x, y, size, o.Quiet) + o.Px(18f);
-        if (place.Length > 0)
-        {
-            string mission = place.StartsWith("Mission ", StringComparison.Ordinal) ? "MISSION " + place["Mission ".Length..] : place;
-            o.Text.DrawAt(o.Text.ClipAt(o.Text.Capitals(mission), size, strip.Width * 0.3f), x, y, size, o.Quiet);
-        }
 
         // The right: a label quiet, its figure lit, from the right edge inward.
         float right = strip.Right - pad;
@@ -183,6 +178,13 @@ public sealed partial class RemasteredHudRenderer
         else if (!teamed && !versus)
         {
             Figure("SQUAD KILLS", lines.Sum(static l => l.Kills).ToString(CultureInfo.InvariantCulture), o.Ink.Highlight);
+        }
+
+        // The mission in what room the figures leave, cut where it would run into them.
+        if (place.Length > 0)
+        {
+            string mission = place.StartsWith("Mission ", StringComparison.Ordinal) ? "MISSION " + place["Mission ".Length..] : place;
+            o.Text.DrawAt(o.Text.ClipAt(OverlayText.Capitals(mission), size, right - x), x, y, size, o.Quiet);
         }
     }
 
@@ -208,7 +210,7 @@ public sealed partial class RemasteredHudRenderer
         {
             Bgra32 ink = o.SideInk(side, ownTeam, TeamRoster.Good);
             string name = side is TeamRoster.Good or TeamRoster.Bad ? Game.Multiplayer.Modes.MatchState.TeamName(side) : "Unassigned";
-            o.Text.DrawAt("TEAM: " + o.Text.Capitals(name), column.X, y, body, ink);
+            o.Text.DrawAt("TEAM: " + OverlayText.Capitals(name), column.X, y, body, ink);
             if (score is { } points)
             {
                 o.Text.DrawRightAt(string.Create(CultureInfo.InvariantCulture, $"SCORE: {points}"), column.Right, y, body, ink);
@@ -279,7 +281,7 @@ public sealed partial class RemasteredHudRenderer
         }
 
         float room = columns.Kills - o.Px(150f) - nameX;
-        string name = o.Text.ClipAt(o.Text.Prose(line.Name), body, room);
+        string name = o.Text.ClipAt(OverlayText.Prose(line.Name), body, room);
         float after = nameX + o.Text.DrawAt(name, nameX, textY, body, ink) + o.Px(10f);
         float tagY = row.Y + ((row.Height - (o.Text.LineHeightAt(o.Px(HudOverlay.Small)) + o.Px(4f))) * 0.5f);
         if (host)

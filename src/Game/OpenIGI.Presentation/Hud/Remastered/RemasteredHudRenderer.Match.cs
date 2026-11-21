@@ -23,7 +23,7 @@ public sealed partial class RemasteredHudRenderer
         // The plate across the top: the mode, and its clock.
         float body = o.Px(HudOverlay.Body);
         float centre = o.Safe.X + (o.Safe.Width * 0.5f);
-        string title = o.Text.Capitals(banner.Title);
+        string title = OverlayText.Capitals(banner.Title);
         string line = banner.Clock is { } clock ? $"{title} - {clock}" : title;
         float width = o.Text.MeasureAt(line, body) + o.Px(36f);
         var plate = new UiRect(centre - (width * 0.5f), o.Safe.Y + o.Px(14f), width, o.Text.LineHeightAt(body) + o.Px(14f));
@@ -34,12 +34,12 @@ public sealed partial class RemasteredHudRenderer
         // A decided match's result, large, below it.
         if (banner.Headline is { } headline)
         {
-            o.Text.DrawCentredAt(o.Text.Capitals(headline), centre, plate.Bottom + o.Px(20f), o.Px(HudOverlay.Huge), o.Ink.Accent, shadow: true);
+            o.Text.DrawCentredAt(OverlayText.Capitals(headline), centre, plate.Bottom + o.Px(20f), o.Px(HudOverlay.Huge), o.Ink.Accent, shadow: true);
         }
 
         if (warning is not null)
         {
-            o.Text.DrawCentredAt(o.Text.Capitals(warning), centre, o.Safe.Y + (o.Safe.Height * 0.3f), o.Px(HudOverlay.Large), o.Ink.Danger, shadow: true);
+            o.Text.DrawCentredAt(OverlayText.Capitals(warning), centre, o.Safe.Y + (o.Safe.Height * 0.3f), o.Px(HudOverlay.Large), o.Ink.Danger, shadow: true);
         }
     }
 }

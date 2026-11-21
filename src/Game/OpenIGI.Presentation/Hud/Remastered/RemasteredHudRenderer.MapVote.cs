@@ -132,9 +132,9 @@ public sealed partial class RemasteredHudRenderer
         float textWidth = card.Width - o.Px(28f);
         string name = choice.Name.Length > 0 ? choice.Name : string.Create(CultureInfo.InvariantCulture, $"Mission {choice.Mission}");
         float y = plate.Bottom + o.Px(10f);
-        o.Text.DrawAt(o.Text.ClipAt(o.Text.Capitals(name), body, textWidth), textX, y, body, o.Ink.Highlight);
+        o.Text.DrawAt(o.Text.ClipAt(OverlayText.Capitals(name), body, textWidth), textX, y, body, o.Ink.Highlight);
         y += o.Text.LineHeightAt(body) + o.Px(4f);
-        o.Text.DrawAt(o.Text.Capitals(MatchModes.Title(choice.Mode)), textX, y, small, own ? o.Ink.Accent : o.Quiet);
+        o.Text.DrawAt(OverlayText.Capitals(MatchModes.Title(choice.Mode)), textX, y, small, own ? o.Ink.Accent : o.Quiet);
 
         // The votes: the share of those who may vote, and the count; the one ahead marked.
         float barY = card.Bottom - o.Px(20f);

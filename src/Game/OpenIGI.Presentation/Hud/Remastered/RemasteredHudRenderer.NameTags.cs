@@ -23,7 +23,7 @@ public sealed partial class RemasteredHudRenderer
     /// <inheritdoc/>
     /// <remarks>
     /// Each name is projected over the player's head through the frame's eye and set flat there, kept spare: the name in the
-    /// title's type in the ally's ink, a small marker pointing down at the head, far off how far, and hurt, the title's meter in
+    /// interface's face in the ally's ink, a small marker pointing down at the head, far off how far, and hurt, the title's meter in
     /// its health colour. No plate behind it: across a compound of allies, plates were a wall of boxes. Not the original's: it had
     /// no other players to name.
     /// </remarks>

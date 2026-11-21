@@ -74,7 +74,7 @@ public sealed partial class RemasteredHudRenderer
         float after = x + pad + o.Px(16f) + o.Text.DrawAt("CONTROLS", x + pad + o.Px(16f), stripY, body, o.Ink.Highlight) + o.Px(18f);
         if (help.Mode.Length > 0)
         {
-            o.Text.DrawAt(o.Text.Capitals(help.Mode), after, stripY, body, o.Quiet);
+            o.Text.DrawAt(OverlayText.Capitals(help.Mode), after, stripY, body, o.Quiet);
         }
 
         // The columns: a title over each on the theme's rule, then its actions, the action at the left and its keys at the right.
@@ -86,7 +86,7 @@ public sealed partial class RemasteredHudRenderer
             float left = x + pad + (c * (columnWidth + gutter));
             float right = left + columnWidth;
             float y = strip.Bottom + o.Px(10f);
-            o.Text.DrawAt(o.Text.Capitals(section.Title), left, y, body, o.Ink.Accent);
+            o.Text.DrawAt(OverlayText.Capitals(section.Title), left, y, body, o.Ink.Accent);
             o.Rule(left, y + o.Text.LineHeightAt(body) + o.Px(4f), columnWidth, HudOverlay.Fade(o.Ink.Primary, 0.55f));
             y += sectionHead;
             for (int r = 0; r < section.Lines.Count; r++)
@@ -108,7 +108,7 @@ public sealed partial class RemasteredHudRenderer
                     capRight -= capWidth + o.Px(5f);
                 }
 
-                string action = o.Text.ClipAt(o.Text.Prose(line.Action), body, capRight - left - o.Px(8f));
+                string action = o.Text.ClipAt(OverlayText.Prose(line.Action), body, capRight - left - o.Px(8f));
                 o.Text.DrawAt(action, left, row.Y + ((row.Height - o.Text.LineHeightAt(body)) * 0.5f), body, o.Ink.Plain);
                 y += rowHeight;
             }

@@ -1,5 +1,4 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
@@ -8,9 +7,9 @@ namespace OpenIGI.Presentation.Hud.Remastered.Widgets;
 
 /// <summary>
 /// One frame's drawing of the session's overlays -- the scoreboard, the chat, the revive marks, the menus a match opens -- in the
-/// played title's own look: its glass and corners (<see cref="HudPanel"/>), its colours (<see cref="HudPalette"/>), and its
-/// status display's bitmap font (<see cref="TitleText"/>). Every overlay is drawn from these few pieces, so both titles' sets
-/// read as one design, and as the heads-up display they stand over.
+/// played title's own look: its glass and corners (<see cref="HudPanel"/>) and its colours (<see cref="HudPalette"/>), with text
+/// in the interface's distance-field faces (<see cref="OverlayText"/>). Every overlay is drawn from these few pieces, so both
+/// titles' sets read as one design, and as the heads-up display they stand over.
 /// </summary>
 internal sealed class HudOverlay
 {
@@ -32,7 +31,7 @@ internal sealed class HudOverlay
     /// <param name="theme">The played title's look.</param>
     /// <param name="text">The title's text, begun on the painter.</param>
     /// <param name="seconds">The time now, for the theme's shimmer and the pulses.</param>
-    public HudOverlay(UiPainter painter, LayoutContext context, HudTheme theme, TitleText text, float seconds)
+    public HudOverlay(UiPainter painter, LayoutContext context, HudTheme theme, OverlayText text, float seconds)
     {
         Painter = painter;
         Context = context;
@@ -57,7 +56,7 @@ internal sealed class HudOverlay
     public Bgra32 Quiet => Fade(Ink.Primary, 0.72f);
 
     /// <summary>Gets the title's text.</summary>
-    public TitleText Text { get; }
+    public OverlayText Text { get; }
 
     /// <summary>Gets the time now, in seconds.</summary>
     public float Seconds { get; }
@@ -107,7 +106,7 @@ internal sealed class HudOverlay
     /// <summary>Draws a sheet the session lays over the picture to be read: the title's glass, darker, cut its way and bracketed.</summary>
     /// <param name="rect">Where it stands.</param>
     /// <param name="opacity">How far it has faded in, nought to one.</param>
-    public void Sheet(UiRect rect, float opacity = 1f) => HudPanel.Draw(Painter, Theme, Motif, Seconds, rect, opacity, shade: 0.58f);
+    public void Sheet(UiRect rect, float opacity = 1f) => HudPanel.Draw(Painter, Theme, Motif, Seconds, rect, opacity, shade: 0.72f);
 
     /// <summary>Draws a strip of glass with a rule under it, a sheet's header.</summary>
     /// <param name="rect">Where it stands.</param>
@@ -203,12 +202,12 @@ internal sealed class HudOverlay
     /// <summary>Measures a key's cap.</summary>
     /// <param name="key">The key's name.</param>
     /// <returns>Its width, in pixels.</returns>
-    public float KeyCapWidth(string key) => MathF.Max(KeyCapHeight, Text.MeasureAt(Text.Capitals(key), Px(Small)) + Px(14f));
+    public float KeyCapWidth(string key) => MathF.Max(KeyCapHeight, Text.MeasureAt(OverlayText.Capitals(key), Px(Small)) + Px(14f));
 
     /// <summary>Gets a key cap's height, in pixels.</summary>
     public float KeyCapHeight => Text.LineHeightAt(Px(Small)) + Px(10f);
 
-    /// <summary>Draws a key's cap: its name in the title's type in a bracketed box of the title's glass.</summary>
+    /// <summary>Draws a key's cap: its name in a bracketed box of the title's glass.</summary>
     /// <param name="key">The key's name.</param>
     /// <param name="x">Its left edge.</param>
     /// <param name="y">Its top edge.</param>
@@ -223,7 +222,7 @@ internal sealed class HudOverlay
             Brackets(cap, Fade(Ink.Primary, 0.8f), 4f);
         }
 
-        string name = Text.Capitals(key);
+        string name = OverlayText.Capitals(key);
         float size = Px(Small);
         Text.DrawCentredAt(name, cap.X + (cap.Width * 0.5f), cap.Y + ((cap.Height - Text.LineHeightAt(size)) * 0.5f), size, lit ? Bgra32.FromRgb(8, 10, 8) : Ink.Highlight);
         return cap;
@@ -352,7 +351,7 @@ internal sealed class HudOverlay
     {
         float px = Px(size);
         float gap = Px(8f);
-        string name = Text.Prose(first);
+        string name = OverlayText.Prose(first);
         float firstWidth = Text.MeasureAt(name, px);
         float total = firstWidth + (second is null ? 0f : gap + Text.MeasureAt(second, px));
         float x = centreX - (total * 0.5f);

@@ -503,9 +503,7 @@ public interface IRemasteredHudPresenter : IDisposable
 /// <summary>What a title needs in order to build its heads-up display.</summary>
 /// <param name="Device">The graphics device to upload through.</param>
 /// <param name="Logger">Where load diagnostics go.</param>
-/// <param name="Files">The installation's data, which the session's overlays read the title's own font from; <see langword="null"/>
-/// where there is none to hand, and they set their text in the shared face instead.</param>
-public readonly record struct HudPresentationRequest(IGraphicsDevice Device, IOpenIgiLogger Logger, VirtualFileSystem? Files = null);
+public readonly record struct HudPresentationRequest(IGraphicsDevice Device, IOpenIgiLogger Logger);
 
 /// <summary>Everything the remaster HUD needs for one draw, collected without mutable renderer state.</summary>
 /// <remarks>

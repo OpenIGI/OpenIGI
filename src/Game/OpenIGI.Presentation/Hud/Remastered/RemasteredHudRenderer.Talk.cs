@@ -56,7 +56,7 @@ public sealed partial class RemasteredHudRenderer
         float small = o.Px(HudOverlay.Small);
         if (warning is { Length: > 0 })
         {
-            string said = o.Text.Capitals(warning);
+            string said = OverlayText.Capitals(warning);
             float width = o.Text.MeasureAt(said, small) + o.Px(30f);
             var plate = new UiRect(o.Safe.X + ((o.Safe.Width - width) * 0.5f), o.Safe.Y + o.Px(18f), width, o.Text.LineHeightAt(small) + o.Px(10f));
             o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
@@ -73,7 +73,7 @@ public sealed partial class RemasteredHudRenderer
         foreach (string speaker in talking)
         {
             float icon = lineHeight * 0.6f;
-            string name = o.Text.Prose(speaker);
+            string name = OverlayText.Prose(speaker);
             var plate = new UiRect(x, y - lineHeight, o.Px(10f) + icon + o.Px(8f) + o.Text.MeasureAt(name, size) + o.Px(12f), lineHeight);
             o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 180));
             o.Brackets(plate, HudOverlay.Fade(o.Ink.Ally, 0.8f), 4f);

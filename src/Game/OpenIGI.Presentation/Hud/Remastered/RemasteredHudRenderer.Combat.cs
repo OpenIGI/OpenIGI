@@ -31,7 +31,7 @@ public sealed partial class RemasteredHudRenderer
 
         UiRect safe = o.Safe;
         float centre = safe.X + (safe.Width * 0.5f);
-        string name = o.Text.Capitals(watched.Name);
+        string name = OverlayText.Capitals(watched.Name);
         string line = watched.Killer
             ? string.Create(CultureInfo.InvariantCulture, $"KILLED BY {name} - {watched.Metres:0} M")
             : $"SPECTATING {name}";
@@ -78,13 +78,13 @@ public sealed partial class RemasteredHudRenderer
 
         float small = o.Px(HudOverlay.Small);
         float step = o.Text.LineHeightAt(small) + o.Px(3f);
-        float width = lines.Max(l => o.Text.MeasureAt(o.Text.Capitals(l), small)) + o.Px(24f);
+        float width = lines.Max(l => o.Text.MeasureAt(OverlayText.Capitals(l), small)) + o.Px(24f);
         var plate = new UiRect(o.Safe.Right - width - o.Px(16f), o.Safe.Y + (o.Safe.Height * 0.62f), width, (step * lines.Count) + o.Px(16f));
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
         o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.7f), 4f);
         for (int i = 0; i < lines.Count; i++)
         {
-            o.Text.DrawAt(o.Text.Capitals(lines[i]), plate.X + o.Px(12f), plate.Y + o.Px(8f) + (step * i), small, o.Ink.Primary);
+            o.Text.DrawAt(OverlayText.Capitals(lines[i]), plate.X + o.Px(12f), plate.Y + o.Px(8f) + (step * i), small, o.Ink.Primary);
         }
     }
 

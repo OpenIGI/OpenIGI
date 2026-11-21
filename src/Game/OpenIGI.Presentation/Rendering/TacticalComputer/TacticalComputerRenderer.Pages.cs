@@ -60,7 +60,7 @@ public sealed partial class TacticalComputerRenderer
     private void DrawObjectives(ComputerCanvas canvas, IComputerObjectives runtime, UiRect card, float pad, float y)
     {
         HudPalette palette = canvas.Palette;
-        TitleText text = canvas.Text;
+        ComputerText text = canvas.Text;
         if (runtime.Objectives.Count == 0)
         {
             text.Draw("NO OBJECTIVES ON FILE", card.X + pad, y, canvas.Quiet);
@@ -117,7 +117,7 @@ public sealed partial class TacticalComputerRenderer
     private void DrawLog(ComputerCanvas canvas, IComputerObjectives runtime, UiRect card, float pad, float y)
     {
         HudPalette palette = canvas.Palette;
-        TitleText text = canvas.Text;
+        ComputerText text = canvas.Text;
         if (runtime.Log.Count == 0)
         {
             text.Draw("NO TRANSMISSIONS LOGGED", card.X + pad, y, canvas.Quiet);
@@ -164,7 +164,7 @@ public sealed partial class TacticalComputerRenderer
     private static void DrawMissionFailed(ComputerCanvas canvas, int screenWidth, int screenHeight)
     {
         HudPalette palette = canvas.Palette;
-        TitleText text = canvas.Text;
+        ComputerText text = canvas.Text;
         canvas.Painter.FillRect(new UiRect(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgba(0, 0, 0, 200));
 
         float line = text.LineHeight;

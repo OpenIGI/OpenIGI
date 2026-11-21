@@ -25,7 +25,7 @@ public sealed class TacticalComputerTests
     [InlineData(3840, 2160)]
     public void The_tabs_stand_in_the_top_strip_and_the_map_and_a_page_between_the_strips(int width, int height)
     {
-        float line = 11f * TitleText.ScaleFor(UiScale.Automatic, height);
+        float line = 11f * ComputerText.ScaleFor(UiScale.Automatic, height);
         float[] names = [line * 2f, line * 6f, line * 2f, line * 3f];
         UiRect[] tabs = new UiRect[names.Length];
         TacticalComputerChrome chrome = TacticalComputerChrome.Measure(width, height, line, pageVisible: true, names, tabs);
@@ -77,8 +77,8 @@ public sealed class TacticalComputerTests
     [InlineData(2160, 4)]
     public void The_text_is_drawn_at_a_whole_number_of_pixels_a_pixel_or_the_players_own(int height, int scale)
     {
-        Assert.Equal(scale, TitleText.ScaleFor(UiScale.Automatic, height));
-        Assert.Equal(3, TitleText.ScaleFor(3, height));
+        Assert.Equal(scale, ComputerText.ScaleFor(UiScale.Automatic, height));
+        Assert.Equal(3, ComputerText.ScaleFor(3, height));
     }
 
     [Fact]

@@ -94,7 +94,7 @@ public sealed partial class RemasteredHudRenderer
             var band = new UiRect(safe.X, safe.Y + (safe.Height * 0.28f), safe.Width, o.Px(56f));
             o.Band(band, HudOverlay.Fade(o.Ink.Danger, 0.35f + (0.25f * o.Pulse)));
             float large = o.Px(HudOverlay.Large);
-            o.Text.DrawCentredAt(o.Text.Capitals(warning), centre, band.Y + ((band.Height - o.Text.LineHeightAt(large)) * 0.5f), large, o.Ink.Highlight, shadow: true);
+            o.Text.DrawCentredAt(OverlayText.Capitals(warning), centre, band.Y + ((band.Height - o.Text.LineHeightAt(large)) * 0.5f), large, o.Ink.Highlight, shadow: true);
         }
     }
 
@@ -122,8 +122,8 @@ public sealed partial class RemasteredHudRenderer
 
         // The teams' names under their scores.
         float small = o.Px(HudOverlay.Small);
-        o.Text.DrawCentredAt(o.Text.Capitals(left.Name), leftScore.X + (scoreWidth * 0.5f), top + height + o.Px(4f), small, leftInk, shadow: true);
-        o.Text.DrawCentredAt(o.Text.Capitals(right.Name), rightScore.X + (scoreWidth * 0.5f), top + height + o.Px(4f), small, rightInk, shadow: true);
+        o.Text.DrawCentredAt(OverlayText.Capitals(left.Name), leftScore.X + (scoreWidth * 0.5f), top + height + o.Px(4f), small, leftInk, shadow: true);
+        o.Text.DrawCentredAt(OverlayText.Capitals(right.Name), rightScore.X + (scoreWidth * 0.5f), top + height + o.Px(4f), small, rightInk, shadow: true);
         return top + height + o.Text.LineHeightAt(small) + o.Px(8f);
     }
 
@@ -176,7 +176,7 @@ public sealed partial class RemasteredHudRenderer
         o.Plate(rival, Bgra32.FromRgba(0, 0, 0, 190));
         o.Brackets(rival, HudOverlay.Fade(o.Ink.Enemy, 0.85f), 6f);
         string who = hud.LeaderName.Length > 0 ? (leading ? $"NEXT - {hud.LeaderName}" : $"LEADER - {hud.LeaderName}") : "NO RIVAL YET";
-        o.Text.DrawAt(o.Text.ClipAt(o.Text.Capitals(who), small, side - o.Px(20f)), rival.X + o.Px(10f), rival.Y + o.Px(5f), small, o.Ink.Enemy);
+        o.Text.DrawAt(o.Text.ClipAt(OverlayText.Capitals(who), small, side - o.Px(20f)), rival.X + o.Px(10f), rival.Y + o.Px(5f), small, o.Ink.Enemy);
         o.Text.DrawAt(hud.LeaderScore.ToString(CultureInfo.InvariantCulture), rival.X + o.Px(10f), rival.Bottom - o.Text.LineHeightAt(large) - o.Px(3f), large, o.Ink.Highlight);
         return top + height + o.Px(6f);
     }
@@ -186,7 +186,7 @@ public sealed partial class RemasteredHudRenderer
     {
         float small = o.Px(HudOverlay.Small);
         string target = hud.Target <= 0 ? string.Empty : hud.Round > 0 ? $"FIRST TO {hud.Target}" : $"FIRST TO {hud.Target} KILLS";
-        string title = o.Text.Capitals(hud.Title);
+        string title = OverlayText.Capitals(hud.Title);
         string line = target.Length > 0 ? $"{title} - {target}" : title;
         float width = o.Text.MeasureAt(line, small);
         float roleWidth = hud.Role is { } role ? o.Text.MeasureAt(role, small) + o.Px(10f) + o.Px(10f) : 0f;
@@ -231,7 +231,7 @@ public sealed partial class RemasteredHudRenderer
     private static float Chip(HudOverlay o, string text, float centre, float y, Bgra32 face, Bgra32 ink)
     {
         float small = o.Px(HudOverlay.Small);
-        string said = o.Text.Capitals(text);
+        string said = OverlayText.Capitals(text);
         float width = o.Text.MeasureAt(said, small) + o.Px(28f);
         var plate = new UiRect(centre - (width * 0.5f), y, width, o.Text.LineHeightAt(small) + o.Px(10f));
         o.Plate(plate, face);
@@ -249,7 +249,7 @@ public sealed partial class RemasteredHudRenderer
         var plate = new UiRect(x - o.Px(14f), y - o.Px(10f), width + o.Px(28f), o.Text.LineHeightAt(small) + o.Px(34f));
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
         o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.8f), 5f);
-        o.Text.DrawAt(o.Text.Capitals(label), x, y - o.Px(2f), small, o.Ink.Highlight);
+        o.Text.DrawAt(OverlayText.Capitals(label), x, y - o.Px(2f), small, o.Ink.Highlight);
         o.Text.DrawRightAt(string.Create(CultureInfo.InvariantCulture, $"{(int)(Math.Clamp(progress, 0f, 1f) * 100f)}%"), x + width, y - o.Px(2f), small, ink);
         o.Meter(new UiRect(x, y + o.Text.LineHeightAt(small) + o.Px(6f), width, MathF.Max(3f, o.Px(6f))), progress, ink);
     }
@@ -258,8 +258,8 @@ public sealed partial class RemasteredHudRenderer
     private static void Hint(HudOverlay o, ModeHint hint, string key, float centre, float y)
     {
         float body = o.Px(HudOverlay.Body);
-        string verb = o.Text.Capitals(hint.Verb);
-        string action = o.Text.Capitals(hint.Action);
+        string verb = OverlayText.Capitals(hint.Verb);
+        string action = OverlayText.Capitals(hint.Action);
         float gap = o.Px(10f);
         float keyWidth = hint.Keyed ? o.KeyCapWidth(key) : 0f;
         float whole = o.Text.MeasureAt(verb, body) + gap + (hint.Keyed ? keyWidth + gap : 0f) + o.Text.MeasureAt(action, body);
@@ -289,12 +289,12 @@ public sealed partial class RemasteredHudRenderer
         o.GlassBand(band, ink);
 
         float huge = o.Px(HudOverlay.Huge);
-        o.Text.DrawCentredAt(o.Text.Capitals(result.Title), centre, band.Y + o.Px(match ? 18f : 14f), huge, ink, shadow: true);
+        o.Text.DrawCentredAt(OverlayText.Capitals(result.Title), centre, band.Y + o.Px(match ? 18f : 14f), huge, ink, shadow: true);
         bool summed = result.Summary is not null;
         float body = o.Px(HudOverlay.Body);
         if (result.Detail.Length > 0)
         {
-            o.Text.DrawCentredAt(o.Text.Capitals(result.Detail), centre, band.Bottom - o.Px(summed ? 86f : 36f), body, o.Ink.Highlight, shadow: true);
+            o.Text.DrawCentredAt(OverlayText.Capitals(result.Detail), centre, band.Bottom - o.Px(summed ? 86f : 36f), body, o.Ink.Highlight, shadow: true);
         }
 
         if (result.Summary is { } summary)

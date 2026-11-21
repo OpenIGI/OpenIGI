@@ -277,8 +277,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         new OpenIGI.Presentation.Hud.Remastered.RemasteredHudRenderer(
             request.Device,
             request.Logger,
-            OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme,
-            request.Files is { } files ? new Igi1TitleFont(request.Device, files, request.Logger) : null);
+            OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme);
 
     /// <inheritdoc/>
     private static IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>
@@ -292,7 +291,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             request.Logger,
             request.ResolveText,
             OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme,
-            new Igi1TitleFont(request.Device, request.Resources.FileSystem, request.Logger));
+            new Igi1ComputerFont(request.Device, request.Resources.FileSystem, request.Logger));
 
     /// <inheritdoc/>
     private static IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request) =>

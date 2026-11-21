@@ -6,13 +6,13 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>
-/// Project I.G.I.'s font for the remastered computer and the session's overlays: the status display's own (<see cref="StatusScreenRenderer.FontResource"/>),
+/// Project I.G.I.'s font for the remastered computer: the status display's own (<see cref="StatusScreenRenderer.FontResource"/>),
 /// from the computer's archive, read on its first use.
 /// </summary>
 /// <param name="device">The device the font is uploaded to.</param>
 /// <param name="files">The installation's data.</param>
 /// <param name="logger">Where a font that cannot be read is told.</param>
-internal sealed class Igi1TitleFont(IGraphicsDevice device, VirtualFileSystem files, IOpenIgiLogger logger) : ITitleFontSource
+internal sealed class Igi1ComputerFont(IGraphicsDevice device, VirtualFileSystem files, IOpenIgiLogger logger) : IComputerFontSource
 {
     private readonly RetailUiResources _resources = new(device, new RetailUiResourceOptions { LogCategory = "Computer" }, logger);
     private BitmapTextRenderer? _font;
@@ -43,7 +43,7 @@ internal sealed class Igi1TitleFont(IGraphicsDevice device, VirtualFileSystem fi
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException)
             {
-                logger.Warning("Computer", $"Could not read the title's font: {ex.Message}");
+                logger.Warning("Computer", $"Could not read the computer's font: {ex.Message}");
             }
 
             return _font;
