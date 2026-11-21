@@ -18,6 +18,7 @@ public sealed partial class GameHost
 
     private AccountLink? _account;
     private Menu.AccountAvatar? _avatar;
+    private Menu.PlayerAvatars? _playerAvatars;
     private Menu.MenuPictureLoader? _menuPictures;
 
     // What makes the menu's pictures, the missions' and the avatar alike.
@@ -37,6 +38,22 @@ public sealed partial class GameHost
     /// build opens a tab. Without it the profile page shows the sign-in address to copy instead.
     /// </remarks>
     public Action<string>? OpenLink { get; set; }
+
+    // The session's players' avatars, where this run reaches the servers at all: a server, a benchmark or a capture never asks.
+    private Menu.PlayerAvatars? PlayerAvatarStore =>
+        _options.SimulationOnly || !_options.SavesUserFiles ? null : _playerAvatars ??= new Menu.PlayerAvatars(MenuPictures, AccountHttp);
+
+    // A player's avatar as the scoreboard draws it, by its line's reference: this player's own the one its account already has.
+    private UI.Kit.UiPicture? BoardAvatar(string reference)
+    {
+        if (reference.Length == 0)
+        {
+            return null;
+        }
+
+        string own = Game.Multiplayer.DiscordAvatar.Reference(_account is { IsSignedIn: true } signedIn ? signedIn.Account?.Avatar : null);
+        return own.Length > 0 && reference == own && _avatar?.Picture is { } mine ? mine : PlayerAvatarStore?.Of(reference);
+    }
 
     // Each frame, once the page has looked: requests collected, a waiting sign-in asked about.
     private void UpdateAccount()

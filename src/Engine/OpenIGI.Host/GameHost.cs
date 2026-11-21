@@ -1011,6 +1011,7 @@ public sealed partial class GameHost : IDisposable
         LeaveParty();
         ReleasePresence();
         _avatar?.Dispose();
+        _playerAvatars?.Dispose();
 
         _sky?.Dispose();
         _rain?.Dispose();

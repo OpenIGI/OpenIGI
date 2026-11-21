@@ -393,7 +393,7 @@ public sealed partial class GameHost
                 session.Relayed,
                 session.Mode,
                 besideVote: voteBesideBoard,
-                ownAvatar: _avatar?.Picture);
+                avatarOf: BoardAvatar);
             state.Batch.End();
         }
 

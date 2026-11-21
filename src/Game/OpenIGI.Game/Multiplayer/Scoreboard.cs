@@ -13,8 +13,9 @@ namespace OpenIGI.Game.Multiplayer;
 /// <param name="Entity">The player's entity in the snapshots, or -1.</param>
 /// <param name="Ping">The player's round trip to the server, in milliseconds; nought for the server's own.</param>
 /// <param name="Skin">The look the player wears, a <see cref="PlayerSkins"/> id.</param>
+/// <param name="Avatar">The player's Discord avatar, a <see cref="DiscordAvatar"/> reference; empty for none.</param>
 public readonly record struct ScoreboardLine(
-    int Slot, string Name, int Team, int Money, int Kills, int Deaths, bool IsAlive, int Entity = -1, int Ping = 0, string Skin = "");
+    int Slot, string Name, int Team, int Money, int Kills, int Deaths, bool IsAlive, int Entity = -1, int Ping = 0, string Skin = "", string Avatar = "");
 
 /// <summary>The scoreboard a server sends its clients: every player's standing, the team scores and the round.</summary>
 /// <param name="Round">The round being played.</param>
@@ -37,7 +38,7 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
             match.ScoreOf(TeamRoster.Bad),
             [.. match.Players.Values.Where(static p => p.Slot >= 0).OrderBy(static p => p.Slot)
                 .Select(p => new ScoreboardLine(
-                    p.Slot, p.Name, p.Team, p.Money, p.Kills, p.Deaths, p.IsAlive, entityOf?.Invoke(p.Slot) ?? -1, pingOf?.Invoke(p.Slot) ?? 0, p.Skin))]);
+                    p.Slot, p.Name, p.Team, p.Money, p.Kills, p.Deaths, p.IsAlive, entityOf?.Invoke(p.Slot) ?? -1, pingOf?.Invoke(p.Slot) ?? 0, p.Skin, p.Avatar))]);
     }
 
     /// <summary>Writes it after a message's kind.</summary>
@@ -61,6 +62,7 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
             writer.WriteVarInt(line.Entity);
             writer.WriteVarUInt((uint)Math.Clamp(line.Ping, 0, 9999));
             writer.WriteString(line.Skin, 16);
+            writer.WriteString(line.Avatar, DiscordAvatar.MaxReferenceBytes);
         }
     }
 
@@ -83,9 +85,13 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
         {
             lines[i] = new ScoreboardLine(
                 (int)reader.ReadVarUInt(), reader.ReadString(JoinRequest.MaxNameBytes), reader.ReadVarInt(), reader.ReadVarInt(),
-                (int)reader.ReadVarUInt(), (int)reader.ReadVarUInt(), reader.ReadBool(), reader.ReadVarInt(), (int)reader.ReadVarUInt(), reader.ReadString(16));
+                (int)reader.ReadVarUInt(), (int)reader.ReadVarUInt(), reader.ReadBool(), reader.ReadVarInt(), (int)reader.ReadVarUInt(), reader.ReadString(16),
+                Avatar(reader.ReadString(DiscordAvatar.MaxReferenceBytes)));
         }
 
         return reader.IsOverflowed ? null : new Scoreboard(round, good, bad, lines);
     }
+
+    // A line's avatar as read: kept only where it names a Discord avatar, for this end downloads what it names.
+    private static string Avatar(string reference) => DiscordAvatar.Url(reference) is null ? string.Empty : reference;
 }

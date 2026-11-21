@@ -144,6 +144,7 @@ public sealed partial class GameHost
         {
             OpenUdp = OpenUdp,
             Instance = DiscordInstance,
+            Avatar = () => Game.Multiplayer.DiscordAvatar.Reference(_account is { IsSignedIn: true } signedIn ? signedIn.Account?.Avatar : null),
             ReloadTables = ReloadTitleTables,
             NewFileSync = NewSessionFileSync,
             MapFilesInPlace = MapFilesInPlace,

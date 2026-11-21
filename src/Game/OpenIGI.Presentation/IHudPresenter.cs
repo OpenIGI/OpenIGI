@@ -214,8 +214,9 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="mode">The mode played, a <see cref="Game.Multiplayer.Modes.GameModes"/> id; empty for co-op.</param>
     /// <param name="besideVote">Whether it shares the screen with the vote for the next map, on its left, its rows fitted to the
     /// room under the match's card; otherwise it stands alone in the middle.</param>
-    /// <param name="ownAvatar">This player's picture -- their Discord avatar, once signed in -- drawn on their own row in place of
-    /// their initial; <see langword="null"/> for the initial.</param>
+    /// <param name="avatarOf">Each player's picture by its line's <see cref="Game.Multiplayer.DiscordAvatar"/> reference -- their
+    /// Discord avatar, where they signed in and it has come down -- drawn on their row in place of their initial;
+    /// <see langword="null"/> for initials only.</param>
     void DrawScoreboard(
         SpriteBatch batch,
         Game.Multiplayer.Scoreboard board,
@@ -228,7 +229,7 @@ public interface IRemasteredHudPresenter : IDisposable
         bool relayed = false,
         string mode = "",
         bool besideVote = false,
-        UI.Kit.UiPicture? ownAvatar = null)
+        Func<string, UI.Kit.UiPicture?>? avatarOf = null)
     {
     }
 

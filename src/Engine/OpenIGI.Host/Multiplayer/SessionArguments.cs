@@ -17,6 +17,8 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="Demo">A saved demo to play back, or <see langword="null"/>.</param>
 /// <param name="Instance">The Discord Activity instance whose room to host, carried by the room itself; <see langword="null"/> for none.</param>
 /// <param name="Public">Whether a hosted room is listed in the server browser, rather than reached by its code alone.</param>
+/// <param name="Avatar">The signed-in player's Discord avatar, a <see cref="OpenIGI.Game.Multiplayer.DiscordAvatar"/> reference the
+/// others' scoreboards show; empty for none.</param>
 public sealed record SessionArguments(
     string? Connect,
     bool Listen,
@@ -31,7 +33,8 @@ public sealed record SessionArguments(
     bool Public = false,
     string Skin = "",
     string? Demo = null,
-    string? Instance = null)
+    string? Instance = null,
+    string Avatar = "")
 {
     /// <summary>The UDP port a server listens on unless told otherwise, as the original's <c>svport</c>.</summary>
     public const int DefaultPort = 26001;

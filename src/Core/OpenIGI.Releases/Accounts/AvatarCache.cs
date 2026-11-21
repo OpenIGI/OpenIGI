@@ -35,13 +35,22 @@ public static class AvatarCache
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(account);
-        if (PngUrl(account.Avatar) is not { } url)
-        {
-            return null;
-        }
+        return PngUrl(account.Avatar) is { } url ? await FetchUrlAsync(http, url, folder, $"avatar-{account.Id}", cancel).ConfigureAwait(false) : null;
+    }
 
+    /// <summary>A PNG at an address as a file in a folder, downloaded the first time; named by its address, so a changed one is a new file.</summary>
+    /// <param name="http">The client to download through.</param>
+    /// <param name="url">The PNG's address.</param>
+    /// <param name="folder">The folder it is kept in.</param>
+    /// <param name="stem">What the file's name begins with.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>The file.</returns>
+    public static async Task<string> FetchUrlAsync(HttpClient http, string url, string folder, string stem = "avatar", CancellationToken cancel = default)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentException.ThrowIfNullOrEmpty(url);
         string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..12];
-        string path = Path.Combine(folder, $"avatar-{account.Id}-{hash}.png");
+        string path = Path.Combine(folder, $"{stem}-{hash}.png");
         if (!File.Exists(path))
         {
             byte[] bytes = await http.GetByteArrayAsync(url, cancel).ConfigureAwait(false);

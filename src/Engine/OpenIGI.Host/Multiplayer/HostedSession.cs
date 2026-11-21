@@ -21,7 +21,11 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="Content">The host's <see cref="JoinRequest.Content"/> fingerprint, or empty to take any.</param>
 /// <param name="MaxPerAddress">The most players from one internet address at once (0 for any), as <see cref="NetServerOptions.MaxClientsPerAddress"/>.</param>
 public sealed record HostedSessionOptions(
-    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "", string HostSkin = "", int MaxPerAddress = 4);
+    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "", string HostSkin = "", int MaxPerAddress = 4)
+{
+    /// <summary>Gets the host's own Discord avatar, a <see cref="DiscordAvatar"/> reference; empty for none.</summary>
+    public string HostAvatar { get; init; } = string.Empty;
+}
 
 /// <summary>A server's session run inside the host: a dedicated server's, or a listen server's beside the host's own player.</summary>
 /// <remarks>
@@ -234,6 +238,11 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             _session = new ServerSession(
                 _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
+            if (_options.IncludesHost && _session.Match.Players.TryGetValue(ServerSession.HostSlot, out MatchPlayer? host))
+            {
+                host.Avatar = _options.HostAvatar;
+            }
+
             _session.Title = _titleId;
             _session.UsesMoneySettings = true;
             _session.Match.Rules = Game.Multiplayer.NetCVars.WithMoney(_session.Match.Rules);

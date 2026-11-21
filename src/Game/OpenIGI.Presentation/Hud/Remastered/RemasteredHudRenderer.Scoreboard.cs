@@ -53,7 +53,7 @@ public sealed partial class RemasteredHudRenderer
         bool relayed = false,
         string mode = "",
         bool besideVote = false,
-        UiPicture? ownAvatar = null)
+        Func<string, UiPicture?>? avatarOf = null)
     {
         _removeButtons.Clear();
         ArgumentNullException.ThrowIfNull(batch);
@@ -110,12 +110,12 @@ public sealed partial class RemasteredHudRenderer
                 int side = sides[i];
                 int score = side == TeamRoster.Good ? board.GoodScore : side == TeamRoster.Bad ? board.BadScore : 0;
                 var column = new UiRect(x + pad + (i * (columnWidth + gap)), columnsTop, columnWidth, height - header - footer);
-                DrawBoardColumn(o, column, [.. lines.Where(l => l.Team == side)], side, score, ownTeam, localEntity, ownAvatar, controls, rowHeight);
+                DrawBoardColumn(o, column, [.. lines.Where(l => l.Team == side)], side, score, ownTeam, localEntity, avatarOf, controls, rowHeight);
             }
         }
         else
         {
-            DrawBoardColumn(o, new UiRect(x + pad, columnsTop, inner, height - header - footer), lines, -1, null, ownTeam, localEntity, ownAvatar, controls, rowHeight);
+            DrawBoardColumn(o, new UiRect(x + pad, columnsTop, inner, height - header - footer), lines, -1, null, ownTeam, localEntity, avatarOf, controls, rowHeight);
         }
 
         // The foot: the key that keeps the board up; nothing while it is up by itself for the vote.
@@ -197,7 +197,7 @@ public sealed partial class RemasteredHudRenderer
         int? score,
         int ownTeam,
         int? localEntity,
-        UiPicture? ownAvatar,
+        Func<string, UiPicture?>? avatarOf,
         ScoreboardControls? controls,
         float rowHeight)
     {
@@ -244,7 +244,7 @@ public sealed partial class RemasteredHudRenderer
         {
             var row = new UiRect(column.X - o.Px(8f), y, column.Width + o.Px(16f), rowHeight - o.Px(2f));
             bool own = localEntity is { } self && line.Entity == self;
-            DrawBoardLine(o, row, columns, line, own, own ? ownAvatar : null);
+            DrawBoardLine(o, row, columns, line, own, avatarOf?.Invoke(line.Avatar));
             if (controls is { } hand && hand.Removable.Contains(line.Entity))
             {
                 DrawRemove(o, row, columns.Kills - o.Px(120f), line.Entity, hand);
@@ -254,7 +254,8 @@ public sealed partial class RemasteredHudRenderer
         }
     }
 
-    // One player's line: the original's number with its S while down, the name with its tags, kills/deaths, and the round trip.
+    // One player's line: the original's number with its S while down, the player's picture, the name with its tags, kills/deaths,
+    // and the round trip.
     private static void DrawBoardLine(HudOverlay o, UiRect row, BoardColumns columns, ScoreboardLine line, bool own, UiPicture? avatar)
     {
         float body = o.Px(HudOverlay.Body);
@@ -269,15 +270,25 @@ public sealed partial class RemasteredHudRenderer
         string id = string.Create(CultureInfo.InvariantCulture, $"{(line.IsAlive ? ' ' : 'S')} [{line.Slot}]");
         o.Text.DrawAt(id, columns.Id, textY, body, line.IsAlive ? o.Quiet : o.Ink.Enemy);
 
-        // The name, after this player's own picture where it has one.
-        float nameX = columns.Name;
+        // The name, after the player's picture: their Discord avatar where they signed in, else their initial on a plate of their
+        // ink, so every name starts at the same place.
+        float edge = MathF.Min(row.Height - o.Px(8f), o.Px(30f));
+        var frame = new UiRect(columns.Name, row.Y + ((row.Height - edge) * 0.5f), edge, edge);
+        float fade = line.IsAlive ? 1f : 0.55f;
         if (avatar is { } picture)
         {
-            float edge = o.Text.LineHeightAt(body);
-            var frame = new UiRect(nameX, row.Y + ((row.Height - edge) * 0.5f), edge, edge);
-            picture.DrawCover(o.Painter, frame, line.IsAlive ? 1f : 0.55f);
-            nameX = frame.Right + o.Px(8f);
+            o.Plate(frame, Bgra32.FromRgba(0, 0, 0, 160), o.Theme.Motifs.CornerSize * 0.3f);
+            picture.DrawCover(o.Painter, frame, fade);
         }
+        else
+        {
+            o.Plate(frame, HudOverlay.Fade(ink, 0.22f * fade), o.Theme.Motifs.CornerSize * 0.3f);
+            string initial = line.Name.Length > 0 ? char.ToUpperInvariant(line.Name[0]).ToString() : "?";
+            float letter = edge * 0.6f;
+            o.Text.DrawCentredAt(initial, frame.X + (frame.Width * 0.5f), frame.Y + ((frame.Height - o.Text.LineHeightAt(letter)) * 0.5f), letter, HudOverlay.Fade(ink, fade));
+        }
+
+        float nameX = frame.Right + o.Px(10f);
 
         float room = columns.Kills - o.Px(150f) - nameX;
         string name = o.Text.ClipAt(OverlayText.Prose(line.Name), body, room);

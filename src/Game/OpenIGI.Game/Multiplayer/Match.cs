@@ -12,6 +12,9 @@ public sealed class MatchPlayer(int slot, string name, int team, int money)
     /// <summary>Gets or sets the look the player wears, a <see cref="PlayerSkins"/> id.</summary>
     public string Skin { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the player's Discord avatar, a <see cref="DiscordAvatar"/> reference; empty for none.</summary>
+    public string Avatar { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the player's team.</summary>
     public int Team { get; set; } = team;
 

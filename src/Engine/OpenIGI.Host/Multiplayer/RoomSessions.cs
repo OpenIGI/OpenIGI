@@ -32,7 +32,7 @@ public static class RoomSessions
             return new SessionClient(
                 room,
                 RoomTransport.HostAddress,
-                new JoinRequest(session.PlayerName, version, session.Password, content, session.LookFor(titleId)),
+                new JoinRequest(session.PlayerName, version, session.Password, content, session.LookFor(titleId), Avatar: session.Avatar),
                 titleId,
                 logger,
                 reopen: () => RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger))
@@ -49,7 +49,10 @@ public static class RoomSessions
         string map = mission.ToString(CultureInfo.InvariantCulture);
         int players = Math.Clamp(session.MaxPlayers, 1, 31);
         HostedSessionOptions options = new(
-            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content, session.LookFor(titleId));
+            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content, session.LookFor(titleId))
+        {
+            HostAvatar = session.Avatar,
+        };
         RoomRequest request = new(
             titleId,
             MultiplayerProtocol.IdFor(titleId).ToString("x16", CultureInfo.InvariantCulture),

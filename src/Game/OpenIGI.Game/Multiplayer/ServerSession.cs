@@ -181,7 +181,7 @@ public sealed partial class ServerSession : IModeHost
                         break;
                     }
 
-                    BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
+                    BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty, request?.Avatar ?? string.Empty);
                     NoteWatch(e.Peer, request);
                     ApplyRates(e.Peer, request);
                     break;
@@ -239,10 +239,10 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
-    private void BeginJoin(int slot, string name, string skin)
+    private void BeginJoin(int slot, string name, string skin, string avatar)
     {
         byte[] challenge = RandomNumberGenerator.GetBytes(PlayerIdentities.ChallengeSize);
-        _pending[slot] = new PendingJoin(name, skin, challenge, _now);
+        _pending[slot] = new PendingJoin(name, skin, challenge, _now) { Avatar = avatar };
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Prove, 8);
         foreach (byte b in challenge)
@@ -298,14 +298,14 @@ public sealed partial class ServerSession : IModeHost
             if (pending.Anonymous)
             {
                 _pending.Remove(slot);
-                Join(slot, pending.Name, pending.Skin, "anon-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)));
+                Join(slot, pending.Name, pending.Skin, "anon-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)), pending.Avatar);
             }
             else if (pending.Check is { IsCompleted: true } check)
             {
                 _pending.Remove(slot);
                 if (check.IsCompletedSuccessfully && check.Result)
                 {
-                    Join(slot, pending.Name, pending.Skin, PlayerIdentities.IdOf(pending.Key));
+                    Join(slot, pending.Name, pending.Skin, PlayerIdentities.IdOf(pending.Key), pending.Avatar);
                 }
                 else
                 {
@@ -597,7 +597,7 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
-    private void Join(int slot, string name, string skin, string playerId)
+    private void Join(int slot, string name, string skin, string playerId, string avatar = "")
     {
         if (TurnedAway(slot, playerId) is { } refusal)
         {
@@ -644,6 +644,7 @@ public sealed partial class ServerSession : IModeHost
         // world's side then let its enemies' through and stopped its team mates'.
         _world.SetTeam(slot, Match.Players[slot].Team);
         Match.Players[slot].Skin = skin;
+        Match.Players[slot].Avatar = avatar;
         _world.SetSkin(slot, skin);
         Welcome(slot, entity.Value);
     }
@@ -1037,6 +1038,8 @@ public sealed partial class ServerSession : IModeHost
         public string Name { get; } = name;
 
         public string Skin { get; } = skin;
+
+        public string Avatar { get; init; } = string.Empty;
 
         public byte[] Challenge { get; } = challenge;
 

@@ -70,6 +70,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         _logger = logger;
     }
 
+    /// <summary>Gets the signed-in player's Discord avatar, a <see cref="DiscordAvatar"/> reference; empty for none.</summary>
+    public Func<string> Avatar { get; init; } = static () => string.Empty;
+
     /// <summary>Gets which missions' maps can be played as arenas; every one when unset.</summary>
     public Func<int, bool>? Arenas { get; init; }
 
@@ -153,7 +156,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             return null;
         }
 
-        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id);
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id, Avatar: Avatar());
         if (line.Address is { } address && line.Answered && OpenUdp is { } open)
         {
             return new ServerFileFetch(open(0), ownsTransport: true, address, request, _titleId(), newSync(), MapFilesInPlace, _logger);
@@ -253,7 +256,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         bool versus = Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
         SessionArguments arguments = new(
             Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: $"{_playerName()}'s game", MaxPlayers: versus ? 15 : 3,
-            Password: string.Empty, Mode: versus ? mode : MatchModes.Coop, Host: true, Public: listed, Instance: Instance);
+            Password: string.Empty, Mode: versus ? mode : MatchModes.Coop, Host: true, Public: listed, Instance: Instance, Avatar: Avatar());
         Begin(RoomSessions.Start(arguments, _titleId(), missionId, _version, _peers, _logger, _content()));
         Shell?.StartMission(missionId, difficulty);
     }
@@ -321,7 +324,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             return;
         }
 
-        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id);
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id, Avatar: Avatar());
         Begin(new SessionClient(open(0), address, request, _titleId(), _logger, reopen: () => open(0)) { Mode = line.Info.Mode });
         _logger.Information(LogCategory, $"Joining {line.Info.Name} at {address} on mission {mission} ({line.Info.Mode}).");
         _startWhenReady = (mission, _difficulty(), false);
@@ -656,7 +659,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             {
                 SessionArguments arguments = new(
                     Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: string.Empty, MaxPlayers: 0,
-                    Password: string.Empty, Mode: room.Mode, Join: code);
+                    Password: string.Empty, Mode: room.Mode, Join: code, Avatar: Avatar());
                 Begin(RoomSessions.Start(arguments, _titleId(), mission, _version, _peers, _logger, _content()));
                 _logger.Information(LogCategory, $"Joining room {code} on mission {mission}.");
                 _startWhenReady = (mission, _difficulty(), false);
