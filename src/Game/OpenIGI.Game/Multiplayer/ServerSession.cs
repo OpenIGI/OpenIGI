@@ -707,7 +707,7 @@ public sealed partial class ServerSession : IModeHost
     /// <param name="text">What to tell.</param>
     public void Announce(string text) => Say(new ChatLine(-1, text, ChatKind.Server), null);
 
-    /// <summary>Marks a place for every player, as the listen server's own player.</summary>
+    /// <summary>Marks a place for the listen server's own player's team, or every player where the mode plays no teams.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position) => Mark(new WorldMark(HostEntity, position), HostSlot);
 
@@ -766,11 +766,8 @@ public sealed partial class ServerSession : IModeHost
     // to all. The listen host's own player hears what its team would.
     private void Say(ChatLine line, int? speaker)
     {
-        int? team = line.Kind == ChatKind.Team && Mode.IsTeamMode && speaker is { } from && Match.Players.TryGetValue(from, out MatchPlayer? who)
-            ? who.Team
-            : null;
-        bool Hears(int slot) =>
-            (team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side)) && !Withheld(speaker, slot);
+        int? team = line.Kind == ChatKind.Team ? SideOf(speaker) : null;
+        bool Hears(int slot) => OnSide(team, slot) && !Withheld(speaker, slot);
 
         if (Hears(HostSlot) || speaker == HostSlot)
         {
@@ -788,9 +785,13 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
+    // A mark to the marker's own team only where the mode plays teams, as a team line is: it shows where its side is looking, and
+    // the other side is not told. Co-op and a free-for-all play no sides, and everyone sees it. The marker sees its own mark.
     private void Mark(WorldMark mark, int speaker)
     {
-        if (!Withheld(speaker, HostSlot))
+        int? team = SideOf(speaker);
+        bool Sees(int slot) => slot == speaker || (OnSide(team, slot) && !Withheld(speaker, slot));
+        if (Sees(HostSlot))
         {
             _marked.Add(mark);
         }
@@ -799,12 +800,20 @@ public sealed partial class ServerSession : IModeHost
         SessionTalk.WriteMark(_writer, mark.Entity, mark.Position);
         foreach (int slot in _clients.Keys)
         {
-            if (!Withheld(speaker, slot))
+            if (Sees(slot))
             {
                 _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
             }
         }
     }
+
+    // The team a player's team-only talk reaches, or null where the mode plays no teams (or the player is on none).
+    private int? SideOf(int? speaker) =>
+        Mode.IsTeamMode && speaker is { } from && Match.Players.TryGetValue(from, out MatchPlayer? who) ? who.Team : null;
+
+    // Whether a player is on that side: anyone, when there is none.
+    private bool OnSide(int? team, int slot) =>
+        team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side);
 
     /// <summary>Tells every player the level the server has begun loading, for each to load alongside it.</summary>
     /// <param name="map">Its map.</param>

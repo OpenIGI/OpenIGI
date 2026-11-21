@@ -314,7 +314,7 @@ public sealed class ClientSession
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
-    /// <summary>Marks a place for every player.</summary>
+    /// <summary>Marks a place for the player's team, or every player where the mode plays no teams: the server decides who sees it.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position)
     {
