@@ -102,6 +102,7 @@ r_hit_sounds	1	archive
 r_hud_density	contextual	archive
 r_hud_fx	1	archive
 r_hud_fx_intensity	1	archive
+r_hud_overlay_preview		-
 r_hud_sway	1	archive
 r_hud_threat	1	archive
 r_impact_effects	1	archive

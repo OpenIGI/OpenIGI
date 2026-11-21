@@ -163,7 +163,7 @@ public sealed class ProfilesShellTests : ShellTestHarness
             host.Account = new FakeAccount().SignedInAs("Sh");
             ProfilesScreen screen = Open(shell);
 
-            Assert.NotNull(Find<Label>(screen, label => label.Text == "This season. All time: 30 matches, 16 wins, 210 kills."));
+            Assert.NotNull(Find<Label>(screen, label => label.Text == "This season. All time: 30 matches, 16 wins, 210 kills, 64 assists."));
             Assert.NotNull(Find<OpenIGI.UI.Kit.Widgets.Stat>(screen, stat => stat.Value == "2.34"));
             Assert.NotNull(Find<OpenIGI.UI.Kit.Widgets.Eyebrow>(screen, eyebrow => eyebrow.Text == "ONLINE RECORD · NOVEMBER 2026"));
         }
