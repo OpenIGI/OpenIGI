@@ -1,5 +1,6 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Net.Identity;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.Releases.Maps;
@@ -23,6 +24,10 @@ internal sealed partial class LauncherModel
     private string? _avatarFor;
     private Task<PlayerRecord>? _recordAsked;
     private DateTimeOffset? _recordAt;
+
+    // The game the shown record is of, and the one last asked about: each game's record is its own.
+    private string? _recordFor;
+    private string? _recordAskedFor;
 
     /// <summary>Gets the account, made the first time it is asked for: the master is asked at once.</summary>
     public AccountLink Account => _account ??= new AccountLink(
@@ -127,9 +132,10 @@ internal sealed partial class LauncherModel
         if (_recordAsked is { IsCompleted: true } done)
         {
             _recordAsked = null;
-            if (done.IsCompletedSuccessfully)
+            if (done.IsCompletedSuccessfully && _recordAskedFor == RecordTitle)
             {
                 Record = done.Result;
+                _recordFor = _recordAskedFor;
             }
         }
 
@@ -140,12 +146,25 @@ internal sealed partial class LauncherModel
             return;
         }
 
+        // Another game chosen: its own record, not the last game's, as soon as it comes.
+        string title = RecordTitle;
+        if (_recordFor is not null && _recordFor != title)
+        {
+            Record = null;
+            _recordFor = null;
+            _recordAt = null;
+        }
+
         if (_recordAsked is null && (_recordAt is not { } at || DateTimeOffset.UtcNow - at > RecordEvery))
         {
             _recordAt = DateTimeOffset.UtcNow;
-            _recordAsked = new StatsService(AccountHttp, MapService.Master).RecordAsync(signedIn.Id);
+            _recordAskedFor = title;
+            _recordAsked = new StatsService(AccountHttp, MapService.Master).RecordAsync(signedIn.Id, title);
         }
     }
+
+    // The game whose record the account panel shows: the one chosen (the editor's, Project I.G.I.'s).
+    private string RecordTitle => (Games[Selected].Retail ?? GameTitle.Igi1).Id;
 
     private void DisposeAccount() => _identity?.Dispose();
 }

@@ -4,10 +4,11 @@
 //
 //   POST /v1/matches                      a server's result of a decided match, signed by its registered key
 //   GET  /v1/matches                      the latest results, newest first
-//   GET  /v1/leaderboard?period=&metric=  the best players: period season (this month, UTC), a month (2026-10) or all; metric score, kills,
-//                                         assists, wins, kd or matches
-//   GET  /v1/players/<id>/stats           one player's record (a key's id or an account's): this season, all time, latest,
-//                                         and the medals earned (medals.js)
+//   GET  /v1/leaderboard?title=&period=&metric=  the best players of one game (title igi1 or igi2; igi1 when not said): period
+//                                         season (this month, UTC), a month (2026-10) or all; metric score, kills, assists, wins,
+//                                         kd or matches
+//   GET  /v1/players/<id>/stats?title=    one player's record in one game (a key's id or an account's): this season, all
+//                                         time, latest, and the medals earned (medals.js)
 //   GET  /internal/servers/<keyId>        a registered server by its key's id ({ name }), or 404: what marks a server
 //                                         official on the list (officialName); reached only from the Worker
 //   POST /internal/forget { keys }          an account deleted (accounts.js): its keys' totals gone, and their name and id
@@ -21,9 +22,12 @@
 //   server:<keyId>          { name, added }
 //   match:<time>-<rand>     the result, as kept
 //   recent                  the latest results' keys, newest first
-//   tot:<period>:<player>   { name, matches, wins, kills, deaths, assists, objectives, seconds, score, flawless } (assists counted
-//                           from the servers that report them; a total kept before has none, read as nought)
-//   last:<player>           the player's latest results' keys, newest first
+//   tot:<title>:<period>:<player>   { name, matches, wins, kills, deaths, assists, objectives, seconds, score, flawless } in one
+//                           game (assists counted from the servers that report them; a total kept before has none, read as nought)
+//   last:<title>:<player>   the player's latest results in one game, their keys, newest first
+//   schema                  2 once the totals are kept by game (migrate)
+//
+// Each game is a board and a record of its own: Project I.G.I.'s and I.G.I. 2's matches never add up together.
 
 import { isFlawless, medalsOf } from "./medals.js";
 import { cleanName } from "./names.js";
@@ -39,6 +43,20 @@ const BOARD_SIZE = 50;
 const BOARD_SECONDS = 30;
 const TITLES = ["igi1", "igi2"];
 const METRICS = ["score", "kills", "assists", "wins", "kd", "matches"];
+
+// Storage takes at most this many keys in one put or delete.
+const BATCH = 128;
+
+// Where a player's totals and latest results in one game are kept.
+const totKey = (title, period, player) => `tot:${title}:${period}:${player}`;
+const lastKey = (title, player) => `last:${title}:${player}`;
+
+// The game a request asks about: igi1 when it doesn't say, as an older build doesn't; anything else is refused.
+function titleAsked(url) {
+  const title = url.searchParams.get("title") ?? TITLES[0];
+  if (!TITLES.includes(title)) throw new Refusal(400, `A title is one of ${TITLES.join(", ")}.`);
+  return title;
+}
 
 // The Worker's side: every stats request goes to the one object that keeps them.
 export async function handleStats(request, env) {
@@ -94,6 +112,7 @@ export class Stats {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
     try {
+      await this.migrate();
       if (parts[0] === "internal" && parts[1] === "forget" && request.method === "POST") {
         return json({ forgotten: await this.forget((await request.json()).keys ?? []) });
       }
@@ -116,11 +135,11 @@ export class Stats {
       }
 
       if (parts[1] === "leaderboard" && request.method === "GET") {
-        return json(await this.board(url.searchParams.get("period") ?? "season", url.searchParams.get("metric") ?? "score"));
+        return json(await this.board(url.searchParams.get("period") ?? "season", url.searchParams.get("metric") ?? "score", titleAsked(url)));
       }
 
       if (parts[1] === "players" && parts[3] === "stats" && request.method === "GET") {
-        return json(await this.record(decodeURIComponent(parts[2])));
+        return json(await this.record(decodeURIComponent(parts[2]), titleAsked(url)));
       }
 
       return json({ error: "Not found." }, 404);
@@ -153,15 +172,16 @@ export class Stats {
 
     const periods = [seasonOf(at), "all"];
     const counted = result.players.filter((line) => line.player);
-    const totals = await this.storage.get(counted.flatMap((line) => periods.map((period) => `tot:${period}:${line.player}`)));
-    const lasts = await this.storage.get(counted.map((line) => `last:${line.player}`));
+    const title = result.title;
+    const totals = await this.storage.get(counted.flatMap((line) => periods.map((period) => totKey(title, period, line.player))));
+    const lasts = await this.storage.get(counted.map((line) => lastKey(title, line.player)));
     for (const line of counted) {
       for (const period of periods) {
-        const name = `tot:${period}:${line.player}`;
+        const name = totKey(title, period, line.player);
         writes[name] = add(totals.get(name), line);
       }
 
-      writes[`last:${line.player}`] = [`match:${id}`, ...(lasts.get(`last:${line.player}`) ?? [])].slice(0, PLAYER_RECENT);
+      writes[lastKey(title, line.player)] = [`match:${id}`, ...(lasts.get(lastKey(title, line.player)) ?? [])].slice(0, PLAYER_RECENT);
     }
 
     // A result off the latest list is kept still: a player's own latest may name it.
@@ -172,22 +192,23 @@ export class Stats {
     return json({ id, counted: counted.length }, 201);
   }
 
-  // The best players of a period by a metric, accounts gathered from their keys.
-  async board(period, metric) {
+  // The best players of one game in a period by a metric, accounts gathered from their keys.
+  async board(period, metric, title = TITLES[0]) {
     if (!METRICS.includes(metric)) {
       throw new Refusal(400, `A metric is one of ${METRICS.join(", ")}.`);
     }
 
     // "all", a named month ("2026-10", a season gone by), or this month's season.
     const season = period === "all" ? "all" : /^\d{4}-\d{2}$/.test(period) ? period : seasonOf(this.now());
-    const cacheKey = `${season}/${metric}`;
+    const cacheKey = `${title}/${season}/${metric}`;
     const cached = this.boards.get(cacheKey);
     if (cached && cached.until > this.now()) {
       return cached.board;
     }
 
-    const totals = await this.storage.list({ prefix: `tot:${season}:` });
-    const byPlayer = new Map([...totals].map(([name, total]) => [name.slice(`tot:${season}:`.length), total]));
+    const prefix = totKey(title, season, "");
+    const totals = await this.storage.list({ prefix });
+    const byPlayer = new Map([...totals].map(([name, total]) => [name.slice(prefix.length), total]));
     const accounts = await this.accountsOf([...byPlayer.keys()]);
 
     // A linked account's keys count together, under its name.
@@ -208,31 +229,32 @@ export class Stats {
       .slice(0, BOARD_SIZE)
       .map((row, index) => ({ rank: index + 1, ...row }));
 
-    const board = { period: season === "all" ? "all" : "season", season, metric, rows: ranked };
+    const board = { title, period: season === "all" ? "all" : "season", season, metric, rows: ranked };
     this.boards.set(cacheKey, { board, until: this.now() + BOARD_SECONDS * 1000 });
     return board;
   }
 
-  // One player's record, by a key's id or an account's: this season, all time, and the latest results they were in.
-  async record(who) {
+  // One player's record in one game, by a key's id or an account's: this season, all time, and the latest results they were in.
+  async record(who, title = TITLES[0]) {
     const keys = await this.keysOf(who);
     const season = seasonOf(this.now());
-    const totals = await this.storage.get(keys.flatMap((key) => [`tot:${season}:${key}`, `tot:all:${key}`]));
-    const lasts = await this.storage.get(keys.map((key) => `last:${key}`));
+    const totals = await this.storage.get(keys.flatMap((key) => [totKey(title, season, key), totKey(title, "all", key)]));
+    const lasts = await this.storage.get(keys.map((key) => lastKey(title, key)));
     let seasonTotal = zero();
     let allTotal = zero();
     for (const key of keys) {
-      seasonTotal = sum(seasonTotal, totals.get(`tot:${season}:${key}`) ?? zero());
-      allTotal = sum(allTotal, totals.get(`tot:all:${key}`) ?? zero());
+      seasonTotal = sum(seasonTotal, totals.get(totKey(title, season, key)) ?? zero());
+      allTotal = sum(allTotal, totals.get(totKey(title, "all", key)) ?? zero());
     }
 
-    const latest = [...new Set(keys.flatMap((key) => lasts.get(`last:${key}`) ?? []))]
+    const latest = [...new Set(keys.flatMap((key) => lasts.get(lastKey(title, key)) ?? []))]
       // Fixed-width time and arrival lead every key, so newest first is plain reverse order.
       .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
       .slice(0, PLAYER_RECENT);
     const results = await this.latest(latest);
     return {
       player: who,
+      title,
       season,
       seasonTotals: finish(seasonTotal),
       allTime: finish(allTotal),
@@ -241,8 +263,8 @@ export class Stats {
     };
   }
 
-  // The linked accounts among some players, their all-time totals told to Discord for its Linked Roles. Never in the way of
-  // a result: a failure here is let go.
+  // The linked accounts among some players, their all-time totals told to Discord for its Linked Roles: the account's, both
+  // games together, as a role is the player's and not a game's. Never in the way of a result: a failure here is let go.
   async tellRoles(players) {
     try {
       const accounts = await this.accountsOf(players);
@@ -251,8 +273,9 @@ export class Stats {
       if (byAccount.size === 0 || !this.env.ACCOUNTS) return;
       const told = [];
       for (const id of byAccount.keys()) {
-        const record = await this.record(id);
-        told.push({ account: id, totals: record.allTime });
+        let both = zero();
+        for (const title of TITLES) both = sum(both, (await this.record(id, title)).allTime);
+        told.push({ account: id, totals: finish(both) });
       }
 
       await this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("all")).fetch("https://accounts/internal/roles", {
@@ -270,17 +293,59 @@ export class Stats {
     if (gone.size === 0) return 0;
     const totals = await this.storage.list({ prefix: "tot:" });
     const deletes = [...totals.keys()].filter((name) => gone.has(name.slice(name.lastIndexOf(":") + 1)));
-    deletes.push(...[...gone].map((key) => `last:${key}`));
+    deletes.push(...[...gone].flatMap((key) => [`last:${key}`, ...TITLES.map((title) => lastKey(title, key))]));
     const writes = {};
     for (const [name, match] of await this.storage.list({ prefix: "match:" })) {
       if (!match.players.some((line) => gone.has(line.player))) continue;
       writes[name] = { ...match, players: match.players.map((line) => (gone.has(line.player) ? { ...line, player: null, name: "Player" } : line)) };
     }
 
-    await this.storage.delete(deletes);
-    if (Object.keys(writes).length > 0) await this.storage.put(writes);
+    for (let at = 0; at < deletes.length; at += BATCH) await this.storage.delete(deletes.slice(at, at + BATCH));
+    await this.putAll(writes);
     this.boards.clear();
     return gone.size;
+  }
+
+  // Once: the totals and latest lists kept before the games were apart (tot:<period>:<player>, last:<player>) made again by
+  // game from the results themselves, every one of which names its game, and the old ones gone. Nothing is lost: a total is
+  // only ever the results added up.
+  async migrate() {
+    if (this.migrated) return;
+    if ((await this.storage.get("schema")) >= 2) {
+      this.migrated = true;
+      return;
+    }
+
+    const matches = [...(await this.storage.list({ prefix: "match:" })).values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+    const writes = {};
+    for (const match of matches) {
+      const title = TITLES.includes(match.title) ? match.title : TITLES[0];
+      for (const line of match.players.filter((counted) => counted.player)) {
+        for (const period of [seasonOf(match.at), "all"]) {
+          const name = totKey(title, period, line.player);
+          writes[name] = add(writes[name], line);
+        }
+
+        const last = lastKey(title, line.player);
+        writes[last] = [`match:${match.id}`, ...(writes[last] ?? [])].slice(0, PLAYER_RECENT);
+      }
+    }
+
+    const old = [
+      ...[...(await this.storage.list({ prefix: "tot:" })).keys()].filter((name) => name.split(":").length === 3),
+      ...[...(await this.storage.list({ prefix: "last:" })).keys()].filter((name) => name.split(":").length === 2),
+    ];
+    await this.putAll(writes);
+    for (let at = 0; at < old.length; at += BATCH) await this.storage.delete(old.slice(at, at + BATCH));
+    await this.storage.put("schema", 2);
+    this.migrated = true;
+    this.boards.clear();
+  }
+
+  // Writes as many keys as there are, a batch at a time.
+  async putAll(writes) {
+    const entries = Object.entries(writes);
+    for (let at = 0; at < entries.length; at += BATCH) await this.storage.put(Object.fromEntries(entries.slice(at, at + BATCH)));
   }
 
   // Kept results, their players' names masked where they hold a slur.

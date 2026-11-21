@@ -47,11 +47,12 @@ public sealed record Medal(string Id, string Name, string About);
 /// <param name="SeasonTotals">This season's totals.</param>
 /// <param name="AllTime">All time's.</param>
 /// <param name="Medals">The medals earned, or <see langword="null"/> from a master too old to say.</param>
-public sealed record PlayerRecord(string Player, string Season, StatTotals SeasonTotals, StatTotals AllTime, IReadOnlyList<Medal>? Medals = null);
+/// <param name="Title">The game the record is of, by title id; <see langword="null"/> from a master that kept both games as one.</param>
+public sealed record PlayerRecord(string Player, string Season, StatTotals SeasonTotals, StatTotals AllTime, IReadOnlyList<Medal>? Medals = null, string? Title = null);
 
 /// <summary>
 /// The master server's stats (tools/master-server/src/stats.js): a listed server reports its decided matches, signed by its
-/// own key, and a player's record is read by their key or account.
+/// own key, and a player's record is read by their key or account, one game at a time: each game's stats are its own.
 /// </summary>
 /// <param name="http">The client to ask through.</param>
 /// <param name="master">The master server.</param>
@@ -71,13 +72,15 @@ public sealed class StatsService(HttpClient http, Uri master)
         await Refused(response, cancel).ConfigureAwait(false);
     }
 
-    /// <summary>Reads a player's record.</summary>
+    /// <summary>Reads a player's record in one game.</summary>
     /// <param name="player">A key's id or an account's.</param>
+    /// <param name="title">The game, by title id: <c>igi1</c> or <c>igi2</c>.</param>
     /// <param name="cancel">Stops it.</param>
     /// <returns>The record.</returns>
-    public async Task<PlayerRecord> RecordAsync(string player, CancellationToken cancel = default)
+    public async Task<PlayerRecord> RecordAsync(string player, string title, CancellationToken cancel = default)
     {
-        using HttpResponseMessage response = await http.GetAsync(new Uri(master, $"/v1/players/{Uri.EscapeDataString(player)}/stats"), cancel).ConfigureAwait(false);
+        Uri address = new(master, $"/v1/players/{Uri.EscapeDataString(player)}/stats?title={Uri.EscapeDataString(title)}");
+        using HttpResponseMessage response = await http.GetAsync(address, cancel).ConfigureAwait(false);
         await Refused(response, cancel).ConfigureAwait(false);
         Stream stream = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
         return await JsonSerializer.DeserializeAsync(stream, StatsJsonContext.Default.PlayerRecord, cancel).ConfigureAwait(false)

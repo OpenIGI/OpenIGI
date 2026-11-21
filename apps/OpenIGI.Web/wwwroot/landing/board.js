@@ -1,5 +1,5 @@
 // The official servers' standings as openigi.com draws them, shared by the home page's top operatives and the leaderboard:
-// the master's address, a player's picture, a podium card and a ranked row. Everything is set as text, never as markup: a
+// the master's address, the games (each its own board and records), a player's picture, a podium card and a ranked row. Everything is set as text, never as markup: a
 // name is whatever its player typed. The site build writes this same file beside its pages.
 
 export const MASTER = "https://master.openigi.com";
@@ -22,6 +22,31 @@ export function el(tag, className, text) {
   return node;
 }
 
+/** The games, each with a board and records of its own, as the master names them and as a page says them. */
+export const GAMES = [["igi1", "Project I.G.I."], ["igi2", "I.G.I. 2"]];
+
+/** A game a page was asked about (?game=), or the first. */
+export const gameOf = (asked) => (GAMES.some(([id]) => id === asked) ? asked : GAMES[0][0]);
+
+/** A switch between the games: a pill of halves, the chosen one filled; tells which is picked. */
+export function gameSwitch(current, onPick) {
+  const group = el("div", "segmented");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Game");
+  for (const [id, name] of GAMES) {
+    const button = el("button", null, name);
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(id === current));
+    button.addEventListener("click", () => {
+      for (const other of group.children) other.setAttribute("aria-pressed", String(other === button));
+      onPick(id);
+    });
+    group.append(button);
+  }
+
+  return group;
+}
+
 /** The metrics a board ranks by, as the master names them and as a page says them. */
 export const METRICS = [
   ["score", "Score"], ["kills", "Kills"], ["assists", "Assists"], ["kd", "K/D"], ["wins", "Wins"], ["matches", "Matches"],
@@ -38,8 +63,9 @@ export const winRate = (row) => (row.matches > 0 ? row.wins / row.matches : 0);
 /** Kills and assists a death. */
 export const kda = (row) => ((row.kills ?? 0) + (row.assists ?? 0)) / Math.max(1, row.deaths ?? 0);
 
-/** Where a player's record is: by their Discord account where it is linked, else by their key. */
-export const recordLink = (row) => `/leaderboard/?player=${encodeURIComponent(row.account ? row.account.id : row.player)}`;
+/** Where a player's record in a game is: by their Discord account where it is linked, else by their key. */
+export const recordLink = (row, game) =>
+  `/leaderboard/?player=${encodeURIComponent(row.account ? row.account.id : row.player)}&game=${encodeURIComponent(gameOf(game))}`;
 
 /** A player's picture: their Discord avatar, or their initial on a disc. */
 export function avatar(name, url) {
@@ -70,10 +96,10 @@ export function kdaLine(row) {
 
 const PLACES = ["first", "second", "third"];
 
-/** One of the top three, as a card on the podium. */
-export function podiumCard(row, metric, label) {
+/** One of the top three in a game, as a card on the podium. */
+export function podiumCard(row, metric, label, game) {
   const card = el("a", `podium-card ${PLACES[row.rank - 1] ?? ""}`);
-  card.href = recordLink(row);
+  card.href = recordLink(row, game);
   card.append(el("span", "place", `#${row.rank}`), avatar(row.name, row.account?.avatar), el("span", "who", row.name));
   const value = el("span", "value", metricText(row, metric));
   value.append(el("small", null, label));
@@ -84,10 +110,10 @@ export function podiumCard(row, metric, label) {
   return card;
 }
 
-/** A player's row on the ranked list. */
-export function rankRow(row, metric) {
+/** A player's row on a game's ranked list. */
+export function rankRow(row, metric, game) {
   const link = el("a", "rank-row");
-  link.href = recordLink(row);
+  link.href = recordLink(row, game);
   const player = el("span", "player");
   player.append(avatar(row.name, row.account?.avatar), el("span", "name", row.name));
   if (row.account) player.append(el("span", "linked", "DISCORD"));

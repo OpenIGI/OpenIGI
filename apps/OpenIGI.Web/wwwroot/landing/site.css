@@ -114,6 +114,12 @@ img { max-width: 100%; }
 .button.primary:hover { background: #fff; }
 .button:focus-visible, .nav a:focus-visible, .tabs button:focus-visible, .segmented button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 
+/* ---- One pill of halves: this or that, the chosen one filled (which game, which period). ---- */
+.segmented { display: inline-flex; padding: 4px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); }
+.segmented button { appearance: none; padding: 9px 18px; border: none; border-radius: 999px; background: none; color: var(--muted); font: 600 13px/1 var(--sans); cursor: pointer; white-space: nowrap; }
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+
 /* ---- Sections of a long page. ---- */
 .section { padding: clamp(56px, 8vw, 96px) 0; border-top: 1px solid var(--line); }
 .section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 28px; }

@@ -1,8 +1,8 @@
 namespace OpenIGI.Tools.Release;
 
 /// <summary>
-/// <c>/leaderboard/</c>: the best players on the official servers this season or all time, by score, kills, assists, K/D,
-/// wins or matches -- the top three on a podium, the rest ranked under them -- read from the master as the page opens;
+/// <c>/leaderboard/</c>: the best players on the official servers in one game (<c>?game=igi1</c> or <c>igi2</c>; each game's
+/// stats are its own) this season or all time, by score, kills, assists, K/D, wins or matches -- the top three on a podium, the rest ranked under them -- read from the master as the page opens;
 /// <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page sends here) is one player's record by their Discord
 /// user id or a key's: their figures this season and all time, their medals and their latest matches. Static like the rest
 /// of the site, in its look (<c>/landing/site.css</c>) and drawn with the home page's own pieces (<c>/landing/board.js</c>);
@@ -43,11 +43,10 @@ internal static class LeaderboardPage
             .clock { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--note); font: 12px/1 var(--mono); }
             .clock b { color: var(--text); font-weight: 500; }
 
-            /* This season or all time: one pill of two halves. */
-            .segmented { display: inline-flex; padding: 4px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); }
-            .segmented button { appearance: none; padding: 9px 18px; border: none; border-radius: 999px; background: none; color: var(--muted); font: 600 13px/1 var(--sans); cursor: pointer; }
-            .segmented button:hover { color: var(--text); }
-            .segmented button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+            /* Which game and which period: the shared pills (site.css), one over the other. */
+            .switches { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+            @media (max-width: 720px) { .switches { align-items: flex-start; } }
+            .record-switch { margin-bottom: 16px; }
 
             /* The metric the board is ranked by: a row of tabs, the chosen one underlined in the accent. */
             .tabs { display: flex; gap: 4px; margin-bottom: 28px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
@@ -110,9 +109,12 @@ internal static class LeaderboardPage
                   <p>Every match on an official server counts: a kill 10, an assist 5, an objective 25, a win 50. Sign in with Discord on the game's Profile page to be on the board under your name.</p>
                   <span class="clock" id="clock" hidden></span>
                 </div>
-                <div class="segmented" role="group" aria-label="Period" id="periods">
-                  <button type="button" data-period="season" aria-pressed="true">This season</button>
-                  <button type="button" data-period="all" aria-pressed="false">All time</button>
+                <div class="switches">
+                  <span id="board-game"></span>
+                  <div class="segmented" role="group" aria-label="Period" id="periods">
+                    <button type="button" data-period="season" aria-pressed="true">This season</button>
+                    <button type="button" data-period="all" aria-pressed="false">All time</button>
+                  </div>
                 </div>
               </div>
               <div class="tabs" role="tablist" aria-label="Ranked by" id="metrics"></div>
@@ -121,6 +123,7 @@ internal static class LeaderboardPage
             </section>
 
             <section id="record" hidden>
+              <div class="record-switch" id="record-game"></div>
               <div class="hero">
                 <span id="avatar"></span>
                 <div>
@@ -145,11 +148,21 @@ internal static class LeaderboardPage
         {{SiteChrome.Footer}}
 
           <script type="module">
-            import { METRICS, ask, avatar, daysLeft, el, kda, kdaLine, number, podiumCard, rankHead, rankRow, seasonName, winRate } from "/landing/board.js";
+            import { GAMES, METRICS, ask, avatar, daysLeft, el, gameOf, gameSwitch, kda, kdaLine, number, podiumCard, rankHead, rankRow, seasonName, winRate } from "/landing/board.js";
 
             const $ = (id) => document.getElementById(id);
             const params = new URLSearchParams(location.search);
-            let period = "season", metric = "score";
+            let period = "season", metric = "score", game = gameOf(params.get("game"));
+            const gameName = () => GAMES.find(([id]) => id === game)[1];
+
+            // The game in the address, so a link or a reload keeps to it.
+            function pickGame(id, show) {
+              game = id;
+              const address = new URL(location.href);
+              address.searchParams.set("game", id);
+              history.replaceState(null, "", address);
+              show();
+            }
             const label = () => METRICS.find(([id]) => id === metric)[1];
 
             // The metric tabs, from the shared list.
@@ -179,9 +192,9 @@ internal static class LeaderboardPage
               const podium = $("podium");
               const ranks = $("ranks");
               try {
-                const board = await ask(`/v1/leaderboard?period=${period}&metric=${metric}`);
+                const board = await ask(`/v1/leaderboard?title=${game}&period=${period}&metric=${metric}`);
                 const season = period !== "all";
-                $("eyebrow").textContent = season ? `Season · ${seasonName(board.season)}` : "Official servers · all time";
+                $("eyebrow").textContent = season ? `${gameName()} · season ${seasonName(board.season)}` : `${gameName()} · all time`;
                 const clock = $("clock");
                 clock.hidden = !season;
                 if (season) {
@@ -190,14 +203,14 @@ internal static class LeaderboardPage
                 }
 
                 if (board.rows.length === 0) {
-                  podium.replaceChildren(el("div", "empty", "Nobody yet: play a match on an official server to be the first."));
+                  podium.replaceChildren(el("div", "empty", `Nobody yet in ${gameName()}: play a match on an official server to be the first.`));
                   ranks.replaceChildren();
                   return;
                 }
 
-                podium.replaceChildren(...board.rows.slice(0, 3).map((row) => podiumCard(row, metric, label())));
+                podium.replaceChildren(...board.rows.slice(0, 3).map((row) => podiumCard(row, metric, label(), game)));
                 const rest = board.rows.slice(3);
-                ranks.replaceChildren(...(rest.length > 0 ? [rankHead(label()), ...rest.map((row) => rankRow(row, metric))] : []));
+                ranks.replaceChildren(...(rest.length > 0 ? [rankHead(label()), ...rest.map((row) => rankRow(row, metric, game))] : []));
               } catch {
                 podium.replaceChildren(el("div", "empty", "The leaderboard can't be reached right now. Try again in a moment."));
                 ranks.replaceChildren();
@@ -228,16 +241,17 @@ internal static class LeaderboardPage
               $("board").hidden = true;
               $("record").hidden = false;
               $("back").hidden = false;
+              $("back").href = `/leaderboard/?game=${game}`;
               try {
                 const [record, account, board] = await Promise.all([
-                  ask(`/v1/players/${encodeURIComponent(player)}/stats`),
+                  ask(`/v1/players/${encodeURIComponent(player)}/stats?title=${game}`),
                   ask(`/v1/players/${encodeURIComponent(player)}`).catch(() => null),
-                  ask("/v1/leaderboard?period=season&metric=score").catch(() => null),
+                  ask(`/v1/leaderboard?title=${game}&period=season&metric=score`).catch(() => null),
                 ]);
                 const name = account?.name ?? record.latest?.[0]?.you?.[0]?.name ?? "Operative";
                 document.title = `${name} · OpenIGI`;
                 $("name").textContent = name;
-                $("season").textContent = `Season · ${seasonName(record.season)}`;
+                $("season").textContent = `${gameName()} · season ${seasonName(record.season)}`;
                 $("avatar").replaceWith(Object.assign(avatar(name, account?.avatar), { id: "avatar" }));
 
                 const s = record.seasonTotals;
@@ -277,7 +291,7 @@ internal static class LeaderboardPage
                   card.append(el("span", "stripe"), what, kdaLine(you ?? {}), el("span", "result", you?.won ? "WON" : "LOST"));
                   return card;
                 });
-                $("matches").replaceChildren(...(matches.length > 0 ? matches : [el("div", "empty", "No matches yet.")]));
+                $("matches").replaceChildren(...(matches.length > 0 ? matches : [el("div", "empty", `No matches in ${gameName()} yet.`)]));
               } catch {
                 $("name").textContent = "Operative";
                 $("figures").replaceChildren(el("div", "empty", "This player has no matches on the official servers yet, or the stats can't be reached right now."));
@@ -285,6 +299,8 @@ internal static class LeaderboardPage
             }
 
             const player = params.get("player");
+            $("board-game").replaceWith(gameSwitch(game, (id) => pickGame(id, showBoard)));
+            $("record-game").replaceChildren(gameSwitch(game, (id) => pickGame(id, () => showRecord(player))));
             if (player) showRecord(player); else showBoard();
           </script>
         </body>

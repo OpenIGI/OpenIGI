@@ -29,6 +29,10 @@ public sealed partial class GameHost
     private (string Account, PlayerRecord Record, DateTimeOffset At)? _record;
     private DateTimeOffset _recordAskedAt = DateTimeOffset.MinValue;
 
+    // The game the kept record is of, and the one last asked about: each game's record is its own.
+    private string _recordFor = string.Empty;
+    private string _recordAskedFor = string.Empty;
+
     // Whether the profile page has looked at the account: until it has, nothing is asked of the servers.
     private bool _accountSeen;
 
@@ -107,7 +111,8 @@ public sealed partial class GameHost
         return new AccountPanel(_account, this);
     }
 
-    // The record on the official servers: read once signed in, and again every two minutes while the page looks.
+    // The record on the official servers in the game being played: read once signed in, again every two minutes while the page
+    // looks, and at once when another game is chosen.
     private void UpdateRecord()
     {
         if (_recordAsked is { IsCompleted: true } asked)
@@ -116,6 +121,7 @@ public sealed partial class GameHost
             if (asked.IsCompletedSuccessfully && _account?.Account is { } account)
             {
                 _record = (account.Id, asked.Result, DateTimeOffset.UtcNow);
+                _recordFor = _recordAskedFor;
             }
         }
 
@@ -124,11 +130,13 @@ public sealed partial class GameHost
             return;
         }
 
-        bool stale = _record is not { } kept || kept.Account != signedIn.Id;
+        string title = _titleRuntime.Title.Id;
+        bool stale = _record is not { } kept || kept.Account != signedIn.Id || _recordFor != title;
         if (stale || DateTimeOffset.UtcNow - _recordAskedAt > TimeSpan.FromMinutes(2))
         {
             _recordAskedAt = DateTimeOffset.UtcNow;
-            _recordAsked = _stats.RecordAsync(signedIn.Id);
+            _recordAskedFor = title;
+            _recordAsked = _stats.RecordAsync(signedIn.Id, title);
         }
     }
 
@@ -199,7 +207,7 @@ public sealed partial class GameHost
 
         public string? Problem => link.Error;
 
-        public AccountRecord? Record => host._record is { } kept && link.Account?.Id == kept.Account
+        public AccountRecord? Record => host._record is { } kept && link.Account?.Id == kept.Account && host._recordFor == host._titleRuntime.Title.Id
             ? new AccountRecord(kept.Record.Season, Totals(kept.Record.SeasonTotals), Totals(kept.Record.AllTime), [.. (kept.Record.Medals ?? []).Select(static medal => medal.Name)])
             : null;
 

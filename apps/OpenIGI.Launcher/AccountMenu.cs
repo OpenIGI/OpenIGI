@@ -279,7 +279,7 @@ internal sealed class AccountMenu : Control
             {
                 float y = header.Y + context.Px(84f);
                 painter.FillRect(new UiRect(header.X, y, header.Width, context.Px(1f)), UiPalette.White(0.08f));
-                painter.DrawLabel(Theme.Mono, $"SEASON · {SeasonName(record.Season)}".ToUpperInvariant(), new UiVec2(header.X, y + context.Px(14f)), context.Px(11f), Theme.TextMuted, 0.2f);
+                painter.DrawLabel(Theme.Mono, $"{(record.Title == "igi2" ? "I.G.I. 2" : "PROJECT I.G.I.")} · SEASON · {SeasonName(record.Season)}".ToUpperInvariant(), new UiVec2(header.X, y + context.Px(14f)), context.Px(11f), Theme.TextMuted, 0.2f);
                 StatTotals season = record.SeasonTotals;
                 if (season.Matches == 0)
                 {

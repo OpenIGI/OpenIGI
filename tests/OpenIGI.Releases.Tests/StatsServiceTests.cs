@@ -56,9 +56,26 @@ public sealed class StatsServiceTests
         Assert.Contains("\"assists\":0", sent, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_record_is_asked_for_one_game()
+    {
+        Uri? asked = null;
+        using var http = new HttpClient(new AnsweringHandler(request =>
+        {
+            asked = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($$"""{"player":"111","title":"igi2","season":"2026-11","seasonTotals":{{Totals}},"allTime":{{Totals}}}""", Encoding.UTF8, "application/json") });
+        }));
+
+        PlayerRecord record = await new StatsService(http, new Uri("https://master.example")).RecordAsync("111", "igi2");
+
+        Assert.Equal("/v1/players/111/stats", asked!.AbsolutePath);
+        Assert.Equal("?title=igi2", asked.Query);
+        Assert.Equal("igi2", record.Title);
+    }
+
     private static async Task<PlayerRecord> Read(string json)
     {
         using var http = new HttpClient(new AnsweringHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") })));
-        return await new StatsService(http, new Uri("https://master.example")).RecordAsync("111");
+        return await new StatsService(http, new Uri("https://master.example")).RecordAsync("111", "igi1");
     }
 }
