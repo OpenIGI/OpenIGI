@@ -201,7 +201,13 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public Igi2CollisionWorld CollisionWorld => _surroundings.World;
 
     /// <inheritdoc/>
-    ICollisionWorld? ITitlePlayer.Collision => CollisionWorld;
+    /// <remarks>
+    /// The world as the player's eye looks across it: the player's own body is no wall. A line from the eye starts inside the
+    /// head's bones, so the world itself would answer with the player, as the crosshair's trace also passes him (<see cref="EnemyUnderAim"/>).
+    /// </remarks>
+    ICollisionWorld? ITitlePlayer.Collision => _eyeWorld ??= new Igi2EyeCollision(this);
+
+    private Igi2EyeCollision? _eyeWorld;
 
     /// <summary>Gets the level's conveyor belts the player may stand on, by level id.</summary>
     public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors => _surroundings.Conveyors;

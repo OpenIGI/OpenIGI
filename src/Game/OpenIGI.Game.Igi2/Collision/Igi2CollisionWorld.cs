@@ -204,9 +204,17 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
     /// <param name="target">Where it stops.</param>
     /// <param name="hit">Receives the nearest surface; its material is the level material row the line went into.</param>
     /// <returns><see langword="true"/> when the line met something before its end.</returns>
-    public bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit)
+    public bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit) => Cast(origin, target, null, out hit);
+
+    /// <summary>Casts one line as <see cref="Cast(Vector3d, Vector3d, out WorldRayHit)"/> does, meeting only the owners a filter keeps.</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="target">Where it stops.</param>
+    /// <param name="includes">Whether an owner's colliders are met, or <see langword="null"/> to meet every one.</param>
+    /// <param name="hit">Receives the nearest surface; its material is the level material row the line went into.</param>
+    /// <returns><see langword="true"/> when the line met something before its end.</returns>
+    public bool Cast(Vector3d origin, Vector3d target, Func<object, bool>? includes, out WorldRayHit hit)
     {
-        WorldLineTrace trace = new(1);
+        WorldLineTrace trace = new(1) { Includes = includes };
         trace.Starts[0] = origin;
         trace.Ends[0] = target;
         TraceLines(trace, EveryTypeGroup | TerrainGroup);
