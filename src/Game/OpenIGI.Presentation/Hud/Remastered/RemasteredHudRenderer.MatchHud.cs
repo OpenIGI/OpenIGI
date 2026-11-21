@@ -283,7 +283,13 @@ public sealed partial class RemasteredHudRenderer
         o.GlassBand(band, ink);
 
         float huge = o.Px(HudOverlay.Huge);
-        o.Text.DrawCentredAt(OverlayText.Capitals(result.Title), centre, band.Y + o.Px(match ? 18f : 14f), huge, ink, shadow: true);
+        float titleY = band.Y + o.Px(match ? 18f : 14f);
+        o.Text.DrawCentredAt(OverlayText.Capitals(result.Title), centre, titleY, huge, ink, shadow: true);
+        if (result.Summary is { Best: true })
+        {
+            MvpLine(o, centre, titleY + o.Text.LineHeightAt(huge) + o.Px(2f));
+        }
+
         bool summed = result.Summary is not null;
         float body = o.Px(HudOverlay.Body);
         if (result.Detail.Length > 0)
@@ -297,8 +303,25 @@ public sealed partial class RemasteredHudRenderer
         }
     }
 
+    // The one who finished on top, said under the result: MATCH MVP in the accent between two short rules of it, a diamond at each
+    // rule's inner end.
+    private static void MvpLine(HudOverlay o, float centre, float y)
+    {
+        const string Said = "MATCH MVP";
+        float body = o.Px(HudOverlay.Body);
+        float half = (o.Text.MeasureAt(Said, body) * 0.5f) + o.Px(16f);
+        float rule = o.Px(70f);
+        float middle = y + (o.Text.LineHeightAt(body) * 0.5f);
+        float thick = MathF.Max(1f, o.Px(2f));
+        o.Painter.FillRect(new UiRect(centre - half - rule, middle - (thick * 0.5f), rule, thick), HudOverlay.Fade(o.Ink.Accent, 0.7f));
+        o.Painter.FillRect(new UiRect(centre + half, middle - (thick * 0.5f), rule, thick), HudOverlay.Fade(o.Ink.Accent, 0.7f));
+        o.Diamond(new UiVec2(centre - half + o.Px(4f), middle), o.Px(5f), o.Ink.Accent);
+        o.Diamond(new UiVec2(centre + half - o.Px(4f), middle), o.Px(5f), o.Ink.Accent);
+        o.Text.DrawCentredAt(Said, centre, y, body, o.Ink.Accent, shadow: true);
+    }
+
     // The player's own match in numbers across the card at its end: where it placed, its kills, deaths and kills a death, each
-    // figure over its small label, with MVP first in the accent for the one who finished on top.
+    // figure over its small label, the place in the accent for the one who finished on top.
     private static void SummaryRow(HudOverlay o, float centre, float top, int place, int players, int kills, int deaths, string ratio, bool best)
     {
         (string Label, string Value, bool Lit)[] figures =
@@ -312,12 +335,7 @@ public sealed partial class RemasteredHudRenderer
         float large = o.Px(HudOverlay.Large);
         float small = o.Px(HudOverlay.Small);
         float column = o.Px(124f);
-        float x = centre - (((figures.Length * column) + (best ? column : 0f)) * 0.5f);
-        if (best)
-        {
-            o.Tag("MVP", x + (column * 0.5f) - ((o.Text.MeasureAt("MVP", small) + o.Px(10f)) * 0.5f), top + o.Px(8f), o.Ink.Accent, filled: true);
-            x += column;
-        }
+        float x = centre - (figures.Length * column * 0.5f);
 
         foreach ((string label, string value, bool lit) in figures)
         {

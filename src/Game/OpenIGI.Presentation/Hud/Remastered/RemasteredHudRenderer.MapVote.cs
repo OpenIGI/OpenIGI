@@ -152,4 +152,18 @@ public sealed partial class RemasteredHudRenderer
             o.Tag("YOUR VOTE", card.Right - o.Text.MeasureAt("YOUR VOTE", small) - o.Px(20f), card.Y + o.Px(16f), o.Ink.Accent, filled: true);
         }
     }
+
+    // A map's sheet on the vote: the title's flat glass, washed in its ink -- faintly under the pointer, more for this player's pick.
+    private static void CardFrame(HudOverlay o, UiRect card, bool own, bool over, Bgra32 ink)
+    {
+        o.Sheet(card);
+        if (own)
+        {
+            o.Plate(card, HudOverlay.Fade(ink, 0.2f));
+        }
+        else if (over)
+        {
+            o.Plate(card, HudOverlay.Fade(ink, 0.1f));
+        }
+    }
 }
