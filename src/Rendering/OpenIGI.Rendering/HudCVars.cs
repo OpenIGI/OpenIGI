@@ -481,6 +481,19 @@ public static class HudCVars
         high: "0.55",
         ultra: "0.55");
 
+    /// <summary>A session overlay to lay over the picture with made-up players, for looking at its design; empty for none.</summary>
+    /// <remarks>
+    /// A developer's tool for reviewing the overlays without a session: one of <c>scoreboard</c>, <c>scoreboard_team</c>,
+    /// <c>chat</c>, <c>chat_open</c>, <c>revive</c>, <c>downed</c>, <c>controls</c>, <c>teammenu</c>, <c>buymenu</c>,
+    /// <c>mapvote</c>, <c>match</c> or <c>all</c>. Set with <c>-runat</c> while a lockstep capture runs, so one run takes a
+    /// still of each.
+    /// </remarks>
+    public static readonly StringCVar OverlayPreview = CVar.Text(
+        "r_hud_overlay_preview",
+        string.Empty,
+        CVarOptions.Developer | CVarOptions.Hidden,
+        "Lay a session overlay over play with made-up players, to look at: scoreboard, scoreboard_team, chat, chat_open, revive, downed, controls, teammenu, buymenu, mapvote, match or all.");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

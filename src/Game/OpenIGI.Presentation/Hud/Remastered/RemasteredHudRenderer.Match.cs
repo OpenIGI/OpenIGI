@@ -1,9 +1,9 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
+using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
-using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Presentation.Hud.Remastered;
 
@@ -15,43 +15,31 @@ public sealed partial class RemasteredHudRenderer
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(banner);
-        if (_theme is not { } type)
+        if (Overlay(batch, screenWidth, screenHeight) is not { } o)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float Px(float units) => context.Px(units);
+        // The plate across the top: the mode, and its clock.
+        float body = o.Px(HudOverlay.Body);
+        float centre = o.Safe.X + (o.Safe.Width * 0.5f);
+        string title = o.Text.Capitals(banner.Title);
+        string line = banner.Clock is { } clock ? $"{title} - {clock}" : title;
+        float width = o.Text.MeasureAt(line, body) + o.Px(36f);
+        var plate = new UiRect(centre - (width * 0.5f), o.Safe.Y + o.Px(14f), width, o.Text.LineHeightAt(body) + o.Px(14f));
+        o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
+        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.8f), 5f);
+        o.Text.DrawCentredAt(line, centre, plate.Y + o.Px(7f), body, o.Ink.Highlight);
 
-        // The pill across the top: the mode, and its clock.
-        string line = banner.Clock is { } clock ? $"{banner.Title}  ·  {clock}" : banner.Title;
-        float size = Px(18f);
-        float width = type.Heading.MeasureWidth(line, size) + Px(40f);
-        float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
-        float y = context.SafeRect.Y + Px(14f);
-        var pill = new UiRect(x, y, width, Px(36f));
-        painter.FillRoundedRect(pill, _surfaces?.Rounded ?? default, BoardFace, Px(18f));
-        painter.DrawLabel(type.Heading, line, new UiVec2(x + Px(20f), y + Px(8f)), size, UiPalette.TextBright, 0.04f);
-
-        // A decided match's result, large, below it; or a line explaining the phase.
+        // A decided match's result, large, below it.
         if (banner.Headline is { } headline)
         {
-            float big = Px(44f);
-            float headWidth = type.Heading.MeasureWidth(headline, big) * 1.06f;
-            painter.DrawLabel(type.Heading, headline, new UiVec2(context.SafeRect.X + ((context.SafeRect.Width - headWidth) * 0.5f), y + Px(60f)), big, Accent, 0.06f);
+            o.Text.DrawCentredAt(o.Text.Capitals(headline), centre, plate.Bottom + o.Px(20f), o.Px(HudOverlay.Huge), o.Ink.Accent, shadow: true);
         }
 
         if (warning is not null)
         {
-            float warn = Px(30f);
-            float warnWidth = type.Heading.MeasureWidth(warning, warn) * 1.06f;
-            painter.DrawLabel(
-                type.Heading, warning, new UiVec2(context.SafeRect.X + ((context.SafeRect.Width - warnWidth) * 0.5f), context.SafeRect.Y + (context.SafeRect.Height * 0.3f)), warn, Bad, 0.06f);
+            o.Text.DrawCentredAt(o.Text.Capitals(warning), centre, o.Safe.Y + (o.Safe.Height * 0.3f), o.Px(HudOverlay.Large), o.Ink.Danger, shadow: true);
         }
     }
-
-    // A team's colour on the team menu: the accent for one side, the warning red for the other, white for nobody's.
-    private static Bgra32 SideColour(int team) =>
-        team == Game.Multiplayer.TeamRoster.Good ? Accent : team == Game.Multiplayer.TeamRoster.Bad ? Bad : UiPalette.TextBright;
 }

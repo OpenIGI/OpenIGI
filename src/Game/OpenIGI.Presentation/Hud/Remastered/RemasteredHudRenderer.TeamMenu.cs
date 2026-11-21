@@ -2,21 +2,21 @@ using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
+using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
-using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
-/// A team match's team menu: across the middle of the screen, a card for each side -- its number key, its name in its colour,
-/// how many play on it and who -- this player's own edged and marked, a side it can't join greyed and marked full; then a
-/// narrower card to be put on the fairer side, and how to choose below.
+/// A team match's team menu, in the played title's look: on the title's glass band across the middle of the screen, a sheet for
+/// each side -- its number key, its name in its ink, how many play on it and who -- this player's own bracketed and marked, a side
+/// it can't join dimmed and marked full; then a narrower sheet to be put on the fairer side, and how to choose below.
 /// </content>
 public sealed partial class RemasteredHudRenderer
 {
-    // The most names a side's card lists before it says how many more.
+    // The most names a side's sheet lists before it says how many more.
     private const int TeamCardNames = 8;
 
     private readonly List<(int Index, float X, float Y, float Width, float Height)> _teamCards = [];
@@ -30,34 +30,27 @@ public sealed partial class RemasteredHudRenderer
         _teamCards.Clear();
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(pick);
-        if (_theme is not { } type)
+        if (Overlay(batch, screenWidth, screenHeight) is not { } o)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float Px(float units) => context.Px(units);
-        UiRect safe = context.SafeRect;
+        UiRect safe = o.Safe;
         float centre = safe.X + (safe.Width * 0.5f);
-
-        float gap = Px(18f);
-        float sideWidth = Math.Min(Px(300f), (safe.Width - Px(48f) - (gap * 2)) * 0.38f);
-        float autoWidth = Math.Min(Px(200f), (safe.Width - Px(48f) - (gap * 2)) * 0.24f);
-        float cardHeight = Px(330f);
+        float gap = o.Px(18f);
+        float sideWidth = Math.Min(o.Px(300f), (safe.Width - o.Px(48f) - (gap * 2)) * 0.38f);
+        float autoWidth = Math.Min(o.Px(200f), (safe.Width - o.Px(48f) - (gap * 2)) * 0.24f);
+        float cardHeight = o.Px(330f);
         float rowWidth = (sideWidth * 2) + autoWidth + (gap * 2);
         float left = centre - (rowWidth * 0.5f);
-        float top = safe.Y + Math.Max(Px(120f), (safe.Height - cardHeight) * 0.42f);
+        float top = safe.Y + Math.Max(o.Px(120f), (safe.Height - cardHeight) * 0.42f);
+        o.GlassBand(new UiRect(safe.X, top - o.Px(70f), safe.Width, cardHeight + o.Px(124f)), HudOverlay.Fade(o.Ink.Primary, 0.6f));
 
-        // A dark band behind it all, so it reads over any scene, fading out at its ends.
-        Band(painter, new UiRect(safe.X, top - Px(70f), safe.Width, cardHeight + Px(124f)), Bgra32.FromRgba(6, 8, 11, 210));
-
-        float headY = top - Px(44f);
-        painter.DrawLabel(type.Heading, "CHOOSE YOUR TEAM", new UiVec2(left, headY - Px(4f)), Px(22f), UiPalette.TextBright, 0.12f);
-        string mode = modeTitle.ToUpperInvariant();
-        float modeSize = Px(13f);
-        painter.DrawLabel(type.Mono, mode, new UiVec2(left + rowWidth - UiPainter.MeasureLabel(type.Mono, mode, modeSize, 0.2f), headY + Px(4f)), modeSize, VoteAccent, 0.2f);
-        painter.FillRect(new UiRect(left, top - Px(12f), rowWidth, Px(1f)), Bgra32.FromRgba(255, 255, 255, 30));
+        float large = o.Px(HudOverlay.Large);
+        float headY = top - o.Px(18f) - o.Text.LineHeightAt(large);
+        o.Text.DrawAt("CHOOSE YOUR TEAM", left, headY, large, o.Ink.Highlight);
+        float small = o.Px(HudOverlay.Small);
+        o.Text.DrawRightAt(o.Text.Capitals(modeTitle), left + rowWidth, headY + o.Text.LineHeightAt(large) - o.Text.LineHeightAt(small), small, o.Ink.Accent);
 
         float x = left;
         for (int i = 0; i < TeamPick.Choices.Count; i++)
@@ -67,11 +60,11 @@ public sealed partial class RemasteredHudRenderer
             bool over = pointer.X >= card.X && pointer.X <= card.Right && pointer.Y >= card.Y && pointer.Y <= card.Bottom;
             if (i < 2)
             {
-                SideCard(painter, type, card, pick, i == 0 ? TeamRoster.Good : TeamRoster.Bad, i + 1, over, Px);
+                SideCard(o, card, pick, i == 0 ? TeamRoster.Good : TeamRoster.Bad, i + 1, over);
             }
             else
             {
-                AutoCard(painter, type, card, over, Px);
+                AutoCard(o, card, over);
             }
 
             _teamCards.Add((i, card.X, card.Y, card.Width, card.Height));
@@ -80,97 +73,93 @@ public sealed partial class RemasteredHudRenderer
 
         string how = string.Create(
             CultureInfo.InvariantCulture,
-            $"PRESS 1–3 OR CLICK A TEAM  ·  {key.ToUpperInvariant()} OR ESC TO CLOSE  ·  {key.ToUpperInvariant()} OPENS THIS AGAIN TO SWITCH");
-        Centred(painter, type.Mono, how, centre, top + cardHeight + Px(20f), Px(12f), UiPalette.TextMuted, 0.18f);
-        UiCursor.Draw(painter, new UiVec2(pointer.X, pointer.Y));
+            $"PRESS 1-3 OR CLICK A TEAM - {key.ToUpperInvariant()} OR ESC TO CLOSE - {key.ToUpperInvariant()} OPENS THIS AGAIN TO SWITCH");
+        o.Text.DrawCentredAt(how, centre, top + cardHeight + o.Px(20f), small, o.Quiet);
+        UiCursor.Draw(o.Painter, new UiVec2(pointer.X, pointer.Y));
     }
 
-    // One side: its key and name in its colour, how many play on it, and who.
-    private static void SideCard(UiPainter painter, UiTheme type, UiRect card, TeamPick pick, int team, int number, bool over, Func<float, float> Px)
+    // One side: its key and name in its ink, how many play on it, and who.
+    private static void SideCard(HudOverlay o, UiRect card, TeamPick pick, int team, int number, bool over)
     {
         bool own = pick.OwnTeam == team;
         bool open = pick.Open(team);
-        Bgra32 colour = SideColour(team);
+        Bgra32 ink = o.SideInk(team, pick.OwnTeam, TeamRoster.Good);
         IReadOnlyList<string> names = pick.On(team);
+        CardFrame(o, card, own, over && open, open ? ink : HudOverlay.Fade(ink, 0.45f));
 
-        painter.FillRect(card, CardFace);
-        if (over && open && !own)
-        {
-            painter.FillRect(card, colour.WithAlpha(26));
-        }
+        float body = o.Px(HudOverlay.Body);
+        float small = o.Px(HudOverlay.Small);
+        float pad = o.Px(16f);
+        float y = card.Y + o.Px(18f);
+        UiRect cap = o.KeyCap(number.ToString(CultureInfo.InvariantCulture), card.X + pad, y, lit: own);
+        o.Text.DrawAt(o.Text.Capitals(MatchState.TeamName(team)), cap.Right + o.Px(10f), cap.Y + ((cap.Height - o.Text.LineHeightAt(o.Px(HudOverlay.Large))) * 0.5f), o.Px(HudOverlay.Large), open ? ink : HudOverlay.Fade(ink, 0.45f));
 
-        // A bar of the side's colour along the top, the name under it.
-        painter.FillRect(new UiRect(card.X, card.Y, card.Width, Px(4f)), open ? colour : colour.WithAlpha(90));
-        float pad = Px(16f);
-        float y = card.Y + Px(18f);
-        painter.DrawLabel(type.Mono, number.ToString(CultureInfo.InvariantCulture), new UiVec2(card.X + pad, y + Px(4f)), Px(15f), open ? VoteAccent : UiPalette.TextMuted, 0f);
-        painter.DrawLabel(type.Heading, MatchState.TeamName(team).ToUpperInvariant(), new UiVec2(card.X + pad + Px(24f), y), Px(24f), open ? colour : colour.WithAlpha(120), 0.1f);
-
+        y = cap.Bottom + o.Px(14f);
         string count = names.Count == 1 ? "1 PLAYER" : string.Create(CultureInfo.InvariantCulture, $"{names.Count} PLAYERS");
+        o.Text.DrawAt(count, card.X + pad, y, small, o.Quiet);
         string state = own ? "YOUR TEAM" : open ? string.Empty : "FULL";
-        y += Px(40f);
-        painter.DrawLabel(type.Mono, count, new UiVec2(card.X + pad, y), Px(12f), UiPalette.TextSecondary, 0.2f);
         if (state.Length > 0)
         {
-            float size = Px(12f);
-            painter.DrawLabel(type.Mono, state, new UiVec2(card.Right - pad - UiPainter.MeasureLabel(type.Mono, state, size, 0.2f), y), size, own ? Victory : Enemy, 0.2f);
+            o.Text.DrawRightAt(state, card.Right - pad, y, small, own ? o.Ink.Accent : o.Ink.Danger);
         }
 
-        y += Px(24f);
-        painter.FillRect(new UiRect(card.X + pad, y, card.Width - (pad * 2), Px(1f)), CardEdge);
-        y += Px(12f);
+        y += o.Text.LineHeightAt(small) + o.Px(8f);
+        o.Rule(card.X + pad, y, card.Width - (pad * 2), HudOverlay.Fade(o.Ink.Primary, 0.4f));
+        y += o.Px(12f);
 
         // Who plays on it, a line each; an empty side says so.
-        float nameSize = Px(15f);
         if (names.Count == 0)
         {
-            painter.DrawLabel(type.Body, "Nobody yet", new UiVec2(card.X + pad, y), nameSize, UiPalette.TextMuted, 0f);
+            o.Text.DrawAt("NOBODY YET", card.X + pad, y, body, o.Quiet);
         }
 
         for (int i = 0; i < names.Count && i < TeamCardNames; i++)
         {
             string name = i == TeamCardNames - 1 && names.Count > TeamCardNames
-                ? string.Create(CultureInfo.InvariantCulture, $"+{names.Count - TeamCardNames + 1} more")
-                : names[i];
-            painter.DrawLabel(type.Body, name, new UiVec2(card.X + pad, y), nameSize, UiPalette.TextBright, 0f);
-            y += Px(24f);
-        }
-
-        // This player's own side edged in amber, as its pick on the map vote is.
-        if (own)
-        {
-            painter.StrokeRect(card, Px(2f), Victory);
-        }
-        else if (over && open)
-        {
-            painter.StrokeRect(card, Px(1f), colour.WithAlpha(160));
-        }
-        else
-        {
-            painter.StrokeRect(card, Px(1f), CardEdge);
+                ? string.Create(CultureInfo.InvariantCulture, $"+{names.Count - TeamCardNames + 1} MORE")
+                : o.Text.ClipAt(o.Text.Prose(names[i]), body, card.Width - (pad * 2f));
+            o.Text.DrawAt(name, card.X + pad, y, body, o.Ink.Plain);
+            y += o.Text.LineHeightAt(body) + o.Px(6f);
         }
     }
 
     // The fairer side, whichever has fewer.
-    private static void AutoCard(UiPainter painter, UiTheme type, UiRect card, bool over, Func<float, float> Px)
+    private static void AutoCard(HudOverlay o, UiRect card, bool over)
     {
-        painter.FillRect(card, CardFace);
-        if (over)
+        CardFrame(o, card, own: false, over, o.Ink.Primary);
+        float body = o.Px(HudOverlay.Body);
+        float small = o.Px(HudOverlay.Small);
+        float pad = o.Px(16f);
+        float y = card.Y + o.Px(18f);
+        UiRect cap = o.KeyCap("3", card.X + pad, y);
+        o.Text.DrawAt("AUTO", cap.Right + o.Px(10f), cap.Y + ((cap.Height - o.Text.LineHeightAt(o.Px(HudOverlay.Large))) * 0.5f), o.Px(HudOverlay.Large), o.Ink.Highlight);
+        y = cap.Bottom + o.Px(14f);
+        o.Text.DrawAt("FEWER PLAYERS", card.X + pad, y, small, o.Quiet);
+        y += o.Text.LineHeightAt(small) + o.Px(8f);
+        o.Rule(card.X + pad, y, card.Width - (pad * 2), HudOverlay.Fade(o.Ink.Primary, 0.4f));
+        y += o.Px(12f);
+        o.Text.DrawAt("JOINS THE SIDE", card.X + pad, y, body, o.Quiet);
+        o.Text.DrawAt("THAT NEEDS YOU", card.X + pad, y + o.Text.LineHeightAt(body) + o.Px(6f), body, o.Quiet);
+    }
+
+    // A choice's sheet on the menu: the title's glass, lit under the pointer, this player's own in the accent's brackets; a bar of its
+    // ink along its top.
+    private static void CardFrame(HudOverlay o, UiRect card, bool own, bool over, Bgra32 ink)
+    {
+        o.Sheet(card);
+        if (over && !own)
         {
-            painter.FillRect(card, Bgra32.FromRgba(255, 255, 255, 12));
+            o.Plate(card, HudOverlay.Fade(ink, 0.1f));
         }
 
-        float pad = Px(16f);
-        float y = card.Y + Px(18f);
-        painter.DrawLabel(type.Mono, "3", new UiVec2(card.X + pad, y + Px(4f)), Px(15f), VoteAccent, 0f);
-        painter.DrawLabel(type.Heading, "AUTO", new UiVec2(card.X + pad + Px(24f), y), Px(24f), UiPalette.TextBright, 0.1f);
-        y += Px(40f);
-        painter.DrawLabel(type.Mono, "FEWER PLAYERS", new UiVec2(card.X + pad, y), Px(12f), UiPalette.TextSecondary, 0.2f);
-        y += Px(24f);
-        painter.FillRect(new UiRect(card.X + pad, y, card.Width - (pad * 2), Px(1f)), CardEdge);
-        y += Px(12f);
-        painter.DrawLabel(type.Body, "Joins the side", new UiVec2(card.X + pad, y), Px(15f), UiPalette.TextMuted, 0f);
-        painter.DrawLabel(type.Body, "that needs you", new UiVec2(card.X + pad, y + Px(24f)), Px(15f), UiPalette.TextMuted, 0f);
-        painter.StrokeRect(card, Px(1f), over ? Bgra32.FromRgba(255, 255, 255, 120) : CardEdge);
+        o.Painter.FillRect(new UiRect(card.X + o.Px(8f), card.Y, card.Width - o.Px(16f), MathF.Max(2f, o.Px(3f))), ink);
+        if (own)
+        {
+            o.Brackets(card, o.Ink.Accent, 12f);
+        }
+        else if (over)
+        {
+            o.Brackets(card, HudOverlay.Fade(ink, 0.9f), 10f);
+        }
     }
 }

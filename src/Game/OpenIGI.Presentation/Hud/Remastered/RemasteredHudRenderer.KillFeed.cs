@@ -1,29 +1,27 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Multiplayer.Modes;
+using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using OpenIGI.UI.Layout;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Kit;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI.Text;
-using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
-/// The kill feed down the top right corner -- killer, the weapon's own silhouette, how it struck, victim -- with the player's
-/// own rows lit, each sliding in and fading away; the player's own kill announced low in the middle; and the killer's weapon
-/// on the card a dead player watches it from.
+/// The kill feed down the top right corner, in the played title's look -- killer, the weapon's own silhouette, how it struck,
+/// victim, the names in the sides' inks and the title's type on a plate of its glass -- with the player's own rows bracketed,
+/// each sliding in and fading away; the player's own kill announced low in the middle; and the killer's weapon on the card a
+/// dead player watches it from.
 /// </content>
 public sealed partial class RemasteredHudRenderer
 {
-    // A row's height, the gap between rows, and the picture's height inside it, in design pixels.
-    private const float FeedRow = 28f;
+    // A row's height, the gap between rows, and the picture's height inside it, in layout pixels.
     private const float FeedGap = 4f;
     private const float FeedPicture = 17f;
     private const float FeedPictureWidest = 74f;
-    private const float FeedName = 15f;
     private const float FeedNameWidest = 168f;
     private const float FeedPad = 10f;
     private const float FeedSpace = 8f;
@@ -32,11 +30,8 @@ public sealed partial class RemasteredHudRenderer
     private const float FeedIn = 0.16f;
     private const float FeedOut = 0.45f;
 
-    private static Bgra32 FeedFace => Bgra32.FromRgba(8, 10, 13, 150);
-    private static Bgra32 FeedOwnFace => Bgra32.FromRgba(16, 19, 24, 205);
+    // The weapon's silhouette: white in every title, as the feed's pictures are drawn.
     private static Bgra32 FeedInk => Bgra32.FromRgb(236, 238, 240);
-    private static Bgra32 GuardGrey => Bgra32.FromRgb(168, 172, 176);
-    private static Bgra32 TeamKillAmber => Bgra32.FromRgb(255, 190, 70);
 
     private HudSilhouettes? _silhouettes;
 
@@ -45,15 +40,14 @@ public sealed partial class RemasteredHudRenderer
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(feed);
-        if (_theme is not { } type || feed.Entries.Count == 0)
+        if (feed.Entries.Count == 0 || Overlay(batch, screenWidth, screenHeight) is not { } o)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float right = context.SafeRect.Right - context.Px(16f);
-        float y = context.SafeRect.Y + context.Px(64f);
+        float right = o.Safe.Right - o.Px(16f);
+        float y = o.Safe.Y + o.Px(64f);
+        float height = o.Text.LineHeightAt(o.Px(HudOverlay.Small)) + o.Px(12f);
         List<FeedPart> parts = [];
         foreach (KillFeedEntry entry in feed.Entries)
         {
@@ -65,61 +59,58 @@ public sealed partial class RemasteredHudRenderer
 
             // A row leaving folds up as it fades, so the ones under it glide up into its place.
             float fold = Easing.Evaluate(Ease.OutCubic, fade);
-            float height = context.Px(FeedRow);
             if (opacity > 0.01f)
             {
                 parts.Clear();
-                RowParts(parts, type, context, feed, entry.Note);
-                DrawRow(batch, painter, context, feed, entry.Note, parts, right + (context.Px(36f) * (1f - appear)), y, height, opacity);
+                RowParts(o, parts, feed, entry.Note);
+                DrawRow(batch, o, feed, entry.Note, parts, right + (o.Px(36f) * (1f - appear)), y, height, opacity);
             }
 
-            y += (height + context.Px(FeedGap)) * fold;
+            y += (height + o.Px(FeedGap)) * fold;
         }
 
-        DrawKillConfirm(painter, context, type, feed);
+        DrawKillConfirm(o, feed);
     }
 
-    // One row, right-aligned at its edge: its strip, the player's own edge, and its parts left to right.
-    private void DrawRow(
-        SpriteBatch batch, UiPainter painter, LayoutContext context, KillFeedView feed, KillNote note, List<FeedPart> parts, float right, float y, float height, float opacity)
+    // One row, right-aligned at its edge: its plate, the player's own brackets, and its parts left to right.
+    private void DrawRow(SpriteBatch batch, HudOverlay o, KillFeedView feed, KillNote note, List<FeedPart> parts, float right, float y, float height, float opacity)
     {
-        float space = context.Px(FeedSpace);
-        float pad = context.Px(FeedPad);
+        float space = o.Px(FeedSpace);
+        float pad = o.Px(FeedPad);
         float width = (pad * 2f) + parts.Sum(p => p.Width) + (space * Math.Max(0, parts.Count - 1));
         var strip = new UiRect(right - width, y, width, height);
         bool killed = feed.OwnEntity >= 0 && note.KillerEntity == feed.OwnEntity;
         bool died = feed.OwnEntity >= 0 && note.VictimEntity == feed.OwnEntity;
 
-        painter.PushOpacity(opacity);
-        painter.FillRect(strip, killed || died ? FeedOwnFace : FeedFace);
+        o.Painter.PushOpacity(opacity);
+        o.Plate(strip, Bgra32.FromRgba(0, 0, 0, killed || died ? (byte)200 : (byte)150));
+        o.Plate(strip, HudOverlay.Fade(o.Ink.Glass.WithAlpha(255), 0.25f));
         if (killed || died)
         {
-            Bgra32 edge = died ? Enemy : FeedInk;
-            painter.FillRect(new UiRect(strip.X, strip.Y, MathF.Max(2f, context.Px(2.5f)), height), edge);
-            painter.StrokeRect(strip, MathF.Max(1f, context.Px(1f)), edge.WithAlpha(died ? (byte)120 : (byte)90));
+            o.Brackets(strip, died ? o.Ink.Enemy : o.Ink.Highlight, 5f);
         }
 
         float x = strip.X + pad;
         float middle = y + (height * 0.5f);
         foreach (FeedPart part in parts)
         {
-            DrawPart(batch, painter, part, x, middle, opacity);
+            DrawPart(batch, o, part, x, middle, opacity);
             x += part.Width + space;
         }
 
-        painter.PopOpacity();
+        o.Painter.PopOpacity();
     }
 
     // What a row shows, left to right: the killer, the weapon or the cause, the marks of how it struck, the victim.
-    private static void RowParts(List<FeedPart> parts, UiTheme type, LayoutContext context, KillFeedView feed, KillNote note)
+    private static void RowParts(HudOverlay o, List<FeedPart> parts, KillFeedView feed, KillNote note)
     {
-        float nameSize = context.Px(FeedName);
-        float widest = context.Px(FeedNameWidest);
-        float glyph = context.Px(FeedPicture);
+        float size = o.Px(HudOverlay.Small);
+        float widest = o.Px(FeedNameWidest);
+        float glyph = o.Px(FeedPicture);
         if (note.HasKiller)
         {
-            Bgra32 colour = (note.Marks & KillMarks.TeamKill) != 0 ? TeamKillAmber : NameColour(feed, note.KillerEntity, note.KillerTeam, guard: false);
-            parts.Add(FeedPart.Name(type.Body, Clip(type.Body, note.Killer, nameSize, widest, 0.02f), nameSize, colour));
+            Bgra32 colour = (note.Marks & KillMarks.TeamKill) != 0 ? o.Ink.Accent : NameColour(o, feed, note.KillerEntity, note.KillerTeam, guard: false);
+            parts.Add(FeedPart.Name(o, o.Text.ClipAt(o.Text.Prose(note.Killer), size, widest), size, colour));
         }
 
         // The weapon's own picture where the title has one; else what killed, as a mark; else the weapon's name.
@@ -132,7 +123,7 @@ public sealed partial class RemasteredHudRenderer
             _ => KitIcon.None,
         };
         bool credited = note.HasKiller && note.Cause is KillCause.Weapon or KillCause.Explosive or KillCause.Melee;
-        if (credited && TryPicture(feed.Art, note.Weapon, glyph, context.Px(FeedPictureWidest), out FeedPart picture))
+        if (credited && TryPicture(feed.Art, note.Weapon, glyph, o.Px(FeedPictureWidest), out FeedPart picture))
         {
             parts.Add(picture);
         }
@@ -141,9 +132,7 @@ public sealed partial class RemasteredHudRenderer
             string weaponName = cause == KitIcon.None ? feed.Art?.WeaponName(note.Weapon) ?? string.Empty : string.Empty;
             if (weaponName.Length > 0)
             {
-                float small = context.Px(11f);
-                string shown = weaponName.ToUpperInvariant();
-                parts.Add(FeedPart.Name(type.Mono, shown, small, UiPalette.TextMuted, UiPainter.MeasureLabel(type.Mono, shown, small, 0.12f), 0.12f));
+                parts.Add(FeedPart.Name(o, o.Text.Capitals(weaponName), size, o.Quiet));
             }
             else
             {
@@ -160,40 +149,38 @@ public sealed partial class RemasteredHudRenderer
 
         if ((note.Marks & KillMarks.Headshot) != 0)
         {
-            parts.Add(FeedPart.Glyph(KitIcon.Headshot, glyph, HeadshotColour));
+            parts.Add(FeedPart.Glyph(KitIcon.Headshot, glyph, o.Ink.Accent));
         }
 
         if ((note.Marks & KillMarks.TeamKill) != 0)
         {
-            parts.Add(FeedPart.Glyph(KitIcon.TeamKill, glyph, TeamKillAmber));
+            parts.Add(FeedPart.Glyph(KitIcon.TeamKill, glyph, o.Ink.Accent));
         }
 
         bool guard = (note.Marks & KillMarks.Guard) != 0;
-        parts.Add(FeedPart.Name(type.Body, Clip(type.Body, note.Victim, nameSize, widest, 0.02f), nameSize, NameColour(feed, note.VictimEntity, note.VictimTeam, guard)));
+        parts.Add(FeedPart.Name(o, o.Text.ClipAt(o.Text.Prose(note.Victim), size, widest), size, NameColour(o, feed, note.VictimEntity, note.VictimTeam, guard)));
     }
 
-    // A name's colour as the player sees the sides: its own white, its side blue, the other red; in co-op every player blue
-    // and the level's soldiers grey; in a free-for-all everyone else red.
-    private static Bgra32 NameColour(KillFeedView feed, int entity, int team, bool guard)
+    // A name's ink as the player sees the sides: its own the title's bright ink, its side the ally's, the other the enemy's; in co-op
+    // every player the ally's and the level's soldiers quiet; in a free-for-all everyone else the enemy's.
+    private static Bgra32 NameColour(HudOverlay o, KillFeedView feed, int entity, int team, bool guard)
     {
         if (guard)
         {
-            return GuardGrey;
+            return o.Quiet;
         }
 
         if (feed.OwnEntity >= 0 && entity == feed.OwnEntity)
         {
-            return UiPalette.TextBright;
+            return o.Ink.Highlight;
         }
 
-        return feed.Coop ? Ally
-            : !feed.Teams ? Enemy
-            : team < 0 || feed.OwnTeam < 0 ? FeedInk
-            : team == feed.OwnTeam ? Ally
-            : Enemy;
+        return feed.Coop ? o.Ink.Ally
+            : !feed.Teams ? o.Ink.Enemy
+            : team < 0 || feed.OwnTeam < 0 ? o.Ink.Plain
+            : team == feed.OwnTeam ? o.Ink.Ally
+            : o.Ink.Enemy;
     }
-
-    private static Bgra32 HeadshotColour => UiPalette.Accent;
 
     // The weapon's picture fitted to the row: as tall as a glyph, no wider than the widest the feed allows.
     private static bool TryPicture(IKillFeedArt? art, string weapon, float height, float widest, out FeedPart part)
@@ -210,18 +197,16 @@ public sealed partial class RemasteredHudRenderer
         return true;
     }
 
-    private void DrawPart(SpriteBatch batch, UiPainter painter, FeedPart part, float x, float middle, float opacity)
+    private void DrawPart(SpriteBatch batch, HudOverlay o, FeedPart part, float x, float middle, float opacity)
     {
         switch (part.Kind)
         {
             case FeedPartKind.Name:
-                float top = middle - (part.Font!.LineHeight(part.Size) * 0.5f);
-                painter.DrawLabel(part.Font, part.Text, new UiVec2(x + 1f, top + 1f), part.Size, Bgra32.FromRgba(0, 0, 0, 150), part.Tracking);
-                painter.DrawLabel(part.Font, part.Text, new UiVec2(x, top), part.Size, part.Colour, part.Tracking);
+                o.Text.DrawAt(part.Text, x, middle - (o.Text.LineHeightAt(part.Size) * 0.5f), part.Size, part.Colour, shadow: true);
                 break;
 
             case FeedPartKind.Glyph:
-                KitIcons.Draw(painter, part.Icon, new UiVec2(x + (part.Width * 0.5f), middle), part.Width, part.Colour);
+                KitIcons.Draw(o.Painter, part.Icon, new UiVec2(x + (part.Width * 0.5f), middle), part.Width, part.Colour);
                 break;
 
             case FeedPartKind.Picture:
@@ -244,7 +229,7 @@ public sealed partial class RemasteredHudRenderer
     }
 
     // The player's own newest kill, low in the middle: the mark, ELIMINATED and whom; how it struck and a run of kills under it.
-    private static void DrawKillConfirm(UiPainter painter, LayoutContext context, UiTheme type, KillFeedView feed)
+    private static void DrawKillConfirm(HudOverlay o, KillFeedView feed)
     {
         if (feed.Confirmed() is not ({ } kill, int streak))
         {
@@ -259,63 +244,62 @@ public sealed partial class RemasteredHudRenderer
             return;
         }
 
-        UiRect safe = context.SafeRect;
+        UiRect safe = o.Safe;
         float centre = safe.X + (safe.Width * 0.5f);
-        float y = safe.Y + (safe.Height * 0.72f) + (context.Px(10f) * (1f - appear));
-        float label = context.Px(13f);
-        float name = context.Px(24f);
-        float glyph = context.Px(22f);
-        float gap = context.Px(10f);
+        float y = safe.Y + (safe.Height * 0.72f) + (o.Px(10f) * (1f - appear));
+        float small = o.Px(HudOverlay.Small);
+        float large = o.Px(HudOverlay.Large);
+        float glyph = o.Px(22f);
+        float gap = o.Px(10f);
         const string Said = "ELIMINATED";
-        string victim = Clip(type.Heading, kill.Note.Victim.ToUpperInvariant(), name, context.Px(320f), 0.06f);
-        float saidWidth = UiPainter.MeasureLabel(type.Mono, Said, label, 0.24f);
-        float victimWidth = UiPainter.MeasureLabel(type.Heading, victim, name, 0.06f);
+        string victim = o.Text.ClipAt(o.Text.Capitals(kill.Note.Victim), large, o.Px(320f));
+        float saidWidth = o.Text.MeasureAt(Said, small);
+        float victimWidth = o.Text.MeasureAt(victim, large);
         float width = glyph + gap + saidWidth + gap + victimWidth;
         float x = centre - (width * 0.5f);
         bool head = (kill.Note.Marks & KillMarks.Headshot) != 0;
         bool guard = (kill.Note.Marks & KillMarks.Guard) != 0;
 
-        painter.PushOpacity(opacity);
-        bool tagged = head || (kill.Note.Marks & KillMarks.Backstab) != 0 || streak > 1;
-        Band(painter, new UiRect(x - context.Px(60f), y - context.Px(6f), width + context.Px(120f), context.Px(tagged ? 68f : 42f)), StripFace);
-        KitIcons.Draw(painter, head ? KitIcon.Headshot : KitIcon.Skull, new UiVec2(x + (glyph * 0.5f), y + (context.Px(30f) * 0.5f)), glyph, head ? HeadshotColour : FeedInk);
-        x += glyph + gap;
-        painter.DrawLabel(type.Mono, Said, new UiVec2(x, y + context.Px(8f)), label, UiPalette.TextMuted, 0.24f);
-        x += saidWidth + gap;
-        painter.DrawLabel(type.Heading, victim, new UiVec2(x, y), name, guard ? FeedInk : Enemy, 0.06f);
-
         // Under it, how it struck and the run it is part of.
         List<(string Text, Bgra32 Colour)> tags = [];
         if (head)
         {
-            tags.Add(("HEADSHOT", HeadshotColour));
+            tags.Add(("HEADSHOT", o.Ink.Accent));
         }
 
         if ((kill.Note.Marks & KillMarks.Backstab) != 0)
         {
-            tags.Add(("BACKSTAB", HeadshotColour));
+            tags.Add(("BACKSTAB", o.Ink.Accent));
         }
 
         if (KillFeedView.StreakName(streak) is { Length: > 0 } run)
         {
-            tags.Add((run, Victory));
+            tags.Add((o.Text.Capitals(run), o.Ink.Highlight));
         }
 
-        float tag = context.Px(16f);
-        float tagGap = context.Px(18f);
-        float tagsWidth = tags.Sum(t => UiPainter.MeasureLabel(type.Heading, t.Text, tag, 0.12f)) + (tagGap * Math.Max(0, tags.Count - 1));
+        o.Painter.PushOpacity(opacity);
+        float lineHeight = o.Text.LineHeightAt(large);
+        float body = o.Px(HudOverlay.Body);
+        o.Band(new UiRect(x - o.Px(60f), y - o.Px(6f), width + o.Px(120f), lineHeight + o.Px(12f) + (tags.Count > 0 ? o.Text.LineHeightAt(body) + o.Px(8f) : 0f)), Bgra32.FromRgba(0, 0, 0, 170));
+        KitIcons.Draw(o.Painter, head ? KitIcon.Headshot : KitIcon.Skull, new UiVec2(x + (glyph * 0.5f), y + (lineHeight * 0.5f)), glyph, head ? o.Ink.Accent : FeedInk);
+        x += glyph + gap;
+        o.Text.DrawAt(Said, x, y + ((lineHeight - o.Text.LineHeightAt(small)) * 0.5f), small, o.Quiet, shadow: true);
+        x += saidWidth + gap;
+        o.Text.DrawAt(victim, x, y, large, guard ? o.Ink.Plain : o.Ink.Enemy, shadow: true);
+
+        float tagGap = o.Px(18f);
+        float tagsWidth = tags.Sum(t => o.Text.MeasureAt(t.Text, body)) + (tagGap * Math.Max(0, tags.Count - 1));
         float tx = centre - (tagsWidth * 0.5f);
         foreach ((string text, Bgra32 colour) in tags)
         {
-            painter.DrawLabel(type.Heading, text, new UiVec2(tx, y + context.Px(37f)), tag, colour, 0.12f);
-            tx += UiPainter.MeasureLabel(type.Heading, text, tag, 0.12f) + tagGap;
+            tx += o.Text.DrawAt(text, tx, y + lineHeight + o.Px(6f), body, colour, shadow: true) + tagGap;
         }
 
-        painter.PopOpacity();
+        o.Painter.PopOpacity();
     }
 
     // The killer's weapon and how it struck, after the name on a dead player's card: as wide as it draws, or nought.
-    private static float KilledByWidth(KillFeedView? feed, LayoutContext context, out FeedPart? picture, out bool head)
+    private static float KilledByWidth(HudOverlay o, KillFeedView? feed, out FeedPart? picture, out bool head)
     {
         picture = null;
         head = false;
@@ -325,15 +309,15 @@ public sealed partial class RemasteredHudRenderer
         }
 
         head = (note.Marks & KillMarks.Headshot) != 0;
-        float glyph = context.Px(20f);
+        float glyph = o.Px(20f);
         float width = 0f;
-        if (TryPicture(feed.Art, note.Weapon, glyph, context.Px(90f), out FeedPart part))
+        if (TryPicture(feed.Art, note.Weapon, glyph, o.Px(90f), out FeedPart part))
         {
             picture = part;
-            width += context.Px(14f) + part.Width;
+            width += o.Px(14f) + part.Width;
         }
 
-        return width + (head ? context.Px(10f) + glyph : 0f);
+        return width + (head ? o.Px(10f) + glyph : 0f);
     }
 
     // What a feed row is made of.
@@ -346,15 +330,15 @@ public sealed partial class RemasteredHudRenderer
 
     // One piece of a feed row, measured.
     private readonly record struct FeedPart(
-        FeedPartKind Kind, float Width, string Text, UiFont? Font, float Size, Bgra32 Colour, float Tracking, KitIcon Icon, IHudIconSource? Icons, HudIcon Art, float Scale, float Height, bool Mirror = false)
+        FeedPartKind Kind, float Width, string Text, float Size, Bgra32 Colour, KitIcon Icon, IHudIconSource? Icons, HudIcon Art, float Scale, float Height, bool Mirror = false)
     {
-        public static FeedPart Name(UiFont font, string text, float size, Bgra32 colour, float? width = null, float tracking = 0.02f) =>
-            new(FeedPartKind.Name, width ?? UiPainter.MeasureLabel(font, text, size, tracking), text, font, size, colour, tracking, KitIcon.None, null, HudIcon.None, 1f, size);
+        public static FeedPart Name(HudOverlay o, string text, float size, Bgra32 colour) =>
+            new(FeedPartKind.Name, o.Text.MeasureAt(text, size), text, size, colour, KitIcon.None, null, HudIcon.None, 1f, size);
 
         public static FeedPart Glyph(KitIcon icon, float size, Bgra32 colour) =>
-            new(FeedPartKind.Glyph, size, string.Empty, null, size, colour, 0f, icon, null, HudIcon.None, 1f, size);
+            new(FeedPartKind.Glyph, size, string.Empty, size, colour, icon, null, HudIcon.None, 1f, size);
 
         public static FeedPart Sprite(IHudIconSource icons, HudIcon icon, float scale, float width, float height, bool mirror) =>
-            new(FeedPartKind.Picture, width, string.Empty, null, height, Bgra32.White, 0f, KitIcon.None, icons, icon, scale, height, mirror);
+            new(FeedPartKind.Picture, width, string.Empty, height, Bgra32.White, KitIcon.None, icons, icon, scale, height, mirror);
     }
 }

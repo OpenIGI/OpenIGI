@@ -1,7 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
-using OpenIGI.UI.Kit.Hud;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -48,15 +47,18 @@ public static class HudAmmoCue
         float pulse = cue.Urgency == 0 ? 0.7f : 0.55f + (0.45f * (0.5f + (0.5f * MathF.Sin(context.Seconds * MathF.PI * 2.4f))));
         Bgra32 colour = cue.Urgency switch
         {
-            2 => UiPalette.Danger,
-            1 => UiPalette.Accent,
-            _ => UiPalette.Text,
+            2 => context.Theme.Palette.Danger,
+            1 => context.Theme.Palette.Accent,
+            _ => context.Theme.Palette.Highlight,
         };
 
         float size = context.Px(13f);
         const float Tracking = 0.24f;
         float width = UiPainter.MeasureLabel(context.Fonts.Name, cue.Word, size, Tracking);
         var at = new UiVec2((context.Width * 0.5f) - (width * 0.5f), (context.Height * 0.5f) + context.Px(42f));
-        HudInk.Label(context.Painter, context.Fonts.Name, cue.Word, at, size, HudDrawContext.Fade(colour, pulse), Tracking);
+        Bgra32 ink = HudDrawContext.Fade(colour, pulse);
+        float offset = MathF.Max(1f, context.Px(1f));
+        context.Painter.DrawLabel(context.Fonts.Name, cue.Word, new UiVec2(at.X + offset, at.Y + offset), size, Bgra32.FromRgba(0, 0, 0, (byte)(210 * ink.A / 255)), Tracking);
+        context.Painter.DrawLabel(context.Fonts.Name, cue.Word, at, size, ink, Tracking);
     }
 }

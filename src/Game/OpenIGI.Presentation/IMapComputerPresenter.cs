@@ -202,13 +202,6 @@ public readonly record struct ComputerFrame(int Width, int Height, int Requested
     public float PixelDensity { get; init; } = 1f;
 }
 
-/// <summary>Where a title's own font comes from, for the remastered computer to set its text in.</summary>
-public interface IComputerFontSource : IDisposable
-{
-    /// <summary>Gets the title's font, loaded on its first use; <see langword="null"/> where the installation has none.</summary>
-    Rendering.BitmapTextRenderer? Font { get; }
-}
-
 /// <summary>What a title needs in order to build its map computer.</summary>
 /// <param name="Device">The graphics device to upload through.</param>
 /// <param name="Resources">The registry the device's own textures are resolved through.</param>

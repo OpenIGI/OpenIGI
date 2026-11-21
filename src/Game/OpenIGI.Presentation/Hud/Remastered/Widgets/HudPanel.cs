@@ -31,7 +31,9 @@ public static class HudPanel
     /// <param name="seconds">The time now, for the shimmer.</param>
     /// <param name="rect">Where it stands, in pixels.</param>
     /// <param name="opacity">How far it has faded in, nought to one.</param>
-    public static void Draw(UiPainter painter, HudTheme theme, float scale, float seconds, UiRect rect, float opacity = 1f)
+    /// <param name="shade">How much darker the glass is laid, nought to one: nought for the heads-up readouts' light pane, more for
+    /// a sheet of the session's that is read through, the scoreboard's, over a bright sky.</param>
+    public static void Draw(UiPainter painter, HudTheme theme, float scale, float seconds, UiRect rect, float opacity = 1f, float shade = 0f)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
@@ -50,6 +52,10 @@ public static class HudPanel
 
         // The glass: the picture behind, blurred, under the theme's tint.
         painter.DrawBackdrop(shape, BlurSigma, HudDrawContext.Fade(palette.Glass, opacity));
+        if (shade > 0f)
+        {
+            painter.FillPolygon(shape, Bgra32.FromRgba(0, 0, 0, (byte)(255f * Math.Clamp(shade, 0f, 1f) * opacity)));
+        }
 
         // Frost: a pale haze over the blurred picture, and a soft wash down it, lighter at the top, so it reads as a pane of
         // frosted glass and not a hole or a flat plate.
@@ -142,6 +148,34 @@ public static class HudPanel
         if (theme.Motifs.DoubleRules)
         {
             painter.FillRect(new UiRect(x, y + (t * 3f), width * 0.62f, t), HudDrawContext.Fade(colour, 0.45f));
+        }
+    }
+
+    /// <summary>
+    /// Draws a strip of glass across a display -- the computer's tab bar, a sheet's header -- the picture behind it blurred under
+    /// the title's tint and darkened, a breath of the title's colour over it, and a rule along its inner edge (the theme's pair).
+    /// </summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The title's look.</param>
+    /// <param name="hairline">How thick a rule is, in pixels.</param>
+    /// <param name="strip">Where it stands, in pixels.</param>
+    /// <param name="ruleBelow">Whether its rule runs along its foot (a strip at the top) or its head (a strip at the foot).</param>
+    /// <param name="opacity">How far it has faded in, nought to one.</param>
+    public static void Strip(UiPainter painter, HudTheme theme, float hairline, UiRect strip, bool ruleBelow, float opacity = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        HudPalette palette = theme.Palette;
+        painter.DrawBackdrop(strip, BlurSigma, palette.Glass.WithAlpha((byte)(170 * opacity)));
+        painter.FillRect(strip, Bgra32.FromRgba(0, 0, 0, (byte)(150 * opacity)));
+        painter.FillRect(strip, HudDrawContext.Fade(palette.Primary, 0.05f * opacity));
+        Bgra32 rule = HudDrawContext.Fade(palette.Primary, 0.6f * opacity);
+        float y = ruleBelow ? strip.Bottom - hairline : strip.Y;
+        painter.FillRect(new UiRect(strip.X, y, strip.Width, hairline), rule);
+        if (theme.Motifs.DoubleRules)
+        {
+            float second = ruleBelow ? strip.Bottom + (hairline * 2f) : strip.Y - (hairline * 3f);
+            painter.FillRect(new UiRect(strip.X, second, strip.Width, hairline), HudDrawContext.Fade(rule, 0.4f));
         }
     }
 

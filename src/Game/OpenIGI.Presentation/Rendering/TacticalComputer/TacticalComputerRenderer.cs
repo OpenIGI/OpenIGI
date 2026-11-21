@@ -29,7 +29,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <b>One look with the heads-up display.</b> Its colours, its corners, brackets and rules, and its visor are the title's
 /// <see cref="HudTheme"/>; its glass is the display's (<see cref="Hud.Remastered.Widgets.HudPanel"/>); it is drawn into the
 /// display's layer and laid over the picture by the same pass (<see cref="IDisplayDevice.ComposeHudLayer"/>). Its text is the
-/// title's own bitmap font (<see cref="ComputerText"/>).
+/// title's own bitmap font (<see cref="TitleText"/>).
 /// </para>
 /// <para>
 /// <b>The map is a feed.</b> The overhead picture is turned into one colour's display by a pass of its own
@@ -78,13 +78,13 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
     private readonly IOpenIgiLogger _logger;
     private readonly Func<string, string> _resolveText;
     private readonly HudTheme _theme;
-    private readonly IComputerFontSource? _fonts;
+    private readonly ITitleFontSource? _fonts;
     private readonly TacticalMapOverlay _overlay;
     private readonly UiRect[] _tabs = new UiRect[PageNames.Length];
     private readonly float[] _tabWidths = new float[PageNames.Length];
     private readonly List<string> _lines = [];
 
-    private ComputerText? _text;
+    private TitleText? _text;
     private RhiBackdrop? _glass;
     private BackdropBlur? _blur;
 
@@ -141,7 +141,7 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
         IOpenIgiLogger logger,
         Func<string, string> resolveText,
         HudTheme theme,
-        IComputerFontSource? fonts = null)
+        ITitleFontSource? fonts = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
@@ -180,7 +180,7 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
         {
             // The title's own font sets the text; the interface's monospaced face stands in for what it cannot.
             IgiTypography typography = UiFontLibrary.Typography(_device);
-            _text = new ComputerText(typography.Mono);
+            _text = new TitleText(typography.Mono);
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -682,8 +682,8 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
     // This frame's layout, from the text as it will be set: one measure for the hit tests and the draws.
     private TacticalComputerChrome Layout(int width, int height)
     {
-        ComputerText text = _text!;
-        text.Use(_fonts?.Font, ComputerText.ScaleFor(_requestedScale, height, _density));
+        TitleText text = _text!;
+        text.Use(_fonts?.Font, TitleText.ScaleFor(_requestedScale, height, _density));
         for (int i = 0; i < PageNames.Length; i++)
         {
             _tabWidths[i] = text.Measure(PageNames[i]);

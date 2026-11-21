@@ -118,6 +118,10 @@ public enum HudCorner
 /// <param name="Glass">The tint of the panels' glass, with its opacity.</param>
 /// <param name="Health">The health gauge's colour at a health from nought to one.</param>
 /// <param name="Visibility">The visibility meter's colour at a visibility from nought to one.</param>
+/// <param name="Plain">The ink of what the session's overlays say that is nobody's in particular: another player's line on the
+/// board, what was said in the chat.</param>
+/// <param name="Ally">The ink of this player's own side, and of its own line on the board.</param>
+/// <param name="Enemy">The ink of the other side, and of a player who is down.</param>
 public sealed record HudPalette(
     Bgra32 Primary,
     Bgra32 Dim,
@@ -126,7 +130,10 @@ public sealed record HudPalette(
     Bgra32 Danger,
     Bgra32 Glass,
     Func<float, Bgra32> Health,
-    Func<float, Bgra32> Visibility);
+    Func<float, Bgra32> Visibility,
+    Bgra32 Plain,
+    Bgra32 Ally,
+    Bgra32 Enemy);
 
 /// <summary>How a theme draws its shapes.</summary>
 /// <param name="Corner">The corners its panels are cut with.</param>

@@ -1,51 +1,43 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Presentation.Hud;
+using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
-using OpenIGI.UI.Text;
-using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Presentation.Hud.Remastered;
 
+/// <content>
+/// The controls sheet held up on its key, in the played title's look: the scoreboard's sheet, a column for each kind of action --
+/// its title on the title's rule, then each action with its keys as the title's key caps at the right -- and the hint that says
+/// how to hold it up.
+/// </content>
 public sealed partial class RemasteredHudRenderer
 {
-    // The controls panel's measures, in design units: the scoreboard's card, its columns side by side.
+    // The controls sheet's measures, in layout pixels.
     private const float ControlsWidth = 1240f;
-    private const float ControlsHeader = 84f;
-    private const float ControlsRow = 40f;
-    private const float ControlsSectionHead = 40f;
-    private const float ControlsFooter = 50f;
-    private const float KeyCapHeight = 28f;
-
-    private static Bgra32 CapFace => Bgra32.FromRgba(255, 255, 255, 18);
-    private static Bgra32 CapEdge => Bgra32.FromRgba(255, 255, 255, 70);
+    private const float ControlsGutter = 30f;
 
     /// <inheritdoc/>
     public void DrawControlsHint(SpriteBatch batch, string holdKey, float opacity, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (_theme is not { } type || opacity <= 0f)
+        if (opacity <= 0f || Overlay(batch, screenWidth, screenHeight) is not { } o)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float Px(float units) => context.Px(units);
-
         // The top left, clear of the match's strip in the middle, the kill feed on the right and the status at the foot.
-        painter.PushOpacity(Math.Clamp(opacity, 0f, 1f));
-        float size = Px(LabelText);
-        string label = "HOLD FOR CONTROLS";
-        float capWidth = KeyCapWidth(type, holdKey, context);
-        float labelWidth = UiPainter.MeasureLabel(type.Heading, label, size, 0.12f);
-        var plate = new UiRect(context.SafeRect.X + Px(24f), context.SafeRect.Y + Px(24f), capWidth + labelWidth + Px(36f), Px(KeyCapHeight + 14f));
-        painter.FillRoundedRect(plate, _surfaces?.Rounded ?? default, BoardFace.WithAlpha(190), Px(6f));
-        float capX = plate.X + Px(8f);
-        KeyCap(painter, type, context, holdKey, capX, plate.Y + Px(7f));
-        painter.DrawLabel(type.Heading, label, new UiVec2(capX + capWidth + Px(12f), UiRowStyle.CapsCenterY(type.Heading, size, plate)), size, UiPalette.TextMuted, 0.12f);
-        painter.PopOpacity();
+        o.Painter.PushOpacity(Math.Clamp(opacity, 0f, 1f));
+        const string Label = "HOLD FOR CONTROLS";
+        float small = o.Px(HudOverlay.Small);
+        float capWidth = o.KeyCapWidth(holdKey);
+        var plate = new UiRect(o.Safe.X + o.Px(24f), o.Safe.Y + o.Px(24f), capWidth + o.Text.MeasureAt(Label, small) + o.Px(30f), o.KeyCapHeight + o.Px(12f));
+        o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 170));
+        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.7f), 4f);
+        UiRect cap = o.KeyCap(holdKey, plate.X + o.Px(6f), plate.Y + o.Px(6f));
+        o.Text.DrawAt(Label, cap.Right + o.Px(12f), cap.Y + ((cap.Height - o.Text.LineHeightAt(small)) * 0.5f), small, o.Quiet);
+        o.Painter.PopOpacity();
     }
 
     /// <inheritdoc/>
@@ -53,130 +45,83 @@ public sealed partial class RemasteredHudRenderer
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(help);
-        if (_theme is not { } type || help.Sections.Count == 0)
+        if (help.Sections.Count == 0 || Overlay(batch, screenWidth, screenHeight) is not { } o)
         {
             return;
         }
 
-        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = UiPainter.Create(batch, context);
-        float Px(float units) => context.Px(units);
-
+        float body = o.Px(HudOverlay.Body);
+        float small = o.Px(HudOverlay.Small);
+        float pad = o.Px(BoardPad);
         int columns = help.Sections.Count;
         int rows = help.Sections.Max(static s => s.Lines.Count);
-        float width = MathF.Min(Px(ControlsWidth), context.SafeRect.Width * 0.94f);
-        float height = Px(ControlsHeader) + Px(ControlsSectionHead) + (rows * Px(ControlsRow)) + Px(24f) + Px(ControlsFooter);
-        float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
-        float top = context.SafeRect.Y + MathF.Max(Px(20f), (context.SafeRect.Height - height) * 0.4f);
-        float pad = Px(BoardPad);
-        var panel = new UiRect(x, top, width, height);
-        float hair = MathF.Max(1f, Px(1f));
-        painter.FillRoundedRect(panel, _surfaces?.Rounded ?? default, BoardEdge, Px(10f));
-        painter.FillRoundedRect(new UiRect(panel.X + hair, panel.Y + hair, panel.Width - (hair * 2f), panel.Height - (hair * 2f)), _surfaces?.Rounded ?? default, BoardFace, Px(10f) - hair);
+        float rowHeight = MathF.Max(o.KeyCapHeight, o.Text.LineHeightAt(body)) + o.Px(6f);
+        float header = o.Text.LineHeightAt(body) + o.Px(22f);
+        float sectionHead = o.Text.LineHeightAt(body) + o.Px(16f);
+        float footer = o.KeyCapHeight + o.Px(20f);
+        float width = MathF.Min(o.Px(ControlsWidth), o.Safe.Width * 0.94f);
+        float height = header + o.Px(10f) + sectionHead + (rows * rowHeight) + o.Px(10f) + footer;
+        float x = o.Safe.X + ((o.Safe.Width - width) * 0.5f);
+        float top = o.Safe.Y + MathF.Max(o.Px(20f), (o.Safe.Height - height) * 0.4f);
+        var sheet = new UiRect(x, top, width, height);
+        o.Sheet(sheet);
 
-        // The header: the chip, and the match it is for.
-        var header = new UiRect(x, top, width, Px(ControlsHeader));
-        float chipText = Px(LabelText + 2f);
-        const string Tag = "CONTROLS";
-        float chipWidth = UiPainter.MeasureLabel(type.Heading, Tag, chipText, 0.1f) + Px(24f);
-        var chip = new UiRect(x + pad, header.Y + ((header.Height - Px(36f)) * 0.5f), chipWidth, Px(36f));
-        painter.FillRect(chip, Accent);
-        painter.DrawLabel(type.Heading, Tag, new UiVec2(chip.X + Px(12f), UiRowStyle.CapsCenterY(type.Heading, chipText, chip)), chipText, Bgra32.FromRgb(20, 16, 10), 0.1f);
+        // The header: what this is, and the match it is for.
+        var strip = new UiRect(x, top, width, header);
+        o.HeaderStrip(strip);
+        float stripY = strip.Y + ((strip.Height - o.Text.LineHeightAt(body)) * 0.5f);
+        o.Diamond(new UiVec2(x + pad + o.Px(4f), stripY + (o.Text.LineHeightAt(body) * 0.5f)), o.Px(5f), o.Ink.Accent);
+        float after = x + pad + o.Px(16f) + o.Text.DrawAt("CONTROLS", x + pad + o.Px(16f), stripY, body, o.Ink.Highlight) + o.Px(18f);
         if (help.Mode.Length > 0)
         {
-            Stat(painter, type, context, chip.Right + Px(22f), header, "MATCH", help.Mode, Text, leftAligned: true, Px(26f));
+            o.Text.DrawAt(o.Text.Capitals(help.Mode), after, stripY, body, o.Quiet);
         }
 
-        painter.FillRect(new UiRect(x, header.Bottom, width, 1f), Hairline);
-
-        // The columns: a heading over each, then its actions, the action at the left and its keys at the right.
-        float gutter = Px(28f);
+        // The columns: a title over each on the theme's rule, then its actions, the action at the left and its keys at the right.
+        float gutter = o.Px(ControlsGutter);
         float columnWidth = (width - (pad * 2f) - (gutter * (columns - 1))) / columns;
-        float headSize = Px(LabelText);
-        float actionSize = Px(18f);
         for (int c = 0; c < columns; c++)
         {
             ControlsSection section = help.Sections[c];
             float left = x + pad + (c * (columnWidth + gutter));
             float right = left + columnWidth;
-            var head = new UiRect(left, header.Bottom + Px(8f), columnWidth, Px(ControlsSectionHead));
-            float headY = UiRowStyle.CapsCenterY(type.Heading, headSize, head);
-            painter.DrawLabel(type.Heading, section.Title, new UiVec2(left, headY), headSize, Accent, 0.14f);
-            painter.FillRect(new UiRect(left, head.Bottom - Px(4f), columnWidth, 1f), Hairline);
-
-            float y = head.Bottom;
+            float y = strip.Bottom + o.Px(10f);
+            o.Text.DrawAt(o.Text.Capitals(section.Title), left, y, body, o.Ink.Accent);
+            o.Rule(left, y + o.Text.LineHeightAt(body) + o.Px(4f), columnWidth, HudOverlay.Fade(o.Ink.Primary, 0.55f));
+            y += sectionHead;
             for (int r = 0; r < section.Lines.Count; r++)
             {
                 ControlsLine line = section.Lines[r];
-                var row = new UiRect(left - Px(8f), y, columnWidth + Px(16f), Px(ControlsRow));
+                var row = new UiRect(left - o.Px(6f), y, columnWidth + o.Px(12f), rowHeight);
                 if (r % 2 == 0)
                 {
-                    painter.FillRoundedRect(row, _surfaces?.Rounded ?? default, RowFace.WithAlpha(8), Px(4f));
+                    o.Plate(row, HudOverlay.Fade(o.Ink.Primary, 0.05f));
                 }
 
                 // The keys from the right, each its own cap, so a long one never crowds the action out.
                 float capRight = right;
-                float capTop = row.Y + ((row.Height - Px(KeyCapHeight)) * 0.5f);
+                float capTop = row.Y + ((row.Height - o.KeyCapHeight) * 0.5f);
                 for (int k = line.Keys.Count - 1; k >= 0; k--)
                 {
-                    float capWidth = KeyCapWidth(type, line.Keys[k], context);
-                    KeyCap(painter, type, context, line.Keys[k], capRight - capWidth, capTop);
-                    capRight -= capWidth + Px(5f);
+                    float capWidth = o.KeyCapWidth(line.Keys[k]);
+                    o.KeyCap(line.Keys[k], capRight - capWidth, capTop);
+                    capRight -= capWidth + o.Px(5f);
                 }
 
-                float room = capRight - left - Px(8f);
-                string action = Fit(type.Body, line.Action, actionSize, room);
-                painter.DrawLabel(type.Body, action, new UiVec2(left, UiRowStyle.CapsCenterY(type.Body, actionSize, row)), actionSize, UiPalette.TextBright, 0f);
-                y += Px(ControlsRow);
+                string action = o.Text.ClipAt(o.Text.Prose(line.Action), body, capRight - left - o.Px(8f));
+                o.Text.DrawAt(action, left, row.Y + ((row.Height - o.Text.LineHeightAt(body)) * 0.5f), body, o.Ink.Plain);
+                y += rowHeight;
             }
         }
 
-        // The foot: how it is kept up, and where the keys are changed.
-        float footerTop = top + height - Px(ControlsFooter);
-        painter.FillRect(new UiRect(x, footerTop, width, 1f), Hairline);
-        var footer = new UiRect(x, footerTop, width, Px(ControlsFooter));
-        float footText = Px(LabelText);
-        float footY = UiRowStyle.CapsCenterY(type.Heading, footText, footer);
-        painter.DrawLabel(type.Heading, "CHANGE ANY KEY IN SETTINGS  ›  CONTROLS", new UiVec2(x + pad, footY), footText, UiPalette.TextMuted, 0.12f);
-        float holdCap = KeyCapWidth(type, help.HoldKey, context);
+        // The foot: where the keys are changed, and how the sheet is kept up.
+        float capY = sheet.Bottom - footer + o.Px(8f);
+        float footY = capY + ((o.KeyCapHeight - o.Text.LineHeightAt(small)) * 0.5f);
+        o.Rule(x + pad, capY - o.Px(6f), width - (pad * 2f), HudOverlay.Fade(o.Ink.Primary, 0.3f));
+        o.Text.DrawAt("CHANGE ANY KEY IN SETTINGS > CONTROLS", x + pad, footY, small, o.Quiet);
+        float holdCap = o.KeyCapWidth(help.HoldKey);
         float capX = x + width - pad - holdCap;
-        KeyCap(painter, type, context, help.HoldKey, capX, footer.Y + ((footer.Height - Px(KeyCapHeight)) * 0.5f));
-        RightLabel(painter, type.Heading, "HOLD", capX - Px(12f), footY, footText, UiPalette.TextMuted);
-    }
-
-    // A key's cap: its name in an outlined box, as wide as the name needs.
-    private static void KeyCap(UiPainter painter, UiTheme type, LayoutContext context, string key, float left, float top)
-    {
-        float width = KeyCapWidth(type, key, context);
-        float height = context.Px(KeyCapHeight);
-        var cap = new UiRect(left, top, width, height);
-        painter.FillRect(cap, CapFace);
-        Outline(painter, cap, CapEdge, MathF.Max(1f, context.Px(1f)));
-        float size = context.Px(LabelText);
-        float textWidth = UiPainter.MeasureLabel(type.Heading, key, size, 0.06f);
-        painter.DrawLabel(type.Heading, key, new UiVec2(left + ((width - textWidth) * 0.5f), UiRowStyle.CapsCenterY(type.Heading, size, cap)), size, UiPalette.TextBright, 0.06f);
-    }
-
-    private static float KeyCapWidth(UiTheme type, string key, LayoutContext context) =>
-        MathF.Max(context.Px(KeyCapHeight), UiPainter.MeasureLabel(type.Heading, key, context.Px(LabelText), 0.06f) + context.Px(16f));
-
-    // A line cut to the room it has, with an ellipsis where it was cut.
-    private static string Fit(UiFont font, string text, float size, float room)
-    {
-        if (room <= 0f || font.MeasureWidth(text, size) <= room)
-        {
-            return text;
-        }
-
-        for (int length = text.Length - 1; length > 0; length--)
-        {
-            string cut = string.Concat(text.AsSpan(0, length).TrimEnd(), "…");
-            if (font.MeasureWidth(cut, size) <= room)
-            {
-                return cut;
-            }
-        }
-
-        return string.Empty;
+        o.KeyCap(help.HoldKey, capX, capY);
+        o.Text.DrawRightAt("HOLD", capX - o.Px(10f), footY, small, o.Quiet);
     }
 }

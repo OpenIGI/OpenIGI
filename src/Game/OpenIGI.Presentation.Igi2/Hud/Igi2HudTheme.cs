@@ -26,7 +26,13 @@ public static class Igi2HudTheme
             Danger: Bgra32.FromRgba(255, 74, 64, 255),
             Glass: Bgra32.FromRgba(10, 22, 48, 70),
             Health: Health,
-            Visibility: Visibility),
+            Visibility: Visibility,
+
+            // statusscreen.c StatusScreen_DisplayScoreboard's inks, on its 0-128 scale: another player's line white (128, 128,
+            // 128), this player's own the status blue (51.2, 76.8, 128), a dead one's red (128, 51.2, 38.4).
+            Plain: Bgra32.FromRgba(255, 255, 255, 255),
+            Ally: Blue,
+            Enemy: Bgra32.FromRgba(255, 102, 77, 255)),
         new HudMotifs(HudCorner.Chamfer, CornerSize: 5f, Hairline: 1f, BracketLength: 7f, Shimmer: true, DoubleRules: true),
         new HudFxSettings
         {

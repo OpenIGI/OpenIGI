@@ -7,14 +7,22 @@ using OpenIGI.UI.Text;
 namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
-/// The remastered computer's text: set in the title's own bitmap font at a whole number of pixels a pixel, so it stays as
-/// crisp as the original's, with the shared monospaced face standing in where the font is missing or lacks a letter.
+/// A title's own text for the remastered displays -- the computer and the session's overlays: set in the title's bitmap font at
+/// a whole number of pixels a pixel, so it stays as crisp as the original's, with the shared monospaced face standing in where
+/// the font is missing or lacks a letter.
 /// </summary>
 /// <remarks>
+/// <para>
 /// One line height serves both, the bitmap font's where there is one, so a line that had to fall back sits on the same
 /// baseline grid as its neighbours.
+/// </para>
+/// <para>
+/// The computer sets everything at one scale (<see cref="Use"/>, then <see cref="Draw"/>); the overlays ask for a size and get
+/// the whole multiple of the font's own line nearest it (the <c>...At</c> members), so their headings and figures stay as
+/// pixel-true as their body.
+/// </para>
 /// </remarks>
-internal sealed class ComputerText
+internal sealed class TitleText
 {
     // How many strings' capitals and coverage are remembered before the memory is started again.
     private const int MemoryLimit = 512;
@@ -28,9 +36,9 @@ internal sealed class ComputerText
     private int _scale = 1;
     private float _opacity = 1f;
 
-    /// <summary>Initializes a new instance of the <see cref="ComputerText"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="TitleText"/> class.</summary>
     /// <param name="fallback">The face drawn where the title's font cannot.</param>
-    public ComputerText(UiFont fallback) => _fallback = fallback;
+    public TitleText(UiFont fallback) => _fallback = fallback;
 
     /// <summary>Gets the height of a line, in pixels.</summary>
     public float LineHeight => _font is { } font ? font.LineHeight * _scale : MathF.Ceiling(_fallback.LineHeight(FallbackSize));
@@ -211,6 +219,196 @@ internal sealed class ComputerText
 
             lines.Add(line);
         }
+    }
+
+    /// <summary>The whole multiple of the font's own pixels that sets a line nearest a height.</summary>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <returns>The multiple; one where there is no font.</returns>
+    public int StepFor(float size) => _font is { LineHeight: > 0 } font ? Math.Max(1, (int)MathF.Round(size / font.LineHeight)) : 1;
+
+    /// <summary>Gets the height of a line set near a height.</summary>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <returns>The height it is set at, in pixels.</returns>
+    public float LineHeightAt(float size) => _font is { } font ? font.LineHeight * StepFor(size) : MathF.Ceiling(size);
+
+    /// <summary>Measures a line set near a height.</summary>
+    /// <param name="text">The line.</param>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <returns>Its width in pixels.</returns>
+    public float MeasureAt(string text, float size)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0f;
+        }
+
+        if (_font is { } font && Covers(text))
+        {
+            int step = StepFor(size);
+            return font.Measure(text, step, step).Width;
+        }
+
+        return _fallback.MeasureWidth(text, FallbackAt(size));
+    }
+
+    /// <summary>Draws a line set near a height with its top left at a point.</summary>
+    /// <param name="text">The line.</param>
+    /// <param name="x">Its left edge, in pixels.</param>
+    /// <param name="y">Its top edge, in pixels.</param>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <param name="colour">Its colour.</param>
+    /// <param name="shadow">Whether a dark copy is laid a font pixel down and right under it, for a line set straight on the
+    /// picture with no glass behind it.</param>
+    /// <returns>Its width in pixels.</returns>
+    public float DrawAt(string text, float x, float y, float size, Bgra32 colour, bool shadow = false)
+    {
+        if (string.IsNullOrEmpty(text) || _batch is null || _painter is null)
+        {
+            return 0f;
+        }
+
+        float left = MathF.Round(x), top = MathF.Round(y);
+        if (_font is { } font && Covers(text))
+        {
+            // Straight into the batch, past the painter: its fade is laid on here, as the painter would.
+            int step = StepFor(size);
+            float fade = _opacity * _painter.Opacity;
+            if (shadow)
+            {
+                font.Draw(_batch, text, left + step, top + step, Bgra32.FromRgba(0, 0, 0, (byte)(200f * colour.A / 255f * fade)), step, step);
+            }
+
+            font.Draw(_batch, text, left, top, colour.WithAlpha((byte)(colour.A * fade)), step, step);
+            return font.Measure(text, step, step).Width;
+        }
+
+        float fallback = FallbackAt(size);
+        var at = new UiVec2(left, top + MathF.Round((LineHeightAt(size) - _fallback.LineHeight(fallback)) * 0.5f));
+        Bgra32 ink = colour.WithAlpha((byte)(colour.A * _opacity));
+        if (shadow)
+        {
+            float offset = MathF.Max(1f, MathF.Round(size / 12f));
+            _painter.DrawText(_fallback, text, new UiVec2(at.X + offset, at.Y + offset), fallback, Bgra32.FromRgba(0, 0, 0, (byte)(200f * ink.A / 255f)));
+        }
+
+        _painter.DrawText(_fallback, text, at, fallback, ink);
+        return _fallback.MeasureWidth(text, fallback);
+    }
+
+    /// <summary>Draws a line set near a height, ending at a point.</summary>
+    /// <param name="text">The line.</param>
+    /// <param name="right">Its right edge, in pixels.</param>
+    /// <param name="y">Its top edge, in pixels.</param>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <param name="colour">Its colour.</param>
+    /// <param name="shadow">Whether it is shadowed, as <see cref="DrawAt"/> says.</param>
+    /// <returns>Its left edge, in pixels.</returns>
+    public float DrawRightAt(string text, float right, float y, float size, Bgra32 colour, bool shadow = false)
+    {
+        float left = right - MeasureAt(text, size);
+        DrawAt(text, left, y, size, colour, shadow);
+        return left;
+    }
+
+    /// <summary>Draws a line set near a height, centred across a point.</summary>
+    /// <param name="text">The line.</param>
+    /// <param name="centre">Its middle, across, in pixels.</param>
+    /// <param name="y">Its top edge, in pixels.</param>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <param name="colour">Its colour.</param>
+    /// <param name="shadow">Whether it is shadowed, as <see cref="DrawAt"/> says.</param>
+    /// <returns>Its left edge, in pixels.</returns>
+    public float DrawCentredAt(string text, float centre, float y, float size, Bgra32 colour, bool shadow = false)
+    {
+        float left = centre - (MeasureAt(text, size) * 0.5f);
+        DrawAt(text, left, y, size, colour, shadow);
+        return left;
+    }
+
+    /// <summary>A line set near a height cut to a width, three stops -- which every title's font has -- where it was cut.</summary>
+    /// <param name="text">The line.</param>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <param name="width">The widest it may be, in pixels.</param>
+    /// <returns>The line, whole or cut.</returns>
+    public string ClipAt(string text, float size, float width)
+    {
+        if (width <= 0f || MeasureAt(text, size) <= width)
+        {
+            return text;
+        }
+
+        for (int length = text.Length - 1; length > 0; length--)
+        {
+            string cut = string.Concat(text.AsSpan(0, length).TrimEnd(), "...");
+            if (MeasureAt(cut, size) <= width)
+            {
+                return cut;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>Breaks a line set near a height into rows no wider than a width, the first narrower, a word too long for a row cut.</summary>
+    /// <param name="text">The line.</param>
+    /// <param name="size">The line's height asked for, in pixels.</param>
+    /// <param name="first">The first row's width, in pixels.</param>
+    /// <param name="rest">The later rows' width, in pixels.</param>
+    /// <returns>The rows.</returns>
+    public List<string> WrapAt(string text, float size, float first, float rest)
+    {
+        var rows = new List<string>(2);
+        int start = 0;
+        float room = Math.Max(size, first);
+        while (start < text.Length)
+        {
+            if (MeasureAt(text[start..], size) <= room)
+            {
+                rows.Add(text[start..]);
+                break;
+            }
+
+            // The most that fits, found by halving; then back to the last space within it, if any.
+            int low = 1;
+            int high = text.Length - start;
+            while (low < high)
+            {
+                int mid = (low + high + 1) / 2;
+                if (MeasureAt(text.Substring(start, mid), size) <= room)
+                {
+                    low = mid;
+                }
+                else
+                {
+                    high = mid - 1;
+                }
+            }
+
+            int space = text.LastIndexOf(' ', start + low - 1, low);
+            int end = space > start ? space : start + low;
+            rows.Add(text[start..end]);
+            start = end;
+            while (start < text.Length && text[start] == ' ')
+            {
+                start++;
+            }
+
+            room = Math.Max(size, rest);
+        }
+
+        if (rows.Count == 0)
+        {
+            rows.Add(string.Empty);
+        }
+
+        return rows;
+    }
+
+    // The stand-in face's size for a line set near a height: as tall a line as the title's font would set.
+    private float FallbackAt(float size)
+    {
+        float perUnit = _fallback.LineHeight(1f);
+        return perUnit > 0f ? LineHeightAt(size) / perUnit : size;
     }
 
     // Whether the title's font has every letter of a string.

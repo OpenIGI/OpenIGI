@@ -7,12 +7,12 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <summary>
-/// I.G.I. 2's font for the remastered computer: the status display's own, <c>font1.fnt</c>, read on its first use.
+/// I.G.I. 2's font for the remastered computer and the session's overlays: the status display's own, <c>font1.fnt</c>, read on its first use.
 /// </summary>
 /// <param name="device">The device the font is uploaded to.</param>
 /// <param name="files">The installation's data.</param>
 /// <param name="logger">Where a font that cannot be read is told.</param>
-internal sealed class Igi2ComputerFont(IGraphicsDevice device, VirtualFileSystem files, IOpenIgiLogger logger) : IComputerFontSource
+internal sealed class Igi2TitleFont(IGraphicsDevice device, VirtualFileSystem files, IOpenIgiLogger logger) : ITitleFontSource
 {
     /// <summary>The status display's font, as <see cref="Igi2HudRenderer"/> loads it.</summary>
     public const string FontResource = "font1.fnt";
@@ -42,7 +42,7 @@ internal sealed class Igi2ComputerFont(IGraphicsDevice device, VirtualFileSystem
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException)
             {
-                logger.Warning("Computer", $"Could not read the computer's font: {ex.Message}");
+                logger.Warning("Computer", $"Could not read the title's font: {ex.Message}");
             }
 
             return _font;

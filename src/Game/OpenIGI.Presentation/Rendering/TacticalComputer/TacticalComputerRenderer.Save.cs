@@ -193,7 +193,7 @@ public sealed partial class TacticalComputerRenderer
     private void DrawSave(ComputerCanvas canvas, UiRect card, float pad, float y)
     {
         HudPalette palette = canvas.Palette;
-        ComputerText text = canvas.Text;
+        TitleText text = canvas.Text;
         float width = card.Width - (pad * 2f);
 
         if (_save.State is ComputerSaveState.Uploading or ComputerSaveState.Complete)

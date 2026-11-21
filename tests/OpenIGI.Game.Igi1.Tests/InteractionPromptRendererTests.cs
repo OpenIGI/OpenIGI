@@ -161,7 +161,7 @@ public sealed class InteractionPromptRendererTests
         int height = Height)
     {
         RecordingGraphicsDevice device = new();
-        using RemasteredHudRenderer renderer = new(device, NullLogger.Instance);
+        using RemasteredHudRenderer renderer = new(device, NullLogger.Instance, OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme);
         Assert.True(renderer.Load());
         SpriteBatch batch = new(device);
 

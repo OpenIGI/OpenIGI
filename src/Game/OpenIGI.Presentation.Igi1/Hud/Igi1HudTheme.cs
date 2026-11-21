@@ -33,7 +33,13 @@ public static class Igi1HudTheme
             Danger: Bgra32.FromRgba(255, 62, 48, 255),
             Glass: Bgra32.FromRgba(4, 30, 12, 70),
             Health: Health,
-            Visibility: static _ => Phosphor),
+            Visibility: static _ => Phosphor,
+
+            // The original had no other players to show. Its status screen's own: the pale phosphor for what anyone says, the
+            // phosphor for this player's side, the alarm red for the other's.
+            Plain: Bgra32.FromRgba(205, 255, 214, 255),
+            Ally: Phosphor,
+            Enemy: Bgra32.FromRgba(255, 62, 48, 255)),
         new HudMotifs(HudCorner.Cut, CornerSize: 8f, Hairline: 1f, BracketLength: 8f, Shimmer: false, DoubleRules: false),
         new HudFxSettings
         {
