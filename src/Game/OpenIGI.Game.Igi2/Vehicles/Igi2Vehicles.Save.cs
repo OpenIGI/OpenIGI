@@ -19,15 +19,24 @@ public sealed partial class Igi2TrainTask : ISavedState
     }
 
     /// <inheritdoc/>
-    /// <remarks>A locomotive is put back on its rails where it was, its carriages with it.</remarks>
+    /// <remarks>
+    /// Each car stands where it was saved, its model object's place read back as the original's is, and it stood there as the tick
+    /// began too: <c>Train_UpdateInternalDataAfterLoadHandler</c>'s <c>Train_Move</c> takes the last place from the place just
+    /// read. Where it stood before the load is not kept as its last place, or a train standing still is drawn swept from there to
+    /// here every tick until it next moves. A locomotive is then put back on its rails, its carriages with it.
+    /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        Igi2ModelObjState.Read(reader);
+        (Vector3d at, float[] orientation, _) = Igi2ModelObjState.Read(reader);
         _realThrust = reader.Real();
         _idealThrust = reader.Real();
         _speed = reader.Real();
         _position = reader.Real();
+        _at = at;
+        _orientation = orientation;
+        _lastAt = at;
+        _lastOrientation = [.. orientation];
         if (!IsCarriage)
         {
             Move(int.MinValue);

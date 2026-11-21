@@ -10,6 +10,7 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Saves;
 using OpenIGI.Game.World;
@@ -302,6 +303,34 @@ public sealed class RetailIgi2LevelAiTests
         Assert.True(seen);
         Assert.True(held, "The guard fired with no weapon object on his body: his flashes and casings were skipped.");
         Assert.True(shots > 8, $"The guard must fire again after his first magazine; shots={shots}.");
+    }
+
+    /// <summary>
+    /// A save written before any soldier knew of the player, loaded over the running mission after a squad has made him its target,
+    /// leaves nobody onto him: <c>AISquad_DeSerializeHandler</c> lets go of each squad's enemy targets and
+    /// <c>HumanAI_DeSerializeHandler</c> clears each readied detection, so the display no longer says anyone is searching.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_save_loaded_over_a_fight_forgets_the_player()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, _, Igi2TitlePlayer player) = Build(facing: 400);
+        player.MapHumans = [player.Human, .. soldiers.Bodies];
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
+        Igi2AiSquad[] squads = [.. m.Tree.OfType<Igi2AiSquadTask>().Select(static t => t.Squad).OfType<Igi2AiSquad>()];
+        for (int tick = 0; tick < 1800 && !squads.Any(static s => s.Targets.Count > 0); tick++)
+        {
+            m.Run.Tick();
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Assert.Contains(squads, static s => s.Targets.Count > 0);
+        Assert.NotEqual(PlayerAlertStatus.None, player.AlertStatus());
+
+        SaveScript.Load(script, m.Tree[0], Saves.Igi2SaveFormat.Context());
+
+        Assert.All(squads, static s => Assert.Empty(s.Targets));
+        Assert.Equal(PlayerAlertStatus.None, player.AlertStatus());
     }
 
     /// <summary>

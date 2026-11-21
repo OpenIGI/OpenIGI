@@ -1,3 +1,5 @@
+using OpenIGI.Game.Igi2.Detection;
+
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
 /// <content>
@@ -35,15 +37,21 @@ public sealed partial class Igi2HumanAi
     }
 
     /// <summary>
-    /// Reads its save state back, <c>HumanAI_DeSerializeHandler</c>: its detection, events and actions are cleared and its weight moved
-    /// to its saved node; its channels are let go, its view is the idle one, and its search and movement are dropped; its patrols are
-    /// found again by id; and a soldier that was patrolling with somewhere to go patrols again, its way there searched from its node.
+    /// Reads its save state back, <c>HumanAI_DeSerializeHandler</c>: its detection, once readied (<c>isDetectionInitialzed</c>, not
+    /// whether it is switched on), events and actions are cleared and its weight moved to its saved node; its channels are let go,
+    /// its view is the idle one, its detection looks at how lit things are again, and its search and movement are dropped; a door it
+    /// had triggered is let go, its queued lines are dropped and its legal nodes no longer hold it; its patrols are found again by
+    /// id; and a soldier that was patrolling with somewhere to go patrols again, its way there searched from its node.
     /// </summary>
     /// <param name="reader">The reader.</param>
+    /// <remarks>
+    /// Nothing it knew of an enemy before the load is kept: a save is loaded over the running level, and what a soldier saw after it
+    /// was written is not in it.
+    /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        if (IsDetection)
+        if (HasDetection)
         {
             Detection.Clear();
         }
@@ -73,9 +81,22 @@ public sealed partial class Igi2HumanAi
         }
 
         UseIdleView();
+        if (HasDetection)
+        {
+            Detection.Flags &= ~Igi2AiDetection.NoVisibilityRange;
+        }
+
         PathSearch.Clear();
         DestinationNode = CurrentNode;
         ClearMovementQueue();
+        if (IsDoorTriggered)
+        {
+            Door = null;
+            IsDoorTriggered = false;
+        }
+
+        _soundQueue.Clear();
+        LegalNodes = (LegalNodes.Node1, LegalNodes.Node2, false);
 
         Patrols.Clear();
         for (int i = 0; i < Math.Min(patrols, Igi2PatrolList.Capacity); i++)

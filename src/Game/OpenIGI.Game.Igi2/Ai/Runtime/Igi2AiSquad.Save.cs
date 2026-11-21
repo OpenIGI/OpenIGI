@@ -115,9 +115,14 @@ public sealed partial class Igi2AiSquad
 
     /// <summary>
     /// Reads its save state back, <c>AISquad_DeSerializeHandler</c>: its actions are popped without their lines or the members' stacks,
-    /// the voices are free to play again, its events are dropped, and each saved action is put back by its kind with its state.
+    /// the voices are free to play again, its enemy targets (<c>atEnemyTarget</c>) and the lines it was playing are let go, its events
+    /// are dropped, and each saved action is put back by its kind with its state.
     /// </summary>
     /// <param name="reader">The reader.</param>
+    /// <remarks>
+    /// A target it still held from before the load kept ordering its members to fire on the player and to stay in combat, every tick,
+    /// though the save was written while it knew of nobody.
+    /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -127,6 +132,8 @@ public sealed partial class Igi2AiSquad
         }
 
         Array.Clear(World.VoiceLastPlayed);
+        _targets.Clear();
+        ClearPlayingSounds();
         _events.Clear();
         IsDead = reader.Bool();
         Flags = reader.Int();
