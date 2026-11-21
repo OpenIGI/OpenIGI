@@ -41,8 +41,14 @@ public sealed partial class PlayerBody
         return each;
     }
 
-    // Moves the body by a share of a knock, through the walls as its own move is; returns how far it actually went.
-    private Vector3d SlideBy(Vector3d delta)
+    /// <summary>
+    /// Moves the body from outside its own tick -- a share of a knock, a conveyor belt's push -- through the walls as its own move
+    /// is: a wall slides it along.
+    /// </summary>
+    /// <param name="delta">How far, in world units.</param>
+    /// <returns>How far it actually went.</returns>
+    /// <remarks>The ground is left to the next tick's move, whose step-down finds the floor under the new place.</remarks>
+    public Vector3d SlideBy(Vector3d delta)
     {
         Vector3d start = Position;
         Vector3d next = start + delta;

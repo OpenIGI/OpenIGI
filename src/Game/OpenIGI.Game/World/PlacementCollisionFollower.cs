@@ -141,12 +141,17 @@ public sealed class PlacementCollisionFollower
         return false;
     }
 
-    // The placement under a point within a step -- half a metre above the feet to a metre below -- by its place in the list, or -1.
-    private int Under(Vector3d feet) =>
+    /// <summary>What a point stands on within a step: from half a metre above the feet to a metre below.</summary>
+    /// <param name="feet">The point, in world units: a human's feet.</param>
+    /// <param name="placement">Receives the placement stood on.</param>
+    /// <param name="footing">Receives the face stood on, its material among it.</param>
+    /// <returns><see langword="true"/> when the point stands on one of the level's placements.</returns>
+    public bool TryStandingOn(Vector3d feet, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out WorldPlacement? placement, out WorldRayHit footing) =>
         _solids.TryIdentify(
-            new Vector3d(feet.X, feet.Y, feet.Z + 2048.0), new Vector3d(feet.X, feet.Y, feet.Z - 4096.0), out _, out WorldPlacement? struck, out _)
-        && struck is not null
-        && _indexOf.TryGetValue(struck, out int index)
-            ? index
-            : -1;
+            new Vector3d(feet.X, feet.Y, feet.Z + 2048.0), new Vector3d(feet.X, feet.Y, feet.Z - 4096.0), out _, out placement, out footing)
+        && placement is not null;
+
+    // The placement under a point within a step, by its place in the list, or -1.
+    private int Under(Vector3d feet) =>
+        TryStandingOn(feet, out WorldPlacement? struck, out _) && _indexOf.TryGetValue(struck, out int index) ? index : -1;
 }

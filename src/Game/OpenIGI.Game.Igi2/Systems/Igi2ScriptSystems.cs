@@ -108,6 +108,10 @@ internal static class Igi2ScriptSystems
 
         Igi2Gameplay.HearAiEvents(everyone, () => player.Ai);
 
+        // The soldiers another game's stand for act the level's cutscenes through their doubles, and ride its movers on them.
+        Ai.Runtime.Igi2AiWorld ai = player.Ai;
+        Soldiers.Igi2SoldierDoubles.Attach(level, b.Root, task => task.Ai is { } mind && ai.Graphs?.Graph(mind.GraphId)?.Parent is not null);
+
         // Another game's humans joined to the level hear its AI events after its own, and are struck by its blasts.
         player.Ai.OtherHumans = level.Joined.Humans;
         player.Explosions?.Joined = level.Joined;

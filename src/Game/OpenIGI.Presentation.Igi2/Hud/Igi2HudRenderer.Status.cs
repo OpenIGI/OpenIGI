@@ -217,7 +217,7 @@ public sealed partial class Igi2HudRenderer
                     tall = below + ActionItem(batch, give.PickupSprite, ThrowAwaySprite, x, y + below);
                 }
             }
-            else if (item is IIgi2Activatable target && InteractionIcon(target) is { } icon)
+            else if (item is IIgi2Activatable target && Igi2ActionBadge.Of(target) is { } icon)
             {
                 tall = ActionItem(batch, icon, null, x, y);
             }
@@ -261,53 +261,33 @@ public sealed partial class Igi2HudRenderer
         return frame.Height;
     }
 
-    /// <summary>Resolves the retail action badge for the target the human has actually selected.</summary>
-    /// <param name="target">The selected target.</param>
-    /// <returns>The status archive sprite name, or null when the target has no badge.</returns>
-    public static string? InteractionIcon(IIgi2Activatable target) => target switch
-    {
-        IIgi2Door { IsLocked: true, IsPickable: true } => "action_picklock.spr",
-        Igi2GenericTbaTask { Sprite.Length: > 0 } action => action.Sprite,
-        { Kind: Igi2ActivateKind.Door } => "a_door.spr",
-        { Kind: Igi2ActivateKind.Cabinet } => "action_searchcab.spr",
-        { Kind: Igi2ActivateKind.Terminal } => "action_comput.spr",
-        { Kind: Igi2ActivateKind.Switch } => "action_pressbutton.spr",
-        { Kind: Igi2ActivateKind.GenericTba } => "a_codepad.spr",
-        { Kind: Igi2ActivateKind.Ladder } => "a_ladder.spr",
-        { Kind: Igi2ActivateKind.Wire } => "a_wire.spr",
-        { Kind: Igi2ActivateKind.Fence } => "a_fence.spr",
-        { Kind: Igi2ActivateKind.StationaryGun } => "a_gun.spr",
-        { Kind: Igi2ActivateKind.SilentKill } => "a_silent.spr",
-        _ => null,
-    };
-
     private void DrawMessages(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
-        float y = title.IsCutscenePlaying ? height - 100f : 36f;
+
+        // StatusMessageScreen_DrawHandler: in a cutscene only the line sent last, left-aligned low on the display.
+        if (title.IsCutscenePlaying)
+        {
+            DrawCutsceneLine(batch, title, width, height);
+            return;
+        }
+
+        float y = 36f;
         foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
-            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying || _font is not { } font) { continue; }
+            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message is not { IsCutsceneMessage: false } || _font is not { } font) { continue; }
 
-            // StatusMessageScreen_FormatMessageText: a cutscene's line wraps to most of the display's width, a message to its box's
-            // forty "A"s less six; the last three lines show.
+            // StatusMessageScreen_FormatMessageText: a message wraps to its box's forty "A"s less six; the last three lines show.
             string printed = slot.Text[..Math.Min(slot.Printed, slot.Text.Length)];
-            float wrap = title.IsCutscenePlaying
-                ? width * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneWidthShare
-                : (font.Measure(OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthString).Width
-                    * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthCount) - OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxMargin;
+            float wrap = (font.Measure(OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthString).Width
+                * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthCount) - OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxMargin;
             foreach (string line in WrappedLines(font, printed, wrap))
             {
-                font.DrawCentered(batch, line, width * 0.5f * _scale, y * _scale, Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
+                font.DrawCentered(batch, line, width * 0.5f * _scale, y * _scale, Bgra32.FromRgba(255, 255, 255, Channel(slot.Opacity)), _scale, _scale);
                 y += 28f;
             }
         }
 
         // The other game's mission's lines, under the player's own, in the same face.
-        if (title.IsCutscenePlaying)
-        {
-            return;
-        }
-
         foreach (OpenIGI.Game.World.StatusMessageDisplay line in _missionMessages)
         {
             if (line.IsCutscene || line.RevealedCharacters <= 0)
@@ -344,6 +324,27 @@ public sealed partial class Igi2HudRenderer
                 Bgra32.FromRgba(255, 255, 255, 255),
                 _scale,
                 _scale);
+        }
+    }
+
+    // StatusMessageScreen_DrawCutSceneMessage: the cutscene's line as its three tilemaps are registered, each at the display's
+    // left and one line under the last, whole -- they are never faded -- in the cutscene's font, which it is wrapped in too.
+    private void DrawCutsceneLine(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
+    {
+        if (title.StatusMessages.CutsceneLine is not { Printed: > 0 } slot
+            || Font(OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneFont) is not { } font)
+        {
+            return;
+        }
+
+        string printed = slot.Text[..Math.Min(slot.Printed, slot.Text.Length)];
+        float x = width * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneLeftShare;
+        float y = height * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneTopShare;
+        Bgra32 colour = Bgra32.FromRgba(255, 255, 255, Channel(slot.Opacity));
+        foreach (string line in WrappedLines(font, printed, width * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneWidthShare))
+        {
+            font.Draw(batch, line, x * _scale, y * _scale, colour, _scale, _scale);
+            y += font.LineHeight;
         }
     }
 

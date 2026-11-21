@@ -449,7 +449,8 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             models,
             random,
             worn);
-        foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies)
+        // A double is readied as a body is (Igi2HumanSoldierTask.Double), but has no collider for the world to hold.
+        foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies.Concat(soldiers.Doubles))
         {
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
 

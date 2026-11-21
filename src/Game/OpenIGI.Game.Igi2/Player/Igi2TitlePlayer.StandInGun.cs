@@ -39,7 +39,7 @@ public sealed partial class Igi2TitlePlayer
     }
 
     // The player standing in, while it is the one played: not while this player's own body mans a gun for it.
-    private ITitlePlayer? ActingStandIn => MansGunForStandIn ? null : StandInPlayer;
+    internal ITitlePlayer? ActingStandIn => MansGunForStandIn ? null : StandInPlayer;
 
     // Carries the player standing in at the gun's seat while this body mans a gun, and puts it down as the gun is left. Answers
     // whether this body runs the tick.

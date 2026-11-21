@@ -170,15 +170,18 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
         }
 
         int key = 0;
+        // A cutscene shows the line it sent last alone (StatusMessageScreen_DrawHandler).
+        OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot? cutscene = title.IsCutscenePlaying ? title.StatusMessages.CutsceneLine : null;
         foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
             key++;
-            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying)
+            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying
+                || (cutscene is not null && !ReferenceEquals(slot, cutscene)))
             {
                 continue;
             }
 
-            model.AddMessage(new HudMessageView(slot.Text[..Math.Min(slot.Printed, slot.Text.Length)], slot.Fade, key));
+            model.AddMessage(new HudMessageView(slot.Text[..Math.Min(slot.Printed, slot.Text.Length)], slot.Opacity, key));
         }
     }
 
@@ -265,7 +268,7 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
                 HudIcon second = context is Igi2WeaponTypeTask give ? new HudIcon(give.PickupSprite) : HudIcon.None;
                 model.AddAction(new HudActionView(new HudIcon(pickup.WeaponType.PickupSprite), second, second.IsSome ? new HudIcon(ThrowAwaySprite) : HudIcon.None, pickup.WeaponType.WeaponId));
             }
-            else if (item is IIgi2Activatable target && InteractionIcon(target) is { } icon)
+            else if (item is IIgi2Activatable target && Igi2ActionBadge.Of(target) is { } icon)
             {
                 model.AddAction(new HudActionView(new HudIcon(icon), HudIcon.None, HudIcon.None, icon));
             }

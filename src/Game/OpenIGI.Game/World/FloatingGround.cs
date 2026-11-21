@@ -17,6 +17,9 @@ public sealed class FloatingGround(IGroundHeightField? bed, Func<Vector3d, doubl
     /// <summary>How far under the surface a floating human's feet are, in world units: 1.35 metres, its eyes a hand above the water.</summary>
     public const double Draught = 1.35 * 4096.0;
 
+    // How far over the plane the bed is looked for, to find land standing over the water: higher than any level's ground.
+    private const double LandAboveUnits = 4096.0 * 10000.0;
+
     private readonly Func<Vector3d, double?> _surface = surface ?? throw new ArgumentNullException(nameof(surface));
 
     /// <inheritdoc/>
@@ -28,11 +31,17 @@ public sealed class FloatingGround(IGroundHeightField? bed, Func<Vector3d, doubl
             return onBed;
         }
 
-        // The plane counts only from at or above it, as ground does, and only where the bed is deeper.
+        // The plane counts only within the window, as ground does, and only where the bed is deeper: a level's water can run on
+        // under its land, and a search from high over the land would otherwise meet the plane before it reached the land.
         double afloat = top - Draught;
-        if (afloat > z + aboveUnits || (onBed && ground.Height >= afloat))
+        if (afloat > z + aboveUnits || afloat < z - TerrainHeightQuery.SearchDepthUnits || (onBed && ground.Height >= afloat))
         {
             return onBed;
+        }
+
+        if (!onBed && bed is not null && bed.TryGetGround(x, y, afloat, LandAboveUnits, out TerrainGround land) && land.Height >= afloat)
+        {
+            return false;
         }
 
         ground = new TerrainGround(afloat, 0.0, 0.0, 1.0);

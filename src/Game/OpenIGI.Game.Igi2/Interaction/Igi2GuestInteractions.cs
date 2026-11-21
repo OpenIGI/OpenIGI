@@ -25,16 +25,6 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </remarks>
 public static class Igi2GuestInteractions
 {
-    // The sprites Project I.G.I. shows for each kind of thing, by its own names.
-    private const string SwitchSprite = "action_pressbutton.spr";
-    private const string DoorSprite = "a_door.spr";
-    private const string CabinetSprite = "action_searchcab.spr";
-    private const string TerminalSprite = "action_comput.spr";
-    private const string ActionSprite = "a_c4.spr";
-    private const string WireSprite = "a_wire.spr";
-    private const string FenceSprite = "a_fence.spr";
-    private const string GunSprite = "stationary.spr";
-
     private static readonly float[] Upright = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
 
     /// <summary>Makes an interaction for each thing of the level a human works by hand, in the order the level holds them.</summary>
@@ -74,15 +64,18 @@ public static class Igi2GuestInteractions
     }
 
     /// <summary>The level's ladders as Project I.G.I.'s humans climb them (<see cref="LadderPlacement"/>), in the order the level holds them.</summary>
-    /// <param name="levelRoot">The level, once its systems have prepared its tasks.</param>
+    /// <param name="activatables">
+    /// What the level's systems made activatable (<c>Igi2LevelBuild.Activatables</c>): its placed ladders and those its buildings'
+    /// attach points make, which are no tasks of the level.
+    /// </param>
     /// <returns>The ladders: each from its foot to its head, with where it is got on at the top.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="activatables"/> is <see langword="null"/>.</exception>
     /// <remarks>The reverse of <see cref="Igi2HostLadder"/>: the same four points and frame, read the other way.</remarks>
-    public static IReadOnlyList<LadderPlacement> Ladders(GameTask levelRoot)
+    public static IReadOnlyList<LadderPlacement> Ladders(IEnumerable<IIgi2Activatable> activatables)
     {
-        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(activatables);
         List<LadderPlacement> ladders = [];
-        foreach (IIgi2Ladder ladder in levelRoot.Descendants().OfType<IIgi2Ladder>())
+        foreach (IIgi2Ladder ladder in activatables.OfType<IIgi2Ladder>())
         {
             IReadOnlyList<float> m = ladder.Frame;
             if (m.Count >= 9)
@@ -112,18 +105,18 @@ public static class Igi2GuestInteractions
             return ForFence(fence);
         }
 
-        (InteractionActivateType type, IReadOnlyList<float> frame, float seconds, string sprite)? shape = target switch
+        (InteractionActivateType type, IReadOnlyList<float> frame, float seconds)? shape = target switch
         {
-            IIgi2Pressable => (InteractionActivateType.Switch, Upright, 0f, SwitchSprite),
-            IIgi2Door door => (InteractionActivateType.Door, door.CurrentOrientation, door.PickLockTime, DoorSprite),
-            IIgi2Cabinet cabinet => (InteractionActivateType.Cabinet, cabinet.Frame, cabinet.SearchTime, CabinetSprite),
+            IIgi2Pressable => (InteractionActivateType.Switch, Upright, 0f),
+            IIgi2Door door => (InteractionActivateType.Door, door.CurrentOrientation, door.PickLockTime),
+            IIgi2Cabinet cabinet => (InteractionActivateType.Cabinet, cabinet.Frame, cabinet.SearchTime),
             IIgi2WorkedActivatable { Kind: Igi2ActivateKind.Terminal } terminal =>
-                (InteractionActivateType.Terminal, terminal.CurrentOrientation, terminal.ActivateTime, TerminalSprite),
+                (InteractionActivateType.Terminal, terminal.CurrentOrientation, terminal.ActivateTime),
             IIgi2WorkedActivatable { Kind: Igi2ActivateKind.GenericTba } action =>
-                (InteractionActivateType.Generic, action.CurrentOrientation, action.ActivateTime, ActionSprite),
+                (InteractionActivateType.Generic, action.CurrentOrientation, action.ActivateTime),
             _ => null,
         };
-        if (shape is not var (type, frame, seconds, sprite) || frame.Count < 9)
+        if (shape is not var (type, frame, seconds) || frame.Count < 9)
         {
             return null;
         }
@@ -138,7 +131,7 @@ public static class Igi2GuestInteractions
             orientation,
             Igi2Pose.Gamma(frame[0], frame[3]),
             Math.Max(1, (int)MathF.Round(seconds * 30f)),
-            sprite,
+            Badge(target),
             door: null,
             isPickable: false,
             stationaryGun: null,
@@ -166,7 +159,7 @@ public static class Igi2GuestInteractions
             Matrix(Upright),
             0f,
             durationTicks: 1,
-            GunSprite,
+            Badge(gun),
             door: null,
             isPickable: false,
             stationaryGun: null,
@@ -204,7 +197,7 @@ public static class Igi2GuestInteractions
             Matrix(frame),
             Igi2Pose.Gamma(frame[0], frame[3]),
             durationTicks: 1,
-            WireSprite,
+            Badge(wire),
             door: null,
             isPickable: false,
             stationaryGun: null,
@@ -240,7 +233,7 @@ public static class Igi2GuestInteractions
             Matrix(frame),
             Igi2Pose.Gamma(frame[0], frame[3]),
             WorldInteraction.FenceTraversalTicks,
-            FenceSprite,
+            Badge(fence),
             door: null,
             isPickable: false,
             stationaryGun: null,
@@ -258,6 +251,9 @@ public static class Igi2GuestInteractions
         interaction.SetConditions(on: null, locked: null, electric: () => fence.IsElectric);
         return interaction;
     }
+
+    // The badge I.G.I. 2 shows for the thing, which the human standing in is shown as well: the level's own art, not its game's.
+    private static string Badge(IIgi2Activatable target) => Igi2ActionBadge.Of(target) ?? string.Empty;
 
     private static Matrix3f Matrix(IReadOnlyList<float> frame) =>
         new(frame[0], frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8]);

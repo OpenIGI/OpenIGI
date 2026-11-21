@@ -139,7 +139,7 @@ public sealed class Igi2StatusPresentationTests
     public void Timed_actions_keep_their_authored_badge()
     {
         Igi2GenericTbaTask action = new() { Sprite = "STATUSSCREEN:action_picklock.spr" };
-        Assert.Equal(action.Sprite, Igi2HudRenderer.InteractionIcon(action));
+        Assert.Equal(action.Sprite, Igi2ActionBadge.Of(action));
     }
 
     private static VirtualFileSystem Files()

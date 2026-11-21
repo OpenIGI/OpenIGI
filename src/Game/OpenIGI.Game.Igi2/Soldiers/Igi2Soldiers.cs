@@ -14,18 +14,26 @@ namespace OpenIGI.Game.Igi2.Soldiers;
 public sealed class Igi2Soldiers
 {
     private readonly List<Igi2HumanSoldier> _bodies;
+    private readonly List<Igi2HumanSoldier> _doubles;
     private TitleWorldModel[]? _all;
     private long _drawnTick = -1;
     // Each active body this tick, and its models once something has asked for them.
     private readonly List<(Igi2HumanSoldier Soldier, IReadOnlyList<TitleWorldModel>? Parts)> _perBody = [];
 
-    private Igi2Soldiers(List<Igi2HumanSoldier> bodies)
+    private Igi2Soldiers(List<Igi2HumanSoldier> bodies, List<Igi2HumanSoldier> doubles)
     {
         _bodies = bodies;
+        _doubles = doubles;
     }
 
     /// <summary>Gets the bodies, in the order the level makes them.</summary>
     public IReadOnlyList<Igi2HumanSoldier> Bodies => _bodies;
+
+    /// <summary>
+    /// Gets the bodies kept for the soldiers another game's stand for (<see cref="Igi2HumanSoldierTask.Double"/>), which only the
+    /// level's cutscenes run: none of <see cref="Bodies"/>, so none is drawn.
+    /// </summary>
+    public IReadOnlyList<Igi2HumanSoldier> Doubles => _doubles;
 
     /// <summary>The models the soldiers draw as a tick left them: each body posed, and the weapon in its hand.</summary>
     /// <param name="tick">The tick.</param>
@@ -122,16 +130,13 @@ public sealed class Igi2Soldiers
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(random);
         List<Igi2HumanSoldier> bodies = [];
+        List<Igi2HumanSoldier> doubles = [];
         Dictionary<string, Igi2BodyModel> looks = new(StringComparer.OrdinalIgnoreCase);
         Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in levelRoot.Descendants().OfType<Igi2HumanSoldierTask>())
         {
-            // Claimed by another game, whose body stands for it: it is given none.
-            if (task.Driver is not null)
-            {
-                continue;
-            }
-
+            // Claimed by another game, whose body stands for it: it is given a double, which the level's cutscenes alone run.
+            bool claimed = task.Driver is not null;
             string wornModel = worn is not null && worn.TryGetValue(task, out string? face) ? face : task.Model;
             Formats.World.MefModel? model = models(wornModel);
             Igi2BoneHierarchy? rig = model?.BoneHierarchy;
@@ -171,12 +176,19 @@ public sealed class Igi2Soldiers
 
             soldier.Model = look;
 
+            if (claimed)
+            {
+                task.Double = soldier;
+                doubles.Add(soldier);
+                continue;
+            }
+
             soldier.Collider = new Igi2BoneCollider(soldier, soldier);
             task.Body = soldier;
             bodies.Add(soldier);
         }
 
-        return new Igi2Soldiers(bodies);
+        return new Igi2Soldiers(bodies, doubles);
     }
 
     /// <summary>

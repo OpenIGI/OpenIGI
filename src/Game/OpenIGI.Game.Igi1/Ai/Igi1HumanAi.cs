@@ -217,6 +217,20 @@ public sealed partial class Igi1HumanAi
     /// <summary>Gets the soldier's world position, in engine units.</summary>
     public Vector3d Position { get; private set; }
 
+    /// <summary>
+    /// Stands the soldier somewhere else at once, facing another way -- where another game's body left it -- and has it find its
+    /// place on its graph from there, going nowhere yet.
+    /// </summary>
+    /// <param name="position">Where it stands, in engine units.</param>
+    /// <param name="facing">Its heading, radians about Z.</param>
+    public void StandAt(Vector3d position, float facing)
+    {
+        Position = position;
+        Facing = Igi1AiGeometry.Wrap(facing);
+        CurrentNode = NearestNode(position);
+        DestinationNode = -1;
+    }
+
     /// <summary>Gets the soldier's heading, in radians about Z.</summary>
     public float Facing { get; private set; }
 

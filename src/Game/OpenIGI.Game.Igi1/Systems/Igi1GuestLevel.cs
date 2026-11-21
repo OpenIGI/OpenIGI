@@ -37,7 +37,7 @@ public sealed class Igi1GuestLevel
     private readonly GuestTaskIds _ids;
 
     // The player standing in the host's level, once one does: its rig and what it is hurt and heard in.
-    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings, Igi1PlayerLife Life)? _player;
+    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings, Igi1PlayerLife Life, HumanPlayerTask Task)? _player;
 
     // What the player walks on: the host's ground, or what the host made of it for the player.
     private IGroundHeightField? _playerGround;
@@ -192,7 +192,7 @@ public sealed class Igi1GuestLevel
             heard.Stage.Player = rig;
         }
 
-        _player = (rig, start.Surroundings, life);
+        _player = (rig, start.Surroundings, life, start.Task);
 
         // It takes the game's guns lying in the level as it reaches them, with the game's cue.
         rig.UseGunPickups(GunPickups);
@@ -327,7 +327,7 @@ public sealed class Igi1GuestLevel
         List<Igi1HumanLineCollider> colliders = [];
         foreach (HumanSoldierTask soldier in Root.Descendants().OfType<HumanSoldierTask>())
         {
-            Igi1StandIn standIn = new(soldier, start.DamageFromHost);
+            Igi1StandIn standIn = new(soldier, start.DamageFromHost) { Simulation = soldiers };
             Igi1HumanLineCollider collider = new(soldier, start.HumanGroup, start.HumanMaterial) { Handler = standIn };
             world.AddCollider(collider);
             standIns[soldier] = standIn;
@@ -340,6 +340,12 @@ public sealed class Igi1GuestLevel
         {
             DamageScale = start.DamageToHost,
             Sound = start.Audio is { } audio ? (name, at) => audio.Play(name, at) : null,
+
+            // The game's own player is met as the game's own missions meet theirs: posed, through the shooter's two rolls.
+            Rolls = start.Random,
+            Player = () => _player is { } own && !own.Life.Health.IsDead
+                ? new Igi1HostedPlayerTarget(own.Task, own.Rig.Body.Position, own.Rig.Body.Yaw)
+                : null,
         };
         soldiers.SetGunShotWorld(rounds, new GunShotSoundWindows(), afterMarch: null);
         // Their weapons' reports, and the player's, through the host's audio by the game's own rule.

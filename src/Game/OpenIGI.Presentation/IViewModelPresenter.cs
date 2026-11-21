@@ -92,11 +92,25 @@ public interface ITitleViewModelPresenter : IDisposable
 
 /// <summary>Draws the rigid models a title's own player has lying in its level, among the world's geometry.</summary>
 /// <remarks>
+/// <para>
 /// The world-pass counterpart of <see cref="ITitleViewModelPresenter"/>, for a player that is also
 /// <see cref="ITitleWorldModels"/>: the same models from the same packs, under the world's projection and depth.
+/// </para>
+/// <para>
+/// Made for itself (a <see cref="ViewModelPresentationRequest"/> for this interface) where the arms the player sees are
+/// another's -- a mod's player standing in -- so the level's own models are still drawn by the level's own game.
+/// </para>
 /// </remarks>
-public interface ITitleWorldModelPresenter
+public interface ITitleWorldModelPresenter : IDisposable
 {
+    /// <summary>Gets or sets how the level lights an object with no bake, which is what these models are.</summary>
+    ObjectShading Shading { get; set; }
+
+    /// <summary>Gets ready to draw a mission's models.</summary>
+    /// <param name="mission">The mission whose packs the models are read from.</param>
+    /// <returns><see langword="false"/> when the mission has nothing to draw them from.</returns>
+    bool Load(LoadedMission mission);
+
     /// <summary>Gets or sets how a body gives up detail with distance, or <see langword="null"/> to draw each whole.</summary>
     Rendering.ModelLodPolicy? Lod
     {

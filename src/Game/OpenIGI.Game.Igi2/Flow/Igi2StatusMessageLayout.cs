@@ -15,6 +15,24 @@ public static class Igi2StatusMessageLayout
     /// <summary>How much of the display's width a cutscene's line takes, <c>0.96875</c>.</summary>
     public const float CutsceneWidthShare = 0.96875f;
 
+    /// <summary>
+    /// How far across the display a cutscene's line starts, the display's width times <c>0.015625</c>
+    /// (<c>StatusMessageScreen_DrawHandler</c>): left-aligned, as its tilemaps are registered.
+    /// </summary>
+    public const float CutsceneLeftShare = 0.015625f;
+
+    /// <summary>
+    /// The font a cutscene's line is set in, <c>g_zFontName_0</c>'s second name (<c>StatusMessageScreen_GetFont</c>, for a message
+    /// whose <c>isCutSceneMessage</c> is set): the computer's objective text's.
+    /// </summary>
+    public const string CutsceneFont = "font4.fnt";
+
+    /// <summary>The font any other message is set in, <c>g_zFontName_0</c>: the computer log's.</summary>
+    public const string MessageFont = "font1.fnt";
+
+    /// <summary>How far down the display a cutscene's first line stands, its height times the double <c>0.8645833134651184</c>.</summary>
+    public const float CutsceneTopShare = 0.8645833134651184f;
+
     /// <summary>The string a box's width is forty of, <c>"A"</c> (<c>StatusMessageScreen_RegisterMessage</c>).</summary>
     public const string BoxWidthString = "A";
 

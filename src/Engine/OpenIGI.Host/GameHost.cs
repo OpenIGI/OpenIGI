@@ -1042,6 +1042,7 @@ public sealed partial class GameHost : IDisposable
         _retailMenus?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
+        _titleWorldModels?.Dispose();
         _titleHud?.Dispose();
         _gi?.Dispose();
         _detailMaps?.Dispose();

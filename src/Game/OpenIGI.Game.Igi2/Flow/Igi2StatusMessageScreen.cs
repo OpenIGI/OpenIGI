@@ -24,6 +24,12 @@ public sealed class Igi2StatusMessageSlot
     /// <summary>Gets how far its box has faded in, a seventh a tick from its third tick.</summary>
     public float Fade { get; internal set; }
 
+    /// <summary>
+    /// Gets how opaque the line is drawn: a cutscene's whole, its tilemaps registered as they were made and never faded
+    /// (<c>StatusMessageScreen_DrawCutSceneMessage</c>); a message's by its box's fade.
+    /// </summary>
+    public float Opacity => Message is { IsCutsceneMessage: true } ? 1f : Fade;
+
     /// <summary>Gets how far its box has opened, a half a tick over its first two.</summary>
     public float Open { get; internal set; }
 }
@@ -129,6 +135,28 @@ public sealed class Igi2StatusMessageScreen
         }
 
         _log.Clear();
+    }
+
+    /// <summary>
+    /// Gets the line a cutscene shows: of the places holding a cutscene's line, the one sent last -- the first of them where two
+    /// were sent on one tick -- as <c>StatusMessageScreen_DrawHandler</c> draws that one alone, whatever others still hold a place.
+    /// </summary>
+    public Igi2StatusMessageSlot? CutsceneLine
+    {
+        get
+        {
+            Igi2StatusMessageSlot? latest = null;
+            foreach (Igi2StatusMessageSlot slot in _slots)
+            {
+                if (slot.IsUsed && slot.Message is { IsCutsceneMessage: true } message
+                    && (latest is null || latest.Message!.TickSent < message.TickSent))
+                {
+                    latest = slot;
+                }
+            }
+
+            return latest;
+        }
     }
 
     /// <summary>A tick of every place in use, <c>StatusMessageScreen_RunHandler</c> (<c>igi2 0x43D620</c>).</summary>
