@@ -53,7 +53,6 @@ src/Game/OpenIGI.Game/World/TerrainSurface.cs
 src/Game/OpenIGI.Game/World/TrainPlacementBuilder.cs
 src/Game/OpenIGI.Game/World/WireTransform.cs
 src/Game/OpenIGI.Game/World/WorldAttachmentWalker.cs
-src/Game/OpenIGI.Game/World/WorldInteraction.cs
 src/Game/OpenIGI.Game.Igi1/World/WorldInteractionCollector.cs
 src/Game/OpenIGI.Game/World/WorldPlacementOrientation.cs
 src/Game/OpenIGI.Game/World/WorldScene.cs
