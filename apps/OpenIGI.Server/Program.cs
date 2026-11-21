@@ -135,7 +135,8 @@ if (config.Room && DataChannelPeerFactory.IsAvailable())
         version,
         config.MaxPlayers,
         config.Public,
-        config.Password.Length > 0);
+        config.Password.Length > 0,
+        Net: MultiplayerProtocol.Version);
     // A server outlives any one room: when the master restarts, or is out of reach for longer than a room waits, it opens
     // another, so browsers can still join it weeks on.
     room = RoomTransport.Host(config.Master, request, new DataChannelPeerFactory(logger), logger, reopens: true);

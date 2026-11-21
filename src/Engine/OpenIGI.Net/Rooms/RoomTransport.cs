@@ -21,9 +21,13 @@ namespace OpenIGI.Net.Rooms;
 /// The Discord Activity instance it is opened for, or <see langword="null"/>: such a room has the instance's own code, and
 /// carries the game itself, as WebRTC is not allowed there.
 /// </param>
+/// <param name="Net">
+/// The network protocol version the game plays, which the room's listing shows so the website can tell which browser build can
+/// join it; <see langword="null"/> to leave it unsaid.
+/// </param>
 public sealed record RoomRequest(
     string Title, string Protocol, string Name, string Map, string Mode, string Version, int MaxPlayers, bool Public, bool Passworded,
-    string? Instance = null);
+    string? Instance = null, int? Net = null);
 
 /// <summary>Where a <see cref="RoomTransport"/> is.</summary>
 public enum RoomStatus
@@ -599,6 +603,11 @@ public sealed class RoomTransport : INetTransport
         if (request.Instance is { } instance)
         {
             body["instance"] = instance;
+        }
+
+        if (request.Net is { } net)
+        {
+            body["net"] = net;
         }
 
 

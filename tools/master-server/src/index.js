@@ -9,12 +9,13 @@
 // when the room browsers join it through is open and hosted from the same address as its heartbeat. The rest the
 // browser checks for itself, with the info query it sends every listed server.
 
-import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
+import { handleRooms, isCode as isRoomCode, netOf, readGeo } from "./rooms.js";
 import { handleParties } from "./parties.js";
 import { handleMaps } from "./maps.js";
 import { handleAccounts, isAccountsPath } from "./accounts.js";
 import { handleStats, isStatsPath, officialName } from "./stats.js";
 import { isAdmin } from "./signed.js";
+import { cleanName } from "./names.js";
 
 export { Room } from "./rooms.js";
 export { Party } from "./parties.js";
@@ -155,10 +156,11 @@ export function isOwner(request, env) {
 }
 
 // A GET answered from this location's cache while it is fresh, and otherwise asked and kept. NO_EDGE_CACHE=1 (the tests'
-// env file) asks every time, so a test sees a change at once.
+// env file, and the self-hosted master, which has no edge) skips that cache: the self-hosted one keeps its answers in its
+// own memory instead (MEMO_CACHE=1, remembered), and a test asks every time, so it sees a change at once.
 async function kept(request, env, ctx, seconds, ask) {
   if (env.NO_EDGE_CACHE === "1") {
-    return ask();
+    return env.MEMO_CACHE === "1" ? remembered(request.url, seconds, ask) : ask();
   }
 
   const cache = caches.default;
@@ -177,6 +179,49 @@ async function kept(request, env, ctx, seconds, ask) {
   keep.headers.set("cache-control", `public, max-age=${seconds}`);
   ctx.waitUntil(cache.put(key, keep.clone()));
   return keep;
+}
+
+// The answers a self-hosted master keeps in its own memory, by address: the one process every request comes to is the cache,
+// with nothing between to run (a separate store would be one more hop to the same machine). While an answer is fresh every
+// asker is handed it; once it is stale, the first asker fetches it again and every asker that comes meanwhile waits for that
+// one fetch rather than making its own, so a page full of visitors costs the list one request every few seconds.
+const memo = new Map();
+const MEMO_LIMIT = 64;
+
+/** An answer kept in memory for some seconds, asked once however many want it at the same moment. */
+export async function remembered(key, seconds, ask, now = () => Date.now()) {
+  const entry = memo.get(key);
+  if (entry?.kept && entry.until > now()) return reply(entry.kept, seconds);
+  if (entry?.pending) return reply(await entry.pending, seconds);
+
+  const pending = (async () => {
+    const answer = await ask();
+    return { status: answer.status, type: answer.headers.get("content-type") ?? "application/json", body: await answer.text() };
+  })();
+  if (memo.size >= MEMO_LIMIT && !memo.has(key)) memo.clear();
+  memo.set(key, { ...entry, pending });
+  try {
+    const got = await pending;
+    if (got.status === 200) memo.set(key, { kept: got, until: now() + seconds * 1000 });
+    else memo.delete(key);
+    return reply(got, seconds);
+  } catch (error) {
+    memo.delete(key);
+    throw error;
+  }
+}
+
+/** Forgets every kept answer: for the tests, between cases. */
+export function forgetRemembered() {
+  memo.clear();
+}
+
+// A kept answer as a response of its own: a fresh one marked for the browser (and Cloudflare in front) to keep as long.
+function reply(got, seconds) {
+  return new Response(got.body, {
+    status: got.status,
+    headers: { "content-type": got.type, "cache-control": got.status === 200 ? `public, max-age=${seconds}` : "no-store" },
+  });
 }
 
 // What a throw becomes. Out of Durable Object requests (the free plan's daily allowance, back at 00:00 UTC) or an object
@@ -311,7 +356,8 @@ export class ServerList {
       // A dedicated server's own room is the server, listed once.
       const servedRooms = new Set(servers.map((s) => s.room).filter(Boolean));
       const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view) && !servedRooms.has(r.view.room)).map((r) => r.view);
-      return json({ servers: [...servers, ...rooms] });
+      // Names are their hosts' own typing, and the list is on the website as well as in every game: a slur is masked (names.js).
+      return json({ servers: [...servers, ...rooms].map((entry) => ({ ...entry, name: cleanName(entry.name) })) });
     }
 
     // How busy things are, as counts only: never a private room's code or anyone's address.
@@ -456,7 +502,7 @@ export class ServerList {
 
 // Whether an entry differs from the one before in anything but its time and its player count: worth writing again.
 function changed(before, after) {
-  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "maxPlayers", "passworded", "region", "room", "official"]) {
+  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "net", "maxPlayers", "passworded", "region", "room", "official"]) {
     if (before[field] !== after[field]) {
       return true;
     }
@@ -510,6 +556,7 @@ function validate(body, ip, now) {
     map: body.map,
     mode: body.mode,
     version: body.version,
+    net: netOf(body.net),
     players: Math.min(players, maxPlayers),
     maxPlayers,
     passworded: body.passworded === true,

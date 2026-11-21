@@ -217,6 +217,29 @@ img { max-width: 100%; }
   .rank-row .matches { display: none; }
 }
 
+/* ---- A session on the servers list: what it is, who is on it, the two ways in. ---- */
+.sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.session { position: relative; display: flex; flex-direction: column; gap: 16px; padding: 22px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(14, 16, 14, 0.72); transition: border-color 0.15s ease, transform 0.15s ease; }
+.session:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.session.official { border-color: rgba(232, 163, 61, 0.4); background: linear-gradient(160deg, rgba(232, 163, 61, 0.1), rgba(14, 16, 14, 0.78) 45%); }
+.session-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--note); font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.chip.coop { border-color: rgba(127, 194, 140, 0.5); color: var(--ok); }
+.chip.versus { border-color: rgba(224, 115, 95, 0.5); color: var(--error); }
+.chip.official { border-color: var(--accent); color: var(--accent); }
+.chip.locked { color: var(--faint); }
+.session h3 { margin: 12px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 21px; font-weight: 700; font-stretch: 88%; }
+.session-where { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.session-count { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 4px 10px; }
+.session-count b { font-size: 26px; font-stretch: 80%; font-variant-numeric: tabular-nums; }
+.session-count > span:not(.bar) { color: var(--faint); font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.session-count .bar { align-self: center; }
+.session-ways { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+.session-ways .button { min-height: 40px; padding: 0 18px; font-size: 13.5px; }
+.button.disabled { border-style: dashed; color: var(--faint); cursor: default; }
+.button.disabled:hover { gap: 12px; background: none; border-color: var(--line-strong); }
+.session-note { color: var(--muted); font: 12px/1.5 var(--mono); }
+
 /* ---- Loading placeholders. ---- */
 .skeleton { border-radius: 12px; background: linear-gradient(90deg, rgba(236, 235, 230, 0.04) 25%, rgba(236, 235, 230, 0.09) 50%, rgba(236, 235, 230, 0.04) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease infinite; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }

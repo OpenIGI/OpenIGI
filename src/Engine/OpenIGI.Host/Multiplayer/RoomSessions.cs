@@ -63,7 +63,8 @@ public static class RoomSessions
             players + 1,
             session.Public,
             session.Password.Length > 0,
-            session.Instance);
+            session.Instance,
+            MultiplayerProtocol.Version);
         return new HostedSession(RoomTransport.Host(RoomTransport.DefaultMaster, request, peers, logger), options, titleId, GameClock.DefaultTickRate, logger);
     }
 }

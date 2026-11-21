@@ -17,6 +17,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\apps\OpenIGI.Web\wwwroot\landing\site.css" LogicalName="OpenIGI.Site.site.css" />
     <EmbeddedResource Include="..\..\apps\OpenIGI.Web\wwwroot\landing\board.js" LogicalName="OpenIGI.Site.board.js" />
+    <EmbeddedResource Include="..\..\apps\OpenIGI.Web\wwwroot\landing\sessions.js" LogicalName="OpenIGI.Site.sessions.js" />
   </ItemGroup>
 
   <ItemGroup>

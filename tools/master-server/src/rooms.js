@@ -542,6 +542,16 @@ export function readGeo(text) {
   return null;
 }
 
+/**
+ * The network protocol version a server or room says it plays (the game's MultiplayerProtocol.Version), or null for one that
+ * doesn't say: a build from before it was told. What a page offering a session checks a browser build against, which can't
+ * ask the session itself.
+ */
+export function netOf(value) {
+  const net = Number(value);
+  return value !== undefined && value !== null && Number.isInteger(net) && net >= 1 && net <= 10000 ? net : null;
+}
+
 function validateRoom(body) {
   if (!body || typeof body !== "object") {
     return "body is not JSON";
@@ -565,6 +575,7 @@ function validateRoom(body) {
     map: body.map,
     mode: body.mode,
     version: body.version,
+    net: netOf(body.net),
     maxPlayers,
     public: body.public === true,
     passworded: body.passworded === true,
@@ -594,6 +605,7 @@ export function roomView(room) {
     map: room.map,
     mode: room.mode,
     version: room.version,
+    net: room.net ?? null,
     players: room.players,
     maxPlayers: room.maxPlayers,
     passworded: room.passworded,

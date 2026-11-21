@@ -63,6 +63,9 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly ScreenStack _stack = new() { PointerSuppressed = true };
     private readonly LauncherLog _log = LauncherLog.Start();
     private readonly LauncherModel _model;
+
+    // Where launchers started after this one hand over what they were opened with (an openigi:// link), or null.
+    private readonly Services.SingleInstance? _instance;
     private readonly SkiaImageStore _images = new();
     private readonly Dictionary<string, UiPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
@@ -110,11 +113,14 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     }
 
     /// <param name="args">The command line: an <c>openigi://</c> invite link, when an invite page opened the launcher.</param>
-    public LauncherApp(string[] args)
+    /// <param name="instance">What later launchers hand over to this one, or <see langword="null"/>.</param>
+    public LauncherApp(string[] args, Services.SingleInstance? instance = null)
     {
+        _instance = instance;
         _model = new LauncherModel(_log);
         Services.InviteLinks.Register(_log.Logger);
         _model.TakeInvite(Services.InviteLinks.FromCommandLine(args ?? []));
+
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 
@@ -521,6 +527,17 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     private void OnUpdate(double elapsed)
     {
+        // A link a later launcher handed over: its game started into the session, and this launcher brought back to the front.
+        if (_instance?.Take() is { } line)
+        {
+            if (Services.InviteLinks.Read(line) is { } invite)
+            {
+                _model.TakeInvite(invite);
+            }
+
+            ShowFromTray();
+        }
+
         if (_screen is null)
         {
             return;

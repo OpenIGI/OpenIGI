@@ -1,7 +1,10 @@
-// The home page's live sections, apart from the game's own script (main.js): who is playing now, from the master's counts,
-// and the season's top operatives in either game -- Discord-linked players only, under their Discord names -- from its
-// boards, one a game. A section the master can't fill is left out rather than shown empty.
+// The home page's live sections, apart from the game's own script (main.js): who is playing now and where to join them, from
+// the master's counts and its list of sessions, and the season's top operatives in either game -- Discord-linked players
+// only, under their Discord names -- from its boards, one a game. A section the master can't fill is left out, not shown empty.
 import { GAMES, METRICS, ask, daysLeft, el, gameSwitch, number, podiumCard, rankHead, rankRow, seasonName } from "./board.js";
+import { bySessionOrder, loadBuilds, loadSessions, sessionCard } from "./sessions.js";
+
+const builds = loadBuilds();
 
 const $ = (id) => document.getElementById(id);
 let game = GAMES[0][0];
@@ -26,6 +29,16 @@ async function live() {
     section.hidden = false;
   } catch {
     section.hidden = true;
+    return;
+  }
+
+  // The three to join first: official servers, then the busiest; the rest are on the servers page.
+  try {
+    const sessions = (await loadSessions()).filter((s) => !s.passworded).sort(bySessionOrder).slice(0, 3);
+    const known = await builds;
+    $("live-sessions").replaceChildren(...sessions.map((s) => sessionCard(s, known)));
+  } catch {
+    $("live-sessions").replaceChildren();
   }
 }
 

@@ -136,6 +136,7 @@
     @keyframes beat { 0%, 100% { box-shadow: 0 0 0 0 rgba(127, 194, 140, 0.45); } 50% { box-shadow: 0 0 0 6px rgba(127, 194, 140, 0); } }
 
     #top-ranks { margin-top: 14px; }
+    #live-sessions { margin-top: 16px; }
     .top-links { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
     @media (max-width: 720px) { .top-links { align-items: flex-start; } }
 
@@ -188,6 +189,7 @@
         </a>
         <span class="nav-links">
           <a href="#play-now">Play</a>
+          <a href="/servers/">Servers</a>
           <a href="/leaderboard/">Leaderboard</a>
           <a class="wide" href="#desktop">Download</a>
           <a class="wide" href="#about">About</a>
@@ -282,10 +284,12 @@
           <div>
             <span class="mono pulse">Live now</span>
             <h2 id="live-title">On the servers right now</h2>
-            <p>Dedicated servers run around the clock, and friends' rooms open from inside the game: no ports, just a code.</p>
+            <p>Dedicated servers run around the clock, and friends' rooms open from inside the game: no ports, just a code. Join one in your browser or the desktop game.</p>
           </div>
+          <a class="section-link" href="/servers/">See every server →</a>
         </div>
         <div class="live-figures" id="live-figures"></div>
+        <div class="sessions" id="live-sessions"></div>
       </div>
     </section>
 
@@ -388,7 +392,7 @@
       <div class="wrap">
         <span>An independent reimplementation, not affiliated with the game's publishers.</span>
         <span>Background: a screenshot from the desktop build.</span>
-        <span><a href="/leaderboard/">Leaderboard</a> · <a href="/privacy/">Privacy</a> · <a href="/code-signing/">Code signing</a></span>
+        <span><a href="/servers/">Servers</a> · <a href="/leaderboard/">Leaderboard</a> · <a href="/privacy/">Privacy</a> · <a href="/code-signing/">Code signing</a></span>
       </div>
     </footer>
   </div>

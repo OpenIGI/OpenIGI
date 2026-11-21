@@ -66,6 +66,8 @@ const master :Workerd.Worker = (
     (name = "TURN_LON", text = "8.7"),
     # No edge here to keep anything at, and no allowance to spare it for.
     (name = "NO_EDGE_CACHE", text = "1"),
+    # No edge here: the list and the counts are kept in the process's own memory a few seconds instead (index.js remembered).
+    (name = "MEMO_CACHE", text = "1"),
 
     (name = "TURN_SECRET", fromEnvironment = "TURN_SECRET"),
     (name = "ADMIN_TOKEN", fromEnvironment = "ADMIN_TOKEN"),

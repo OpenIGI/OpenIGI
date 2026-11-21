@@ -13,11 +13,15 @@ internal static class SiteChrome
     /// <summary>The bar's link to the leaderboard, for the page it marks as the one shown.</summary>
     public const string Leaderboard = "leaderboard";
 
+    /// <summary>The bar's link to the sessions being played, for the page it marks as the one shown.</summary>
+    public const string Servers = "servers";
+
     /// <summary>The shared files, by the path they are served at, each with the name it is embedded under.</summary>
     public static IReadOnlyList<(string Path, string Resource)> Files { get; } =
     [
         ("landing/site.css", "OpenIGI.Site.site.css"),
         ("landing/board.js", "OpenIGI.Site.board.js"),
+        ("landing/sessions.js", "OpenIGI.Site.sessions.js"),
     ];
 
     /// <summary>The foot of a page.</summary>
@@ -25,7 +29,7 @@ internal static class SiteChrome
           <footer class="site-footer">
             <div class="wrap">
               <span>An independent reimplementation, not affiliated with the game's publishers.</span>
-              <span><a href="/">Home</a> · <a href="/leaderboard/">Leaderboard</a> · <a href="/privacy/">Privacy</a> · <a href="/code-signing/">Code signing</a></span>
+              <span><a href="/">Home</a> · <a href="/servers/">Servers</a> · <a href="/leaderboard/">Leaderboard</a> · <a href="/privacy/">Privacy</a> · <a href="/code-signing/">Code signing</a></span>
             </div>
           </footer>
         """;
@@ -42,6 +46,7 @@ internal static class SiteChrome
               </a>
               <span class="nav-links">
                 <a href="/#play-now">Play</a>
+                <a href="/servers/"{{(current == Servers ? " aria-current=\"page\"" : string.Empty)}}>Servers</a>
                 <a href="/leaderboard/"{{(current == Leaderboard ? " aria-current=\"page\"" : string.Empty)}}>Leaderboard</a>
                 <a class="wide" href="/#desktop">Download</a>
                 <a class="wide" href="/#about">About</a>

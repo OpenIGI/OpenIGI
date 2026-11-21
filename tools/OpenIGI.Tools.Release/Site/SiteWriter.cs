@@ -90,6 +90,9 @@ internal static class SiteWriter
             Text(output, path, SiteChrome.Read(resource));
         }
 
+        // The sessions being played online, each with the ways in, read from the master as the page opens and while it is looked at.
+        Text(output, "servers/index.html", ServersPage.Html);
+
         // The official servers' leaderboard and each player's record, read from the master as the page opens.
         Text(output, "leaderboard/index.html", LeaderboardPage.Html);
 

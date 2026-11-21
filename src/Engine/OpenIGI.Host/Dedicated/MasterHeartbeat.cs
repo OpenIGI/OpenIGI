@@ -21,9 +21,11 @@ namespace OpenIGI.Host.Dedicated;
 /// <param name="Passworded">Whether it asks a password.</param>
 /// <param name="Region">Its region, or empty.</param>
 /// <param name="Room">Its WebRTC room's code, by which browsers join it, or empty.</param>
+/// <param name="Net">The network protocol version it plays (<see cref="MultiplayerProtocol.Version"/>): what the website checks a
+/// browser build against before it offers to play there.</param>
 public sealed record HeartbeatBody(
     int Port, string Title, string Protocol, string Name, string Map, string Mode, string Version, int Players, int MaxPlayers,
-    bool Passworded, string Region, string Room);
+    bool Passworded, string Region, string Room, int Net = MultiplayerProtocol.Version);
 
 /// <summary>What a stopping server tells the master: which of its ports leaves the list.</summary>
 /// <param name="Port">The port.</param>
