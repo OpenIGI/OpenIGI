@@ -70,7 +70,10 @@ public sealed partial class GameHost
             host.ProfileSaved();
         }
 
-        public void StartMission(int id) => host.StartMission(id);
+        // Once its files are there: a browser reads the next level's large files only when it is first wanted, and loaded
+        // before they arrive it came up without its terrain and models, the player falling out of the world. The desktop's
+        // gate always says yes, so there this is the plain start.
+        public void StartMission(int id) => host.StartMissionWhenReadable(id);
 
         public bool FollowsSession => host.TickObserver is Multiplayer.ISessionFollower;
 

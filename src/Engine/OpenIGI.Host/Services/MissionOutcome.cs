@@ -48,7 +48,7 @@ internal interface IMissionOutcomeHost
     /// <summary>Writes the player's settings and profiles.</summary>
     void SaveConfiguration();
 
-    /// <summary>Starts a mission, releasing the one being played.</summary>
+    /// <summary>Starts a mission, releasing the one being played, once the load gate says its files can be read.</summary>
     /// <param name="id">The mission to start.</param>
     void StartMission(int id);
 
