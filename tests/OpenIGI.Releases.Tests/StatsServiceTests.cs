@@ -29,6 +29,33 @@ public sealed class StatsServiceTests
         Assert.Null(record.Medals);
     }
 
+    [Fact]
+    public async Task A_record_reads_assists_and_none_from_an_older_master()
+    {
+        string counted = Totals.Replace("\"kd\":4.25", "\"kd\":4.25,\"assists\":9", StringComparison.Ordinal);
+        PlayerRecord record = await Read($$"""{"player":"111","season":"2026-11","seasonTotals":{{counted}},"allTime":{{Totals}}}""");
+        Assert.Equal(9, record.SeasonTotals.Assists);
+        Assert.Equal(0, record.AllTime.Assists);
+    }
+
+    [Fact]
+    public async Task A_report_sends_each_players_assists()
+    {
+        string? sent = null;
+        using var http = new HttpClient(new AnsweringHandler(async request =>
+        {
+            sent = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{}") };
+        }));
+        using var key = new PointSigner();
+        MatchReport report = new("igi1", "tdm", "1", 600, 0, [new MatchReportLine("aaaaaaaaaaaaaaaa", "Ana", 0, 4, 2, 0, true, Assists: 7), new MatchReportLine(null, "Bo", 1, 2, 4, 0, false)]);
+
+        await new StatsService(http, new Uri("https://master.example")).ReportAsync(key, report);
+
+        Assert.Contains("\"assists\":7", sent, StringComparison.Ordinal);
+        Assert.Contains("\"assists\":0", sent, StringComparison.Ordinal);
+    }
+
     private static async Task<PlayerRecord> Read(string json)
     {
         using var http = new HttpClient(new AnsweringHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") })));

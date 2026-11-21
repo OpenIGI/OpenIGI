@@ -5,7 +5,7 @@
 //   POST /v1/matches                      a server's result of a decided match, signed by its registered key
 //   GET  /v1/matches                      the latest results, newest first
 //   GET  /v1/leaderboard?period=&metric=  the best players: period season (this month, UTC), a month (2026-10) or all; metric score, kills,
-//                                         wins, kd or matches
+//                                         assists, wins, kd or matches
 //   GET  /v1/players/<id>/stats           one player's record (a key's id or an account's): this season, all time, latest,
 //                                         and the medals earned (medals.js)
 //   GET  /internal/servers/<keyId>        a registered server by its key's id ({ name }), or 404: what marks a server
@@ -21,7 +21,8 @@
 //   server:<keyId>          { name, added }
 //   match:<time>-<rand>     the result, as kept
 //   recent                  the latest results' keys, newest first
-//   tot:<period>:<player>   { name, matches, wins, kills, deaths, objectives, seconds, score, flawless }
+//   tot:<period>:<player>   { name, matches, wins, kills, deaths, assists, objectives, seconds, score, flawless } (assists counted
+//                           from the servers that report them; a total kept before has none, read as nought)
 //   last:<player>           the player's latest results' keys, newest first
 
 import { isFlawless, medalsOf } from "./medals.js";
@@ -36,7 +37,7 @@ const MIN_KD_MATCHES = 5;
 const BOARD_SIZE = 50;
 const BOARD_SECONDS = 30;
 const TITLES = ["igi1", "igi2"];
-const METRICS = ["score", "kills", "wins", "kd", "matches"];
+const METRICS = ["score", "kills", "assists", "wins", "kd", "matches"];
 
 // The Worker's side: every stats request goes to the one object that keeps them.
 export async function handleStats(request, env) {
@@ -74,9 +75,9 @@ export function seasonOf(time) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-// A result's points for a player: a kill 10, an objective 25, a win 50.
+// A result's points for a player: a kill 10, an assist 5, an objective 25, a win 50.
 export function scoreOf(line) {
-  return line.kills * 10 + line.objectives * 25 + (line.won ? 50 : 0);
+  return line.kills * 10 + (line.assists ?? 0) * 5 + line.objectives * 25 + (line.won ? 50 : 0);
 }
 
 export class Stats {
@@ -350,14 +351,16 @@ export function checkResult(body) {
   const players = body.players.map((line) => {
     const kills = count(line.kills);
     const deaths = count(line.deaths);
+    // Assists come from the servers that count them; one that doesn't reports none.
+    const assists = count(line.assists ?? 0);
     const objectives = count(line.objectives ?? 0);
     const seconds = Number.isInteger(line.seconds) && line.seconds >= 0 && line.seconds <= MAX_SECONDS ? line.seconds : body.seconds;
-    if (kills === null || deaths === null || objectives === null || !Number.isInteger(line.team)) {
+    if (kills === null || deaths === null || assists === null || objectives === null || !Number.isInteger(line.team)) {
       throw new Refusal(400, "A player's line is counts.");
     }
 
     const player = typeof line.player === "string" && /^[0-9a-f]{16}$/.test(line.player) ? line.player : null;
-    const counted = { player, name: text(line.name, 32) || "Player", team: line.team, kills, deaths, objectives, seconds, won: line.won === true };
+    const counted = { player, name: text(line.name, 32) || "Player", team: line.team, kills, deaths, assists, objectives, seconds, won: line.won === true };
     return { ...counted, score: scoreOf(counted) };
   });
 
@@ -365,7 +368,7 @@ export function checkResult(body) {
 }
 
 function zero() {
-  return { matches: 0, wins: 0, kills: 0, deaths: 0, objectives: 0, seconds: 0, score: 0, flawless: 0 };
+  return { matches: 0, wins: 0, kills: 0, deaths: 0, assists: 0, objectives: 0, seconds: 0, score: 0, flawless: 0 };
 }
 
 function add(total, line) {
@@ -376,6 +379,7 @@ function add(total, line) {
     wins: base.wins + (line.won ? 1 : 0),
     kills: base.kills + line.kills,
     deaths: base.deaths + line.deaths,
+    assists: (base.assists ?? 0) + (line.assists ?? 0),
     objectives: base.objectives + line.objectives,
     seconds: base.seconds + line.seconds,
     score: base.score + line.score,

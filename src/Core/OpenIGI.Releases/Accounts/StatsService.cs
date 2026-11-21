@@ -11,7 +11,8 @@ namespace OpenIGI.Releases.Accounts;
 /// <param name="Deaths">The times they died.</param>
 /// <param name="Objectives">The objectives they won: bombs planted or defused, rounds decided.</param>
 /// <param name="Won">Whether they were on the winning side.</param>
-public sealed record MatchReportLine(string? Player, string Name, int Team, int Kills, int Deaths, int Objectives, bool Won);
+/// <param name="Assists">The enemies they helped kill: badly hurt in a life another player ended.</param>
+public sealed record MatchReportLine(string? Player, string Name, int Team, int Kills, int Deaths, int Objectives, bool Won, int Assists = 0);
 
 /// <summary>A decided match's result, as a server reports it.</summary>
 /// <param name="Title">The game, by title id.</param>
@@ -29,9 +30,10 @@ public sealed record MatchReport(string Title, string Mode, string Map, int Seco
 /// <param name="Deaths">The deaths.</param>
 /// <param name="Objectives">The objectives won.</param>
 /// <param name="Seconds">The time played.</param>
-/// <param name="Score">The points: a kill 10, an objective 25, a win 50.</param>
+/// <param name="Score">The points: a kill 10, an assist 5, an objective 25, a win 50.</param>
 /// <param name="Kd">Kills a death, to two places.</param>
-public sealed record StatTotals(int Matches, int Wins, int Kills, int Deaths, int Objectives, int Seconds, int Score, double Kd);
+/// <param name="Assists">The assists; nought from a master too old to count them.</param>
+public sealed record StatTotals(int Matches, int Wins, int Kills, int Deaths, int Objectives, int Seconds, int Score, double Kd, int Assists = 0);
 
 /// <summary>A medal: something a player has done on the official servers, read from their all-time totals.</summary>
 /// <param name="Id">Its id, such as <c>first-win</c>.</param>

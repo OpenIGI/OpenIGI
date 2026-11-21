@@ -36,7 +36,8 @@ public sealed record AccountSummary(string Id, string Name, string AvatarUrl);
 /// <param name="Deaths">The deaths.</param>
 /// <param name="Kd">Kills a death.</param>
 /// <param name="Score">The points.</param>
-public sealed record RecordTotals(int Matches, int Wins, int Kills, int Deaths, double Kd, int Score);
+/// <param name="Assists">The assists.</param>
+public sealed record RecordTotals(int Matches, int Wins, int Kills, int Deaths, double Kd, int Score, int Assists = 0);
 
 /// <summary>The player's record on the official servers.</summary>
 /// <param name="Season">The season now, as <c>yyyy-MM</c>.</param>

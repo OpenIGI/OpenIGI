@@ -292,6 +292,7 @@ internal sealed class AccountMenu : Control
                     ("MATCHES", Number(season.Matches)),
                     ("WINS", Number(season.Wins)),
                     ("KILLS", Number(season.Kills)),
+                    ("ASSISTS", Number(season.Assists)),
                     ("K/D", season.Kd.ToString("0.00", CultureInfo.InvariantCulture)),
                 ];
                 float column = header.Width / figures.Length;

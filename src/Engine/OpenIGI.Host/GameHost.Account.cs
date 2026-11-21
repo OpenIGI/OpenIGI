@@ -214,7 +214,7 @@ public sealed partial class GameHost
         public bool IsBusy => link.IsBusy;
 
         private static RecordTotals Totals(StatTotals totals) =>
-            new(totals.Matches, totals.Wins, totals.Kills, totals.Deaths, totals.Kd, totals.Score);
+            new(totals.Matches, totals.Wins, totals.Kills, totals.Deaths, totals.Kd, totals.Score, totals.Assists);
 
         public bool CanOpenLinks => host.OpenLink is not null;
 

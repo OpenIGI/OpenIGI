@@ -1,8 +1,8 @@
 namespace OpenIGI.Tools.Release;
 
 /// <summary>
-/// <c>/leaderboard/</c>: the best players on the official servers this season or all time, by score, kills, wins, K/D or
-/// matches, read from the master as the page opens; <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page
+/// <c>/leaderboard/</c>: the best players on the official servers this season or all time, by score, kills, assists, wins,
+/// K/D or matches, read from the master as the page opens; <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page
 /// sends here) is one player's record by their Discord user id or a key's: this season, their medals and their latest
 /// matches. Static like the rest of the site; everything shown is set as text, never as markup.
 /// </summary>
@@ -90,14 +90,15 @@ internal static class LeaderboardPage
               <nav aria-label="Ranked by" id="metrics" style="margin-top: 8px">
                 <button data-metric="score" aria-pressed="true">Score</button>
                 <button data-metric="kills" aria-pressed="false">Kills</button>
+                <button data-metric="assists" aria-pressed="false">Assists</button>
                 <button data-metric="wins" aria-pressed="false">Wins</button>
                 <button data-metric="kd" aria-pressed="false">K/D</button>
                 <button data-metric="matches" aria-pressed="false">Matches</button>
               </nav>
               <div class="panel" style="margin-top: 14px">
                 <table>
-                  <thead><tr><th>#</th><th>Player</th><th>Score</th><th class="narrow-hide">Kills</th><th class="narrow-hide">Wins</th><th>K/D</th><th class="narrow-hide">Matches</th></tr></thead>
-                  <tbody id="rows"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+                  <thead><tr><th>#</th><th>Player</th><th>Score</th><th class="narrow-hide">Kills</th><th class="narrow-hide">Assists</th><th class="narrow-hide">Wins</th><th>K/D</th><th class="narrow-hide">Matches</th></tr></thead>
+                  <tbody id="rows"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
                 </table>
               </div>
             </section>
@@ -111,7 +112,7 @@ internal static class LeaderboardPage
               <h2>Latest matches</h2>
               <div class="panel">
                 <table>
-                  <thead><tr><th>When</th><th>Match</th><th>Kills</th><th>Deaths</th><th>Result</th></tr></thead>
+                  <thead><tr><th>When</th><th>Match</th><th>Kills</th><th>Deaths</th><th>Assists</th><th>Result</th></tr></thead>
                   <tbody id="matches"></tbody>
                 </table>
               </div>
@@ -149,7 +150,7 @@ internal static class LeaderboardPage
                 if (board.rows.length === 0) {
                   const tr = document.createElement("tr");
                   tr.append(cell("Nobody yet: play a match on an official server to be the first.", "empty"));
-                  tr.firstChild.colSpan = 7;
+                  tr.firstChild.colSpan = 8;
                   rows.append(tr);
                   return;
                 }
@@ -164,7 +165,7 @@ internal static class LeaderboardPage
                   link.append(document.createTextNode(row.name));
                   who.append(link);
                   tr.append(who);
-                  for (const [key, text, narrow] of [["score", number(row.score)], ["kills", number(row.kills), true], ["wins", number(row.wins), true], ["kd", row.kd.toFixed(2)], ["matches", number(row.matches), true]]) {
+                  for (const [key, text, narrow] of [["score", number(row.score)], ["kills", number(row.kills), true], ["assists", number(row.assists ?? 0), true], ["wins", number(row.wins), true], ["kd", row.kd.toFixed(2)], ["matches", number(row.matches), true]]) {
                     tr.append(cell(text, [key === metric ? "key" : "", narrow ? "narrow-hide" : ""].join(" ").trim()));
                   }
                   rows.append(tr);
@@ -173,7 +174,7 @@ internal static class LeaderboardPage
                 rows.replaceChildren();
                 const tr = document.createElement("tr");
                 tr.append(cell("The leaderboard can't be reached right now. Try again in a moment.", "empty"));
-                tr.firstChild.colSpan = 7;
+                tr.firstChild.colSpan = 8;
                 rows.append(tr);
               }
             }
@@ -192,7 +193,7 @@ internal static class LeaderboardPage
                 $("season").textContent = `Season ${seasonName(record.season)}`;
                 if (account?.avatar) { $("avatar").src = account.avatar; $("avatar").hidden = false; }
                 const s = record.seasonTotals;
-                $("figures").replaceChildren(...[["Matches", number(s.matches)], ["Wins", number(s.wins)], ["Kills", number(s.kills)], ["Deaths", number(s.deaths)], ["K/D", s.kd.toFixed(2)], ["Score", number(s.score)]].map(([label, value]) => {
+                $("figures").replaceChildren(...[["Matches", number(s.matches)], ["Wins", number(s.wins)], ["Kills", number(s.kills)], ["Deaths", number(s.deaths)], ["Assists", number(s.assists ?? 0)], ["K/D", s.kd.toFixed(2)], ["Score", number(s.score)]].map(([label, value]) => {
                   const box = document.createElement("div");
                   box.className = "stat";
                   const b = document.createElement("b");
@@ -204,7 +205,7 @@ internal static class LeaderboardPage
                   return box;
                 }));
                 const a = record.allTime;
-                $("alltime").textContent = `All time: ${number(a.matches)} matches, ${number(a.wins)} wins, ${number(a.kills)} kills, ${a.kd.toFixed(2)} K/D.`;
+                $("alltime").textContent = `All time: ${number(a.matches)} matches, ${number(a.wins)} wins, ${number(a.kills)} kills, ${number(a.assists ?? 0)} assists, ${a.kd.toFixed(2)} K/D.`;
                 const medals = (record.medals ?? []).map((medal) => {
                   const chip = document.createElement("span");
                   chip.className = "medal";
@@ -228,13 +229,14 @@ internal static class LeaderboardPage
                     cell(`${modes[match.mode] ?? match.mode.toUpperCase()} · map ${match.map}`),
                     cell(number(you?.kills)),
                     cell(number(you?.deaths)),
+                    cell(number(you?.assists ?? 0)),
                     cell(you?.won ? "Won" : "Lost", you?.won ? "won" : ""));
                   return tr;
                 });
                 if (matches.length === 0) {
                   const tr = document.createElement("tr");
                   tr.append(cell("No matches yet.", "empty"));
-                  tr.firstChild.colSpan = 5;
+                  tr.firstChild.colSpan = 6;
                   matches.push(tr);
                 }
                 $("matches").replaceChildren(...matches);

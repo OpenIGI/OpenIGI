@@ -10,7 +10,7 @@ namespace OpenIGI.Host.Dedicated;
 
 /// <summary>
 /// Reports each decided versus match to the master, signed by the server's own key: who played, on which side, their
-/// kills, deaths and objectives, and who won. The master counts it only when the key is one of its listed servers'; any
+/// kills, deaths, assists and objectives, and who won. The master counts it only when the key is one of its listed servers'; any
 /// other server is told so once, and plays on as before.
 /// </summary>
 public sealed class MatchReporter
@@ -93,7 +93,8 @@ public sealed class MatchReporter
                 player.Kills,
                 player.Deaths,
                 player.Objectives,
-                winner >= 0 && (match.IsFreeForAll ? player.Slot == winner : player.Team == winner)))];
+                winner >= 0 && (match.IsFreeForAll ? player.Slot == winner : player.Team == winner),
+                player.Assists))];
         return lines.Count < 2 ? null : new MatchReport(server.Title, mode, map, Math.Max(0, seconds), winner, lines);
     }
 

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Security.Cryptography;
 using System.Text;
 using OpenIGI.Releases.Accounts;
 using Xunit;
@@ -100,26 +99,6 @@ public sealed class AccountServiceTests
 
     private static HttpResponseMessage Json(HttpStatusCode status, string json) =>
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
-
-    // A player's key as IPlayerIdentity holds one: its public key an uncompressed point, its signatures r then s.
-    private sealed class PointSigner : IRequestSigner, IDisposable
-    {
-        private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-
-        public string PublicKey
-        {
-            get
-            {
-                ECParameters p = _key.ExportParameters(false);
-                return Convert.ToBase64String([4, .. p.Q.X!, .. p.Q.Y!]);
-            }
-        }
-
-        public Task<byte[]> SignAsync(byte[] text) =>
-            Task.FromResult(_key.SignData(text, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
-
-        public void Dispose() => _key.Dispose();
-    }
 
     private sealed class Answering(Func<HttpRequestMessage, Task<HttpResponseMessage>> answer) : HttpMessageHandler
     {

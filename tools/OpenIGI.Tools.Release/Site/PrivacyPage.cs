@@ -30,7 +30,7 @@ internal static class PrivacyPage
 
             <h2>Matches on the official servers</h2>
             <p>The official servers report each finished match: the mode and map, and each player's name, team, kills, deaths,
-              objectives and result. Your totals, medals and place on the <a href="/leaderboard/">leaderboard</a> are worked out
+              assists, objectives and result. Your totals, medals and place on the <a href="/leaderboard/">leaderboard</a> are worked out
               from these reports and are public. Community and friends' servers report nothing.</p>
 
             <h2>Discord features</h2>

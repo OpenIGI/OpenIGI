@@ -177,4 +177,28 @@ const keyId = (await get("/v1/admin/stats-servers"))[0].keyId;
 await ask(new Request(`https://master/v1/admin/stats-servers/${keyId}`, { method: "DELETE" }));
 assert.equal((await ask(await signed(official, tdm([line(BO, "Bo", 0, 1, 0, true), line(CY, "Cy", 1, 0, 1, false)])))).status, 403);
 
+// Assists: counted where a server reports them, worth five points, ranked by, and nought for a server that sends none.
+{
+  const fresh = new Stats({ storage: fakeStorage() }, { ACCOUNTS: accounts }, () => Date.UTC(2026, 10, 20));
+  const server = await serverKey();
+  await fresh.fetch(new Request("https://master/v1/admin/stats-servers", { method: "POST", body: JSON.stringify({ key: server.wire, name: "Official" }) }));
+  const helped = (player, name, team, kills, deaths, assists, won) => ({ ...line(player, name, team, kills, deaths, won), assists });
+  assert.equal((await fresh.fetch(await signed(server, tdm([helped(BO, "Bo", 0, 2, 1, 6, true), helped(CY, "Cy", 1, 3, 2, 1, false)])))).status, 201);
+  // An older server sends no assists: still counted, as none.
+  assert.equal((await fresh.fetch(await signed(server, tdm([line(BO, "Bo", 0, 1, 0, true), line(CY, "Cy", 1, 0, 1, false)])))).status, 201);
+
+  const ask2 = async (path) => (await fresh.fetch(new Request(`https://master${path}`))).json();
+  const bo = await ask2(`/v1/players/${BO}/stats`);
+  assert.equal(bo.allTime.assists, 6);
+  assert.equal(bo.allTime.score, scoreOf({ kills: 2, assists: 6, objectives: 0, won: true }) + scoreOf({ kills: 1, objectives: 0, won: true }));
+  assert.equal(scoreOf({ kills: 2, assists: 6, objectives: 0, won: true }), 2 * 10 + 6 * 5 + 50);
+  assert.equal(bo.latest.find((match) => match.players.some((p) => p.assists === 6)).you[0].assists, 6);
+
+  const byAssists = await ask2("/v1/leaderboard?period=season&metric=assists");
+  assert.deepEqual(byAssists.rows.map((row) => [row.name, row.assists]), [["Bo", 6], ["Cy", 1]]);
+
+  // A negative or absurd count is refused like any other.
+  assert.throws(() => checkResult(tdm([helped(BO, "Bo", 0, 1, 0, -1, true), line(CY, "Cy", 1, 0, 1, false)])));
+}
+
 console.log("matches: ok");

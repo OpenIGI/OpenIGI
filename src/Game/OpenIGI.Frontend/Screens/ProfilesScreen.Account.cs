@@ -125,6 +125,7 @@ public sealed partial class ProfilesScreen
             ("Matches", Figure(season?.Matches)),
             ("Wins", Figure(season?.Wins)),
             ("Kills", Figure(season?.Kills)),
+            ("Assists", Figure(season?.Assists)),
             ("K/D", season is null ? "—" : season.Kd.ToString("0.00", CultureInfo.InvariantCulture)),
             ("Score", Figure(season?.Score)),
         ];
@@ -135,7 +136,7 @@ public sealed partial class ProfilesScreen
 
         column.AddChild(stats);
         column.AddChild(Note(theme, record is { } known
-            ? string.Create(CultureInfo.InvariantCulture, $"This season. All time: {known.AllTime.Matches} matches, {known.AllTime.Wins} wins, {known.AllTime.Kills} kills.")
+            ? string.Create(CultureInfo.InvariantCulture, $"This season. All time: {known.AllTime.Matches} matches, {known.AllTime.Wins} wins, {known.AllTime.Kills} kills, {known.AllTime.Assists} assists.")
             : Accounts?.Status == AccountStatus.SignedIn
                 ? "Matches on the official servers are counted here from your next one on."
                 : "Sign in and play on the official servers to start your record."));
