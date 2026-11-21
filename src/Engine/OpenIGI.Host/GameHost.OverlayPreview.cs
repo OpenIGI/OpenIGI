@@ -116,7 +116,7 @@ public sealed partial class GameHost
                 ? new NextMapVote([new MapChoice(3, MatchModes.TeamDeathmatch), new MapChoice(5, MatchModes.SearchAndDestroy, Again: true), new MapChoice(8, MatchModes.FreeForAll)], [2, 1, 0], 6, 0)
                 : null,
         };
-        hud.DrawMatchHud(state.Batch, match, null, "E", width, height);
+        hud.DrawMatchHud(state.Batch, asked is "teammenu" or "buymenu" ? match with { Hint = null } : match, null, "E", width, height);
         (float, float) pointer = (width * 0.5f, height * 0.5f);
         if (match.MapVote is { } vote)
         {

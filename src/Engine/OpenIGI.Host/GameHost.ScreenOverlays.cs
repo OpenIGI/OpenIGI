@@ -452,7 +452,9 @@ public sealed partial class GameHost
             if (shown is Game.Multiplayer.Modes.MatchHud hud)
             {
                 string useKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.Activate)) ?? "E";
-                matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
+                // A menu up over play takes the line under the crosshair's place: what could be done there waits until it shuts.
+                bool menuUp = _teamMenuUp || _buyMenuUp;
+                matchHud.DrawMatchHud(state.Batch, menuUp ? hud with { Hint = null } : hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
                 if (hud.MapVote is { } vote)
                 {
                     matchHud.DrawMapVote(
