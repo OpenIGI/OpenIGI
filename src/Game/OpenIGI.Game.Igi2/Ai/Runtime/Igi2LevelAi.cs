@@ -156,7 +156,8 @@ public static class Igi2LevelAi
         List<Igi2HumanAi> minds = [];
         foreach (Igi2HumanSoldierTask task in setup.Root.Descendants().OfType<Igi2HumanSoldierTask>())
         {
-            if (task.Body is { } body && task.Ai is { } aiTask)
+            // A soldier another game's stands for keeps its mind on its double, for the level's cutscenes to direct.
+            if ((task.Body ?? task.Double) is { } body && task.Ai is { } aiTask)
             {
                 Igi2HumanAi mind = new(world, aiTask, body);
                 mind.UpdateInternalData();
@@ -166,7 +167,8 @@ public static class Igi2LevelAi
 
         foreach (Igi2AiSquad squad in world.Squads)
         {
-            squad.BuildTeam(squad.Task.Soldiers.Select(static soldier => soldier.Body?.Mind).OfType<Igi2HumanAi>());
+            // A soldier another game's stands for is in its squad through its double, for the level's cutscenes to move with it.
+            squad.BuildTeam(squad.Task.Soldiers.Select(static soldier => (soldier.Body ?? soldier.Double)?.Mind).OfType<Igi2HumanAi>());
         }
 
         foreach (Igi2HumanAi mind in minds)

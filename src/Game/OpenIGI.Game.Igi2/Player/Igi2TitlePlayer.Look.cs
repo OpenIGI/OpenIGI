@@ -12,21 +12,45 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerLook
     private TitlePlayerInput _lookInput;
 
     /// <inheritdoc/>
-    public bool CanPreviewLook => !IsCutscenePlaying && !Human.IsDead && !Human.IsLockOrientation
-        && !Human.View.IsLockOrientation && !Human.View.IsOverride && !Human.Channels.IsLocked;
+    /// <remarks>Another game's player standing in turns its own head, while no cutscene has the view.</remarks>
+    public bool CanPreviewLook => StandInLook is { } standIn
+        ? !IsCutscenePlaying && standIn.CanPreviewLook
+        : !IsCutscenePlaying && !Human.IsDead && !Human.IsLockOrientation
+            && !Human.View.IsLockOrientation && !Human.View.IsOverride && !Human.Channels.IsLocked;
 
     /// <inheritdoc/>
-    public Matrix3f LookOrientation => Look.Orientation;
+    public Matrix3f LookOrientation => StandInLook?.LookOrientation ?? Look.Orientation;
 
     /// <inheritdoc/>
-    public void GatherLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) => Look.Gather(mouseX, mouseY, sensitivity, invertMouse);
+    public void GatherLook(float mouseX, float mouseY, float sensitivity, bool invertMouse)
+    {
+        if (StandInLook is { } standIn)
+        {
+            standIn.GatherLook(mouseX, mouseY, sensitivity, invertMouse);
+            return;
+        }
+
+        Look.Gather(mouseX, mouseY, sensitivity, invertMouse);
+    }
 
     /// <inheritdoc/>
-    public void ResetLook() => Look.Reset();
+    public void ResetLook()
+    {
+        if (StandInLook is { } standIn)
+        {
+            standIn.ResetLook();
+            return;
+        }
+
+        Look.Reset();
+    }
 
     /// <inheritdoc/>
     public Matrix3f PreviewLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) =>
-        Look.Preview(mouseX, mouseY, sensitivity, invertMouse);
+        StandInLook?.PreviewLook(mouseX, mouseY, sensitivity, invertMouse) ?? Look.Preview(mouseX, mouseY, sensitivity, invertMouse);
+
+    // The look of another game's player standing in, which turns its own head between ticks.
+    private ITitlePlayerLook? StandInLook => ActingStandIn as ITitlePlayerLook;
 
     // The look between ticks, from where the human faces as of its last.
     private TitleLookPreview Look => _look ??= new(() => CanPreviewLook, () => (Human.Gamma, Human.View.IdealPitch), SmoothAim, Aim);

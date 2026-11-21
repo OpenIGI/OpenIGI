@@ -51,7 +51,10 @@ public sealed partial class GameHost
     private ITitleViewModelPresenter? _titleArms;
 
     // The same presenter, when it also draws what the player has lying in its level.
-    private ITitleWorldModelPresenter? TitleWorldModelPresenter => _titleArms as ITitleWorldModelPresenter;
+    // The level's own models where the arms are not their drawer too: another's arms, a mod's player standing in.
+    private ITitleWorldModelPresenter? _titleWorldModels;
+
+    private ITitleWorldModelPresenter? TitleWorldModelPresenter => _titleArms as ITitleWorldModelPresenter ?? _titleWorldModels;
     private ITitleHudPresenter? _titleHud;
     private float _titleMouseX;
     private float _titleMouseY;
@@ -88,6 +91,8 @@ public sealed partial class GameHost
         _titleHud = null;
         _titleArms?.Dispose();
         _titleArms = null;
+        _titleWorldModels?.Dispose();
+        _titleWorldModels = null;
         _standingGameplay = null;
         TitlePlayerRequest request = new(
             new WorldBuildRequest(
@@ -168,7 +173,21 @@ public sealed partial class GameHost
             }
 
             // Lit as the world's unbaked objects are: the arms and the weapon carry no lightmap.
-            _titleArms?.Shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
+            ObjectShading shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
+            _titleArms?.Shading = shading;
+
+            // Arms that do not draw the level's own models -- another game's, standing in -- leave them to the level's game.
+            if (_titleArms is not ITitleWorldModelPresenter)
+            {
+                _titleWorldModels = _presentation.Presenters.Create<ViewModelPresentationRequest, ITitleWorldModelPresenter>(ViewModelRequest());
+                if (_titleWorldModels is not null && !_titleWorldModels.Load(loaded))
+                {
+                    _titleWorldModels.Dispose();
+                    _titleWorldModels = null;
+                }
+
+                _titleWorldModels?.Shading = shading;
+            }
         }
         ForgetTitleInput();
         _playerMode = !_options.StartFlying;

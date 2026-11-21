@@ -37,7 +37,10 @@ public sealed class Igi1GuestLevel
     private readonly GuestTaskIds _ids;
 
     // The player standing in the host's level, once one does: its rig and what it is hurt and heard in.
-    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings)? _player;
+    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings, Igi1PlayerLife Life, HumanPlayerTask Task)? _player;
+
+    // What the player walks on: the host's ground, or what the host made of it for the player.
+    private IGroundHeightField? _playerGround;
 
     private Igi1GuestLevel(Igi1GuestContent content, LevelTask root)
     {
@@ -119,6 +122,10 @@ public sealed class Igi1GuestLevel
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(start);
         IOpenIgiLogger log = start.Surroundings.Logger;
+
+        // What it walks on: the level's ground, or what the host makes of it for a human of this game.
+        IGroundHeightField? footing = start.Ground ?? world.Ground;
+        _playerGround = footing;
         PlayerSpawnPoint spawn = PlayerSpawn.Of(start.Task);
 
         // Its grenades and view model meet the host's world; its view model's forward sweep meets the ground alone.
@@ -147,6 +154,9 @@ public sealed class Igi1GuestLevel
 
         Igi1HumanPlayer human = new(rig, life, start.Surroundings);
         rig.UseHealth(life.Health);
+
+        // A live fence of the level's it walks into shocks it, as the game's own does.
+        rig.ElectrifiedFenceTouched += human.Shock;
         rig.Body.SetFallImpactSink(human.Land);
         if (animations.ViewRig is { } viewRig)
         {
@@ -154,29 +164,57 @@ public sealed class Igi1GuestLevel
         }
 
         Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
-        rig.Humans = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
+        // Its rounds meet the level's humans body by body; one they do not stop is the level's to take -- its glass, its cameras,
+        // its barrels -- through the level's own collision.
+        HumanShot bodies = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
+        Igi1HostStrikes strikes = new(world);
+        float toHost = start.DamageToHost;
+        rig.Humans = (
+            Core.Numerics.Vector3d origin,
+            Core.Numerics.Vector3d end,
+            float damageFactor,
+            Game.Weapons.WeaponCategory category,
+            double stopDistance,
+            bool alreadyHeard,
+            out HumanHit hit) =>
+        {
+            if (bodies(origin, end, damageFactor, category, stopDistance, alreadyHeard, out hit))
+            {
+                return true;
+            }
+
+            strikes.Strike(origin, end, damageFactor * toHost, start.Task, category);
+            return false;
+        };
 
         if (start.Surroundings is Igi1GuestPlayerSurroundings heard)
         {
             heard.Stage.Player = rig;
         }
 
-        _player = (rig, start.Surroundings);
+        _player = (rig, start.Surroundings, life, start.Task);
 
         // It takes the game's guns lying in the level as it reaches them, with the game's cue.
         rig.UseGunPickups(GunPickups);
         rig.GunPickedUp += _ => start.Surroundings.PlayDefinition(Igi1MissionAudio.GunPickupSound, Igi1MissionAudio.GunPickupSoundPriority);
-        rig.PlaceAt(world.Ground, spawn, start.Solids.PlayerRegistrationCaster());
+        rig.PlaceAt(footing, spawn, start.Solids.PlayerRegistrationCaster());
 
         // The host's player task stands for it: its body is the rig, its events the player's, and it is the human the host's
         // world, AI and scripts meet.
         HumanPlayerTask task = start.Task;
         task.Driver = Core.Titles.GameTitle.Igi1;
-        task.Body = new Igi1PlayerBody(() => rig, task);
+        task.Body = new Igi1PlayerBody(() => rig, task)
+        {
+            // The host's scripts put its player where they will (Human_PopPosition): the rig goes there, onto the ground below.
+            Placement = (held, feet) => held.Place(
+                footing,
+                new Core.Numerics.Vector3d(feet.X, feet.Y, feet.Z + PlayerBody.StandingEyeHeight) / WorldScene.UnitsPerMetre,
+                held.Yaw),
+        };
         task.Events = human;
         task.StandIn = task;
         world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
-        Igi1TitlePlayer player = new(human, world.Ground);
+        Igi1TitlePlayer player = new(human, footing);
 
         // As it dies, the camera pulls back from where it falls, kept off the host's walls.
         if (start.Surroundings is Igi1GuestPlayerSurroundings surroundings)
@@ -259,6 +297,9 @@ public sealed class Igi1GuestLevel
         };
 
         IReadOnlyList<SoldierLoadedGroup> groups = soldiers.Load(_content.Mission, Root, world.Ground, world.Cast);
+        soldiers.UseHostDoors(start.Doors);
+        soldiers.UseHostTasks(start.AlarmIsOn, start.TaskPosition);
+        soldiers.SetAiTaskActivator(start.ActivateTask);
         soldiers.Animate(
             start.Graphs,
             sight,
@@ -286,7 +327,7 @@ public sealed class Igi1GuestLevel
         List<Igi1HumanLineCollider> colliders = [];
         foreach (HumanSoldierTask soldier in Root.Descendants().OfType<HumanSoldierTask>())
         {
-            Igi1StandIn standIn = new(soldier, start.DamageFromHost);
+            Igi1StandIn standIn = new(soldier, start.DamageFromHost) { Simulation = soldiers };
             Igi1HumanLineCollider collider = new(soldier, start.HumanGroup, start.HumanMaterial) { Handler = standIn };
             world.AddCollider(collider);
             standIns[soldier] = standIn;
@@ -299,8 +340,23 @@ public sealed class Igi1GuestLevel
         {
             DamageScale = start.DamageToHost,
             Sound = start.Audio is { } audio ? (name, at) => audio.Play(name, at) : null,
+
+            // The game's own player is met as the game's own missions meet theirs: posed, through the shooter's two rolls.
+            Rolls = start.Random,
+            Player = () => _player is { } own && !own.Life.Health.IsDead
+                ? new Igi1HostedPlayerTarget(own.Task, own.Rig.Body.Position, own.Rig.Body.Yaw)
+                : null,
         };
         soldiers.SetGunShotWorld(rounds, new GunShotSoundWindows(), afterMarch: null);
+        // Their weapons' reports, and the player's, through the host's audio by the game's own rule.
+        Igi1GuestWeaponSounds? reports = start.Audio is { } reportsThrough
+            ? new Igi1GuestWeaponSounds(reportsThrough, () => _player?.Rig.EyeUnits ?? default)
+            : null;
+        if (reports is not null)
+        {
+            soldiers.SetWeaponSound(reports.TickSoldier);
+        }
+
         if (start.Audio is { } voices)
         {
             soldiers.SetScriptSound((name, at, _) => voices.Play(name, at));
@@ -310,9 +366,13 @@ public sealed class Igi1GuestLevel
         LevelUpdateWalker walker = new(Root);
         soldiers.AttachTo(walker);
         hosted = new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player, GunPickups);
+        hosted.WeaponAt = index => index >= 0 && index < arsenal.Weapons.Weapons.Count ? arsenal.Weapons.Weapons[index] : null;
         if (_player is { } player)
         {
+            hosted.PlayerSave = Saves.Igi1PlayerSave.GuestSection(player.Rig, player.Life, arsenal.Weapons, arsenal.Ammunition);
             HearPlayer(hosted, player.Rig, player.Surroundings, steps);
+            KeepPlayer(hosted, player.Rig, player.Life, player.Surroundings, reports);
+            RunClimbs(hosted, player.Rig, _playerGround ?? world.Ground);
         }
 
         return hosted;
@@ -337,6 +397,69 @@ public sealed class Igi1GuestLevel
             }
 
             heard?.Sounds.PlayPlayerImpacts();
+        });
+    }
+
+    // What the game's own mission does for its player as each tick closes (Igi1MissionTick.EndTick and its audio): the weapon in
+    // its hands sounds, the red wash of a hit and a flashbang's white fade, and its body, once it has fallen, plays its fall out.
+    private void KeepPlayer(
+        Igi1HostedLevel hosted, PlayerCamera rig, Igi1PlayerLife life, IIgi1PlayerSurroundings surroundings, Igi1GuestWeaponSounds? reports)
+    {
+        hosted.PlayerRig = rig;
+        AnimTriggerRegistry? triggers = _content.Guest.Session.Services.TryGet(out AnimTriggerRegistry? table) ? table : null;
+        if (surroundings is Igi1GuestPlayerSurroundings own)
+        {
+            own.Bodies = () => hosted.Presenter;
+        }
+
+        hosted.EachTick(() =>
+        {
+            reports?.TickPlayer(rig, triggers);
+            life.DamageFlash.Tick();
+            life.FlashbangFlash.Tick();
+            hosted.Presenter?.TickPlayerBody();
+        });
+        if (reports is not null)
+        {
+            hosted.OnLeave(reports.Reset);
+        }
+    }
+
+    // The player's climbs and its work by hand, which the game's own mission runs beside the rig each tick
+    // (Igi1MissionTick.TickClimbsAndInteractions): the ladder's rungs and slide, and the clip that carries the body over a fence
+    // or along a wire. The body is one only the simulation keeps, as a headless run's is; nothing here draws it.
+    private static void RunClimbs(Igi1HostedLevel hosted, PlayerCamera rig, IGroundHeightField? ground)
+    {
+        LadderClimb climb = new();
+        InteractionMotion motion = new();
+        ILadderBody? body = null;
+        hosted.EachTick(() =>
+        {
+            if (rig.IsOnLadder && ground is not null)
+            {
+                body ??= rig.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
+                PlayerInputFrame frame = rig.LastFrame;
+                climb.Tick(
+                    rig,
+                    body,
+                    frame[(int)PlayerInputSlot.MoveUp] > 0.5f,
+                    frame[(int)PlayerInputSlot.MoveDown] > 0.5f,
+                    frame[(int)PlayerInputSlot.Activate] > 0.5f,
+                    ground,
+                    static _ => { });
+            }
+
+            if (rig.IsInWorldInteraction)
+            {
+                body ??= rig.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
+                motion.Tick(rig, body);
+            }
+
+            if (!rig.IsOnLadder && !rig.IsInWorldInteraction && (climb.IsActive || motion.IsActive))
+            {
+                climb.Reset();
+                motion.Reset();
+            }
         });
     }
 

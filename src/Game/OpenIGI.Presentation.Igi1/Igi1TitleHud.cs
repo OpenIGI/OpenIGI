@@ -35,6 +35,16 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
     private RemasteredHud? _remastered;
     private IReadOnlyList<StatusMessageDisplay> _messages = [];
 
+    // The player's tick the action icon's pulse has run to.
+    private long _pulsedTo;
+
+    // Where the action badge's art comes from: the level's own game's, made from the files the host gives.
+    private readonly Func<VirtualFileSystem, IHudIconSource>? _makeActionArt;
+    private IHudIconSource? _actionArt;
+
+    // The level's own game's HUD, which draws the level's cutscenes -- their framing, filters and lines -- in place of this one.
+    private readonly ITitleHudPresenter? _level;
+
     /// <summary>Initializes a new instance of the <see cref="Igi1TitleHud"/> class.</summary>
     /// <param name="device">The device to draw with.</param>
     /// <param name="logger">Where it reports.</param>
@@ -48,13 +58,23 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
     /// <see langword="null"/> to read them from the files the host gives.
     /// </param>
     /// <param name="soldiers">The game's soldiers about the player, whom the remastered display shows seeing it; <see langword="null"/> for none.</param>
+    /// <param name="actionArt">
+    /// Makes, from the host's files, the art the badge of what the player stands before is drawn from -- that of the level's own game,
+    /// where the player works another game's level and is shown that game's badges; <see langword="null"/> for the game's own.
+    /// </param>
+    /// <param name="level">
+    /// The HUD of the level's own game, where the player stands in another game's level: it draws the screen while the level's
+    /// cutscene plays, as that game frames, filters and subtitles it; <see langword="null"/> for none.
+    /// </param>
     public Igi1TitleHud(
         IGraphicsDevice device,
         IOpenIgiLogger logger,
         AmmoTypeRegistry? ammoTypes = null,
         Func<ITitlePlayer, Igi1TitlePlayer?>? resolve = null,
         VirtualFileSystem? own = null,
-        Func<Game.Igi1.Ai.SoldierSimulation?>? soldiers = null)
+        Func<Game.Igi1.Ai.SoldierSimulation?>? soldiers = null,
+        Func<VirtualFileSystem, IHudIconSource>? actionArt = null,
+        ITitleHudPresenter? level = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
@@ -63,6 +83,8 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
         _ammoTypes = ammoTypes;
         _resolve = resolve ?? (static player => player as Igi1TitlePlayer);
         _own = own;
+        _makeActionArt = actionArt;
+        _level = level;
     }
 
     /// <inheritdoc/>
@@ -70,22 +92,41 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
     {
         ArgumentNullException.ThrowIfNull(files);
         _hud.Load(_own ?? files);
+        (_actionArt as IDisposable)?.Dispose();
+        _actionArt = _makeActionArt?.Invoke(files);
+        _level?.Load(files);
     }
 
     /// <inheritdoc/>
-    public void ShowMissionMessages(IReadOnlyList<StatusMessageDisplay> messages) => _messages = messages ?? [];
+    public void ShowMissionMessages(IReadOnlyList<StatusMessageDisplay> messages)
+    {
+        _messages = messages ?? [];
+        _level?.ShowMissionMessages(_messages);
+    }
 
     // The camera the frame was drawn from, when the host gave it: see ShowView.
     private (Camera3D Eye, float TanX)? _view;
 
     /// <inheritdoc/>
-    public void ShowView(Camera3D eye, float horizontalTangent) => _view = (eye, horizontalTangent);
+    public void ShowView(Camera3D eye, float horizontalTangent)
+    {
+        _view = (eye, horizontalTangent);
+        _level?.ShowView(eye, horizontalTangent);
+    }
 
     /// <inheritdoc/>
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(player);
+
+        // The level's cutscene is the level's game's to show, as it frames and subtitles it; the player's display waits.
+        if (_level is not null && player.IsCutscenePlaying)
+        {
+            _level.Draw(batch, player, screenWidth, screenHeight, requestedScale);
+            return;
+        }
+
         if (!_hud.IsReady || _resolve(player) is not { } igi1)
         {
             return;
@@ -109,6 +150,26 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
                     BinocularTargets(igi1, rig, screenWidth, screenHeight), null);
             }
 
+            // What the player stands before to work -- a door, a switch, a ladder -- pulsing low in the middle, as the game's own
+            // missions draw it (Igi1HudOverlay.DrawRetailStatus); the pulse runs on the player's own ticks.
+            for (long tick = Math.Max(_pulsedTo, igi1.Ticks - 30); tick < igi1.Ticks; tick++)
+            {
+                _hud.Tick();
+            }
+
+            _pulsedTo = igi1.Ticks;
+            if (rig.ActionSprite is { Length: > 0 } action)
+            {
+                if (_actionArt?.Resolve(new HudIcon(action)) is { } art)
+                {
+                    _hud.DrawAction(batch, art, screenWidth, screenHeight, scale);
+                }
+                else if (_actionArt is null)
+                {
+                    _hud.DrawAction(batch, action, screenWidth, screenHeight, scale);
+                }
+            }
+
             _hud.DrawStatusMessages(batch, _messages.Where(static message => !message.IsCutscene), screenWidth, screenHeight, scale);
             Igi1HudSections.Status(batch, _hud, rig, igi1.Human.Life.Health.RemainingFraction, null, screenWidth, screenHeight, scale);
         }
@@ -117,7 +178,13 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _hud.Dispose();
+    public void Dispose()
+    {
+        (_actionArt as IDisposable)?.Dispose();
+        _actionArt = null;
+        _level?.Dispose();
+        _hud.Dispose();
+    }
 
     // What the binoculars pick out of the soldiers about the player, through its eye, timed on the player's own ticks in the
     // milliseconds the original's detector counts.
@@ -151,11 +218,29 @@ public sealed class Igi1TitleHud : ITitleHudPresenter
                 : rig.View is { } view
                     ? HudProjector.FromYawPitch(rig.EyeUnits, rig.Yaw, rig.Pitch, view.TanX, width, height)
                     : null;
-            _remastered.Draw(batch, _model, Igi1HudTheme.Theme, _hud, HudFrame.FromSettings(width, height, scale, igi1.Ticks / 30f, crosshairSpread: 8f) with
+            IHudIconSource icons = _actionArt is { } actionArt && rig.ActionSprite is { Length: > 0 } action
+                ? new ActionArt(_hud, actionArt, action)
+                : _hud;
+            _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(width, height, scale, igi1.Ticks / 30f, crosshairSpread: 8f) with
             {
                 Projector = projector,
             });
         }
+    }
+
+    // The game's own pictures, but the badge of what the player stands before from the level's own game's art.
+    private sealed class ActionArt(IHudIconSource own, IHudIconSource badges, string badge) : IHudIconSource
+    {
+        public bool TryMeasure(HudIcon icon, out float width, out float height) =>
+            Of(icon).TryMeasure(icon, out width, out height);
+
+        public void Draw(SpriteBatch batch, HudIcon icon, float x, float y, float scale, Bgra32 colour) =>
+            Of(icon).Draw(batch, icon, x, y, scale, colour);
+
+        public SpriteResource? Resolve(HudIcon icon) => Of(icon).Resolve(icon);
+
+        private IHudIconSource Of(HudIcon icon) =>
+            icon.IsSome && string.Equals(icon.Name, badge, StringComparison.OrdinalIgnoreCase) ? badges : own;
     }
 
     private RemasteredHud CreateRemastered()

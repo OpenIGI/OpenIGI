@@ -279,7 +279,7 @@ public sealed partial class Igi1HumanAi
         int state = door.UseState;
         if (state is 1 or 3)
         {
-            door.CommandOpen();
+            door.OpenForSoldier();
         }
         else if (state != 2)
         {

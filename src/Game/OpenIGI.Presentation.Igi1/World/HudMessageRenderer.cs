@@ -45,7 +45,7 @@ internal sealed class HudMessageRenderer
     }
 
     /// <summary>Draws the native action sprite selected by a retail activatable task.</summary>
-    /// <remarks>See <see cref="StatusScreenRenderer.DrawAction"/>.</remarks>
+    /// <remarks>See <see cref="StatusScreenRenderer.DrawAction(SpriteBatch, string, int, int, int)"/>.</remarks>
     public void DrawAction(
         SpriteBatch batch,
         string spriteName,
@@ -55,8 +55,29 @@ internal sealed class HudMessageRenderer
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentException.ThrowIfNullOrEmpty(spriteName);
-        if (_sprite(spriteName) is not { } icon
-            || icon.Asset.Frames.Count == 0)
+        if (_sprite(spriteName) is { } icon)
+        {
+            DrawAction(batch, icon, screenWidth, screenHeight, scale);
+        }
+    }
+
+    /// <summary>Draws an action sprite given whole -- another game's art, where the player works another game's level -- as
+    /// <see cref="DrawAction(SpriteBatch, string, int, int, int)"/> draws the game's own.</summary>
+    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
+    /// <param name="icon">The sprite.</param>
+    /// <param name="screenWidth">The back buffer's width.</param>
+    /// <param name="screenHeight">The back buffer's height.</param>
+    /// <param name="scale">The UI scale.</param>
+    public void DrawAction(
+        SpriteBatch batch,
+        SpriteResource icon,
+        int screenWidth,
+        int screenHeight,
+        int scale = UiScale.Native)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(icon);
+        if (icon.Asset.Frames.Count == 0)
         {
             return;
         }

@@ -56,6 +56,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
                     request.Logger,
                     OpenIGI.Presentation.Igi2.Hud.Igi2HudTheme.Theme))
             .Add<ViewModelPresentationRequest, ITitleViewModelPresenter>(CreateTitleViewModel)
+            .Add<ViewModelPresentationRequest, ITitleWorldModelPresenter>(CreateTitleWorldModels)
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<GroundPresentationRequest, ITerrainPresenter>(CreateGround)
@@ -82,6 +83,10 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
     private static ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
+        new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
+
+    // The level's own models -- its figures, the soldiers it draws, what lies about, its blasts -- where another's arms are drawn.
+    private static ITitleWorldModelPresenter? CreateTitleWorldModels(in ViewModelPresentationRequest request) =>
         new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
 
     /// <inheritdoc/>

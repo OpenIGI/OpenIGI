@@ -66,6 +66,13 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IW
     /// <summary>Gets or sets the soldier's body, or <see langword="null"/> before the level's gameplay made one.</summary>
     public Igi2HumanSoldier? Body { get; set; }
 
+    /// <summary>
+    /// Gets or sets the body the level keeps for the soldier while another game's stands for it (<see cref="Driver"/>), which the
+    /// level runs only where it directs the soldier itself -- its cutscenes, its movers -- and the other game's soldier then follows (<see cref="Soldiers.Igi2SoldierDoubles"/>): never drawn,
+    /// met by nothing, and no human of the level's lists; <see langword="null"/> for one of the level's own.
+    /// </summary>
+    public Igi2HumanSoldier? Double { get; set; }
+
     /// <inheritdoc/>
     /// <remarks>A claimed soldier is given no body (<see cref="Soldiers.Igi2Soldiers.Spawn"/>): the other game's stands for it.</remarks>
     public GameTitle? Driver { get; set; }

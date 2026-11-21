@@ -265,7 +265,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public bool IsMenuEnabled => Flow?.IsMenuEnabled ?? true;
 
     /// <inheritdoc/>
-    public Vector3d Position => StandInPlayer?.Position ?? Human.Position;
+    public Vector3d Position => ActingStandIn?.Position ?? Human.Position;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -275,7 +275,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.Position
-        : StandInPlayer is { } standIn ? standIn.EyePosition
+        : ActingStandIn is { } standIn ? standIn.EyePosition
         : (Human.CameraMode is 3 or 5 ? _movementCamera.Position
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position) + ViewError.Offset(0f);
 
@@ -303,7 +303,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 return OpenIGI.Game.Igi2.Computer.Igi2ComputerMap.Orientation;
             }
 
-            if (StandInPlayer is { } standIn)
+            if (ActingStandIn is { } standIn)
             {
                 return standIn.ViewOrientation;
             }
@@ -321,7 +321,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
     public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.FieldOfView
-        : StandInPlayer is { } standIn ? standIn.FieldOfViewScale
+        : ActingStandIn is { } standIn ? standIn.FieldOfViewScale
         : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
@@ -333,9 +333,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     {
         get
         {
-            if (StandInPlayer is not null)
+            if (ActingStandIn is { } acting)
             {
-                return Level?.CutsceneView is null && !IsComputerShown ? (StandInPlayer as ITitleFirstPerson)?.FirstPerson : null;
+                return Level?.CutsceneView is null && !IsComputerShown ? (acting as ITitleFirstPerson)?.FirstPerson : null;
             }
 
             if (Level?.CutsceneView is not null || Human.CameraMode != 1 || Human.IsThirdPerson || IsComputerShown)
@@ -644,6 +644,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         TakeCheats();
         Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);
         Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
+        _pressedThisTick = pressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
         Human.SteadyTurns = GameplayCVars.SteadyTurns.Value;
         // Retail keeps the profile's flag the other way round from its menu (config.c: isInvertMouse is 1 by default, and the menu's
@@ -695,7 +696,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// </summary>
     internal void RunPlayer()
     {
-        if (StoodFor is not null)
+        if (StoodFor is not null && !CarryStandInOnGun())
         {
             if (StandInPlayer is { } standIn)
             {
@@ -705,6 +706,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 if (StandIn is not { IsDead: true })
                 {
                     Human.OfferGenericPickups(standIn.EyePosition);
+                    DesignateForStandIn(standIn);
+                    ToggleThermalForStandIn();
                 }
             }
 

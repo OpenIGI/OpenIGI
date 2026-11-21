@@ -39,6 +39,12 @@ public sealed class Igi2LevelNatives
     /// <summary>Gets the level flow of the level running, or <see langword="null"/>.</summary>
     public Igi2LevelFlowTask? LevelFlow { get; private set; }
 
+    /// <summary>
+    /// Gets or sets another game's player standing for the level's own, which the calls made on the level's player reach too;
+    /// <see langword="null"/> while the level's own plays.
+    /// </summary>
+    public OpenIGI.Game.Player.IScriptedHuman? StandIn { get; set; }
+
     /// <summary>Binds the natives to a level.</summary>
     /// <param name="player">The player.</param>
     /// <param name="taskById">The level's tasks by id, <c>Level_atLevelQTaskID</c>, each as the object it runs as.</param>
@@ -87,6 +93,7 @@ public sealed class Igi2LevelNatives
         functions.Register(natives, "HumanPlayer_DisableAllWeapons", _ =>
         {
             Player?.DisableAllWeapons();
+            StandIn?.DisableAllWeapons();
             return QvmValue.Zero;
         }, 0);
 
@@ -142,7 +149,8 @@ public sealed class Igi2LevelNatives
         // Human_PopPositionScriptFunction: a human by id is put at a spot in metres; the player goes back to its default states.
         functions.Register(natives, "Human_PopPosition", call =>
         {
-            if (call.Count == 4 && (uint)call.GetInt32(0) < 0x1000u && _taskById(call.GetInt32(0)) is Igi2Human human)
+            object? placed = call.Count == 4 && (uint)call.GetInt32(0) < 0x1000u ? _taskById(call.GetInt32(0)) : null;
+            if (placed is Igi2Human human)
             {
                 Vector3d at = new(call.GetReal(1) * 4096.0, call.GetReal(2) * 4096.0, call.GetReal(3) * 4096.0);
                 human.PopPositionDroppingGround(at);
@@ -150,6 +158,11 @@ public sealed class Igi2LevelNatives
                 {
                     Player.GoToDefaultState();
                 }
+            }
+            else if (placed is OpenIGI.Game.Player.IScriptedHuman standIn)
+            {
+                // Another game's human standing for one of the level's: put where the script puts the one it stands for.
+                standIn.PopPosition(new Vector3d(call.GetReal(1) * 4096.0, call.GetReal(2) * 4096.0, call.GetReal(3) * 4096.0));
             }
 
             return QvmValue.Zero;

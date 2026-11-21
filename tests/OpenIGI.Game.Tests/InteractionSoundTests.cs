@@ -97,7 +97,7 @@ public sealed class InteractionSoundTests
         List<InteractionSoundEvent> heard = [];
         interactions.Sounds = heard.Add;
         int fences = interactions.Items.Count(static item => item.Type == InteractionActivateType.Fence && item.FenceSpan is not null
-            && item.Task.TryGetValue("Electric Expression", out object? electric) && electric is string { Length: > 0 });
+            && ((DeclaredTask)item.Task).TryGetValue("Electric Expression", out object? electric) && electric is string { Length: > 0 });
         Assert.True(fences > 0);
 
         // The fences are powered while ConditionalContainer_360 runs; the container's gate binds its isRun in a played level.

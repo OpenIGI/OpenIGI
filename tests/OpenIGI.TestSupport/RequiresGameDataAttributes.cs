@@ -59,17 +59,17 @@ public sealed class RequiresTitleDataFactAttribute(params string[] titleIds) : F
     }
 }
 
-/// <summary>A <see cref="TheoryAttribute"/> that skips unless the named title's installation is configured.</summary>
-/// <param name="titleId">The title's stable id, for example <c>igi2</c>.</param>
+/// <summary>A <see cref="TheoryAttribute"/> that skips unless the named titles' installations are configured.</summary>
+/// <param name="titleIds">The titles' stable ids, for example <c>igi2</c>: a test of one game's soldiers in another's names both.</param>
 [AttributeUsage(AttributeTargets.Method)]
-public sealed class RequiresTitleDataTheoryAttribute(string titleId) : TheoryAttribute
+public sealed class RequiresTitleDataTheoryAttribute(params string[] titleIds) : TheoryAttribute
 {
-    private string TitleId { get; } = titleId;
+    private string[] TitleIds { get; } = titleIds;
 
     /// <inheritdoc/>
     public override string? Skip
     {
-        get => RequiresTitleDataFactAttribute.SkipFor(TitleId) ?? base.Skip;
+        get => TitleIds.Select(RequiresTitleDataFactAttribute.SkipFor).FirstOrDefault(static skip => skip is not null) ?? base.Skip;
         set => base.Skip = value;
     }
 }

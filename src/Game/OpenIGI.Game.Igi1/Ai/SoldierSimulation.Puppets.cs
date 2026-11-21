@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Igi1.Ai;
@@ -23,6 +24,9 @@ public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int
 public sealed partial class SoldierSimulation
 {
     private readonly Dictionary<SoldierView, SoldierPuppet> _puppets = [];
+
+    // The soldiers another game's bodies stand and pose for now (Lend), with where each stands.
+    private readonly Dictionary<SoldierView, (Vector3d Position, Matrix3f Orientation)> _lent = [];
 
     // The puppets that fired since the last call to TakePuppetShots, for the mission to trace their rounds.
     private readonly List<(SoldierView View, OpenIGI.Game.Weapons.WeaponType? Weapon, float Facing, float Pitch)> _puppetShots = [];
@@ -119,9 +123,78 @@ public sealed partial class SoldierSimulation
         }
     }
 
-    // A puppeted soldier's tick: its pose taken from the server's, its rig stepped, its mind left alone.
+    /// <summary>
+    /// Stands a soldier where another game's body stands and in its pose (<see cref="SoldierView.BorrowPose"/>), its own mind not run
+    /// until it is given back (<see cref="EndLending"/>): the level's game moving it through a cutscene of its own.
+    /// </summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="position">Where the body stands, in world units.</param>
+    /// <param name="orientation">The way it faces.</param>
+    /// <param name="pose">Its pose on the soldier's own skeleton, in its own frame.</param>
+    /// <returns>Whether the soldier stands so; a dead one does not.</returns>
+    public bool Lend(SoldierView view, Vector3d position, Matrix3f orientation, BonePose pose)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(pose);
+        if (view.IsDead)
+        {
+            EndLending(view, view.Position, view.Orientation);
+            return false;
+        }
+
+        _lent[view] = (position, orientation);
+        view.PlaceAt(position, orientation);
+        view.BorrowPose(pose);
+        return true;
+    }
+
+    /// <summary>Gives a lent soldier back its own mind and pose, standing where the other game's body last stood.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="position">Where it stands, in world units.</param>
+    /// <param name="orientation">The way it faces.</param>
+    public void EndLending(SoldierView view, Vector3d position, Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (!_lent.Remove(view))
+        {
+            return;
+        }
+
+        view.BorrowPose(null);
+        if (!view.IsDead)
+        {
+            // Its mind goes on from there: the mind places the body each tick.
+            if (Brains.TryGetValue(view, out Igi1HumanAi? brain))
+            {
+                brain.StandAt(position, SoldierPuppet.FacingOf(orientation));
+            }
+
+            view.PlaceAt(position, orientation);
+        }
+    }
+
+    /// <summary>Gets whether another game's body stands and poses a soldier now (<see cref="Lend"/>).</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns><see langword="true"/> while it is lent.</returns>
+    public bool IsLent(SoldierView view) => _lent.ContainsKey(view);
+
+    // A puppeted soldier's tick: its pose taken from the server's, its rig stepped, its mind left alone. A lent one is stood where
+    // the other game's body is, its own clips stepped beneath the pose it borrows.
     private bool TickPuppet(SoldierView view)
     {
+        if (_lent.TryGetValue(view, out (Vector3d Position, Matrix3f Orientation) lent))
+        {
+            if (view.IsDead)
+            {
+                EndLending(view, view.Position, view.Orientation);
+                return false;
+            }
+
+            view.Tick();
+            view.PlaceAt(lent.Position, lent.Orientation);
+            return true;
+        }
+
         if (!_puppets.TryGetValue(view, out SoldierPuppet puppet))
         {
             return false;

@@ -21,6 +21,7 @@ public sealed class Igi1HostedLevelPresenter : ITaskPresenter
     private readonly GunPickupRenderer? _pickups;
     private readonly GunPickupRegistry _lying;
     private readonly LoadedMission _mission;
+    private readonly Igi1HostedLevel _level;
 
     /// <summary>Initializes a new instance of the <see cref="Igi1HostedLevelPresenter"/> class.</summary>
     /// <param name="device">The device to draw with.</param>
@@ -36,6 +37,16 @@ public sealed class Igi1HostedLevelPresenter : ITaskPresenter
         _renderer = new SoldierRenderer(device, content.Guest.Resources, logger, magic, simulation: level.Soldiers);
         _renderer.Present(content.Mission, level.Groups);
         _renderer.Arm(content.Mission, content.Arsenal.Weapons);
+
+        // The player's own body, where the game's player stands in the level: unseen until the player dies, then thrown down
+        // where it fell for the camera that pulls back from it.
+        _level = level;
+        if (level.PlayerRig is { } rig && content.PlayerAnimations.Body is { } bodyClips)
+        {
+            _renderer.LoadPlayerBody(content.Mission, Igi1GuestContent.PlayerModel, bodyClips, rig.Body.Position, -rig.Body.Yaw);
+        }
+
+        level.Presenter = _renderer;
 
         // The guns lying in the level, laid and dropped, drawn as the game's own missions draw theirs; a drop is added as it falls.
         _lying = level.GunPickups;
@@ -63,6 +74,9 @@ public sealed class Igi1HostedLevelPresenter : ITaskPresenter
         _renderer.BeginFrame(blend, smooth: true);
         _renderer.DrawGroundShadows(camera, projection);
         _renderer.Draw(camera, projection);
+
+        // The player's own body, once it has fallen: it draws nothing while the player lives.
+        _renderer.DrawPlayerBody(camera, projection);
         _pickups?.BeginFrame(blend, smooth: true);
         _pickups?.Draw(camera, projection);
     }
@@ -74,6 +88,11 @@ public sealed class Igi1HostedLevelPresenter : ITaskPresenter
     public void Dispose()
     {
         _lying.Spawned -= AddDropped;
+        if (ReferenceEquals(_level.Presenter, _renderer))
+        {
+            _level.Presenter = null;
+        }
+
         _pickups?.Dispose();
         _renderer.Dispose();
     }

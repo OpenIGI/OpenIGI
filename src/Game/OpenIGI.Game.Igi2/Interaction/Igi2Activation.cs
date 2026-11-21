@@ -238,6 +238,9 @@ public sealed class Igi2EvaluateActivate
     /// <summary>Gets the best target found, <c>ptBestQTask</c>.</summary>
     public IIgi2Activatable? Best { get; private set; }
 
+    /// <summary>Gets the point <see cref="Best"/> resolved itself at, in world units; <see langword="null"/> where it gave none.</summary>
+    public Vector3d? BestPosition { get; private set; }
+
     /// <summary>Gets or sets the human looking, <c>ptQTask</c>, which some targets note how they were found on.</summary>
     public object? Activator { get; init; }
 
@@ -249,6 +252,7 @@ public sealed class Igi2EvaluateActivate
         BestAlpha = 0f;
         BestGamma = 0f;
         Best = target;
+        BestPosition = null;
     }
 
     /// <summary>Forgets the best target found so far, as a ladder whose sight is blocked does.</summary>
@@ -311,6 +315,7 @@ public sealed class Igi2EvaluateActivate
 
         BestGamma = gamma;
         Best = target;
+        BestPosition = position;
         BestAlpha = 0f;
         return true;
     }

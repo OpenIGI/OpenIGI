@@ -33,8 +33,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
     /// scripts put up whose infrared expression holds (<c>OverlayHolder_RunHandler</c>). Never in a cutscene, which turns it off
     /// (<c>CutScene</c>), nor for a dead player.
     /// </remarks>
-    public bool IsInfraredView => !IsCutscenePlaying && !Human.IsDead
-        && (ScreenOverlay?.IsInfrared == true || IsInfraredScope || (Human.IsInfraEnabled && ZoomOverlay == BinocularOverlayType));
+    public bool IsInfraredView => ActingStandIn is not null
+        ? !IsCutscenePlaying && StandIn is not { IsDead: true } && (ScreenOverlay?.IsInfrared == true || _standInThermal)
+        : !IsCutscenePlaying && !Human.IsDead
+            && (ScreenOverlay?.IsInfrared == true || IsInfraredScope || (Human.IsInfraEnabled && ZoomOverlay == BinocularOverlayType));
 
     /// <inheritdoc/>
     /// <remarks>The infrared view with no thermal scope up: the goggles raised, or an infrared overlay the scripts put up.</remarks>

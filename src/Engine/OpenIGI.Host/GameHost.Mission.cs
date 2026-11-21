@@ -606,6 +606,7 @@ public sealed partial class GameHost
         _modelGlows?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
+        _titleWorldModels?.Dispose();
         _sky = null;
         _rain?.Dispose();
         _rain = null;
@@ -625,6 +626,7 @@ public sealed partial class GameHost
         _arms = null;
         _titleFeatures = null;
         _titleArms = null;
+        _titleWorldModels = null;
         _playerMode = false;
         _scene = null;
         _mission.Terrain = null;

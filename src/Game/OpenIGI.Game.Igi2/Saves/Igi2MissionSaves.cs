@@ -34,8 +34,12 @@ public sealed class Igi2MissionSaves : MissionSaves
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked.</remarks>
-    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed;
+    /// <remarks>
+    /// <c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked. Nor while another game's humans stand in the
+    /// level that keep nothing of themselves in its save (<see cref="OpenIGI.Game.World.LevelJoiners.HasUnsavedGuests"/>): a
+    /// save without them would bring back a level they no longer fit.
+    /// </remarks>
+    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed && !_level.HostsUnsavedGuests;
 
     /// <summary>Gets where the slots are kept, with the load list and the carry-overs that are this game's own.</summary>
     public new Igi2SaveSlots SlotStore => _slots;
@@ -121,6 +125,8 @@ public sealed class Igi2MissionSaves : MissionSaves
 
         public GameTask Root => level.Root;
 
+        public bool HostsUnsavedGuests => level.Joined.HasUnsavedGuests;
+
         public int MissionTime => player.MissionTime;
 
         public int SavesUsed
@@ -136,7 +142,7 @@ public sealed class Igi2MissionSaves : MissionSaves
         }
 
         // Its tasks, its dropped weapons, its mines and its glass.
-        public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines());
+        public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines(), level.Joined.SaveSections);
 
         // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds;
         // the messages on the screen and the computer's log go too. Its missile smoke, level sounds and bullet holes are the

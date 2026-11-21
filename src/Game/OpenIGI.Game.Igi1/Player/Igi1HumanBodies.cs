@@ -38,6 +38,38 @@ public sealed class Igi1PlayerBody(Func<PlayerCamera?> rig, HumanTask task) : IH
     /// container holds it out of the world, as an intro's does, is nobody's target.
     /// </remarks>
     public bool IsActive => rig() is not null && ConditionalContainerGate.IsTaskActive(task);
+
+    /// <summary>
+    /// Gets what puts the rig's feet at a spot of the level it stands in; <see langword="null"/> where nothing moves it by
+    /// script. The game's own missions move their player through their own scripts.
+    /// </summary>
+    public Func<PlayerCamera, Vector3d, bool>? Placement { get; init; }
+
+    /// <inheritdoc/>
+    public bool Place(Vector3d feet) => rig() is { } held && Placement is { } place && place(held, feet);
+
+    /// <inheritdoc/>
+    /// <remarks>Only where another game's level places it too (<see cref="Placement"/>): the game's own never carries its player.</remarks>
+    public bool Hold(Vector3d feet)
+    {
+        if (rig() is not { } held || Placement is null)
+        {
+            return false;
+        }
+
+        held.Body.Position = feet;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Only where another game's level places it too (<see cref="Placement"/>): the game's own scripts disarm their player themselves.</remarks>
+    public void Disarm()
+    {
+        if (Placement is not null)
+        {
+            rig()?.Weapons?.Disarm();
+        }
+    }
 }
 
 /// <summary>A soldier's live body, as any game's AI perceives the soldier's task.</summary>

@@ -31,6 +31,26 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     /// <summary>Gets the level's <c>Radio</c> tasks.</summary>
     public IReadOnlyList<RadioRuntime> Radios => _radios;
 
+    /// <summary>
+    /// The interactions of another game's level, each standing for a thing that level keeps (<see cref="WorldInteraction.Hosted"/>):
+    /// what Project I.G.I.'s player activates where it stands in that level.
+    /// </summary>
+    /// <param name="hosted">The interactions, in the order the level holds their things.</param>
+    /// <returns>The registry, which nothing walks: whoever runs the level ticks it (<see cref="Tick"/>).</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hosted"/> is <see langword="null"/>.</exception>
+    public static WorldInteractionRegistry OfHosted(IEnumerable<WorldInteraction> hosted)
+    {
+        ArgumentNullException.ThrowIfNull(hosted);
+        WorldInteractionRegistry registry = new();
+        foreach (WorldInteraction item in hosted)
+        {
+            item.Clock = () => registry.Now;
+            registry._items.Add(item);
+        }
+
+        return registry;
+    }
+
     public static WorldInteractionRegistry Build(
         GameTask root,
         LoadedMission mission,
@@ -428,7 +448,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
 
         foreach (WorldInteraction item in _items)
         {
-            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye))
+            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye, look))
             {
                 continue;
             }

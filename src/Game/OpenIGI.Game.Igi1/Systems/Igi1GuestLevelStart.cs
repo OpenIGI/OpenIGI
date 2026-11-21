@@ -51,6 +51,18 @@ public sealed record Igi1GuestLevelStart(IHostCollisionWorld World, IAiPlayer Pl
     /// <summary>Gets what the soldiers' rounds' damage is multiplied by as it strikes what the level holds.</summary>
     public float DamageToHost { get; init; } = 1f;
 
+    /// <summary>Gets the level's doors, which a soldier walking its graph opens and waits on as it does its own game's.</summary>
+    public IReadOnlyList<IAiDoor> Doors { get; init; } = [];
+
+    /// <summary>Gets whether an alarm of the level sounds, by its control's id, as a soldier's orders name it; <see langword="null"/> for a level without alarms.</summary>
+    public Func<int, bool>? AlarmIsOn { get; init; }
+
+    /// <summary>Gets where a task of the level stands, by its id, in world units: the alarm button a soldier runs to.</summary>
+    public Func<int, Core.Numerics.Vector3d?>? TaskPosition { get; init; }
+
+    /// <summary>Gets what works a task of the level by its id, as a soldier reaches it: the alarm button pressed.</summary>
+    public Action<int>? ActivateTask { get; init; }
+
     /// <summary>Gets what the soldiers' sounds play through, or <see langword="null"/> for silence.</summary>
     public ITitleAudio? Audio { get; init; }
 

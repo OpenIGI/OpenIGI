@@ -35,16 +35,31 @@ public static class Igi2ClipRetarget
     {
         ArgumentNullException.ThrowIfNull(clip);
         ArgumentNullException.ThrowIfNull(target);
-        IReadOnlyList<int> from = clip.Hierarchy.Parents;
-        IReadOnlyList<Vector3f> fromRest = clip.Hierarchy.Translations;
+        return Match(clip.Hierarchy.ParentSpan, clip.Hierarchy.TranslationSpan, target);
+    }
+
+    /// <summary>Matches a sequel rig's bones to a skeleton of the first game, as <see cref="Match(Igi2AnimationClip, BoneSkeleton)"/>.</summary>
+    /// <param name="source">The sequel's rig, as a body of it is posed on.</param>
+    /// <param name="target">The skeleton.</param>
+    /// <returns>For each of the skeleton's bones, the rig's bone it is, or -1 for none.</returns>
+    public static int[] Match(BoneSkeleton source, BoneSkeleton target)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        return Match(source.Parents, source.RestTranslations, target);
+    }
+
+    private static int[] Match(ReadOnlySpan<int> from, ReadOnlySpan<Vector3f> fromRest, BoneSkeleton target)
+    {
         ReadOnlySpan<int> to = target.Parents;
         ReadOnlySpan<Vector3f> toRest = target.RestTranslations;
+        int count = from.Length;
 
         int[] ofTarget = new int[target.BoneCount];
         Array.Fill(ofTarget, -1);
-        int[] ofClip = new int[clip.BoneCount];
+        int[] ofClip = new int[count];
         Array.Fill(ofClip, -1);
-        for (int bone = 0; bone < clip.BoneCount; bone++)
+        for (int bone = 0; bone < count; bone++)
         {
             if (from[bone] < 0)
             {
@@ -93,7 +108,7 @@ public static class Igi2ClipRetarget
     /// <param name="target">The first game's skeleton it is played on.</param>
     /// <param name="id">The animation's id in its set.</param>
     /// <param name="fallback">A local orientation for each of the skeleton's bones the clip does not move, or empty for none.</param>
-    /// <param name="match">The bones matched, as <see cref="Match"/> gives them, or <see langword="null"/> to match them here.</param>
+    /// <param name="match">The bones matched, as <see cref="Match(Igi2AnimationClip, BoneSkeleton)"/> gives them, or <see langword="null"/> to match them here.</param>
     /// <returns>The animation, cyclic when the clip loops.</returns>
     /// <exception cref="ArgumentException">The clip moves fewer than half the skeleton's bones: it is another rig's.</exception>
     public static BoneAnimation ToBoneAnimation(
@@ -155,10 +170,66 @@ public static class Igi2ClipRetarget
             flags: clip.Loops ? BoneAnimation.CyclicFlag : 0u);
     }
 
+    /// <summary>
+    /// A body of the sequel's pose as a skeleton of the first game stands in it: each matched bone turned as the sequel's is, one the
+    /// sequel lacks turned against its parent as it is in <paramref name="fallback"/>, every bone seated on its parent by the first
+    /// game's own rest offset, the root where the sequel's is.
+    /// </summary>
+    /// <param name="source">The sequel's posed body, in its own frame (unturned by its facing).</param>
+    /// <param name="match">The bones matched, as <see cref="Match(BoneSkeleton, BoneSkeleton)"/> gives them.</param>
+    /// <param name="target">The first game's skeleton.</param>
+    /// <param name="fallback">The first game's body as it stands of its own accord, in its own frame, for the bones the sequel lacks.</param>
+    /// <returns>The first game's pose, in the body's own frame.</returns>
+    /// <remarks>
+    /// The two games pose alike -- a bone's world rotation is its parent's times its own, a bone sits at its parent's position plus
+    /// its rest offset turned by the parent (<see cref="BonePose.Evaluate"/>) -- so a matched bone's world rotation carries over as it is.
+    /// </remarks>
+    public static BonePose ToPose(BonePose source, int[] match, BoneSkeleton target, BonePose fallback)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(match);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(fallback);
+        int count = target.BoneCount;
+        Matrix3f[] rotations = new Matrix3f[count];
+        Vector3f[] positions = new Vector3f[count];
+        ReadOnlySpan<int> parents = target.Parents;
+        ReadOnlySpan<Vector3f> rest = target.RestTranslations;
+        for (int bone = 0; bone < count; bone++)
+        {
+            int parent = parents[bone];
+            int from = bone < match.Length ? match[bone] : -1;
+            bool matched = from >= 0 && from < source.BoneCount;
+            if (parent < 0)
+            {
+                rotations[bone] = matched ? source.Rotations[from] : fallback.Rotations[bone];
+                positions[bone] = matched ? source.Positions[from] : fallback.Positions[bone];
+                continue;
+            }
+
+            Matrix3f above = rotations[parent];
+            if (matched)
+            {
+                rotations[bone] = source.Rotations[from];
+            }
+            else
+            {
+                // Its own turn against its parent, as the first game's body holds it.
+                Matrix3f own = fallback.Rotations[parent].Transposed() * fallback.Rotations[bone];
+                rotations[bone] = above * own;
+            }
+
+            // The palette's M . v, as BonePose seats a bone on its parent.
+            positions[bone] = positions[parent] + above.Transposed().Transform(rest[bone]);
+        }
+
+        return BonePose.FromBones(rotations, positions, parents);
+    }
+
     /// <summary>A pose of the first game's skeleton, as the sequel's clip numbers its bones: for reading the clip's attach objects
     /// (<see cref="Igi2AttachedParts"/>) off a body of the first game.</summary>
     /// <param name="pose">The first game's posed skeleton.</param>
-    /// <param name="match">The bones matched, as <see cref="Match"/> gives them.</param>
+    /// <param name="match">The bones matched, as <see cref="Match(Igi2AnimationClip, BoneSkeleton)"/> gives them.</param>
     /// <param name="clip">The clip.</param>
     /// <returns>The pose, one bone for each of the clip's: a matched one where the first game's is, one the first game lacks
     /// hanging rigidly off its parent.</returns>
@@ -198,7 +269,7 @@ public static class Igi2ClipRetarget
     /// <param name="b">The other.</param>
     /// <returns><see langword="true"/> when their bone trees are the same.</returns>
     /// <remarks>A clip may keep a limb's rest a few centimetres off its rig's -- the sequel's carry clip does one forearm -- which
-    /// loses the limb to <see cref="Match"/>; a clip of the same tree can take another's match instead.</remarks>
+    /// loses the limb to <see cref="Match(Igi2AnimationClip, BoneSkeleton)"/>; a clip of the same tree can take another's match instead.</remarks>
     public static bool SameTree(Igi2AnimationClip a, Igi2AnimationClip b)
     {
         ArgumentNullException.ThrowIfNull(a);

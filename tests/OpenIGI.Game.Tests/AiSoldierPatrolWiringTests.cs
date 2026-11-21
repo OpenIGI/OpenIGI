@@ -294,7 +294,7 @@ public sealed class AiSoldierPatrolWiringTests : AiSoldierCombatWiringFixture
         Igi1HumanAi soldier = new(graph, start.Position, facing: 0f, phase: 0, seed: 1);
 
         DoorState door = new(maxAngleDegrees: 90f, openTimeSeconds: 1f);
-        soldier.SetDoorQuery(_ => door);
+        soldier.SetDoorQuery(_ => new StateDoor(door, start.Position));
 
         Assert.True(soldier.GoTo(hop.Value.To));
 
@@ -498,5 +498,15 @@ public sealed class AiSoldierPatrolWiringTests : AiSoldierCombatWiringFixture
         soldier.Tick(damageTick + 1, enemyEye, 0.0, enemyFeet: enemyFeet);
         Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.LieDown);
         Assert.Equal(HumanSoldierStates.ProneState, soldier.TickCombatState(animationDone: false));
+    }
+
+    // A door's state as a walking soldier finds a door: where it stands, how it stands, and its open command.
+    private sealed class StateDoor(DoorState state, Vector3d at) : IAiDoor
+    {
+        public Vector3d DoorPosition => at;
+
+        public int UseState => state.UseState;
+
+        public void OpenForSoldier() => state.CommandOpen();
     }
 }

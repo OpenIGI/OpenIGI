@@ -28,6 +28,9 @@ public sealed class Igi1GuestPlayerSurroundings(Igi1GuestSoundStage stage, IOpen
     /// <summary>Gets or sets what hears the player land, at its feet and as far as it carries; <see langword="null"/> for no one.</summary>
     public Action<Vector3d, double>? Heard { get; set; }
 
+    /// <summary>Gets or sets what draws the player's own body, asked as it is needed; <see langword="null"/> where nothing draws it.</summary>
+    public Func<Ai.ISoldierPresenter?>? Bodies { get; set; }
+
     /// <summary>Gets or sets what pulls the camera back from the player's body as it falls; <see langword="null"/> to leave the view.</summary>
     public Action<Vector3d, float>? DeathCamera { get; set; }
 
@@ -64,9 +67,9 @@ public sealed class Igi1GuestPlayerSurroundings(Igi1GuestSoundStage stage, IOpen
     }
 
     /// <inheritdoc/>
-    public void KillBody(int fall, Vector3d feet, float facing, int bone, Vector3d travel, WeaponCategory category, Vector3d velocity)
-    {
-    }
+    /// <remarks>The player's own body falls where the level is drawn, as the game's own missions throw it down.</remarks>
+    public void KillBody(int fall, Vector3d feet, float facing, int bone, Vector3d travel, WeaponCategory category, Vector3d velocity) =>
+        Bodies?.Invoke()?.KillPlayerBody(fall, feet, facing, bone, travel, category, velocity);
 
     /// <inheritdoc/>
     public void BeginDeathCamera(Vector3d feet, float facing) => DeathCamera?.Invoke(feet, facing);
@@ -75,10 +78,7 @@ public sealed class Igi1GuestPlayerSurroundings(Igi1GuestSoundStage stage, IOpen
     public void HearLanding(Vector3d feet, double radiusUnits) => Heard?.Invoke(feet, radiusUnits);
 
     /// <inheritdoc/>
-    /// <remarks>The host draws the guest's body; it has none of its own to stand up.</remarks>
-    public void ReviveBody()
-    {
-    }
+    public void ReviveBody() => Bodies?.Invoke()?.RevivePlayerBody();
 
     /// <inheritdoc/>
     /// <remarks>The host's player owns the view; there is no camera of the guest's to end.</remarks>

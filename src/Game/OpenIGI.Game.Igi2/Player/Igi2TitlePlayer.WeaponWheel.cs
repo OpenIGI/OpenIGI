@@ -12,8 +12,14 @@ public sealed partial class Igi2TitlePlayer
     private readonly List<Igi2WeaponItem> _wheelItems = [];
     private int _wheelPick = -1;
 
+    private readonly WeaponWheel _wheel = new();
+
     /// <inheritdoc/>
-    public WeaponWheel Wheel { get; } = new();
+    /// <remarks>Another game's player standing in turns its own wheel, over what it carries.</remarks>
+    public WeaponWheel Wheel => StandInWheel?.Wheel ?? _wheel;
+
+    // The wheel of another game's player standing in.
+    private IWeaponWheelPlayer? StandInWheel => ActingStandIn as IWeaponWheelPlayer;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -22,6 +28,11 @@ public sealed partial class Igi2TitlePlayer
     /// </remarks>
     public (IReadOnlyList<string> Choices, int Current) WheelChoices()
     {
+        if (StandInWheel is { } standIn)
+        {
+            return standIn.WheelChoices();
+        }
+
         _wheelChoices.Clear();
         _wheelItems.Clear();
         int current = -1;
@@ -55,6 +66,12 @@ public sealed partial class Igi2TitlePlayer
     /// <inheritdoc/>
     public void ChooseFromWheel(string choice)
     {
+        if (StandInWheel is { } standIn)
+        {
+            standIn.ChooseFromWheel(choice);
+            return;
+        }
+
         if (int.TryParse(choice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
         {
             _wheelPick = number;

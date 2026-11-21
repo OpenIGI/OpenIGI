@@ -524,7 +524,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
         int scale = UiScale.Native)
         => DrawAction(batch, StatusScreenLayout.LadderActionSprite, screenWidth, screenHeight, scale);
 
-    /// <inheritdoc cref="HudMessageRenderer.DrawAction"/>
+    /// <inheritdoc cref="HudMessageRenderer.DrawAction(SpriteBatch, string, int, int, int)"/>
     public void DrawAction(
         SpriteBatch batch,
         string spriteName,
@@ -532,6 +532,15 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
         int screenHeight,
         int scale = UiScale.Native)
         => _messages.DrawAction(batch, spriteName, screenWidth, screenHeight, scale);
+
+    /// <inheritdoc cref="HudMessageRenderer.DrawAction(SpriteBatch, SpriteResource, int, int, int)"/>
+    public void DrawAction(
+        SpriteBatch batch,
+        SpriteResource icon,
+        int screenWidth,
+        int screenHeight,
+        int scale = UiScale.Native)
+        => _messages.DrawAction(batch, icon, screenWidth, screenHeight, scale);
 
     /// <inheritdoc cref="HudMessageRenderer.DrawStatusMessages"/>
     public void DrawStatusMessages(

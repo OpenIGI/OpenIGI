@@ -296,7 +296,7 @@ public sealed class RetailElevatorTests
 
         Assert.NotEqual(2, elevator.State.CurrentFloorIndex);
         Assert.True(interactions.ActivateFromAi(callButton.Task.Id));
-        Assert.True(elevators.RequestFromSwitch(callButton.Task));
+        Assert.True(elevators.RequestFromSwitch((DeclaredTask)callButton.Task));
 
         bool travelled = false;
         for (int tick = 0; tick < 10000; tick++)

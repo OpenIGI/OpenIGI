@@ -28,7 +28,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// clock restarts each time its duration is out, as retail's does.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2StatusMessageTask : Igi2Task
+public sealed partial class Igi2StatusMessageTask : Igi2Task, World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StatusMessage";
@@ -458,6 +458,21 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     {
         _sound?.Delete();
         _sound = null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>StatusMessage_RemoveHandler</c>: its sound is deleted and its line taken off the screen, so a line
+    /// whose part of a cutscene its container has closed does not hang on over the next.
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        KillSound();
+        if (_slot != -1)
+        {
+            Screen?.Remove(_slot);
+            _slot = -1;
+        }
     }
 }
 

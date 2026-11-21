@@ -131,7 +131,7 @@ public sealed partial class ObjectCollisionIndex
     {
         if (PickupTaken?.Invoke(entry.Owner) == true
             || IsRetired(entry)
-            || _passable.Contains(entry.Owner)
+            || Passes(entry)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
         {
             return;
@@ -498,7 +498,7 @@ public sealed partial class ObjectCollisionIndex
 
         if (PickupTaken?.Invoke(entry.Owner) == true
             || IsRetired(entry)
-            || _passable.Contains(entry.Owner)
+            || Passes(entry)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
         {
             return false;
@@ -548,7 +548,7 @@ public sealed partial class ObjectCollisionIndex
             if (PickupTaken?.Invoke(entry.Owner) == true
                 || IsRetired(entry)
                 || (honourPassable
-                    && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
+                    && (Passes(entry) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
             {
                 continue;
             }
@@ -748,7 +748,7 @@ public sealed partial class ObjectCollisionIndex
         foreach (ObjectCollisionEntry entry in _playerEntries)
         {
             if (IsRetired(entry)
-                || _passable.Contains(entry.Owner)
+                || Passes(entry)
                 || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
                 continue;
