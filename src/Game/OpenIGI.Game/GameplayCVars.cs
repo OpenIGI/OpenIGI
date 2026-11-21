@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Core.Configuration;
 
 namespace OpenIGI.Game;
 
@@ -21,28 +22,33 @@ namespace OpenIGI.Game;
 [CVarContainer]
 public static class GameplayCVars
 {
-    /// <summary>Which named profile the gameplay-presentation settings correspond to.</summary>
+    /// <summary>Which experience to put the game in: the original's, or the remaster's.</summary>
     /// <remarks>
-    /// Setting this writes the profile's values over the variables it names, which is how <c>-vanilla</c>
-    /// reaches the gameplay layer: the flag emits <c>g_preset vanilla</c> as a start-up statement,
-    /// exactly as it emits <c>gfx_preset vanilla</c> and <c>snd_preset vanilla</c>.
+    /// Setting this writes the experience's values over every variable <see cref="ExperiencePresetRegistry"/> manages --
+    /// the HUD, the markers and optics, and the gameplay additions -- which is how <c>-vanilla</c> reaches them: the flag
+    /// emits <c>g_preset vanilla</c> as a start-up statement, as it emits <c>gfx_preset vanilla</c> and <c>snd_preset
+    /// vanilla</c>. Not saved: what the player chose is the values themselves, which are, and a saved experience read
+    /// back at start-up would write over any of them changed since.
     /// </remarks>
-    public static readonly EnumCVar<GameplayProfile> Preset = CVar.Choice(
+    public static readonly EnumCVar<ExperiencePreset> Preset = CVar.Choice(
         "g_preset",
-        GameplayProfile.Enhanced,
-        CVarOptions.Archive,
-        "Gameplay presentation profile: vanilla restores the original's canned death animations.");
+        ExperiencePreset.Enhanced,
+        CVarOptions.None,
+        "Experience: vanilla puts the HUD, markers, optics and gameplay additions as the original game had them; enhanced as the remaster's.");
 
     /// <summary>Whether Project I.G.I. offers save games, which the original never had.</summary>
     /// <remarks>
     /// On: the pause menu's Save Game and Load Game, and the quick save and quick load keys, kept by I.G.I. 2's rules. Off, the
     /// mission is played through as the original has it. I.G.I. 2's save games are its own and do not read this.
     /// </remarks>
-    public static readonly BoolCVar Igi1Saves = CVar.Bool(
-        "g_igi1_saves",
-        true,
-        CVarOptions.Archive,
-        "Offer save games in Project I.G.I., which the original never had. Off plays a mission through in one go.");
+    public static readonly BoolCVar Igi1Saves = Experience.Define(
+        CVar.Bool(
+            "g_igi1_saves",
+            true,
+            CVarOptions.Archive,
+            "Offer save games in Project I.G.I., which the original never had. Off plays a mission through in one go."),
+        vanilla: "0",
+        enhanced: "1");
 
     /// <summary>Whether the dead are simulated rather than playing a canned death animation.</summary>
     /// <remarks>
@@ -59,11 +65,14 @@ public static class GameplayCVars
     /// simulation is something a player asks for.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar Ragdoll = CVar.Bool(
-        "g_ragdoll",
-        false,
-        CVarOptions.Archive,
-        "Simulate the dead instead of playing the original's canned death animations.");
+    public static readonly BoolCVar Ragdoll = Experience.Define(
+        CVar.Bool(
+            "g_ragdoll",
+            false,
+            CVarOptions.Archive,
+            "Simulate the dead instead of playing the original's canned death animations."),
+        vanilla: "0",
+        enhanced: null);
 
     /// <summary>Whether a dropped weapon falls as a real rigid body or the way the original drops it.</summary>
     /// <remarks>
@@ -82,16 +91,14 @@ public static class GameplayCVars
     /// above. It is safe because the Vanilla preset forces it off, and the regression gate runs Vanilla.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar RealisticDrops = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar RealisticDrops = Experience.Define(
         CVar.Bool(
             "g_realistic_drops",
             true,
             CVarOptions.Archive,
             "Dropped weapons fall as real rigid bodies. Off drops them the way the original does."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether I.G.I. 2's player's ground speed turns with him, or drifts on as retail's does.</summary>
     /// <remarks>
@@ -100,16 +107,14 @@ public static class GameplayCVars
     /// I.G.I.'s player's does. A third exception to the rule above: where the player goes is game logic. The Vanilla preset
     /// forces it off, as with <see cref="RealisticDrops"/>.
     /// </remarks>
-    public static readonly BoolCVar SteadyTurns = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar SteadyTurns = Experience.Define(
         CVar.Bool(
             "g_steady_turns",
             true,
             CVarOptions.Archive,
             "I.G.I. 2's player keeps moving the way he faces as he turns. Off drifts sideways after a turn, as the original does."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
     /// <remarks>
@@ -127,16 +132,14 @@ public static class GameplayCVars
     /// it off, as with <see cref="RealisticDrops"/>.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar BodiesStay = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar BodiesStay = Experience.Define(
         CVar.Bool(
             "g_bodies_stay",
             true,
             CVarOptions.Archive,
             "Dead soldiers stay where they fell. Off takes a body away once it is out of sight, as the original does."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How hard a round throws a body it kills.</summary>
     /// <remarks>
@@ -338,27 +341,16 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "How long the camera takes to travel between the first- and third-person views, in seconds.");
 
-    /// <summary>Wires the profile variable to the values it stands for.</summary>
+    /// <summary>Wires the experience variable to the values it stands for.</summary>
     /// <remarks>
-    /// A static constructor rather than a registry, the same way <c>AudioCVars</c> does it and for the
-    /// same reason: the preset registry lives in the renderer, which this layer does not drive. The
-    /// profile is not recomputed when one of its variables is changed by hand — it says what was asked
-    /// for, and a player who then turns one thing off is not silently switched to "custom" mid-session.
+    /// The variable is not recomputed when one of its values is changed by hand -- it says what was asked for. Which
+    /// experience the values add up to is <see cref="ExperiencePresetRegistry.Detect"/>'s, as the settings page reads it.
     /// </remarks>
     static GameplayCVars() => Preset.Changed += (_, _) => Apply(Preset.Value);
 
-    /// <summary>Writes a profile's values over the variables it names.</summary>
-    /// <param name="profile">The profile to apply. <see cref="GameplayProfile.Custom"/> changes nothing.</param>
-    public static void Apply(GameplayProfile profile)
-    {
-        switch (profile)
-        {
-            case GameplayProfile.Vanilla:
-                Ragdoll.Value = false;
-                break;
+    /// <summary>Writes an experience's values over the variables it names.</summary>
+    /// <param name="preset">The experience to apply. <see cref="ExperiencePreset.Custom"/> changes nothing.</param>
+    public static void Apply(ExperiencePreset preset) => Experience.Apply(preset);
 
-            default:
-                break;
-        }
-    }
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
 }

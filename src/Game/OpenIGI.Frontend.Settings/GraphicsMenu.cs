@@ -1,36 +1,4 @@
-﻿namespace OpenIGI.Frontend.Settings;
-
-/// <summary>One row of the graphics page that is a single variable shown as itself.</summary>
-/// <param name="Variable">The variable the row drives.</param>
-/// <param name="Caption">The row's caption, as the player reads it.</param>
-/// <param name="Help">What the row does, in a sentence written for a player.</param>
-/// <param name="Choices">
-/// What a choice variable's values are called on screen, keyed by the stored value, or null to show them
-/// as stored.
-/// </param>
-/// <param name="Step">A numeric row's slider step, or <see langword="null"/> for a twentieth of the variable's range.</param>
-/// <remarks>
-/// The caption and the help are written here rather than taken from the variable, and that is the whole
-/// point of the type. A variable's own <c>Help</c> is written for whoever is reading the renderer — it
-/// says things like "windowed inverse square", "L1-SH layout" and "the pi-over-N estimator" — and it is
-/// the right text for the console to print. It is the wrong text to put in front of somebody who wants
-/// the picture to look nice.
-/// </remarks>
-public sealed record GraphicsSetting(
-    string Variable,
-    string Caption,
-    string Help,
-    IReadOnlyDictionary<string, string>? Choices = null,
-    float? Step = null);
-
-/// <summary>A titled run of rows on the graphics page.</summary>
-/// <param name="Title">The heading shown above the rows.</param>
-/// <param name="Groups">The quality choices in this section, in the order they are shown.</param>
-/// <param name="Settings">The single-variable rows in this section, shown after the groups.</param>
-public sealed record GraphicsSection(
-    string Title,
-    IReadOnlyList<QualityGroup> Groups,
-    IReadOnlyList<GraphicsSetting> Settings);
+namespace OpenIGI.Frontend.Settings;
 
 /// <summary>
 /// What the graphics page offers: the choices a player expects to find in a game's options, each
@@ -62,9 +30,9 @@ public sealed record GraphicsSection(
 public static class GraphicsMenu
 {
     /// <summary>Gets the page's sections, in the order they are shown.</summary>
-    public static IReadOnlyList<GraphicsSection> Sections { get; } =
+    public static IReadOnlyList<SettingsPanel> Sections { get; } =
     [
-        new GraphicsSection(
+        new SettingsPanel(
             "Lighting",
             [
                 new QualityGroup(
@@ -248,8 +216,8 @@ public static class GraphicsMenu
             ],
             []),
 
-        new GraphicsSection(
-            "Image",
+        new SettingsPanel(
+            "Resolution & Anti-Aliasing",
             [
                 new QualityGroup(
                     "Upscaling",
@@ -264,7 +232,7 @@ public static class GraphicsMenu
                     // for why two identical steps must never be shipped as two.
                     new QualityLevel("Balanced (70%)", ("r_scale", "0.7")),
                     new QualityLevel("Quality (85%)", ("r_scale", "0.85")),
-                    new QualityLevel("Native (100%)", ("r_scale", "1"))),
+                    new QualityLevel("Native (100%)", ("r_scale", "1"))) { ShownWhen = new("r_dlss_quality", WhileOff: true) },
 
                 new QualityGroup(
                     "Anti-Aliasing",
@@ -286,7 +254,35 @@ public static class GraphicsMenu
                         ("r_aa", "0"),
                         ("r_aa_threshold", "0.33"),
                         ("r_thin_geometry", "0.75"))),
+            ],
+            [
+                new SettingRow(
+                    "r_dlss_quality",
+                    "NVIDIA DLSS",
+                    "NVIDIA's upscaler. Off uses the game's own, at the Upscaling setting. DLAA renders at full "
+                        + "resolution and only smooths the picture; Quality down to Ultra Performance render fewer "
+                        + "pixels and rebuild the rest, for more frame rate. Takes the place of Upscaling while on. "
+                        + "Needs an NVIDIA RTX GPU and the NVIDIA DLSS download from the launcher.",
+                    new Dictionary<string, string>
+                    {
+                        ["off"] = "Off",
+                        ["dlaa"] = "DLAA",
+                        ["quality"] = "Quality",
+                        ["balanced"] = "Balanced",
+                        ["performance"] = "Performance",
+                        ["ultraperformance"] = "Ultra Performance",
+                    }),
+                new SettingRow(
+                    "r_ray_reconstruction",
+                    "Ray Reconstruction",
+                    "Lets DLSS also clean up the traced lighting, replacing the game's own denoisers, at some "
+                        + "cost. It is part of DLSS, so it works with any DLSS mode above and does nothing while "
+                        + "DLSS is off. Needs hardware ray tracing.") { ShownWhen = new("r_dlss_quality") },
+            ]),
 
+        new SettingsPanel(
+            "Detail",
+            [
                 new QualityGroup(
                     "Texture Quality",
                     "How sharp surfaces stay at a distance, and how much relief is derived from the game's "
@@ -317,7 +313,35 @@ public static class GraphicsMenu
                     new QualityLevel("Enhanced", ("r_terrain_detail", "220")),
                     new QualityLevel("High", ("r_terrain_detail", "320")),
                     new QualityLevel("Ultra", ("r_terrain_detail", "450"))),
+            ],
+            [
+                // A row of its own rather than a quality group: every preset smooths the ground fully,
+                // so its lighter steps are no preset's values, and they are still worth offering.
+                new SettingRow(
+                    "r_terrain_smooth",
+                    "Ground Smoothing",
+                    "Rounds off the flat facets and spikes of the ground near you in I.G.I. Smooth refines "
+                        + "it to a two-metre grid, Smoother to one metre. What you stand on is unchanged.",
+                    new Dictionary<string, string>
+                    {
+                        ["0"] = "Off",
+                        ["1"] = "Smooth",
+                        ["2"] = "Smoother",
+                    }),
 
+                // A row of its own: a distance a player tunes by eye for their screen, not a preset's quality step.
+                new SettingRow(
+                    "r_model_lod_reach",
+                    "Model Detail Distance",
+                    "How far out objects keep their full detail before switching to simpler versions. 1 is the "
+                        + "original's own distances, which swap small props only a few metres away; each step "
+                        + "keeps detail that many times as far, for a little more work per frame.",
+                    Step: 0.5f),
+            ]),
+
+        new SettingsPanel(
+            "Look",
+            [
                 new QualityGroup(
                     "Image Style",
                     "The photographic grade over the finished frame: contrast, colour, the darkening at "
@@ -366,418 +390,43 @@ public static class GraphicsMenu
                         ("r_bloom_threshold", "0"))),
             ],
             [
-                // A row of its own rather than a quality group: every preset smooths the ground fully,
-                // so its lighter steps are no preset's values, and they are still worth offering.
-                new GraphicsSetting(
-                    "r_terrain_smooth",
-                    "Ground Smoothing",
-                    "Rounds off the flat facets and spikes of the ground near you in I.G.I. Smooth refines "
-                        + "it to a two-metre grid, Smoother to one metre. What you stand on is unchanged.",
-                    new Dictionary<string, string>
-                    {
-                        ["0"] = "Off",
-                        ["1"] = "Smooth",
-                        ["2"] = "Smoother",
-                    }),
-
-                // A row of its own: a distance a player tunes by eye for their screen, not a preset's quality step.
-                new GraphicsSetting(
-                    "r_model_lod_reach",
-                    "Model Detail Distance",
-                    "How far out objects keep their full detail before switching to simpler versions. 1 is the "
-                        + "original's own distances, which swap small props only a few metres away; each step "
-                        + "keeps detail that many times as far, for a little more work per frame.",
-                    Step: 0.5f),
-            ]),
-
-        new GraphicsSection(
-            "NVIDIA",
-            [],
-            [
-                new GraphicsSetting(
-                    "r_dlss_quality",
-                    "DLSS",
-                    "NVIDIA's upscaler. Off uses the game's own, at the Upscaling setting. DLAA renders at full "
-                        + "resolution and only smooths the picture; Quality down to Ultra Performance render fewer "
-                        + "pixels and rebuild the rest, for more frame rate. Takes the place of Upscaling while on. "
-                        + "Needs an NVIDIA RTX GPU and the NVIDIA DLSS download from the launcher.",
-                    new Dictionary<string, string>
-                    {
-                        ["off"] = "Off",
-                        ["dlaa"] = "DLAA",
-                        ["quality"] = "Quality",
-                        ["balanced"] = "Balanced",
-                        ["performance"] = "Performance",
-                        ["ultraperformance"] = "Ultra Performance",
-                    }),
-                new GraphicsSetting(
-                    "r_ray_reconstruction",
-                    "Ray Reconstruction",
-                    "Lets DLSS also clean up the traced lighting, replacing the game's own denoisers, at some "
-                        + "cost. It is part of DLSS, so it works with any DLSS mode above and does nothing while "
-                        + "DLSS is off. Needs hardware ray tracing."),
-                new GraphicsSetting(
-                    "r_frame_generation",
-                    "Frame Generation",
-                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs the "
-                        + "Direct3D 12 renderer and an RTX 40-series or newer, and turns NVIDIA Reflex on to keep "
-                        + "the controls responsive."),
-                new GraphicsSetting(
-                    "r_low_latency",
-                    "NVIDIA Reflex",
-                    "Starts each frame as late as the GPU allows, so what you see answers the mouse sooner. "
-                        + "Boost also keeps the GPU's clocks up."),
-            ]),
-
-        new GraphicsSection(
-            "Camera",
-            [],
-            [
-                new GraphicsSetting(
-                    "r_exposure",
-                    "Brightness",
-                    "How bright the picture is overall. The eye still adapts to each room on its own; this "
-                        + "nudges the result up or down to suit your display."),
-                new GraphicsSetting(
+                new SettingRow(
                     "r_motion_blur",
                     "Motion Blur",
                     "Smears the picture along fast movement, the way a camera shutter does. Off is the "
                         + "sharper and the more responsive-feeling of the two."),
-                new GraphicsSetting(
+                new SettingRow(
                     "r_grain",
                     "Film Grain",
                     "Adds a fine moving speckle over the frame, like film stock. A little of it also "
                         + "breaks up the banding a smooth sky picks up on an 8-bit display."),
             ]),
-    ];
 
-    /// <summary>
-    /// Gets the rows that are graphics variables but are not graphics <em>quality</em>, shown on the
-    /// Gameplay page instead.
-    /// </summary>
-    /// <remarks>
-    /// Every one of these is an <c>r_</c> variable, so the old page collected them by prefix and put them
-    /// among the quality settings. That is where the prefix stops being a good guide: whether the
-    /// remastered HUD is drawn, whether spotted enemies are outlined, and whether rounds leave marks are
-    /// choices about what the player is shown and what the game does, not about how well it is drawn. They
-    /// belong beside the other gameplay and interface options, and a player looking for them looks there.
-    /// </remarks>
-    public static IReadOnlyList<GraphicsSetting> InterfaceSettings { get; } =
-    [
-        new GraphicsSetting(
-            "r_day_night_cycle",
-            "Day/Night Cycle",
-            "Lets time pass while you play. A mission still begins at the hour it was written for, and "
-                + "the sun goes on from there, so a long mission can end under a different sky. Off, "
-                + "every mission stays at its own hour, the way the original's do."),
-        new GraphicsSetting(
-            "r_day_length",
-            "Day Length",
-            "How long a whole day takes, in minutes, once the cycle above is on. Forty is a sun you "
-                + "notice having moved; a minute or two is a sunrise you can stand and watch."),
-        new GraphicsSetting(
-            "r_lamp_daylight",
-            "Lamps Follow Daylight",
-            "Puts the level's lamps on photocells: they go out by day and strike one by one as dusk "
-                + "falls, each on its own delay. Outdoors leaves lamps under a roof lit, as a building's "
-                + "are; Everywhere includes them; Off keeps every lamp burning, as in the original."),
-        new GraphicsSetting(
-            "r_remastered_hud",
-            "Remastered HUD",
-            "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "
-                + "the original's."),
-        new GraphicsSetting(
-            "hud_retail_scale",
-            "Original HUD Size",
-            "How big the original HUD is drawn. Automatic enlarges it to suit your screen; Original draws it at "
-                + "its own size, as the original game does, small and in the corners of a large screen.",
-            new Dictionary<string, string>
-            {
-                ["0"] = "Automatic",
-                ["1"] = "Original",
-                ["2"] = "2x",
-                ["3"] = "3x",
-                ["4"] = "4x",
-            }),
-        new GraphicsSetting(
-            "r_hud_density",
-            "HUD Density",
-            "How much of the remastered HUD stays up. Contextual dims the weapon and inventory until something "
-                + "about them changes; Minimal shows only what is urgent; Full keeps everything on screen."),
-        new GraphicsSetting(
-            "r_hud_fx",
-            "HUD Visor Effects",
-            "Projects the remastered HUD as if on a visor: a slight bend, colour fringing, scanlines, a glow on "
-                + "bright figures, a flicker as it appears, and a shake and a red wash at the corners when you are hit."),
-        new GraphicsSetting(
-            "r_hud_fx_intensity",
-            "HUD Visor Strength",
-            "How strongly the visor effects above are applied."),
-        new GraphicsSetting(
-            "r_hud_sway",
-            "HUD Sway",
-            "Lets the HUD trail your view by a few pixels as you turn, then settle, as a helmet's display would."),
-        new GraphicsSetting(
-            "r_hud_threat",
-            "Alert Status",
-            "Says at the top of the screen how far the soldiers are onto you: searching, suspicious, alarm or detected."),
-        new GraphicsSetting(
-            "r_crosshair",
-            "Crosshair",
-            "A clean crosshair shaped to the weapon in hand: it opens as you fire, turns red over an enemy, in place of the original's."),
-        new GraphicsSetting(
-            "r_colorblind",
-            "Colour Blind Mode",
-            "Draws the interface's paired colours -- alive and down, healthy and hurt, one team and the other -- in colours that "
-                + "stay apart for your kind of colour vision.",
-            new Dictionary<string, string>
-            {
-                ["0"] = "Off",
-                ["1"] = "Deuteranopia",
-                ["2"] = "Protanopia",
-                ["3"] = "Tritanopia",
-            }),
-        new GraphicsSetting(
-            "r_crosshair_color",
-            "Crosshair Colour",
-            "The crosshair's colour.",
-            new Dictionary<string, string>
-            {
-                ["0"] = "White",
-                ["1"] = "Green",
-                ["2"] = "Yellow",
-                ["3"] = "Cyan",
-                ["4"] = "Magenta",
-                ["5"] = "Red",
-                ["6"] = "Orange",
-            }),
-        new GraphicsSetting("r_crosshair_size", "Crosshair Size", "How long the crosshair's ticks are.", Step: 10f),
-        new GraphicsSetting("r_crosshair_thickness", "Crosshair Thickness", "How thick the crosshair's ticks are.", Step: 10f),
-        new GraphicsSetting("r_crosshair_gap", "Crosshair Gap", "Extra space between the crosshair's centre and its ticks.", Step: 1f),
-        new GraphicsSetting("r_crosshair_opacity", "Crosshair Opacity", "How solid the crosshair is.", Step: 5f),
-        new GraphicsSetting("r_crosshair_dot", "Crosshair Dot", "A dot at the crosshair's centre."),
-        new GraphicsSetting("r_crosshair_outline", "Crosshair Outline", "A faint dark edge round the crosshair, so it reads on bright ground."),
-        new GraphicsSetting(
-            "r_crosshair_dynamic",
-            "Dynamic Crosshair",
-            "The crosshair opens as you move and fire, showing where rounds may land; off, it holds still."),
-        new GraphicsSetting(
-            "r_ammo_cue",
-            "Ammo Warning",
-            "A word under the crosshair when your weapon runs low: LOW AMMO, then RELOAD when it is empty, NO AMMO when you have none left."),
-        new GraphicsSetting(
-            "r_hit_markers",
-            "Hit Markers",
-            "A mark on the crosshair when a round hits, and a red cross when it kills; larger for a headshot."),
-        new GraphicsSetting(
-            "r_hit_sounds",
-            "Hit Sounds",
-            "A short tick when a round hits and a deeper one when it kills."),
-        new GraphicsSetting(
-            "hud_killfeed",
-            "Kill Feed",
-            "In multiplayer and co-op, the kills listed in the top right corner, with the weapon, and your own announced."),
-        new GraphicsSetting(
-            "hud_killfeed_singleplayer",
-            "Kill Feed in Single Player",
-            "The kill feed in single player too: each guard you kill listed in the top right corner, with the weapon and any headshot."),
-        new GraphicsSetting(
-            "r_scope_glint",
-            "Scope Glint",
-            "A sniper who has you in his sights shows the glint of his scope, a flash of light where he is."),
-        new GraphicsSetting(
-            "r_world_objective",
-            "Projected Objective",
-            "Projects the objective you are working on onto its place in the level, so you read it where it is."),
-        new GraphicsSetting(
-            "r_interaction_prompt",
-            "Interaction Markers",
-            "Marks a door, ladder or terminal you can use with a badge on the object itself, showing the "
-                + "key you have bound and, where the action takes time, a ring that fills as you hold it. "
-                + "Off, the same prompt is a line of text across the middle of the screen."),
-        new GraphicsSetting(
-            "r_computer_tactical",
-            "Tactical Computer",
-            "Draws the map computer in the remaster's style, with the level's objectives and your own "
-                + "position on it."),
-        new GraphicsSetting(
-            "r_messages_tactical",
-            "Mission Messages",
-            "Shows objective and radio messages as on-screen cards rather than as plain lines of text."),
-        new GraphicsSetting(
-            "r_binocular_lens",
-            "Binocular Optics",
-            "Draws the binoculars with a lens: a round field of view, edge darkening and a little colour "
-                + "fringing towards the rim."),
-        new GraphicsSetting(
-            "r_binocular_outline",
-            "Highlight Spotted Enemies",
-            "Outlines soldiers seen through the binoculars, so a distant figure against a hillside can be "
-                + "picked out."),
-        new GraphicsSetting(
-            "r_binocular_silhouette",
-            "Silhouette Highlight",
-            "Draws that highlight as a soft outline over a faint fill, red for enemies, seen through walls "
-                + "and fading towards the edges of the view. Off, it is a coloured glow."),
-        new GraphicsSetting(
-            "r_thermal_remastered",
-            "Thermal Optics",
-            "Sees through the thermal goggles and the thermal scope with a modern sensor: the whole world as "
-                + "heat, people glowing and seen through thin cover, the dead cooling. Off is the original's view."),
-        new GraphicsSetting(
-            "r_thermal_palette",
-            "Thermal Palette",
-            "How the thermal sensor colours heat: White Hot, Black Hot, Ironbow or Rainbow. The palette key "
-                + "steps through them while the goggles are up."),
-        new GraphicsSetting(
-            "r_thermal_noise",
-            "Thermal Sensor Noise",
-            "How much grain and fixed-pattern noise the thermal sensor shows. Nought is a clean picture."),
-        new GraphicsSetting(
-            "r_weather_enabled",
-            "Weather",
-            "Draws the rain or snow the level authors gave each mission."),
-        new GraphicsSetting(
-            "r_storm",
-            "Storm Effects",
-            "Adds wind-driven streaks, splashes where the rain lands, and lightning to a level whose "
-                + "weather is a storm."),
-        new GraphicsSetting(
-            "r_time_of_day",
-            "Time of Day",
-            "The hour the sun starts each mission at. -1 is each level's own authored hour, which is the "
-                + "light it was made for; the bracket keys move it while you play. Lasts the session."),
-        new GraphicsSetting(
-            "r_impact_particles",
-            "Impact Effects",
-            "Sparks, dust and debris where rounds land, chosen to suit the surface that was hit."),
-        new GraphicsSetting(
-            "r_blast_quality",
-            "Bomb Blast",
-            "How search and destroy's bomb goes off. Original is the original's rocket explosion; Enhanced adds its fire and "
-                + "smoke, light, shake, and the props and walls it shatters; Full throws all of its fire and smoke and draws its "
-                + "after-blast sweeping over the world.",
-            new Dictionary<string, string>
-            {
-                ["0"] = "Original",
-                ["1"] = "Enhanced",
-                ["2"] = "Full",
-            }),
-        new GraphicsSetting(
-            "r_blast_shake",
-            "Blast Shake",
-            "How hard the bomb's blast shakes the view. The original's own explosion shake is unaffected."),
-        new GraphicsSetting(
-            "r_bulletmarks",
-            "Bullet Marks",
-            "Leaves the marks rounds make on walls and floors."),
-        new GraphicsSetting(
-            "r_muzzle_flash",
-            "Muzzle Flash",
-            "How bright the flame at the barrel is. The original's is bright enough to swallow the first "
-                + "few metres of a tracer."),
-        new GraphicsSetting(
-            "r_damage_flash",
-            "Damage Flash",
-            "How strongly the screen washes red when you are hit."),
+        new SettingsPanel(
+            "Performance",
+            [],
+            [
+                new SettingRow(
+                    "r_frame_generation",
+                    "Frame Generation",
+                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs the "
+                        + "Direct3D 12 renderer and an RTX 40-series or newer, and turns NVIDIA Reflex on to keep "
+                        + "the controls responsive."),
+                new SettingRow(
+                    "r_low_latency",
+                    "NVIDIA Reflex",
+                    "Starts each frame as late as the GPU allows, so what you see answers the mouse sooner. "
+                        + "Boost also keeps the GPU's clocks up."),
+            ]),
     ];
-
-    /// <summary>Gets the rows shown on the Display page, with captions written for a player.</summary>
-    /// <remarks>
-    /// <para>
-    /// The ones every game's display options have, in the order a player looks for them: what draws, the
-    /// window, its size, then how frames reach it. Captioned here rather than by machine from their
-    /// variable names, which would turn one of them into "Smooth" — which says nothing.
-    /// </para>
-    /// <para>
-    /// <c>r_resolution</c> and <c>r_frame_limit</c> are not choices their types spell out — one is the
-    /// display's modes, the other a number — so the page builds their lists itself; see
-    /// <see cref="FrameRateCaps"/>.
-    /// </para>
-    /// </remarks>
-    public static IReadOnlyList<GraphicsSetting> DisplaySettings { get; } =
-    [
-        new GraphicsSetting(
-            "r_renderer",
-            "Graphics API",
-            "What the game draws through. Automatic is Direct3D 12 on Windows and Vulkan elsewhere; WebGPU "
-                + "is the browser version's. OpenGL is for older graphics cards that have neither of the first two, "
-                + "and has no ray tracing or DLSS. Changing it rebuilds the renderer and puts you back where you "
-                + "were, which takes a few seconds.",
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["auto"] = "Automatic",
-                ["d3d12"] = "Direct3D 12",
-                ["vulkan"] = "Vulkan",
-                ["webgpu"] = "WebGPU",
-                ["opengl"] = "OpenGL",
-            }),
-        new GraphicsSetting(
-            "r_window_mode",
-            "Window Mode",
-            "Borderless covers the screen at the desktop's resolution and switches away instantly. Fullscreen "
-                + "takes the monitor over at the resolution below. Windowed runs in a window that size.",
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["windowed"] = "Windowed",
-                ["borderless"] = "Borderless",
-                ["fullscreen"] = "Fullscreen",
-            }),
-        new GraphicsSetting(
-            "r_resolution",
-            "Resolution",
-            "The window's size, or the monitor's mode in fullscreen. Desktop is your screen's own. To render "
-                + "fewer pixels at the same size, lower Upscaling on the Graphics page instead."),
-        new GraphicsSetting(
-            "r_widescreen_fov",
-            "Widescreen View",
-            "On a screen wider than 4:3, keeps the original's view whole and shows more at the sides, with "
-                + "nothing stretched. Off keeps the original's side-to-side angle, which crops the top and bottom "
-                + "and stretches the hands and weapon. A 4:3 screen looks the same either way."),
-        new GraphicsSetting(
-            "r_vsync",
-            "Vertical Sync",
-            "Waits for the display to be ready before showing each frame. On removes tearing; off uncaps "
-                + "the frame rate and lowers the delay between mouse and picture."),
-        new GraphicsSetting(
-            "r_smooth",
-            "Smooth Motion",
-            "Draws the world at your display's rate rather than the original's fixed thirty steps a "
-                + "second, interpolating between them. Also removes IGI2's mouse filtering and turn-speed cap. "
-                + "Off restores the original cadence and IGI2 mouse response."),
-        new GraphicsSetting(
-            "r_frame_limit",
-            "Frame Rate Cap",
-            "The most frames a second the game draws. A cap a little under your display's rate keeps the "
-                + "motion even and the GPU cooler. Held by NVIDIA Reflex where it runs, which keeps the delay "
-                + "low while it does."),
-        new GraphicsSetting(
-            "language",
-            "Language",
-            "The language of the game's own text -- mission names and briefings, objectives, messages and the "
-                + "mission computer -- read from the game's language folders.",
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["english"] = "English",
-                ["usa"] = "English (US)",
-                ["german"] = "Deutsch",
-                ["french"] = "Français",
-                ["italian"] = "Italiano",
-                ["spanish"] = "Español",
-            }),
-    ];
-
-    /// <summary>Gets the frame-rate caps the Display page offers, in frames a second; nought is none.</summary>
-    /// <remarks>The rates displays commonly run at, and the fractions of them a steady cap is chosen from.</remarks>
-    public static IReadOnlyList<int> FrameRateCaps { get; } = [0, 30, 60, 75, 90, 100, 120, 144, 165, 180, 240, 360];
 
     /// <summary>Gets every quality group on the page, in the order they are shown.</summary>
     public static IReadOnlyList<QualityGroup> Groups { get; } =
         [.. Sections.SelectMany(section => section.Groups)];
 
     /// <summary>Gets every single-variable row on the page, in the order they are shown.</summary>
-    public static IReadOnlyList<GraphicsSetting> Settings { get; } =
-        [.. Sections.SelectMany(section => section.Settings)];
+    public static IReadOnlyList<SettingRow> Settings { get; } =
+        [.. Sections.SelectMany(section => section.Rows)];
 
     /// <summary>
     /// Gets the archived graphics variables the page deliberately does not show, each with the reason.

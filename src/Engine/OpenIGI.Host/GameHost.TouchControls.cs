@@ -300,7 +300,7 @@ public sealed partial class GameHost
                 else if (button == TouchButton.Team)
                 {
                     // The team menu's key is a setting of its own, not an action the profile binds.
-                    if (DevTools.BindKeyNames.TryParse(TeamMenuCVars.Key.Value, out KeyCode team))
+                    if (BindKeyNames.TryParse(TeamMenuCVars.Key.Value, out KeyCode team))
                     {
                         _touchKeysWanted.Add(team);
                     }

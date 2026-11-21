@@ -11,6 +11,7 @@ using Xunit.Abstractions;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>The two ways a dropped gun falls: the original's, and the realistic rigid body.</summary>
+[Collection(ExperienceSettings.Name)]
 public sealed class DroppedWeaponModeTests(ITestOutputHelper output)
 {
     private const double Metre = RigidMeshBody.UnitsPerMetre;

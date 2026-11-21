@@ -230,11 +230,14 @@ public static class ExposureCVars
     /// <c>-sundir</c>, which is a comparison capture and keeps every lamp as the level ships it.
     /// </para>
     /// </remarks>
-    public static readonly EnumCVar<LampDaylight> LampDaylight = CVar.Choice(
-        "r_lamp_daylight",
-        global::OpenIGI.Rendering.LampDaylight.Outdoors,
-        CVarOptions.Archive,
-        "Which lamps go off by day and come on at dusk: off, outdoors or everywhere. Not in the original.");
+    public static readonly EnumCVar<LampDaylight> LampDaylight = Experience.Define(
+        CVar.Choice(
+            "r_lamp_daylight",
+            global::OpenIGI.Rendering.LampDaylight.Outdoors,
+            CVarOptions.Archive,
+            "Which lamps go off by day and come on at dusk: off, outdoors or everywhere. Not in the original."),
+        vanilla: "off",
+        enhanced: "outdoors");
 
     /// <summary>The brightness the frame is actually exposed at: the player's, less the night's, moved by the mission's look.</summary>
     /// <remarks>
@@ -414,4 +417,6 @@ public static class ExposureCVars
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
+
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
 }

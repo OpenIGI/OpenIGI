@@ -91,6 +91,14 @@ public class TabStrip : Control
     /// <summary>Gets the tab captions.</summary>
     public IReadOnlyList<string> Tabs => _tabs;
 
+    /// <summary>
+    /// Gets or sets which tabs can be chosen, by index, or <see langword="null"/> for all of them. A tab that cannot is a
+    /// reading -- shown, dimmed, while something else is chosen, and passed over by the keys and the pointer.
+    /// </summary>
+    public Func<int, bool>? TabEnabled { get; set; }
+
+    private bool CanChoose(int index) => TabEnabled is null || TabEnabled(index);
+
     /// <summary>Gets or sets the selected tab index.</summary>
     public int SelectedIndex
     {
@@ -140,22 +148,35 @@ public class TabStrip : Control
     {
         switch (direction)
         {
-            case NavDirection.Left when _selected > 0:
-                SelectedIndex = _selected - 1;
-                return true;
-            case NavDirection.Right when _selected < _tabs.Count - 1:
-                SelectedIndex = _selected + 1;
-                return true;
+            case NavDirection.Left:
+                return Step(-1);
+            case NavDirection.Right:
+                return Step(1);
             default:
                 return false;
         }
+    }
+
+    // To the next tab that can be chosen that way, if there is one.
+    private bool Step(int direction)
+    {
+        for (int i = _selected + direction; i >= 0 && i < _tabs.Count; i += direction)
+        {
+            if (CanChoose(i))
+            {
+                SelectedIndex = i;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>
     public override void ActivateAt(UiVec2 point)
     {
         int index = IndexAt(point);
-        if (index >= 0)
+        if (index >= 0 && CanChoose(index))
         {
             SelectedIndex = index;
         }
@@ -277,7 +298,9 @@ public class TabStrip : Control
             // follows the amber across rather than flipping when the selection lands.
             float overlap = MathF.Max(0f, MathF.Min(rect.Right, _indicator.Value + _indicatorWidth.Value) - MathF.Max(rect.X, _indicator.Value));
             float covered = rect.Width <= 0f ? 0f : Math.Clamp(overlap / rect.Width, 0f, 1f);
-            Bgra32 rest = _hovered == i ? Theme.TextBright : Theme.Large ? Theme.TextSecondary : UiPalette.TextTertiary;
+            Bgra32 rest = !CanChoose(i) ? Theme.TextDisabled
+                : _hovered == i ? Theme.TextBright
+                : Theme.Large ? Theme.TextSecondary : UiPalette.TextTertiary;
             Bgra32 color = Interpolate.Lerp(rest, Theme.OnAccent, covered);
 
             string caption = Upper(_tabs[i]);

@@ -5,8 +5,8 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The categories made straight from variables — Audio, and the variables of Gameplay — grouped by the word
-/// after their prefix, so <c>g_ragdoll_force</c> and <c>g_ragdoll_gravity</c> share a Ragdoll panel.
+/// The category made straight from variables — the mods' own settings — grouped by the word after their prefix,
+/// so <c>mod_x_ragdoll_force</c> and <c>mod_x_ragdoll_gravity</c> share a panel.
 /// </summary>
 internal static class CvarGroupBuilder
 {
@@ -75,33 +75,16 @@ internal static class CvarGroupBuilder
         return rows;
     }
 
-    /// <summary>The names of every visible variable that starts with a prefix, in registration order.</summary>
+    /// <summary>The names of every variable that starts with a prefix and is meant for players, in registration order.</summary>
+    /// <remarks>Neither a hidden variable nor a developer's switch is offered: both are the console's.</remarks>
     public static List<string> NamesWithPrefix(CVarRegistry cvars, string prefix)
     {
         var names = new List<string>();
         foreach (ICVar cvar in cvars.All)
         {
             if (cvar.Name.StartsWith(prefix, StringComparison.Ordinal)
-                && !cvar.Flags.HasFlag(CVarOptions.Hidden))
-            {
-                names.Add(cvar.Name);
-            }
-        }
-
-        return names;
-    }
-
-    /// <summary>The names of every visible gameplay (<c>g_</c>) and interface (<c>ui_</c>) variable.</summary>
-    public static List<string> GameplayNames(CVarRegistry cvars)
-    {
-        var names = new List<string>();
-        foreach (ICVar cvar in cvars.All)
-        {
-            // The cheats are a group of their own, behind their gate (GameplaySettingsTab); loose here they were
-            // switches that did nothing.
-            if ((cvar.Name.StartsWith("g_", StringComparison.Ordinal) || cvar.Name.StartsWith("ui_", StringComparison.Ordinal))
                 && !cvar.Flags.HasFlag(CVarOptions.Hidden)
-                && !cvar.Flags.HasFlag(CVarOptions.Cheat))
+                && !cvar.Flags.HasFlag(CVarOptions.Developer))
             {
                 names.Add(cvar.Name);
             }

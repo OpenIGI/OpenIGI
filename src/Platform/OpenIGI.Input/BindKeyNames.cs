@@ -1,6 +1,5 @@
-using OpenIGI.Input;
 
-namespace OpenIGI.Host.DevTools;
+namespace OpenIGI.Input;
 
 /// <summary>
 /// Translates between <see cref="KeyCode"/> and the names <c>bind</c> uses.

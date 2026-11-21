@@ -21,7 +21,7 @@ public static class CombatEffectCVars
     /// what every modern shooter draws anyway.
     /// </para>
     /// </remarks>
-    public static readonly NumericCVar<float> MuzzleFlash = Presets.Define(
+    public static readonly NumericCVar<float> MuzzleFlash = Experience.Define(
         CVar.Float(
             "r_muzzle_flash",
             1f,
@@ -30,9 +30,7 @@ public static class CombatEffectCVars
             CVarOptions.Archive,
             "Muzzle flash brightness. 1 is the original's, 0 removes it."),
         vanilla: "1",
-        enhanced: "0.45",
-        high: "0.45",
-        ultra: "0.45");
+        enhanced: "0.45");
 
     /// <summary>Whether the original's own impact effects are drawn.</summary>
     /// <remarks>
@@ -60,7 +58,7 @@ public static class CombatEffectCVars
     /// brown plume, a body a brief red mist. One is the authored look, two doubles the particle counts,
     /// and vanilla pins zero so a vanilla run shows the original's effects and nothing else.
     /// </remarks>
-    public static readonly NumericCVar<float> ImpactParticles = Presets.Define(
+    public static readonly NumericCVar<float> ImpactParticles = Experience.Define(
         CVar.Float(
             "r_impact_particles",
             1f,
@@ -69,9 +67,7 @@ public static class CombatEffectCVars
             CVarOptions.Archive,
             "Particle bursts where rounds land: sparks, dust and debris by surface. 0 turns them off."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the marks rounds leave on the world are drawn.</summary>
     /// <remarks>
@@ -136,5 +132,6 @@ public static class CombatEffectCVars
         ultra: "1");
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

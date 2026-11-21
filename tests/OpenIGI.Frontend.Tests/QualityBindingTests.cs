@@ -123,6 +123,7 @@ public sealed class QualityBindingTests
         // assemblies the menu's rows come from, not only the ones some other test happened to touch first.
         OpenIGI.Rendering.Generated.CVarRegistrations.RegisterAll();
         OpenIGI.Game.Generated.CVarRegistrations.RegisterAll();
+        OpenIGI.Audio.Generated.CVarRegistrations.RegisterAll();
 
         // CreateControl returns null if ANY variable a group names is unregistered, so a single typo in a
         // thirteen-name group does not produce a broken row -- it produces no row at all, silently. This
@@ -137,7 +138,7 @@ public sealed class QualityBindingTests
             }
         }
 
-        foreach (GraphicsSetting setting in AllSettings())
+        foreach (SettingRow setting in AllSettings())
         {
             Assert.True(
                 registry.TryGet(setting.Variable, out ICVar? direct) && direct is not null,
@@ -245,7 +246,7 @@ public sealed class QualityBindingTests
         List<string> words = [.. GraphicsMenu.Groups.Select(group => group.Caption)];
         words.AddRange(GraphicsMenu.Groups.SelectMany(group => group.Levels).Select(level => level.Name));
         words.AddRange(AllSettings().Select(setting => setting.Caption));
-        words.AddRange(GraphicsMenu.Sections.Select(section => section.Title));
+        words.AddRange(SettingsMenus.Pages.SelectMany(page => page.Panels).Select(panel => panel.Title));
 
         foreach (string word in words)
         {
@@ -317,10 +318,8 @@ public sealed class QualityBindingTests
     }
 
     /// <summary>Every row the settings screen shows as a single variable, wherever it is shown.</summary>
-    private static IEnumerable<GraphicsSetting> AllSettings() =>
-        GraphicsMenu.Settings
-            .Concat(GraphicsMenu.InterfaceSettings)
-            .Concat(GraphicsMenu.DisplaySettings);
+    private static IEnumerable<SettingRow> AllSettings() =>
+        SettingsMenus.Rows;
 
     [Fact]
     public void Every_shipped_group_can_read_back_every_step_it_writes()

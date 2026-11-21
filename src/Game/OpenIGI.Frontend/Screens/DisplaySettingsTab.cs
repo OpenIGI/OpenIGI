@@ -1,86 +1,72 @@
 using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
+using OpenIGI.Rendering;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend.Screens;
 
-/// <summary>The settings page's Display category: its rows, in <see cref="GraphicsMenu.DisplaySettings"/>'s order.</summary>
+/// <summary>The settings page's Display category: its panels, as <see cref="DisplayMenu.Panels"/> lays them out.</summary>
 /// <remarks>
 /// Two of them are lists this page builds, because their variables' types do not spell the choices out:
 /// the resolutions the display offers, and the frame-rate caps.
 /// </remarks>
 internal static class DisplaySettingsTab
 {
-    /// <summary>Builds the category's rows.</summary>
+    /// <summary>Builds the category's groups.</summary>
     /// <param name="rowBuilder">What the rows are built with; its lookup goes through the draft.</param>
     /// <param name="theme">The theme.</param>
-    public static List<SettingsGroup> Build(SettingsRowBuilder rowBuilder, UiTheme theme)
+    public static List<SettingsGroup> Build(SettingsRowBuilder rowBuilder, UiTheme theme) =>
+        SettingsPanelBuilder.Build(rowBuilder, theme, "Display", DisplayMenu.Panels, setting => BuildRow(rowBuilder, theme, setting));
+
+    // The rows whose choices the page lists itself; null for the rest, which the panel builds as usual.
+    private static Dropdown? BuildRow(SettingsRowBuilder rowBuilder, UiTheme theme, SettingRow setting)
     {
-        // What the screen is and how the picture is put on it, apart; the language on its own.
-        var screen = new List<Control>();
-        var output = new List<Control>();
-        var language = new List<Control>();
-        foreach (GraphicsSetting setting in GraphicsMenu.DisplaySettings)
+        switch (setting.Variable)
         {
-            List<Control> rows = setting.Variable switch
-            {
-                "r_renderer" or "r_window_mode" or "r_resolution" => screen,
-                _ when setting.Variable.Contains("lang", StringComparison.OrdinalIgnoreCase) => language,
-                _ => output,
-            };
-            switch (setting.Variable)
-            {
-                case "r_resolution":
-                    if (ChoiceRow(rowBuilder, theme, setting, ResolutionChoices(rowBuilder.Context)) is ({ } resolution, { } cvar))
-                    {
-                        rows.Add(resolution);
+            case "r_resolution":
+                if (ChoiceRow(rowBuilder, theme, setting, ResolutionChoices(rowBuilder.Context)) is ({ } resolution, { } cvar))
+                {
+                    // Borderless has no resolution of its own to choose, so the row follows the window mode.
+                    rowBuilder.WhileShown("r_window_mode", () => rowBuilder.DescribeRow(resolution, cvar, setting));
+                    return resolution;
+                }
 
-                        // Borderless has no resolution of its own to choose, so the row follows the window mode.
-                        rowBuilder.WhileShown("r_window_mode", () => rowBuilder.DescribeRow(resolution, cvar, setting));
-                    }
+                return null;
 
-                    break;
+            case "r_renderer" when setting.Choices is { } apis:
+                // No Automatic to choose: a setting still on auto reads as the API it starts, which is what it is.
+                return ChoiceRow(
+                    rowBuilder,
+                    theme,
+                    setting,
+                    [.. apis.Select(static pair => (pair.Key, pair.Value))],
+                    static stored => Enum.TryParse(stored, ignoreCase: true, out RendererBackend api)
+                        ? RendererBackends.Resolve(api).ToString().ToLowerInvariant()
+                        : stored).Control;
 
-                case "r_frame_limit":
-                    if (ChoiceRow(rowBuilder, theme, setting, FrameRateCapChoices()) is ({ } cap, _))
-                    {
-                        rows.Add(cap);
-                    }
+            case "r_frame_limit":
+                return ChoiceRow(rowBuilder, theme, setting, FrameRateCapChoices()).Control;
 
-                    break;
-
-                default:
-                    rows.AddRange(rowBuilder.SettingRows(theme, [setting]));
-                    break;
-            }
+            default:
+                return null;
         }
-
-        List<SettingsGroup> groups = [];
-        foreach ((string title, List<Control> rows) in new[] { ("Screen", screen), ("Output", output), ("Language", language) })
-        {
-            if (rows.Count > 0)
-            {
-                groups.Add(new SettingsGroup(title, rows));
-            }
-        }
-
-        return groups;
     }
 
     /// <summary>A row choosing among a list of a variable's values, and the variable; nulls where it is not registered.</summary>
     private static (Dropdown? Control, ICVar? Cvar) ChoiceRow(
         SettingsRowBuilder rowBuilder,
         UiTheme theme,
-        GraphicsSetting setting,
-        IReadOnlyList<(string Value, string Caption)> choices)
+        SettingRow setting,
+        IReadOnlyList<(string Value, string Caption)> choices,
+        Func<string, string>? reads = null)
     {
         if (rowBuilder.Find(setting.Variable) is not { } cvar)
         {
             return (null, null);
         }
 
-        Dropdown control = CVarBinding.CreateChoiceControl(theme, cvar, setting.Caption, choices, rowBuilder.Bindings);
+        Dropdown control = CVarBinding.CreateChoiceControl(theme, cvar, setting.Caption, choices, rowBuilder.Bindings, reads);
         rowBuilder.DescribeRow(control, cvar, setting);
         rowBuilder.TabCvars.Add(cvar);
         return (control, cvar);
@@ -100,10 +86,10 @@ internal static class DisplaySettingsTab
         return choices;
     }
 
-    /// <summary>No cap, then the caps <see cref="GraphicsMenu.FrameRateCaps"/> offers.</summary>
+    /// <summary>No cap, then the caps <see cref="DisplayMenu.FrameRateCaps"/> offers.</summary>
     private static List<(string Value, string Caption)> FrameRateCapChoices() =>
         [
-            .. GraphicsMenu.FrameRateCaps.Select(static fps => fps <= 0
+            .. DisplayMenu.FrameRateCaps.Select(static fps => fps <= 0
                 ? ("0", "Unlimited")
                 : (fps.ToString(CultureInfo.InvariantCulture), string.Create(CultureInfo.InvariantCulture, $"{fps} fps"))),
         ];

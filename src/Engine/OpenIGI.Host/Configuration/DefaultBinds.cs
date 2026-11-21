@@ -83,6 +83,12 @@ public static class DefaultBinds
         ("coop_mark", "CoopMark"),
         ("coop_chat", "CoopChat"),
         ("coop_chat team", "CoopTeamChat"),
+
+        // The four lines said at a press, each named by what it says.
+        ("coop_say Go, go, go!", "Say: Go, go, go!"),
+        ("coop_say Hold position.", "Say: Hold position."),
+        ("coop_say Enemy spotted.", "Say: Enemy spotted."),
+        ("coop_say Need help here!", "Say: Need help here!"),
         ("thermal_palette", "ThermalPalette"),
     ];
 

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Configuration;
 
 namespace OpenIGI.Game.Player.Aim;
@@ -17,12 +18,15 @@ namespace OpenIGI.Game.Player.Aim;
 public static class ModernAimCVars
 {
     /// <summary>Whether modern aim is on.</summary>
-    public static readonly BoolCVar Enabled = CVar.Bool(
-        "g_modern_aim",
-        false,
-        CVarOptions.Archive,
-        "Modern aiming: the right mouse button aims down the sights, Q and E lean with the weapon up, and the weapon braces on "
-        + "ledges and tables. Off plays the original's sight, zoom and peek.");
+    public static readonly BoolCVar Enabled = Experience.Define(
+        CVar.Bool(
+            "g_modern_aim",
+            false,
+            CVarOptions.Archive,
+            "Modern aiming: the right mouse button aims down the sights, Q and E lean with the weapon up, and the weapon braces on "
+            + "ledges and tables. Off plays the original's sight, zoom and peek."),
+        vanilla: "0",
+        enhanced: null);
 
     /// <summary>Whether a press of the aim button stays aimed until the next, rather than for as long as it is held.</summary>
     public static readonly BoolCVar Toggle = CVar.Bool(
@@ -55,4 +59,6 @@ public static class ModernAimCVars
         true,
         CVarOptions.Archive,
         "Aiming down the sights at a ledge, table or wall edge braces the weapon on it. Off braces only on the mount key.");
+
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
 }

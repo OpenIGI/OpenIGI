@@ -13,16 +13,14 @@ public static class HudCVars
     /// Both presentations stay loaded so this can switch live from the console or settings screen.
     /// Vanilla selects the recovered retail path; the other presets retain the remaster HUD by default.
     /// </remarks>
-    public static readonly BoolCVar RemasteredHud = Presets.DefineInterface(
+    public static readonly BoolCVar RemasteredHud = Experience.Define(
         CVar.Bool(
             "r_remastered_hud",
             true,
             CVarOptions.Archive,
             "Draw the remaster HUD. Off uses IGI1's original health, weapon, action and timer display."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How much the original HUD's 640x480 art is magnified; nought fits it to the screen.</summary>
     /// <remarks>
@@ -45,19 +43,17 @@ public static class HudCVars
     /// and shakes and reddens at its corners when the player is hit (<see cref="HudFxSettings"/>). Only while
     /// <see cref="RemasteredHud"/> is on; off draws the remastered HUD flat.
     /// </remarks>
-    public static readonly BoolCVar HudFx = Presets.DefineInterface(
+    public static readonly BoolCVar HudFx = Experience.Define(
         CVar.Bool(
             "r_hud_fx",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, project it as on a visor: curvature, fringe, scanlines, glow and hit effects."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How strongly the remastered HUD's visor effects are applied, nought to one.</summary>
-    public static readonly NumericCVar<float> HudFxIntensity = Presets.DefineInterface(
+    public static readonly NumericCVar<float> HudFxIntensity = Experience.Define(
         CVar.Float(
             "r_hud_fx_intensity",
             1f,
@@ -66,68 +62,61 @@ public static class HudCVars
             CVarOptions.Archive,
             "Strength of the remaster HUD's visor effects, 0 to 1."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How much of the remastered HUD stays on screen.</summary>
     /// <remarks>
     /// Full keeps everything up. Contextual dims the weapon and the inventory when nothing about them changes and brings them
     /// back on a reload, a switch, low rounds, a hit or an alarm. Minimal shows only what is urgent.
     /// </remarks>
-    public static readonly EnumCVar<HudDensity> HudDensity = Presets.DefineInterface(
+    public static readonly EnumCVar<HudDensity> HudDensity = Experience.Define(
         CVar.Choice(
             "r_hud_density",
             global::OpenIGI.Rendering.HudDensity.Contextual,
             CVarOptions.Archive,
             "How much of the remaster HUD stays up: full, contextual or minimal."),
         vanilla: "full",
-        enhanced: "contextual",
-        high: "contextual",
-        ultra: "contextual");
+        enhanced: "contextual");
 
     /// <summary>Whether the remastered HUD trails the view a little as it turns, as a visor's display would.</summary>
-    public static readonly BoolCVar HudSway = Presets.DefineInterface(
+    public static readonly BoolCVar HudSway = Experience.Define(
         CVar.Bool(
             "r_hud_sway",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, let it trail the view a few pixels as it turns, then settle."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the remastered HUD says in a word, at the top of the screen, how far the soldiers are onto the player.</summary>
-    public static readonly BoolCVar HudThreat = Presets.DefineInterface(
+    public static readonly BoolCVar HudThreat = Experience.Define(
         CVar.Bool(
             "r_hud_threat",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, say at the top of the screen how far the soldiers are onto you: searching, suspicious, alarm, detected."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the remastered display draws its own crosshair, one for each kind of weapon, in place of the original's.</summary>
-    public static readonly BoolCVar Crosshair = Presets.DefineInterface(
+    public static readonly BoolCVar Crosshair = Experience.Define(
         CVar.Bool(
             "r_crosshair",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, a clean crosshair shaped to each kind of weapon that opens as you fire and turns red over an enemy."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the remastered display says under the crosshair when the weapon runs low or empty.</summary>
-    public static readonly BoolCVar AmmoCue = CVar.Bool(
-        "r_ammo_cue",
-        true,
-        CVarOptions.Archive,
-        "With the remaster HUD, a word under the crosshair when the weapon runs low: LOW AMMO, RELOAD, NO AMMO.");
+    public static readonly BoolCVar AmmoCue = Experience.Define(
+        CVar.Bool(
+            "r_ammo_cue",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, a word under the crosshair when the weapon runs low: LOW AMMO, RELOAD, NO AMMO."),
+        vanilla: "0",
+        enhanced: "1");
 
     /// <summary>The sound a teammate going down plays, by its name in the title's sound table; empty for none.</summary>
     public static readonly StringCVar DownedSound = CVar.Text(
@@ -179,35 +168,34 @@ public static class HudCVars
         "hud_killfeed", true, CVarOptions.Archive, "In multiplayer and co-op, list the kills in the top right corner and announce your own.");
 
     /// <summary>Whether a single-player mission lists the player's kills of the level's soldiers as a session's feed does.</summary>
-    public static readonly BoolCVar KillFeedSinglePlayer = CVar.Bool(
-        "hud_killfeed_singleplayer",
-        false,
-        CVarOptions.Archive,
-        "In single player too, list your kills of the level's soldiers in the top right corner, with the weapon and any headshot.");
+    public static readonly BoolCVar KillFeedSinglePlayer = Experience.Define(
+        CVar.Bool(
+            "hud_killfeed_singleplayer",
+            false,
+            CVarOptions.Archive,
+            "In single player too, list your kills of the level's soldiers in the top right corner, with the weapon and any headshot."),
+        vanilla: "0",
+        enhanced: null);
 
     /// <summary>Whether the crosshair marks a hit and confirms a kill.</summary>
-    public static readonly BoolCVar HitMarkers = Presets.DefineInterface(
+    public static readonly BoolCVar HitMarkers = Experience.Define(
         CVar.Bool(
             "r_hit_markers",
             true,
             CVarOptions.Archive,
             "On the crosshair, either display's, a mark when a round hits and a red cross when it kills: soldiers and other players."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether a hit and a kill sound a short tick.</summary>
-    public static readonly BoolCVar HitSounds = Presets.DefineInterface(
+    public static readonly BoolCVar HitSounds = Experience.Define(
         CVar.Bool(
             "r_hit_sounds",
             true,
             CVarOptions.Archive,
             "A short tick when a round hits and a deeper one when it kills, in either display: soldiers and other players."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Gets or sets whether a multiplayer session is being played, which marks and sounds every hit whatever the settings.</summary>
     /// <remarks>
@@ -224,28 +212,24 @@ public static class HudCVars
     public static bool SoundsHits => InSession || HitSounds.Value;
 
     /// <summary>Whether a sniper aiming at the player shows the glint of his scope.</summary>
-    public static readonly BoolCVar ScopeGlint = Presets.DefineInterface(
+    public static readonly BoolCVar ScopeGlint = Experience.Define(
         CVar.Bool(
             "r_scope_glint",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, a sniper who has you in his sights shows the glint of his scope."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the objective being worked on is projected onto its place in the level.</summary>
-    public static readonly BoolCVar WorldObjective = Presets.DefineInterface(
+    public static readonly BoolCVar WorldObjective = Experience.Define(
         CVar.Bool(
             "r_world_objective",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, project the current objective onto its place in the level."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether a usable object is marked in the world rather than captioned across the screen.</summary>
     /// <remarks>
@@ -262,16 +246,14 @@ public static class HudCVars
     /// action sprites.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar InteractionPrompt = Presets.DefineInterface(
+    public static readonly BoolCVar InteractionPrompt = Experience.Define(
         CVar.Bool(
             "r_interaction_prompt",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, mark usable objects in the world. Off is the centred text prompt."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the C-key map computer is the remaster's interface rather than the retail one.</summary>
     /// <remarks>
@@ -288,16 +270,14 @@ public static class HudCVars
     /// that shares an implementation with the thing it is gating is not a gate.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar TacticalComputer = Presets.DefineInterface(
+    public static readonly BoolCVar TacticalComputer = Experience.Define(
         CVar.Bool(
             "r_computer_tactical",
             true,
             CVarOptions.Archive,
             "Draw the map computer as the full-screen tactical interface. Off is the retail handheld panel."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the remastered binocular applies its glass-lens display transform.</summary>
     /// <remarks>
@@ -305,32 +285,28 @@ public static class HudCVars
     /// finished picture, raised as the device comes up. Off under vanilla for the reason the tactical
     /// computer is: the retail binocular is the regression gate and must stay untouched.
     /// </remarks>
-    public static readonly BoolCVar BinocularLens = Presets.DefineInterface(
+    public static readonly BoolCVar BinocularLens = Experience.Define(
         CVar.Bool(
             "r_binocular_lens",
             true,
             CVarOptions.Archive,
             "Apply the remastered binocular's glass-lens transform (tint, bloom, bezel vignette)."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether binocular-detected enemies are given a through-wall silhouette glow.</summary>
     /// <remarks>
     /// A team-coloured selection glow drawn over each scanned soldier while the remastered optics are up,
     /// so a marked contact stays legible through cover. Off under vanilla with the rest of the remaster.
     /// </remarks>
-    public static readonly BoolCVar BinocularOutline = Presets.DefineInterface(
+    public static readonly BoolCVar BinocularOutline = Experience.Define(
         CVar.Bool(
             "r_binocular_outline",
             true,
             CVarOptions.Archive,
             "Glow binocular-detected enemies through walls while the remastered optics are up."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the binoculars' highlight is drawn in the silhouette style rather than as a glow.</summary>
     /// <remarks>
@@ -338,16 +314,14 @@ public static class HudCVars
     /// fades towards the screen's edges; off, it is the glow of <see cref="BinocularOutline"/>, drawn into the scene. Only
     /// while that is on.
     /// </remarks>
-    public static readonly BoolCVar BinocularSilhouette = Presets.DefineInterface(
+    public static readonly BoolCVar BinocularSilhouette = Experience.Define(
         CVar.Bool(
             "r_binocular_silhouette",
             true,
             CVarOptions.Archive,
             "Draw the binoculars' highlight as a soft outline over a faint fill, rather than as a glow."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>The remastered binocular detector's range at the default zoom, in metres.</summary>
     /// <remarks>
@@ -356,7 +330,7 @@ public static class HudCVars
     /// default field of view up to <see cref="BinocularRangeZoomed"/> at the tightest zoom. The vanilla
     /// optics ignore both and stay retail-uncapped.
     /// </remarks>
-    public static readonly NumericCVar<float> BinocularRange = Presets.DefineInterface(
+    public static readonly NumericCVar<float> BinocularRange = Experience.Define(
         CVar.Float(
             "r_binocular_range",
             150f,
@@ -365,9 +339,7 @@ public static class HudCVars
             CVarOptions.Archive,
             "Range, in metres, the remastered binocular detector marks a contact at, at the default zoom."),
         vanilla: "150",
-        enhanced: "150",
-        high: "150",
-        ultra: "150");
+        enhanced: "150");
 
     /// <summary>The remastered binocular detector's range at the tightest zoom, in metres.</summary>
     /// <remarks>
@@ -375,7 +347,7 @@ public static class HudCVars
     /// closest magnification, so leaning into the optics sees further, the way a real scope resolves a
     /// distant figure the naked view cannot.
     /// </remarks>
-    public static readonly NumericCVar<float> BinocularRangeZoomed = Presets.DefineInterface(
+    public static readonly NumericCVar<float> BinocularRangeZoomed = Experience.Define(
         CVar.Float(
             "r_binocular_range_zoomed",
             250f,
@@ -384,9 +356,7 @@ public static class HudCVars
             CVarOptions.Archive,
             "Range, in metres, the remastered binocular detector marks a contact at, at the tightest zoom."),
         vanilla: "250",
-        enhanced: "250",
-        high: "250",
-        ultra: "250");
+        enhanced: "250");
 
     /// <summary>Whether a title's thermal optics are seen through the remastered sensor rather than the original's heat ramp.</summary>
     /// <remarks>
@@ -394,31 +364,27 @@ public static class HudCVars
     /// infrared view, its bodies in the heat ramp and its frame over them. Off under vanilla, where the original is the gate.
     /// Needs the offscreen scene; without it the original's view is drawn whatever this says.
     /// </remarks>
-    public static readonly BoolCVar ThermalRemastered = Presets.DefineInterface(
+    public static readonly BoolCVar ThermalRemastered = Experience.Define(
         CVar.Bool(
             "r_thermal_remastered",
             true,
             CVarOptions.Archive,
             "See through thermal optics with the remastered sensor: the world as heat, people glowing. Off is the original's view."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How the remastered thermal sensor colours heat.</summary>
-    public static readonly EnumCVar<ThermalPalette> ThermalPalette = Presets.DefineInterface(
+    public static readonly EnumCVar<ThermalPalette> ThermalPalette = Experience.Define(
         CVar.Choice(
             "r_thermal_palette",
             global::OpenIGI.Rendering.ThermalPalette.WhiteHot,
             CVarOptions.Archive,
             "How the remastered thermal sensor colours heat: whitehot, blackhot, ironbow or rainbow."),
         vanilla: "whitehot",
-        enhanced: "whitehot",
-        high: "whitehot",
-        ultra: "whitehot");
+        enhanced: "whitehot");
 
     /// <summary>How strong the remastered thermal sensor's grain and fixed-pattern noise are.</summary>
-    public static readonly NumericCVar<float> ThermalNoise = Presets.DefineInterface(
+    public static readonly NumericCVar<float> ThermalNoise = Experience.Define(
         CVar.Float(
             "r_thermal_noise",
             1f,
@@ -427,9 +393,7 @@ public static class HudCVars
             CVarOptions.Archive,
             "Strength of the remastered thermal sensor's grain and fixed-pattern noise; 0 is a clean picture."),
         vanilla: "1",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the mission's status messages are drawn as the remaster's comms cards.</summary>
     /// <remarks>
@@ -443,16 +407,14 @@ public static class HudCVars
     /// its own bitmap message block and original display timing.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar TacticalMessages = Presets.DefineInterface(
+    public static readonly BoolCVar TacticalMessages = Experience.Define(
         CVar.Bool(
             "r_messages_tactical",
             true,
             CVarOptions.Archive,
             "With the remaster HUD, draw mission messages as tactical cards. Off is the retail message block."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How strongly the screen washes red when the player is hit.</summary>
     /// <remarks>
@@ -468,7 +430,7 @@ public static class HudCVars
     /// to hide the thing that is shooting at you, which turns a damage cue into a punishment.
     /// </para>
     /// </remarks>
-    public static readonly NumericCVar<float> DamageFlash = Presets.DefineInterface(
+    public static readonly NumericCVar<float> DamageFlash = Experience.Define(
         CVar.Float(
             "r_damage_flash",
             0.55f,
@@ -477,9 +439,7 @@ public static class HudCVars
             CVarOptions.Archive,
             "How red the screen goes when you are hit. 1 is the original's strength, 0 removes it."),
         vanilla: "1",
-        enhanced: "0.55",
-        high: "0.55",
-        ultra: "0.55");
+        enhanced: "0.55");
 
     /// <summary>A session overlay to lay over the picture with made-up players, for looking at its design; empty for none.</summary>
     /// <remarks>
@@ -495,5 +455,6 @@ public static class HudCVars
         "Lay a session overlay over play with made-up players, to look at: scoreboard, scoreboard_team, chat, chat_open, revive, downed, controls, teammenu, buymenu, mapvote, match or all.");
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

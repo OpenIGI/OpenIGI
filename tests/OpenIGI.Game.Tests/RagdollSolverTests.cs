@@ -13,6 +13,7 @@ namespace OpenIGI.Game.Tests;
 /// Covers the rigid-body solver: that a body stays a body, that it lands on a floor rather than in it,
 /// and that a joint stays inside the range it was given.
 /// </summary>
+[Collection(ExperienceSettings.Name)]
 public sealed class RagdollSolverTests
 {
     /// <summary>No joint comes apart, however long the body is thrown about.</summary>

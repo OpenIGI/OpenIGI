@@ -4,7 +4,6 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Game.Player;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Hud;

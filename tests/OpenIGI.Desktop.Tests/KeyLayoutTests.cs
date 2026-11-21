@@ -2,7 +2,6 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Host;
 using OpenIGI.Host.Configuration;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Input;
 using Xunit;
 

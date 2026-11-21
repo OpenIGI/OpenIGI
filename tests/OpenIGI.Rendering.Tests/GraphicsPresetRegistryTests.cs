@@ -79,29 +79,34 @@ public sealed class GraphicsPresetRegistryTests
     }
 
     /// <summary>
-    /// Only vanilla is drawn the original's rain; every preset above it gets the remastered storm.
+    /// Only the original experience is drawn the original's rain; the remaster's gets the storm, whatever the quality.
     /// </summary>
     /// <remarks>
     /// The two rain renderers are chosen between by <c>r_storm</c> alone, so this one variable is the
-    /// whole of "which rain does this player see". Vanilla means the shipped band of thin vertical
-    /// streaks -- it is the regression gate, and it has to stay that -- and every tier above it means
-    /// the particle storm: wind, shelter, splashes and wet ground. A tier that quietly lost the storm
-    /// would show 1998's rain in the middle of an otherwise modern picture, in the three retail missions
-    /// that rain, and nothing would report it.
+    /// whole of "which rain does this player see". The original experience means the shipped band of thin
+    /// vertical streaks -- <c>-vanilla</c> sends it, and it is the regression gate -- and the remaster's means
+    /// the particle storm: wind, shelter, splashes and wet ground. It is the experience's, not a quality tier's,
+    /// so a player on the cheapest picture still gets the storm.
     /// </remarks>
     [Fact]
-    public void OnlyVanillaDrawsTheOriginalsRain()
+    public void OnlyTheOriginalExperienceDrawsTheOriginalsRain()
     {
         _ = WeatherCVars.Storm;
-
-        GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
-        Assert.False(WeatherCVars.Storm.Value, "vanilla has to keep the original's rain band");
-
-        foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
-            [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
+        bool held = WeatherCVars.Storm.Value;
+        try
         {
-            GraphicsPresetRegistry.Default.Apply(preset);
-            Assert.True(WeatherCVars.Storm.Value, $"{preset} draws the original's rain band, not the storm");
+            ExperiencePresetRegistry.Default.Apply(ExperiencePreset.Vanilla);
+            Assert.False(WeatherCVars.Storm.Value, "the original experience has to keep the original's rain band");
+
+            ExperiencePresetRegistry.Default.Apply(ExperiencePreset.Enhanced);
+            Assert.True(WeatherCVars.Storm.Value, "the remaster's experience draws the original's rain band, not the storm");
+
+            GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
+            Assert.True(WeatherCVars.Storm.Value, "a quality preset chose the rain");
+        }
+        finally
+        {
+            WeatherCVars.Storm.Value = held;
         }
     }
 
@@ -138,11 +143,10 @@ public sealed class GraphicsPresetRegistryTests
         // r_day_night_cycle joins them for the same reason the weather does: it is a choice about what
         // the world is doing while you play it, not about how well the world is drawn. A preset naming it
         // would mean picking Ultra silently started the clock, or picking Vanilla silently stopped it.
-        // r_lamp_daylight with it: whether the lamps follow that clock is the world's behaviour too.
         string[] preferences =
         [
             "r_weather_enabled", "r_weather_kind", "r_weather_speed",
-            "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length", "r_lamp_daylight",
+            "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length",
             "r_vsync",
 
             // The display: which API draws, and the window it draws into. Choices about the machine and the
@@ -170,11 +174,17 @@ public sealed class GraphicsPresetRegistryTests
             // under it, and the colours drawn for their colour vision. A quality tier resetting them would undo a choice
             // the player made about their own eyes and hands.
             "r_crosshair_color", "r_crosshair_size", "r_crosshair_thickness", "r_crosshair_gap", "r_crosshair_opacity",
-            "r_crosshair_dot", "r_crosshair_outline", "r_crosshair_dynamic", "r_ammo_cue", "r_colorblind",
+            "r_crosshair_dot", "r_crosshair_outline", "r_crosshair_dynamic", "r_colorblind",
         ];
 
         _ = LightingCVars.Lighting;
-        HashSet<string> managed = [.. GraphicsPresetRegistry.Default.Managed.Select(variable => variable.Name)];
+        // Named by the quality presets, or by the experience -- the original game's or the remaster's -- which holds
+        // what the game shows and adds rather than how well it draws.
+        HashSet<string> managed =
+        [
+            .. GraphicsPresetRegistry.Default.Managed.Select(variable => variable.Name),
+            .. ExperiencePresetRegistry.Default.Managed.Select(variable => variable.Name),
+        ];
 
         string[] unmanaged =
         [

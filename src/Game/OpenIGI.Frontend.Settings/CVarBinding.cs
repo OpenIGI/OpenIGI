@@ -106,6 +106,10 @@ public static class CVarBinding
     /// <param name="label">The caption.</param>
     /// <param name="choices">The values offered, each with what it is called on screen, in the order shown.</param>
     /// <param name="lifetime">Receives the handle that unhooks the control; see <see cref="CreateControl"/>.</param>
+    /// <param name="reads">
+    /// Which offered value a stored one is shown as, or <see langword="null"/> to show each as itself: for a stored value
+    /// that stands for one of the others, as a graphics API of <c>auto</c> stands for the one it starts.
+    /// </param>
     /// <returns>The bound dropdown.</returns>
     /// <remarks>
     /// For a variable whose useful values are a short list its type does not spell out: a resolution the
@@ -118,19 +122,21 @@ public static class CVarBinding
         ICVar cvar,
         string label,
         IReadOnlyList<(string Value, string Caption)> choices,
-        ICollection<IDisposable>? lifetime = null)
+        ICollection<IDisposable>? lifetime = null,
+        Func<string, string>? reads = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(cvar);
         ArgumentNullException.ThrowIfNull(choices);
 
         List<(string Value, string Caption)> offered = [.. choices];
-        if (!offered.Exists(choice => choice.Value == cvar.ValueText))
+        string held = reads?.Invoke(cvar.ValueText) ?? cvar.ValueText;
+        if (!offered.Exists(choice => choice.Value == held))
         {
-            offered.Add((cvar.ValueText, cvar.ValueText));
+            offered.Add((held, held));
         }
 
-        Binding binding = BindChoices(theme, label, cvar, offered);
+        Binding binding = BindChoices(theme, label, cvar, offered, reads);
         lifetime?.Add(binding);
         return (Dropdown)binding.Control;
     }
@@ -183,10 +189,12 @@ public static class CVarBinding
         });
     }
 
-    private static Binding BindChoices(UiTheme theme, string caption, ICVar cvar, IReadOnlyList<(string Value, string Caption)> choices)
+    private static Binding BindChoices(
+        UiTheme theme, string caption, ICVar cvar, IReadOnlyList<(string Value, string Caption)> choices, Func<string, string>? reads = null)
     {
+        string Shown(string stored) => reads?.Invoke(stored) ?? stored;
         string[] options = [.. choices.Select(static choice => choice.Value)];
-        int current = Math.Max(0, Array.IndexOf(options, cvar.ValueText));
+        int current = Math.Max(0, Array.IndexOf(options, Shown(cvar.ValueText)));
         var gate = new BindingGate();
         var dropdown = new Dropdown(theme, caption, choices.Select(static choice => choice.Caption), current);
         Action<int> selectionChanged = index =>
@@ -198,7 +206,7 @@ public static class CVarBinding
         };
         EventHandler<CVarChangedEventArgs> cvarChanged = (_, _) => gate.Run(() =>
         {
-            int i = Array.IndexOf(options, cvar.ValueText);
+            int i = Array.IndexOf(options, Shown(cvar.ValueText));
             if (i >= 0)
             {
                 dropdown.SelectedIndex = i;

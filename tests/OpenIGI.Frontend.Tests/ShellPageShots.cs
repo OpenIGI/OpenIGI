@@ -3,6 +3,7 @@ using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend.Screens;
+using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Input;
 using OpenIGI.UI;
@@ -42,6 +43,10 @@ public sealed class ShellPageShots
         ("07-settings-audio", static context => new SettingsScreen(context) { StartCategory = "audio" }, false),
         ("08-settings-controls", static context => new SettingsScreen(context) { StartCategory = "controls" }, false),
         ("09-settings-gameplay", static context => new SettingsScreen(context) { StartCategory = "gameplay" }, false),
+        ("09-settings-gameplay-open", static context => new SettingsScreen(context) { StartCategory = "gameplay" }, false),
+        ("09-settings-interface", static context => new SettingsScreen(context) { StartCategory = "interface" }, false),
+        ("09-settings-interface-open", static context => new SettingsScreen(context) { StartCategory = "interface" }, false),
+        ("07-settings-audio-open", static context => new SettingsScreen(context) { StartCategory = "audio" }, false),
         ("10-profile", static context => new ProfilesScreen(context), false),
         ("10-profile-waiting", static context => new ProfilesScreen(context), false),
         ("10-profile-signed-in", static context => new ProfilesScreen(context), false),
@@ -121,6 +126,7 @@ public sealed class ShellPageShots
                     InGame = inGame,
                 };
                 var shell = new Shell(context);
+                OpenPanels(context.Cvars, name.EndsWith("-open", StringComparison.Ordinal));
                 context.Stack.Reset(create(context), animate: false);
 
                 var layout = new LayoutContext(width, height, userScale: OpenIGI.Core.Graphics.UiScale.MenuBoost(width, height, density));
@@ -167,7 +173,29 @@ public sealed class ShellPageShots
     {
         OpenIGI.Rendering.Generated.CVarRegistrations.RegisterAll();
         OpenIGI.Game.Generated.CVarRegistrations.RegisterAll();
+        OpenIGI.Audio.Generated.CVarRegistrations.RegisterAll();
         return CVarRegistry.Default;
+    }
+
+    // An "-open" page is drawn with every Advanced panel open and the settings that rows follow turned on, so the rows
+    // they hide are drawn too; every other page with them as a fresh install has them.
+    private static void OpenPanels(CVarRegistry cvars, bool open)
+    {
+        string expanded = open
+            ? string.Join(',', SettingsMenus.Pages.SelectMany(page => page.Panels.Select(panel => $"{page.Page}/{panel.Title}")))
+            : string.Empty;
+        Set("ui_settings_expanded", expanded);
+        Set("g_ragdoll", open ? "1" : "0");
+        Set("g_modern_aim", open ? "1" : "0");
+        Set("g_cheats_enabled", open ? "1" : "0");
+
+        void Set(string name, string value)
+        {
+            if (cvars.TryGet(name, out ICVar? cvar) && cvar is not null)
+            {
+                cvar.TrySetText(value, out _);
+            }
+        }
     }
 
     // The game's fourteen, as the campaign page lists them.

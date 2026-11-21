@@ -939,7 +939,7 @@ public sealed partial class GameHost : IDisposable
             {
                 if (executeBinds && !PlaytestOwns(key))
                 {
-                    state.Console.System.ExecuteBind(BindKeyNames.NameOf(key));
+                    state.Console.System.ExecuteBind(Input.BindKeyNames.NameOf(key));
                 }
             }
         }

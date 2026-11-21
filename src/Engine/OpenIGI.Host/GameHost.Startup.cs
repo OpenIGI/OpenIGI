@@ -765,13 +765,13 @@ public sealed partial class GameHost
                     .. Configuration.DefaultBinds.Listed.Select(listed => new CommandKey(
                         listed.Label,
                         listed.Statement,
-                        DevTools.BindKeyNames.TryParse(Configuration.DefaultBinds.KeyOf(state.Console.System.Binds, listed.Statement), out Input.KeyCode bound)
+                        Input.BindKeyNames.TryParse(Configuration.DefaultBinds.KeyOf(state.Console.System.Binds, listed.Statement), out Input.KeyCode bound)
                             ? bound
                             : Input.KeyCode.None)),
                 ],
                 bindCommandKey: (statement, key) =>
                 {
-                    if (DevTools.BindKeyNames.NameOf(key) is { Length: > 0 } name)
+                    if (Input.BindKeyNames.NameOf(key) is { Length: > 0 } name)
                     {
                         Configuration.DefaultBinds.Rebind(state.Console.System, statement, name);
                     }

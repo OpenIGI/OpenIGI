@@ -1,3 +1,4 @@
+using OpenIGI.Core.Configuration;
 using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.Frontend.Settings;
@@ -17,14 +18,14 @@ namespace OpenIGI.Frontend.Screens;
 internal static class ControlsSettingsTab
 {
     /// <summary>A touch screen's rows, shown once the screen has been touched.</summary>
-    private static readonly GraphicsSetting[] TouchSettings =
+    private static readonly SettingRow[] TouchSettings =
     [
-        new GraphicsSetting(
+        new SettingRow(
             "touch_look_sensitivity",
             "Look Sensitivity",
             "How far the view turns for a drag across the screen. At 1 it is the game's own rate; higher turns further "
                 + "for the same drag."),
-        new GraphicsSetting(
+        new SettingRow(
             "touch_gyro",
             "Gyroscope Aim",
             "Turning the phone turns the view, alongside the fingers. Scope aims with it only through a sight or the "
@@ -36,21 +37,50 @@ internal static class ControlsSettingsTab
                 ["scope"] = "Scope",
                 ["always"] = "Always",
             }),
-        new GraphicsSetting(
+        new SettingRow(
             "touch_gyro_sensitivity",
             "Gyroscope Sensitivity",
             "How far the view turns for a turn of the phone. At 1 it turns exactly as far as the phone did; higher "
                 + "needs less wrist."),
-        new GraphicsSetting(
+        new SettingRow(
             "touch_gyro_invert",
             "Invert Gyroscope",
             "Tilting the top of the phone away looks down instead of up."),
     ];
 
-    // How the movement keys behave, as the player likes them.
-    private static readonly GraphicsSetting[] MovementSettings =
+    // How a co-op player's voice goes out, and how loud the others' are. The key held to talk is a row of its own, below.
+    private static readonly SettingRow[] VoiceSettings =
     [
-        new GraphicsSetting(
+        new SettingRow(
+            "coop_voice",
+            "Voice Chat",
+            "How your voice reaches your teammates in co-op: only while you hold the push-to-talk key, whenever you speak, or "
+                + "not at all. You still hear them unless their volume is at nought.",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["0"] = "Off",
+                ["1"] = "Push to Talk",
+                ["2"] = "Open Mic",
+            }),
+        new SettingRow(
+            "coop_voice_volume",
+            "Voice Volume",
+            "How loud your teammates' voices are. 100 is as they spoke; up to 200 lifts a quiet microphone.",
+            Step: 10f),
+    ];
+
+    // The keys kept as a setting holding a bind name rather than as a bind: each one held or pressed only in a match.
+    private static readonly (string Variable, string Caption, string Group)[] SettingKeys =
+    [
+        ("mp_team_key", "Team menu", Multiplayer),
+        ("mp_controls_key", "Show controls", Multiplayer),
+        ("coop_voice_key", "Push to talk", Voice),
+    ];
+
+    // How the movement keys behave, as the player likes them.
+    private static readonly SettingRow[] MovementSettings =
+    [
+        new SettingRow(
             "in_crouch_toggle",
             "Toggle Crouch",
             "Press crouch once to crouch and again to stand, rather than holding it down."),
@@ -131,16 +161,57 @@ internal static class ControlsSettingsTab
         var commandRows = new List<(KeyBindingRow Row, string Statement)>();
         foreach (CommandKey command in context.Host.CommandKeys)
         {
-            var row = new KeyBindingRow(theme, command.Label, command.Key, CommandKeyName(command.Key))
+            string caption = Humanize(command.Label);
+            var row = new KeyBindingRow(theme, caption, command.Key, CommandKeyName(command.Key))
             {
-                Tooltip = $"Press this row, then a key, to rebind {command.Label}.",
+                Tooltip = $"Press this row, then a key, to rebind {caption}.",
             };
             string statement = command.Statement;
             row.BindingChanged += key => { context.Host.BindCommandKey(statement, key); RefreshCommandRows(); };
             row.MouseBindingChanged += _ => RefreshCommandRows();
             row.MouseWheelBindingChanged += _ => RefreshCommandRows();
             commandRows.Add((row, statement));
-            grouped.Add(("Interface", row));
+            grouped.Add((command.Statement.StartsWith(MultiplayerCommandPrefix, StringComparison.Ordinal) ? Multiplayer : "Interface", row));
+        }
+
+        // The keys held in a setting by their bind name: rebinding one writes the name, which the game reads as it plays.
+        var settingKeyRows = new List<(KeyBindingRow Row, ICVar Cvar)>();
+        foreach ((string variable, string caption, string group) in SettingKeys)
+        {
+            if (!context.Cvars.TryGet(variable, out ICVar? cvar) || cvar is null)
+            {
+                continue;
+            }
+
+            KeyCode current = BindKeyNames.TryParse(cvar.ValueText, out KeyCode parsed) ? parsed : KeyCode.None;
+            var row = new KeyBindingRow(theme, caption, current, CommandKeyName(current))
+            {
+                Tooltip = $"Press this row, then a key, to rebind {caption}.",
+            };
+            row.BindingChanged += key =>
+            {
+                if (BindKeyNames.NameOf(key) is { Length: > 0 } name)
+                {
+                    cvar.TrySetText(name, out _);
+                }
+
+                RefreshSettingKeys();
+            };
+
+            // A key is all these can hold: a mouse button or the wheel puts the row back on the key it still is.
+            row.MouseBindingChanged += _ => RefreshSettingKeys();
+            row.MouseWheelBindingChanged += _ => RefreshSettingKeys();
+            settingKeyRows.Add((row, cvar));
+            grouped.Add((group, row));
+        }
+
+        void RefreshSettingKeys()
+        {
+            foreach ((KeyBindingRow row, ICVar cvar) in settingKeyRows)
+            {
+                KeyCode key = BindKeyNames.TryParse(cvar.ValueText, out KeyCode parsed) ? parsed : KeyCode.None;
+                row.SetBinding(key, CommandKeyName(key));
+            }
         }
 
         // Every row again from the binds themselves: a key taken from one command shows as taken, and a mouse button, which
@@ -165,6 +236,12 @@ internal static class ControlsSettingsTab
             }
 
             RefreshCommandRows();
+            foreach ((_, ICVar cvar) in settingKeyRows)
+            {
+                cvar.TrySetText(cvar.DefaultText, out _);
+            }
+
+            RefreshSettingKeys();
         }
 
         resetBindings = Reset;
@@ -173,7 +250,6 @@ internal static class ControlsSettingsTab
         [
             BuildBand(context, theme, grouped, Reset),
             SettingsGroup.Of("Mouse", [sensitivity, invert]),
-            SettingsGroup.Of("Movement", rowBuilder.SettingRows(theme, MovementSettings)),
         ];
         if (context.Host.TouchScreen)
         {
@@ -199,17 +275,45 @@ internal static class ControlsSettingsTab
         foreach (string name in BindingGroups)
         {
             List<Control> rows = [.. grouped.Where(entry => entry.Group == name).Select(static entry => (Control)entry.Row)];
+
+            // How the movement keys behave leads their panel, rather than standing in a second panel of the same name.
+            if (name == "Movement")
+            {
+                rows.InsertRange(0, rowBuilder.SettingRows(theme, MovementSettings));
+            }
+
             if (rows.Count > 0)
             {
                 groups.Add(SettingsGroup.Of(name, rows));
             }
         }
 
+        // Co-op voice last, beside the other multiplayer keys: how it goes out, how loud the others are, and the key held to talk.
+        List<Control> voice = rowBuilder.SettingRows(theme, VoiceSettings);
+        voice.AddRange(grouped.Where(static entry => entry.Group == Voice).Select(static entry => (Control)entry.Row));
+        if (voice.Count > 0)
+        {
+            groups.Add(SettingsGroup.Of(Voice, voice));
+        }
+
         return groups;
     }
 
     // The bindings' groups, in the order the page shows them.
-    private static readonly string[] BindingGroups = ["Movement", "Combat", "Equipment", "Interface"];
+    private static readonly string[] BindingGroups = ["Movement", "Combat", WeaponSlots, "Equipment", "Interface", Multiplayer];
+
+    // The keys that take a weapon of each kind in hand.
+    private const string WeaponSlots = "Weapon slots";
+
+    // The keys that do nothing outside a multiplayer or co-op session, together at the foot, so a player who only
+    // plays the campaign can pass them by and one setting up for a match finds them in one place.
+    private const string Multiplayer = "Multiplayer";
+
+    // Co-op voice chat's settings and its key, a panel of their own after the multiplayer keys.
+    private const string Voice = "Voice";
+
+    // The console commands a co-op room answers to, and nothing else does.
+    private const string MultiplayerCommandPrefix = "coop_";
 
     // Across the top: a box that narrows the rows to those whose action or key has what is typed, how a row is rebound,
     // and what puts every binding back. R does the last from the keyboard; the button is there for the pointer.
@@ -280,12 +384,24 @@ internal static class ControlsSettingsTab
     // Which group an action's row stands in.
     private static string GroupOf(string action)
     {
+        // Before the weapon test below: dropping a weapon is a multiplayer key, not a combat one.
+        if (action is "Scoreboard" or "BuyMenu" or "DropWeapon")
+        {
+            return Multiplayer;
+        }
+
         if (action.StartsWith("Move", StringComparison.OrdinalIgnoreCase)
             || action.StartsWith("Peek", StringComparison.OrdinalIgnoreCase)
             || action.StartsWith("Lean", StringComparison.OrdinalIgnoreCase)
             || action is "Jump" or "Crouch" or "ToggleWalkRun" or "Prone" or "Sprint")
         {
             return "Movement";
+        }
+
+        // The nine slot keys, apart from the weapon handling, so neither panel runs long.
+        if (action.StartsWith("WeaponCategory", StringComparison.Ordinal))
+        {
+            return WeaponSlots;
         }
 
         if (action.Contains("Fire", StringComparison.OrdinalIgnoreCase)
@@ -324,6 +440,10 @@ internal static class ControlsSettingsTab
             "PrevWeapon" => "Previous weapon",
             "Underbarrel" => "Underbarrel launcher",
             "Mount" => "Mount weapon",
+            "ThirdPersonView" => "Third-person view",
+            "CoopMark" => "Mark for team",
+            "CoopChat" => "Chat",
+            "CoopTeamChat" => "Team chat",
             _ => string.Empty,
         };
         if (known.Length > 0)
