@@ -33,7 +33,9 @@ public static class HudPanel
     /// <param name="opacity">How far it has faded in, nought to one.</param>
     /// <param name="shade">How much darker the glass is laid, nought to one: nought for the heads-up readouts' light pane, more for
     /// a sheet of the session's that is read through, the scoreboard's, over a bright sky.</param>
-    public static void Draw(UiPainter painter, HudTheme theme, float scale, float seconds, UiRect rect, float opacity = 1f, float shade = 0f)
+    /// <param name="trim">Whether the rim, the light along its top, the corner brackets and the shimmer are drawn: the heads-up
+    /// readouts' glass has them, the session's flat sheets do not.</param>
+    public static void Draw(UiPainter painter, HudTheme theme, float scale, float seconds, UiRect rect, float opacity = 1f, float shade = 0f, bool trim = true)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
@@ -64,6 +66,11 @@ public static class HudPanel
             rect,
             [new UiGradientStop(0f, HudDrawContext.Fade(palette.Highlight, 0.16f * opacity)), new UiGradientStop(0.45f, HudDrawContext.Fade(palette.Primary, 0.05f * opacity)), new UiGradientStop(1f, HudDrawContext.Fade(palette.Primary, 0f))],
             UiGradientDirection.Vertical);
+
+        if (!trim)
+        {
+            return;
+        }
 
         // Its rim, thin and quiet, and the light caught along its top edge.
         float hairline = MathF.Max(1f, (motifs.Hairline * scale));

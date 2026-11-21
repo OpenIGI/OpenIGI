@@ -11,7 +11,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// A team match's team menu, in the played title's look: on the title's glass band across the middle of the screen, a sheet for
-/// each side -- its number key, its name in its ink, how many play on it and who -- this player's own bracketed and marked, a side
+/// each side -- its number key, its name in its ink, how many play on it and who -- this player's own washed in its ink and marked, a side
 /// it can't join dimmed and marked full; then a narrower sheet to be put on the fairer side, and how to choose below.
 /// </content>
 public sealed partial class RemasteredHudRenderer
@@ -142,24 +142,17 @@ public sealed partial class RemasteredHudRenderer
         o.Text.DrawAt("THAT NEEDS YOU", card.X + pad, y + o.Text.LineHeightAt(body) + o.Px(6f), body, o.Quiet);
     }
 
-    // A choice's sheet on the menu: the title's glass, lit under the pointer, this player's own in the accent's brackets; a bar of its
-    // ink along its top.
+    // A choice's sheet on the menu: the title's flat glass, washed in its ink -- faintly under the pointer, more for this player's own.
     private static void CardFrame(HudOverlay o, UiRect card, bool own, bool over, Bgra32 ink)
     {
         o.Sheet(card);
-        if (over && !own)
-        {
-            o.Plate(card, HudOverlay.Fade(ink, 0.1f));
-        }
-
-        o.Painter.FillRect(new UiRect(card.X + o.Px(8f), card.Y, card.Width - o.Px(16f), MathF.Max(2f, o.Px(3f))), ink);
         if (own)
         {
-            o.Brackets(card, o.Ink.Accent, 12f);
+            o.Plate(card, HudOverlay.Fade(ink, 0.2f));
         }
         else if (over)
         {
-            o.Brackets(card, HudOverlay.Fade(ink, 0.9f), 10f);
+            o.Plate(card, HudOverlay.Fade(ink, 0.1f));
         }
     }
 }

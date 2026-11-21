@@ -34,7 +34,6 @@ public sealed partial class RemasteredHudRenderer
         float capWidth = o.KeyCapWidth(holdKey);
         var plate = new UiRect(o.Safe.X + o.Px(24f), o.Safe.Y + o.Px(24f), capWidth + o.Text.MeasureAt(Label, small) + o.Px(30f), o.KeyCapHeight + o.Px(12f));
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 170));
-        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.7f), 4f);
         UiRect cap = o.KeyCap(holdKey, plate.X + o.Px(6f), plate.Y + o.Px(6f));
         o.Text.DrawAt(Label, cap.Right + o.Px(12f), cap.Y + ((cap.Height - o.Text.LineHeightAt(small)) * 0.5f), small, o.Quiet);
         o.Painter.PopOpacity();

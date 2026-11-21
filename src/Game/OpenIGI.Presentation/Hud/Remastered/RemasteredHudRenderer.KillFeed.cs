@@ -12,7 +12,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 
 /// <content>
 /// The kill feed down the top right corner, in the played title's look -- killer, the weapon's own silhouette, how it struck,
-/// victim, the names in the sides' inks on a plate of the title's glass -- with the player's own rows bracketed,
+/// victim, the names in the sides' inks on a plate of the title's glass -- with the player's own rows lit,
 /// each sliding in and fading away; the player's own kill announced low in the middle; and the killer's weapon on the card a
 /// dead player watches it from.
 /// </content>
@@ -72,7 +72,7 @@ public sealed partial class RemasteredHudRenderer
         DrawKillConfirm(o, feed);
     }
 
-    // One row, right-aligned at its edge: its plate, the player's own brackets, and its parts left to right.
+    // One row, right-aligned at its edge: its plate, lit when it is the player's own, and its parts left to right.
     private void DrawRow(SpriteBatch batch, HudOverlay o, KillFeedView feed, KillNote note, List<FeedPart> parts, float right, float y, float height, float opacity)
     {
         float space = o.Px(FeedSpace);
@@ -87,7 +87,7 @@ public sealed partial class RemasteredHudRenderer
         o.Plate(strip, HudOverlay.Fade(o.Ink.Glass.WithAlpha(255), 0.25f));
         if (killed || died)
         {
-            o.Brackets(strip, died ? o.Ink.Enemy : o.Ink.Highlight, 5f);
+            o.Plate(strip, HudOverlay.Fade(died ? o.Ink.Enemy : o.Ink.Highlight, 0.22f));
         }
 
         float x = strip.X + pad;

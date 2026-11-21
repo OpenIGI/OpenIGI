@@ -60,10 +60,6 @@ public sealed partial class RemasteredHudRenderer
             bool affordable = !item.Full && (free || item.Price <= money);
             bool over = pointer.X >= rect.X && pointer.X <= rect.Right && pointer.Y >= rect.Y && pointer.Y <= rect.Bottom;
             o.Row(rect, own: false, over: over && affordable, ink: o.Ink.Accent);
-            if (over && affordable)
-            {
-                o.Brackets(rect, o.Ink.Accent, 5f);
-            }
 
             float textY = rect.Y + ((rect.Height - o.Text.LineHeightAt(body)) * 0.5f);
             float capX = rect.X + o.Px(8f);

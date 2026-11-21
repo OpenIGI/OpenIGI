@@ -81,7 +81,6 @@ public sealed partial class RemasteredHudRenderer
         float width = lines.Max(l => o.Text.MeasureAt(OverlayText.Capitals(l), small)) + o.Px(24f);
         var plate = new UiRect(o.Safe.Right - width - o.Px(16f), o.Safe.Y + (o.Safe.Height * 0.62f), width, (step * lines.Count) + o.Px(16f));
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
-        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.7f), 4f);
         for (int i = 0; i < lines.Count; i++)
         {
             o.Text.DrawAt(OverlayText.Capitals(lines[i]), plate.X + o.Px(12f), plate.Y + o.Px(8f) + (step * i), small, o.Ink.Primary);
@@ -121,7 +120,6 @@ public sealed partial class RemasteredHudRenderer
             float width = o.Text.MeasureAt(line, body);
             var plate = new UiRect(middle.X - (width * 0.5f) - o.Px(18f), safe.Y + (safe.Height * 0.66f), width + o.Px(36f), o.Text.LineHeightAt(body) + o.Px(14f));
             o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
-            o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.8f), 5f);
             o.Text.DrawCentredAt(line, middle.X, plate.Y + o.Px(7f), body, o.Ink.Highlight);
         }
 

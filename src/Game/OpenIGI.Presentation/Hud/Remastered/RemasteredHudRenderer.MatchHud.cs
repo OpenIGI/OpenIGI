@@ -132,7 +132,6 @@ public sealed partial class RemasteredHudRenderer
     {
         o.Plate(clock, Bgra32.FromRgba(0, 0, 0, 200));
         o.Plate(clock, HudOverlay.Fade(o.Ink.Glass.WithAlpha(255), 0.4f));
-        o.Brackets(clock, HudOverlay.Fade(o.Ink.Primary, 0.85f), 6f);
         float large = o.Px(HudOverlay.Large);
         float small = o.Px(HudOverlay.Small);
         float figureY = clock.Y + o.Px(4f);
@@ -168,13 +167,11 @@ public sealed partial class RemasteredHudRenderer
         Bgra32 ownInk = leading ? o.Ink.Accent : o.Ink.Ally;
         o.Plate(own, Bgra32.FromRgba(0, 0, 0, 190));
         o.Plate(own, HudOverlay.Fade(ownInk, 0.18f));
-        o.Brackets(own, ownInk, 6f);
         o.Text.DrawAt($"YOU - {Place(hud.OwnRank)}", own.X + o.Px(10f), own.Y + o.Px(5f), small, ownInk);
         o.Text.DrawRightAt(hud.OwnScore.ToString(CultureInfo.InvariantCulture), own.Right - o.Px(10f), own.Bottom - o.Text.LineHeightAt(large) - o.Px(3f), large, o.Ink.Highlight);
 
         var rival = new UiRect(clock.Right + o.Px(4f), top, side, height);
         o.Plate(rival, Bgra32.FromRgba(0, 0, 0, 190));
-        o.Brackets(rival, HudOverlay.Fade(o.Ink.Enemy, 0.85f), 6f);
         string who = hud.LeaderName.Length > 0 ? (leading ? $"NEXT - {hud.LeaderName}" : $"LEADER - {hud.LeaderName}") : "NO RIVAL YET";
         o.Text.DrawAt(o.Text.ClipAt(OverlayText.Capitals(who), small, side - o.Px(20f)), rival.X + o.Px(10f), rival.Y + o.Px(5f), small, o.Ink.Enemy);
         o.Text.DrawAt(hud.LeaderScore.ToString(CultureInfo.InvariantCulture), rival.X + o.Px(10f), rival.Bottom - o.Text.LineHeightAt(large) - o.Px(3f), large, o.Ink.Highlight);
@@ -235,7 +232,6 @@ public sealed partial class RemasteredHudRenderer
         float width = o.Text.MeasureAt(said, small) + o.Px(28f);
         var plate = new UiRect(centre - (width * 0.5f), y, width, o.Text.LineHeightAt(small) + o.Px(10f));
         o.Plate(plate, face);
-        o.Brackets(plate, HudOverlay.Fade(ink, 0.7f), 4f);
         o.Text.DrawCentredAt(said, centre, y + o.Px(5f), small, ink);
         return plate.Bottom + o.Px(6f);
     }
@@ -248,7 +244,6 @@ public sealed partial class RemasteredHudRenderer
         float small = o.Px(HudOverlay.Small);
         var plate = new UiRect(x - o.Px(14f), y - o.Px(10f), width + o.Px(28f), o.Text.LineHeightAt(small) + o.Px(34f));
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
-        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.8f), 5f);
         o.Text.DrawAt(OverlayText.Capitals(label), x, y - o.Px(2f), small, o.Ink.Highlight);
         o.Text.DrawRightAt(string.Create(CultureInfo.InvariantCulture, $"{(int)(Math.Clamp(progress, 0f, 1f) * 100f)}%"), x + width, y - o.Px(2f), small, ink);
         o.Meter(new UiRect(x, y + o.Text.LineHeightAt(small) + o.Px(6f), width, MathF.Max(3f, o.Px(6f))), progress, ink);
@@ -266,7 +261,6 @@ public sealed partial class RemasteredHudRenderer
         float height = MathF.Max(o.KeyCapHeight, o.Text.LineHeightAt(body)) + o.Px(12f);
         var plate = new UiRect(centre - (whole * 0.5f) - o.Px(16f), y - o.Px(6f), whole + o.Px(32f), height);
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
-        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.8f), 5f);
         float textY = plate.Y + ((plate.Height - o.Text.LineHeightAt(body)) * 0.5f);
         float x = plate.X + o.Px(16f);
         x += o.Text.DrawAt(verb, x, textY, body, o.Quiet) + gap;

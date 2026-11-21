@@ -60,7 +60,6 @@ public sealed partial class RemasteredHudRenderer
             float width = o.Text.MeasureAt(said, small) + o.Px(30f);
             var plate = new UiRect(o.Safe.X + ((o.Safe.Width - width) * 0.5f), o.Safe.Y + o.Px(18f), width, o.Text.LineHeightAt(small) + o.Px(10f));
             o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
-            o.Brackets(plate, HudOverlay.Fade(o.Ink.Accent, 0.9f), 4f);
             o.Diamond(new UiVec2(plate.X + o.Px(10f), plate.Y + (plate.Height * 0.5f)), o.Px(4f), o.Ink.Accent);
             o.Text.DrawAt(said, plate.X + o.Px(20f), plate.Y + o.Px(5f), small, o.Ink.Accent);
         }
@@ -76,7 +75,6 @@ public sealed partial class RemasteredHudRenderer
             string name = OverlayText.Prose(speaker);
             var plate = new UiRect(x, y - lineHeight, o.Px(10f) + icon + o.Px(8f) + o.Text.MeasureAt(name, size) + o.Px(12f), lineHeight);
             o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 180));
-            o.Brackets(plate, HudOverlay.Fade(o.Ink.Ally, 0.8f), 4f);
             KitIcons.Draw(o.Painter, KitIcon.Microphone, new UiVec2(plate.X + o.Px(10f) + (icon * 0.5f), plate.Y + (lineHeight * 0.5f)), icon, o.Ink.Ally);
             o.Text.DrawAt(name, plate.X + o.Px(18f) + icon, plate.Y + o.Px(5f), size, o.Ink.Plain);
             y -= lineHeight + o.Px(4f);

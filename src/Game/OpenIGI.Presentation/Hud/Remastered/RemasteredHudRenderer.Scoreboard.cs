@@ -276,7 +276,6 @@ public sealed partial class RemasteredHudRenderer
             float edge = o.Text.LineHeightAt(body);
             var frame = new UiRect(nameX, row.Y + ((row.Height - edge) * 0.5f), edge, edge);
             picture.DrawCover(o.Painter, frame, line.IsAlive ? 1f : 0.55f);
-            o.Brackets(frame, ink, 3f);
             nameX = frame.Right + o.Px(8f);
         }
 

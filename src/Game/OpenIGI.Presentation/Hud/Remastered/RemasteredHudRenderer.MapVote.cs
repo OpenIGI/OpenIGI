@@ -12,7 +12,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 /// <content>
 /// The vote for the next map, under a decided match's card, in the played title's look: a sheet for each map offered -- its
 /// number key, its mission's number large on a plate, its name and mode, and the title's meter of the votes it has -- the
-/// player's own pick bracketed in the accent and the one leading marked, how many have voted above them, and how to vote below.
+/// player's own pick washed in the accent and the one leading marked, how many have voted above them, and how to vote below.
 /// </content>
 public sealed partial class RemasteredHudRenderer
 {

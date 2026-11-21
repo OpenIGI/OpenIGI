@@ -103,10 +103,13 @@ internal sealed class HudOverlay
         return ours ? Ink.Ally : Ink.Enemy;
     }
 
-    /// <summary>Draws a sheet the session lays over the picture to be read: the title's glass, darker, cut its way and bracketed.</summary>
+    /// <summary>
+    /// Draws a sheet the session lays over the picture to be read: the title's glass, darker, cut its way -- flat, with no rim or
+    /// corner marks, as the original's own plates are.
+    /// </summary>
     /// <param name="rect">Where it stands.</param>
     /// <param name="opacity">How far it has faded in, nought to one.</param>
-    public void Sheet(UiRect rect, float opacity = 1f) => HudPanel.Draw(Painter, Theme, Motif, Seconds, rect, opacity, shade: 0.72f);
+    public void Sheet(UiRect rect, float opacity = 1f) => HudPanel.Draw(Painter, Theme, Motif, Seconds, rect, opacity, shade: 0.72f, trim: false);
 
     /// <summary>Draws a strip of glass with a rule under it, a sheet's header.</summary>
     /// <param name="rect">Where it stands.</param>
@@ -120,12 +123,6 @@ internal sealed class HudOverlay
     /// <param name="colour">Its colour.</param>
     public void Rule(float x, float y, float width, Bgra32 colour) => HudPanel.Rule(Painter, Theme, Motif, x, y, width, colour);
 
-    /// <summary>Draws brackets at a rectangle's corners.</summary>
-    /// <param name="rect">The rectangle.</param>
-    /// <param name="colour">Their colour.</param>
-    /// <param name="length">How far each arm runs, in layout pixels.</param>
-    public void Brackets(UiRect rect, Bgra32 colour, float length = 6f) => HudPanel.Brackets(Painter, Theme, Motif, rect, Px(length), colour);
-
     /// <summary>Fills a rectangle with the theme's corners cut.</summary>
     /// <param name="rect">The rectangle.</param>
     /// <param name="colour">Its colour.</param>
@@ -134,8 +131,8 @@ internal sealed class HudOverlay
         Painter.FillCutRect(rect, (cut ?? (Theme.Motifs.CornerSize * 0.6f)) * Motif, Corners, colour);
 
     /// <summary>
-    /// Lays a line's row: nothing for an ordinary one; this player's own washed in the highlight and bracketed; one under the
-    /// pointer washed lighter.
+    /// Lays a line's row: nothing for an ordinary one; this player's own washed in the highlight; one under the pointer washed
+    /// lighter.
     /// </summary>
     /// <param name="rect">The row.</param>
     /// <param name="own">Whether it is this player's own.</param>
@@ -146,8 +143,7 @@ internal sealed class HudOverlay
         Bgra32 lit = ink ?? Ink.Highlight;
         if (own)
         {
-            Plate(rect, Fade(lit, 0.14f));
-            Brackets(rect, Fade(lit, 0.85f), 5f);
+            Plate(rect, Fade(lit, 0.2f));
         }
         else if (over)
         {
@@ -207,7 +203,7 @@ internal sealed class HudOverlay
     /// <summary>Gets a key cap's height, in pixels.</summary>
     public float KeyCapHeight => Text.LineHeightAt(Px(Small)) + Px(10f);
 
-    /// <summary>Draws a key's cap: its name in a bracketed box of the title's glass.</summary>
+    /// <summary>Draws a key's cap: its name on a plate of the title's colour.</summary>
     /// <param name="key">The key's name.</param>
     /// <param name="x">Its left edge.</param>
     /// <param name="y">Its top edge.</param>
@@ -216,11 +212,7 @@ internal sealed class HudOverlay
     public UiRect KeyCap(string key, float x, float y, bool lit = false)
     {
         var cap = new UiRect(x, y, KeyCapWidth(key), KeyCapHeight);
-        Plate(cap, lit ? Ink.Highlight : Fade(Ink.Primary, 0.14f), Theme.Motifs.CornerSize * 0.4f);
-        if (!lit)
-        {
-            Brackets(cap, Fade(Ink.Primary, 0.8f), 4f);
-        }
+        Plate(cap, lit ? Ink.Highlight : Fade(Ink.Primary, 0.3f), Theme.Motifs.CornerSize * 0.4f);
 
         string name = OverlayText.Capitals(key);
         float size = Px(Small);
@@ -228,7 +220,7 @@ internal sealed class HudOverlay
         return cap;
     }
 
-    /// <summary>Draws a small word in a box beside a name -- HOST, YOU, a dead player's S -- outlined, or filled for the strongest.</summary>
+    /// <summary>Draws a small word on a plate beside a name -- HOST, YOU -- faintly in its colour, or filled for the strongest.</summary>
     /// <param name="word">The word.</param>
     /// <param name="x">Its left edge.</param>
     /// <param name="y">Its top edge.</param>
@@ -246,7 +238,7 @@ internal sealed class HudOverlay
         }
         else
         {
-            Painter.StrokeRect(box, Hairline, Fade(colour, 0.85f));
+            Plate(box, Fade(colour, 0.22f), Theme.Motifs.CornerSize * 0.4f);
         }
 
         Text.DrawAt(word, box.X + Px(5f), box.Y + Px(2f), size, filled ? Bgra32.FromRgb(8, 10, 8) : colour);

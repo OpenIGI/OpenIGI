@@ -28,7 +28,6 @@ public sealed partial class RemasteredHudRenderer
         float width = o.Text.MeasureAt(line, body) + o.Px(36f);
         var plate = new UiRect(centre - (width * 0.5f), o.Safe.Y + o.Px(14f), width, o.Text.LineHeightAt(body) + o.Px(14f));
         o.Plate(plate, Bgra32.FromRgba(0, 0, 0, 190));
-        o.Brackets(plate, HudOverlay.Fade(o.Ink.Primary, 0.8f), 5f);
         o.Text.DrawCentredAt(line, centre, plate.Y + o.Px(7f), body, o.Ink.Highlight);
 
         // A decided match's result, large, below it.
