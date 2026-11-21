@@ -195,10 +195,22 @@ public sealed partial class ServerSession
         return notes;
     }
 
-    // Each hit to the two in it -- the shooter and the one hit -- and to no one else: what a player learns of a fight is its own.
-    private void TellCombat()
+    // Each hit between two players into the match, towards the assists a death credits.
+    private void CountDamage(IReadOnlyList<CombatNote> notes)
     {
-        foreach (CombatNote note in _world.TakeCombat())
+        foreach (CombatNote note in notes)
+        {
+            if (note.Attacker >= 0 && note.Victim >= 0)
+            {
+                Match.Damaged(SlotOf(note.Victim), SlotOf(note.Attacker), note.Damage);
+            }
+        }
+    }
+
+    // Each hit to the two in it -- the shooter and the one hit -- and to no one else: what a player learns of a fight is its own.
+    private void TellCombat(IReadOnlyList<CombatNote> notes)
+    {
+        foreach (CombatNote note in notes)
         {
             int shooter = note.Attacker >= 0 ? SlotOf(note.Attacker) : -1;
             int victim = note.Victim >= 0 ? SlotOf(note.Victim) : -1;

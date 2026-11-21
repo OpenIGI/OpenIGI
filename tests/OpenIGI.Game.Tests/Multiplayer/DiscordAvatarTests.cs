@@ -44,13 +44,15 @@ public sealed class DiscordAvatarTests
     }
 
     [Fact]
-    public void The_scoreboard_carries_each_players_avatar()
+    public void The_scoreboard_carries_each_players_avatar_and_assists()
     {
-        Scoreboard sent = new(1, 0, 0, [new ScoreboardLine(3, "Anya", 0, 0, 2, 2, true, Entity: 4, Avatar: "embed/3")]);
+        Scoreboard sent = new(1, 0, 0, [new ScoreboardLine(3, "Anya", 0, 0, 2, 2, true, Entity: 4, Avatar: "embed/3", Assists: 5)]);
         BitWriter writer = new(256);
         sent.Write(writer);
         BitReader reader = new(writer.AsSpan().ToArray());
 
-        Assert.Equal("embed/3", Scoreboard.Read(ref reader)?.Lines[0].Avatar);
+        ScoreboardLine? read = Scoreboard.Read(ref reader)?.Lines[0];
+        Assert.Equal("embed/3", read?.Avatar);
+        Assert.Equal(5, read?.Assists);
     }
 }

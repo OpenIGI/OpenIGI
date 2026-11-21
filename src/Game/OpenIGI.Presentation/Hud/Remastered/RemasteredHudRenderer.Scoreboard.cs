@@ -15,7 +15,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 /// <para>
 /// I.G.I. 2's own board (statusscreen.c <c>StatusScreen_DisplayScoreboard</c>) for both titles, on the played title's glass. A
 /// team match stands its two sides in two columns either side of the middle, as the original does -- each its <c>TEAM: name</c>
-/// and <c>SCORE: n</c> over the heads NAME, KILLS/DEATHS and PING -- and a free-for-all or a co-op squad has one. Each player's
+/// and <c>SCORE: n</c> over the heads NAME, KILLS, DEATHS, ASSISTS and PING -- and a free-for-all or a co-op squad has one. Each player's
 /// line is sorted by kills (<c>StatusScreen_SortByFrags</c>) and set in the original's inks: this player's own in the ally's,
 /// one who is down in the enemy's with the original's <c>S</c> before their number, everyone else plain.
 /// </para>
@@ -27,7 +27,7 @@ namespace OpenIGI.Presentation.Hud.Remastered;
 public sealed partial class RemasteredHudRenderer
 {
     // The board's measures, in layout pixels.
-    private const float BoardWidth = 1100f;
+    private const float BoardWidth = 1320f;
     private const float BoardColumnGap = 34f;
     private const float BoardPad = 26f;
 
@@ -68,7 +68,7 @@ public sealed partial class RemasteredHudRenderer
         bool teamed = MatchModes.IsVersus(mode)
             ? MatchModes.HasTeams(mode)
             : board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
-        ScoreboardLine[] lines = [.. board.Lines.OrderByDescending(static l => l.Kills).ThenBy(static l => l.Deaths).ThenBy(static l => l.Slot)];
+        ScoreboardLine[] lines = [.. board.Lines.OrderByDescending(static l => l.Kills).ThenByDescending(static l => l.Assists).ThenBy(static l => l.Deaths).ThenBy(static l => l.Slot)];
         int ownTeam = localEntity is { } self && lines.FirstOrDefault(l => l.Entity == self) is { Name: not null } mine ? mine.Team : -1;
         int[] sides = teamed ? [.. new[] { TeamRoster.Good, TeamRoster.Bad }.Union(lines.Select(static l => l.Team).Order())] : [];
         int tallest = teamed ? sides.Max(side => lines.Count(l => l.Team == side)) : lines.Length;
@@ -230,7 +230,9 @@ public sealed partial class RemasteredHudRenderer
         BoardColumns columns = BoardColumns.For(o, column);
         o.Text.DrawAt("ID", columns.Id, y, small, o.Quiet);
         o.Text.DrawAt("NAME", columns.Name, y, small, o.Quiet);
-        o.Text.DrawRightAt("KILLS/DEATHS", columns.Kills, y, small, o.Quiet);
+        o.Text.DrawRightAt("KILLS", columns.Kills, y, small, o.Quiet);
+        o.Text.DrawRightAt("DEATHS", columns.Deaths, y, small, o.Quiet);
+        o.Text.DrawRightAt("ASSISTS", columns.Assists, y, small, o.Quiet);
         o.Text.DrawRightAt("PING", columns.Ping, y, small, o.Quiet);
         y += o.Text.LineHeightAt(small) + o.Px(8f);
 
@@ -247,7 +249,7 @@ public sealed partial class RemasteredHudRenderer
             DrawBoardLine(o, row, columns, line, own, avatarOf?.Invoke(line.Avatar));
             if (controls is { } hand && hand.Removable.Contains(line.Entity))
             {
-                DrawRemove(o, row, columns.Kills - o.Px(120f), line.Entity, hand);
+                DrawRemove(o, row, columns.FiguresLeft - o.Px(10f), line.Entity, hand);
             }
 
             y += rowHeight;
@@ -290,7 +292,7 @@ public sealed partial class RemasteredHudRenderer
 
         float nameX = frame.Right + o.Px(10f);
 
-        float room = columns.Kills - o.Px(150f) - nameX;
+        float room = columns.FiguresLeft - o.Px(16f) - nameX;
         string name = o.Text.ClipAt(OverlayText.Prose(line.Name), body, room);
         float after = nameX + o.Text.DrawAt(name, nameX, textY, body, ink) + o.Px(10f);
         float tagY = row.Y + ((row.Height - (o.Text.LineHeightAt(o.Px(HudOverlay.Small)) + o.Px(4f))) * 0.5f);
@@ -304,8 +306,10 @@ public sealed partial class RemasteredHudRenderer
             o.Tag("YOU", after, tagY, o.Ink.Ally, filled: true);
         }
 
-        // Kills over deaths, as the original writes them; then the round trip with its bars.
-        o.Text.DrawRightAt(string.Create(CultureInfo.InvariantCulture, $"{line.Kills}/{line.Deaths}"), columns.Kills, textY, body, ink);
+        // Kills, deaths and assists, each under its own head; then the round trip with its bars.
+        o.Text.DrawRightAt(line.Kills.ToString(CultureInfo.InvariantCulture), columns.Kills, textY, body, ink);
+        o.Text.DrawRightAt(line.Deaths.ToString(CultureInfo.InvariantCulture), columns.Deaths, textY, body, HudOverlay.Fade(ink, 0.8f));
+        o.Text.DrawRightAt(line.Assists.ToString(CultureInfo.InvariantCulture), columns.Assists, textY, body, HudOverlay.Fade(ink, 0.8f));
         float bars = o.Px(20f);
         float barsHeight = o.Text.LineHeightAt(body) * 0.8f;
         Bgra32 pingInk = host ? o.Quiet : o.PingInk(line.Ping);
@@ -333,16 +337,20 @@ public sealed partial class RemasteredHudRenderer
         _removeButtons.Add((entity, button.X, button.Y, button.Width, button.Height));
     }
 
-    // Where a board column's figures stand across it: the number and name from its left, the figures to its right.
-    private readonly record struct BoardColumns(float Id, float Name, float Kills, float Ping)
+    // Where a board column's figures stand across it: the number and name from its left; kills, deaths, assists and the round
+    // trip by their right edges, each figure's column as wide as its head; and where the first figure's column begins.
+    private readonly record struct BoardColumns(float Id, float Name, float Kills, float Deaths, float Assists, float Ping, float FiguresLeft)
     {
         public static BoardColumns For(HudOverlay o, UiRect column)
         {
             float id = column.X;
             float name = id + o.Text.MeasureAt("S [00]", o.Px(HudOverlay.Body)) + o.Px(14f);
+            float figure = o.Text.MeasureAt("ASSISTS", o.Px(HudOverlay.Small)) + o.Px(18f);
             float ping = column.Right;
-            float kills = ping - o.Px(110f);
-            return new BoardColumns(id, name, kills, ping);
+            float assists = ping - o.Px(100f);
+            float deaths = assists - figure;
+            float kills = deaths - figure;
+            return new BoardColumns(id, name, kills, deaths, assists, ping, kills - figure);
         }
     }
 }

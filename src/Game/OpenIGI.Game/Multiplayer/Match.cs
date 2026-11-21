@@ -30,6 +30,9 @@ public sealed class MatchPlayer(int slot, string name, int team, int money)
     /// <summary>Gets or sets the times the player has died.</summary>
     public int Deaths { get; set; }
 
+    /// <summary>Gets or sets the enemies the player helped kill: hurt badly in the life another player's kill ended.</summary>
+    public int Assists { get; set; }
+
     /// <summary>Gets or sets the objectives the player has resolved.</summary>
     public int Objectives { get; set; }
 
@@ -55,8 +58,15 @@ public sealed class MatchPlayer(int slot, string name, int team, int money)
 /// </remarks>
 public sealed class Match
 {
+    /// <summary>How much of a whole health an enemy must have taken from a player in the life another ended for it to count as
+    /// an assist: four tenths, a tactical shooter's forty-one of a hundred.</summary>
+    public const float AssistShare = 0.4f;
+
     private readonly Dictionary<int, MatchPlayer> _players = [];
     private readonly int[] _teamScores = new int[2];
+
+    // The damage each player has taken this life, by who dealt it, in whole healths: what an assist is counted from.
+    private readonly Dictionary<int, Dictionary<int, float>> _damage = [];
 
     /// <summary>Initializes a new instance of the <see cref="Match"/> class.</summary>
     /// <param name="rules">The server's rules.</param>
@@ -102,7 +112,33 @@ public sealed class Match
 
     /// <summary>Takes out a player who has left.</summary>
     /// <param name="slot">The player's slot.</param>
-    public void Leave(int slot) => _players.Remove(slot);
+    public void Leave(int slot)
+    {
+        _players.Remove(slot);
+        _damage.Remove(slot);
+    }
+
+    /// <summary>Records damage one player dealt another, towards an assist should a third finish it this life.</summary>
+    /// <param name="victim">The slot of the player hurt.</param>
+    /// <param name="attacker">The slot of the player who hurt it.</param>
+    /// <param name="damage">How much, in whole healths.</param>
+    /// <remarks>A team mate's damage, one's own, the world's, and a hit on one already down count for nothing.</remarks>
+    public void Damaged(int victim, int attacker, float damage)
+    {
+        if (victim == attacker || damage <= 0f
+            || !_players.TryGetValue(victim, out MatchPlayer? hurt) || !hurt.IsAlive
+            || !_players.TryGetValue(attacker, out MatchPlayer? shooter) || (shooter.Team == hurt.Team && !IsFreeForAll))
+        {
+            return;
+        }
+
+        if (!_damage.TryGetValue(victim, out Dictionary<int, float>? dealt))
+        {
+            _damage[victim] = dealt = [];
+        }
+
+        dealt[attacker] = dealt.GetValueOrDefault(attacker) + damage;
+    }
 
     /// <summary>Moves a player's standing to another slot, as one who dropped comes back on a new connection.</summary>
     /// <param name="from">The slot it stood under.</param>
@@ -113,6 +149,11 @@ public sealed class Match
         {
             player.Slot = to;
             _players[to] = player;
+        }
+
+        if (_damage.Remove(from, out Dictionary<int, float>? dealt))
+        {
+            _damage[to] = dealt;
         }
     }
 
@@ -130,6 +171,7 @@ public sealed class Match
         dead.Deaths++;
         dead.IsAlive = false;
         dead.DiedAt = now;
+        CreditAssists(dead, killer);
         if (killer == victim || !_players.TryGetValue(killer, out MatchPlayer? shooter))
         {
             return;
@@ -143,6 +185,24 @@ public sealed class Match
 
         shooter.Kills++;
         Pay(shooter, Rules.MoneyKill);
+    }
+
+    // Every enemy but the killer that took enough of the dead player's health this life helped kill it; the life's tally then goes.
+    private void CreditAssists(MatchPlayer dead, int killer)
+    {
+        if (!_damage.Remove(dead.Slot, out Dictionary<int, float>? dealt))
+        {
+            return;
+        }
+
+        foreach ((int slot, float damage) in dealt)
+        {
+            if (slot != killer && damage >= AssistShare && _players.TryGetValue(slot, out MatchPlayer? helper)
+                && (helper.Team != dead.Team || IsFreeForAll))
+            {
+                helper.Assists++;
+            }
+        }
     }
 
     /// <summary>Gets what a respawn costs a dead player now, the cost falling to nothing with time.</summary>
@@ -200,6 +260,7 @@ public sealed class Match
     public void RoundOver(int winningTeam)
     {
         Round++;
+        _damage.Clear();
         if ((uint)winningTeam < 2)
         {
             _teamScores[winningTeam]++;
@@ -224,11 +285,13 @@ public sealed class Match
     {
         Round = 0;
         Array.Clear(_teamScores);
+        _damage.Clear();
         foreach (MatchPlayer player in _players.Values)
         {
             player.Money = Math.Min(Rules.MoneyStart, Rules.MoneyCap);
             player.Kills = 0;
             player.Deaths = 0;
+            player.Assists = 0;
             player.Objectives = 0;
             player.IsAlive = true;
             player.DiedAt = null;
@@ -265,6 +328,8 @@ public sealed class Match
     /// <param name="winningTeam">The team that won it, or -1.</param>
     public void PayRound(int winningTeam)
     {
+        // A round decided starts every player's next life afresh: a wound that outlasted it helps no one's later kill.
+        _damage.Clear();
         foreach (MatchPlayer player in _players.Values)
         {
             Pay(player, player.Team == winningTeam ? Rules.MoneyMissionWin : Rules.MoneyMissionLost);
@@ -276,6 +341,7 @@ public sealed class Match
     public void SwapSides()
     {
         (_teamScores[0], _teamScores[1]) = (_teamScores[1], _teamScores[0]);
+        _damage.Clear();
         foreach (MatchPlayer player in _players.Values)
         {
             // The second half's economy starts over, as the first's did.

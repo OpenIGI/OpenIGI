@@ -365,9 +365,12 @@ public sealed partial class ServerSession : IModeHost
             Match.Rules = NetCVars.WithMoney(Match.Rules);
         }
 
+        // The tick's hits counted before its deaths, so a wound dealt in the same tick as the kill still helps it.
+        IReadOnlyList<CombatNote> combat = _world.TakeCombat();
+        CountDamage(combat);
         Mode.Tick(this, tick, _world.TakeDeaths());
         TellKits();
-        TellCombat();
+        TellCombat(combat);
         TellMatch(tick);
 
         if (tick % TickRate == 0)

@@ -18,12 +18,12 @@ public sealed partial class GameHost
     // The made-up players: enough of them, on both sides, alive and down, with a host and this player among them.
     private static readonly ScoreboardLine[] PreviewLines =
     [
-        new(0, "Jones", TeamRoster.Good, 0, 14, 3, true, 1, 0),
-        new(1, "Anya", TeamRoster.Good, 0, 9, 5, true, 2, 38),
-        new(2, "Priboi", TeamRoster.Bad, 0, 11, 6, false, 3, 92),
-        new(3, "Ekk", TeamRoster.Bad, 0, 6, 9, true, 4, 151),
-        new(4, "Phillips", TeamRoster.Good, 0, 3, 7, false, 5, 64),
-        new(5, "Lagatin", TeamRoster.Bad, 0, 2, 10, true, 6, 210),
+        new(0, "Jones", TeamRoster.Good, 0, 14, 3, true, 1, 0, Assists: 4),
+        new(1, "Anya", TeamRoster.Good, 0, 9, 5, true, 2, 38, Assists: 7),
+        new(2, "Priboi", TeamRoster.Bad, 0, 11, 6, false, 3, 92, Assists: 2),
+        new(3, "Ekk", TeamRoster.Bad, 0, 6, 9, true, 4, 151, Assists: 5),
+        new(4, "Phillips", TeamRoster.Good, 0, 3, 7, false, 5, 64, Assists: 1),
+        new(5, "Lagatin", TeamRoster.Bad, 0, 2, 10, true, 6, 210, Assists: 0),
     ];
 
     // This player's own line among them.
