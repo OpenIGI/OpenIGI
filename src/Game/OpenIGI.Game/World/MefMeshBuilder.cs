@@ -88,19 +88,21 @@ public static class MefMeshBuilder
         // the helicopters (issue #50), and mission 14's yard and halls among the rooms -- and many more have a share of
         // faces whose normals were smoothed across an edge. Wound to the normals, those faces turned inside out and the
         // preset that culls drew their insides. The stored order is mirrored whole into this renderer's facing.
-        // A model with no normals (IGI 2's lightmapped geometry) is drawn two-sided and keeps the order it was stored in.
+        // I.G.I. 2's lightmapped geometry, which stores no normals, is no exception: the original culls it the same way
+        // (Direct3DRender_SetGenericStateLightmap, CULLMODE CCW). Left as stored, even drawn two-sided, a thin wall's two
+        // coincident faces -- culled whatever the preset (CoincidentSkins) -- lost the face that is looked at: mission 3's
+        // panelled wall under the fuel depot stairs was seen through, to the stairs' underside and the blue backs beyond.
         bool authored = HasNormals(vertices);
-        if (authored)
-        {
-            MirrorWinding(indices);
-        }
-        else
+        if (!authored)
         {
             // Baked geometry is lit by its bake alone in the original, so it stores no normal. A look that
             // lights the world itself has nothing to light such a surface by -- a hall of it stays black
-            // under its own lamps -- so each vertex is given the normal its faces have.
+            // under its own lamps -- so each vertex is given the normal its faces have. Read from the stored
+            // order, before it is turned over.
             FaceNormals(vertices, indices);
         }
+
+        MirrorWinding(indices);
 
         // Wound as stored, a sheet's two faces face apart, and the faces that coincide can be drawn culled.
         MeshSubset[] partitioned = CoincidentSkins.Partition(vertices, indices, subsets, SkinPlaneToleranceUnits * scale);

@@ -10,8 +10,9 @@ public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, MeshSub
 {
     /// <summary>Gets a value indicating whether the model stored no normals and these were worked out from its faces.</summary>
     /// <remarks>
-    /// Such a model is not wound to this renderer's front and has to stay two-sided, so what asks whether a
-    /// mesh can be culled asks this as well as whether it has normals.
+    /// They are for the looks that light the world themselves. The original lit such a model with none: its fixed-function
+    /// sun met a zero normal at every vertex (<c>Direct3DRender_SetGenericStateRigid</c>), so an unlightmapped one took the
+    /// ambient alone -- mission 3's crates in the dark fuel depot hall, not lit by the moon outside.
     /// </remarks>
     public bool HasDerivedNormals { get; init; }
 

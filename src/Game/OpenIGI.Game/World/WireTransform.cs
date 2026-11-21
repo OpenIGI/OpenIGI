@@ -167,7 +167,7 @@ public readonly record struct WireTransform(
                 vertex.Colour);
         }
 
-        // Strung, a model with no normals of its own stays two-sided, as it was before.
+        // Strung, it keeps its source's winding, turned over to the original's front as every model is.
         return new MeshGeometry(vertices, [.. source.Indices], source.Subsets) { HasDerivedNormals = source.HasDerivedNormals };
     }
 

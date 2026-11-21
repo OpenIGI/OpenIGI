@@ -314,8 +314,8 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
             BuildBent(source, vertices, low, high);
         }
 
-        // A model with no normals of its own stays two-sided once bent: a tunnel is such a model, seen from inside, and bent
-        // without this it was drawn to the rock outside it and not to the train within.
+        // Bent, it keeps its source's winding, turned over to the original's front as every model is: a tunnel, which stores no
+        // normals, faces the train within it and not the rock outside.
         return new MeshGeometry(vertices, [.. source.Indices], source.Subsets) { HasDerivedNormals = source.HasDerivedNormals };
     }
 

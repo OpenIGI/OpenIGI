@@ -384,11 +384,9 @@ internal sealed class TrainPlacementBuilder
         // Turned over as the ordinary mesh builder turns a model, and for the same reason: the original culls a bent
         // segment's stored order (0x49C850), which faces away from this renderer's front. Left as stored, the railway
         // was hidden at the one preset that culls; wound to its normals instead, the faces whose smoothed normals lean
-        // the other way were turned inside out, and a road showed its underside.
-        if (MefMeshBuilder.HasNormals(vertices))
-        {
-            MefMeshBuilder.MirrorWinding(indices);
-        }
+        // the other way were turned inside out, and a road showed its underside. A segment without normals is turned over
+        // too: the original culls it the same.
+        MefMeshBuilder.MirrorWinding(indices);
 
         return new MeshGeometry(vertices, indices, [.. subsets]);
     }

@@ -11,15 +11,6 @@ internal sealed class ResolvedWorldModel(MeshGeometry geometry, MeshHandle mesh)
 
     public MeshHandle Mesh { get; } = mesh;
 
-    /// <summary>Whether the mesh was wound to the original's front (it has normals), rooms and props alike.</summary>
-    /// <remarks>
-    /// IGI2 lightmapped MEFs omit normals and are not turned over. They must remain two-sided; culling them
-    /// erases mission 2's cave. Evaluate once at residency, rather than scanning vertices in every render pass.
-    /// </remarks>
-    public bool CanCull => _hasNormals;
-
-    private readonly bool _hasNormals = !geometry.HasDerivedNormals && MefMeshBuilder.HasNormals(geometry.Vertices);
-
     public WorldSubsetDraw[]? Subsets { get; set; }
 
     /// <summary>Gets or sets whether any of those subsets is glazing.</summary>

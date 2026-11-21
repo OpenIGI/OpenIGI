@@ -317,8 +317,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
         bool faceGroups = FaceGroupBlending && !rotorsOnly && !glassOnly;
         byte appliedReference = IGraphicsDevice.DefaultAlphaReference;
 
-        // Interior sectors and meshes without authored normals have no reliable outward facing.
-        // Choose culling per mesh below, including when an archived r_world_cull enables it.
         bool cullBackFaces = GeometryCVars.WorldCull.Value != 0;
         CullMode appliedCull = CullMode.None;
         _device.SetCullMode(appliedCull);
@@ -554,9 +552,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
             // Every model wound to the original's front is culled, rooms included, as the original culls every model in every
             // look (CCW: Direct3DRender_SetLitState 0x49D480, Direct3DRender_SetUnlitState 0x49D810). A building's shell and its
             // room share the plane of each door and window from opposite sides; drawn two-sided, the two fight over every pixel of
-            // it. Only a mesh without normals, which nothing could wind, stays two-sided.
-            bool culled = cullBackFaces && model.CanCull;
-            CullMode cull = culled ? CullMode.CounterClockwise : CullMode.None;
+            // it. I.G.I. 2's lightmapped geometry, which stores no normals, is wound and culled the same.
+            CullMode cull = cullBackFaces ? CullMode.CounterClockwise : CullMode.None;
             if (cull != appliedCull)
             {
                 _device.SetCullMode(cull);
@@ -656,7 +653,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     // world's as M * v (the model view above is built that way, so its COLUMNS are the
                     // model's axes in the world), and the inverse is its transpose: dotting the world
                     // vector against each column, which is what the engine's row-vector Transform does.
-                    Vector3f sun = !baked && shading.Sun is { } sunlight
+                    // A model that stored no normals is lit by the ambient alone, as the original's zero normals left it.
+                    Vector3f sun = !baked && !model.Geometry.HasDerivedNormals && shading.Sun is { } sunlight
                         ? orientation.Transform(sunlight.Direction)
                         : Vector3f.Zero;
                     if (sun != appliedSun)

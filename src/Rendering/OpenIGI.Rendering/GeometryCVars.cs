@@ -14,9 +14,9 @@ public static class GeometryCVars
     /// facing the original culls to (CCW in every look: Direct3DRender_SetLitState 0x49D480 and
     /// Direct3DRender_SetUnlitState 0x49D810). On in every preset: a thin surface such as a roller door
     /// is two faces back to back on one plane, and drawn two-sided the pair fights for depth and flickers
-    /// as the eye moves. Interior sectors and meshes without usable normals stay two-sided: in particular,
-    /// IGI2 lightmapped geometry carries no normals. Not archived, so a value saved by an older build
-    /// cannot turn it off again; off is for comparing in the console only.
+    /// as the eye moves. Rooms and I.G.I. 2's lightmapped geometry, which stores no normals, are culled
+    /// alike, as the original culls them (Direct3DRender_SetGenericStateLightmap). Not archived, so a value
+    /// saved by an older build cannot turn it off again; off is for comparing in the console only.
     /// </remarks>
     public static readonly NumericCVar<int> WorldCull = Presets.Define(
         CVar.Int(
@@ -25,7 +25,7 @@ public static class GeometryCVars
             0,
             1,
             CVarOptions.None,
-            "Cull back faces of normal-bearing world meshes, as the original does; interior sectors remain two-sided."),
+            "Cull back faces of world meshes, as the original does."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
