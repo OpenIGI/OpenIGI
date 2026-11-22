@@ -112,7 +112,8 @@ public sealed partial class Igi2HumanPlayer
 
         SoundWater();
         IsWeaponDisplay = !IsSwimming;
-        if (GroundCollider is not null && GroundIntersection.Normal.Z < SteepGround)
+        // Project I.G.I.'s body meets steep ground with its own wall sweep and slide, so the keys stay its to read.
+        if (GroundCollider is not null && GroundIntersection.Normal.Z < SteepGround && !StandsOnIgi1Feet)
         {
             Channels[Igi2HumanChannel.MoveForwards] = 0f;
             Channels[Igi2HumanChannel.MoveBackwards] = 0f;
@@ -283,6 +284,13 @@ public sealed partial class Igi2HumanPlayer
             return;
         }
 
+        if (StandsOnIgi1Feet)
+        {
+            MoveOnIgi1Feet(Igi1Feet!);
+            return;
+        }
+
+        Igi1Feet?.Unseat();
         if ((Signal & Igi2PlayerSignal.Grounded) == 0 || IsDead)
         {
             GroundMovementSpeed = default;

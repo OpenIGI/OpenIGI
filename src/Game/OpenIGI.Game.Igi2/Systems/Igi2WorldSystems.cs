@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
@@ -246,5 +247,42 @@ internal static class Igi2WorldSystems
         {
             profile.Difficulty = (int)b.Player.Human.Difficulty;
         }
+    }
+
+    /// <summary>
+    /// Project I.G.I.'s body for the player to stand on when its movement is asked for (<see cref="Igi2PlayerMovement.Igi1"/>):
+    /// the level's objects as that game's collision, kept where the level's doors, lifts and trains have moved them, its
+    /// terrain, and the level's humans it cannot walk through.
+    /// </summary>
+    /// <remarks>
+    /// Made for every level, so the setting can change between ticks; the collision follows the level only while the body is
+    /// moving the player, and catches up with whatever moved meanwhile when it next does.
+    /// </remarks>
+    public static void Igi1Feet(Igi2LevelBuild b)
+    {
+        if (b.Request.Built.Solids is not { } solids)
+        {
+            return;
+        }
+
+        Igi2HumanPlayer human = b.Player.Human;
+        PlacementCollisionFollower follower = new(solids, b.Request.Built.Scene.Placements, b.Player.Motions, b.Player.Presence);
+        follower.Follow();
+        b.Level.AddTickEnd(() =>
+        {
+            if (human.Movement == Igi2PlayerMovement.Igi1)
+            {
+                follower.Follow();
+            }
+        });
+
+        Collision.Igi2CollisionWorld world = b.Player.CollisionWorld;
+        WorldTraceCast trace = ((IHostCollisionWorld)world).Trace;
+        List<Igi2Human> others = [.. b.LevelHumans().Where(h => !ReferenceEquals(h, human))];
+        human.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(
+            solids.PlayerCaster(),
+            WorldTrace.AsRayCast(trace, WorldTraceMask.Terrain),
+            world.Ground,
+            () => others.Where(static h => !h.IsDead).Select(static h => h.Position)));
     }
 }

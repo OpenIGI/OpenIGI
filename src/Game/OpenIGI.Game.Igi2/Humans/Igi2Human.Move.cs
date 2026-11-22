@@ -235,6 +235,27 @@ public abstract partial class Igi2Human
             BoneCollisionDelta = default;
         }
 
+        Arrive(to, speed, forcePosition, forceOrientation);
+    }
+
+    /// <summary>
+    /// Puts the body where another game's mover took it this tick, as <see cref="Move"/> ends: the move's speed, its change, the
+    /// place on the platform and the speed through the world.
+    /// </summary>
+    /// <param name="from">Where the move started, after the platform carried it (<see cref="UpdatePlatformMovement"/>).</param>
+    /// <param name="to">Where the mover put the feet.</param>
+    /// <remarks>The mover found its own ground and walls; nothing of <see cref="Move"/>'s collision runs.</remarks>
+    public void ArriveFrom(Vector3d from, Vector3d to)
+    {
+        Vector3f speed = new((float)(to.X - from.X), (float)(to.Y - from.Y), (float)(to.Z - from.Z));
+        AccumulatedSpeed = speed;
+        BoneCollisionDelta = default;
+        Arrive(to, speed, forcePosition: true, forceOrientation: true);
+    }
+
+    // The end of a move, however it was made: the place, the speed and its change, the platform's note and the world speed.
+    private void Arrive(Vector3d to, Vector3f speed, bool forcePosition, bool forceOrientation)
+    {
         Position = to;
         Vector3f total = TotalSpeed;
         Acceleration = new Vector3f(((Fpu)speed.X - total.X).F, ((Fpu)speed.Y - total.Y).F, ((Fpu)speed.Z - total.Z).F);

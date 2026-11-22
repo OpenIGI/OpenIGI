@@ -23,6 +23,16 @@ public static class GameplayMenu
                     "Mid-Mission Saves",
                     "Lets you save and load in the middle of a Project I.G.I. mission, from the pause menu and the quick save "
                         + "keys, which the original never allowed. Off plays each mission through in one go. I.G.I. 2 keeps its own saves."),
+                new SettingRow(
+                    "g_igi2_movement",
+                    "I.G.I. 2 Movement",
+                    "How you move and look in I.G.I. 2. Project I.G.I. gives the sequel's soldier the first game's walk, run, "
+                        + "strafe, crouch and jump, and its one-to-one mouse look. Your weapons, aim and health stay I.G.I. 2's.",
+                    Choices: new Dictionary<string, string>
+                    {
+                        ["igi2"] = "I.G.I. 2",
+                        ["igi1"] = "Project I.G.I.",
+                    }),
             ]),
 
         new SettingsPanel(

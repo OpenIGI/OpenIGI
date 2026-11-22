@@ -147,6 +147,9 @@ public static class Igi2LevelSystems
     /// <summary>The soldiers' minds.</summary>
     public const string Ai = "Ai";
 
+    /// <summary>Project I.G.I.'s body for the player to stand on, when its movement is asked for.</summary>
+    public const string Igi1Feet = "Igi1Feet";
+
     /// <summary>Makes the title's systems, in order.</summary>
     /// <returns>A fresh list, which the caller may edit.</returns>
     public static LevelSystems<Igi2LevelBuild> Create() => new LevelSystems<Igi2LevelBuild>()
@@ -193,7 +196,8 @@ public static class Igi2LevelSystems
         .Add(System(Activation, Igi2InteractionSystems.Activation))
         .Add(System(Motions, Igi2InteractionSystems.Motions))
         .Add(System(Difficulty, Igi2WorldSystems.Difficulty))
-        .Add(System(Ai, Igi2ScriptSystems.Ai));
+        .Add(System(Ai, Igi2ScriptSystems.Ai))
+        .Add(System(Igi1Feet, Igi2WorldSystems.Igi1Feet));
 
     private static LevelSystem<Igi2LevelBuild> System(string name, Action<Igi2LevelBuild> build) => new(name, build);
 }

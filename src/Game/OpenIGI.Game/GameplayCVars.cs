@@ -116,6 +116,28 @@ public static class GameplayCVars
         vanilla: "0",
         enhanced: "1");
 
+    /// <summary>Whose movement and look I.G.I. 2's player has: the game's own, or Project I.G.I.'s.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Igi2PlayerMovement.Igi1"/> stands I.G.I. 2's player on Project I.G.I.'s own body
+    /// (<see cref="Player.PlayerBody"/>): its walk, run, strafe, crouch, jump and fall, played from the walk carried with the
+    /// code (<see cref="Player.HumanLocomotionRootMotion"/>), so it needs nothing of that game's installed; and its look is
+    /// Project I.G.I.'s one-to-one mouse. What it carries, how it aims and what hurts it stay I.G.I. 2's.
+    /// </para>
+    /// <para>
+    /// Another exception to the rule above: where the player goes is game logic. The Vanilla preset forces I.G.I. 2's own, as
+    /// with <see cref="SteadyTurns"/>, and a co-op client's player is moved by its command's choice on the server.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<Igi2PlayerMovement> Igi2Movement = Experience.Define(
+        CVar.Choice(
+            "g_igi2_movement",
+            Igi2PlayerMovement.Igi2,
+            CVarOptions.Archive,
+            "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look."),
+        vanilla: "igi2",
+        enhanced: null);
+
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
     /// <remarks>
     /// <para>

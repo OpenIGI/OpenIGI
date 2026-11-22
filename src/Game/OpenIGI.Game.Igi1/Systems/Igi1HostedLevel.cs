@@ -194,29 +194,13 @@ public sealed class Igi1HostedLevel
     {
         PlacementCollisionFollower follower = new(solids, placements, motions, presence);
         follower.Follow();
-        int carrier = -1;
+        PlayerBodyCarrier carrier = new(follower, pushes);
         EachTick(() =>
         {
             follower.Follow();
-            if (rider?.Human.Rig is not { IsOnLadder: false, IsInWorldInteraction: false } rig)
+            if (rider?.Human.Rig is { IsOnLadder: false, IsInWorldInteraction: false } rig)
             {
-                return;
-            }
-
-            // A lift, a train, a helicopter: the player rides what it stands on as that moves, and turns with it.
-            if (follower.TryCarry(ref carrier, rig.Body.Position, out Core.Numerics.Vector3d carried, out float turn))
-            {
-                rig.Body.Position = carried;
-                rig.Body.Yaw += turn;
-            }
-
-            // A conveyor belt: standing on its moving face, the player is pushed along it, through the walls as its own step is.
-            if (pushes is not null
-                && rig.Body.IsGrounded
-                && follower.TryStandingOn(rig.Body.Position, out WorldPlacement? under, out WorldRayHit footing)
-                && pushes.PushOn(under, footing.Material) is { } push)
-            {
-                rig.Body.SlideBy(new Core.Numerics.Vector3d(push.X, push.Y, push.Z));
+                carrier.Carry(rig.Body);
             }
         });
     }
