@@ -171,14 +171,18 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
             model.TimerSeconds = Math.Max(0, (int)flow.MaxPlayTime - (flow.Tick / 30));
         }
 
+        // The mission's messages in play; a cutscene's subtitle is not the display's but drawn as the original draws it, low on
+        // the left of the picture (DrawCutsceneLine), so while one plays the strip shows nothing.
+        if (title.IsCutscenePlaying)
+        {
+            return;
+        }
+
         int key = 0;
-        // A cutscene shows the line it sent last alone (StatusMessageScreen_DrawHandler).
-        OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot? cutscene = title.IsCutscenePlaying ? title.StatusMessages.CutsceneLine : null;
         foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
             key++;
-            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying
-                || (cutscene is not null && !ReferenceEquals(slot, cutscene)))
+            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message is not { IsCutsceneMessage: false })
             {
                 continue;
             }

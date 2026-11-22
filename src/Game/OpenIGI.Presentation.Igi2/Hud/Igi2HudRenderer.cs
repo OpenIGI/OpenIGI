@@ -60,6 +60,12 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         if (remastered && !optics)
         {
             DrawRemastered(batch, title, screenWidth, screenHeight, requestedScale);
+
+            // A cutscene's subtitle in the original's face and place, whichever display is chosen.
+            if (title.IsCutscenePlaying)
+            {
+                DrawCutsceneLine(batch, title, width, height);
+            }
         }
         else if (!optics)
         {

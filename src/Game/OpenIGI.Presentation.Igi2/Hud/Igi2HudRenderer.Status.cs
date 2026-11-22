@@ -329,6 +329,9 @@ public sealed partial class Igi2HudRenderer
 
     // StatusMessageScreen_DrawCutSceneMessage: the cutscene's line as its three tilemaps are registered, each at the display's
     // left and one line under the last, whole -- they are never faded -- in the cutscene's font, which it is wrapped in too.
+    // The places are the original's shares of the whole display, so the line keeps to the picture's lower left at any shape.
+    // The face is grown with the display's height from the 720 lines I.G.I. 2 is laid out for, by a fraction rather than the
+    // whole-number interface scale: that rounds 1080 lines down to the face's own pixels, a line too small to read.
     private void DrawCutsceneLine(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
         if (title.StatusMessages.CutsceneLine is not { Printed: > 0 } slot
@@ -337,14 +340,18 @@ public sealed partial class Igi2HudRenderer
             return;
         }
 
+        // In the display's own pixels: the width and height given are the interface's, its scale times smaller.
+        float screenWidth = width * _scale, screenHeight = height * _scale;
+        float size = Math.Max(1f, screenHeight / AuthoredHeight);
         string printed = slot.Text[..Math.Min(slot.Printed, slot.Text.Length)];
-        float x = width * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneLeftShare;
-        float y = height * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneTopShare;
+        float x = screenWidth * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneLeftShare;
+        float y = screenHeight * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneTopShare;
         Bgra32 colour = Bgra32.FromRgba(255, 255, 255, Channel(slot.Opacity));
-        foreach (string line in WrappedLines(font, printed, width * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneWidthShare))
+        float wrap = screenWidth * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneWidthShare / size;
+        foreach (string line in WrappedLines(font, printed, wrap))
         {
-            font.Draw(batch, line, x * _scale, y * _scale, colour, _scale, _scale);
-            y += font.LineHeight;
+            font.Draw(batch, line, x, y, colour, size, size);
+            y += font.LineHeight * size;
         }
     }
 
