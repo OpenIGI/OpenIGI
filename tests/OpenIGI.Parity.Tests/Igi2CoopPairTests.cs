@@ -1117,6 +1117,42 @@ public sealed class Igi2CoopPairTests
         }
     }
 
+    /// <summary>
+    /// The host and its partner finish the first mission -- the lift down, both in the mine shaft -- and the host goes on to the
+    /// second with the room still open and the joiner following it there.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_host_finishing_the_first_mission_goes_on_to_the_second_and_the_joiner_follows()
+    {
+        using Igi2CoopPair pair = Joined();
+        Igi2TitlePlayer first = pair.Host!;
+        Igi2HumanPlayer partner = Assert.Single(first.NetworkHumans).Human;
+        pair.RunUntil(() => false, 120);
+        OpenIGI.Game.Igi2.Flow.Igi2AreaActivateTask shaft = first.LevelTasks().OfType<OpenIGI.Game.Igi2.Flow.Igi2AreaActivateTask>().Single(static a => a.Id == 162);
+        OpenIGI.Game.Flow.EditVariableTask lift = first.LevelTasks().OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 271);
+        lift.Value = 2;
+        bool completed = false;
+        int frames = pair.RunUntil(
+            () =>
+            {
+                if (ReferenceEquals(pair.Host, first) && first.Outcome != TitleMissionOutcome.Completed && !completed)
+                {
+                    first.Human.Position = shaft.Position;
+                    partner.Position = shaft.Position;
+                }
+
+                completed |= first.Outcome == TitleMissionOutcome.Completed;
+                return pair.Client.Ended is not null || (completed && pair.Client.Session?.Map == "12" && !ReferenceEquals(pair.Host, first));
+            },
+            6000);
+
+        Assert.True(completed, "the first mission never completed");
+        Assert.True(
+            frames >= 0 && pair.Client.Ended is null,
+            $"after the first mission the joiner's session ended '{pair.Client.Ended}', its map '{pair.Client.Session?.Map}', the host's level {(ReferenceEquals(pair.Host, first) ? "the first still" : "a new one")}");
+        Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.NetworkHumans.Count == 1 && !pair.Client.HoldsLevel, 4000) >= 0, "the joiner never came into the second mission");
+    }
+
     internal static Igi2CoopPair Joined(params string[] hostArgs) => JoinedOn(Igi2CoopPair.FirstMission, hostArgs);
 
     internal static Igi2CoopPair JoinedOn(int mission, params string[] hostArgs)
