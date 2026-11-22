@@ -33,7 +33,8 @@ public interface IIgi2AreaOccupant
 
     /// <summary>
     /// Gets a value indicating whether it has been taken out of the level: a player whose client left, or a dedicated server's own
-    /// level player, which nobody plays. No area counts it.
+    /// level player, which nobody plays, once a client's player has joined (before that it stands in for the players to come). No
+    /// area counts it.
     /// </summary>
     bool IsGone => false;
 }

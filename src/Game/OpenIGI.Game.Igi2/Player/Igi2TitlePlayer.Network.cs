@@ -258,13 +258,14 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
 
     /// <summary>
     /// Takes the level's own player out of the level's world, on a dedicated server where nobody plays it: neither seen, hunted,
-    /// struck by blasts, counted by the areas or burnt by the smoke, and solid to nobody. The scripts still weigh it until a
-    /// client joins (<see cref="ScriptPlayers"/>), so a server waiting for its first player does not fail its mission.
+    /// struck by blasts or burnt by the smoke, and solid to nobody. The scripts still weigh it until a client joins
+    /// (<see cref="ScriptPlayers"/>), and the areas that count the level's humans still count it where it stands, so a server
+    /// waiting for its first player does not fail its mission: mission 1 failed the moment it loaded, its player outside every
+    /// area, and the server sat on the failed page answering nobody. <see cref="DismissLevelPlayer"/> lets it go.
     /// </summary>
     internal void RetireLevelPlayer()
     {
         Igi2HumanPlayer human = Human;
-        human.IsGone = true;
         (MapHumans as List<Igi2Human>)?.Remove(human);
         (Ai?.Detection ?? _surroundings.Detection)?.Remove(human);
         Explosions?.RemoveTarget(human);
@@ -283,6 +284,16 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
         {
             SpawnKit?.World.RemoveBody(collider);
         }
+    }
+
+    /// <summary>
+    /// Lets a dedicated server's retired level player go once a client's player is in the level: the scripts weigh it no more and
+    /// no area counts it (<see cref="Flow.IIgi2AreaOccupant.IsGone"/>); the joined players are the level's now.
+    /// </summary>
+    internal void DismissLevelPlayer()
+    {
+        ScriptPlayers?.Remove(Human);
+        Human.IsGone = true;
     }
 
     /// <summary>Takes a player out of the level, as its client leaves.</summary>

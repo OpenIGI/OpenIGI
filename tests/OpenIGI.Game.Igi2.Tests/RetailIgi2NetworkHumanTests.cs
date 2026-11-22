@@ -101,6 +101,24 @@ public sealed class RetailIgi2NetworkHumanTests
     /// level's humans of the player's side (<c>CRITERIA_HUMAN0</c>), which held the level's own player and no other, and a server
     /// whose level player nobody plays never saw anyone reach it -- the mission never completed and never moved on.
     /// </summary>
+    /// <summary>
+    /// A dedicated server waiting for its first player keeps mission 1 going: its level player, which nobody plays, stands in for
+    /// the players to come in the areas as in the scripts. Left out of the areas, it was outside the mission's every area the
+    /// moment the level loaded, the mission failed, and the server sat on the failed page answering nobody.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void An_empty_dedicated_server_does_not_fail_mission_1_while_it_waits_for_its_first_player()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        _ = new Igi2ReplicatedWorld(level) { IncludesHost = false };
+        for (int tick = 0; tick < 900; tick++)
+        {
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+
+        Assert.NotEqual(TitleMissionOutcome.Failed, level.Outcome);
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void A_dedicated_servers_mission_ends_when_a_joined_player_goes_down_the_mine_shaft()
     {

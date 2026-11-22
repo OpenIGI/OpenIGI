@@ -295,10 +295,10 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         struck.KeepsWeaponsWhenDown = HoldsTheDead;
         HearHarm(slot + 1, struck);
 
-        // A dedicated server's level player is weighed by the scripts only until a player has joined.
+        // A dedicated server's level player is weighed by the scripts and counted by the areas only until a player has joined.
         if (!IncludesHost)
         {
-            _level.ScriptPlayers?.Remove(_level.Human);
+            _level.DismissLevelPlayer();
         }
 
         Arm(human);
