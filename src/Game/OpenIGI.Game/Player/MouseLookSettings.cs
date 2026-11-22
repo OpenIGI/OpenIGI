@@ -103,6 +103,20 @@ public readonly record struct MouseLookSettings(float RadiansPerCount, bool Inve
     public static float ZoomSensitivityScale(float currentTanX) =>
         Math.Clamp(currentTanX / HumanView.DefaultTanX, 0f, 1f);
 
+    /// <summary>
+    /// The look input an original's filtered turn reads for a motion, at this rate: a whole turn of it, unzoomed, goes as far as
+    /// this look goes for the same counts, and only the original's easing of small turns and averaging of the pitch differ.
+    /// </summary>
+    /// <param name="counts">The tick's motion, in mouse counts.</param>
+    /// <param name="turnPerInput">How far an input of one turns the unzoomed view, in radians: π times its field of view.</param>
+    /// <returns>The input, held to one either way as the originals hold theirs.</returns>
+    /// <remarks>
+    /// The originals read a 255th of the motion times their own 0.05-to-1 sensitivity, which on a modern mouse turns many times
+    /// faster than the profile's rate here; taking the rate from <see cref="RadiansPerCount"/> keeps the one slider meaning the
+    /// same speed under either look.
+    /// </remarks>
+    public float RetailInput(float counts, float turnPerInput) => Math.Clamp(counts * RadiansPerCount / turnPerInput, -1f, 1f);
+
     /// <summary>The yaw a frame's horizontal motion asks for, in radians.</summary>
     /// <param name="mouseDeltaX">The horizontal motion, in mouse counts.</param>
     /// <returns>The change in yaw. Mouse right turns right.</returns>

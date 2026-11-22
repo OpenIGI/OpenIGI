@@ -660,8 +660,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             && CanPreviewLook;
         _lookInput = input;
         _rawKeys = input.Raw;
-        _reader.Read(new Igi2PlayerInputState(
-            Analog(input.MouseX, Human.UnfilteredMouse), Analog(input.MouseY, Human.UnfilteredMouse), held, pressed), _frame);
+        (float mouseX, float mouseY) = LookInput(input);
+        _reader.Read(new Igi2PlayerInputState(mouseX, mouseY, held, pressed), _frame);
         TakeWheelPick();
         if (Level is { } level)
         {

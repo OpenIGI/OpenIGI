@@ -164,6 +164,46 @@ public sealed class Igi2Igi1MovementTests
         Assert.Equal(Math.Abs(input) < HumanBodyTurn.SmallInput, Math.Abs(eased) < Math.Abs(whole));
     }
 
+    /// <summary>
+    /// The original look turns at the profile's own rate: a flick turns the player exactly as far as the linear look turns it for
+    /// the same counts and sensitivity, and only a small motion is eased, so the one slider means one speed under either look.
+    /// </summary>
+    /// <param name="counts">The tick's motion, in mouse counts.</param>
+    /// <param name="sensitivity">The profile's sensitivity.</param>
+    [Theory]
+    [InlineData(400f, 0.4f)]
+    [InlineData(-900f, 0.4f)]
+    [InlineData(150f, 0.8f)]
+    public void The_original_look_turns_a_flick_as_far_as_the_linear_one(float counts, float sensitivity)
+    {
+        MouseLookSettings rate = MouseLookSettings.FromSensitivity(sensitivity, invertPitch: false);
+        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
+        player.Movement = Igi2PlayerMovement.Igi1;
+        player.Igi1Look = Igi1Look.Retail;
+        float before = player.IdealGamma;
+
+        Tick(player, Igi2PlayerAction.None, rate.RetailInput(counts, MathF.PI * Igi2HumanView.DefaultFieldOfView));
+
+        // The sequel's heading turns the other way from the linear look's yaw.
+        Assert.Equal(-rate.YawDelta(counts), player.IdealGamma - before, 1e-5f);
+    }
+
+    /// <summary>A small motion under the original look turns less than the linear look, eased as the first game eases it.</summary>
+    [Fact]
+    public void The_original_look_eases_a_small_motion()
+    {
+        MouseLookSettings rate = MouseLookSettings.FromSensitivity(0.4f, invertPitch: false);
+        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
+        player.Movement = Igi2PlayerMovement.Igi1;
+        player.Igi1Look = Igi1Look.Retail;
+        float before = player.IdealGamma;
+
+        Tick(player, Igi2PlayerAction.None, rate.RetailInput(20f, MathF.PI * Igi2HumanView.DefaultFieldOfView));
+
+        float turned = Math.Abs(player.IdealGamma - before);
+        Assert.InRange(turned, Math.Abs(rate.YawDelta(20f)) * 0.5f, Math.Abs(rate.YawDelta(20f)) * 0.6f);
+    }
+
     /// <summary>The session's comparison stands in for the chosen movement and look; off leaves the settings' own.</summary>
     [Fact]
     public void The_comparison_stands_in_for_the_settings()
