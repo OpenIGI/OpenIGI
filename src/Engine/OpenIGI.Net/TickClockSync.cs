@@ -14,11 +14,19 @@ namespace OpenIGI.Net;
 /// are stamped <see cref="CommandTick"/>, ahead of the server by half a round trip and a small buffer, so each arrives
 /// just before the server runs that tick. This is Source's split between <c>cl_interp</c> and the predicted tickbase.
 /// </para>
+/// <para>
+/// The two are kept apart, as Source's are. The drawn moment is counted back from the snapshots as they arrive
+/// (<see cref="ArrivingTick"/>, Source's client clock, which follows the tick of the packets it receives), not from the
+/// server's present: the newest snapshot a client holds is already half a round trip old, and a moment counted back from
+/// the server's present by less than that lies past it -- every body carried on along its velocity, every frame, on any
+/// line slower than twice the delay.
+/// </para>
 /// </remarks>
 public sealed class TickClockSync
 {
     private bool _hasSample;
     private double _offsetTicks;
+    private double _arrivalTicks;
     private long _lastSampleTick = long.MinValue;
     private double _spacingTicks = 1;
     private double _jitterTicks;
@@ -42,8 +50,15 @@ public sealed class TickClockSync
     public double SnapThreshold { get; set; } = 8;
 
     /// <summary>Gets or sets how far behind the server remote things are drawn at least, in seconds (<c>cl_interp</c>).</summary>
-    /// <remarks>The delay applied (<see cref="AppliedInterpolationDelay"/>) is never less, and grows with what the line does.</remarks>
-    public double InterpolationDelay { get; set; } = 0.1;
+    /// <remarks>
+    /// <para>The delay applied (<see cref="AppliedInterpolationDelay"/>) is never less, and grows with what the line does.</para>
+    /// <para>
+    /// None by default: the snapshots' own spacing sets the least (<see cref="InterpolationRatio"/> of them, two ticks at a snapshot a
+    /// tick), as Source's <c>cl_interp 0</c> leaves it to <c>cl_interp_ratio</c>. It is counted back from the snapshots arriving
+    /// (<see cref="ArrivingTick"/>), so it is all margin whatever the round trip.
+    /// </para>
+    /// </remarks>
+    public double InterpolationDelay { get; set; }
 
     /// <summary>Gets or sets how many snapshot spacings the delay covers at least (<c>cl_interp_ratio</c>), so one lost is bridged.</summary>
     public double InterpolationRatio { get; set; } = 2;
@@ -57,7 +72,7 @@ public sealed class TickClockSync
     /// <summary>Gets how far each snapshot's arrival strays from the clock's estimate, on average, in ticks.</summary>
     public double ArrivalJitterTicks => _jitterTicks;
 
-    /// <summary>Gets how far behind the server remote things are drawn now, in seconds.</summary>
+    /// <summary>Gets how far behind the snapshots arriving remote things are drawn now, in seconds.</summary>
     /// <remarks>
     /// The larger of <see cref="InterpolationDelay"/> and <see cref="InterpolationRatio"/> snapshot spacings, and twice the
     /// arrival jitter beyond half a tick on top -- so a slow or jittery line still has a snapshot either side to blend
@@ -78,17 +93,21 @@ public sealed class TickClockSync
     /// <param name="roundTripTime">The connection's round trip, in seconds.</param>
     public void AddSample(long serverTick, double now, double roundTripTime)
     {
-        double sample = serverTick + (roundTripTime * 0.5 * TickRate) - (now * TickRate);
+        double arrival = serverTick - (now * TickRate);
+        double sample = arrival + (roundTripTime * 0.5 * TickRate);
         if (!_hasSample || Math.Abs(sample - _offsetTicks) > SnapThreshold)
         {
             _offsetTicks = sample;
+            _arrivalTicks = arrival;
             _hasSample = true;
             _lastSampleTick = serverTick;
             Adapt();
             return;
         }
 
-        _jitterTicks += (Math.Abs(sample - _offsetTicks) - _jitterTicks) * Smoothing;
+        // The jitter is the arrivals' own: the round trip's estimate moving is no snapshot coming late.
+        _jitterTicks += (Math.Abs(arrival - _arrivalTicks) - _jitterTicks) * Smoothing;
+        _arrivalTicks += (arrival - _arrivalTicks) * Smoothing;
         _offsetTicks += (sample - _offsetTicks) * Smoothing;
         if (serverTick > _lastSampleTick)
         {
@@ -118,10 +137,15 @@ public sealed class TickClockSync
     /// <returns>The estimated tick.</returns>
     public double ServerTick(double now) => (now * TickRate) + _offsetTicks;
 
+    /// <summary>Gets the tick of a snapshot arriving now, fractional: the server's present as this client hears of it, half a round trip late.</summary>
+    /// <param name="now">The local time, in seconds.</param>
+    /// <returns>The tick, which the newest snapshot held is at or just behind on a steady line.</returns>
+    public double ArrivingTick(double now) => (now * TickRate) + _arrivalTicks;
+
     /// <summary>Gets the tick remote things are drawn at now, fractional.</summary>
     /// <param name="now">The local time, in seconds.</param>
-    /// <returns>The tick to interpolate the snapshots to.</returns>
-    public double InterpolationTick(double now) => ServerTick(now) - (AppliedInterpolationDelay * TickRate);
+    /// <returns>The tick to interpolate the snapshots to: behind the snapshots arriving by the delay applied.</returns>
+    public double InterpolationTick(double now) => ArrivingTick(now) - (AppliedInterpolationDelay * TickRate);
 
     /// <summary>Gets the tick a command sampled now should be stamped for.</summary>
     /// <param name="now">The local time, in seconds.</param>

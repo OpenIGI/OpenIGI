@@ -131,6 +131,31 @@ public abstract class HumanBodyMachine
     /// <summary>Puts the machine back to standing.</summary>
     public void Reset() => Advance(InitialState);
 
+    /// <summary>
+    /// Stands the machine in the state that plays a clip, running no entry: a co-op client's copy of a soldier, which only plays
+    /// the clips the server's does, keeps its machine where the server's is, so a fall foreseen here is the one that state
+    /// falls in. <b>Not retail.</b>
+    /// </summary>
+    /// <param name="clip">The clip the soldier plays.</param>
+    /// <remarks>The first state naming it; a clip no state names (a flinch, a script's) leaves the machine where it was.</remarks>
+    public void FollowClip(int clip)
+    {
+        if (clip < 0 || StateTable.AnimationOf(State) == clip)
+        {
+            return;
+        }
+
+        for (int state = 0; state < StateTable.StateCount; state++)
+        {
+            if (StateTable.AnimationOf(state) == clip)
+            {
+                PreviousState = State;
+                State = state;
+                return;
+            }
+        }
+    }
+
     /// <summary>Runs one tick, taking at most one transition.</summary>
     /// <param name="input">What the body reads this tick.</param>
     /// <returns>The state after the tick.</returns>

@@ -82,6 +82,56 @@ public sealed class CombatFeedbackTests
     }
 
     [Fact]
+    public void A_hit_counted_as_it_struck_marks_at_once_and_not_again_when_the_server_tells_of_it()
+    {
+        Player.ShotTally tally = new();
+        CombatFeedback feedback = new() { Credit = tally, SoldierKillForeseen = () => false };
+        feedback.Take([], own: 1, now: 0);
+
+        // The client's round meets its copy of a soldier: counted there and then.
+        tally.Hit(head: false);
+        feedback.Take([], own: 1, now: 1);
+        Assert.Equal(1f, feedback.Shown(1, default, LookingNorth)?.Marker?.Strength);
+
+        // The server's note of the same hit a round trip later marks nothing new, and counts nothing twice.
+        feedback.Take([new CombatNote(1, -1, 0f, Killed: false, Head: false, default)], own: 1, now: 1 + CombatFeedback.MarkerSeconds + 0.1);
+        Assert.Null(feedback.Shown(1 + CombatFeedback.MarkerSeconds + 0.1, default, LookingNorth)?.Marker);
+        Assert.Equal(1, tally.Hits);
+    }
+
+    [Fact]
+    public void A_soldiers_death_the_server_tells_of_is_counted_once_whether_or_not_the_client_foresaw_it()
+    {
+        Player.ShotTally tally = new();
+        bool foreseen = true;
+        CombatFeedback feedback = new() { Credit = tally, SoldierKillForeseen = () => foreseen };
+        feedback.Take([], own: 1, now: 0);
+
+        // Foreseen: the client counted it as its round struck; the note counts nothing.
+        tally.Hit(head: true);
+        tally.Killed(head: true);
+        feedback.Take([], own: 1, now: 1);
+        feedback.Take([new CombatNote(1, -1, 0f, Killed: true, Head: true, default)], own: 1, now: 1.2);
+        Assert.Equal(1, tally.Kills);
+
+        // Not foreseen (a partner left it its last health, a grenade): the note counts it, and it marks red.
+        foreseen = false;
+        feedback.Take([new CombatNote(1, -1, 0f, Killed: true, Head: false, default)], own: 1, now: 5);
+        Assert.Equal(2, tally.Kills);
+        Assert.True(feedback.Shown(5, default, LookingNorth)?.Marker?.Killed);
+    }
+
+    [Fact]
+    public void On_the_host_a_soldiers_death_is_counted_where_it_falls_and_never_from_the_note()
+    {
+        Player.ShotTally tally = new();
+        CombatFeedback feedback = new() { Credit = tally };
+        feedback.Take([], own: 0, now: 0);
+        feedback.Take([new CombatNote(0, -1, 0f, Killed: true, Head: false, default)], own: 0, now: 1);
+        Assert.Equal(0, tally.Kills);
+    }
+
+    [Fact]
     public void Others_hits_and_ones_own_harm_to_oneself_show_nothing()
     {
         CombatFeedback feedback = new();

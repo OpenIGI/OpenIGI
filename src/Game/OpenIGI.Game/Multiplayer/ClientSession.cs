@@ -451,6 +451,9 @@ public sealed class ClientSession
     /// <summary>Gets or sets the server tick, to a fraction, the others were last drawn at: what a shot made now was aimed at.</summary>
     public double? DrawnTick { get; set; }
 
+    /// <summary>Gets the line's round trip to the server, in seconds; nought before there is a line.</summary>
+    public double RoundTripTime => _net.Connection?.Statistics.RoundTripTime ?? 0;
+
     /// <summary>Gets or sets where every message the server delivers is kept, for a demo; <see langword="null"/> keeps none.</summary>
     public DemoRecording? Recording { get; set; }
 

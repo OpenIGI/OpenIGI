@@ -29,6 +29,9 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
     private const int ClimbPatience = 60;
 
     private readonly Dictionary<int, Igi2NetworkHuman> _puppets = [];
+
+    // What this client foresees of its player's rounds on the soldiers: hit marked, flinched or felled at once.
+    private readonly PredictedSoldierHarm _foresight = new();
     private int _healthBehind;
     private int _offClimbThere;
 
@@ -46,10 +49,15 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
             _level.RemoveNetworkHuman(stale);
         }
 
-        foreach (Igi2HumanSoldier soldier in _level.Soldiers?.Bodies ?? [])
+        IReadOnlyList<Igi2HumanSoldier> bodies = _level.Soldiers?.Bodies ?? [];
+        for (int i = 0; i < bodies.Count; i++)
         {
+            Igi2HumanSoldier soldier = bodies[i];
             soldier.Puppet = soldier.PuppetPose();
             soldier.Weapon.Firing?.IsReplica = true;
+
+            // This player's rounds on it are foreseen here, by its place among the level's soldiers.
+            soldier.Foresight = (_foresight, i);
         }
 
         _level.Marks = this;
@@ -79,6 +87,9 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
             return _command;
         }
     }
+
+    /// <inheritdoc/>
+    public PredictedSoldierHarm? SoldierForesight => _foresight;
 
     /// <inheritdoc/>
     public IReadOnlyCollection<int> Shown => _puppets.Keys;
@@ -188,7 +199,16 @@ public sealed partial class Igi2ClientWorld : IReplicatedClientWorld
         {
             if (_level.Soldiers is { } soldiers && (uint)index < (uint)soldiers.Bodies.Count)
             {
-                soldiers.Bodies[index].Puppet = Igi2ReplicatedWorld.PoseOf(human);
+                // The server's word on one this client foresaw falling: it stays down until the word comes, and gets up if the
+                // word was due and the server kept it alive.
+                Igi2HumanSoldier soldier = soldiers.Bodies[index];
+                float? left = SoldierVitality.Decode(human.Health, soldier.Damage.MaxDamage);
+                if (_foresight.TakeServer(index, left, (human.Flags & ReplicatedHumanCondition.Alive) != 0) == ForeseenHarmVerdict.GetUp)
+                {
+                    soldier.RiseAsPuppet(left);
+                }
+
+                soldier.Puppet = Igi2ReplicatedWorld.PoseOf(human);
             }
 
             return;

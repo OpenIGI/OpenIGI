@@ -44,7 +44,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     private readonly string _titleId;
     private readonly int _tickRate;
     private readonly IOpenIgiLogger _logger;
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly SessionClock _clock = new();
     private readonly HashSet<int> _known = [];
     private IReplicatedWorld? _world;
     // The level the session was last bound to.
@@ -99,6 +99,12 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             MaxClientsPerAddress = options.MaxPerAddress,
         });
     }
+
+    /// <summary>
+    /// Sets what tells the session's time, in seconds, in the wall clock's place: a run stepped frame by frame keeps its frames'
+    /// time, as the line it is given does, so a round trip measures what the line was told to take.
+    /// </summary>
+    public Func<double>? TimeSource { set => _clock.Source = value; }
 
     /// <summary>Gets the room's code, when the session is hosted through one and the room is open.</summary>
     public string? RoomCode => _room?.Code;

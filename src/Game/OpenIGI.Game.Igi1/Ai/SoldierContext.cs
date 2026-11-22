@@ -131,6 +131,13 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// </summary>
     public bool PuppetsOnly { get; set; }
 
+    /// <summary>
+    /// Gets or sets what a co-op client foresees of its player's rounds on these soldiers, by runtime id: the round that would
+    /// kill one fells him here at once, and one short of it marks its hit, before the server's word comes. <see langword="null"/>
+    /// everywhere else.
+    /// </summary>
+    public Game.Multiplayer.PredictedSoldierHarm? Foresight { get; set; }
+
     /// <summary>Gets each brain by its runtime id.</summary>
     public Dictionary<int, Igi1HumanAi> BrainsByRuntimeId { get; } = [];
 

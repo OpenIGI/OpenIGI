@@ -160,13 +160,25 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// brain is told, so it steps the body every tick from then on instead of freezing it.
     /// </para>
     /// </remarks>
+    /// <param name="view">The soldier.</param>
+    /// <param name="hit">Where the killing hit struck.</param>
+    /// <param name="origin">Where its line started.</param>
+    /// <param name="end">Where its line ended.</param>
+    /// <param name="category">The killing weapon's kind.</param>
+    /// <param name="mode">How the death is chosen.</param>
+    /// <param name="foreseen">
+    /// Whether it is a co-op client's copy falling ahead of its server's word (<see cref="SoldierContext.Foresight"/>): it falls
+    /// as the server's will, but its mind is left alone, its gun is the server's to lay, and its coin is the client's own -- the
+    /// level's stream is the server's.
+    /// </param>
     public void Die(
         SoldierView view,
         HumanHit hit,
         Vector3d origin,
         Vector3d end,
         WeaponCategory category,
-        SoldierDeathMode mode)
+        SoldierDeathMode mode,
+        bool foreseen = false)
     {
         Matrix3f orientation = view.Orientation;
         Vector3f forward = new(orientation.M12, orientation.M22, orientation.M32);
@@ -176,8 +188,8 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         int scriptOverride = brain?.DeathAnimationOverride ?? -1;
         Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         // The heading the body has now. The authored one (the spawn's gamma) snapped every soldier that died back
-        // to the way it was placed.
-        float facing = brain?.Facing ?? MathF.Atan2(orientation.M21, orientation.M11);
+        // to the way it was placed. A puppet's mind never turned it: its heading is the one the server's pose gave it.
+        float facing = !foreseen && brain is not null ? brain.Facing : MathF.Atan2(orientation.M21, orientation.M11);
         float livingFacing = facing;
 
         int animation;
@@ -198,7 +210,9 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             }
 
             // 0x45C440's coin, drawn from the level's stream unless the script named the death clip.
-            int flip = scriptOverride == -1 ? (int)_context.AiRandom.NextBounded(2) : _deathsSoFar++ & 1;
+            int flip = foreseen ? Random.Shared.Next(2)
+                : scriptOverride == -1 ? (int)_context.AiRandom.NextBounded(2)
+                : _deathsSoFar++ & 1;
             animation = soldierClass.ChooseDeathAnimation(mode, hit.Zone, front, flip, scriptOverride);
         }
 
@@ -223,6 +237,10 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         WeaponType? droppedWeapon = dying is null || (LetGoOfGun.Count > 0 && LetGoOfGun.Contains(view))
             ? null
             : WeaponForDrop(dying.CarriedWeaponType, dying.WeaponType);
+
+        // A foreseen fall lets the gun go from the hand, as the server's will, and lays none: the server's gun comes with the
+        // level's pickups.
+        bool laysGun = droppedWeapon is not null && !foreseen;
         Vector3d dropPosition = view.Position;
         Matrix3f dropRotation = view.Orientation;
         if (droppedWeapon is not null && dying is not null)
@@ -238,7 +256,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         view.PlaceAt(view.Position, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
         view.Kill(animation);
 
-        if (brain is not null)
+        if (brain is not null && !foreseen)
         {
             brain.Kill(fall, facing);
         }
@@ -267,7 +285,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             BodyFell?.Invoke(new SoldierFall(
                 view, ragdollOrigin, hit.Bone, travel, category, velocity, droppedWeapon is not null, orientation, hit.Position));
 
-            if (droppedWeapon is { } dropped)
+            if (laysGun && droppedWeapon is { } dropped)
             {
                 SoldierSimulation.WeaponDropTraced?.Invoke(view.Soldier.Id, dropPosition, view.Position, view.RootSample.Z);
                 WeaponDrop?.Invoke(dropped, dropPosition, dropRotation, DropVelocity(velocity, travel));
@@ -411,7 +429,10 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             // soldier killed only here would lie dead while the server went on posing it alive and firing.
             if (_context.PuppetsOnly)
             {
-                round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
+                bool head = hit.Zone == HumanDamage.NeckZone;
+                round.Credit?.Hit(head);
+                bool plain = brain?.IsInstantDeathDisabled ?? false;
+                ForeseeRound(struckView, round, hit, health.LeastPreview(damageFactor, plain), head);
                 return;
             }
 
@@ -587,6 +608,52 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         {
             ReactToHit(soldier, brain, ExplosionDamage.Zone, dealt, explosion: true);
         }
+    }
+
+    /// <summary>Gets or sets what is told as a soldier foreseen dead on a co-op client gets up again, its server having kept him alive.</summary>
+    public Action<SoldierView>? BodyRose { get; set; }
+
+    // A co-op client's own round on its copy of a soldier, weighed against what the server last said he had left: past it he
+    // falls here at once, as the server's will; short of it he grunts. The server's word follows a round trip and the
+    // interpolation later, and stands.
+    // It is weighed by the least it can have dealt, not by the zone it struck here: the copy plays the server's clip but not at
+    // its frame, and a round through the chest here is now and then one through an arm there. Weighed by its zone here, such a
+    // round felled a soldier the server kept alive, who got up again when its word came.
+    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in, and
+    // the next round at its chest met its head -- here alone.
+    private void ForeseeRound(SoldierView struck, Igi1WeaponHit round, HumanHit hit, float least, bool head)
+    {
+        if (!round.FromPlayer || round.Credit is not { } credit || _context.Foresight is not { } foresight || struck.IsDead
+            || !_context.Brains.TryGetValue(struck, out Igi1HumanAi? brain))
+        {
+            return;
+        }
+
+        // A blade kills outright only a soldier with no fight on (KnifeStab's 1000), which is the server's mind to know: a client's
+        // copy's never fights, and every stab would fell it here. Its flinch is foreseen, its death left to the server.
+        if (round.Category != WeaponCategory.Knife
+            && foresight.NoteHit(brain.RuntimeId, least) == Game.Multiplayer.ForeseenHarm.Kill)
+        {
+            credit.Killed(head);
+            Die(struck, hit, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category), foreseen: true);
+            return;
+        }
+
+        ReportHitSound(struck);
+    }
+
+    /// <summary>Stands a soldier foreseen dead up again, its server having kept him alive.</summary>
+    /// <param name="view">The soldier.</param>
+    public void Rise(SoldierView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (!view.IsDead)
+        {
+            return;
+        }
+
+        view.Rise();
+        BodyRose?.Invoke(view);
     }
 
     /// <summary>A non-lethal hit: the soldier's class decides whether it flinches, and it grunts.</summary>

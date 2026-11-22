@@ -60,8 +60,26 @@ public sealed class CombatFeedback
     /// Gets or sets the local player's own tally, which its hits on the session's other players are counted into as the
     /// session tells of them: the crosshair's hit and kill marks and their sounds read it, in either display.
     /// </summary>
-    /// <remarks>A hit on a soldier (a note's victim below nought) is the soldiers' to count, where they are struck.</remarks>
+    /// <remarks>
+    /// A hit on a soldier (a note's victim below nought) is the soldiers' to count, where they are struck: on a client, as its own
+    /// round strikes its copy of him (<see cref="PredictedSoldierHarm"/>), so it marks there and then. The hit marker is drawn off
+    /// this tally's counts, one mark for each however it came, so a hit marked as it was struck is not marked again as the server
+    /// tells of it.
+    /// </remarks>
     public Player.ShotTally? Credit { get; set; }
+
+    /// <summary>
+    /// Gets or sets what a client asks of a soldier's death its server told of (a note's victim below nought, killed): whether it
+    /// foresaw that kill and counted it already. <see langword="null"/> where the soldiers' kills are all counted where they fall,
+    /// on the host.
+    /// </summary>
+    /// <remarks>A kill it did not foresee -- a grenade's, a round that had its last health left by a partner's -- is counted from the note.</remarks>
+    public Func<bool>? SoldierKillForeseen { get; set; }
+
+    // The tally the marker is drawn off, and its counts as last marked.
+    private Player.ShotTally? _marked;
+    private int _markedHits;
+    private int _markedKills;
 
     /// <summary>Takes in the notes the session told of.</summary>
     /// <param name="notes">The notes.</param>
@@ -81,9 +99,21 @@ public sealed class CombatFeedback
                 }
             }
 
+            // A soldier's death the client did not foresee: counted now, as the server tells of it.
+            if (note is { Victim: < 0, Killed: true } && note.Attacker == own && Credit is { } killer
+                && SoldierKillForeseen is { } foreseen && !foreseen())
+            {
+                killer.Killed(note.Head);
+            }
+
             if (note.Attacker == own && note.Victim != own)
             {
-                _hit = (now, note.Killed || (_hit is { } last && now - last.At < MarkerSeconds && last.Killed), note.Head);
+                // With no tally to draw it off, the marker is the notes'.
+                if (Credit is null)
+                {
+                    Mark(now, note.Killed, note.Head);
+                }
+
                 Hits++;
                 Dealt += note.Victim >= 0 ? note.Damage : 0f;
             }
@@ -101,7 +131,36 @@ public sealed class CombatFeedback
         }
 
         _struck.RemoveAll(s => now - s.At > MarkSeconds);
+        MarkTally(now);
     }
+
+    // The tally's hits and kills since it was last read, marked: a tally newly in hand marks nothing.
+    private void MarkTally(double now)
+    {
+        if (Credit is not { } tally)
+        {
+            _marked = null;
+            return;
+        }
+
+        if (!ReferenceEquals(tally, _marked))
+        {
+            (_marked, _markedHits, _markedKills) = (tally, tally.Hits, tally.Kills);
+            return;
+        }
+
+        bool killed = tally.Kills > _markedKills;
+        if (killed || tally.Hits > _markedHits)
+        {
+            Mark(now, killed, killed ? tally.LastKillHead : tally.LastHitHead);
+        }
+
+        (_markedHits, _markedKills) = (tally.Hits, tally.Kills);
+    }
+
+    // A hit marked: red for a kill, kept red through a hit that follows a kill inside the marker's life.
+    private void Mark(double now, bool killed, bool head) =>
+        _hit = (now, killed || (_hit is { } last && now - last.At < MarkerSeconds && last.Killed), head);
 
     /// <summary>Starts the round's tally of damage dealt and taken again.</summary>
     public void ResetTally()
