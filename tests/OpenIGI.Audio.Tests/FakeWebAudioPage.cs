@@ -28,8 +28,6 @@ internal sealed class FakeWebAudioPage : IWebAudioPage
 
     public List<string> Log { get; } = [];
 
-    public (double X, double Y, double Z, float ForwardX, float ForwardY, float ForwardZ, float UpX, float UpY, float UpZ) Listener { get; private set; }
-
     public int Open(int sampleRate, int voiceCount)
     {
         OpenCalls++;
@@ -43,12 +41,6 @@ internal sealed class FakeWebAudioPage : IWebAudioPage
         CloseCalls++;
         Log.Add("close");
     }
-
-    public void SetListener(
-        double x, double y, double z,
-        float forwardX, float forwardY, float forwardZ,
-        float upX, float upY, float upZ) =>
-        Listener = (x, y, z, forwardX, forwardY, forwardZ, upX, upY, upZ);
 
     public void SetBusGain(int category, float gain)
     {
@@ -75,20 +67,14 @@ internal sealed class FakeWebAudioPage : IWebAudioPage
         Log.Add($"destroy {buffer}");
     }
 
-    public void SetVoice(
-        int voice, int category, float gain, float pitch,
-        bool positional, float pan,
-        double x, double y, double z, float minimumDistance, float maximumDistance)
+    public void SetVoice(int voice, int category, float gain, float pitch, float pan)
     {
         VoiceState state = State(voice);
         state.Category = category;
         state.Gain = gain;
         state.Pitch = pitch;
-        state.Positional = positional;
         state.Pan = pan;
-        state.Position = (x, y, z);
-        state.Distances = (minimumDistance, maximumDistance);
-        Log.Add($"set {voice} {category} {gain:0.###} {pitch:0.###} {(positional ? "3d" : "pan")} {pan:0.###}");
+        Log.Add($"set {voice} {category} {gain:0.###} {pitch:0.###} {pan:0.###}");
     }
 
     public void Play(int voice, int buffer, bool looping)
@@ -164,13 +150,7 @@ internal sealed class FakeWebAudioPage : IWebAudioPage
 
         public float Pitch { get; set; }
 
-        public bool Positional { get; set; }
-
         public float Pan { get; set; }
-
-        public (double X, double Y, double Z) Position { get; set; }
-
-        public (float Minimum, float Maximum) Distances { get; set; }
 
         public int Buffer { get; set; }
 

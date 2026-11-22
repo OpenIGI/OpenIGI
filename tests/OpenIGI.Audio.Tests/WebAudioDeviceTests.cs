@@ -254,19 +254,47 @@ public sealed class WebAudioDeviceTests
     }
 
     [Fact]
-    public void A_placed_voice_hands_its_geometry_to_the_panner_when_spatial()
+    public void A_placed_voice_is_faded_and_panned_by_its_direction_when_spatial()
     {
         FakeWebAudioPage page = new();
         using WebAudioDevice device = new(AudioDeviceOptions.Default with { VoiceCount = 1, Spatial = true }, page);
         AudioBufferHandle buffer = device.CreateBuffer(Mono16, Tone(0.05));
 
-        device.Play(buffer, VoiceParameters.Default.At(new Vector3d(10, 20, 30), 2f, 40f) with { Pitch = 1.5f });
+        // Twenty-one metres to the right on a 2-40 m range: hard right, and half way down the linear fade.
+        device.Play(buffer, VoiceParameters.Default.At(new Vector3d(21, 0, 0), 2f, 40f) with { Pitch = 1.5f });
 
         FakeWebAudioPage.VoiceState state = page.Voices[0];
-        Assert.True(state.Positional);
-        Assert.Equal((10.0, 20.0, 30.0), state.Position);
-        Assert.Equal((2f, 40f), state.Distances);
+        Assert.Equal(1f, state.Pan, precision: 3);
+        Assert.Equal(MixBuses.Quantise(1f) * 0.5f, state.Gain, precision: 3);
         Assert.Equal(1.5f, state.Pitch);
+    }
+
+    [Fact]
+    public void A_spatial_voice_below_the_head_stays_centred()
+    {
+        FakeWebAudioPage page = new();
+        using WebAudioDevice device = new(AudioDeviceOptions.Default with { VoiceCount = 1, Spatial = true }, page);
+        AudioBufferHandle buffer = device.CreateBuffer(Mono16, Tone(0.05));
+
+        // The player's own step: under the head with a hair of sideways offset. Azimuth alone made this
+        // hard right, and the same hair the other way hard left.
+        device.Play(buffer, VoiceParameters.Default.At(new Vector3d(0.002, 0, -1.6), 1f, 20f));
+
+        Assert.Equal(0f, page.Voices[0].Pan, precision: 2);
+    }
+
+    [Fact]
+    public void A_spatial_voice_follows_the_listener()
+    {
+        FakeWebAudioPage page = new();
+        using WebAudioDevice device = new(AudioDeviceOptions.Default with { VoiceCount = 1, Spatial = true }, page);
+        AudioBufferHandle buffer = device.CreateBuffer(Mono16, Tone(0.05));
+        device.Play(buffer, VoiceParameters.Default.At(new Vector3d(10, 0, 0), 2f, 40f));
+        Assert.Equal(1f, page.Voices[0].Pan, precision: 3);
+
+        // Step past the source: it is now on the left without the game re-aiming the voice.
+        device.Listener = AudioListenerState.Default with { Position = new Vector3d(20, 0, 0) };
+        Assert.Equal(-1f, page.Voices[0].Pan, precision: 3);
     }
 
     [Fact]
@@ -282,13 +310,11 @@ public sealed class WebAudioDeviceTests
         device.Play(buffer, parameters);
 
         FakeWebAudioPage.VoiceState state = page.Voices[0];
-        Assert.False(state.Positional);
         Assert.Equal(0.5f, state.Pan, precision: 3);
 
         // Move the listener onto the source: the image centres without the voice being re-aimed by the game.
         device.Listener = AudioListenerState.Default with { Position = new Vector3d(10, 0, 0) };
         Assert.Equal(0f, state.Pan, precision: 3);
-        Assert.Equal((10.0, 0.0, 0.0), (page.Listener.X, page.Listener.Y, page.Listener.Z));
     }
 
     [Fact]
