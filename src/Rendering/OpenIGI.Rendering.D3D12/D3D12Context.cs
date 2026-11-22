@@ -377,19 +377,26 @@ internal sealed unsafe class D3D12Context : IDisposable
             ((IUnknown*)configuration)->Release();
         }
 
+        // Page faults always: the runtime only keeps a list of live and recently freed allocations, a cost paid
+        // at creation and release rather than per frame, and it is what names the resource a shader faulted on
+        // -- a removal with only its reason (a hang after an MMU fault) says nothing about where to look.
         // Breadcrumbs on request -- OPENIGI_D3D12_DRED=1 -- or with validation: the runtime records a marker
         // around every command, which costs GPU time in every frame to describe a device loss most runs never
-        // have. Without them a loss still reports its reason.
-        bool dredWanted = validation != D3D12Validation.None
+        // have.
+        bool breadcrumbsWanted = validation != D3D12Validation.None
             || Environment.GetEnvironmentVariable("OPENIGI_D3D12_DRED") is "1" or "true" or "on";
         ID3D12DeviceRemovedExtendedDataSettings1* dred = null;
         Guid dredClsid = D3D12Classes.DeviceRemovedExtendedData;
         Guid dredIid = ID3D12DeviceRemovedExtendedDataSettings1.Guid;
-        if (dredWanted && _factory->GetConfigurationInterface(&dredClsid, &dredIid, (void**)&dred) >= 0 && dred is not null)
+        if (_factory->GetConfigurationInterface(&dredClsid, &dredIid, (void**)&dred) >= 0 && dred is not null)
         {
-            dred->SetAutoBreadcrumbsEnablement(DredEnablement.ForcedOn);
-            dred->SetBreadcrumbContextEnablement(DredEnablement.ForcedOn);
             dred->SetPageFaultEnablement(DredEnablement.ForcedOn);
+            if (breadcrumbsWanted)
+            {
+                dred->SetAutoBreadcrumbsEnablement(DredEnablement.ForcedOn);
+                dred->SetBreadcrumbContextEnablement(DredEnablement.ForcedOn);
+            }
+
             ((IUnknown*)dred)->Release();
         }
 
