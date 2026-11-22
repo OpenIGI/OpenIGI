@@ -29,6 +29,21 @@ public interface IWebAudioPage
     /// <summary>Closes the context and drops everything the page holds.</summary>
     void Close();
 
+    /// <summary>Places the listener.</summary>
+    /// <param name="x">The position's X, in metres.</param>
+    /// <param name="y">The position's Y, in metres.</param>
+    /// <param name="z">The position's Z, in metres.</param>
+    /// <param name="forwardX">The facing direction's X.</param>
+    /// <param name="forwardY">The facing direction's Y.</param>
+    /// <param name="forwardZ">The facing direction's Z.</param>
+    /// <param name="upX">The up direction's X.</param>
+    /// <param name="upY">The up direction's Y.</param>
+    /// <param name="upZ">The up direction's Z.</param>
+    void SetListener(
+        double x, double y, double z,
+        float forwardX, float forwardY, float forwardZ,
+        float upX, float upY, float upZ);
+
     /// <summary>Sets the gain of one bus.</summary>
     /// <param name="category">The bus, as a <see cref="SoundCategory"/> ordinal.</param>
     /// <param name="gain">The linear gain.</param>
@@ -46,14 +61,23 @@ public interface IWebAudioPage
     /// <param name="buffer">The buffer's id; an unknown one is ignored.</param>
     void DestroyBuffer(int buffer);
 
-    /// <summary>Aims a voice: its bus, level, rate and pan.</summary>
+    /// <summary>Aims a voice: its bus, level, rate and placement.</summary>
     /// <param name="voice">The slot index.</param>
     /// <param name="category">The bus, as a <see cref="SoundCategory"/> ordinal.</param>
-    /// <param name="gain">The linear gain, already through the original's curve and any distance fade.</param>
+    /// <param name="gain">The linear gain, already through the original's curve.</param>
     /// <param name="pitch">The playback rate multiplier.</param>
-    /// <param name="pan">The stereo pan, minus one (left) to one (right).</param>
+    /// <param name="positional">Whether the voice is placed in the world (<paramref name="x"/> and the distances apply) or panned flat (<paramref name="pan"/> applies).</param>
+    /// <param name="pan">The flat pan, minus one (left) to one (right).</param>
+    /// <param name="x">The world position's X, in metres.</param>
+    /// <param name="y">The world position's Y, in metres.</param>
+    /// <param name="z">The world position's Z, in metres.</param>
+    /// <param name="minimumDistance">Inside this the voice is at full gain.</param>
+    /// <param name="maximumDistance">At this the voice has faded to silence.</param>
     /// <remarks>Called before a voice starts and again whenever it moves, so it must be cheap.</remarks>
-    void SetVoice(int voice, int category, float gain, float pitch, float pan);
+    void SetVoice(
+        int voice, int category, float gain, float pitch,
+        bool positional, float pan,
+        double x, double y, double z, float minimumDistance, float maximumDistance);
 
     /// <summary>Starts a resident buffer on a voice.</summary>
     /// <param name="voice">The slot index.</param>

@@ -14,14 +14,13 @@ namespace OpenIGI.Audio.Web;
 /// graph needs to be told, through <see cref="IWebAudioPage"/>.
 /// </para>
 /// <para>
-/// <b>Every voice is a gain and a stereo pan; the page places nothing in 3D.</b> With
-/// <see cref="AudioDeviceOptions.Spatial"/> on, a placed sound gets OpenAL's linear distance fade and
-/// the sideways share of its direction as the pan (see <c>Place</c>); the page's own 3D panner pans by
-/// azimuth alone and threw sounds below the head from one ear to the other. With it off, the gain and
-/// pan the original computes (<see cref="VanillaSpatialiser"/>) go to the same stereo panner, and the
-/// vanilla image is exact rather than OpenAL's unit-circle likeness: a stereo panner attenuates one
-/// channel, which is what DirectSound's pan did. Either way the device re-aims the live placed voices
-/// whenever the listener moves.
+/// <b>The distance model is linear, as it is on OpenAL.</b> A panner's <c>linear</c> model computes
+/// exactly the fade the original does — full gain inside the reference distance, a straight line to
+/// silence at the maximum — so the game's own min and max distances keep meaning what their authors
+/// intended. With <see cref="AudioDeviceOptions.Spatial"/> off, the gain and pan the original computes
+/// (<see cref="VanillaSpatialiser"/>) go to a stereo panner instead, and the vanilla image is exact
+/// rather than OpenAL's unit-circle likeness: a stereo panner attenuates one channel, which is what
+/// DirectSound's pan did.
 /// </para>
 /// <para>
 /// <b>Buses are real here.</b> The page has a gain node per <see cref="SoundCategory"/>, so a volume
@@ -43,9 +42,6 @@ namespace OpenIGI.Audio.Web;
 public sealed class WebAudioDevice : IAudioDevice
 {
     private const string LogCategory = "Audio";
-
-    // Within this of the head a placed sound is the player's own, and its pan eases to the centre; see Place.
-    private const double NearFieldMetres = 1.0;
 
     private readonly IOpenIgiLogger _logger;
     private readonly AudioDeviceOptions _options;
@@ -102,7 +98,7 @@ public sealed class WebAudioDevice : IAudioDevice
         set
         {
             _listener = value;
-            ApplyListener();
+            ApplyListener(value);
         }
     }
 
@@ -322,6 +318,7 @@ public sealed class WebAudioDevice : IAudioDevice
             _page.SetBusGain((int)category, _buses.Get(category));
         }
 
+        ApplyListener(_listener);
         _logger.Information(
             LogCategory,
             $"Web Audio ready: {count} voices at {SampleRate} Hz, {(_options.Spatial ? "3D" : "vanilla pan")}.");
@@ -359,78 +356,74 @@ public sealed class WebAudioDevice : IAudioDevice
 
         float pitch = VanillaSpatialiser.ClampPitch(parameters.Pitch);
 
-        float gain;
-        float pan;
         if (_options.Spatial && parameters.IsPositional)
         {
-            // The gain goes through the original's quantised curve before the distance fade, as OpenAL's
-            // source gain does, so the loudness matches the desktop's.
-            (float fade, pan) = Place(parameters, _listener);
-            gain = MixBuses.Quantise(parameters.Gain) * fade;
-        }
-        else
-        {
-            // Vanilla, or a flat voice: gain and pan exactly as 0x496E60 works them out. See the class
-            // remarks for why a stereo panner makes this exact here.
-            (float vanillaGain, pan) = VanillaSpatialiser.Spatialise(parameters, _listener);
-            gain = MixBuses.Quantise(vanillaGain);
-            if (_options.ReverseStereo)
-            {
-                pan = -pan;
-            }
+            // Hand the geometry over and let the panner do it. The gain still goes through the original's
+            // quantised curve so the loudness matches; only the placement is the browser's. The two
+            // distances are kept apart on the page, where the linear model would otherwise divide by zero.
+            _page.SetVoice(
+                voice.Index,
+                (int)parameters.Category,
+                MixBuses.Quantise(parameters.Gain),
+                pitch,
+                positional: true,
+                pan: 0f,
+                parameters.Position.X,
+                parameters.Position.Y,
+                parameters.Position.Z,
+                parameters.MinimumDistance,
+                parameters.MaximumDistance);
+            return;
         }
 
-        _page.SetVoice(voice.Index, (int)parameters.Category, gain, pitch, pan);
+        // Vanilla, or a flat voice: work out gain and pan ourselves exactly as 0x496E60 does, and give
+        // the stereo panner the pan. See the class remarks for why this is exact here.
+        (float gain, float pan) = VanillaSpatialiser.Spatialise(parameters, _listener);
+        if (_options.ReverseStereo)
+        {
+            pan = -pan;
+        }
+
+        _page.SetVoice(
+            voice.Index,
+            (int)parameters.Category,
+            MixBuses.Quantise(gain),
+            pitch,
+            positional: false,
+            pan,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            minimumDistance: 1f,
+            maximumDistance: 2f);
     }
 
-    /// <summary>The distance fade and stereo pan of a placed sound, as OpenAL positions one.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Not the page's 3D panner.</b> A Web Audio panner's <c>equalpower</c> model pans by azimuth
-    /// alone: it drops the elevation, so a sound straight below the head -- the player's own footsteps,
-    /// a dropped shell -- is panned by whatever sliver of sideways offset is left, and a few centimetres
-    /// either way throws it hard left or hard right. That was one channel going silent for a moment and
-    /// then the other. The pan here is the sideways share of the full direction, which is how OpenAL
-    /// pans a source onto two speakers: beside the head is hard over; above, below, ahead and behind are
-    /// centred.
-    /// </para>
-    /// <para>
-    /// A source within <see cref="NearFieldMetres"/> of the head is the player's own sound, and its
-    /// direction is mostly the noise of the listener and the source being placed on different ticks; its
-    /// pan eases to the centre there rather than flipping with that noise.
-    /// </para>
-    /// </remarks>
-    private static (float Fade, float Pan) Place(in VoiceParameters parameters, in AudioListenerState listener)
+    private void ApplyListener(in AudioListenerState listener)
     {
-        // OpenAL's linear model keeps the two distances apart; the same here so the fade never divides by zero.
-        float reference = Math.Max(0.0001f, parameters.MinimumDistance);
-        float farthest = Math.Max(parameters.MaximumDistance, reference * 1.0001f);
-
-        Vector3d delta = parameters.Position - listener.Position;
-        double distance = delta.Length;
-        float fade = VanillaSpatialiser.DistanceGain(1f, distance, reference, farthest);
-        if (distance <= 0.0)
+        if (!_open)
         {
-            return (fade, 0f);
+            return;
         }
 
-        // The engine's v * M convention, as VanillaSpatialiser.Pan applies it: X is the listener's right.
-        Vector3d local = listener.Orientation.Transform(delta);
-        double sideways = local.X / distance;
-        double nearness = Math.Min(1.0, distance / NearFieldMetres);
-        return (fade, Math.Clamp((float)(sideways * nearness), -1f, 1f));
-    }
+        Vector3f forward = listener.Forward;
+        Vector3f up = listener.Up;
+        _page.SetListener(
+            listener.Position.X, listener.Position.Y, listener.Position.Z,
+            forward.X, forward.Y, forward.Z,
+            up.X, up.Y, up.Z);
 
-    private void ApplyListener()
-    {
-        // Every placed sound's gain and pan is worked out here against the head as it is now -- the
-        // original's per-tick recompute (0x496E60) under vanilla, OpenAL's placement under 3D (see
-        // Place) -- so the live positional voices are re-aimed whenever the listener moves.
-        foreach (VoiceSlot voice in _pool.Voices)
+        // The original recomputes every sound's apparent gain and pan EVERY TICK against the head as
+        // it is now (0x496E60). A flat pan is set when a voice starts and frozen from then on, so the
+        // live positional voices are re-panned whenever the listener moves, which is what the
+        // original's per-tick recompute was. With a real panner the browser tracks the head itself.
+        if (!_options.Spatial)
         {
-            if (voice.IsActive && voice.Parameters.IsPositional)
+            foreach (VoiceSlot voice in _pool.Voices)
             {
-                ApplyParameters(voice, voice.Parameters);
+                if (voice.IsActive && voice.Parameters.IsPositional)
+                {
+                    ApplyParameters(voice, voice.Parameters);
+                }
             }
         }
     }

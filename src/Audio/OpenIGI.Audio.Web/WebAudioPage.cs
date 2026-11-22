@@ -24,6 +24,13 @@ public sealed partial class WebAudioPage : IWebAudioPage
     public void Close() => ClosePage();
 
     /// <inheritdoc/>
+    public void SetListener(
+        double x, double y, double z,
+        float forwardX, float forwardY, float forwardZ,
+        float upX, float upY, float upZ) =>
+        SetPageListener(x, y, z, forwardX, forwardY, forwardZ, upX, upY, upZ);
+
+    /// <inheritdoc/>
     public void SetBusGain(int category, float gain) => SetPageBusGain(category, gain);
 
     /// <inheritdoc/>
@@ -34,8 +41,11 @@ public sealed partial class WebAudioPage : IWebAudioPage
     public void DestroyBuffer(int buffer) => DestroyPageBuffer(buffer);
 
     /// <inheritdoc/>
-    public void SetVoice(int voice, int category, float gain, float pitch, float pan) =>
-        SetPageVoice(voice, category, gain, pitch, pan);
+    public void SetVoice(
+        int voice, int category, float gain, float pitch,
+        bool positional, float pan,
+        double x, double y, double z, float minimumDistance, float maximumDistance) =>
+        SetPageVoice(voice, category, gain, pitch, positional, pan, x, y, z, minimumDistance, maximumDistance);
 
     /// <inheritdoc/>
     public void Play(int voice, int buffer, bool looping) => PlayPageVoice(voice, buffer, looping);
@@ -79,6 +89,12 @@ public sealed partial class WebAudioPage : IWebAudioPage
     [JSImport("close", ModuleName)]
     private static partial void ClosePage();
 
+    [JSImport("setListener", ModuleName)]
+    private static partial void SetPageListener(
+        double x, double y, double z,
+        float forwardX, float forwardY, float forwardZ,
+        float upX, float upY, float upZ);
+
     [JSImport("setBusGain", ModuleName)]
     private static partial void SetPageBusGain(int category, float gain);
 
@@ -90,7 +106,10 @@ public sealed partial class WebAudioPage : IWebAudioPage
     private static partial void DestroyPageBuffer(int buffer);
 
     [JSImport("setVoice", ModuleName)]
-    private static partial void SetPageVoice(int voice, int category, float gain, float pitch, float pan);
+    private static partial void SetPageVoice(
+        int voice, int category, float gain, float pitch,
+        bool positional, float pan,
+        double x, double y, double z, float minimumDistance, float maximumDistance);
 
     [JSImport("play", ModuleName)]
     private static partial void PlayPageVoice(int voice, int buffer, bool looping);
