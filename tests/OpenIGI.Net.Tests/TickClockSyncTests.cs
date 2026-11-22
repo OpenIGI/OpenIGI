@@ -8,9 +8,21 @@ public sealed class TickClockSyncTests
     private const int TickRate = 30;
 
     [Fact]
-    public void A_steady_line_sending_every_tick_draws_at_cl_interp()
+    public void A_steady_line_sending_every_tick_draws_two_ticks_behind()
     {
         TickClockSync clock = Feed(spacing: 1, jitterSeconds: 0, seconds: 10);
+        Assert.Equal(2.0 / TickRate, clock.AppliedInterpolationDelay, 3);
+    }
+
+    [Fact]
+    public void A_set_cl_interp_is_the_least_a_steady_line_draws_at()
+    {
+        TickClockSync clock = new(TickRate) { InterpolationDelay = 0.1 };
+        for (long tick = 0; tick < 10 * TickRate; tick++)
+        {
+            clock.AddSample(tick, (tick / (double)TickRate) + 0.05, 0.1);
+        }
+
         Assert.Equal(0.1, clock.AppliedInterpolationDelay, 3);
     }
 

@@ -42,8 +42,16 @@ public sealed class TickClockSync
     public double SnapThreshold { get; set; } = 8;
 
     /// <summary>Gets or sets how far behind the server remote things are drawn at least, in seconds (<c>cl_interp</c>).</summary>
-    /// <remarks>The delay applied (<see cref="AppliedInterpolationDelay"/>) is never less, and grows with what the line does.</remarks>
-    public double InterpolationDelay { get; set; } = 0.1;
+    /// <remarks>
+    /// <para>The delay applied (<see cref="AppliedInterpolationDelay"/>) is never less, and grows with what the line does.</para>
+    /// <para>
+    /// None by default: the snapshots' own spacing sets the least (<see cref="InterpolationRatio"/> of them, two ticks at a snapshot a
+    /// tick), as Source's <c>cl_interp 0</c> leaves it to <c>cl_interp_ratio</c>. A tenth of a second, as it was, drew every
+    /// soldier and partner a third of a tick further back than a steady line needs, and everything a round did to them showed that
+    /// much later.
+    /// </para>
+    /// </remarks>
+    public double InterpolationDelay { get; set; }
 
     /// <summary>Gets or sets how many snapshot spacings the delay covers at least (<c>cl_interp_ratio</c>), so one lost is bridged.</summary>
     public double InterpolationRatio { get; set; } = 2;
