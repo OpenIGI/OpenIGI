@@ -295,7 +295,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
                     (ushort)Math.Clamp(soldier.CurrentAnimation + 1, 0, ushort.MaxValue),
                     (ushort)Math.Clamp(soldier.UpperBodyAnimation + 1, 0, ushort.MaxValue),
                     0,
-                    255,
+                    soldiers.VitalityOf(soldier),
                     (byte)Math.Clamp(soldier.Soldier.Team, 0, 255),
                     soldier.IsDead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive,
                     unchecked((byte)(soldiers.AgentOf(soldier)?.ShotSequence ?? 0)),

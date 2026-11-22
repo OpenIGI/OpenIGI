@@ -72,6 +72,9 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     {
         _identity = identity;
         _reopen = reopen;
+
+        // A soldier's death the server tells of was counted already when this client's own round foresaw it.
+        _combat.SoldierKillForeseen = () => _world?.SoldierForesight?.ClaimKill() ?? false;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _server = server;
         _request = request ?? throw new ArgumentNullException(nameof(request));

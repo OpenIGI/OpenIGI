@@ -155,6 +155,11 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
     public override bool IsFlinching => State is FlinchState or ProneFlinchState;
 
     /// <inheritdoc/>
+    /// <remarks>The standing per-ticks whose prefix takes a flinch into 30: the stand, the gaits, the combat cycle, the throw and the blow.</remarks>
+    public override bool FlinchesStanding => State is StandState or WalkState or ForwardState or FastForwardState or FiringState
+        or DisplayReloadState or GrenadeThrowState or CloseCombatState or ReadyState or RackState or ReloadState or RunState or RunFiringState;
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Rolls, kneels and their changes die into 33, whose entry <c>0x45C5A0</c> plays 24; prone states and
     /// theirs into 34, whose <c>0x45C650</c> plays 25. Neither turns or draws.

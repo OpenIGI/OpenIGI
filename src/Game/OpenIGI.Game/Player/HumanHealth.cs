@@ -157,12 +157,29 @@ public sealed class HumanHealth : Saves.IExchangedState
     /// </remarks>
     public float Apply(int zone, float damageFactor, bool instantDeathDisabled = false)
     {
-        if (Invulnerable)
+        float dealt = Preview(zone, damageFactor, instantDeathDisabled);
+        if (Invulnerable || zone < 0 || zone >= Zones.Count)
         {
             return 0f;
         }
 
-        if (zone < 0 || zone >= Zones.Count)
+        Damage += dealt;
+        Hits++;
+        return dealt;
+    }
+
+    /// <summary>Gets the damage one round would add, without adding it: what <see cref="Apply"/> adds.</summary>
+    /// <param name="zone">The zone struck.</param>
+    /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
+    /// <param name="instantDeathDisabled">Whether the head and neck take the plain factor, as <see cref="Apply"/> reads it.</param>
+    /// <returns>The damage the round would add.</returns>
+    /// <remarks>
+    /// <b>Not retail.</b> A co-op client's copy of a soldier takes no harm of its own -- the server's does -- but foresees what its
+    /// player's round will do there, to mark the hit and the fall at once.
+    /// </remarks>
+    public float Preview(int zone, float damageFactor, bool instantDeathDisabled = false)
+    {
+        if (Invulnerable || zone < 0 || zone >= Zones.Count)
         {
             return 0f;
         }
@@ -171,10 +188,7 @@ public sealed class HumanHealth : Saves.IExchangedState
         float dealt = instantDeathDisabled && headOrNeck
             ? damageFactor
             : HumanDamage.DamageOfHit(Zones[zone].Multiplier, damageFactor);
-        dealt *= DamageScale;
-        Damage += dealt;
-        Hits++;
-        return dealt;
+        return dealt * DamageScale;
     }
 
     /// <summary>Adds damage that is already expressed in health units.</summary>

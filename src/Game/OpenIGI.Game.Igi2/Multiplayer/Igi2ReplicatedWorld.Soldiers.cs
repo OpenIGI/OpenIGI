@@ -20,13 +20,18 @@ public sealed partial class Igi2ReplicatedWorld
     /// <summary>One soldier as a snapshot carries it.</summary>
     /// <param name="index">Its place among the level's soldiers.</param>
     /// <param name="soldier">The soldier.</param>
+    /// <param name="ownMaximum">
+    /// Its own health before a squad's toughness scaled it (<see cref="CoopSquad.EnemyHealthScale"/>), which a client's copy of it
+    /// has: its health goes as a share of that (<see cref="SoldierVitality"/>), for a client to weigh its round against.
+    /// </param>
     /// <returns>Its replicated state.</returns>
-    public static ReplicatedHuman ReplicateSoldier(int index, Igi2HumanSoldier soldier)
+    public static ReplicatedHuman ReplicateSoldier(int index, Igi2HumanSoldier soldier, float ownMaximum)
     {
         ArgumentNullException.ThrowIfNull(soldier);
         Igi2SoldierPose pose = soldier.PuppetPose();
-        float max = soldier.Damage.MaxDamage;
-        float left = max > 0 ? Math.Clamp(1f - (soldier.Damage.Damage / max), 0f, 1f) : 1f;
+        Humans.Igi2HumanDamage damage = soldier.Damage;
+        bool foreseeable = !damage.IsUnharmed && soldier.Mind is not { IsInvulnerable: true } && soldier.Mind is not { IsInstantDeathDisabled: true };
+        float left = soldier.IsDead ? 0f : Math.Max(0f, damage.MaxDamage - damage.Damage);
         return new ReplicatedHuman(
             SoldierEntity(index),
             Int3.From(pose.Position),
@@ -36,11 +41,17 @@ public sealed partial class Igi2ReplicatedWorld
             (ushort)Math.Clamp(pose.State, 0, ushort.MaxValue),
             0,
             soldier.Weapon.Inventory?.HeldForSnapshot ?? 0,
-            (byte)Math.Round(left * 255),
+            SoldierVitality.Encode(left, ownMaximum, foreseeable),
             (byte)Math.Clamp(soldier.Team, 0, 255),
             pose.Alive ? ReplicatedHumanCondition.Alive : ReplicatedHumanCondition.None,
             pose.Shots);
     }
+
+    /// <summary>Gets a soldier's own health, before the squad's toughness scaled it (<see cref="ScaleEnemies"/>).</summary>
+    /// <param name="soldier">The soldier.</param>
+    /// <returns>The health, in the game's units.</returns>
+    private float OwnHealthOf(Igi2HumanSoldier soldier) =>
+        _soldierHealth.TryGetValue(soldier, out float own) ? own : soldier.Damage.MaxDamage / _enemyScale;
 
     /// <summary>Gets the pose a client stands its copy of a soldier in, from what a snapshot carries.</summary>
     /// <param name="human">The soldier as sent.</param>
@@ -65,7 +76,7 @@ public sealed partial class Igi2ReplicatedWorld
         {
             if (soldiers.Bodies[i] is { IsActive: true } soldier)
             {
-                into.Add(ReplicateSoldier(i, soldier));
+                into.Add(ReplicateSoldier(i, soldier, OwnHealthOf(soldier)));
             }
         }
     }

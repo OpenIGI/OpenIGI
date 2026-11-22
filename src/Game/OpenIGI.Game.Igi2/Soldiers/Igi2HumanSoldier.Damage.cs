@@ -78,10 +78,12 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
             return;
         }
 
-        // A co-op client's puppet bleeds where the round struck; the server's copy takes the harm, and falls if it kills.
+        // A co-op client's puppet bleeds where the round struck; the server's copy takes the harm, and falls if it kills. What the
+        // round will do there is foreseen here, at once: the hit marked, the flinch or the fall.
         if (Puppet is not null)
         {
             CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
+            ForeseeHit(hit);
             return;
         }
 
@@ -99,13 +101,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
         bool isPlaySound = true;
         Igi2DamagePart part = DamagePartOf(hit);
         Damage.LastPart = part;
-        float damage = hit.Damage;
-        if (!(part is Igi2DamagePart.Groin or Igi2DamagePart.Head && instantDeathDisabled)
-            && hit.WeaponType.WeaponType != Igi2WeaponTypeKind.Knife)
-        {
-            damage = ((Fpu)damage * Damage.Multiplier(part)).F;
-        }
-
+        float damage = DamageOf(hit, part, instantDeathDisabled);
         Damage.Add(part, damage);
         hit.Tally?.Hit(part == Igi2DamagePart.Head);
         CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
@@ -128,13 +124,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
 
             DeathDirection = hit.ShotVector;
             DeathDamage = hit.Damage;
-            DeathByType = hit.WeaponType.WeaponType switch
-            {
-                Igi2WeaponTypeKind.Gun => 2,
-                Igi2WeaponTypeKind.Pistol => 3,
-                Igi2WeaponTypeKind.Shotgun => 1,
-                _ => 4,
-            };
+            DeathByType = DeathTypeOf(hit.WeaponType.WeaponType);
             Signal |= Igi2SoldierSignal.Dead;
             IsDead = true;
         }
@@ -154,6 +144,21 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
             Say(HitLines);
         }
     }
+
+    /// <summary>What a bullet deals the zone it struck: the hit's damage times the zone's multiplier, but a knife's and, where instant death is kept off, the head's and the groin's plain.</summary>
+    private float DamageOf(in Igi2WeaponHit hit, Igi2DamagePart part, bool instantDeathDisabled) =>
+        !(part is Igi2DamagePart.Groin or Igi2DamagePart.Head && instantDeathDisabled) && hit.WeaponType.WeaponType != Igi2WeaponTypeKind.Knife
+            ? ((Fpu)hit.Damage * Damage.Multiplier(part)).F
+            : hit.Damage;
+
+    /// <summary>How a bullet's weapon kills, <c>eDeathByType</c>: 2 a gun, 3 a pistol, 1 a shotgun, 4 anything else.</summary>
+    private static int DeathTypeOf(int kind) => kind switch
+    {
+        Igi2WeaponTypeKind.Gun => 2,
+        Igi2WeaponTypeKind.Pistol => 3,
+        Igi2WeaponTypeKind.Shotgun => 1,
+        _ => 4,
+    };
 
     /// <summary>
     /// A blast reaching the soldier, <c>HumanSoldier_ExplosionHitHandler</c> (<c>igi2 0x4EB8E0</c>): none while its mind keeps harm off

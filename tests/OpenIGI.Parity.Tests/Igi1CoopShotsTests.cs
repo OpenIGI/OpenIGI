@@ -138,10 +138,47 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         Assert.True(joiner.Missed <= host.Missed + 1, $"{how}: the host missed {host.Missed} of {host.Rounds} rounds, the joiner {joiner.Missed} of {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
     }
 
+    /// <summary>
+    /// The joiner's own rounds mark their hits on its crosshair, and the one that kills fells the guard on its screen, as they
+    /// strike -- before the server has even run the command that fired them, where once each waited a round trip and the
+    /// interpolation for the server's word. The server's word then keeps the guard down, and the kill is counted once.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void The_joiners_rounds_mark_and_fell_a_guard_on_its_screen_before_the_servers_word()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.Ping(0.1);
+        pair.RunUntil(() => false, 60);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host.World.Soldiers!;
+        Game.Igi1.Player.SoldierView guard = soldiers.SoldierViews.First(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier));
+        Game.Igi1.Player.SoldierView shown = pair.Joiner!.World.Soldiers!.SoldierByRuntimeId(soldiers.RuntimeIdOf(guard))!;
+        Game.Player.ShotTally tally = pair.Joiner.World.Player!.Shots;
+        (int hits, int kills) = (tally.Hits, tally.Kills);
+        float hurt = soldiers.HealthOf(guard).Damage;
+        int frame = 0, marked = -1, struck = -1, shownFell = -1, fell = -1;
+        RoundsToFell(pair, partner, hostShoots: false, guard, running: false, automatic: false, hostAway: false, head: false, live: false, watch: () =>
+        {
+            frame++;
+            marked = marked < 0 && tally.Hits > hits ? frame : marked;
+            struck = struck < 0 && soldiers.HealthOf(guard).Damage != hurt ? frame : struck;
+            shownFell = shownFell < 0 && shown.IsDead ? frame : shownFell;
+            fell = fell < 0 && guard.IsDead ? frame : fell;
+        });
+
+        Assert.True(marked > 0 && struck > 0, $"marked {marked}, struck on the server {struck}");
+        Assert.True(marked < struck, $"the joiner's first hit was marked on frame {marked}, the server's guard struck on {struck}");
+        Assert.True(shownFell > 0 && shownFell < (fell < 0 ? int.MaxValue : fell), $"the joiner's guard fell on frame {shownFell}, the server's on {fell}");
+
+        pair.RunUntil(() => false, 60);
+        Assert.True(shown.IsDead, "the joiner's guard got up again though the server's fell");
+        Assert.Equal(kills + 1, tally.Kills);
+    }
+
     // One shooter, a gun in hand, five metres from a guard -- standing, or running three metres either way across its front --
     // clicking the fire button at the guard's chest where its own game shows the guard, until the host's soldier falls: the
     // rounds that took, as the host's game counts them.
-    private static (int Rounds, int Missed, string Log) RoundsToFell(Igi1CoopPair pair, Igi1NetworkPlayer partner, bool hostShoots, Game.Igi1.Player.SoldierView guard, bool running, bool automatic, bool hostAway, bool head, bool live)
+    private static (int Rounds, int Missed, string Log) RoundsToFell(Igi1CoopPair pair, Igi1NetworkPlayer partner, bool hostShoots, Game.Igi1.Player.SoldierView guard, bool running, bool automatic, bool hostAway, bool head, bool live, Action? watch = null)
     {
         Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
         Game.Igi1.Player.PlayerCamera shooter = hostShoots ? pair.Host.World.Player! : partner.Player;
@@ -237,6 +274,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
             {
                 Move();
                 Aim();
+                watch?.Invoke();
                 input.Mouse.SetButton(MouseButton.Left, automatic || frame++ % 6 < 2);
                 foreach (Game.Igi1.Weapons.GunImpact impact in shooter.Impacts)
                 {

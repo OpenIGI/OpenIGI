@@ -249,6 +249,9 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierDamage.BodyFell"/>
     internal Action<SoldierFall>? BodyFell { get => _damage.BodyFell; set => _damage.BodyFell = value; }
 
+    /// <inheritdoc cref="SoldierDamage.BodyRose"/>
+    internal Action<SoldierView>? BodyRose { get => _damage.BodyRose; set => _damage.BodyRose = value; }
+
     /// <inheritdoc cref="GuardGeneratorSpawner.SpawnedBody"/>
     internal Func<string, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody
     {

@@ -19,6 +19,9 @@ public static class ClientReplication
         ArgumentNullException.ThrowIfNull(world);
         session.Receive(now);
 
+        // The wait on the server's word for a hit this client foresees: its round trip and how far behind the soldiers are drawn.
+        world.SoldierForesight?.Advance(now, session.RoundTripTime, session.Clock?.AppliedInterpolationDelay ?? 0);
+
         // Nothing of a level the server has begun is shown on the one this client is leaving, nor commanded from it.
         if (session.Behind)
         {

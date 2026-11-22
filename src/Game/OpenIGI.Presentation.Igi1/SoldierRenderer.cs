@@ -264,6 +264,16 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 RunStyled(_logger, member, "A mod's soldier body's Fell", (styled, fall), static fell => fell.styled.Fell(fell.fall));
             }
         };
+
+        // A co-op client's soldier it foresaw falling, whom its server kept alive: drawn by his clips again, his gun in hand.
+        _sim.BodyRose = view =>
+        {
+            if (FindMember(view) is { } member)
+            {
+                member.Ragdoll = null;
+                member.Weapon = member.CarriedWeapon;
+            }
+        };
     }
 
     /// <inheritdoc/>

@@ -23,6 +23,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         _game.ResetToLevelStart();
         _game.World.Player?.ReleaseLadder();
         _offLadderThere = 0;
+        _foresight.Clear();
     }
 
     /// <inheritdoc/>
@@ -126,8 +127,15 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         if (game.World.Soldiers is { } soldiers)
         {
             soldiers.PuppetsOnly = true;
+            soldiers.Foresight = _foresight;
         }
     }
+
+    // What this client foresees of its player's rounds on the soldiers: hit marked, flinched or felled at once.
+    private readonly PredictedSoldierHarm _foresight = new();
+
+    /// <inheritdoc/>
+    public PredictedSoldierHarm? SoldierForesight => _foresight;
 
     // The partners the frame draws on a client: each where the snapshots put it, its legs and torso on the clips the server's ran
     // (a torso clip started again when the server's was), and the weapon the server has in its hand, fired when its count moved.
@@ -550,6 +558,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                     ?? (human.Source > 0 && (human.Flags & ReplicatedHumanCondition.Alive) != 0 ? soldiers.ReplaceAsServerDid(human.Source - 1, runtimeId) : null)) is { } soldier)
             {
                 soldiers.PuppetsOnly = true;
+                soldiers.Foresight = _foresight;
                 soldiers.Puppet(soldier, new Ai.SoldierPuppet(
                     human.Position.ToVector(),
                     Quantize.AngleFromBits(human.Yaw),
@@ -557,7 +566,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                     human.Action - 1,
                     Quantize.AngleFromBits(human.Pitch),
                     (human.Flags & ReplicatedHumanCondition.Alive) != 0,
-                    human.Shots));
+                    human.Shots,
+                    human.Health));
             }
 
             return;
