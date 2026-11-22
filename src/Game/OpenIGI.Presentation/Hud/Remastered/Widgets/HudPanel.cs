@@ -87,7 +87,7 @@ public static class HudPanel
         // Now and then a bright band sweeps across.
         if (motifs.Shimmer)
         {
-            Shimmer(painter, theme, scale, seconds, rect, opacity);
+            Shimmer(painter, theme, scale, seconds, rect, shape, opacity);
         }
     }
 
@@ -186,8 +186,8 @@ public static class HudPanel
         }
     }
 
-    // A bright diagonal band crossing the panel once every few seconds.
-    private static void Shimmer(UiPainter painter, HudTheme theme, float scale, float seconds, UiRect rect, float opacity)
+    // A bright diagonal band crossing the panel once every few seconds, kept inside the panel's outline, cut corners and all.
+    private static void Shimmer(UiPainter painter, HudTheme theme, float scale, float seconds, UiRect rect, ReadOnlySpan<UiVec2> shape, float opacity)
     {
         const float Period = 6.5f;
         const float Sweep = 0.9f;
@@ -202,14 +202,22 @@ public static class HudPanel
         float x = rect.X - bandWidth + ((rect.Width + (bandWidth * 2f)) * t);
         float lean = rect.Height * 0.6f;
         Bgra32 bright = HudDrawContext.Fade(theme.Palette.Highlight, 0.16f * opacity * MathF.Sin(t * MathF.PI));
-        painter.PushClip(rect);
-        painter.FillQuad(
+        ReadOnlySpan<UiVec2> band =
+        [
             new UiVec2(x, rect.Bottom),
             new UiVec2(x + bandWidth, rect.Bottom),
             new UiVec2(x + bandWidth + lean, rect.Y),
             new UiVec2(x + lean, rect.Y),
-            bright);
-        painter.PopClip();
+        ];
+
+        // The painter's quad is unclipped, so the band is cut to the outline itself and filled as a polygon, which the
+        // painter's own clip also holds: a band that crossed the panel's edge spilled over the screen beside it.
+        Span<UiVec2> inside = stackalloc UiVec2[UiGeometry.MaxClippedVertices];
+        int count = UiGeometry.ClipConvex(band, shape, inside);
+        if (count >= 3)
+        {
+            painter.FillPolygon(inside[..count], bright, smoothEdges: false);
+        }
     }
 
     // The panel's outline, clockwise from the top left, with the theme's corners cut.

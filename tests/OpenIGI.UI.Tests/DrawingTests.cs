@@ -92,6 +92,54 @@ public sealed class DrawingTests
         }
     }
 
+    /// <summary>
+    /// A band crossing a panel whose corners are cut is cut to the panel itself: every point of what is left lies inside the
+    /// outline, the cut corners included, and the part inside is all kept.
+    /// </summary>
+    /// <param name="clockwise">Whether the outline runs clockwise on screen.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_convex_polygon_is_clipped_to_a_convex_outline(bool clockwise)
+    {
+        // A 100 x 40 panel with its top-left and bottom-right corners cut by 10, and a slanted band over its left edge and top.
+        UiVec2[] panel = [new(0f, 10f), new(10f, 0f), new(100f, 0f), new(100f, 30f), new(90f, 40f), new(0f, 40f)];
+        if (!clockwise)
+        {
+            Array.Reverse(panel);
+        }
+
+        ReadOnlySpan<UiVec2> band = [new(-20f, 40f), new(0f, 40f), new(24f, -20f), new(4f, -20f)];
+        Span<UiVec2> output = stackalloc UiVec2[UiGeometry.MaxClippedVertices];
+        int count = UiGeometry.ClipConvex(band, panel, output);
+
+        Assert.True(count >= 3);
+        foreach (UiVec2 p in output[..count])
+        {
+            Assert.InRange(p.X, -0.001f, 100.001f);
+            Assert.InRange(p.Y, -0.001f, 40.001f);
+
+            // Not past the top-left cut: x + y >= 10 there.
+            Assert.True(p.X + p.Y >= 10f - 0.001f, $"{p} lies outside the cut corner.");
+        }
+
+        // What of the band lies inside, worked by hand: its right edge runs x = 16 - 0.4y, its left edge is the panel's (x = 0)
+        // or, above y = 10, the cut (x = 10 - y). That is 90 beside the cut and 180 below it.
+        float area = MathF.Abs(UiGeometry.SignedArea2(output[..count])) * 0.5f;
+        Assert.Equal(270f, area, 0.01f);
+    }
+
+    /// <summary>A polygon wholly outside the outline leaves nothing.</summary>
+    [Fact]
+    public void A_polygon_outside_a_convex_outline_leaves_nothing()
+    {
+        UiVec2[] panel = [new(0f, 0f), new(10f, 0f), new(10f, 10f), new(0f, 10f)];
+        ReadOnlySpan<UiVec2> away = [new(20f, 20f), new(30f, 20f), new(30f, 30f)];
+        Span<UiVec2> output = stackalloc UiVec2[UiGeometry.MaxClippedVertices];
+
+        Assert.True(UiGeometry.ClipConvex(away, panel, output) < 3);
+    }
+
     [Fact]
     public void A_gradient_samples_between_its_stops()
     {

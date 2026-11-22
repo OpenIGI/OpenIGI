@@ -85,6 +85,63 @@ public static class UiGeometry
         return count;
     }
 
+    /// <summary>Clips a convex polygon to another convex polygon: what of a shape lies inside an outline.</summary>
+    /// <param name="subject">The polygon to clip, in order.</param>
+    /// <param name="clip">The convex outline to keep it inside, in order, either way round.</param>
+    /// <param name="output">Receives the clipped polygon; must hold <see cref="MaxClippedVertices"/>.</param>
+    /// <returns>The clipped polygon's vertex count; fewer than three means nothing is inside.</returns>
+    /// <remarks>
+    /// Sutherland–Hodgman against each edge of the outline, which is exact while both are convex: for a highlight that must stay
+    /// within a panel whose corners are cut, where a rectangle clip would let it spill past the cuts.
+    /// </remarks>
+    public static int ClipConvex(ReadOnlySpan<UiVec2> subject, ReadOnlySpan<UiVec2> clip, Span<UiVec2> output)
+    {
+        if (subject.Length < 3 || clip.Length < 3)
+        {
+            return 0;
+        }
+
+        Span<UiVec2> a = stackalloc UiVec2[MaxClippedVertices];
+        Span<UiVec2> b = stackalloc UiVec2[MaxClippedVertices];
+        int count = Math.Min(subject.Length, MaxClippedVertices / 2);
+        subject[..count].CopyTo(a);
+
+        // Inside is the side the outline's interior lies on, which its winding says.
+        float winding = MathF.Sign(SignedArea2(clip));
+        for (int edge = 0; edge < clip.Length && count > 0; edge++)
+        {
+            UiVec2 from = clip[edge];
+            UiVec2 to = clip[(edge + 1) % clip.Length];
+            int written = 0;
+            UiVec2 previous = a[count - 1];
+            float previousSide = Side(from, to, previous) * winding;
+            for (int i = 0; i < count && written < MaxClippedVertices - 1; i++)
+            {
+                UiVec2 current = a[i];
+                float side = Side(from, to, current) * winding;
+                if ((side >= 0f) != (previousSide >= 0f))
+                {
+                    float t = previousSide / (previousSide - side);
+                    b[written++] = new UiVec2(previous.X + ((current.X - previous.X) * t), previous.Y + ((current.Y - previous.Y) * t));
+                }
+
+                if (side >= 0f && written < MaxClippedVertices)
+                {
+                    b[written++] = current;
+                }
+
+                previous = current;
+                previousSide = side;
+            }
+
+            count = written;
+            b[..count].CopyTo(a);
+        }
+
+        a[..count].CopyTo(output);
+        return count;
+    }
+
     /// <summary>Gets a value indicating whether a polygon lies entirely inside a rectangle.</summary>
     /// <param name="points">The polygon's vertices.</param>
     /// <param name="clip">The rectangle.</param>
@@ -117,6 +174,10 @@ public static class UiGeometry
 
         return area;
     }
+
+    // Which side of the line from one point to another a third lies: positive to the clockwise side on screen.
+    private static float Side(UiVec2 from, UiVec2 to, UiVec2 point) =>
+        ((to.X - from.X) * (point.Y - from.Y)) - ((to.Y - from.Y) * (point.X - from.X));
 
     private static int ClipEdge(ReadOnlySpan<UiVertex> input, Span<UiVertex> output, float plane, int axis, bool keepGreater)
     {

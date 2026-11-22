@@ -15,6 +15,9 @@
     <!-- Project I.G.I.'s retail player tuning, run through the script VM once, as the first game's own suite reads it: the
          same file rather than a copy, so the movement parity tests tune that game's player exactly as those tests do. -->
     <Compile Include="..\OpenIGI.Game.Tests\RetailPlayerParameters.cs" Link="Shared\RetailPlayerParameters.cs" />
+
+    <!-- The UI suite's recording renderer, so the HUD's panels can be checked for what they draw: the same file, not a copy. -->
+    <Compile Include="..\OpenIGI.UI.Tests\RecordingUiRenderer.cs" Link="Shared\RecordingUiRenderer.cs" />
   </ItemGroup>
 
   <ItemGroup>
