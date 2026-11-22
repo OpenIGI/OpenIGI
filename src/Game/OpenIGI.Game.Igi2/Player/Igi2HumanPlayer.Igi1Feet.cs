@@ -56,6 +56,15 @@ public sealed partial class Igi2HumanPlayer
         Vector3d start = Position;
         UpdatePlatformMovement(ref start, updatePosition: true, updateOrientation: true);
 
+        // Taking over from one of I.G.I. 2's own states, the body is seated on the footing the sequel finds there, which reaches
+        // up as well as down. Getting off a ladder at its top pops the feet two metres up from the clip's last frame, and on the
+        // tall building of mission 1 that left them half a metre under the roof: the sequel's ground lifted them onto it, but
+        // the first game's body, seated where the feet were, met nothing below and fell through the building to the ground.
+        if (!feet.IsSeated)
+        {
+            GroundCollision(start, ref start, GroundTolerance);
+        }
+
         feet.Body.LoadSpeedScale = Igi1Weight ? CarriedSpeedScale : 1f;
         feet.Step(start, Gamma, Igi1Command());
         LandFromIgi1Feet(feet);

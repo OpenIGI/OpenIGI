@@ -269,6 +269,9 @@ public sealed partial class Igi2HumanPlayer
         // game's ladder, which looks for none, nothing is underfoot.
         if (AttachParent is not null)
         {
+            // Carried, the player is I.G.I. 2's to move: Project I.G.I.'s body, if it stood on one, is seated afresh on its
+            // footing when it is let go -- off a ladder's top, the roof the ladder reaches.
+            Igi1Feet?.Unseat();
             if (AttachParent is Interaction.IIgi2Ladder { KeepsFooting: false })
             {
                 Signal &= ~Igi2PlayerSignal.Grounded;
