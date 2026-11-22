@@ -47,6 +47,9 @@ public sealed partial class HostedSession
     /// <summary>Gets a value indicating whether the host's own player plays too: a listen server rather than a dedicated one.</summary>
     public bool IncludesHost => _options.IncludesHost;
 
+    /// <inheritdoc/>
+    public bool Unattended => !_options.IncludesHost;
+
     /// <summary>Gets or sets what changes the map a players' vote carried (<see cref="ServerSession.ChangeMap"/>).</summary>
     public Func<int, string?, string?>? ChangeMap
     {

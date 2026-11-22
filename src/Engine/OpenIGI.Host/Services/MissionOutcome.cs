@@ -58,6 +58,9 @@ internal interface IMissionOutcomeHost
     // A versus session's: the level is an arena, so its own objectives and failures end nothing; the mode does.
     bool PlaysArena { get; }
 
+    // A dedicated server's: nobody sits at it to choose what a failed mission's page offers.
+    bool RunsUnattended { get; }
+
     /// <summary>Lets go of the mission being played.</summary>
     void ReleasePlayedMission();
 }
@@ -71,6 +74,9 @@ internal interface IMissionOutcomeHost
 /// <param name="host">What deciding a mission reads of the host.</param>
 internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logger, IMissionOutcomeHost host) : IHostService
 {
+    // Whether a co-op client has said its mission failed and it waits on its server, so it is said once.
+    private bool _followerToldOfFailure;
+
     /// <summary>How much longer than the original the remaster holds a status message, in seconds.</summary>
     private const float RemasteredMessageHoldSeconds = 3f;
 
@@ -107,7 +113,33 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         if (host.Objectives is { IsFailed: true } || host.TitlePlayer is { Outcome: TitleMissionOutcome.Failed })
         {
             // The retail grace period first; see MissionSession.CountFailure.
-            if (session.CountFailure() && state.Shell is not null)
+            bool failureDue = session.CountFailure();
+            if (failureDue && host.RunsUnattended && session.Mission is { } retried)
+            {
+                // A dedicated server begins the mission again, and its players follow it there. On the failed page, which
+                // nobody at the server can click, it stopped answering: no one could join it again until it was restarted.
+                host.Events?.Raise(new MissionEnded(retried.Id, Completed: false));
+                logger.Information("Mission", $"The level's LevelFlow has failed the mission; a dedicated server begins mission {retried.Id} again.");
+                session.ClearFailure();
+                host.StartMission(retried.Id);
+                return;
+            }
+
+            // A co-op client's failure is its server's to settle: the server begins the mission again, or its host chooses on
+            // its own failed page, and this client follows it there. On a failed page of its own it stopped ticking its session,
+            // went quiet, and was let go by the server two seconds later -- never to follow it anywhere.
+            if (failureDue && host.FollowsSession)
+            {
+                if (!_followerToldOfFailure)
+                {
+                    _followerToldOfFailure = true;
+                    logger.Information("Mission", "The level's LevelFlow has failed the mission; waiting for the server to go on.");
+                }
+
+                return;
+            }
+
+            if (failureDue && state.Shell is not null)
             {
                 session.FailedMenu = true;
                 if (session.Mission is { } failedMission)
@@ -128,6 +160,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         else
         {
             session.ClearFailure();
+            _followerToldOfFailure = false;
         }
         if (!session.ResultHandled
             && (host.Objectives is { IsComplete: true } || host.TitlePlayer is { Outcome: TitleMissionOutcome.Completed })

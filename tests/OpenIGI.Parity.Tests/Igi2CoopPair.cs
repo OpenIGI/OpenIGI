@@ -31,6 +31,15 @@ internal sealed class Igi2CoopPair : CoopPair<Igi2TitlePlayer>
     {
     }
 
+    /// <summary>Starts a dedicated server -- its own player nobody's -- and a joiner, on a mission.</summary>
+    /// <param name="dedicated">Ignored; tells this overload apart.</param>
+    /// <param name="mission">The mission both play.</param>
+    /// <param name="frames">How many frames each may run.</param>
+    public Igi2CoopPair(bool dedicated, int mission, int frames)
+        : base(GameDataSource.Igi2, GameTitle.Igi2, "igi2", null, null, mission, frames, [], [], joinLater: false, dedicated: dedicated)
+    {
+    }
+
     /// <summary>Starts both games on a mission with its intro playing, as a real session does: neither skips it at start.</summary>
     /// <param name="withIntro">Ignored; tells this overload apart.</param>
     /// <param name="mission">The mission both play.</param>

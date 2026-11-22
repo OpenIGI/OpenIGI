@@ -70,11 +70,11 @@ internal abstract class CoopPair<TLevel> : IDisposable
             new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: !dedicated, HostSkin: hostLook),
             titleId,
             30,
-            NullLogger.Instance) { TimeSource = FrameTime };
+            HostLogger) { TimeSource = FrameTime };
         _client = NewClient();
 
-        HostGame = Make([.. args, .. skip, .. hostArgs], HostWindow, _hostDevice, hostAudio ?? NullAudioDeviceFactory.Instance);
-        JoinerGame = Make([.. args, .. (joinLater ? joinerArgs : skip)], JoinerWindow, _joinerDevice, joinerAudio ?? NullAudioDeviceFactory.Instance);
+        HostGame = Make([.. args, .. skip, .. hostArgs], HostWindow, _hostDevice, hostAudio ?? NullAudioDeviceFactory.Instance, HostLogger);
+        JoinerGame = Make([.. args, .. (joinLater ? joinerArgs : skip)], JoinerWindow, _joinerDevice, joinerAudio ?? NullAudioDeviceFactory.Instance, JoinerLogger);
         _hostWatch = new Watch(_session) { Talks = talks };
         _joinerWatch = new FollowingWatch(_client) { Talks = talks };
         HostGame.TickObserver = _hostWatch;
@@ -190,12 +190,14 @@ internal abstract class CoopPair<TLevel> : IDisposable
         _hostDevice.Dispose();
         _joinerDevice.Dispose();
         _joinerIdentity.Dispose();
+        (_hostLogger as IDisposable)?.Dispose();
+        (_joinerLogger as IDisposable)?.Dispose();
     }
 
     private SessionClient NewClient()
     {
         JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0);
-        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty, Skin: _joinerLook), _titleId, NullLogger.Instance, _joinerIdentity,
+        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty, Skin: _joinerLook), _titleId, JoinerLogger, _joinerIdentity,
             reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0))
         {
             Mode = _joinerMode,
@@ -230,7 +232,20 @@ internal abstract class CoopPair<TLevel> : IDisposable
         JoinerLink.Receive.Latency = seconds / 2;
     }
 
-    private GameHost Make(string[] args, HeadlessGameWindow window, RecordingGraphicsDevice device, IAudioDeviceFactory audio)
+    // Each game's log, written to a folder when OPENIGI_PAIR_LOG names one, to read what the two did after a test; else none.
+    private static IOpenIgiLogger PairLogger(string role) =>
+        Environment.GetEnvironmentVariable("OPENIGI_PAIR_LOG") is { Length: > 0 } folder
+            ? new FileLogger(Path.Combine(Directory.CreateDirectory(folder).FullName, $"{role}.log"))
+            : NullLogger.Instance;
+
+    private IOpenIgiLogger HostLogger => _hostLogger ??= PairLogger("host");
+
+    private IOpenIgiLogger JoinerLogger => _joinerLogger ??= PairLogger("joiner");
+
+    private IOpenIgiLogger? _hostLogger;
+    private IOpenIgiLogger? _joinerLogger;
+
+    private GameHost Make(string[] args, HeadlessGameWindow window, RecordingGraphicsDevice device, IAudioDeviceFactory audio, IOpenIgiLogger logger)
     {
         string root = _data.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.For(_title);
@@ -238,7 +253,7 @@ internal abstract class CoopPair<TLevel> : IDisposable
         files.RegisterDevice(new LocalFileDevice(root));
         FileSystemConfig.LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(files);
         return new GameHost(new HeadlessPlatformHost(), window, device, audio,
-            InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, HostOptions.Parse([.. args, "-nosave"]), root, NullLogger.Instance);
+            InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, HostOptions.Parse([.. args, "-nosave"]), root, logger);
     }
 
     // Passes the ticks on to a session and keeps the level it runs on.
@@ -293,6 +308,8 @@ internal abstract class CoopPair<TLevel> : IDisposable
         }
 
         public bool HoldsLevel => Inner is ISessionHold { HoldsLevel: true };
+
+        public bool Unattended => Inner is ISessionHold { Unattended: true };
 
         public void AnnounceGoing(string map) => (Inner as ISessionHold)?.AnnounceGoing(map);
 

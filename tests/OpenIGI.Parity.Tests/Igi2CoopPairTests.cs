@@ -1153,6 +1153,35 @@ public sealed class Igi2CoopPairTests
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.NetworkHumans.Count == 1 && !pair.Client.HoldsLevel, 4000) >= 0, "the joiner never came into the second mission");
     }
 
+    /// <summary>
+    /// A dedicated server whose mission fails -- its only player down -- begins the mission again, and the player follows it
+    /// there. It once opened the failed page, which nobody at a server can click, and stopped answering: no one could join it
+    /// again until it was restarted by hand.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dedicated_server_whose_mission_fails_begins_it_again_and_its_player_follows()
+    {
+        using Igi2CoopPair pair = new(dedicated: true, Igi2CoopPair.FirstMission, 20000);
+        Assert.True(
+            pair.RunUntil(() => pair.Joined && pair.Host!.NetworkHumans.Count == 1 && !pair.Client.HoldsLevel, 4000) >= 0,
+            "the joiner was never welcomed");
+        pair.RunUntil(() => false, 60);
+        Igi2TitlePlayer first = pair.Host!;
+        Igi2TitlePlayer joinerFirst = pair.Joiner!;
+        byte? epoch = pair.Client.Session?.Epoch;
+        Igi2HumanPlayer partner = Assert.Single(first.NetworkHumans).Human;
+        partner.Damage.Damage = partner.Damage.MaxDamage + 1f;
+        partner.UpdateDie();
+        Assert.True(pair.RunUntil(() => first.Outcome == OpenIGI.Game.Player.TitleMissionOutcome.Failed, 3000) >= 0, "the mission never failed");
+        Assert.True(
+            pair.RunUntil(() => !ReferenceEquals(pair.Host, first), 1500) >= 0,
+            $"the server never began the mission again: failed page {pair.HostGame.ShowsMissionFailed}, outcome {first.Outcome}, level {first.Level?.GetHashCode()}");
+        Assert.False(pair.HostGame.ShowsMissionFailed, "the server opened the failed page");
+        Assert.True(
+            pair.RunUntil(() => pair.Client.Ended is null && pair.Joined && pair.Host!.NetworkHumans.Count == 1 && !pair.Client.HoldsLevel, 4000) >= 0,
+            $"the player never came into the mission again: ended '{pair.Client.Ended ?? "no"}', joined {pair.Joined}, host's players {pair.Host?.NetworkHumans.Count}, held {pair.Client.HoldsLevel}, map {pair.Client.Session?.Map}, joiner level new {!ReferenceEquals(pair.Joiner, joinerFirst)}, joiner failed page {pair.JoinerGame.ShowsMissionFailed}, epoch {pair.Client.Session?.Epoch} (was {epoch}), behind {pair.Client.Session?.Behind}");
+    }
+
     internal static Igi2CoopPair Joined(params string[] hostArgs) => JoinedOn(Igi2CoopPair.FirstMission, hostArgs);
 
     internal static Igi2CoopPair JoinedOn(int mission, params string[] hostArgs)

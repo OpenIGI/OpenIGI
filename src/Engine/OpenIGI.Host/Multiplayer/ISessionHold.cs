@@ -9,6 +9,9 @@ public interface ISessionHold
     /// <summary>Gets whether the level now loaded is to be held, still behind the loading screen, until the others are there.</summary>
     bool HoldsLevel { get; }
 
+    /// <summary>Gets whether nobody sits at this end to play or choose: a dedicated server's, whose own player is nobody's.</summary>
+    bool Unattended => false;
+
     /// <summary>Tells the others the mission this end has begun loading, for them to load alongside it: the host's to say.</summary>
     /// <param name="map">The mission's map.</param>
     void AnnounceGoing(string map)

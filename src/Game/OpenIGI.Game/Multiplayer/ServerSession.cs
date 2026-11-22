@@ -859,6 +859,9 @@ public sealed partial class ServerSession : IModeHost
         _net.Flush(now);
     }
 
+    /// <summary>Gets the players the last <see cref="Travel"/> could not put in the new level, who were let go: for the server's log.</summary>
+    public List<string> TravelDropped { get; } = [];
+
     /// <summary>Goes on to another level with every player: the next mission, or the same one again.</summary>
     /// <param name="world">The new level's world.</param>
     /// <param name="map">Its map.</param>
@@ -896,10 +899,12 @@ public sealed partial class ServerSession : IModeHost
             }
         }
 
+        TravelDropped.Clear();
         foreach ((int slot, ClientState client) in _clients.ToArray())
         {
             if ((client.Watching ? WatcherEntity : world.AddPlayer(slot, client.Name)) is not { } entity)
             {
+                TravelDropped.Add(client.Name);
                 _clients.Remove(slot);
                 Match.Leave(slot);
                 _net.Disconnect(slot, "no room in the level");

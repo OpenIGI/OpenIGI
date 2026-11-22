@@ -278,6 +278,10 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             _level = next.Level;
             string map = next.Map.Length > 0 ? next.Map : _session.Map;
             _session.Travel(_world, map);
+            foreach (string dropped in _session.TravelDropped)
+            {
+                _logger.Warning(LogCategory, $"{dropped} could not be put in {MapName(map)} and was let go (no room in the level).");
+            }
 
             // The new level's match, under the mode now asked for, on its own layout.
             _session.RestartMode(NewMode(_world));

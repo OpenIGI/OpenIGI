@@ -79,6 +79,8 @@ public sealed partial class GameHost
 
         public bool PlaysArena => host.TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
 
+        public bool RunsUnattended => host.TickObserver is Multiplayer.ISessionHold { Unattended: true };
+
         public void ReleasePlayedMission() => host.ReleasePlayedMission();
     }
 }
