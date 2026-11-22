@@ -334,6 +334,15 @@ public sealed partial class GameHost
             if (_atmosphere is { } tint && tint.FogColour.LengthSquared > 0f)
             {
                 medium = medium with { Albedo = tint.FogColour };
+
+                // A title's own sky is its hour's, and so is its haze: moved off that hour, the colour goes with the dome
+                // (OwnSkyShare) and the air scatters as air. Mission 1's dark blue night fog over a noon sun was a haze too
+                // dark to see, and the far hills stood as crisp as the near ones.
+                if (_sky is { IsGameOwnSky: true } && OwnSkyShare() is var hourShare && hourShare < 1f)
+                {
+                    Vector3f air = VolumetricFogSettings.Off.ScatteringAlbedo;
+                    medium = medium with { Albedo = air + ((tint.FogColour - air) * hourShare) };
+                }
             }
 
             if (FogCVars.FogDensity.Value > 0f)

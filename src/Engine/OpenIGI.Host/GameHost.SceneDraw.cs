@@ -40,11 +40,25 @@ public sealed partial class GameHost
             return 0f;
         }
 
+        return share * PaintedHourShare();
+    }
+
+    /// <summary>How much of a title's own sky this frame keeps over the atmosphere, nought to one.</summary>
+    /// <remarks>
+    /// All of it at the hour it was painted for, which is every mission left on its own clock. It used to be all of it at
+    /// every hour, so a night level moved to noon (r_time_of_day, the cycle) kept its starry night dome over a noon sun, and
+    /// the haze and the sky light were the night's. The same fade as a mission's painted look; a level with no outdoors keeps it.
+    /// </remarks>
+    private float OwnSkyShare() => _timeOfDay.Sunless ? 1f : PaintedHourShare();
+
+    // Whole within an hour of the hour the level's sun is bound at, gone three hours away, eased between.
+    private float PaintedHourShare()
+    {
         float painted = (_timeOfDay.BoundSun ?? _timeOfDay.Sun)?.TimeOfDay is > 0f and <= 24f and var hour ? hour : 12f;
         float away = MathF.Abs(_timeOfDay.DayNight.TimeHours - painted) % 24f;
         away = MathF.Min(away, 24f - away);
         float t = Math.Clamp((away - 1f) / 2f, 0f, 1f);
-        return share * (1f - (t * t * (3f - (2f * t))));
+        return 1f - (t * t * (3f - (2f * t)));
     }
 
     /// <summary>Gets the flat light the level's models without a lightmap are lit by: the level's own under baked light, else none.</summary>
@@ -124,7 +138,7 @@ public sealed partial class GameHost
             // A title that keeps its own sky keeps all of it. One whose sky the atmosphere replaces keeps as
             // much of its painted dome as the mission's look asks for, and only near the hour it was painted
             // at: the painted sky is one moment's sky, and the cycle's atmosphere is every other.
-            float paintedShare = _sky is { IsGameOwnSky: true } ? 1f : PaintedSkyShare();
+            float paintedShare = _sky is { IsGameOwnSky: true } ? OwnSkyShare() : PaintedSkyShare();
             _device.SetPaintedSkyWeight(paintedShare, fogged: _sky is { IsGameOwnSky: true });
             bool paintedSky = captured && _sky is { HasSky: true } && paintedShare > 0f;
             _paintedLayers = paintedSky && _sky is { IsGameOwnSky: false } ? paintedShare : 0f;
