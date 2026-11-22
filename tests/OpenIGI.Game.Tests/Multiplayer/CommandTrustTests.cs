@@ -121,6 +121,35 @@ public sealed class CommandTrustTests
         Assert.Equal(next - 1 - queue.Buffered, queue.LastTakenTick);
     }
 
+    /// <summary>
+    /// A client that ran its own clock ahead for a few seconds -- the ticks a hitch while the level loaded owed it, run at once --
+    /// and then went on one a tick has the surplus dropped, not run a few commands late for the rest of the session. Measured on
+    /// the I.G.I. 2 server: a client that sent 50 a second for two seconds after loading had 4 to 10 commands waiting from then on.
+    /// </summary>
+    [Fact]
+    public void A_client_that_ran_ahead_after_loading_is_not_run_late_ever_after()
+    {
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        for (int tick = 0; tick < 400; tick++)
+        {
+            int arriving = tick is >= 20 and < 80 ? (tick % 3 == 0 ? 1 : 2) : 1;
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+                // The loop's condition does the work.
+            }
+        }
+
+        Assert.True(queue.Dropped > 0, "nothing was dropped");
+        Assert.True(queue.Buffered <= queue.Held + 1, $"still {queue.Buffered} queued, {queue.Held} held back");
+    }
+
     [Fact]
     public void A_value_that_is_no_number_never_reaches_the_player()
     {

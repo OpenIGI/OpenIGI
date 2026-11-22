@@ -34,10 +34,12 @@ namespace OpenIGI.Game.Multiplayer;
 /// <c>sv_maxusrcmdprocessticks</c>.
 /// </para>
 /// <para>
-/// A backlog the credit cannot pay off is dropped, oldest first, down to <see cref="TargetDepth"/>: a client that stalled for
-/// a second or two (its window held, its line stopped) and then sent everything it made meanwhile would otherwise have its
-/// every later command run that much late for the rest of the session, two catch-up runs a tick being all the credit
-/// ever allows. What is dropped is stale already; the client's prediction is corrected once to where its player stands.
+/// A backlog the credit cannot pay off is dropped, oldest first, down to what the queue holds back, as Source drops the
+/// commands a client sends past what its time allows: a client that ran its own clock ahead -- a frame that hitched while the
+/// level loaded, the ticks it owed run all at once -- or that stalled and then sent everything it made meanwhile would
+/// otherwise have every later command run that much late for the rest of the session, the credit earned a tick at a time
+/// being spent each tick on the command that came with it. Half a second of ticks it could not pay for, however many wait,
+/// is enough. What is dropped is stale already; the client's prediction is corrected once to where its player stands.
 /// </para>
 /// </remarks>
 public sealed class UserCommandBuffer
@@ -92,9 +94,11 @@ public sealed class UserCommandBuffer
     /// <remarks>
     /// A third of a second once. A client that stalls for longer than that and then runs the ticks it owes -- a browser's page
     /// taking in a new part of a level, a collection, a held line let go -- sends a second's commands together; what the credit
-    /// could not pay was dropped as run, and its player here was left on a ladder its client had already climbed off.
+    /// could not pay was dropped as run, and its player here was left on a ladder its client had already climbed off. Two
+    /// over a second: a second's stall leaves its client's thirty and the one it sent as the line came back, and a credit of
+    /// thirty left one of them a tick late for good.
     /// </remarks>
-    public int MaxCredit { get; set; } = 30;
+    public int MaxCredit { get; set; } = 32;
 
     /// <summary>Gets or sets the most commands the queue gives in one tick.</summary>
     public int MaxPerTick { get; set; } = 4;
@@ -218,8 +222,9 @@ public sealed class UserCommandBuffer
         _running = true;
         WeighTheLine();
 
-        // A backlog the credit cannot pay off, held half a second: dropped to what the queue holds back, oldest first.
-        if (_pending.Count > MaxDepth && _credit < 2)
+        // A backlog the credit cannot pay off, held half a second: dropped to what the queue holds back, oldest first. Any
+        // backlog: one hovering a few commands deep, never past MaxDepth for long, once sat there for the whole session.
+        if (_pending.Count > Held + 1 && _credit < 2)
         {
             if (++_backlogTicks >= StaleBacklogTicks)
             {
