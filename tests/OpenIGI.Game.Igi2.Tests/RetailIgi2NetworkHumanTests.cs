@@ -86,12 +86,14 @@ public sealed class RetailIgi2NetworkHumanTests
         Igi2TitlePlayer level = StandMission1();
         Igi2ReplicatedWorld world = new(level) { IncludesHost = false };
 
-        Assert.True(level.Human.IsGone);
+        // Counted by the areas until the first player is in: gone at once, it left an empty server's mission failing as it loaded.
+        Assert.False(level.Human.IsGone);
         Assert.DoesNotContain(level.Human, level.Ai!.Detection!.Detectables);
         Assert.DoesNotContain(level.Human, level.Ai.Players);
         Assert.Contains(level.Human, level.ScriptPlayers!);
 
         Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Assert.True(level.Human.IsGone);
         Assert.DoesNotContain(level.Human, level.ScriptPlayers!);
         Assert.Equal(world.PlayerOf(0)!.Human, level.Ai.Players.Primary);
     }
