@@ -588,26 +588,6 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
         }
     }
 
-    /// <summary>
-    /// Stands a soldier up again whom a co-op client foresaw falling and its server kept alive: it lives again here, and the next
-    /// pose its server sends starts its clip. <b>Not retail.</b>
-    /// </summary>
-    public void Rise()
-    {
-        if (!IsDead)
-        {
-            return;
-        }
-
-        IsDead = false;
-        Soldier.IsDead = false;
-
-        // No clip is the one playing, so the server's next is played whatever it is.
-        CurrentAnimation = -1;
-        _pose = null;
-        _unrotatedPose = null;
-    }
-
     /// <summary>Rebuilds this body at its authored spawn, as a GuardGenerator clone does.</summary>
     /// <remarks>
     /// The native generator recursively clones the stored task template rather than reviving the corpse

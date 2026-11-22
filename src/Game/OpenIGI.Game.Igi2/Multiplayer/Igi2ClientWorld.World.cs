@@ -22,21 +22,13 @@ public sealed partial class Igi2ClientWorld
 
         // The hits the server's copy of this client's player took, felt by this one: the flinch that stopped the server's in
         // its stride, the push along the shot, the cry, the shake and the red flash. The damage comes with the player's health.
-        // The push carried the server's copy on through every command this client has run since: it is caught up, and what this
-        // client predicted for those commands moves with it, or the server's word on each put the player back by a push it took.
         Player.Igi2HumanPlayer own = _level.Human;
         foreach (ReplicatedSense sense in snapshot.Senses ?? [])
         {
             if (sense.Entity == ownEntity && sense.Kind == Igi2NetworkHuman.HitSense && !own.IsDead
                 && float.IsFinite(sense.A) && Enum.IsDefined((Humans.Igi2DamagePart)(int)sense.A))
             {
-                List<Core.Numerics.Vector3d> each = own.FeelHitLate((Humans.Igi2DamagePart)(int)sense.A, sense.Vector, ticksAhead);
-
-                // The player now stands after the newest of those commands, whose prediction is yet to be recorded.
-                if (each.Count > 1)
-                {
-                    predictions.ShiftNewest(each.GetRange(0, each.Count - 1));
-                }
+                own.FeelHit((Humans.Igi2DamagePart)(int)sense.A, sense.Vector);
             }
         }
 

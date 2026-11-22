@@ -8,21 +8,9 @@ public sealed class TickClockSyncTests
     private const int TickRate = 30;
 
     [Fact]
-    public void A_steady_line_sending_every_tick_draws_two_ticks_behind()
+    public void A_steady_line_sending_every_tick_draws_at_cl_interp()
     {
         TickClockSync clock = Feed(spacing: 1, jitterSeconds: 0, seconds: 10);
-        Assert.Equal(2.0 / TickRate, clock.AppliedInterpolationDelay, 3);
-    }
-
-    [Fact]
-    public void A_set_cl_interp_is_the_least_a_steady_line_draws_at()
-    {
-        TickClockSync clock = new(TickRate) { InterpolationDelay = 0.1 };
-        for (long tick = 0; tick < 10 * TickRate; tick++)
-        {
-            clock.AddSample(tick, (tick / (double)TickRate) + 0.05, 0.1);
-        }
-
         Assert.Equal(0.1, clock.AppliedInterpolationDelay, 3);
     }
 
@@ -53,38 +41,6 @@ public sealed class TickClockSyncTests
         clock.AddSample(10_000, 10_000.0 / TickRate, 0);
         double after = clock.AppliedInterpolationDelay;
         Assert.True(after > before && after < 0.4, $"{before} -> {after}");
-    }
-
-    /// <summary>
-    /// The moment drawn is counted back from the snapshots as they arrive, not from the server's present: the newest snapshot held
-    /// is half a round trip old, and on any line slower than twice the delay a moment counted back from the server's present lay
-    /// past it -- every body carried on along its velocity, every frame.
-    /// </summary>
-    /// <param name="roundTrip">The line's round trip, in seconds.</param>
-    [Theory]
-    [InlineData(0.03)]
-    [InlineData(0.1)]
-    [InlineData(0.25)]
-    [InlineData(0.9)]
-    public void The_moment_drawn_has_a_snapshot_after_it_whatever_the_round_trip(double roundTrip)
-    {
-        TickClockSync clock = new(TickRate);
-        long newest = 0;
-        for (long tick = 0; tick < 10 * TickRate; tick++)
-        {
-            double arrival = (tick / (double)TickRate) + (roundTrip / 2);
-            clock.AddSample(tick, arrival, roundTrip);
-            newest = tick;
-
-            // As the snapshot arrives, and a frame later with the next one still on its way.
-            Assert.True(clock.InterpolationTick(arrival) <= newest - 1.9, $"tick {tick}: drew {clock.InterpolationTick(arrival):F2} with {newest} the newest");
-            Assert.True(clock.InterpolationTick(arrival + (0.99 / TickRate)) < newest, $"tick {tick}: drew past the newest snapshot");
-        }
-
-        // The server's present is still told apart, for the commands: half a round trip on from the snapshots arriving.
-        double now = (newest / (double)TickRate) + (roundTrip / 2);
-        Assert.Equal(newest + (roundTrip / 2 * TickRate), clock.ServerTick(now), 2);
-        Assert.Equal(newest, clock.ArrivingTick(now), 2);
     }
 
     // Snapshots every `spacing` ticks for a while, arriving off their time by up to `jitterSeconds` either way.

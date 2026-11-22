@@ -157,29 +157,12 @@ public sealed class HumanHealth : Saves.IExchangedState
     /// </remarks>
     public float Apply(int zone, float damageFactor, bool instantDeathDisabled = false)
     {
-        float dealt = Preview(zone, damageFactor, instantDeathDisabled);
-        if (Invulnerable || zone < 0 || zone >= Zones.Count)
+        if (Invulnerable)
         {
             return 0f;
         }
 
-        Damage += dealt;
-        Hits++;
-        return dealt;
-    }
-
-    /// <summary>Gets the damage one round would add, without adding it: what <see cref="Apply"/> adds.</summary>
-    /// <param name="zone">The zone struck.</param>
-    /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
-    /// <param name="instantDeathDisabled">Whether the head and neck take the plain factor, as <see cref="Apply"/> reads it.</param>
-    /// <returns>The damage the round would add.</returns>
-    /// <remarks>
-    /// <b>Not retail.</b> A co-op client's copy of a soldier takes no harm of its own -- the server's does -- but foresees what its
-    /// player's round will do there, to mark the hit and the fall at once.
-    /// </remarks>
-    public float Preview(int zone, float damageFactor, bool instantDeathDisabled = false)
-    {
-        if (Invulnerable || zone < 0 || zone >= Zones.Count)
+        if (zone < 0 || zone >= Zones.Count)
         {
             return 0f;
         }
@@ -188,31 +171,10 @@ public sealed class HumanHealth : Saves.IExchangedState
         float dealt = instantDeathDisabled && headOrNeck
             ? damageFactor
             : HumanDamage.DamageOfHit(Zones[zone].Multiplier, damageFactor);
-        return dealt * DamageScale;
-    }
-
-    /// <summary>Gets the least one round that harms at all would add, whichever zone it struck.</summary>
-    /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
-    /// <param name="instantDeathDisabled">Whether the head and neck take the plain factor, as <see cref="Apply"/> reads it.</param>
-    /// <returns>The least damage; nought when no zone takes any.</returns>
-    /// <remarks>
-    /// <b>Not retail.</b> A co-op client's copy of a soldier stands in the server's clip but not at its frame, so the zone its
-    /// player's round strikes here is not always the zone it strikes there -- a chest here, an arm there. What the client foresees
-    /// of a round is weighed by the least it can have done.
-    /// </remarks>
-    public float LeastPreview(float damageFactor, bool instantDeathDisabled = false)
-    {
-        float least = float.MaxValue;
-        for (int zone = 0; zone < Zones.Count; zone++)
-        {
-            float dealt = Preview(zone, damageFactor, instantDeathDisabled);
-            if (dealt > 0f && dealt < least)
-            {
-                least = dealt;
-            }
-        }
-
-        return least == float.MaxValue ? 0f : least;
+        dealt *= DamageScale;
+        Damage += dealt;
+        Hits++;
+        return dealt;
     }
 
     /// <summary>Adds damage that is already expressed in health units.</summary>
