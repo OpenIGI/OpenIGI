@@ -181,6 +181,25 @@ public interface IReplicatedWorld
     string? Teleport(int slot, int toSlot, double metres) => "this game can't move its players";
 
     /// <summary>
+    /// Puts a player a few metres from one of the level's soldiers, facing it: a debugging tool's (<see cref="NetProbe"/>).
+    /// <b>Temporary.</b>
+    /// </summary>
+    /// <param name="slot">The player moved.</param>
+    /// <param name="soldier">The soldier's entity (<see cref="ReplicatedEntity.IsSoldier"/>).</param>
+    /// <param name="metres">How far from it.</param>
+    /// <returns>Why it could not be, or <see langword="null"/>.</returns>
+    string? TeleportBeforeSoldier(int slot, int soldier, double metres) => "this game can't move its players to its soldiers";
+
+    /// <summary>
+    /// Harms one of the level's soldiers by a share of its own health, as a round of the server's own would: a debugging tool's
+    /// (<see cref="NetProbe"/>). A share of one or more kills it. <b>Temporary.</b>
+    /// </summary>
+    /// <param name="soldier">The soldier's entity.</param>
+    /// <param name="share">The share of its health taken.</param>
+    /// <returns>Why it could not be, or <see langword="null"/>.</returns>
+    string? HarmSoldier(int soldier, float share) => "this game can't harm its soldiers from the console";
+
+    /// <summary>
     /// Says a match begins -- the first on the map, or one played again on it -- just before its players are put back: each is
     /// armed from nothing at that spawn, as at a first one, rather than keeping what it carried through the last.
     /// </summary>
@@ -391,6 +410,19 @@ public interface IReplicatedClientWorld
     void ResetToLevelStart()
     {
     }
+
+    /// <summary>Gets where this client's game draws one of the others it shows, for a debugging trace (<see cref="NetProbe"/>).</summary>
+    /// <param name="id">The human's entity.</param>
+    /// <returns>Where it stands and what it does; <see langword="null"/> when the title does not say.</returns>
+    ProbeDrawn? Drawn(int id) => null;
+
+    /// <summary>
+    /// Turns this client's own player to look at the chest of one of the others it shows, for a debugging tool to shoot with
+    /// (<see cref="NetProbe"/>). <b>Temporary.</b>
+    /// </summary>
+    /// <param name="id">The human's entity.</param>
+    /// <returns>Whether the title turned it.</returns>
+    bool AimAt(int id) => false;
 
     /// <summary>Gets the entity ids of the other players shown.</summary>
     IReadOnlyCollection<int> Shown { get; }

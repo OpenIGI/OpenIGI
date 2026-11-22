@@ -411,6 +411,7 @@ public sealed partial class ServerSession : IModeHost
 
         Snapshot snapshot = _world.Capture(tick);
         LastSnapshot = snapshot;
+        NetProbe.Server?.WriteSnapshot(snapshot);
         TellShields();
         LagCompensationHistory.Add(snapshot);
         foreach (ClientState client in _clients.Values)

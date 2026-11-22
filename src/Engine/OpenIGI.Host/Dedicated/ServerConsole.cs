@@ -55,6 +55,11 @@ public interface IServerControl
     /// <returns>What happened.</returns>
     string Teleport(string who, string before, double metres) => "This server can't move its players.";
 
+    /// <summary>Runs one of the server's debugging commands, the words after <c>dbg</c> (<see cref="Game.Multiplayer.ServerSession.Debug"/>). <b>Temporary.</b></summary>
+    /// <param name="words">The words.</param>
+    /// <returns>What it did, a line each.</returns>
+    IReadOnlyList<string> Debug(IReadOnlyList<string> words) => ["This server has no debugging commands."];
+
     /// <summary>Saves the session so far as a demo.</summary>
     /// <param name="path">Where to.</param>
     /// <returns>Why it could not be, or <see langword="null"/> once saved.</returns>
@@ -93,6 +98,7 @@ public sealed class ServerConsole(IServerControl server)
         "kick <player> [reason]         put a player out",
         "where                          every player's team, place, health and gun",
         "tp <player> <other> [metres]   put a player in front of another, facing it (5 m)",
+        "dbg guards|tp|hurt|kill|trace  debugging (temporary): soldiers listed, moved to, hurt, killed; trace on|off|mark",
         "sv_shotlog 0|1                 log every round a player fires at the others (on)",
         "mp_buytime <seconds>           how long a round's buy time lasts, from the next round (20; 0 for none)",
         "mp_timelimit <minutes>         how long a deathmatch lasts, from the next map (0 for the mode's ten)",
@@ -141,6 +147,7 @@ public sealed class ServerConsole(IServerControl server)
                 words[1],
                 words[2],
                 words.Length > 3 && double.TryParse(words[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double metres) ? Math.Clamp(metres, 0.5, 100) : 5)],
+            "dbg" => server.Debug(words[1..]),
             "endmatch" => EndMatch(),
             "next" => server.NextMap() is { } next ? [$"Going on to mission {next.Mission} ({ModeOf(next)})."] : ["There is no rotation; use map <mission> [mode]."],
             "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", MatchModes.All)}."],

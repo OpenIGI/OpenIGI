@@ -144,7 +144,10 @@ public static class ClientReplication
             }
 
             world.Show(shown);
+            NetProbe.Client?.WriteShown(now, moment, shown, world.Drawn(human.Id));
         }
+
+        NetProbe.Client?.WriteOwn(now, moment, world.LocalPosition, session.Reconciler.Corrections, session.Reconciler.LastError, session.LastRunCommandTick);
 
         foreach (int id in world.Shown.Where(id => !present.Contains(id)).ToArray())
         {

@@ -189,6 +189,7 @@ public sealed partial class GameHost
         UpdateBombSounds();
         UpdateBombFrontSound();
         UpdateBuySounds();
+        UpdateNetProbe();
         if (!state.Console.IsOpen)
         {
             UpdateCoopVoice();

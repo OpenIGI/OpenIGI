@@ -208,4 +208,40 @@ public sealed class Igi2CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
         Assert.Equal(0, idle);
         Assert.True(corrections <= hits * 5 && worst < Metre, report);
     }
+
+    /// <summary>
+    /// The debugging tools work end to end in two games: both traces written, a player put before a guard, the guard hurt and
+    /// killed by the server's commands, and the joiner's copy falling with it. The traces are left for compare.py.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_debugging_tools_trace_both_sides_and_move_and_harm_guards()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-netprobe-test");
+        using Igi2CoopPair pair = Igi2CoopPairTests.Joined();
+        pair.Ping(0.1);
+        pair.RunUntil(() => false, 60);
+        output.WriteLine(NetProbe.Command(server: true, ["on"], folder, 0));
+        output.WriteLine(NetProbe.Command(server: false, ["on"], folder, 0));
+        ServerSession server = pair.Session.Session!;
+        string name = pair.Client.PlayerName;
+        foreach (string line in server.Debug(["guards", name]).Take(3))
+        {
+            output.WriteLine(line);
+        }
+
+        string moved = Assert.Single(server.Debug(["tp", name, $"nearest:{name}", "6"]));
+        output.WriteLine(moved);
+        Assert.Contains("stands", moved, StringComparison.Ordinal);
+        pair.RunUntil(() => false, 60);
+        int guard = server.LastSnapshot!.Humans.Where(static h => ReplicatedEntity.IsSoldier(h.Id) && (h.Flags & ReplicatedHumanCondition.Alive) != 0)
+            .OrderBy(h => (h.Position.ToVector() - pair.Host!.NetworkHumans[0].Human.Position).Length).First().Id;
+        output.WriteLine(Assert.Single(server.Debug(["hurt", guard.ToString(System.Globalization.CultureInfo.InvariantCulture), "0.3"])));
+        pair.RunUntil(() => false, 60);
+        output.WriteLine(Assert.Single(server.Debug(["kill", guard.ToString(System.Globalization.CultureInfo.InvariantCulture)])));
+        Igi2HumanSoldier copy = pair.Joiner!.Soldiers!.Bodies[Game.Igi2.Multiplayer.Igi2ReplicatedWorld.SoldierIndex(guard)!.Value];
+        Assert.True(pair.RunUntil(() => copy.IsDead, 60) >= 0, "the joiner's copy never fell");
+        pair.RunUntil(() => false, 60);
+        output.WriteLine(NetProbe.Command(server: true, ["off"], folder, 0));
+        output.WriteLine(NetProbe.Command(server: false, ["off"], folder, 0));
+    }
 }

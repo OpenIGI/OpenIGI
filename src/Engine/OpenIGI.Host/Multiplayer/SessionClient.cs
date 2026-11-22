@@ -88,6 +88,9 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     /// </summary>
     public Func<double>? TimeSource { set => _clock.Source = value; }
 
+    /// <summary>Gets the name this client asked to play under.</summary>
+    public string PlayerName => _request.PlayerName;
+
     /// <inheritdoc/>
     public string? RoomCode => Room?.Code;
 

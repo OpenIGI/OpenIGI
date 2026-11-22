@@ -115,6 +115,19 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     public IReadOnlyList<string> Where() => _session.Where();
 
     /// <inheritdoc/>
+    /// <remarks><c>trace on|off|mark</c> writes the server's trace beside its settings; the rest is the session's.</remarks>
+    public IReadOnlyList<string> Debug(IReadOnlyList<string> words)
+    {
+        if (words.Count > 0 && words[0].Equals("trace", StringComparison.OrdinalIgnoreCase))
+        {
+            string directory = Path.GetDirectoryName(Core.Configuration.SettingsPaths.GetSettingsPath()) ?? Core.Configuration.SettingsPaths.PortableDirectory;
+            return [Game.Multiplayer.NetProbe.Command(server: true, [.. words.Skip(1)], directory, _session.Session?.LastSnapshot?.Tick ?? 0)];
+        }
+
+        return _session.Session?.Debug(words) ?? ["No match is being played."];
+    }
+
+    /// <inheritdoc/>
     public string Teleport(string who, string before, double metres)
     {
         string answer = _session.Teleport(who, before, metres);
