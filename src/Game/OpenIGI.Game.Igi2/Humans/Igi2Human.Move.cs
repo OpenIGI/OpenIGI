@@ -23,7 +23,7 @@ public abstract partial class Igi2Human
     private const float SlideEase = 0.1f;
 
     /// <summary>What is left of an impact after a tick, <c>0x3F666666</c>.</summary>
-    private const float ImpactDecay = 0.9f;
+    protected const float ImpactDecay = 0.9f;
 
     /// <summary>
     /// A step along the ground, <c>Human_MoveOnGround</c> (<c>igi2 0x503570</c>): a speed forward, turned by a heading off the
