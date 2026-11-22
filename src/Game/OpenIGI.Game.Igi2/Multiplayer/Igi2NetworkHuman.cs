@@ -152,6 +152,7 @@ public sealed class Igi2NetworkHuman
             Human.UnfilteredMouse = began.Unfiltered;
             Human.SteadyTurns = began.SteadyTurns;
             Human.InvertMouse = began.InvertMouse;
+            Human.Movement = began.Movement;
         }
 
         Human.View.RunZoom();

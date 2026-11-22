@@ -9,8 +9,10 @@ namespace OpenIGI.Game.Igi2.Multiplayer;
 /// <param name="Unfiltered">Whether the vertical look skipped the original's mouse filters.</param>
 /// <param name="SteadyTurns">Whether the ground speed turns with the body (<c>g_steady_turns</c>).</param>
 /// <param name="InvertMouse">Whether the mouse is inverted, which a peek's height reads.</param>
+/// <param name="Movement">Whose movement the player has (<c>g_igi2_movement</c>).</param>
 /// <param name="Seed">The seed the player's stream is set to before the command runs, at most <see cref="Igi2Command.SeedLimit"/>.</param>
-public readonly record struct Igi2CommandStart(float IdealGamma, float IdealPitch, bool Unfiltered, bool SteadyTurns, bool InvertMouse, uint Seed);
+public readonly record struct Igi2CommandStart(
+    float IdealGamma, float IdealPitch, bool Unfiltered, bool SteadyTurns, bool InvertMouse, Igi2PlayerMovement Movement, uint Seed);
 
 /// <summary>What a command left the player with that a lost key press would leave otherwise on the two machines.</summary>
 /// <param name="Chosen">The weapon chosen, by number, or -1 for none.</param>
@@ -67,6 +69,9 @@ public static class Igi2Command
     private const int ClimbShift = 5;
     private const int ClimbMask = 3;
 
+    // Project I.G.I.'s movement, above the climb's two bits.
+    private const int Igi1MovementFlag = 128;
+
     // The keys that step the weapon from what is in hand, which the chosen weapon stands in for on the server.
     private static readonly Igi2HumanChannel[] WeaponSteps =
     [
@@ -97,7 +102,8 @@ public static class Igi2Command
             | (start.SteadyTurns ? SteadyTurnsFlag : 0)
             | (start.InvertMouse ? InvertMouseFlag : 0)
             | (end.Walk ? WalkFlag : 0)
-            | ((end.Climb & ClimbMask) << ClimbShift);
+            | ((end.Climb & ClimbMask) << ClimbShift)
+            | (start.Movement == Igi2PlayerMovement.Igi1 ? Igi1MovementFlag : 0);
         command[Chosen] = end.Chosen < 0 ? 0f : end.Chosen + 1;
         command[SeedAt] = start.Seed & SeedLimit;
         command[FieldOfViewAt] = end.FieldOfView;
@@ -154,6 +160,7 @@ public static class Igi2Command
             (flags & UnfilteredLook) != 0,
             (flags & SteadyTurnsFlag) != 0,
             (flags & InvertMouseFlag) != 0,
+            (flags & Igi1MovementFlag) != 0 ? Igi2PlayerMovement.Igi1 : Igi2PlayerMovement.Igi2,
             float.IsFinite(seed) && seed >= 0f ? (uint)Math.Min(seed, SeedLimit) : 0u);
     }
 

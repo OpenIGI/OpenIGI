@@ -104,6 +104,12 @@ internal static class Igi2NetworkHumanFactory
             }
         }
 
+        // A client on Project I.G.I.'s movement is moved here as there: on a body of its own, over the level's same world.
+        if (level.Human.Igi1Feet is { } feet)
+        {
+            human.Igi1Feet = new Igi1FootMotion(feet.World, human);
+        }
+
         human.UpdateViewBody(updateAnimation: false);
         return new Igi2NetworkHuman(human, weapons, kit.World);
     }

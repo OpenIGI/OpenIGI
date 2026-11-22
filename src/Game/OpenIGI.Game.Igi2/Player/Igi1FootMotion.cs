@@ -1,19 +1,53 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Player;
 
-/// <summary>What Project I.G.I.'s body walks in an I.G.I. 2 level.</summary>
-/// <param name="Walls">The level's placed objects, which the wall sweep, the ground probe and the roof probe meet.</param>
-/// <param name="TerrainWalls">The level's terrain as the wall sweep meets it, or <see langword="null"/> for none.</param>
-/// <param name="Terrain">The ground the body stands on where no object is under it, or <see langword="null"/> for none.</param>
-/// <param name="OtherHumans">Where the humans the body cannot walk into stand, or <see langword="null"/> for none.</param>
-public sealed record Igi1FootWorld(
-    WorldRayCast? Walls,
-    WorldRayCast? TerrainWalls,
-    IGroundHeightField? Terrain,
-    Func<IEnumerable<Vector3d>>? OtherHumans);
+/// <summary>What Project I.G.I.'s bodies walk in an I.G.I. 2 level: one for the level, whichever of its players stand on one.</summary>
+/// <param name="walls">The level's placed objects, which the wall sweep, the ground probe and the roof probe meet.</param>
+/// <param name="terrainWalls">The level's terrain as the wall sweep meets it, or <see langword="null"/> for none.</param>
+/// <param name="terrain">The ground a body stands on where no object is under it, or <see langword="null"/> for none.</param>
+/// <param name="humans">The level's humans, whom a body cannot walk into, or <see langword="null"/> for none.</param>
+public sealed class Igi1FootWorld(
+    WorldRayCast? walls,
+    WorldRayCast? terrainWalls,
+    IGroundHeightField? terrain,
+    Func<IEnumerable<Igi2Human>>? humans)
+{
+    /// <summary>Gets the level's placed objects as a body's sweeps and probes meet them.</summary>
+    public WorldRayCast? Walls { get; } = walls;
+
+    /// <summary>Gets the level's terrain as the wall sweep meets it.</summary>
+    public WorldRayCast? TerrainWalls { get; } = terrainWalls;
+
+    /// <summary>Gets the ground a body stands on where no object is under it.</summary>
+    public IGroundHeightField? Terrain { get; } = terrain;
+
+    /// <summary>Gets a value indicating whether a body has stepped since <see cref="TakeUse"/> last asked.</summary>
+    /// <remarks>What the level's collision is kept up to date for: while no body walks it, nothing needs it moved.</remarks>
+    public bool IsInUse { get; private set; }
+
+    /// <summary>Where the living humans other than one stand, their feet in world units.</summary>
+    /// <param name="self">The human asking, who is not in its own way.</param>
+    /// <returns>Their feet.</returns>
+    public IEnumerable<Vector3d> OthersThan(Igi2Human self) => humans is null
+        ? []
+        : humans().Where(h => !ReferenceEquals(h, self) && !h.IsDead).Select(static h => h.Position);
+
+    /// <summary>Notes that a body has stepped.</summary>
+    public void Use() => IsInUse = true;
+
+    /// <summary>Whether a body has stepped since the last asking, and starts the count again.</summary>
+    /// <returns><see langword="true"/> when one has.</returns>
+    public bool TakeUse()
+    {
+        bool used = IsInUse;
+        IsInUse = false;
+        return used;
+    }
+}
 
 /// <summary>
 /// Project I.G.I.'s body under I.G.I. 2's player (<see cref="Igi2PlayerMovement.Igi1"/>): the first game's own walk, run, strafe,
@@ -40,14 +74,20 @@ public sealed class Igi1FootMotion
 
     /// <summary>Initializes a new instance of the <see cref="Igi1FootMotion"/> class.</summary>
     /// <param name="world">What the body walks.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="world"/> is <see langword="null"/>.</exception>
-    public Igi1FootMotion(Igi1FootWorld world)
+    /// <param name="self">The player it moves, which the body does not count among the humans in its way.</param>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public Igi1FootMotion(Igi1FootWorld world, Igi2Human self)
     {
         ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(self);
+        World = world;
         _terrain = world.Terrain;
-        Body = new PlayerBody { Walls = world.Walls, TerrainWalls = world.TerrainWalls, OtherHumans = world.OtherHumans };
+        Body = new PlayerBody { Walls = world.Walls, TerrainWalls = world.TerrainWalls, OtherHumans = () => world.OthersThan(self) };
         Body.SetFallImpactSink(impact => _landing = impact);
     }
+
+    /// <summary>Gets what the body walks, which another player of the same level can stand a body of its own on.</summary>
+    public Igi1FootWorld World { get; }
 
     /// <summary>Gets the body.</summary>
     public PlayerBody Body { get; }
@@ -89,6 +129,7 @@ public sealed class Igi1FootMotion
 
         // A landing the player's states did not take on the tick after it was made is not theirs to take later.
         _landing = null;
+        World.Use();
         Body.Position = feet;
         Body.Yaw = heading;
         Body.TickAnimated(command, _terrain, _animator);

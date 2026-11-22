@@ -751,7 +751,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
 
         CommandStart = new Multiplayer.Igi2CommandStart(
-            Human.IdealGamma, Human.View.IdealPitch, Human.UnfilteredMouse, Human.SteadyTurns, Human.InvertMouse, seed);
+            Human.IdealGamma, Human.View.IdealPitch, Human.UnfilteredMouse, Human.SteadyTurns, Human.InvertMouse, Human.Movement, seed);
         Human.Update(_frame);
         Human.RunDelayed();
 

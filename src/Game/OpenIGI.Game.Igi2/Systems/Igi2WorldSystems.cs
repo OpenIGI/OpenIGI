@@ -255,8 +255,9 @@ internal static class Igi2WorldSystems
     /// terrain, and the level's humans it cannot walk through.
     /// </summary>
     /// <remarks>
-    /// Made for every level, so the setting can change between ticks; the collision follows the level only while the body is
-    /// moving the player, and catches up with whatever moved meanwhile when it next does.
+    /// Made for every level, so the setting can change between ticks; the collision follows the level only while a body is
+    /// moving a player (a co-op partner's stands on the same world), and catches up with whatever moved meanwhile when one next
+    /// does.
     /// </remarks>
     public static void Igi1Feet(Igi2LevelBuild b)
     {
@@ -266,23 +267,26 @@ internal static class Igi2WorldSystems
         }
 
         Igi2HumanPlayer human = b.Player.Human;
+        Collision.Igi2CollisionWorld world = b.Player.CollisionWorld;
+        WorldTraceCast trace = ((IHostCollisionWorld)world).Trace;
+        List<Igi2Human> humans = b.LevelHumans();
+        if (!humans.Contains(human))
+        {
+            humans.Add(human);
+        }
+
+        Igi1FootWorld feet = new(
+            solids.PlayerCaster(), WorldTrace.AsRayCast(trace, WorldTraceMask.Terrain), world.Ground, () => humans);
+        human.Igi1Feet = new Igi1FootMotion(feet, human);
+
         PlacementCollisionFollower follower = new(solids, b.Request.Built.Scene.Placements, b.Player.Motions, b.Player.Presence);
         follower.Follow();
         b.Level.AddTickEnd(() =>
         {
-            if (human.Movement == Igi2PlayerMovement.Igi1)
+            if (feet.TakeUse())
             {
                 follower.Follow();
             }
         });
-
-        Collision.Igi2CollisionWorld world = b.Player.CollisionWorld;
-        WorldTraceCast trace = ((IHostCollisionWorld)world).Trace;
-        List<Igi2Human> others = [.. b.LevelHumans().Where(h => !ReferenceEquals(h, human))];
-        human.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(
-            solids.PlayerCaster(),
-            WorldTrace.AsRayCast(trace, WorldTraceMask.Terrain),
-            world.Ground,
-            () => others.Where(static h => !h.IsDead).Select(static h => h.Position)));
     }
 }

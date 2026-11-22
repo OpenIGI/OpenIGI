@@ -128,7 +128,7 @@ public sealed class Igi2Igi1MovementTests
     {
         (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
         player.Movement = Igi2PlayerMovement.Igi1;
-        player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, null));
+        player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, null), player);
         Tick(player, Igi2PlayerAction.None);
 
         // The reference stands where the player first stood, at rest.
