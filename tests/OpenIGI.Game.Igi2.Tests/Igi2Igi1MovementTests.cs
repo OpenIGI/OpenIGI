@@ -145,7 +145,7 @@ public sealed class Igi2Igi1MovementTests
             float strafe = Axis(held, Igi2PlayerAction.MoveRight, Igi2PlayerAction.MoveLeft);
             PlayerCommand command = new(
                 forward, strafe, 0f, 0f,
-                Run: player.IsWalk == player.Channels.IsHeld(Igi2HumanChannel.ModifyWalkRun),
+                Run: !player.Signal.HasFlag(Igi2PlayerSignal.Walking),
                 Crouch: player.Pose == Igi2HumanPose.Crouching,
                 Jump: jump);
             Vector3d before = reference.Body.Position;

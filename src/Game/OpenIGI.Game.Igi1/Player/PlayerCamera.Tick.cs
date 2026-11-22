@@ -62,6 +62,10 @@ public sealed partial class PlayerCamera
             return;
         }
 
+        // The body's state machine reads the walk/run latch as it stood, and the toggle flips it after (HumanPlayer_Update,
+        // 0x4109A0: the machine at 0x4105C0 builds its walking bit from the latch, and the press is taken once the machines
+        // have run): a press shows on the next tick's gait.
+        bool running = _locomotion.Running;
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
 
@@ -98,7 +102,7 @@ public sealed partial class PlayerCamera
             return;
         }
 
-        PlayerCommand command = PlayerInputSampler.Command(_input, _locomotion.Running, CanJump);
+        PlayerCommand command = PlayerInputSampler.Command(_input, running, CanJump);
 
         // A brace on a top lower than a standing body can bend to is held from a crouch.
         if (MountCrouches)

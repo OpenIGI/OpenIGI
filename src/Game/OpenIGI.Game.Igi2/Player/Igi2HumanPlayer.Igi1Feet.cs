@@ -75,17 +75,17 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>The tick's controls as Project I.G.I.'s body reads them.</summary>
     /// <remarks>
-    /// The move keys as the first game's axes; the pace as the walk toggle stands once this tick's press has flipped it, as the
-    /// first game flips its latch before it moves; the stance I.G.I. 2's own keys chose this tick, so the clips the states play
-    /// are the ones the body moves by; the jump on its key's press, except on a lift, where the first game allows none either.
-    /// The turn is the player's own, already taken.
+    /// The move keys as the first game's axes; the pace as this tick's states read it, before the walk toggle's press flips it,
+    /// as both games take the press only once their machines have run (<c>0x4109A0</c>); the stance I.G.I. 2's own keys chose
+    /// this tick, so the clips the states play are the ones the body moves by; the jump on its key's press, except on a lift,
+    /// where the first game allows none either. The turn is the player's own, already taken.
     /// </remarks>
     private PlayerCommand Igi1Command()
     {
         float forward = Axis(Igi2HumanChannel.MoveForwards, Igi2HumanChannel.MoveBackwards);
         float strafe = Axis(Igi2HumanChannel.MoveRight, Igi2HumanChannel.MoveLeft);
         bool jump = Channels.WasPressed(Igi2HumanChannel.Jump) && !Surroundings.IsOnElevator;
-        return new PlayerCommand(forward, strafe, 0f, 0f, Run: RunsByKeys, Crouch: Pose == Igi2HumanPose.Crouching, Jump: jump);
+        return new PlayerCommand(forward, strafe, 0f, 0f, Run: !Has(Igi2PlayerSignal.Walking), Crouch: Pose == Igi2HumanPose.Crouching, Jump: jump);
     }
 
     private float Axis(Igi2HumanChannel positive, Igi2HumanChannel negative) =>

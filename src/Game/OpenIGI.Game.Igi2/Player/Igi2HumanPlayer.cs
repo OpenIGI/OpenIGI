@@ -134,9 +134,6 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
     /// <remarks><c>tStateContext.tCrouchContext.isHoldButtonMode</c>: a held crouch ends on release, a toggled one does not.</remarks>
     public bool CrouchIsHeld { get; private set; }
 
-    /// <summary>Gets a value indicating whether the walk toggle and the modify key held make a run: running when the two agree.</summary>
-    private bool RunsByKeys => IsWalk == Channels.IsHeld(Igi2HumanChannel.ModifyWalkRun);
-
     /// <summary>Packs this tick's signal word from the channels.</summary>
     /// <remarks>
     /// <c>HumanPlayer_StateSignalHandler</c> (<c>igi2 0x4A2800</c>), run by the state machine before the
@@ -159,7 +156,7 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
         }
 
         // Modify-walk-run inverts the walk toggle while held: running when the two agree.
-        if (RunsByKeys)
+        if (IsWalk == channels.IsHeld(Igi2HumanChannel.ModifyWalkRun))
         {
             IsRunning = true;
             signal &= ~Igi2PlayerSignal.Walking;
