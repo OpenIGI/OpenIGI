@@ -432,7 +432,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                 bool head = hit.Zone == HumanDamage.NeckZone;
                 round.Credit?.Hit(head);
                 bool plain = brain?.IsInstantDeathDisabled ?? false;
-                ForeseeRound(struckView, round, hit, health.LeastPreview(damageFactor, plain), head);
+                ForeseeRound(struckView, round, hit, health.Preview(hit.Zone, damageFactor, plain), health.LeastPreview(damageFactor, plain), head);
                 return;
             }
 
@@ -616,12 +616,15 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     // A co-op client's own round on its copy of a soldier, weighed against what the server last said he had left: past it he
     // falls here at once, as the server's will; short of it he grunts. The server's word follows a round trip and the
     // interpolation later, and stands.
-    // It is weighed by the least it can have dealt, not by the zone it struck here: the copy plays the server's clip but not at
-    // its frame, and a round through the chest here is now and then one through an arm there. Weighed by its zone here, such a
-    // round felled a soldier the server kept alive, who got up again when its word came.
-    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in, and
-    // the next round at its chest met its head -- here alone.
-    private void ForeseeRound(SoldierView struck, Igi1WeaponHit round, HumanHit hit, float least, bool head)
+    // It is weighed by the zone it struck here while the copy stands still in a clip it has played for as long as the server's
+    // word takes to come: then the server's soldier stands in the same pose, and its round meets the same zone. A copy whose
+    // clip changed since is a flinch behind the server's or ahead of it -- bent while the server's stands, or standing while it
+    // bends -- and one on the move plays its gait at a frame of its own; a round at either's chest is now and then one at the
+    // server's soldier's head. Such a round is weighed by the least it can have dealt, or it felled a soldier the server kept
+    // alive, who got up again when its word came.
+    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in for
+    // every round that followed.
+    private void ForeseeRound(SoldierView struck, Igi1WeaponHit round, HumanHit hit, float dealt, float least, bool head)
     {
         if (!round.FromPlayer || round.Credit is not { } credit || _context.Foresight is not { } foresight || struck.IsDead
             || !_context.Brains.TryGetValue(struck, out Igi1HumanAi? brain))
@@ -632,7 +635,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         // A blade kills outright only a soldier with no fight on (KnifeStab's 1000), which is the server's mind to know: a client's
         // copy's never fights, and every stab would fell it here. Its flinch is foreseen, its death left to the server.
         if (round.Category != WeaponCategory.Knife
-            && foresight.NoteHit(brain.RuntimeId, least) == Game.Multiplayer.ForeseenHarm.Kill)
+            && foresight.NoteHit(brain.RuntimeId, PosedAsTheServers(struck, foresight) ? dealt : least) == Game.Multiplayer.ForeseenHarm.Kill)
         {
             credit.Killed(head);
             Die(struck, hit, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category), foreseen: true);
@@ -641,6 +644,11 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
         ReportHitSound(struck);
     }
+
+    // Whether a co-op client's copy of a soldier stands still, in a clip it has played for as long as the server's word takes to come.
+    private bool PosedAsTheServers(SoldierView copy, Game.Multiplayer.PredictedSoldierHarm foresight) =>
+        !_context.PuppetsMoving.Contains(copy)
+        && (!_context.PuppetClipChangedAt.TryGetValue(copy, out int changed) || _context.TickCount - changed > foresight.ConfirmSeconds * 30);
 
     /// <summary>Stands a soldier foreseen dead up again, its server having kept him alive.</summary>
     /// <param name="view">The soldier.</param>

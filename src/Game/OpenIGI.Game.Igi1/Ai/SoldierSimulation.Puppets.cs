@@ -155,6 +155,15 @@ public sealed partial class SoldierSimulation
     public void Puppet(SoldierView view, in SoldierPuppet puppet)
     {
         ArgumentNullException.ThrowIfNull(view);
+        if (_puppets.TryGetValue(view, out SoldierPuppet stood) && (stood.Position - puppet.Position).LengthSquared > 1)
+        {
+            _context.PuppetsMoving.Add(view);
+        }
+        else
+        {
+            _context.PuppetsMoving.Remove(view);
+        }
+
         _puppets[view] = puppet;
 
         // The server's word on one this client foresaw falling: it stays down until the word comes, and gets up if the word
@@ -303,6 +312,7 @@ public sealed partial class SoldierSimulation
         if (view.CurrentAnimation != puppet.Animation && puppet.Animation >= 0)
         {
             view.PlayStateAnimation(puppet.Animation, loops: true);
+            _context.PuppetClipChangedAt[view] = _context.TickCount;
 
             // Its machine stands where the server's does, so a fall foreseen here is the one that state falls in.
             if (Brains.TryGetValue(view, out Igi1HumanAi? posed))

@@ -33,6 +33,9 @@ public sealed partial class Igi2HumanSoldier
     // Whether the server's state has been entered on this copy since it became a puppet.
     private bool _puppetEntered;
 
+    // When, on the foresight's clock, the server's pose last changed this copy's state.
+    private double _puppetEnteredAt = double.MinValue;
+
     /// <summary>
     /// Gets or sets what a co-op client foresees of its player's rounds on this puppet, and the soldier's name in it: a round past
     /// what the server last said it had left fells it here at once, one short of it marks its hit. <see langword="null"/> elsewhere.
@@ -41,11 +44,13 @@ public sealed partial class Igi2HumanSoldier
 
     // The client's player's round on this puppet: the hit counted to the player's tally and cried out at, then the fall when
     // the round takes what the server last said was left.
-    // It is weighed by the least it can have dealt, not by the zone it struck here: the copy plays the server's clip but not at
-    // its frame, and a round through the chest here is now and then one through an arm there. Weighed by its zone here, such a
-    // round felled a soldier the server kept alive, who got up again when its word came.
-    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in, and
-    // the next round met another zone of it -- here alone.
+    // It is weighed by the zone it struck here while the copy stands still in a state it has been in for as long as the
+    // server's word takes to come: then the server's soldier stands in the same pose, and its round meets the same zone. A copy
+    // whose state changed since is a flinch behind the server's or ahead of it, and one on the move plays its gait at a frame
+    // of its own; a round at either's chest is now and then one at the server's soldier's head. Such a round is weighed by the
+    // least it can have dealt, or it felled a soldier the server kept alive, who got up again when its word came.
+    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in for
+    // every round that followed.
     private void ForeseeHit(in Igi2WeaponHit hit)
     {
         if (Foresight is not { } foresight || hit.Tally is not { } tally
@@ -58,7 +63,11 @@ public sealed partial class Igi2HumanSoldier
         bool head = part == Igi2DamagePart.Head;
         tally.Hit(head);
         Damage.LastPart = part;
-        if (foresight.Harm.NoteHit(foresight.Key, LeastDamageOf(hit, Mind?.IsInstantDeathDisabled ?? false)) == Game.Multiplayer.ForeseenHarm.Kill)
+        bool plain = Mind?.IsInstantDeathDisabled ?? false;
+        // Its body stands where its last tick's pose put it; on the move, the newest pose is somewhere else.
+        bool still = Puppet is not { } pose || Vector3d.DistanceSquared(pose.Position, Position) <= 1;
+        bool posed = still && foresight.Harm.Now - _puppetEnteredAt > foresight.Harm.ConfirmSeconds;
+        if (foresight.Harm.NoteHit(foresight.Key, posed ? DamageOf(hit, part, plain) : LeastDamageOf(hit, plain)) == Game.Multiplayer.ForeseenHarm.Kill)
         {
             tally.Killed(head);
 
@@ -153,6 +162,7 @@ public sealed partial class Igi2HumanSoldier
         {
             Locomotion.Enter(pose.State, this);
             _puppetEntered = true;
+            _puppetEnteredAt = Foresight?.Harm.Now ?? 0;
         }
 
         Gamma = pose.Gamma;

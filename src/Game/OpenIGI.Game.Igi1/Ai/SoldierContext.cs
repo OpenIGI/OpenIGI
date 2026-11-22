@@ -138,6 +138,19 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// </summary>
     public Game.Multiplayer.PredictedSoldierHarm? Foresight { get; set; }
 
+    /// <summary>
+    /// Gets the tick each of a co-op client's puppets last changed its clip on, as the server's pose changed it: a puppet whose
+    /// clip has stood for as long as the server's word takes to come stands in the pose the server's does, and one that has not
+    /// may be a flinch behind it or ahead.
+    /// </summary>
+    public Dictionary<Player.SoldierView, int> PuppetClipChangedAt { get; } = [];
+
+    /// <summary>
+    /// Gets the co-op client's puppets the server's poses are moving: each stood somewhere else in the pose before. One on the
+    /// move plays its gait at a frame of its own, its head and arms crossing where the server's chest is.
+    /// </summary>
+    public HashSet<Player.SoldierView> PuppetsMoving { get; } = [];
+
     /// <summary>Gets each brain by its runtime id.</summary>
     public Dictionary<int, Igi1HumanAi> BrainsByRuntimeId { get; } = [];
 

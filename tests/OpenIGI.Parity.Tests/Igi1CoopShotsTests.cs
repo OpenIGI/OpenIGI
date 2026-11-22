@@ -64,11 +64,18 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
             (int Rounds, int Missed, string Log) joiner = RoundsToFell(pair, partner, hostShoots: false, guards[1], running, automatic, hostAway, head, live);
             output.WriteLine($"+{enemyHealth}% ping {ping} running {running} automatic {automatic} hostAway {hostAway} head {head} live {live} thirdPerson {thirdPerson}: host {host.Rounds} rounds, {host.Missed} missed ({host.Log}); joiner {joiner.Rounds} rounds, {joiner.Missed} missed ({joiner.Log})");
 
+            pair.RunUntil(() => false, 45);
+            Game.Multiplayer.PredictedSoldierHarm foresight = pair.Joiner!.World.Soldiers!.Foresight!;
+            output.WriteLine($"foreseen kills {foresight.Kills}, get-ups {foresight.GetUps}");
+
             // The rounds that missed, not the rounds it took: a head shot the host happens to land fells a guard in one, and
             // how many land is the netcode's business.
             Assert.True(
                 joiner.Missed <= (host.Missed * 3 / 2) + 1,
                 $"at +{enemyHealth}%, {ping * 1000:0} ms, {(running ? "running" : "standing")}: the host missed {host.Missed} of {host.Rounds} rounds, the joiner {joiner.Missed} of {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
+
+            // The guard the joiner felled fell on its screen once: foreseen or not, never ahead of a server that kept him alive.
+            Assert.True(foresight.GetUps == 0, $"at {ping * 1000:0} ms, {(running ? "running" : "standing")}, head {head}: a guard the joiner foresaw falling got up again {foresight.GetUps} times of {foresight.Kills}");
         }
         finally
         {
@@ -144,10 +151,9 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
     /// once and stays down, never ahead of a server that keeps him alive, and the kill is counted once.
     /// </summary>
     /// <remarks>
-    /// The joiner's copy of a guard plays the server's clip but not at its frame, so a round through the chest on the joiner's
-    /// screen is now and then one through another zone on the server. The fall is foreseen only of a round that kills whichever
-    /// zone it struck; this guard takes four of the pistol's, and its fall is the server's word. It once fell on the second, which
-    /// met the head of a copy flinching on the joiner's screen alone, and got up again.
+    /// This guard takes four of the pistol's rounds. It once fell on the second, which met the head of a copy flinching on the
+    /// joiner's screen alone, and got up again; and then, weighed by the least a round can deal, not until the server's word, a
+    /// third of a second after the fourth.
     /// </remarks>
     [RequiresGameDataFact]
     public void The_joiners_rounds_mark_a_guard_at_once_and_fell_him_once()
@@ -175,6 +181,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         Assert.True(marked > 0 && struck > 0, $"marked {marked}, struck on the server {struck}");
         Assert.True(marked < struck, $"the joiner's first hit was marked on frame {marked}, the server's guard struck on {struck}");
         Assert.True(fell > 0, "the server's guard never fell");
+        output.WriteLine($"marked on frame {marked}, struck there on {struck}; fell here on frame {shownFell}, there on {fell}");
 
         pair.RunUntil(() => false, 60);
         Assert.True(shown.IsDead, $"the joiner's guard is up though the server's fell on frame {fell}; it fell here on {shownFell}");
