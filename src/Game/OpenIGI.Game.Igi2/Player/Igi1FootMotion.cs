@@ -83,8 +83,19 @@ public sealed class Igi1FootMotion
         World = world;
         _terrain = world.Terrain;
         Body = new PlayerBody { Walls = world.Walls, TerrainWalls = world.TerrainWalls, OtherHumans = () => world.OthersThan(self) };
-        Body.SetFallImpactSink(impact => _landing = impact);
+        Body.SetFallImpactSink(impact =>
+        {
+            _landing = impact;
+            LandingKick.Install(impact.ViewKickUnits);
+        });
     }
+
+    /// <summary>Gets the first game's dip of the view on landing, armed by the body's landings and stepped with its steps.</summary>
+    public HumanLandingViewKick LandingKick { get; } = new();
+
+    /// <summary>Gets where the first game's camera stands: the body's eye, dipped by a landing in the world's height.</summary>
+    /// <remarks>What <c>0x464BD0</c> places the camera at, the lean and a round's shake aside.</remarks>
+    public Vector3d Eye => Body.Eye + new Vector3d(0.0, 0.0, LandingKick.OffsetUnits);
 
     /// <summary>Gets what the body walks, which another player of the same level can stand a body of its own on.</summary>
     public Igi1FootWorld World { get; }
@@ -94,6 +105,9 @@ public sealed class Igi1FootMotion
 
     /// <summary>Gets a value indicating whether the body is moving the player: seated, and not handed back since.</summary>
     public bool IsSeated => _seated;
+
+    /// <summary>Gets the first game's locomotion state the body is in (<see cref="HumanBodyStateMachine"/>).</summary>
+    public int LocomotionState => _animator.State;
 
     /// <summary>Gets a value indicating whether the body left the ground in a jump on its last step.</summary>
     public bool TookOff => _seated && Body.TookOffThisTick;
@@ -123,6 +137,7 @@ public sealed class Igi1FootMotion
         if (!_seated)
         {
             Body.ComeToRest();
+            LandingKick.Reset();
             _animator = new HumanLocomotionAnimator(HumanLocomotionRootMotion.Retail);
             _seated = true;
         }
@@ -133,6 +148,9 @@ public sealed class Igi1FootMotion
         Body.Position = feet;
         Body.Yaw = YawOf(heading);
         Body.TickAnimated(command, _terrain, _animator);
+
+        // Stepped where the first game steps it, after the body has moved (and perhaps armed it) this tick.
+        LandingKick.Advance();
     }
 
     /// <summary>The first game's yaw for a heading of the sequel's.</summary>

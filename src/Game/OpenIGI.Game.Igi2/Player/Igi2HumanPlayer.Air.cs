@@ -201,18 +201,9 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     private void ControlInAir()
     {
-        // Project I.G.I.'s body steers and drops itself, and lands itself.
+        // Project I.G.I.'s body steers and drops itself, and lands itself in the tick it meets the ground (MoveOnIgi1Feet).
         if (StandsOnIgi1Feet)
         {
-            if (Has(Igi2PlayerSignal.Grounded))
-            {
-                LandFromIgi1Feet(Igi1Feet!);
-            }
-            else
-            {
-                _fallDamageProtected = IsProtectedFromFallDamage;
-            }
-
             return;
         }
 
@@ -295,7 +286,8 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>A landing at a speed: the view kick it gives, the damage past the safe speed, and the noise the AI hears.</summary>
     /// <param name="metresPerSecond">How fast the player met the ground.</param>
-    private void LandAt(Fpu metresPerSecond)
+    /// <param name="viewKick">The dip another game's body measured for it, or <see langword="null"/> for the sequel's own.</param>
+    private void LandAt(Fpu metresPerSecond, float? viewKick = null)
     {
         Fpu kick = (Fpu)0.125f * metresPerSecond;
         if (kick.Value < 0.0)
@@ -307,7 +299,7 @@ public sealed partial class Igi2HumanPlayer
             kick = 1f;
         }
 
-        View.ImpactOffset = (kick * -1024.0).F;
+        View.ImpactOffset = viewKick ?? (kick * -1024.0).F;
         View.ImpactAngle = 0f;
 
         Fpu excess = metresPerSecond - SafeLandingSpeed;

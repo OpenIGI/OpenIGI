@@ -1,6 +1,4 @@
-using OpenIGI.Game.Player;
-
-namespace OpenIGI.Game.Igi1.Player;
+namespace OpenIGI.Game.Player;
 
 /// <summary>
 /// The dip the camera makes on landing — installed by the fall, played out by the camera.

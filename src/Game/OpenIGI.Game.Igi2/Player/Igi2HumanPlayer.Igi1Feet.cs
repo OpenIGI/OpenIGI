@@ -54,6 +54,7 @@ public sealed partial class Igi2HumanPlayer
         UpdatePlatformMovement(ref start, updatePosition: true, updateOrientation: true);
 
         feet.Step(start, Gamma, Igi1Command());
+        LandFromIgi1Feet(feet);
         if (feet.Body.IsGrounded && GroundCollider is { } ground && Surroundings.PushOnConveyor(ground, GroundIntersection) is { } push)
         {
             feet.Push(push);
@@ -74,30 +75,44 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>The tick's controls as Project I.G.I.'s body reads them.</summary>
     /// <remarks>
-    /// The move keys as the first game's axes; the pace and the stance I.G.I. 2's own keys chose this tick, so the clips the
-    /// states play are the ones the body moves by; the jump on its key's press, except on a lift, where the first game allows
-    /// none either. The turn is the player's own, already taken.
+    /// The move keys as the first game's axes; the pace as the walk toggle stands once this tick's press has flipped it, as the
+    /// first game flips its latch before it moves; the stance I.G.I. 2's own keys chose this tick, so the clips the states play
+    /// are the ones the body moves by; the jump on its key's press, except on a lift, where the first game allows none either.
+    /// The turn is the player's own, already taken.
     /// </remarks>
     private PlayerCommand Igi1Command()
     {
         float forward = Axis(Igi2HumanChannel.MoveForwards, Igi2HumanChannel.MoveBackwards);
         float strafe = Axis(Igi2HumanChannel.MoveRight, Igi2HumanChannel.MoveLeft);
         bool jump = Channels.WasPressed(Igi2HumanChannel.Jump) && !Surroundings.IsOnElevator;
-        return new PlayerCommand(forward, strafe, 0f, 0f, Run: !Has(Igi2PlayerSignal.Walking), Crouch: Pose == Igi2HumanPose.Crouching, Jump: jump);
+        return new PlayerCommand(forward, strafe, 0f, 0f, Run: RunsByKeys, Crouch: Pose == Igi2HumanPose.Crouching, Jump: jump);
     }
 
     private float Axis(Igi2HumanChannel positive, Igi2HumanChannel negative) =>
         (Channels.IsHeld(positive) ? 1f : 0f) - (Channels.IsHeld(negative) ? 1f : 0f);
 
     /// <summary>
-    /// A landing Project I.G.I.'s body made, taken as I.G.I. 2's own: its view kick, its damage and the noise the AI hears, by
-    /// the speed the first game measures it at (the fall's, straight down).
+    /// A landing Project I.G.I.'s body made, in the tick it made it as that game takes it: I.G.I. 2's damage and the noise its AI
+    /// hears, by the speed the first game measures (the fall's, straight down). The view's dip is the first game's own
+    /// (<see cref="Igi1FootMotion.LandingKick"/>), so the sequel's is not armed.
     /// </summary>
     private void LandFromIgi1Feet(Igi1FootMotion feet)
     {
         if (feet.TakeLanding() is { } landing)
         {
-            LandAt(landing.SpeedMetresPerSecond);
+            LandAt(landing.SpeedMetresPerSecond, viewKick: 0f);
         }
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// On Project I.G.I.'s body, that game's camera (<see cref="Igi1FootMotion.Eye"/>): over the feet by the body's origin in
+    /// the pose and its stance's offset, dipped by its landings, so the view sinks into a crouch and rides the walk, the jump and
+    /// the landing as the first game's does.
+    /// </remarks>
+    protected override Vector3d ViewEyes => StandsOnIgi1Feet && Igi1Feet!.IsSeated ? Igi1Feet.Eye : base.ViewEyes;
+
+    /// <inheritdoc/>
+    protected override float ViewObjectDip =>
+        StandsOnIgi1Feet && Igi1Feet!.IsSeated ? Igi1Feet.LandingKick.ViewModelOffsetUnits : base.ViewObjectDip;
 }
