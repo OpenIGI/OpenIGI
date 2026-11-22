@@ -69,7 +69,9 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
         // The lines of the other game's mission the player stands in, after its own, told apart from them by their keys.
         _model.AddMissionMessages(_missionMessages, firstKey: MissionMessageKeys);
         _icons ??= new Igi2HudIcons(() => _assets);
-        float seconds = title.Human.Ticks / 30f;
+        // The level's clock, which runs through a cutscene: the player's stands still while one plays, and a display timed on it
+        // never finished flickering in, so a cutscene's subtitle was drawn wholly transparent.
+        float seconds = (title.Level?.Ticks ?? title.Human.Ticks) / 30f;
         // The player's view as the host drew this frame, between ticks; the tick's own view only where the host gave none.
         OpenIGI.Core.Numerics.Matrix3f rows = title.ViewOrientation;
         HudProjector projector = _view is { } drawn
