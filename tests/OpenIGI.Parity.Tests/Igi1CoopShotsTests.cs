@@ -191,8 +191,8 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
     }
 
     /// <summary>
-    /// The host runs the joiner's commands as they arrive, as Source runs a player's (<c>CBasePlayer::PhysicsSimulate</c>) and
-    /// Unreal a character's move, so what the joiner does reaches the host's level half a round trip later. The host once gave
+    /// The host runs the joiner's commands as they arrive, as Source runs a player's (<c>CBasePlayer::PhysicsSimulate</c>),
+    /// so what the joiner does reaches the host's level half a round trip later. The host once gave
     /// exactly one a tick, and whatever came in a clump -- any hitch -- sat in its queue for the rest of the session: nearly
     /// five deep after one tenth of a second's hitch, a sixth of a second on every shot and step from then on.
     /// </summary>

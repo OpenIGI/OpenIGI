@@ -10,8 +10,8 @@ namespace OpenIGI.Game.Multiplayer;
 /// </para>
 /// <para>
 /// Every command that has arrived is run on the server's next tick, as Source runs a player's
-/// (<c>CBasePlayer::PhysicsSimulate</c>: all the commands waiting, in the frame they are found waiting) and Unreal a
-/// character's move (<c>ServerMove</c>, on receipt). A tick on which none arrived runs none -- the player waits for its client
+/// (<c>CBasePlayer::PhysicsSimulate</c>: all the commands waiting, in the frame they are found waiting). A tick on which
+/// none arrived runs none -- the player waits for its client
 /// rather than move on controls nobody pressed, and the tick is counted in <see cref="Missed"/> -- and the next runs the two
 /// that came. So what a client does reaches the server's level half a round trip after it did it, and no later.
 /// </para>
