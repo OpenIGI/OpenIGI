@@ -9,11 +9,22 @@ namespace OpenIGI.Game.Multiplayer;
 /// repeated, early and out of order; the queue keeps each once and hands them out in order.
 /// </para>
 /// <para>
-/// The arrival of packets jitters, so a queue that ran a command the moment one arrived would starve every other tick. It
-/// waits, as Source's does, until <see cref="TargetDepth"/> are queued before it starts (and again after it ran dry), and
-/// from then gives one a tick. A client whose clock runs a little fast fills it; past <see cref="MaxDepth"/> it gives two a
-/// tick until it is back down. Starved, it gives none: the player waits for its client rather than move on controls nobody
-/// pressed, and the ticks it waited are counted in <see cref="Missed"/>.
+/// Every command that has arrived is run on the server's next tick, as Source runs a player's
+/// (<c>CBasePlayer::PhysicsSimulate</c>: all the commands waiting, in the frame they are found waiting) and Unreal a
+/// character's move (<c>ServerMove</c>, on receipt). A tick on which none arrived runs none -- the player waits for its client
+/// rather than move on controls nobody pressed, and the tick is counted in <see cref="Missed"/> -- and the next runs the two
+/// that came. So what a client does reaches the server's level half a round trip after it did it, and no later.
+/// </para>
+/// <para>
+/// It once waited for two before it started and from then gave exactly one a tick, draining only past six: whatever came in a
+/// clump -- any hitch of the line or the client's frame -- stayed queued for the rest of the session, and every command after
+/// ran that much late: four deep on a 90 ms line, a hit shown four tenths of a second after the shot.
+/// </para>
+/// <para>
+/// A line that brings its packets unevenly leaves ticks with no command and ticks with two, and the player's server copy
+/// moves in fits for everyone watching. The queue sees that for itself -- a dry tick here and there among ticks that ran --
+/// and holds its newest command back a tick while it lasts (<see cref="Held"/>, two for a worse line), letting it go again
+/// once the line has been steady for a while. What it holds is what the line needs now, never what a hitch once left.
 /// </para>
 /// <para>
 /// Catching up is paid for. Each tick of the server's earns the client one command's run, kept up to <see cref="MaxCredit"/>,
@@ -33,7 +44,6 @@ public sealed class UserCommandBuffer
 {
     private readonly SortedDictionary<long, (float[] Channels, long ViewTick, float ViewFraction)> _pending = [];
     private readonly float[] _last;
-    private bool _primed;
     private double _credit;
 
     /// <summary>Initializes a new instance of the <see cref="UserCommandBuffer"/> class.</summary>
@@ -50,10 +60,32 @@ public sealed class UserCommandBuffer
     /// <summary>Gets how many commands may wait before more are refused.</summary>
     public int MaxQueued { get; }
 
-    /// <summary>Gets or sets how many commands the queue waits for before it starts handing them out.</summary>
-    public int TargetDepth { get; set; } = 2;
+    /// <summary>Gets or sets the least of the newest commands held back a tick whatever the line does; none, as Source holds none.</summary>
+    public int TargetDepth { get; set; }
 
-    /// <summary>Gets or sets past how many waiting commands the queue gives two a tick.</summary>
+    /// <summary>Gets or sets the most the queue holds back by itself for an uneven line.</summary>
+    public int MaxHeld { get; set; } = 2;
+
+    /// <summary>Gets or sets the share of ticks left dry by an uneven line past which one more command is held back.</summary>
+    public double UnevenShare { get; set; } = 0.1;
+
+    /// <summary>Gets or sets how many ticks in a row must run before a command held back for an uneven line is let go: ten seconds.</summary>
+    public int SteadyTicks { get; set; } = 300;
+
+    /// <summary>Gets how many of the newest commands are held back a tick now: <see cref="TargetDepth"/>, or what the line's unevenness asks.</summary>
+    public int Held => Math.Max(Math.Max(0, TargetDepth), _heldForLine);
+
+    // What the line's unevenness has the queue hold back, the share of recent ticks it left dry (stalls apart), the dry
+    // ticks in a row now, and the ticks in a row that ran.
+    private int _heldForLine;
+    private double _unevenShare;
+    private int _dryRun;
+    private int _steadyRun;
+
+    // Whether the queue is giving commands out: from when as many wait as it holds back and one more, until it runs dry.
+    private bool _running;
+
+    /// <summary>Gets or sets past how many waiting commands the client is behind: a backlog its credit cannot pay off is dropped.</summary>
     public int MaxDepth { get; set; } = 6;
 
     /// <summary>Gets or sets the most commands' runs a client may save up to catch up with: a second at the original's tick.</summary>
@@ -64,7 +96,7 @@ public sealed class UserCommandBuffer
     /// </remarks>
     public int MaxCredit { get; set; } = 30;
 
-    /// <summary>Gets or sets the most commands the queue gives in one tick while it is over <see cref="MaxDepth"/>.</summary>
+    /// <summary>Gets or sets the most commands the queue gives in one tick.</summary>
     public int MaxPerTick { get; set; } = 4;
 
     /// <summary>Gets or sets how many ticks running a backlog over <see cref="MaxDepth"/> the credit cannot pay off waits before it is dropped: half a second.</summary>
@@ -166,35 +198,37 @@ public sealed class UserCommandBuffer
     }
 
     /// <summary>Gets how many commands to run this tick, and counts a tick the queue is dry.</summary>
-    /// <returns>Nought, one, or up to <see cref="MaxPerTick"/> while catching up.</returns>
+    /// <returns>As many as wait beyond <see cref="TargetDepth"/>, up to <see cref="MaxPerTick"/> and what the client has earned.</returns>
     /// <remarks>Called once a server tick: that is what earns the client its runs.</remarks>
     public int Due()
     {
         _credit = Math.Min(_credit + 1, MaxCredit);
-        if (!_primed)
-        {
-            if (_pending.Count < TargetDepth)
-            {
-                Missed += LastTakenTick == long.MinValue ? 0 : 1;
-                return 0;
-            }
 
-            _primed = true;
-        }
-
-        if (_pending.Count == 0)
+        // Dry, or -- holding some back for an uneven line -- not yet as many waiting as it holds and one to run: the hold is
+        // what the queue starts on again after it ran dry, and from then it gives one a tick down to nothing.
+        if (_pending.Count == 0 || (!_running && _pending.Count <= Held))
         {
-            _primed = false;
-            Missed++;
+            _running = false;
+            Missed += LastTakenTick == long.MinValue ? 0 : 1;
+            _dryRun += LastTakenTick == long.MinValue ? 0 : 1;
+            _steadyRun = 0;
             return 0;
         }
 
-        // A backlog the credit cannot pay off, held half a second: dropped to the depth the queue keeps, oldest first.
+        _running = true;
+        WeighTheLine();
+
+        // A backlog the credit cannot pay off, held half a second: dropped to what the queue holds back, oldest first.
         if (_pending.Count > MaxDepth && _credit < 2)
         {
             if (++_backlogTicks >= StaleBacklogTicks)
             {
                 DropBacklog();
+                if (_pending.Count == 0)
+                {
+                    _running = false;
+                    return 0;
+                }
             }
         }
         else
@@ -202,9 +236,10 @@ public sealed class UserCommandBuffer
             _backlogTicks = 0;
         }
 
-        // Over its depth it gives what brings it back to the depth it keeps, a few a tick: at two a tick a second's backlog
-        // took a second to run, and the commands still arriving kept it over its depth until the credit was gone.
-        int wanted = _pending.Count > MaxDepth ? Math.Clamp(_pending.Count - TargetDepth, 2, Math.Max(2, MaxPerTick)) : 1;
+        // One, and with it all that wait beyond what is held back, a few a tick: at one a tick and no more, a clump that came
+        // together stayed queued for good, and at two a tick a second's backlog took a second to run while the commands still
+        // arriving kept it there until the credit was gone.
+        int wanted = Math.Clamp(_pending.Count - Held, 1, Math.Max(1, MaxPerTick));
         int due = Math.Min(wanted, (int)Math.Floor(_credit));
         if (due < wanted)
         {
@@ -215,12 +250,44 @@ public sealed class UserCommandBuffer
         return due;
     }
 
-    // Drops the oldest waiting commands until the queue's own depth is left. Each counts as run, so its repeats in later
+    // A tick that has commands to run, after however many that had none: a dry tick or two among ticks that ran is the line
+    // coming unevenly, and counts towards holding a command back; a longer gap is a stall -- the client's window held, its
+    // line stopped -- which no buffer bridges, and counts for nothing. A long steady run lets a held command go.
+    private void WeighTheLine()
+    {
+        const double Smoothing = 1.0 / 60;
+        const int LongestUnevenGap = 3;
+        if (_dryRun is > 0 and <= LongestUnevenGap)
+        {
+            for (int i = 0; i < _dryRun; i++)
+            {
+                _unevenShare += (1 - _unevenShare) * Smoothing;
+            }
+        }
+
+        _dryRun = 0;
+        _unevenShare -= _unevenShare * Smoothing;
+        _steadyRun++;
+        if (_unevenShare > UnevenShare && _heldForLine < MaxHeld)
+        {
+            _heldForLine++;
+            _unevenShare = 0;
+            _steadyRun = 0;
+        }
+        else if (_heldForLine > 0 && _steadyRun >= SteadyTicks)
+        {
+            _heldForLine--;
+            _unevenShare = 0;
+            _steadyRun = 0;
+        }
+    }
+
+    // Drops the oldest waiting commands until what the queue holds back is left. Each counts as run, so its repeats in later
     // packets are not taken again, and what it held down is what is held down after it.
     private void DropBacklog()
     {
         _backlogTicks = 0;
-        while (_pending.Count > TargetDepth)
+        while (_pending.Count > Held)
         {
             KeyValuePair<long, (float[] Channels, long ViewTick, float ViewFraction)> oldest = _pending.First();
             _pending.Remove(oldest.Key);

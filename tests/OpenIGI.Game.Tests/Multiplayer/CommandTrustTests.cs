@@ -27,7 +27,8 @@ public sealed class CommandTrustTests
             }
         }
 
-        Assert.InRange(ran, Ticks - queue.TargetDepth, Ticks + queue.MaxCredit);
+        // One a tick and what it had saved, less the ticks a backlog it could not pay off was dropped on.
+        Assert.InRange(ran, Ticks - (Ticks / queue.StaleBacklogTicks), Ticks + queue.MaxCredit);
         Assert.True(queue.Throttled > 0);
     }
 
@@ -123,7 +124,7 @@ public sealed class CommandTrustTests
     [Fact]
     public void A_value_that_is_no_number_never_reaches_the_player()
     {
-        UserCommandBuffer queue = new(Channels) { TargetDepth = 1 };
+        UserCommandBuffer queue = new(Channels);
         float[] channels = new float[Channels];
         channels[0] = float.NaN;
         channels[1] = float.PositiveInfinity;

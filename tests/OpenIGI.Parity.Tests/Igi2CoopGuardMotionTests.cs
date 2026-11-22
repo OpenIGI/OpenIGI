@@ -50,8 +50,12 @@ public sealed class Igi2CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
         long samples = session.Remote.Samples, extrapolations = session.Remote.Extrapolations, corrections = session.Reconciler.Corrections;
         int frames = 0, watched = 0, jumps = 0, astray = 0, high = 0, moving = 0, changesHere = 0, changesThere = 0, wounded = 0, deadHere = 0;
         double worstStep = 0, worstAstray = 0, worstHigh = 0, sumAstray = 0;
+        OpenIGI.Game.Multiplayer.UserCommandBuffer commands = Assert.Single(pair.Host.NetworkHumans).Commands;
+        long queued = 0;
         for (int frame = 0; frame < 900 && pair.Step(); frame++)
         {
+            queued += commands.Buffered;
+
             // The host's rounds, a burst every five seconds: the guards hear them and come.
             pair.HostInput.Mouse.SetButton(MouseButton.Left, frame % 150 < 20);
             if (pair.Session.Session?.LastSnapshot is not { } taken || session.DrawnTick is not { } drawn)
@@ -132,13 +136,16 @@ public sealed class Igi2CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
             $"guard frames {watched} ({moving} moving): jumps>0.5m {jumps}, worst step {worstStep:0.00} m; " +
             $"astray>0.25m {astray}, worst {worstAstray:0.00} m, mean {sumAstray / Math.Max(1, watched) * 100:0.0} cm; high>0.25m {high}, worst {worstHigh:0.00} m; " +
             $"state changes host {changesThere} joiner {changesHere}; down-here-alive-there frames {deadHere}; " +
-            $"corrections {(session.Reconciler.Corrections - corrections) / (frames / 30.0):0.00}/s; foreseen kills {foresight?.Kills ?? 0} get-ups {foresight?.GetUps ?? 0}");
+            $"host holds {queued / 900.0:0.00} of the joiner's commands (held back {commands.Held}); corrections {(session.Reconciler.Corrections - corrections) / (frames / 30.0):0.00}/s; foreseen kills {foresight?.Kills ?? 0} get-ups {foresight?.GetUps ?? 0}");
         output.WriteLine(report);
 
         Assert.True(carried * 50 <= asked, $"the joiner's guards were carried past the newest snapshot; {report}");
         Assert.True(jumps == 0, $"a guard jumped; {report}");
         Assert.True(astray * 100 <= Math.Max(100, watched), $"the joiner's guards strayed from where the host's went; {report}");
         Assert.Equal(0, foresight?.GetUps ?? 0);
+
+        // The host runs the joiner's commands as they arrive, holding back no more than the line's unevenness asks.
+        Assert.True(queued / 900.0 < (bad ? 2.5 : 1.0), report);
     }
 
     /// <summary>

@@ -190,6 +190,45 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         Assert.True(kills + 1 == tally.Kills, $"{tally.Kills - kills} kills counted for one guard: foreseen {foresight.Kills}, fell here on frame {shownFell}, there on {fell}");
     }
 
+    /// <summary>
+    /// The host runs the joiner's commands as they arrive, as Source runs a player's (<c>CBasePlayer::PhysicsSimulate</c>) and
+    /// Unreal a character's move, so what the joiner does reaches the host's level half a round trip later. The host once gave
+    /// exactly one a tick, and whatever came in a clump -- any hitch -- sat in its queue for the rest of the session: nearly
+    /// five deep after one tenth of a second's hitch, a sixth of a second on every shot and step from then on.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void The_host_runs_the_joiners_commands_as_they_arrive_however_they_came()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.Ping(0.1);
+        pair.RunUntil(() => false, 90);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        long corrections = pair.Client.Session!.Reconciler.Corrections;
+
+        // A hitch, as every session has: the joiner's packets held a tenth of a second and then let through together.
+        pair.JoinerLink.Send.Latency += 0.13;
+        pair.RunUntil(() => false, 10);
+        pair.JoinerLink.Send.Latency -= 0.13;
+        pair.RunUntil(() => false, 30);
+
+        // Walking, so a command run twice or left out would show as a correction.
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        long queued = 0, missed = partner.Commands.Missed;
+        const int Frames = 300;
+        for (int frame = 0; frame < Frames && pair.Step(); frame++)
+        {
+            queued += partner.Commands.Buffered;
+        }
+
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        double depth = queued / (double)Frames;
+        string report = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"the host held {depth:0.00} of the joiner's commands on average after the hitch; {partner.Commands.Missed - missed} dry ticks, {pair.Client.Session.Reconciler.Corrections - corrections} corrections, {partner.Commands.Dropped} dropped");
+        output.WriteLine(report);
+        Assert.True(depth < 1.0, report);
+        Assert.Equal(0, partner.Commands.Dropped);
+    }
+
     // One shooter, a gun in hand, five metres from a guard -- standing, or running three metres either way across its front --
     // clicking the fire button at the guard's chest where its own game shows the guard, until the host's soldier falls: the
     // rounds that took, as the host's game counts them.
