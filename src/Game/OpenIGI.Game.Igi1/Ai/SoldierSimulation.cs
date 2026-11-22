@@ -107,7 +107,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         _bodies = new SoldierBodyQueries(_context);
         _staging = new SoldierCutsceneStaging(_context);
         _footsteps = new SoldierFootsteps(_context);
-        _damage = new SoldierDamage(_context, _footsteps, scriptSound) { ForeseenFlinch = ForeseeFlinch };
+        _damage = new SoldierDamage(_context, _footsteps, scriptSound);
         _footsteps.LandSound = (sound, at) => scriptSound(sound, at, null);
         _rounds = new SoldierGunShotRounds(_context, _sight, _noise);
         _fire = new SoldierWeaponFire(_context, _rounds, _noise);

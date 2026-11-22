@@ -41,57 +41,14 @@ public sealed partial class SoldierSimulation
     // The puppets that fired since the last call to TakePuppetShots, for the mission to trace their rounds.
     private readonly List<(SoldierView View, OpenIGI.Game.Weapons.WeaponType? Weapon, float Facing, float Pitch)> _puppetShots = [];
 
-    // The puppets flinching from a round this client foresaw, with the flinch's clip and the tick it is held to: until the
-    // server's own flinch comes back (its clip in the pose), or its word was due and never came.
-    private readonly Dictionary<SoldierView, (int Clip, int Until)> _foreseenFlinches = [];
-
     /// <summary>
     /// Gets or sets what this co-op client foresees of its player's rounds on its puppets (<see cref="SoldierContext.Foresight"/>):
-    /// a round short of the server's word on a soldier's health flinches him, one past it fells him, at once.
+    /// a round short of the server's word on a soldier's health marks its hit, one past it fells him, at once.
     /// </summary>
     public Game.Multiplayer.PredictedSoldierHarm? Foresight
     {
         get => _context.Foresight;
         set => _context.Foresight = value;
-    }
-
-    // A round this client foresaw flinches its puppet as the server's body machine will: a standing body plays its zone's limb
-    // clip (the flinch state's entry), the torso let go as the flinch takes the whole body. Held until the server's flinch is
-    // posed or its word was due; a kneeling or prone body has flinches of its own, left to the server.
-    private void ForeseeFlinch(SoldierView view, int zone)
-    {
-        if (view.IsDead || !Brains.TryGetValue(view, out Igi1HumanAi? brain) || !brain.Body.FlinchesStanding)
-        {
-            return;
-        }
-
-        int clip = brain.Body.FlinchAnimationFor(zone);
-        if (clip < 0 || !view.PlayStateAnimation(clip, loops: false))
-        {
-            return;
-        }
-
-        view.StopUpperBodyAnimation();
-        int wait = (int)Math.Ceiling((Foresight?.ConfirmSeconds ?? Game.Multiplayer.PredictedSoldierHarm.MostConfirmSeconds) * 30);
-        _foreseenFlinches[view] = (clip, _context.TickCount + wait);
-    }
-
-    // Whether a puppet holds the flinch this client foresaw against the server's pose: until the server's own flinch is posed,
-    // which it then goes on in rather than starting again, or its word was due.
-    private bool HoldsForeseenFlinch(SoldierView view, in SoldierPuppet puppet)
-    {
-        if (!_foreseenFlinches.TryGetValue(view, out (int Clip, int Until) flinch))
-        {
-            return false;
-        }
-
-        if (puppet.Animation == flinch.Clip || _context.TickCount >= flinch.Until)
-        {
-            _foreseenFlinches.Remove(view);
-            return false;
-        }
-
-        return true;
     }
 
     /// <summary>Takes the shots the puppeted soldiers fired since the last call: who, with what, and which way.</summary>
@@ -205,7 +162,6 @@ public sealed partial class SoldierSimulation
         if (Foresight is { } foresight && Brains.TryGetValue(view, out Igi1HumanAi? brain)
             && foresight.TakeServer(brain.RuntimeId, HealthLeftOf(view, puppet.Vitality), puppet.Alive) == Game.Multiplayer.ForeseenHarmVerdict.GetUp)
         {
-            _foreseenFlinches.Remove(view);
             _damage.Rise(view);
         }
 
@@ -332,7 +288,6 @@ public sealed partial class SoldierSimulation
         // quiet, its shots counted so none is fired again should it get up.
         if (view.IsDead)
         {
-            _foreseenFlinches.Remove(view);
             view.Tick();
             if (_context.FindAgent(view) is { } down && Brains.TryGetValue(view, out Igi1HumanAi? waiting))
             {
@@ -345,19 +300,18 @@ public sealed partial class SoldierSimulation
         }
 
         view.PlaceAt(puppet.Position, Matrix3f.RotationZ(puppet.Facing));
-        bool flinching = HoldsForeseenFlinch(view, puppet);
-        if (!flinching && view.CurrentAnimation != puppet.Animation && puppet.Animation >= 0)
+        if (view.CurrentAnimation != puppet.Animation && puppet.Animation >= 0)
         {
             view.PlayStateAnimation(puppet.Animation, loops: true);
 
-            // Its machine stands where the server's does, so a hit foreseen here flinches and falls as that state would.
+            // Its machine stands where the server's does, so a fall foreseen here is the one that state falls in.
             if (Brains.TryGetValue(view, out Igi1HumanAi? posed))
             {
                 posed.Body.FollowClip(puppet.Animation);
             }
         }
 
-        if (!flinching && view.UpperBodyAnimation != puppet.UpperBody)
+        if (view.UpperBodyAnimation != puppet.UpperBody)
         {
             if (puppet.UpperBody >= 0)
             {

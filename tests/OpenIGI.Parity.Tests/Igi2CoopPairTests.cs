@@ -360,11 +360,12 @@ public sealed class Igi2CoopPairTests
     }
 
     /// <summary>
-    /// The joiner's round short of a guard's health marks the hit and flinches the joiner's copy there and then, as the server's will;
-    /// the server's flinch, a round trip later, goes on in the same one rather than starting a second.
+    /// The joiner's round short of a guard's health marks the hit there and then, and the copy stays in the pose the server's
+    /// stands in: its flinch is the server's to pose. Flinched at once on the joiner's screen alone, the copy bent out of the
+    /// pose the server's still stood in, and the joiner's next round met another zone of it than the server's did.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
-    public void A_guard_the_joiners_round_wounds_flinches_on_its_screen_at_once()
+    public void A_guard_the_joiners_round_wounds_is_marked_at_once_and_posed_by_the_server()
     {
         using Igi2CoopPair pair = Joined();
         pair.Ping(0.1);
@@ -380,11 +381,10 @@ public sealed class Igi2CoopPairTests
 
         Assert.False(copy.IsDead);
         Assert.Equal(hits + 1, own.Shots.Hits);
-        Assert.Contains(copy.Locomotion.CurrentState, (int[])[Game.Igi2.Soldiers.Igi2SoldierState.Hit, Game.Igi2.Soldiers.Igi2SoldierState.LieDownHit]);
-
-        // Held against the server's pose, which has yet to flinch, for the frames its word takes.
-        pair.RunUntil(() => false, 2);
-        Assert.Contains(copy.Locomotion.CurrentState, (int[])[Game.Igi2.Soldiers.Igi2SoldierState.Hit, Game.Igi2.Soldiers.Igi2SoldierState.LieDownHit]);
+        Assert.Equal(copy.Puppet!.Value.State, copy.Locomotion.CurrentState);
+        pair.RunUntil(() => false, 30);
+        Assert.False(copy.IsDead);
+        Assert.Equal(copy.Puppet!.Value.State, copy.Locomotion.CurrentState);
     }
 
     /// <summary>

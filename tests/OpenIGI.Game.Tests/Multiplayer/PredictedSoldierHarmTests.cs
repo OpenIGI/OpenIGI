@@ -111,4 +111,20 @@ public sealed class PredictedSoldierHarmTests
         harm.Advance(now, 0.1, 0.066);
         return harm;
     }
+
+    /// <summary>
+    /// What a soldier has left is never sent as less than it is: the round that leaves it a sliver would fell it on the client's
+    /// screen, and it would get up again when the server's word came.
+    /// </summary>
+    [Fact]
+    public void A_soldiers_health_is_never_told_as_less_than_it_has()
+    {
+        for (float left = 0.001f; left < 2.5f; left += 0.0137f)
+        {
+            float told = SoldierVitality.Decode(SoldierVitality.Encode(left, 1.3f, foreseeable: true), 1.3f)!.Value;
+            Assert.True(told >= left - 0.0001f && told < left + (1.3f * SoldierVitality.Step) + 0.0001f, $"{left} left was told as {told}");
+        }
+
+        Assert.Equal(0f, SoldierVitality.Decode(SoldierVitality.Encode(0f, 1.3f, foreseeable: true), 1.3f)!.Value);
+    }
 }

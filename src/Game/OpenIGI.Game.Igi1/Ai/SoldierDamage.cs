@@ -431,7 +431,8 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             {
                 bool head = hit.Zone == HumanDamage.NeckZone;
                 round.Credit?.Hit(head);
-                ForeseeRound(struckView, round, hit, health.Preview(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false), head);
+                bool plain = brain?.IsInstantDeathDisabled ?? false;
+                ForeseeRound(struckView, round, hit, health.LeastPreview(damageFactor, plain), head);
                 return;
             }
 
@@ -609,16 +610,18 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         }
     }
 
-    /// <summary>Gets or sets what flinches a co-op client's copy of a soldier its player's round struck: the soldier and the zone.</summary>
-    public Action<SoldierView, int>? ForeseenFlinch { get; set; }
-
     /// <summary>Gets or sets what is told as a soldier foreseen dead on a co-op client gets up again, its server having kept him alive.</summary>
     public Action<SoldierView>? BodyRose { get; set; }
 
     // A co-op client's own round on its copy of a soldier, weighed against what the server last said he had left: past it he
-    // falls here at once, as the server's will; short of it he grunts, and flinches if his class would. The server's word follows
-    // a round trip and the interpolation later, and stands.
-    private void ForeseeRound(SoldierView struck, Igi1WeaponHit round, HumanHit hit, float dealt, bool head)
+    // falls here at once, as the server's will; short of it he grunts. The server's word follows a round trip and the
+    // interpolation later, and stands.
+    // It is weighed by the least it can have dealt, not by the zone it struck here: the copy plays the server's clip but not at
+    // its frame, and a round through the chest here is now and then one through an arm there. Weighed by its zone here, such a
+    // round felled a soldier the server kept alive, who got up again when its word came.
+    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in, and
+    // the next round at its chest met its head -- here alone.
+    private void ForeseeRound(SoldierView struck, Igi1WeaponHit round, HumanHit hit, float least, bool head)
     {
         if (!round.FromPlayer || round.Credit is not { } credit || _context.Foresight is not { } foresight || struck.IsDead
             || !_context.Brains.TryGetValue(struck, out Igi1HumanAi? brain))
@@ -629,17 +632,14 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         // A blade kills outright only a soldier with no fight on (KnifeStab's 1000), which is the server's mind to know: a client's
         // copy's never fights, and every stab would fell it here. Its flinch is foreseen, its death left to the server.
         if (round.Category != WeaponCategory.Knife
-            && foresight.NoteHit(brain.RuntimeId, dealt) == Game.Multiplayer.ForeseenHarm.Kill)
+            && foresight.NoteHit(brain.RuntimeId, least) == Game.Multiplayer.ForeseenHarm.Kill)
         {
             credit.Killed(head);
             Die(struck, hit, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category), foreseen: true);
             return;
         }
 
-        if (ReactToHit(struck, brain: null, hit.Zone, dealt, explosion: false))
-        {
-            ForeseenFlinch?.Invoke(struck, hit.Zone);
-        }
+        ReportHitSound(struck);
     }
 
     /// <summary>Stands a soldier foreseen dead up again, its server having kept him alive.</summary>
@@ -657,12 +657,11 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     }
 
     /// <summary>A non-lethal hit: the soldier's class decides whether it flinches, and it grunts.</summary>
-    /// <returns>Whether it flinches.</returns>
     /// <remarks>
     /// Every hit handler plays the grunt on the non-lethal branch, and an explosion only when it made the
     /// soldier react (<c>0x45A3D0</c>). The flinch is the bit the handlers raise for the body machine.
     /// </remarks>
-    private bool ReactToHit(SoldierView soldier, Igi1HumanAi? brain, int zone, float dealt, bool explosion)
+    private void ReactToHit(SoldierView soldier, Igi1HumanAi? brain, int zone, float dealt, bool explosion)
     {
         if (!_recoil.TryGetValue(soldier, out HumanRecoil? recoil))
         {
@@ -685,8 +684,6 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         {
             ReportHitSound(soldier, HumanVariantSound.AiExplosionHitPrefix, HumanVariantSound.AiExplosionHitVariants);
         }
-
-        return outcome.Flinches;
     }
 
     /// <summary>Plays a struck soldier's grunt unless it is still inside its cooldown.</summary>

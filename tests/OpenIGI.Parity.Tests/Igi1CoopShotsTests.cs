@@ -139,12 +139,18 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
     }
 
     /// <summary>
-    /// The joiner's own rounds mark their hits on its crosshair, and the one that kills fells the guard on its screen, as they
-    /// strike -- before the server has even run the command that fired them, where once each waited a round trip and the
-    /// interpolation for the server's word. The server's word then keeps the guard down, and the kill is counted once.
+    /// The joiner's own rounds mark their hits on its crosshair as they strike -- before the server has even run the command that
+    /// fired them, where once each waited a round trip and the interpolation for the server's word. The guard falls on its screen
+    /// once and stays down, never ahead of a server that keeps him alive, and the kill is counted once.
     /// </summary>
+    /// <remarks>
+    /// The joiner's copy of a guard plays the server's clip but not at its frame, so a round through the chest on the joiner's
+    /// screen is now and then one through another zone on the server. The fall is foreseen only of a round that kills whichever
+    /// zone it struck; this guard takes four of the pistol's, and its fall is the server's word. It once fell on the second, which
+    /// met the head of a copy flinching on the joiner's screen alone, and got up again.
+    /// </remarks>
     [RequiresGameDataFact]
-    public void The_joiners_rounds_mark_and_fell_a_guard_on_its_screen_before_the_servers_word()
+    public void The_joiners_rounds_mark_a_guard_at_once_and_fell_him_once()
     {
         using Igi1CoopPair pair = Joined();
         pair.Ping(0.1);
@@ -168,11 +174,13 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
 
         Assert.True(marked > 0 && struck > 0, $"marked {marked}, struck on the server {struck}");
         Assert.True(marked < struck, $"the joiner's first hit was marked on frame {marked}, the server's guard struck on {struck}");
-        Assert.True(shownFell > 0 && shownFell < (fell < 0 ? int.MaxValue : fell), $"the joiner's guard fell on frame {shownFell}, the server's on {fell}");
+        Assert.True(fell > 0, "the server's guard never fell");
 
         pair.RunUntil(() => false, 60);
-        Assert.True(shown.IsDead, "the joiner's guard got up again though the server's fell");
-        Assert.Equal(kills + 1, tally.Kills);
+        Assert.True(shown.IsDead, $"the joiner's guard is up though the server's fell on frame {fell}; it fell here on {shownFell}");
+        Game.Multiplayer.PredictedSoldierHarm foresight = pair.Joiner.World.Soldiers!.Foresight!;
+        Assert.True(foresight.GetUps == 0, $"the joiner's guard fell on frame {shownFell}, got up {foresight.GetUps} times, and the server's fell on {fell}");
+        Assert.True(kills + 1 == tally.Kills, $"{tally.Kills - kills} kills counted for one guard: foreseen {foresight.Kills}, fell here on frame {shownFell}, there on {fell}");
     }
 
     // One shooter, a gun in hand, five metres from a guard -- standing, or running three metres either way across its front --

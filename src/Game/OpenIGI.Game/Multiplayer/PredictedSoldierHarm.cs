@@ -49,7 +49,10 @@ public static class SoldierVitality
             return Unforeseeable;
         }
 
-        double steps = Math.Round(Math.Max(0f, remaining) / ownMaximum / Step);
+        // Rounded up: a client never takes a soldier for weaker than it is, or the round that leaves it a sliver would fell it
+        // on that client's screen and it would get up again when the server's word came. Taken for a step stronger, the fall
+        // waits for that word, as every fall once did.
+        double steps = Math.Ceiling((Math.Max(0f, remaining) / ownMaximum / Step) - 1e-3);
         return steps >= Unforeseeable ? Unforeseeable : (byte)steps;
     }
 
@@ -95,6 +98,12 @@ public sealed class PredictedSoldierHarm
 
     private readonly Dictionary<int, Soldier> _soldiers = [];
 
+    /// <summary>Gets how many soldiers foreseen dead got up again, the server having kept them alive: the foresight's misses.</summary>
+    public int GetUps { get; private set; }
+
+    /// <summary>Gets how many soldiers were foreseen dead.</summary>
+    public int Kills { get; private set; }
+
     /// <summary>Gets the clock, in seconds, as last advanced.</summary>
     public double Now { get; private set; }
 
@@ -139,6 +148,7 @@ public sealed class PredictedSoldierHarm
             s.FellAt = Now;
             s.KilledAt = Now;
             s.KillUnclaimed = true;
+            Kills++;
             return ForeseenHarm.Kill;
         }
 
@@ -196,6 +206,7 @@ public sealed class PredictedSoldierHarm
         s.FellAt = null;
         s.Pending = 0f;
         s.KillUnclaimed = false;
+        GetUps++;
         return ForeseenHarmVerdict.GetUp;
     }
 

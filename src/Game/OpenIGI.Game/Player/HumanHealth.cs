@@ -191,6 +191,30 @@ public sealed class HumanHealth : Saves.IExchangedState
         return dealt * DamageScale;
     }
 
+    /// <summary>Gets the least one round that harms at all would add, whichever zone it struck.</summary>
+    /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
+    /// <param name="instantDeathDisabled">Whether the head and neck take the plain factor, as <see cref="Apply"/> reads it.</param>
+    /// <returns>The least damage; nought when no zone takes any.</returns>
+    /// <remarks>
+    /// <b>Not retail.</b> A co-op client's copy of a soldier stands in the server's clip but not at its frame, so the zone its
+    /// player's round strikes here is not always the zone it strikes there -- a chest here, an arm there. What the client foresees
+    /// of a round is weighed by the least it can have done.
+    /// </remarks>
+    public float LeastPreview(float damageFactor, bool instantDeathDisabled = false)
+    {
+        float least = float.MaxValue;
+        for (int zone = 0; zone < Zones.Count; zone++)
+        {
+            float dealt = Preview(zone, damageFactor, instantDeathDisabled);
+            if (dealt > 0f && dealt < least)
+            {
+                least = dealt;
+            }
+        }
+
+        return least == float.MaxValue ? 0f : least;
+    }
+
     /// <summary>Adds damage that is already expressed in health units.</summary>
     /// <param name="zone">The accumulator bucket to add it to.</param>
     /// <param name="damage">The amount to add, without a zone or difficulty multiplier.</param>

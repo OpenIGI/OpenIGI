@@ -35,16 +35,17 @@ public sealed partial class Igi2HumanSoldier
 
     /// <summary>
     /// Gets or sets what a co-op client foresees of its player's rounds on this puppet, and the soldier's name in it: a round past
-    /// what the server last said it had left fells it here at once, one short of it flinches it. <see langword="null"/> elsewhere.
+    /// what the server last said it had left fells it here at once, one short of it marks its hit. <see langword="null"/> elsewhere.
     /// </summary>
     public (Game.Multiplayer.PredictedSoldierHarm Harm, int Key)? Foresight { get; set; }
 
-    // The flinch the client foresaw, and when, on the foresight's clock, it gives way to the server's pose: once the server's own
-    // flinch is posed (the same state, which goes on rather than starting again), or its word was due and never came.
-    private (int State, double Until)? _foreseenFlinch;
-
-    // The client's player's round on this puppet, weighed as the server's copy will take it (WeaponHit): the hit counted to the
-    // player's tally, then the fall when it takes what the server last said was left, else the cry and the flinch.
+    // The client's player's round on this puppet: the hit counted to the player's tally and cried out at, then the fall when
+    // the round takes what the server last said was left.
+    // It is weighed by the least it can have dealt, not by the zone it struck here: the copy plays the server's clip but not at
+    // its frame, and a round through the chest here is now and then one through an arm there. Weighed by its zone here, such a
+    // round felled a soldier the server kept alive, who got up again when its word came.
+    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in, and
+    // the next round met another zone of it -- here alone.
     private void ForeseeHit(in Igi2WeaponHit hit)
     {
         if (Foresight is not { } foresight || hit.Tally is not { } tally
@@ -54,11 +55,10 @@ public sealed partial class Igi2HumanSoldier
         }
 
         Igi2DamagePart part = DamagePartOf(hit);
-        float damage = DamageOf(hit, part, Mind?.IsInstantDeathDisabled ?? false);
         bool head = part == Igi2DamagePart.Head;
         tally.Hit(head);
         Damage.LastPart = part;
-        if (foresight.Harm.NoteHit(foresight.Key, damage) == Game.Multiplayer.ForeseenHarm.Kill)
+        if (foresight.Harm.NoteHit(foresight.Key, LeastDamageOf(hit, Mind?.IsInstantDeathDisabled ?? false)) == Game.Multiplayer.ForeseenHarm.Kill)
         {
             tally.Killed(head);
 
@@ -66,35 +66,28 @@ public sealed partial class Igi2HumanSoldier
             DeathDirection = hit.ShotVector;
             DeathDamage = hit.Damage;
             DeathByType = DeathTypeOf(hit.WeaponType.WeaponType);
-            _foreseenFlinch = null;
             KillOutright();
             RemoteGunfire?.Silence();
             return;
         }
 
-        RecoilMeter = ((Fpu)damage + RecoilMeter).F;
         PlayHitSound(HurtSounds);
-        int flinch = Pose == Humans.Igi2HumanPose.LyingFlat ? Igi2SoldierState.LieDownHit : Igi2SoldierState.Hit;
-        Locomotion.Enter(flinch, this);
-        _foreseenFlinch = (flinch, foresight.Harm.Now + foresight.Harm.ConfirmSeconds);
     }
 
-    // Whether the puppet keeps the flinch the client foresaw rather than the server's pose: until the server's own is posed or its
-    // word was due.
-    private bool HoldsForeseenFlinch(in Igi2SoldierPose pose)
+    // The least a round that harms at all deals this soldier, whichever zone it strikes.
+    private float LeastDamageOf(in Igi2WeaponHit hit, bool instantDeathDisabled)
     {
-        if (_foreseenFlinch is not { } flinch)
+        float least = float.MaxValue;
+        for (int part = 0; part < Igi2HumanDamage.PartCount; part++)
         {
-            return false;
+            float dealt = DamageOf(hit, (Igi2DamagePart)part, instantDeathDisabled);
+            if (dealt > 0f && dealt < least)
+            {
+                least = dealt;
+            }
         }
 
-        if (pose.State == flinch.State || Foresight is not { } foresight || foresight.Harm.Now >= flinch.Until)
-        {
-            _foreseenFlinch = null;
-            return false;
-        }
-
-        return true;
+        return least == float.MaxValue ? 0f : least;
     }
 
     /// <summary>
@@ -127,7 +120,6 @@ public sealed partial class Igi2HumanSoldier
         IsDisableDeltaTranslation = false;
         Animation.SetMainFlags(raise: Igi2AnimControllerBits.None, clear: Igi2AnimControllerBits.NoRootTranslation);
         _puppetEntered = false;
-        _foreseenFlinch = null;
     }
 
     /// <summary>Gets what shows the rounds the server's copy fires, once posed.</summary>
@@ -157,7 +149,7 @@ public sealed partial class Igi2HumanSoldier
         // A puppet's locomotion never ticks, so a state's entry -- which plays its clip -- runs only as it is entered here. The
         // soldier is made in Stand with that entry left for its first tick: one the server keeps standing was never entered and
         // stood in no clip at all, its bind pose, on every client.
-        if (!HoldsForeseenFlinch(pose) && (Locomotion.CurrentState != pose.State || !_puppetEntered))
+        if (Locomotion.CurrentState != pose.State || !_puppetEntered)
         {
             Locomotion.Enter(pose.State, this);
             _puppetEntered = true;

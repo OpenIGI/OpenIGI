@@ -133,8 +133,8 @@ public abstract class HumanBodyMachine
 
     /// <summary>
     /// Stands the machine in the state that plays a clip, running no entry: a co-op client's copy of a soldier, which only plays
-    /// the clips the server's does, keeps its machine where the server's is, so a hit foreseen here flinches and falls as that
-    /// state would. <b>Not retail.</b>
+    /// the clips the server's does, keeps its machine where the server's is, so a fall foreseen here is the one that state
+    /// falls in. <b>Not retail.</b>
     /// </summary>
     /// <param name="clip">The clip the soldier plays.</param>
     /// <remarks>The first state naming it; a clip no state names (a flinch, a script's) leaves the machine where it was.</remarks>
@@ -155,15 +155,6 @@ public abstract class HumanBodyMachine
             }
         }
     }
-
-    /// <summary>Gets the clip a flinch from a hit to a zone plays: the zone's row's limb clip, as the flinch's entry takes it.</summary>
-    /// <param name="zone">The zone struck.</param>
-    /// <returns>The clip, or <c>-1</c> for a zone the table does not cover.</returns>
-    public int FlinchAnimationFor(int zone) => zone >= 0 && zone < _hitZones.Count ? _hitZones[zone].LimbAnimation : -1;
-
-    /// <summary>Gets whether a hit in the current state flinches the body into the class's general flinch, which a client foresees.</summary>
-    /// <remarks>Standing states only: a kneeling or prone body has flinches of its own, and those the client leaves to the server.</remarks>
-    public virtual bool FlinchesStanding => false;
 
     /// <summary>Runs one tick, taking at most one transition.</summary>
     /// <param name="input">What the body reads this tick.</param>
