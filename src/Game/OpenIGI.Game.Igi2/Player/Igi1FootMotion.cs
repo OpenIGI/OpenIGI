@@ -116,7 +116,7 @@ public sealed class Igi1FootMotion
 
     /// <summary>Steps the body a tick from where I.G.I. 2's player stands and faces.</summary>
     /// <param name="feet">Where the player's feet are, as its platform has carried them.</param>
-    /// <param name="heading">Which way it faces: I.G.I. 2's gamma, which turns the body's forward axis as the first game's yaw does.</param>
+    /// <param name="heading">Which way it faces: I.G.I. 2's gamma (<see cref="YawOf"/>).</param>
     /// <param name="command">The tick's controls, the turn already taken by I.G.I. 2's player.</param>
     public void Step(Vector3d feet, float heading, in PlayerCommand command)
     {
@@ -131,9 +131,17 @@ public sealed class Igi1FootMotion
         _landing = null;
         World.Use();
         Body.Position = feet;
-        Body.Yaw = heading;
+        Body.Yaw = YawOf(heading);
         Body.TickAnimated(command, _terrain, _animator);
     }
+
+    /// <summary>The first game's yaw for a heading of the sequel's.</summary>
+    /// <param name="gamma">I.G.I. 2's gamma: its forward axis is <c>(-sin γ, cos γ)</c> (<c>Real32x9_Create</c>).</param>
+    /// <returns>
+    /// The yaw that faces the same way. Project I.G.I.'s forward axis is <c>(sin ψ, cos ψ)</c> and its right <c>(cos ψ, -sin ψ)</c>
+    /// (<see cref="HumanMotion.ApplyRootMotion"/> over the body's basis), so the two turn opposite ways and agree only at zero.
+    /// </returns>
+    public static float YawOf(float gamma) => -gamma;
 
     /// <summary>Pushes the body along a moving face it stands on, through the walls as its own step is.</summary>
     /// <param name="push">The push, in world units a tick.</param>

@@ -73,6 +73,49 @@ public sealed class Igi2Igi1MovementTests
         Assert.Equal(0f, player.Damage.Damage);
     }
 
+    /// <summary>
+    /// Turned off zero, each key moves the player along I.G.I. 2's own axes for its heading: forward along its forward axis, back
+    /// against it, right along its right axis and left against it.
+    /// </summary>
+    /// <param name="degrees">The heading the player is turned to.</param>
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(37f)]
+    [InlineData(90f)]
+    [InlineData(-120f)]
+    public void Each_key_moves_the_player_along_its_own_axes(float degrees)
+    {
+        (Igi2PlayerAction Key, int Axis, float Sign)[] keys =
+        [
+            (Igi2PlayerAction.MoveForwards, 1, 1f), (Igi2PlayerAction.MoveBackwards, 1, -1f),
+            (Igi2PlayerAction.MoveRight, 0, 1f), (Igi2PlayerAction.MoveLeft, 0, -1f),
+        ];
+        foreach ((Igi2PlayerAction key, int axis, float sign) in keys)
+        {
+            (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
+            player.Movement = Igi2PlayerMovement.Igi1;
+            player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, null), player);
+            float gamma = degrees * MathF.PI / 180f;
+            player.Gamma = gamma;
+            player.IdealGamma = gamma;
+            Tick(player, Igi2PlayerAction.None);
+
+            Vector3d start = player.Position;
+            for (int i = 0; i < 20; i++)
+            {
+                Tick(player, key);
+            }
+
+            Matrix3f o = player.Orientation;
+            Vector3f along = axis == 1 ? new Vector3f(o.M12, o.M22, 0f) : new Vector3f(o.M11, o.M21, 0f);
+            Vector3d moved = player.Position - start;
+            double ahead = ((moved.X * along.X) + (moved.Y * along.Y)) * sign;
+            double astray = Math.Abs((moved.X * along.Y) - (moved.Y * along.X));
+            Assert.True(ahead > 1000d, $"{key} at {degrees} degrees moved {moved}, {ahead} along its axis.");
+            Assert.True(astray < ahead * 0.05, $"{key} at {degrees} degrees strayed {astray} off its axis, moving {moved}.");
+        }
+    }
+
     /// <summary>Under I.G.I. 2's own movement the body is never stepped: the player moves as the sequel moves it.</summary>
     [Fact]
     public void Igi2s_own_movement_leaves_the_body_alone()
@@ -106,7 +149,7 @@ public sealed class Igi2Igi1MovementTests
                 Crouch: player.Pose == Igi2HumanPose.Crouching,
                 Jump: jump);
             Vector3d before = reference.Body.Position;
-            reference.Body.Yaw = player.Gamma;
+            reference.Body.Yaw = Igi1FootMotion.YawOf(player.Gamma);
             reference.Body.TickAnimated(command, terrain: null, reference.Animator);
             reference.Travelled += Across(reference.Body.Position - before);
 
@@ -135,7 +178,7 @@ public sealed class Igi2Igi1MovementTests
         PlayerBody body = new() { Walls = Floor };
         body.ComeToRest();
         Reference reference = new(body, new HumanLocomotionAnimator(HumanLocomotionRootMotion.Retail));
-        body.Yaw = player.Gamma;
+        body.Yaw = Igi1FootMotion.YawOf(player.Gamma);
         body.TickAnimated(new PlayerCommand(0f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: false), terrain: null, reference.Animator);
         Assert.True(body.Position == player.Position, $"{body.Position} against {player.Position}.");
         return (player, reference);
