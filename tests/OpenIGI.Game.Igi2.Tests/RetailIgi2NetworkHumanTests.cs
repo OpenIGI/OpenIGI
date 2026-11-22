@@ -96,6 +96,43 @@ public sealed class RetailIgi2NetworkHumanTests
         Assert.Equal(world.PlayerOf(0)!.Human, level.Ai.Players.Primary);
     }
 
+    /// <summary>
+    /// A dedicated server's mission 1 ends when a joined player rides the lift down the mine shaft: the shaft's area counts the
+    /// level's humans of the player's side (<c>CRITERIA_HUMAN0</c>), which held the level's own player and no other, and a server
+    /// whose level player nobody plays never saw anyone reach it -- the mission never completed and never moved on.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dedicated_servers_mission_ends_when_a_joined_player_goes_down_the_mine_shaft()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        Igi2ReplicatedWorld world = new(level) { IncludesHost = false };
+        Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Igi2HumanPlayer joined = world.PlayerOf(0)!.Human;
+        for (int tick = 0; tick < 300; tick++)
+        {
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+
+        Flow.Igi2AreaActivateTask shaft = level.LevelTasks().OfType<Flow.Igi2AreaActivateTask>().Single(a => a.Id == 162);
+        Game.Flow.EditVariableTask lift = level.LevelTasks().OfType<Game.Flow.EditVariableTask>().Single(v => v.Id == 271);
+        Flow.Igi2StatusMessageTask done = level.LevelTasks().OfType<Flow.Igi2StatusMessageTask>().Single(s => s.Id == 354);
+
+        // The lift is down and the player stands in the shaft: the mission's last line is sent, and a second after it has been
+        // shown the level is complete.
+        lift.Value = 2;
+        bool counted = false;
+        for (int tick = 0; tick < 3000 && level.Outcome != TitleMissionOutcome.Completed; tick++)
+        {
+            joined.Position = shaft.Position;
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+            counted |= shaft.Active > 0;
+        }
+
+        Assert.True(counted, "the shaft never counted the joined player");
+        Assert.True(done.IsFinishedDisplay || done.IsDisplay, "the mission's last line was never sent");
+        Assert.Equal(TitleMissionOutcome.Completed, level.Outcome);
+    }
+
     [RequiresTitleDataFact("igi2")]
     public void A_single_player_level_has_no_networked_players_and_one_rostered_player()
     {

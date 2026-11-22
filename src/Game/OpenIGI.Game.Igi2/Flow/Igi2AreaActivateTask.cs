@@ -30,6 +30,12 @@ public interface IIgi2AreaOccupant
 
     /// <summary>Gets where a side-kick is counted at, its root as it holds what it drops (<c>bonedyncubeobj.c sub_580CA0</c>).</summary>
     Vector3d SideKickPosition => RootPosition;
+
+    /// <summary>
+    /// Gets a value indicating whether it has been taken out of the level: a player whose client left, or a dedicated server's own
+    /// level player, which nobody plays. No area counts it.
+    /// </summary>
+    bool IsGone => false;
 }
 
 /// <summary>
@@ -227,10 +233,12 @@ public sealed partial class Igi2AreaActivateTask : OpenIGI.Game.Flow.AreaActivat
         {
             foreach (IIgi2AreaOccupant human in Humans)
             {
-                if (human.IsActive && IsInside(human.RootPosition))
-                {
-                    hits++;
-                }
+                hits += CountsAsHuman(human) ? 1 : 0;
+            }
+
+            foreach (IIgi2AreaOccupant player in Players)
+            {
+                hits += IsJoinedPlayer(player) && CountsAsHuman(player) ? 1 : 0;
             }
 
             return hits;
@@ -240,18 +248,39 @@ public sealed partial class Igi2AreaActivateTask : OpenIGI.Game.Flow.AreaActivat
         {
             foreach (IIgi2AreaOccupant human in Humans)
             {
-                if ((Igi2AreaCriteria.Team(human.Team) & mask) == 0 || (human.IsAi && human.IsDead))
-                {
-                    continue;
-                }
+                hits += CountsForTeams(human, mask) ? 1 : 0;
+            }
 
-                if (IsInside(human.RootPosition))
-                {
-                    hits++;
-                }
+            foreach (IIgi2AreaOccupant player in Players)
+            {
+                hits += IsJoinedPlayer(player) && CountsForTeams(player, mask) ? 1 : 0;
             }
         }
 
         return hits;
+    }
+
+    private bool CountsAsHuman(IIgi2AreaOccupant human) => !human.IsGone && human.IsActive && IsInside(human.RootPosition);
+
+    private bool CountsForTeams(IIgi2AreaOccupant human, int mask) =>
+        !human.IsGone
+        && (Igi2AreaCriteria.Team(human.Team) & mask) != 0
+        && !(human.IsAi && human.IsDead)
+        && IsInside(human.RootPosition);
+
+    // The criteria that count humans read the level's list (Human_ptQTaskList), which holds the level's own player and not the
+    // session's others: a co-op partner is a human of the level too, so one standing inside counts as the level's player does.
+    // Without it a dedicated server, whose level player nobody plays, never saw anyone reach mission 1's mine shaft.
+    private bool IsJoinedPlayer(IIgi2AreaOccupant player)
+    {
+        foreach (IIgi2AreaOccupant human in Humans)
+        {
+            if (ReferenceEquals(human, player))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
