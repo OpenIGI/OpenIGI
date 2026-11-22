@@ -559,20 +559,13 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         _visible.Add(new Visible(stand, tree, delta.Length));
     }
 
-    private void Issue(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled)
-    {
-        // The bake in the second slot is a colour to multiply in, not a light to keep apart -- see
-        // BakeOf. The forward path does that already; this is what tells the deferred one.
-        _device.SetLightmapModulates(true);
-        try
-        {
-            IssueTrees(camera, select, blend, doubled);
-        }
-        finally
-        {
-            _device.SetLightmapModulates(false);
-        }
-    }
+    // The bake rides in the lightmap slot as what it is: LIGHT. The forward path multiplies it into the texture, which is the
+    // original's MODULATE2X; the deferred path keeps it in its baked attachment, as it keeps every other object's bake and the
+    // ground's. It used to be told to multiply it into the albedo instead (SetLightmapModulates), and an albedo is lit again by
+    // whatever lights the frame: mission 1's night bake, about (40, 70, 106) doubled, took the leaves to a sixth of their colour
+    // before the dynamic presets' moon and bounce lit them a second time, and the woods drew as black cut-outs.
+    private void Issue(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled) =>
+        IssueTrees(camera, select, blend, doubled);
 
     // ForestRender_Draw with ForestRender_SetGenericState_Trunk: a trunk is lit, its diffuse the grey of the tree's bake (the mean of its
     // three channels) and its ambient one, so it is the texture times the scene's ambient plus the sun's colour by the cosine and that
@@ -685,8 +678,8 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// <para>
     /// A single texel, because a tree is one draw and the port has no per-draw diffuse colour to put
     /// this in — the forward push block is full. The lightmap slot is free here and the forward path
-    /// already multiplies it into the base colour, which is the product wanted; the deferred path is
-    /// told to do the same by <see cref="IGraphicsDevice.SetLightmapModulates"/>. Doubling is baked
+    /// already multiplies it into the base colour, which is the product wanted; the deferred path
+    /// keeps it as baked light beside the albedo, as it keeps any object's bake. Doubling is baked
     /// into the texel rather than done in a shader, which is exact at these levels: the night values
     /// are all well under half.
     /// </para>
