@@ -392,12 +392,6 @@ public interface IReplicatedClientWorld
     {
     }
 
-    /// <summary>
-    /// Gets what this client foresees of its player's rounds on the level's soldiers (<see cref="PredictedSoldierHarm"/>), or
-    /// <see langword="null"/> where the title foresees none.
-    /// </summary>
-    PredictedSoldierHarm? SoldierForesight => null;
-
     /// <summary>Gets the entity ids of the other players shown.</summary>
     IReadOnlyCollection<int> Shown { get; }
 

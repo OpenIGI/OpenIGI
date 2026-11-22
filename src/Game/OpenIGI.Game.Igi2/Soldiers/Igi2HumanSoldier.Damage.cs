@@ -78,12 +78,12 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
             return;
         }
 
-        // A co-op client's puppet bleeds where the round struck; the server's copy takes the harm, and falls if it kills. What the
-        // round will do there is foreseen here, at once: the hit marked, the flinch or the fall.
+        // A co-op client's puppet bleeds where the round struck and its hit is marked, at once; the server's copy takes the harm,
+        // and flinches and falls by the server's word.
         if (Puppet is not null)
         {
             CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
-            ForeseeHit(hit);
+            MarkHit(hit);
             return;
         }
 

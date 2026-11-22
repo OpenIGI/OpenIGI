@@ -119,7 +119,7 @@ public sealed class Igi1CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
                 $"extrapolated {carried} of {asked} samples ({100.0 * carried / Math.Max(1, asked):0.0}%); " +
                 $"guard frames {watched} ({moving} moving): jumps>0.5m {jumps}, worst step {worstStep:0.00} m; " +
                 $"astray>0.25m {astray}, worst {worstAstray:0.00} m, mean {sumAstray / Math.Max(1, watched) * 100:0.0} cm; high>0.25m {high}, worst {worstHigh:0.00} m; " +
-                $"corrections {(session.Reconciler.Corrections - corrections) / seconds:0.00}/s; get-ups {here.Foresight?.GetUps ?? 0}");
+                $"corrections {(session.Reconciler.Corrections - corrections) / seconds:0.00}/s");
             output.WriteLine(report);
 
             Assert.True(moving > 300, $"the guards hardly moved; {report}");

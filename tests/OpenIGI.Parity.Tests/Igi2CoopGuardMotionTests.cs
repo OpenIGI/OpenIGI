@@ -15,12 +15,12 @@ public sealed class Igi2CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
 
     /// <summary>
     /// The host's gunfire stirs the guards, and the joiner's copies of them are watched frame by frame: each is drawn between two
-    /// snapshots, where the host's guard stood at the moment drawn -- not carried on past the newest snapshot, nor thrown about
-    /// by the rounds the joiner foresees striking them.
+    /// snapshots, where the host's guard stood at the moment drawn -- not carried on past the newest snapshot, nor felled or
+    /// thrown about by the joiner's own rounds on its copies of them.
     /// </summary>
     /// <param name="ping">The round trip, in seconds.</param>
     /// <param name="bad">Whether the line also wanders and loses a packet in twenty each way.</param>
-    /// <param name="wounds">Whether the joiner's rounds graze a guard now and then, each foreseen on its screen.</param>
+    /// <param name="wounds">Whether the joiner's rounds strike a guard now and then, each marked on its screen and nothing more.</param>
     [RequiresTitleDataTheory("igi2")]
     [InlineData(0.1, false, false)]
     [InlineData(0.1, true, true)]
@@ -83,18 +83,18 @@ public sealed class Igi2CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
                 Igi2HumanSoldier shown = here[i];
                 if (shown.IsDead)
                 {
-                    // Down here while the host's lives: a fall this client foresaw that the server has not borne out.
+                    // Down here while the host's lives: no round of the joiner's fells its copy of a guard, only the server's word.
                     deadHere++;
                     continue;
                 }
 
-                // A graze from the joiner's gun on a guard on the move, foreseen on its screen as it strikes.
+                // A round from the joiner's gun on a guard on the move, heavy enough to kill: marked on its screen, the rest the server's.
                 if (wounds && frame % 45 == 30 && wounded <= frame / 45
                     && last.TryGetValue(i, out Vector3d stood) && (shown.Position - stood).Length > 0.01 * Metre)
                 {
                     wounded++;
                     shown.WeaponHit(new OpenIGI.Game.Igi2.Weapons.Igi2WeaponHit(
-                        new OpenIGI.Game.Physics.WorldIntersection { Position = shown.Position }, 0.001f, new Vector3f(40960f, 0f, 0f),
+                        new OpenIGI.Game.Physics.WorldIntersection { Position = shown.Position }, 1_000_000f, new Vector3f(40960f, 0f, 0f),
                         pair.Joiner.Human, pair.Joiner.Weapons!.Inventory.Current!.WeaponType, null));
                 }
 
@@ -129,20 +129,19 @@ public sealed class Igi2CoopGuardMotionTests(Xunit.Abstractions.ITestOutputHelpe
         pair.HostInput.Mouse.SetButton(MouseButton.Left, false);
         long asked = session.Remote.Samples - samples;
         long carried = session.Remote.Extrapolations - extrapolations;
-        PredictedSoldierHarm? foresight = here.Select(static s => s.Foresight?.Harm).FirstOrDefault(static h => h is not null);
         string report = string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"igi2 ping {ping * 1000:0} ms bad {bad} wounds {wounded}: interp {session.Clock!.AppliedInterpolationDelay * 1000:0} ms, rtt {session.RoundTripTime * 1000:0} ms; " +
             $"extrapolated {carried} of {asked} samples ({100.0 * carried / Math.Max(1, asked):0.0}%); " +
             $"guard frames {watched} ({moving} moving): jumps>0.5m {jumps}, worst step {worstStep:0.00} m; " +
             $"astray>0.25m {astray}, worst {worstAstray:0.00} m, mean {sumAstray / Math.Max(1, watched) * 100:0.0} cm; high>0.25m {high}, worst {worstHigh:0.00} m; " +
             $"state changes host {changesThere} joiner {changesHere}; down-here-alive-there frames {deadHere}; " +
-            $"host holds {queued / 900.0:0.00} of the joiner's commands (held back {commands.Held}); corrections {(session.Reconciler.Corrections - corrections) / (frames / 30.0):0.00}/s; foreseen kills {foresight?.Kills ?? 0} get-ups {foresight?.GetUps ?? 0}");
+            $"host holds {queued / 900.0:0.00} of the joiner's commands (held back {commands.Held}); corrections {(session.Reconciler.Corrections - corrections) / (frames / 30.0):0.00}/s");
         output.WriteLine(report);
 
         Assert.True(carried * 50 <= asked, $"the joiner's guards were carried past the newest snapshot; {report}");
         Assert.True(jumps == 0, $"a guard jumped; {report}");
         Assert.True(astray * 100 <= Math.Max(100, watched), $"the joiner's guards strayed from where the host's went; {report}");
-        Assert.Equal(0, foresight?.GetUps ?? 0);
+        Assert.Equal(0, deadHere);
 
         // The host runs the joiner's commands as they arrive, holding back no more than the line's unevenness asks.
         Assert.True(queued / 900.0 < (bad ? 2.5 : 1.0), report);

@@ -62,19 +62,18 @@ public sealed class CombatFeedback
     /// </summary>
     /// <remarks>
     /// A hit on a soldier (a note's victim below nought) is the soldiers' to count, where they are struck: on a client, as its own
-    /// round strikes its copy of him (<see cref="PredictedSoldierHarm"/>), so it marks there and then. The hit marker is drawn off
+    /// round strikes its copy of him, so it marks there and then. The hit marker is drawn off
     /// this tally's counts, one mark for each however it came, so a hit marked as it was struck is not marked again as the server
     /// tells of it.
     /// </remarks>
     public Player.ShotTally? Credit { get; set; }
 
     /// <summary>
-    /// Gets or sets what a client asks of a soldier's death its server told of (a note's victim below nought, killed): whether it
-    /// foresaw that kill and counted it already. <see langword="null"/> where the soldiers' kills are all counted where they fall,
-    /// on the host.
+    /// Gets or sets whether a soldier's death the server tells of (a note's victim below nought, killed) is counted to the local
+    /// player's tally here: on a client, whose copies of the soldiers never die by its own rounds. <see langword="false"/> where
+    /// the soldiers' kills are counted where they fall, on the host.
     /// </summary>
-    /// <remarks>A kill it did not foresee -- a grenade's, a round that had its last health left by a partner's -- is counted from the note.</remarks>
-    public Func<bool>? SoldierKillForeseen { get; set; }
+    public bool CountsSoldierKills { get; set; }
 
     // The tally the marker is drawn off, and its counts as last marked.
     private Player.ShotTally? _marked;
@@ -99,9 +98,8 @@ public sealed class CombatFeedback
                 }
             }
 
-            // A soldier's death the client did not foresee: counted now, as the server tells of it.
-            if (note is { Victim: < 0, Killed: true } && note.Attacker == own && Credit is { } killer
-                && SoldierKillForeseen is { } foreseen && !foreseen())
+            // A soldier's death by this player's hand: counted now, as the server tells of it.
+            if (CountsSoldierKills && note is { Victim: < 0, Killed: true } && note.Attacker == own && Credit is { } killer)
             {
                 killer.Killed(note.Head);
             }

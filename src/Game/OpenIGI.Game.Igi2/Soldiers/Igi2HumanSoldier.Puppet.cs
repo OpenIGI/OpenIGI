@@ -33,102 +33,21 @@ public sealed partial class Igi2HumanSoldier
     // Whether the server's state has been entered on this copy since it became a puppet.
     private bool _puppetEntered;
 
-    // When, on the foresight's clock, the server's pose last changed this copy's state.
-    private double _puppetEnteredAt = double.MinValue;
-
-    /// <summary>
-    /// Gets or sets what a co-op client foresees of its player's rounds on this puppet, and the soldier's name in it: a round past
-    /// what the server last said it had left fells it here at once, one short of it marks its hit. <see langword="null"/> elsewhere.
-    /// </summary>
-    public (Game.Multiplayer.PredictedSoldierHarm Harm, int Key)? Foresight { get; set; }
-
-    // The client's player's round on this puppet: the hit counted to the player's tally and cried out at, then the fall when
-    // the round takes what the server last said was left.
-    // It is weighed by the zone it struck here while the copy stands still in a state it has been in for as long as the
-    // server's word takes to come: then the server's soldier stands in the same pose, and its round meets the same zone. A copy
-    // whose state changed since is a flinch behind the server's or ahead of it, and one on the move plays its gait at a frame
-    // of its own; a round at either's chest is now and then one at the server's soldier's head. Such a round is weighed by the
-    // least it can have dealt, or it felled a soldier the server kept alive, who got up again when its word came.
-    // The flinch is the server's to pose. Flinched here at once, the copy bent out of the pose the server's still stood in for
-    // every round that followed.
-    private void ForeseeHit(in Igi2WeaponHit hit)
+    // The client's player's round on this puppet: the hit counted to the player's tally and cried out at, as it strikes. Its
+    // flinch and its fall are the server's word alone, as Source's are: this copy plays the server's state but not at its
+    // frame, so the zone a round strikes here is not always the zone it strikes there, and a fall foreseen from it was now and
+    // then one the server never bore out -- the soldier fell, lay while the server's moved on, and got up somewhere else.
+    private void MarkHit(in Igi2WeaponHit hit)
     {
-        if (Foresight is not { } foresight || hit.Tally is not { } tally
-            || (hit.Shooter is Igi2Human shooter && shooter.Team == Team) || Mind is { IsInvulnerable: true })
+        if (hit.Tally is not { } tally || (hit.Shooter is Igi2Human shooter && shooter.Team == Team) || Mind is { IsInvulnerable: true })
         {
             return;
         }
 
         Igi2DamagePart part = DamagePartOf(hit);
-        bool head = part == Igi2DamagePart.Head;
-        tally.Hit(head);
+        tally.Hit(part == Igi2DamagePart.Head);
         Damage.LastPart = part;
-        bool plain = Mind?.IsInstantDeathDisabled ?? false;
-        // Its body stands where its last tick's pose put it; on the move, the newest pose is somewhere else.
-        bool still = Puppet is not { } pose || Vector3d.DistanceSquared(pose.Position, Position) <= 1;
-        bool posed = still && foresight.Harm.Now - _puppetEnteredAt > foresight.Harm.ConfirmSeconds;
-        if (foresight.Harm.NoteHit(foresight.Key, posed ? DamageOf(hit, part, plain) : LeastDamageOf(hit, plain)) == Game.Multiplayer.ForeseenHarm.Kill)
-        {
-            tally.Killed(head);
-
-            // It falls as the server's will, the way the round sent it -- the confirmed fall alone knew no way.
-            DeathDirection = hit.ShotVector;
-            DeathDamage = hit.Damage;
-            DeathByType = DeathTypeOf(hit.WeaponType.WeaponType);
-            KillOutright();
-            RemoteGunfire?.Silence();
-            return;
-        }
-
         PlayHitSound(HurtSounds);
-    }
-
-    // The least a round that harms at all deals this soldier, whichever zone it strikes.
-    private float LeastDamageOf(in Igi2WeaponHit hit, bool instantDeathDisabled)
-    {
-        float least = float.MaxValue;
-        for (int part = 0; part < Igi2HumanDamage.PartCount; part++)
-        {
-            float dealt = DamageOf(hit, (Igi2DamagePart)part, instantDeathDisabled);
-            if (dealt > 0f && dealt < least)
-            {
-                least = dealt;
-            }
-        }
-
-        return least == float.MaxValue ? 0f : least;
-    }
-
-    /// <summary>
-    /// Stands up a puppet the client foresaw falling whom the server kept alive (<see cref="Game.Multiplayer.ForeseenHarmVerdict.GetUp"/>):
-    /// its fall undone, what the death set put back as a living body has it, and the server's state entered on the next pose.
-    /// <b>Not retail.</b>
-    /// </summary>
-    /// <param name="remaining">What the server says it has left, in health, or <see langword="null"/> when not told.</param>
-    public void RiseAsPuppet(float? remaining)
-    {
-        if (!IsDead)
-        {
-            return;
-        }
-
-        Damage.Damage = remaining is { } left ? Math.Max(0f, Damage.MaxDamage - left) : 0f;
-        IsDead = false;
-        Locomotion.Flags &= ~DeadSignal;
-        Signal &= ~Igi2SoldierSignal.Dead;
-        LifeState = 0;
-        IsDeathAnimationDone = false;
-        IsDeathPositionStabilized = false;
-        IsDeathSoundPlayed = false;
-        Pose = Humans.Igi2HumanPose.Standing;
-        CameraMode = 1;
-        View.IsLockOrientation = false;
-        IsLockOrientation = false;
-        UpperBodyFlags &= ~1;
-        GroundTolerance = LandingGroundTolerance;
-        IsDisableDeltaTranslation = false;
-        Animation.SetMainFlags(raise: Igi2AnimControllerBits.None, clear: Igi2AnimControllerBits.NoRootTranslation);
-        _puppetEntered = false;
     }
 
     /// <summary>Gets what shows the rounds the server's copy fires, once posed.</summary>
@@ -162,7 +81,6 @@ public sealed partial class Igi2HumanSoldier
         {
             Locomotion.Enter(pose.State, this);
             _puppetEntered = true;
-            _puppetEnteredAt = Foresight?.Harm.Now ?? 0;
         }
 
         Gamma = pose.Gamma;

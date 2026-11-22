@@ -73,8 +73,8 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
         _identity = identity;
         _reopen = reopen;
 
-        // A soldier's death the server tells of was counted already when this client's own round foresaw it.
-        _combat.SoldierKillForeseen = () => _world?.SoldierForesight?.ClaimKill() ?? false;
+        // The soldiers are the server's: their deaths by this player's hand are counted as the server tells of them.
+        _combat.CountsSoldierKills = true;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _server = server;
         _request = request ?? throw new ArgumentNullException(nameof(request));
@@ -207,9 +207,12 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
             $"{(session.SnapshotBytesReceived - _snapshotBytesAt) / seconds / 1024:F1} KiB/s unreadable {session.DroppedSnapshots - _droppedSnapshotsAt} | " +
             $"newest snapshot {age} ticks old, commands ahead {ahead}, server queue {session.CommandLead}, packets held {(session.CommandPacketsHeld - _heldAt) / seconds:F1}/s | " +
             $"corrections {session.Reconciler.Corrections - _correctionsAt} last error {session.Reconciler.LastError:F0} | " +
+            $"drawn {session.Clock?.AppliedInterpolationDelay * 1000:F0} ms behind, carried past the newest snapshot {session.Remote.Extrapolations - _extrapolationsAt} of {session.Remote.Samples - _samplesAt} | " +
             $"{(connection is null ? "-" : NetDiagnostics.Route(_transport, connection.RemoteAddress))}"));
 
         _diagnosedAt = now;
+        _extrapolationsAt = session.Remote.Extrapolations;
+        _samplesAt = session.Remote.Samples;
         _ticksSinceDiagnosed = 0;
         _pumpsSinceDiagnosed = 0;
         _partsAt = session.SnapshotPartsReceived;
@@ -574,6 +577,10 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     private double _graphCorrections;
     private long _graphSnapshotsAt;
     private long _graphCorrectionsAt;
+
+    // The interpolator's counts as last told in the log.
+    private long _extrapolationsAt;
+    private long _samplesAt;
 
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view)

@@ -13,16 +13,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="LookPitch">Its look's pitch, radians.</param>
 /// <param name="Alive">Whether it lives.</param>
 /// <param name="Shots">Its shots so far, counted round in a byte: a change is a shot to flame and sound.</param>
-/// <param name="Vitality">What is left of it, as the server's snapshots carry it (<see cref="Game.Multiplayer.SoldierVitality"/>).</param>
-public readonly record struct SoldierPuppet(
-    Vector3d Position,
-    float Facing,
-    int Animation,
-    int UpperBody,
-    float LookPitch,
-    bool Alive,
-    byte Shots = 0,
-    byte Vitality = Game.Multiplayer.SoldierVitality.Unforeseeable)
+public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int Animation, int UpperBody, float LookPitch, bool Alive, byte Shots = 0)
 {
     /// <summary>Gets the heading an orientation turns a soldier to, the inverse of <see cref="Matrix3f.RotationZ"/>.</summary>
     /// <param name="orientation">The orientation.</param>
@@ -40,16 +31,6 @@ public sealed partial class SoldierSimulation
 
     // The puppets that fired since the last call to TakePuppetShots, for the mission to trace their rounds.
     private readonly List<(SoldierView View, OpenIGI.Game.Weapons.WeaponType? Weapon, float Facing, float Pitch)> _puppetShots = [];
-
-    /// <summary>
-    /// Gets or sets what this co-op client foresees of its player's rounds on its puppets (<see cref="SoldierContext.Foresight"/>):
-    /// a round short of the server's word on a soldier's health marks its hit, one past it fells him, at once.
-    /// </summary>
-    public Game.Multiplayer.PredictedSoldierHarm? Foresight
-    {
-        get => _context.Foresight;
-        set => _context.Foresight = value;
-    }
 
     /// <summary>Takes the shots the puppeted soldiers fired since the last call: who, with what, and which way.</summary>
     /// <returns>The shots.</returns>
@@ -101,16 +82,6 @@ public sealed partial class SoldierSimulation
         return Game.Multiplayer.SoldierVitality.Encode(remaining, health.BaseMaximumHealth, foreseeable);
     }
 
-    /// <summary>Gets the health a co-op client's copy of a soldier has left by its server's word, in this game's units.</summary>
-    /// <param name="view">The soldier.</param>
-    /// <param name="vitality">The byte the server sent (<see cref="VitalityOf"/>).</param>
-    /// <returns>The health, or <see langword="null"/> when its death is not to be foreseen.</returns>
-    public float? HealthLeftOf(SoldierView view, byte vitality)
-    {
-        ArgumentNullException.ThrowIfNull(view);
-        return Game.Multiplayer.SoldierVitality.Decode(vitality, _context.HealthOf(view).BaseMaximumHealth);
-    }
-
     /// <summary>Gets a soldier's runtime id, unique to each live soldier and the same on every machine playing the level.</summary>
     /// <param name="view">The soldier.</param>
     /// <returns>The id, or -1 for one with no mind.</returns>
@@ -155,24 +126,7 @@ public sealed partial class SoldierSimulation
     public void Puppet(SoldierView view, in SoldierPuppet puppet)
     {
         ArgumentNullException.ThrowIfNull(view);
-        if (_puppets.TryGetValue(view, out SoldierPuppet stood) && (stood.Position - puppet.Position).LengthSquared > 1)
-        {
-            _context.PuppetsMoving.Add(view);
-        }
-        else
-        {
-            _context.PuppetsMoving.Remove(view);
-        }
-
         _puppets[view] = puppet;
-
-        // The server's word on one this client foresaw falling: it stays down until the word comes, and gets up if the word
-        // was due and the server kept him alive.
-        if (Foresight is { } foresight && Brains.TryGetValue(view, out Igi1HumanAi? brain)
-            && foresight.TakeServer(brain.RuntimeId, HealthLeftOf(view, puppet.Vitality), puppet.Alive) == Game.Multiplayer.ForeseenHarmVerdict.GetUp)
-        {
-            _damage.Rise(view);
-        }
 
         // Stood there now, not at its next tick: the frame drawn after the snapshot is read shows it where the snapshot has
         // it, at the moment the client says it drew (ClientSession.DrawnTick), which its shots are rewound to -- a tick late,
@@ -293,32 +247,10 @@ public sealed partial class SoldierSimulation
             return true;
         }
 
-        // Fallen here on this client's foresight, alive there until the server's word comes: it lies where it fell, its gun
-        // quiet, its shots counted so none is fired again should it get up.
-        if (view.IsDead)
-        {
-            view.Tick();
-            if (_context.FindAgent(view) is { } down && Brains.TryGetValue(view, out Igi1HumanAi? waiting))
-            {
-                down.FiredThisTick = false;
-                down.ShotSequence = puppet.Shots;
-                WeaponSound?.Invoke(waiting.RuntimeId, false, down.WeaponType, waiting.EyePosition());
-            }
-
-            return true;
-        }
-
         view.PlaceAt(puppet.Position, Matrix3f.RotationZ(puppet.Facing));
         if (view.CurrentAnimation != puppet.Animation && puppet.Animation >= 0)
         {
             view.PlayStateAnimation(puppet.Animation, loops: true);
-            _context.PuppetClipChangedAt[view] = _context.TickCount;
-
-            // Its machine stands where the server's does, so a fall foreseen here is the one that state falls in.
-            if (Brains.TryGetValue(view, out Igi1HumanAi? posed))
-            {
-                posed.Body.FollowClip(puppet.Animation);
-            }
         }
 
         if (view.UpperBodyAnimation != puppet.UpperBody)

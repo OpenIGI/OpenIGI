@@ -85,7 +85,7 @@ public sealed class CombatFeedbackTests
     public void A_hit_counted_as_it_struck_marks_at_once_and_not_again_when_the_server_tells_of_it()
     {
         Player.ShotTally tally = new();
-        CombatFeedback feedback = new() { Credit = tally, SoldierKillForeseen = () => false };
+        CombatFeedback feedback = new() { Credit = tally, CountsSoldierKills = true };
         feedback.Take([], own: 1, now: 0);
 
         // The client's round meets its copy of a soldier: counted there and then.
@@ -100,25 +100,19 @@ public sealed class CombatFeedbackTests
     }
 
     [Fact]
-    public void A_soldiers_death_the_server_tells_of_is_counted_once_whether_or_not_the_client_foresaw_it()
+    public void On_a_client_a_soldiers_death_is_counted_as_the_server_tells_of_it()
     {
         Player.ShotTally tally = new();
-        bool foreseen = true;
-        CombatFeedback feedback = new() { Credit = tally, SoldierKillForeseen = () => foreseen };
+        CombatFeedback feedback = new() { Credit = tally, CountsSoldierKills = true };
         feedback.Take([], own: 1, now: 0);
 
-        // Foreseen: the client counted it as its round struck; the note counts nothing.
-        tally.Hit(head: true);
-        tally.Killed(head: true);
+        // The client's rounds marked their hits as they struck; the fall is the server's word, and so is its count.
+        tally.Hit(head: false);
         feedback.Take([], own: 1, now: 1);
-        feedback.Take([new CombatNote(1, -1, 0f, Killed: true, Head: true, default)], own: 1, now: 1.2);
+        Assert.Equal(0, tally.Kills);
+        feedback.Take([new CombatNote(1, -1, 0f, Killed: true, Head: false, default)], own: 1, now: 1.2);
         Assert.Equal(1, tally.Kills);
-
-        // Not foreseen (a partner left it its last health, a grenade): the note counts it, and it marks red.
-        foreseen = false;
-        feedback.Take([new CombatNote(1, -1, 0f, Killed: true, Head: false, default)], own: 1, now: 5);
-        Assert.Equal(2, tally.Kills);
-        Assert.True(feedback.Shown(5, default, LookingNorth)?.Marker?.Killed);
+        Assert.True(feedback.Shown(1.2, default, LookingNorth)?.Marker?.Killed);
     }
 
     [Fact]
