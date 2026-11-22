@@ -187,6 +187,9 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     public void StepMain() => Main.Step(Main.Time + Main.TimeStep);
 
     /// <inheritdoc/>
+    public void StepMainTo(int time) => Main.Step(time);
+
+    /// <inheritdoc/>
     public void PlayClip(Igi2AnimationClip? clip, int time, float blendSeconds, int state)
     {
         SetAnimation(clip, time, blendSeconds);

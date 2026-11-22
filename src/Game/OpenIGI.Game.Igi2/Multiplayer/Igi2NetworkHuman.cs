@@ -232,6 +232,7 @@ public sealed class Igi2NetworkHuman
                 Human.UpdateDie();
             }
 
+            _gunfire?.Silence();
             Human.Update(_frame);
 
             // The death the server's copy fell in, not one drawn here.

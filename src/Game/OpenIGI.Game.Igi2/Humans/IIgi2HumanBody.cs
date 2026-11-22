@@ -32,6 +32,10 @@ public interface IIgi2HumanAnimation
     /// <remarks>The human's update steps it once a tick, after the body has moved.</remarks>
     void StepMain();
 
+    /// <summary>Steps the main controller to a time: <c>AnimController_Step(main, time)</c>.</summary>
+    /// <param name="time">The time, in clip ticks; past either end it wraps or ends as the controller's flags say.</param>
+    void StepMainTo(int time);
+
     /// <summary>Takes the upper-body clip off, blending back to the main clip (<c>HumanAnim_ClearUpperBodyAnimation</c>).</summary>
     /// <param name="blendSeconds">The blend; 0 for a cut.</param>
     void ClearUpperBody(float blendSeconds);

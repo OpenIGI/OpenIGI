@@ -27,6 +27,9 @@ public sealed partial class Igi2HumanSoldier
     /// </remarks>
     public Igi2SoldierPose? Puppet { get; set; }
 
+    // Whether the server's state has been entered on this copy since it became a puppet.
+    private bool _puppetEntered;
+
     /// <summary>Gets what shows the rounds the server's copy fires, once posed.</summary>
     internal Weapons.Igi2RemoteGunfire? RemoteGunfire { get; set; }
 
@@ -46,13 +49,18 @@ public sealed partial class Igi2HumanSoldier
                 KillOutright();
             }
 
+            RemoteGunfire?.Silence();
             Update(NoChannels);
             return;
         }
 
-        if (Locomotion.CurrentState != pose.State)
+        // A puppet's locomotion never ticks, so a state's entry -- which plays its clip -- runs only as it is entered here. The
+        // soldier is made in Stand with that entry left for its first tick: one the server keeps standing was never entered and
+        // stood in no clip at all, its bind pose, on every client.
+        if (Locomotion.CurrentState != pose.State || !_puppetEntered)
         {
             Locomotion.Enter(pose.State, this);
+            _puppetEntered = true;
         }
 
         Gamma = pose.Gamma;

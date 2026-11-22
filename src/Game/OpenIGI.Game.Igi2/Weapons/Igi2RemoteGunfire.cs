@@ -60,6 +60,17 @@ public sealed class Igi2RemoteGunfire(Igi2WeaponFiring weapon, IIgi2WeaponOwner 
         }
     }
 
+    /// <summary>
+    /// Forgets the rounds and the loop, as the body falls: its death stopped the fire slot's sound (<c>Human_UpdateDie</c>), and
+    /// no count comes for a dead body to end a loop by. Stood up again, it counts afresh, and its old rounds are no shots now.
+    /// </summary>
+    public void Silence()
+    {
+        _looping = null;
+        _shots = null;
+        _sinceShot = 0;
+    }
+
     // The ticks between two rounds of the gun, as its handler reports its delay.
     private static int DelayTicks(Igi2GunTask gun) => gun.RoundsPerMinute <= 0 ? 0 : (int)((60f / gun.RoundsPerMinute * 30f) + 0.5f);
 }

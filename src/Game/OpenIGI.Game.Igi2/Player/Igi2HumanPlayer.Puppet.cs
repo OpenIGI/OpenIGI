@@ -55,7 +55,11 @@ public sealed partial class Igi2HumanPlayer
         IdealGamma = gamma;
         View.Pitch = pitch;
         UpdateBody();
-        Animation.StepMain();
+        if (!ClimbAsPuppet(state, position))
+        {
+            Animation.StepMain();
+        }
+
         TouchPose();
         UpdateViewBody(updateAnimation: false);
         Weapon.UpdateStatus();
@@ -157,6 +161,77 @@ public sealed partial class Igi2HumanPlayer
         Animation.AutoStep();
         TouchPose();
     }
+
+    /// <summary>
+    /// The clip of a copy on a ladder, by its height up it: <c>HumanRemote_UpdateAnim</c> in the climbing state. The state's tick,
+    /// which sets the clip's pace a step at a time, is the server copy's alone, so here the clip held still on its entry's pace of
+    /// none, and a partner slid up and down the ladder frozen in one frame.
+    /// </summary>
+    /// <param name="state">The state the copy is in.</param>
+    /// <param name="position">Where the copy stands this tick.</param>
+    /// <returns><see langword="true"/> when the clip was set here, and is not to be stepped by its pace.</returns>
+    /// <remarks>
+    /// Retail sends the ladder's index with a remote climber; here the ladder within reach as the copy goes onto it is kept, at
+    /// its foot or its top. The time is the height above the ladder's foot (its third vertex) at a clip's length to every
+    /// 2457.6 units, two steps, wrapped to the clip, and stepped to the shorter way round from where the clip stands.
+    /// </remarks>
+    private bool ClimbAsPuppet(int state, Vector3d position)
+    {
+        if (Igi2PlayerState.ClimbModeOf(state) != 1)
+        {
+            _puppetLadder = null;
+            return false;
+        }
+
+        _puppetLadder ??= NearestLadder(position);
+        int total = Animation.MainTotalTime;
+        if (state != Igi2PlayerState.ClimbLadder || _puppetLadder is not { } ladder || total <= 0)
+        {
+            return false;
+        }
+
+        long climbed = (long)((position.Z - ladder.MagicVertex(2).Z) * total * 0.00040690103196538985);
+        int target = (int)(Math.Max(climbed, 0) % total);
+        int now = Animation.MainTime;
+        int apart = target >= now ? target - now : now - target;
+        if (apart > total / 2)
+        {
+            if (target < now)
+            {
+                Animation.StepMainTo(total + target);
+                return true;
+            }
+
+            target -= total;
+        }
+
+        Animation.StepMainTo(target);
+        return true;
+    }
+
+    // The ladder nearest the copy among those within its reach, or null.
+    private Interaction.IIgi2Ladder? NearestLadder(Vector3d position)
+    {
+        Interaction.IIgi2Ladder? nearest = null;
+        double least = double.MaxValue;
+        foreach (Interaction.IIgi2Activatable candidate in Surroundings.FindActivatables(position, ActivateRadius))
+        {
+            if (candidate is Interaction.IIgi2Ladder ladder)
+            {
+                Vector3d off = ladder.MagicVertex(2) - position;
+                double distance = (off.X * off.X) + (off.Y * off.Y);
+                if (distance < least)
+                {
+                    least = distance;
+                    nearest = ladder;
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    private Interaction.IIgi2Ladder? _puppetLadder;
 
     // The timed action nearest the copy among those within its reach, or null.
     private Interaction.IIgi2TimedAction? NearestTimedAction(Vector3d position)
