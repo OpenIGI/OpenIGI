@@ -4,6 +4,7 @@ using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Tests;
 

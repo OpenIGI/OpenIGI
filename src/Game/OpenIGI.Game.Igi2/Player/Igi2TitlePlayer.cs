@@ -647,14 +647,17 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         _pressedThisTick = pressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
         Human.SteadyTurns = GameplayCVars.SteadyTurns.Value;
-        Human.Movement = GameplayCVars.Igi2Movement.Value;
+        TakeMovementChoice(Igi2MovementChoice.Current);
         // Retail keeps the profile's flag the other way round from its menu (config.c: isInvertMouse is 1 by default, and the menu's
         // get and set negate it); the host's says what the player chose.
         _reader.InvertMouse = !input.InvertMouse;
         Human.InvertMouse = !input.InvertMouse;
-        // Project I.G.I.'s movement looks as that game does, one mouse count one step whatever the frame pacing: Smooth Motion's
-        // unfiltered look, without the tick averaging, the fine-aim curve and the clamp.
-        Human.UnfilteredMouse = (input.UnfilteredMouse || Human.Movement == Igi2PlayerMovement.Igi1) && CanPreviewLook;
+        // Project I.G.I.'s movement looks as that game does. The remaster's look is one mouse count one step whatever the frame
+        // pacing: Smooth Motion's unfiltered look, without the tick averaging, the fine-aim curve and the clamp. The original's is
+        // the tick's filtered input whatever Smooth Motion is, its turn eased as its body's (Igi2HumanPlayer.TurnFor).
+        Human.UnfilteredMouse = !Human.TurnsAsIgi1Retail
+            && (input.UnfilteredMouse || Human.Movement == Igi2PlayerMovement.Igi1)
+            && CanPreviewLook;
         _lookInput = input;
         _rawKeys = input.Raw;
         _reader.Read(new Igi2PlayerInputState(
@@ -751,7 +754,15 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
 
         CommandStart = new Multiplayer.Igi2CommandStart(
-            Human.IdealGamma, Human.View.IdealPitch, Human.UnfilteredMouse, Human.SteadyTurns, Human.InvertMouse, Human.Movement, seed);
+            Human.IdealGamma,
+            Human.View.IdealPitch,
+            Human.UnfilteredMouse,
+            Human.SteadyTurns,
+            Human.InvertMouse,
+            Human.Movement,
+            Human.Igi1Look,
+            Human.Igi1Weight,
+            seed);
         Human.Update(_frame);
         Human.RunDelayed();
 

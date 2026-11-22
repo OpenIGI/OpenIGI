@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using Xunit;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -114,6 +115,82 @@ public sealed class Igi2Igi1MovementTests
             Assert.True(ahead > 1000d, $"{key} at {degrees} degrees moved {moved}, {ahead} along its axis.");
             Assert.True(astray < ahead * 0.05, $"{key} at {degrees} degrees strayed {astray} off its axis, moving {moved}.");
         }
+    }
+
+    /// <summary>
+    /// With weapon weight on, the weapons carried slow the first game's walk by I.G.I. 2's own share, a half at most; off, they do
+    /// not slow it at all.
+    /// </summary>
+    /// <param name="slowDown">The weapons' summed slow-down.</param>
+    /// <param name="expected">The share of the walk left.</param>
+    [Theory]
+    [InlineData(0.3f, 0.7)]
+    [InlineData(0.8f, 0.5)]
+    public void Weapon_weight_slows_the_walk_as_IGI2_slows_its_own(float slowDown, double expected)
+    {
+        double free = RunDistance(weight: false, slowDown);
+        double laden = RunDistance(weight: true, slowDown);
+
+        Assert.Equal(RunDistance(weight: false, slowDown: 0f), free, 6);
+        Assert.InRange(laden / free, expected - 0.001, expected + 0.001);
+    }
+
+    /// <summary>
+    /// The original's look eases a small turn as Project I.G.I.'s body does (<see cref="HumanBodyTurn"/>), where the linear look
+    /// and I.G.I. 2's own turn it whole; a large turn is whole in both.
+    /// </summary>
+    /// <param name="input">The tick's horizontal look input.</param>
+    [Theory]
+    [InlineData(0.02f)]
+    [InlineData(-0.045f)]
+    [InlineData(0.3f)]
+    public void The_original_look_eases_a_small_turn_as_IGI1s_body_does(float input)
+    {
+        (Igi2HumanPlayer retail, _, _) = Igi2PlayerFakes.OnFloor();
+        retail.Movement = Igi2PlayerMovement.Igi1;
+        retail.Igi1Look = Igi1Look.Retail;
+        (Igi2HumanPlayer linear, _, _) = Igi2PlayerFakes.OnFloor();
+        linear.Movement = Igi2PlayerMovement.Igi1;
+
+        float retailBefore = retail.IdealGamma, linearBefore = linear.IdealGamma;
+        Tick(retail, Igi2PlayerAction.None, input);
+        Tick(linear, Igi2PlayerAction.None, input);
+
+        float fov = retail.View.FieldOfView;
+        float eased = (-(Fpu)new HumanBodyTurn(averages: false).Step(input) * fov).F;
+        float whole = ((-((Fpu)input * 3.1415927f)) * fov).F;
+        Assert.Equal(((Fpu)eased + retailBefore).F, retail.IdealGamma);
+        Assert.Equal(((Fpu)whole + linearBefore).F, linear.IdealGamma);
+        Assert.Equal(Math.Abs(input) < HumanBodyTurn.SmallInput, Math.Abs(eased) < Math.Abs(whole));
+    }
+
+    /// <summary>The session's comparison stands in for the chosen movement and look; off leaves the settings' own.</summary>
+    [Fact]
+    public void The_comparison_stands_in_for_the_settings()
+    {
+        Assert.Equal(
+            new Igi2MovementChoice(Igi2PlayerMovement.Igi1, Igi1Look.Retail, true),
+            Igi2MovementChoice.From(Igi2PlayerMovement.Igi1, Igi1Look.Retail, true, Igi2MovementCompare.Off));
+        Assert.Equal(Igi2PlayerMovement.Igi2, Igi2MovementChoice.From(Igi2PlayerMovement.Igi1, Igi1Look.Retail, false, Igi2MovementCompare.Igi2).Movement);
+        Assert.True(Igi2MovementChoice.From(Igi2PlayerMovement.Igi2, Igi1Look.Retail, false, Igi2MovementCompare.Igi1Linear).LinearIgi1Look);
+        Assert.True(Igi2MovementChoice.From(Igi2PlayerMovement.Igi2, Igi1Look.Linear, false, Igi2MovementCompare.Igi1Retail).RetailIgi1Look);
+    }
+
+    // How far the player runs in forty ticks on the first game's body, carrying weapons that slow by a share.
+    private static double RunDistance(bool weight, float slowDown)
+    {
+        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor(new Igi2PlayerFakes.RecordingWeapon { SummedMovementSlowDown = slowDown });
+        player.Movement = Igi2PlayerMovement.Igi1;
+        player.Igi1Weight = weight;
+        player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, null), player);
+        Tick(player, Igi2PlayerAction.None);
+        Vector3d start = player.Position;
+        for (int i = 0; i < 40; i++)
+        {
+            Tick(player, Igi2PlayerAction.MoveForwards);
+        }
+
+        return Across(player.Position - start);
     }
 
     /// <summary>Under I.G.I. 2's own movement the body is never stepped: the player moves as the sequel moves it.</summary>

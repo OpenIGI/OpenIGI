@@ -41,7 +41,7 @@ public sealed class RetailIgi2NetworkHumanTests
             float[] channels = new float[Igi2HumanChannels.Count];
             channels[(int)Igi2HumanChannel.MoveForwards] = 1f;
             float[] command = new float[Igi2Command.ChannelCount];
-            Igi2Command.Pack(channels, new Igi2CommandStart(other.Human.IdealGamma, other.Human.View.IdealPitch, false, false, false, Igi2PlayerMovement.Igi2, 0), new Igi2CommandEnd(other.Human.ChosenWeaponNumber, other.Human.IsWalk, other.Human.View.FieldOfView, other.Human.View.ObjectFieldOfView), command);
+            Igi2Command.Pack(channels, new Igi2CommandStart(other.Human.IdealGamma, other.Human.View.IdealPitch, false, false, false, Igi2PlayerMovement.Igi2, Igi1Look.Linear, false, 0), new Igi2CommandEnd(other.Human.ChosenWeaponNumber, other.Human.IsWalk, other.Human.View.FieldOfView, other.Human.View.ObjectFieldOfView), command);
             other.Commands.Push(new UserCommand(300 + i, command));
             level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
         }

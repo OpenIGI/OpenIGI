@@ -15,7 +15,7 @@ public sealed class Igi2CommandTests
         frame[(int)Igi2HumanChannel.MoveForwards] = 1f;
         frame[(int)Igi2HumanChannel.LookX] = 0.25f;
         float[] command = new float[Igi2Command.ChannelCount];
-        Igi2CommandStart start = new(1.5f, -0.2f, Unfiltered: true, SteadyTurns: true, InvertMouse: true, Igi2PlayerMovement.Igi1, Seed: 123456);
+        Igi2CommandStart start = new(1.5f, -0.2f, Unfiltered: true, SteadyTurns: true, InvertMouse: true, Igi2PlayerMovement.Igi1, Igi1Look.Retail, Igi1Weight: true, Seed: 123456);
         Igi2Command.Pack(frame, start, new Igi2CommandEnd(-1, Walk: true, 0.5f, 0.6f, Climb: 3), command);
 
         float[] read = new float[Igi2HumanChannels.Count];
@@ -94,7 +94,7 @@ public sealed class Igi2CommandTests
 
         // Through the command, as a float, and back.
         float[] command = new float[Igi2Command.ChannelCount];
-        Igi2Command.Pack(new float[Igi2HumanChannels.Count], new Igi2CommandStart(0f, 0f, false, false, false, Igi2PlayerMovement.Igi2, seed), new Igi2CommandEnd(-1, false, 1f, 1f), command);
+        Igi2Command.Pack(new float[Igi2HumanChannels.Count], new Igi2CommandStart(0f, 0f, false, false, false, Igi2PlayerMovement.Igi2, Igi1Look.Linear, false, seed), new Igi2CommandEnd(-1, false, 1f, 1f), command);
         uint carried = Igi2Command.Unpack(command, new float[Igi2HumanChannels.Count], out _)!.Value.Seed;
         Assert.Equal(seed, carried);
 

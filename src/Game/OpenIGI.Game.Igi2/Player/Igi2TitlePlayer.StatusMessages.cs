@@ -17,15 +17,21 @@ public sealed partial class Igi2TitlePlayer
     /// Shown by the level flow's clock in a level of I.G.I. 2's own; by the player's where it stands in another game's level,
     /// whose tick also runs the screen it prints on.
     /// </remarks>
-    public void ShowStatusMessage(string key, string sprite = "", string sound = "")
+    public void ShowStatusMessage(string key, string sprite = "", string sound = "") => Say(key, localized: true, sprite, sound);
+
+    /// <summary>Says a line to the player as it is written, not looked up in the language: the remaster's own words.</summary>
+    /// <param name="text">The line.</param>
+    public void ShowStatusText(string text) => Say(text, localized: false, string.Empty, string.Empty);
+
+    private void Say(string text, bool localized, string sprite, string sound)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentException.ThrowIfNullOrEmpty(text);
         Igi2StatusMessageTask message = new()
         {
-            Text = key,
+            Text = text,
             Sprite = sprite,
             Sound = sound,
-            IsLocalized = true,
+            IsLocalized = localized,
             IsForceSend = true,
             IsSendOnce = true,
             Strings = Strings,

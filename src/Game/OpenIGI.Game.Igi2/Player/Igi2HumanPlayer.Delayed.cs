@@ -11,6 +11,17 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>How fast the posture's precision settles each tick, <c>0x3F333333</c>.</summary>
     private const float PrecisionSettling = 0.7f;
 
+    /// <summary>Gets what the weapons carried leave of the player's speed: one less their summed slow-down, at most a half off.</summary>
+    /// <remarks>Rounded once, as the original stores it; the jump wait's half of it is exact.</remarks>
+    public float CarriedSpeedScale
+    {
+        get
+        {
+            float slowDown = Weapon.SummedMovementSlowDown;
+            return ((Fpu)1.0 - (slowDown < MaxMovementSlowDown ? slowDown : MaxMovementSlowDown)).F;
+        }
+    }
+
     /// <summary>Gets the precision the posture has settled to, <c>vActualModifiedPrecision</c>.</summary>
     public float ActualModifiedPrecision { get; private set; }
 
@@ -68,9 +79,8 @@ public sealed partial class Igi2HumanPlayer
     public void RunDelayed()
     {
         HandleBreathViewOffset();
-        float slowDown = Weapon.SummedMovementSlowDown;
-        Fpu scale = (Fpu)1.0 - (slowDown < MaxMovementSlowDown ? slowDown : MaxMovementSlowDown);
-        MovementSpeedScale = JumpWaitTimer != 0 ? (scale * 0.5).F : scale.F;
+        float scale = CarriedSpeedScale;
+        MovementSpeedScale = JumpWaitTimer != 0 ? ((Fpu)scale * 0.5).F : scale;
 
         ActualModifiedPrecision = ((((Fpu)IdealModifiedPrecision - ActualModifiedPrecision) * PrecisionSettling) + ActualModifiedPrecision).F;
         ActualWeaponPrecision = ((((Fpu)IdealWeaponPrecision - ActualWeaponPrecision) * CrossHairDamping) + ActualWeaponPrecision).F;

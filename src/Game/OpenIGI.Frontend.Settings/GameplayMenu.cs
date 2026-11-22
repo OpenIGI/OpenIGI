@@ -33,6 +33,21 @@ public static class GameplayMenu
                         ["igi2"] = "I.G.I. 2",
                         ["igi1"] = "Project I.G.I.",
                     }),
+                new SettingRow(
+                    "g_igi2_igi1_look",
+                    "Project I.G.I. Mouse",
+                    "How the mouse turns you on Project I.G.I. movement in I.G.I. 2. Linear moves the view the same for every bit of "
+                        + "mouse travel. Original eases small movements and smooths the vertical look, as the first game did.",
+                    Choices: new Dictionary<string, string>
+                    {
+                        ["linear"] = "Linear",
+                        ["retail"] = "Original",
+                    }),
+                new SettingRow(
+                    "g_igi2_igi1_weight",
+                    "Project I.G.I. Weapon Weight",
+                    "On Project I.G.I. movement in I.G.I. 2, the weapons you carry slow you as they do in I.G.I. 2: the one in hand in "
+                        + "full, the rest by half, never below half speed. Off moves as freely as the first game."),
             ]),
 
         new SettingsPanel(
@@ -259,6 +274,9 @@ public static class GameplayMenu
         // The sound a co-op partner going down makes, by its name in the game's sound table: a name a player cannot
         // choose without knowing the table.
         "hud_down_sound",
+
+        // A movement and look to compare with the chosen one, for the session: a debug key steps it, and it is never saved.
+        "g_igi2_movement_compare",
 
         // What the game was last asked to be. The Experience band across the top of the Gameplay and Interface pages is its
         // menu form, and reads the settings themselves rather than this.

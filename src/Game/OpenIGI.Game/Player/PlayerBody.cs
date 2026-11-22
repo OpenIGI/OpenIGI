@@ -194,17 +194,25 @@ public sealed partial class PlayerBody
     /// </remarks>
     public double JumpHorizontalSpeed =>
         (Parameters?.JumpHorizontalSpeed ?? 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour)
-        * Cheats.SpeedMultiplier;
+        * Cheats.SpeedMultiplier
+        * LoadSpeedScale;
 
     /// <summary>Gets the factor the animation's delta translation is scaled by.</summary>
     /// <remarks><see cref="HumanPlayerParameters.DeltaTranslationScale"/> — argument 0, 1.75 in retail.</remarks>
     public float DeltaTranslationScale =>
         (Parameters?.DeltaTranslationScale ?? HumanMotion.DefaultDeltaTranslationScale)
         * Cheats.SpeedMultiplier
-        * AimSpeedScale;
+        * AimSpeedScale
+        * LoadSpeedScale;
 
     /// <summary>Gets or sets what aiming down the sights makes of the walk: one, the original's, unless modern aim has the sights up.</summary>
     public float AimSpeedScale { get; set; } = 1f;
+
+    /// <summary>
+    /// Gets or sets what the weight carried makes of the walk and the jump's carry: one, the original's, which has no weight. <b>Not
+    /// retail</b>: another game's body standing on this one, which slows its player by what it carries, sets it.
+    /// </summary>
+    public float LoadSpeedScale { get; set; } = 1f;
 
     /// <summary>How far the pitch may travel from level, in radians.</summary>
     public const float PitchLimit = 1.5533431f;

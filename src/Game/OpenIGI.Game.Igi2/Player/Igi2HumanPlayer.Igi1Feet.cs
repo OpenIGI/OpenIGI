@@ -7,9 +7,21 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <content>Project I.G.I.'s movement under the player (<see cref="Igi2PlayerMovement.Igi1"/>).</content>
 public sealed partial class Igi2HumanPlayer
 {
+    // The first game's ease of a small turn, for the original's look; the yaw never averages (HumanBodyTurn).
+    private readonly HumanBodyTurn _igi1Turn = new(averages: false);
+
     /// <summary>Gets or sets whose movement the player has this tick.</summary>
     /// <remarks>Set before each tick from the setting, or from a co-op client's command on the server.</remarks>
     public Igi2PlayerMovement Movement { get; set; }
+
+    /// <summary>Gets or sets how the mouse turns the player on Project I.G.I.'s movement.</summary>
+    public Igi1Look Igi1Look { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the weapons carried slow Project I.G.I.'s walk (<see cref="CarriedSpeedScale"/>).</summary>
+    public bool Igi1Weight { get; set; }
+
+    /// <summary>Gets a value indicating whether the mouse turns the player as Project I.G.I.'s original turns its own.</summary>
+    public bool TurnsAsIgi1Retail => Movement == Igi2PlayerMovement.Igi1 && Igi1Look == Igi1Look.Retail;
 
     /// <summary>Gets or sets Project I.G.I.'s body, which moves the player on foot when <see cref="Movement"/> asks for it.</summary>
     /// <remarks><see langword="null"/> where the level gave the player none to stand on: it then moves as I.G.I. 2's own always.</remarks>
@@ -53,6 +65,7 @@ public sealed partial class Igi2HumanPlayer
         Vector3d start = Position;
         UpdatePlatformMovement(ref start, updatePosition: true, updateOrientation: true);
 
+        feet.Body.LoadSpeedScale = Igi1Weight ? CarriedSpeedScale : 1f;
         feet.Step(start, Gamma, Igi1Command());
         LandFromIgi1Feet(feet);
         if (feet.Body.IsGrounded && GroundCollider is { } ground && Surroundings.PushOnConveyor(ground, GroundIntersection) is { } push)
@@ -115,4 +128,14 @@ public sealed partial class Igi2HumanPlayer
     /// <inheritdoc/>
     protected override float ViewObjectDip =>
         StandsOnIgi1Feet && Igi1Feet!.IsSeated ? Igi1Feet.LandingKick.ViewModelOffsetUnits : base.ViewObjectDip;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Turning as Project I.G.I.'s original turns (<see cref="Igi1Look.Retail"/>), a small turn is eased as its body's is
+    /// (<c>0x4610C0</c>, <see cref="HumanBodyTurn"/>): never averaged, divided by <c>2 - 16.67|s|</c> under 0.06. The sequel's own
+    /// turns the input whole.
+    /// </remarks>
+    protected override Fpu TurnFor(float input) => TurnsAsIgi1Retail
+        ? -(Fpu)_igi1Turn.Step(input) * View.FieldOfView
+        : base.TurnFor(input);
 }

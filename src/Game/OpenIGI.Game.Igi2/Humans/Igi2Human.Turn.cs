@@ -65,7 +65,7 @@ public abstract partial class Igi2Human
 
         Alpha = 0f;
         Beta = 0f;
-        Fpu turn = (-((Fpu)input * Pi)) * View.FieldOfView;
+        Fpu turn = TurnFor(input);
         if (turn.Value != 0.0 && Pose == Igi2HumanPose.LyingFlat)
         {
             turn = CheckTurnRoom(turn);
@@ -77,6 +77,12 @@ public abstract partial class Igi2Human
         Gamma = IdealGamma;
         BuildOrientation(turnsOnPlatform);
     }
+
+    /// <summary>The turn a tick's horizontal look input makes: the input times π times the view's field of view, turned the sequel's way.</summary>
+    /// <param name="input">The tick's horizontal look channel.</param>
+    /// <returns>The turn, in radians.</returns>
+    /// <remarks>A player turning as another game turns eases it as that game does (<see cref="Player.Igi2HumanPlayer"/>).</remarks>
+    protected virtual Fpu TurnFor(float input) => (-((Fpu)input * Pi)) * View.FieldOfView;
 
     /// <summary>The orientation from the angles, tilted onto the ground when lying or dead (<c>Human_UpdateBody</c>'s end).</summary>
     private void BuildOrientation(bool turnsOnPlatform)

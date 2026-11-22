@@ -12,10 +12,13 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerLook
     private TitlePlayerInput _lookInput;
 
     /// <inheritdoc/>
-    /// <remarks>Another game's player standing in turns its own head, while no cutscene has the view.</remarks>
+    /// <remarks>
+    /// Another game's player standing in turns its own head, while no cutscene has the view. Turning as Project I.G.I.'s original
+    /// turns, nothing is shown between ticks: its look is the tick's filtered input, which a frame cannot take ahead of the tick.
+    /// </remarks>
     public bool CanPreviewLook => StandInLook is { } standIn
         ? !IsCutscenePlaying && standIn.CanPreviewLook
-        : !IsCutscenePlaying && !Human.IsDead && !Human.IsLockOrientation
+        : !IsCutscenePlaying && !Human.IsDead && !Human.IsLockOrientation && !Human.TurnsAsIgi1Retail
             && !Human.View.IsLockOrientation && !Human.View.IsOverride && !Human.Channels.IsLocked;
 
     /// <inheritdoc/>

@@ -138,6 +138,43 @@ public static class GameplayCVars
         vanilla: "igi2",
         enhanced: null);
 
+    /// <summary>How the mouse turns I.G.I. 2's player on Project I.G.I.'s movement: one count one step, or as the original turns.</summary>
+    /// <remarks>
+    /// <see cref="Igi1Look.Linear"/> is the remaster's Project I.G.I. look, the same rate for every count however it is paced.
+    /// <see cref="Igi1Look.Retail"/> is the original's (<c>0x4610C0</c>, <c>0x464800</c>): the tick's motion, its small turns
+    /// eased (<see cref="Player.HumanBodyTurn"/>), and the pitch averaged with the last tick's. Read only while
+    /// <see cref="Igi2Movement"/> is <see cref="Igi2PlayerMovement.Igi1"/>.
+    /// </remarks>
+    public static readonly EnumCVar<Igi1Look> Igi2Igi1Look = CVar.Choice(
+        "g_igi2_igi1_look",
+        Igi1Look.Linear,
+        CVarOptions.Archive,
+        "How the mouse turns I.G.I. 2's player on Project I.G.I.'s movement: linear, one count one step, or retail, the original's eased turn.");
+
+    /// <summary>Whether the weapons I.G.I. 2's player carries slow Project I.G.I.'s walk, as they slow the sequel's own.</summary>
+    /// <remarks>
+    /// The original I.G.I. 2 takes the weapon in hand in full and every other carried half off the player's speed, to half at
+    /// most (<c>Weapon_GetSummedMovementSlowDown</c>); Project I.G.I. has no weight. On, the same share comes off the first
+    /// game's walk and its jump's carry. Read only while <see cref="Igi2Movement"/> is <see cref="Igi2PlayerMovement.Igi1"/>.
+    /// </remarks>
+    public static readonly BoolCVar Igi2Igi1Weight = CVar.Bool(
+        "g_igi2_igi1_weight",
+        false,
+        CVarOptions.Archive,
+        "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.");
+
+    /// <summary>A movement and look to compare against the chosen one, stepped by a key while playing and never saved.</summary>
+    /// <remarks>
+    /// <see cref="Igi2MovementCompare.Off"/> plays what <see cref="Igi2Movement"/> and <see cref="Igi2Igi1Look"/> say; any other
+    /// value stands in for both for the session. Not archived, so the default key that steps it (<c>DefaultBinds</c>) writes
+    /// nothing a next launch starts on.
+    /// </remarks>
+    public static readonly EnumCVar<Igi2MovementCompare> Igi2MovementCompare = CVar.Choice(
+        "g_igi2_movement_compare",
+        Game.Igi2MovementCompare.Off,
+        CVarOptions.None,
+        "Stand in for I.G.I. 2's movement and look this session, to compare them: off, igi2, igi1linear or igi1retail.");
+
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
     /// <remarks>
     /// <para>
