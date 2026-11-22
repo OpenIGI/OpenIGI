@@ -55,6 +55,38 @@ public sealed class TickClockSyncTests
         Assert.True(after > before && after < 0.4, $"{before} -> {after}");
     }
 
+    /// <summary>
+    /// The moment drawn is counted back from the snapshots as they arrive, not from the server's present: the newest snapshot held
+    /// is half a round trip old, and on any line slower than twice the delay a moment counted back from the server's present lay
+    /// past it -- every body carried on along its velocity, every frame.
+    /// </summary>
+    /// <param name="roundTrip">The line's round trip, in seconds.</param>
+    [Theory]
+    [InlineData(0.03)]
+    [InlineData(0.1)]
+    [InlineData(0.25)]
+    [InlineData(0.9)]
+    public void The_moment_drawn_has_a_snapshot_after_it_whatever_the_round_trip(double roundTrip)
+    {
+        TickClockSync clock = new(TickRate);
+        long newest = 0;
+        for (long tick = 0; tick < 10 * TickRate; tick++)
+        {
+            double arrival = (tick / (double)TickRate) + (roundTrip / 2);
+            clock.AddSample(tick, arrival, roundTrip);
+            newest = tick;
+
+            // As the snapshot arrives, and a frame later with the next one still on its way.
+            Assert.True(clock.InterpolationTick(arrival) <= newest - 1.9, $"tick {tick}: drew {clock.InterpolationTick(arrival):F2} with {newest} the newest");
+            Assert.True(clock.InterpolationTick(arrival + (0.99 / TickRate)) < newest, $"tick {tick}: drew past the newest snapshot");
+        }
+
+        // The server's present is still told apart, for the commands: half a round trip on from the snapshots arriving.
+        double now = (newest / (double)TickRate) + (roundTrip / 2);
+        Assert.Equal(newest + (roundTrip / 2 * TickRate), clock.ServerTick(now), 2);
+        Assert.Equal(newest, clock.ArrivingTick(now), 2);
+    }
+
     // Snapshots every `spacing` ticks for a while, arriving off their time by up to `jitterSeconds` either way.
     private static TickClockSync Feed(int spacing, double jitterSeconds, double seconds)
     {

@@ -29,7 +29,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     private readonly string _titleId;
     private readonly IOpenIgiLogger _logger;
     private readonly OpenIGI.Net.Identity.IPlayerIdentity? _identity;
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly SessionClock _clock = new();
     private IReplicatedClientWorld? _world;
     private NetClient? _netClient;
     private ClientSession? _session;
@@ -81,6 +81,12 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
         _titleId = titleId ?? throw new ArgumentNullException(nameof(titleId));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// Sets what tells the session's time, in seconds, in the wall clock's place: a run stepped frame by frame keeps its frames'
+    /// time, as the line it is given does, so a round trip measures what the line was told to take.
+    /// </summary>
+    public Func<double>? TimeSource { set => _clock.Source = value; }
 
     /// <inheritdoc/>
     public string? RoomCode => Room?.Code;

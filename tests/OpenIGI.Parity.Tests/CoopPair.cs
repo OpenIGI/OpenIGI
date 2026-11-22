@@ -70,7 +70,7 @@ internal abstract class CoopPair<TLevel> : IDisposable
             new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: !dedicated, HostSkin: hostLook),
             titleId,
             30,
-            NullLogger.Instance);
+            NullLogger.Instance) { TimeSource = FrameTime };
         _client = NewClient();
 
         HostGame = Make([.. args, .. skip, .. hostArgs], HostWindow, _hostDevice, hostAudio ?? NullAudioDeviceFactory.Instance);
@@ -199,6 +199,7 @@ internal abstract class CoopPair<TLevel> : IDisposable
             reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0))
         {
             Mode = _joinerMode,
+            TimeSource = FrameTime,
         };
     }
 
@@ -213,8 +214,10 @@ internal abstract class CoopPair<TLevel> : IDisposable
 
     private readonly OpenIGI.Net.Identity.EcdsaPlayerIdentity _joinerIdentity = OpenIGI.Net.Identity.EcdsaPlayerIdentity.CreateEphemeral();
 
-    // Frames run, the clock the joiner's line keeps.
+    // Frames run, the clock the joiner's line keeps, and both sessions with it.
     private long _steps;
+
+    private double FrameTime() => _steps / 30.0;
 
     /// <summary>Gets the joiner's line to the host, perfect until a test makes it otherwise.</summary>
     public SimulatedLinkTransport JoinerLink { get; private set; } = null!;
