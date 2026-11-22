@@ -10,7 +10,6 @@ namespace OpenIGI.Game.Igi2.Multiplayer;
 /// <param name="SteadyTurns">Whether the ground speed turns with the body (<c>g_steady_turns</c>).</param>
 /// <param name="InvertMouse">Whether the mouse is inverted, which a peek's height reads.</param>
 /// <param name="Movement">Whose movement the player has (<c>g_igi2_movement</c>).</param>
-/// <param name="Igi1Look">How the mouse turns it on Project I.G.I.'s movement (<c>g_igi2_igi1_look</c>).</param>
 /// <param name="Igi1Weight">Whether its weapons slow Project I.G.I.'s walk (<c>g_igi2_igi1_weight</c>).</param>
 /// <param name="Seed">The seed the player's stream is set to before the command runs, at most <see cref="Igi2Command.SeedLimit"/>.</param>
 public readonly record struct Igi2CommandStart(
@@ -20,7 +19,6 @@ public readonly record struct Igi2CommandStart(
     bool SteadyTurns,
     bool InvertMouse,
     Igi2PlayerMovement Movement,
-    Igi1Look Igi1Look,
     bool Igi1Weight,
     uint Seed);
 
@@ -79,10 +77,9 @@ public static class Igi2Command
     private const int ClimbShift = 5;
     private const int ClimbMask = 3;
 
-    // Project I.G.I.'s movement, above the climb's two bits, and how it looks and carries.
+    // Project I.G.I.'s movement, above the climb's two bits, and whether it carries its weapons' weight.
     private const int Igi1MovementFlag = 128;
-    private const int Igi1RetailLookFlag = 256;
-    private const int Igi1WeightFlag = 512;
+    private const int Igi1WeightFlag = 256;
 
     // The keys that step the weapon from what is in hand, which the chosen weapon stands in for on the server.
     private static readonly Igi2HumanChannel[] WeaponSteps =
@@ -116,7 +113,6 @@ public static class Igi2Command
             | (end.Walk ? WalkFlag : 0)
             | ((end.Climb & ClimbMask) << ClimbShift)
             | (start.Movement == Igi2PlayerMovement.Igi1 ? Igi1MovementFlag : 0)
-            | (start.Igi1Look == Igi1Look.Retail ? Igi1RetailLookFlag : 0)
             | (start.Igi1Weight ? Igi1WeightFlag : 0);
         command[Chosen] = end.Chosen < 0 ? 0f : end.Chosen + 1;
         command[SeedAt] = start.Seed & SeedLimit;
@@ -175,7 +171,6 @@ public static class Igi2Command
             (flags & SteadyTurnsFlag) != 0,
             (flags & InvertMouseFlag) != 0,
             (flags & Igi1MovementFlag) != 0 ? Igi2PlayerMovement.Igi1 : Igi2PlayerMovement.Igi2,
-            (flags & Igi1RetailLookFlag) != 0 ? Igi1Look.Retail : Igi1Look.Linear,
             (flags & Igi1WeightFlag) != 0,
             float.IsFinite(seed) && seed >= 0f ? (uint)Math.Min(seed, SeedLimit) : 0u);
     }

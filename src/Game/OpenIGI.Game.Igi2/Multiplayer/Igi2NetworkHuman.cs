@@ -153,7 +153,6 @@ public sealed class Igi2NetworkHuman
             Human.SteadyTurns = began.SteadyTurns;
             Human.InvertMouse = began.InvertMouse;
             Human.Movement = began.Movement;
-            Human.Igi1Look = began.Igi1Look;
             Human.Igi1Weight = began.Igi1Weight;
         }
 

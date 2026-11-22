@@ -4,7 +4,6 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using Xunit;
-using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -135,85 +134,13 @@ public sealed class Igi2Igi1MovementTests
         Assert.InRange(laden / free, expected - 0.001, expected + 0.001);
     }
 
-    /// <summary>
-    /// The original's look eases a small turn as Project I.G.I.'s body does (<see cref="HumanBodyTurn"/>), where the linear look
-    /// and I.G.I. 2's own turn it whole; a large turn is whole in both.
-    /// </summary>
-    /// <param name="input">The tick's horizontal look input.</param>
-    [Theory]
-    [InlineData(0.02f)]
-    [InlineData(-0.045f)]
-    [InlineData(0.3f)]
-    public void The_original_look_eases_a_small_turn_as_IGI1s_body_does(float input)
-    {
-        (Igi2HumanPlayer retail, _, _) = Igi2PlayerFakes.OnFloor();
-        retail.Movement = Igi2PlayerMovement.Igi1;
-        retail.Igi1Look = Igi1Look.Retail;
-        (Igi2HumanPlayer linear, _, _) = Igi2PlayerFakes.OnFloor();
-        linear.Movement = Igi2PlayerMovement.Igi1;
-
-        float retailBefore = retail.IdealGamma, linearBefore = linear.IdealGamma;
-        Tick(retail, Igi2PlayerAction.None, input);
-        Tick(linear, Igi2PlayerAction.None, input);
-
-        float fov = retail.View.FieldOfView;
-        float eased = (-(Fpu)new HumanBodyTurn(averages: false).Step(input) * fov).F;
-        float whole = ((-((Fpu)input * 3.1415927f)) * fov).F;
-        Assert.Equal(((Fpu)eased + retailBefore).F, retail.IdealGamma);
-        Assert.Equal(((Fpu)whole + linearBefore).F, linear.IdealGamma);
-        Assert.Equal(Math.Abs(input) < HumanBodyTurn.SmallInput, Math.Abs(eased) < Math.Abs(whole));
-    }
-
-    /// <summary>
-    /// The original look turns at the profile's own rate: a flick turns the player exactly as far as the linear look turns it for
-    /// the same counts and sensitivity, and only a small motion is eased, so the one slider means one speed under either look.
-    /// </summary>
-    /// <param name="counts">The tick's motion, in mouse counts.</param>
-    /// <param name="sensitivity">The profile's sensitivity.</param>
-    [Theory]
-    [InlineData(400f, 0.4f)]
-    [InlineData(-900f, 0.4f)]
-    [InlineData(150f, 0.8f)]
-    public void The_original_look_turns_a_flick_as_far_as_the_linear_one(float counts, float sensitivity)
-    {
-        MouseLookSettings rate = MouseLookSettings.FromSensitivity(sensitivity, invertPitch: false);
-        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
-        player.Movement = Igi2PlayerMovement.Igi1;
-        player.Igi1Look = Igi1Look.Retail;
-        float before = player.IdealGamma;
-
-        Tick(player, Igi2PlayerAction.None, rate.RetailInput(counts, MathF.PI * Igi2HumanView.DefaultFieldOfView));
-
-        // The sequel's heading turns the other way from the linear look's yaw.
-        Assert.Equal(-rate.YawDelta(counts), player.IdealGamma - before, 1e-5f);
-    }
-
-    /// <summary>A small motion under the original look turns less than the linear look, eased as the first game eases it.</summary>
-    [Fact]
-    public void The_original_look_eases_a_small_motion()
-    {
-        MouseLookSettings rate = MouseLookSettings.FromSensitivity(0.4f, invertPitch: false);
-        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
-        player.Movement = Igi2PlayerMovement.Igi1;
-        player.Igi1Look = Igi1Look.Retail;
-        float before = player.IdealGamma;
-
-        Tick(player, Igi2PlayerAction.None, rate.RetailInput(20f, MathF.PI * Igi2HumanView.DefaultFieldOfView));
-
-        float turned = Math.Abs(player.IdealGamma - before);
-        Assert.InRange(turned, Math.Abs(rate.YawDelta(20f)) * 0.5f, Math.Abs(rate.YawDelta(20f)) * 0.6f);
-    }
-
-    /// <summary>The session's comparison stands in for the chosen movement and look; off leaves the settings' own.</summary>
+    /// <summary>The session's comparison stands in for the chosen movement; off leaves the settings' own.</summary>
     [Fact]
     public void The_comparison_stands_in_for_the_settings()
     {
-        Assert.Equal(
-            new Igi2MovementChoice(Igi2PlayerMovement.Igi1, Igi1Look.Retail, true),
-            Igi2MovementChoice.From(Igi2PlayerMovement.Igi1, Igi1Look.Retail, true, Igi2MovementCompare.Off));
-        Assert.Equal(Igi2PlayerMovement.Igi2, Igi2MovementChoice.From(Igi2PlayerMovement.Igi1, Igi1Look.Retail, false, Igi2MovementCompare.Igi2).Movement);
-        Assert.True(Igi2MovementChoice.From(Igi2PlayerMovement.Igi2, Igi1Look.Retail, false, Igi2MovementCompare.Igi1Linear).LinearIgi1Look);
-        Assert.True(Igi2MovementChoice.From(Igi2PlayerMovement.Igi2, Igi1Look.Linear, false, Igi2MovementCompare.Igi1Retail).RetailIgi1Look);
+        Assert.Equal(new Igi2MovementChoice(Igi2PlayerMovement.Igi1, true), Igi2MovementChoice.From(Igi2PlayerMovement.Igi1, true, Igi2MovementCompare.Off));
+        Assert.Equal(Igi2PlayerMovement.Igi2, Igi2MovementChoice.From(Igi2PlayerMovement.Igi1, false, Igi2MovementCompare.Igi2).Movement);
+        Assert.Equal(Igi2PlayerMovement.Igi1, Igi2MovementChoice.From(Igi2PlayerMovement.Igi2, false, Igi2MovementCompare.Igi1).Movement);
     }
 
     // How far the player runs in forty ticks on the first game's body, carrying weapons that slow by a share.

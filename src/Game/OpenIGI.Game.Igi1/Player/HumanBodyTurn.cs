@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Player;
+namespace OpenIGI.Game.Igi1.Player;
 
 /// <summary>
 /// How a human on foot turns on the input frame: the body's yaw (<c>0x4610C0</c>, float 0) or the view's pitch

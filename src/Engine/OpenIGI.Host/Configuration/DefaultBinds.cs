@@ -66,9 +66,9 @@ public static class DefaultBinds
         ("f3", "coop_say Enemy spotted."),
         ("f4", "coop_say Need help here!"),
 
-        // I.G.I. 2's movement and look against Project I.G.I.'s, with its linear and its original mouse, stepped while playing to
-        // compare them, and back to the settings' own. g_igi2_movement_compare is not archived, so the rule above holds.
-        ("f11", "toggle g_igi2_movement_compare igi2 igi1linear igi1retail off"),
+        // I.G.I. 2's movement against Project I.G.I.'s, stepped while playing to compare them, and back to the settings' own.
+        // g_igi2_movement_compare is not archived, so the rule above holds.
+        ("f11", "toggle g_igi2_movement_compare igi2 igi1 off"),
 
         // The remastered thermal sensor's palette, stepped while it is up. Beside Page Up, the goggles' own alternate key in
         // I.G.I. 2. It writes no setting: the palette it picks lasts the session, and r_thermal_palette stays the player's.

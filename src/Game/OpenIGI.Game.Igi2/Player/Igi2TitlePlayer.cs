@@ -652,16 +652,13 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         // get and set negate it); the host's says what the player chose.
         _reader.InvertMouse = !input.InvertMouse;
         Human.InvertMouse = !input.InvertMouse;
-        // Project I.G.I.'s movement looks as that game does. The remaster's look is one mouse count one step whatever the frame
-        // pacing: Smooth Motion's unfiltered look, without the tick averaging, the fine-aim curve and the clamp. The original's is
-        // the tick's filtered input whatever Smooth Motion is, its turn eased as its body's (Igi2HumanPlayer.TurnFor).
-        Human.UnfilteredMouse = !Human.TurnsAsIgi1Retail
-            && (input.UnfilteredMouse || Human.Movement == Igi2PlayerMovement.Igi1)
-            && CanPreviewLook;
+        // Project I.G.I.'s movement looks as that game does, one mouse count one step whatever the frame pacing: Smooth Motion's
+        // unfiltered look, without the tick averaging, the fine-aim curve and the clamp.
+        Human.UnfilteredMouse = (input.UnfilteredMouse || Human.Movement == Igi2PlayerMovement.Igi1) && CanPreviewLook;
         _lookInput = input;
         _rawKeys = input.Raw;
-        (float mouseX, float mouseY) = LookInput(input);
-        _reader.Read(new Igi2PlayerInputState(mouseX, mouseY, held, pressed), _frame);
+        _reader.Read(new Igi2PlayerInputState(
+            Analog(input.MouseX, Human.UnfilteredMouse), Analog(input.MouseY, Human.UnfilteredMouse), held, pressed), _frame);
         TakeWheelPick();
         if (Level is { } level)
         {
@@ -760,7 +757,6 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             Human.SteadyTurns,
             Human.InvertMouse,
             Human.Movement,
-            Human.Igi1Look,
             Human.Igi1Weight,
             seed);
         Human.Update(_frame);
