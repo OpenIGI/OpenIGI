@@ -47,9 +47,15 @@ public sealed class Igi2CarriedPose
     /// <summary>Stands it where the level placed it, not moving.</summary>
     /// <param name="position">Where.</param>
     /// <param name="angles">Which way, as level data's three angles.</param>
-    public void Place(Vector3d position, Vector3f angles)
+    public void Place(Vector3d position, Vector3f angles) => Place(position, EngineEuler.Rotation(angles.X, angles.Y, angles.Z));
+
+    /// <summary>Stands it where the level placed it, facing as a frame does, not moving.</summary>
+    /// <param name="position">Where.</param>
+    /// <param name="frame">Which way, row by row.</param>
+    public void Place(Vector3d position, IReadOnlyList<float> frame)
     {
-        _orientation = EngineEuler.Rotation(angles.X, angles.Y, angles.Z);
+        ArgumentNullException.ThrowIfNull(frame);
+        _orientation = [.. frame];
         Position = position;
         LastPosition = position;
         _lastOrientation = [.. _orientation];

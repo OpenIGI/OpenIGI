@@ -32,7 +32,8 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached, IAiDoor
+public sealed partial class Igi2DoorTask
+    : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached, IAttachParent, IIgi2MovedTick, IAiDoor
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Door";
@@ -226,6 +227,17 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     /// <summary>Gets which way it faced at the start of the tick, <c>tLastOrientation</c>.</summary>
     public IReadOnlyList<float> LastOrientation => _lastOrientation;
 
+    /// <inheritdoc/>
+    /// <remarks>What it carries -- a padlock on a gate, a crane's load and button, an inner door -- is held against where it stands.</remarks>
+    public Vector3d AttachPosition => _position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> AttachOrientation => _orientation;
+
+    /// <inheritdoc/>
+    /// <remarks>The tick it last ran in, which is the only tick it moves in.</remarks>
+    public int MovedTick { get; private set; } = int.MinValue;
+
     /// <summary>
     /// Gets its state as <c>Door_GetDoorStatus</c> (<c>igi2 0x538460</c>) reports it: 0 open (past <see cref="OpenEnough"/>), 2
     /// told to open, 1 shut, 3 closing.
@@ -277,6 +289,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     {
         ArgumentNullException.ThrowIfNull(level);
         Start(level);
+        MovedTick = level.Ticks;
         level.RunChildren(this);
 
         bool wasClosed = _isClosed != 0;
@@ -539,7 +552,9 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         return true;
     }
 
-    // Slid along its stop offsets by the slider, turned by the slider's share of its angle, and its solids carried with it.
+    // Slid along its stop offsets by the slider, turned by the slider's share of its angle, and its solids carried with it; then,
+    // RigidDynCubeObj_UpdateAttachments, everything the level put beneath it follows it. Left behind, a gate's padlock hung in the
+    // air where the gate had shut, solid, and a crane swung away from the load it carries.
     private void SetPosition()
     {
         float[] m = _base;
@@ -553,6 +568,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
             ? Igi2Pose.RotateGamma(m, (((Fpu)MaxAngle * Slider) * 0.017453292f).F)
             : [.. m];
         Repose();
+        Igi2Attachment.UpdateChildren(this);
     }
 
     private void Repose()

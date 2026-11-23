@@ -30,7 +30,7 @@ internal static class Igi2VehicleSystems
                 b.Movers.Add(car);
                 foreach (GameTask rider in Riders(car))
                 {
-                    Ride(rider, b);
+                    Igi2InteractionSystems.Carry(rider, b);
                 }
             }
 
@@ -55,22 +55,6 @@ internal static class Igi2VehicleSystems
             {
                 yield return below;
             }
-        }
-    }
-
-    // A model object riding a car moves: its solids go with it, and it is drawn where it is carried.
-    private static void Ride(GameTask rider, Igi2LevelBuild b)
-    {
-        switch (rider)
-        {
-            case Interaction.Igi2EditRigidObjTask prop when prop.Guide is null:
-                Igi2InteractionSystems.Move(prop, b);
-                break;
-            case Interaction.Igi2SwitchTask button:
-                button.Magic = b.Magic;
-                button.Bind(b.Player.CollisionWorld.SolidsOf(Interaction.Igi2SwitchTask.TypeName, button.Id));
-                b.Movers.Add(button);
-                break;
         }
     }
 
