@@ -1,4 +1,5 @@
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Scoring;
 using Xunit;
 
 namespace OpenIGI.Game.Tests.Config;
@@ -72,5 +73,39 @@ public sealed class ProfileDocumentTests
         Assert.Null(ProfileDocument.FromJson(System.Text.Json.JsonDocument.Parse("""{"schema":99,"missions":{},"bindings":[]}""").RootElement));
         Assert.Null(ProfileDocument.FromJson(System.Text.Json.JsonDocument.Parse("""{"name":"x"}""").RootElement));
         Assert.Null(ProfileDocument.FromJson(System.Text.Json.JsonDocument.Parse("[1,2]").RootElement));
+    }
+
+    /// <summary>
+    /// Each mission's best follows the player: through the document and back, merged to the better of two, and absent -- not an
+    /// error -- from a document an older build wrote.
+    /// </summary>
+    [Fact]
+    public void Mission_records_follow_the_player_and_merge_to_the_better()
+    {
+        MissionRankRequirements requirements = MissionRankRequirements.FromRows(
+            [900f, 5f, 3f, 20f, 10f], [600f, 2f, 1f, 50f, 30f], [300f, 0f, 0f, 80f, 60f]);
+        TitleMissionRecord operative = MissionScoreRecord.Encode(new MissionScore(30 * 250, 0, 90, 100, 70) { Difficulty = 1, MissionId = 11 }, requirements);
+        TitleMissionRecord bodyguard = MissionScoreRecord.Encode(new MissionScore(30 * 800, 4, 25, 0, 0) { Difficulty = 1, MissionId = 11 }, requirements);
+
+        PlayerProfile desk = PlayerProfile.CreateDefault();
+        desk.SetMissionRecord("igi2", 11, bodyguard);
+        desk.SetMissionRecord("igi1", 1, bodyguard);
+        PlayerProfile browser = PlayerProfile.CreateDefault();
+        browser.SetMissionRecord("igi2", 11, operative);
+
+        ProfileDocument? read = ProfileDocument.FromJson(ProfileDocument.From(browser).ToJson());
+        Assert.NotNull(read);
+        Assert.Equal(operative.Counts, read.MissionRecords![0].Counts);
+
+        PlayerProfile merged = PlayerProfile.CreateDefault();
+        ProfileDocument.Merge(ProfileDocument.From(desk), read, localIsNewer: true).ApplyTo(merged);
+        Assert.Equal(operative.Counts, merged.MissionRecordOf("igi2", 11)!.Counts);
+        Assert.Equal(bodyguard.Counts, merged.MissionRecordOf("igi1", 1)!.Counts);
+
+        ProfileDocument? old = ProfileDocument.FromJson(System.Text.Json.JsonDocument.Parse(
+            """{"schema":1,"missions":{"igi1":3},"difficulty":1,"invertMouse":false,"mouseSensitivity":0.4,"bindings":[]}""").RootElement);
+        Assert.NotNull(old);
+        Assert.Null(old.MissionRecords);
+        Assert.Single(ProfileDocument.Merge(ProfileDocument.From(desk), old, localIsNewer: false).MissionRecords!, static r => r.Title == "igi2");
     }
 }

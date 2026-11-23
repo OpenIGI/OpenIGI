@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenIGI.Game.Scoring;
 
 namespace OpenIGI.Game.Config;
 
@@ -9,6 +10,13 @@ namespace OpenIGI.Game.Config;
 /// <param name="Device">The input device.</param>
 /// <param name="Key">The key or button.</param>
 public sealed record ProfileBinding(string Action, string Device, string Key);
+
+/// <summary>The best a player has done in one mission of one game, as a profile document carries it.</summary>
+/// <param name="Title">The game, by title id.</param>
+/// <param name="Mission">The mission.</param>
+/// <param name="Counts">The record's counts.</param>
+/// <param name="Figures">The record's figures.</param>
+public sealed record ProfileMissionRecord(string Title, int Mission, IReadOnlyList<int> Counts, IReadOnlyList<float> Figures);
 
 /// <summary>
 /// What of a player's profile follows them between their computers and the browser, through their account: how far they
@@ -22,13 +30,18 @@ public sealed record ProfileBinding(string Action, string Device, string Key);
 /// <param name="InvertMouse">Whether the mouse's vertical axis is inverted.</param>
 /// <param name="MouseSensitivity">The mouse's sensitivity, 0 to 1.</param>
 /// <param name="Bindings">The keys, as the profile lists them.</param>
+/// <param name="MissionRecords">
+/// The best done in each mission, by game; <see langword="null"/> in a document an older build wrote, which knew none -- and which
+/// passes over the list when it reads a newer one.
+/// </param>
 public sealed record ProfileDocument(
     int Schema,
     IReadOnlyDictionary<string, int> Missions,
     int Difficulty,
     bool InvertMouse,
     float MouseSensitivity,
-    IReadOnlyList<ProfileBinding> Bindings)
+    IReadOnlyList<ProfileBinding> Bindings,
+    IReadOnlyList<ProfileMissionRecord>? MissionRecords = null)
 {
     /// <summary>The version this build writes.</summary>
     public const int CurrentSchema = 1;
@@ -51,12 +64,14 @@ public sealed record ProfileDocument(
             profile.Difficulty,
             profile.InvertMouse,
             profile.MouseSensitivity,
-            [.. profile.Bindings.Select(static b => new ProfileBinding(b.Action, b.Device, b.Key))]);
+            [.. profile.Bindings.Select(static b => new ProfileBinding(b.Action, b.Device, b.Key))],
+            [.. profile.MissionRecords.Select(static r => new ProfileMissionRecord(r.TitleId, r.MissionId, r.Record.Counts, r.Record.Figures))]);
     }
 
     /// <summary>
     /// Merges what this computer has with what the account has: in each game the furthest mission either reached (missions
-    /// are numbered in campaign order), and everything else from the side that changed last.
+    /// are numbered in campaign order), in each mission the better best (<see cref="MissionScoring.Prefer"/>), and everything
+    /// else from the side that changed last.
     /// </summary>
     /// <param name="local">This computer's.</param>
     /// <param name="remote">The account's.</param>
@@ -73,7 +88,33 @@ public sealed record ProfileDocument(
         }
 
         ProfileDocument settings = localIsNewer ? local : remote;
-        return settings with { Schema = CurrentSchema, Missions = missions };
+        return settings with { Schema = CurrentSchema, Missions = missions, MissionRecords = MergeRecords(local, remote) };
+    }
+
+    // Every mission either side keeps a record of; where both do, the better.
+    private static List<ProfileMissionRecord> MergeRecords(ProfileDocument local, ProfileDocument remote)
+    {
+        var merged = new Dictionary<(string Title, int Mission), TitleMissionRecord>();
+        foreach (ProfileMissionRecord record in remote.MissionRecords ?? [])
+        {
+            merged[(record.Title, record.Mission)] = new TitleMissionRecord(record.Counts, record.Figures);
+        }
+
+        foreach (ProfileMissionRecord record in local.MissionRecords ?? [])
+        {
+            var mine = new TitleMissionRecord(record.Counts, record.Figures);
+            merged[(record.Title, record.Mission)] = merged.TryGetValue((record.Title, record.Mission), out TitleMissionRecord? theirs)
+                ? MissionScoring.Prefer(mine, theirs)
+                : mine;
+        }
+
+        return
+        [
+            .. merged
+                .OrderBy(static entry => entry.Key.Title, StringComparer.Ordinal)
+                .ThenBy(static entry => entry.Key.Mission)
+                .Select(static entry => new ProfileMissionRecord(entry.Key.Title, entry.Key.Mission, entry.Value.Counts, entry.Value.Figures)),
+        ];
     }
 
     /// <summary>Puts the document into a profile.</summary>
@@ -86,6 +127,14 @@ public sealed record ProfileDocument(
             if (mission > 0)
             {
                 profile.SetMission(title, mission);
+            }
+        }
+
+        foreach (ProfileMissionRecord record in MissionRecords ?? [])
+        {
+            if (record is { Title.Length: > 0, Counts: not null, Figures: not null })
+            {
+                profile.SetMissionRecord(record.Title, record.Mission, new TitleMissionRecord(record.Counts, record.Figures));
             }
         }
 

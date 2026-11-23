@@ -134,7 +134,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         _wallBlocks = new PlayerWallBlockLog(logger ?? NullLogger.Instance, _body);
         _firstPerson = new PlayerFirstPersonView(_body);
         _pickups = new PlayerPickups(_body);
-        _shots = new PlayerShotResolver(_body, _random);
+        _shots = new PlayerShotResolver(_body, _random, Shots);
         _interaction = new PlayerInteractionDriver(this, _body, _input, _random, _shots);
         _ladder = new PlayerLadderController(_body);
         _footsteps = new PlayerFootsteps(_body);

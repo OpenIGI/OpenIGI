@@ -81,6 +81,16 @@ public sealed partial class GameHost
 
         public bool RunsUnattended => host.TickObserver is Multiplayer.ISessionHold { Unattended: true };
 
+        public bool PlaysSolo => host.TickObserver is null;
+
+        public Multiplayer.ISessionMissionScore? ScoreSession => host.TickObserver as Multiplayer.ISessionMissionScore;
+
+        public long Milliseconds => host._loop.TimeSource.Milliseconds;
+
+        public bool ShowsScoreScreen => !host._options.SimulationOnly;
+
+        public Game.Scoring.MissionScoreWords ScoreWords => host.ScoreWords;
+
         public void ReleasePlayedMission() => host.ReleasePlayedMission();
     }
 }

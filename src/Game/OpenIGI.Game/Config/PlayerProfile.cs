@@ -571,6 +571,7 @@ public sealed partial class PlayerProfile
             copy._titleMissions[title] = mission;
         }
 
+        // Not the mission records: they are the player's own, and a clone is a new player's start.
         return copy;
     }
 

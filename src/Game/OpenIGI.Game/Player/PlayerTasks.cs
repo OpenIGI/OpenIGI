@@ -239,8 +239,11 @@ public interface IHumanBodyState
 /// </remarks>
 public partial class HumanPlayerTask : HumanTask, IAiPlayer
 {
-    /// <summary>Gets how many times a squad has first spotted the player, as an AI that keeps the count reports it.</summary>
-    public int TimesSpotted { get; private set; }
+    /// <summary>
+    /// Gets or sets how many times a squad has first spotted the player, as an AI that keeps the count reports it; a save game
+    /// puts it back.
+    /// </summary>
+    public int TimesSpotted { get; set; }
 
     /// <inheritdoc/>
     public bool IsKeepingLow => Body?.IsKeepingLow ?? false;

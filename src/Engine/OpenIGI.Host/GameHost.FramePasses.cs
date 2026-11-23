@@ -412,6 +412,12 @@ public sealed partial class GameHost
     /// <summary>Lets Escape, held, skip a cutscene, or bring the pause menu up over the level.</summary>
     private void HandleEscape(FrameLoopState state)
     {
+        // A completed mission's rank screen takes Escape, and every key, to go on.
+        if (UpdateScoreScreen(state))
+        {
+            return;
+        }
+
         UpdateCutsceneSkip(state);
 
         // Escape brings the shell up over the level as a pause menu. It goes AFTER the shell's own
@@ -427,6 +433,7 @@ public sealed partial class GameHost
             && !_computerOpen
             && !_touchEditor.IsOpen
             && !_session.FailedMenu
+            && _session.Score is null
             && _mission.Scenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
             && _mission.MenusEnabled

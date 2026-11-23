@@ -42,6 +42,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
 /// <param name="editTouchLayout">Leaves the pause menu for the touch layout editor, over the mission.</param>
 /// <param name="openEditor">Opens the editor, or <see langword="null"/> in a build without one.</param>
+/// <param name="bestScore">The card of the best the active profile has done in a mission of the running game, or <see langword="null"/>.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -69,8 +70,12 @@ public sealed class ShellHost(
     IPartyPanel? party = null,
     IAccountPanel? account = null,
     IShellMaps? maps = null,
-    Func<int, UiPicture?>? missionPicture = null) : IShellHost
+    Func<int, UiPicture?>? missionPicture = null,
+    Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? bestScore = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => bestScore?.Invoke(missionId);
+
     /// <inheritdoc/>
     public ICoopRooms? Coop => coop;
 

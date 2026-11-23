@@ -128,8 +128,17 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
                 World.PlayerTicked &= stepped;
                 return stepped;
             },
+            Scorer = new Flow.Igi1MissionScorer(World, MissionRanks(request.World)),
         };
     }
+
+    // What the mission's ranks ask: its own ranks.json where its folder (a mod's first) has one, else the game's table.
+    private static Scoring.MissionRankRequirements? MissionRanks(in WorldBuildRequest level) =>
+        Flow.Igi1MissionRanks.Shipped.Read(
+            level.Mission.Descriptor.Id,
+            level.Resources.FileSystem,
+            level.Mission.LevelPack.Directory,
+            level.Logger);
 
     /// <inheritdoc/>
     MissionState IHostedMission.World => World;

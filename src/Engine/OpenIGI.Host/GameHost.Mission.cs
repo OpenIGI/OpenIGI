@@ -232,6 +232,9 @@ public sealed partial class GameHost
         }
 
         systems.BuildAll(build);
+
+        // The profile's record of the mission, kept from its first play as retail's load keeps it.
+        _outcome.MissionBegun();
     }
 
     /// <summary>Makes the mission systems, in the order a mission is brought up: the host's, and the game's set among them.</summary>

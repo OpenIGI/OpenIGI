@@ -397,6 +397,9 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // A completed mission's rank screen, over the level it stands still.
+        DrawScoreScreen(state);
+
         // The fallen teammates, each marked where it lies: a cross in a disc, its ring the revival; and a fall told as it happens.
         IReadOnlyList<Game.Ai.ReviveMarker> fallen = [.. _soldiers?.ReviveMarkers() ?? [], .. CoopMarks?.ReviveMarkers() ?? []];
         UpdateDownedAlerts(fallen);

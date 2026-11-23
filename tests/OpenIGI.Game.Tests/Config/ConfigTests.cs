@@ -60,6 +60,25 @@ public sealed class ConfigTests
         Assert.Equal(0, reloaded.Active.MissionOf("igi3"));
     }
 
+    /// <summary>A mission's best is kept in OpenIGI's file by game and mission, every figure exactly, and a new player starts with none.</summary>
+    [Fact]
+    public void Mission_records_round_trip_and_stay_with_their_player()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        var record = new OpenIGI.Game.Scoring.TitleMissionRecord([11, 1, 0, 76, 40, 9, 98, 3, 26760, 0], [1200f, 5f, -1f, 25.5f, 0.1f, 900f, 2f, 1f, 50f, 30f, 600f, 0f, 0f, 80f, 60f]);
+        profile.SetMissionRecord("igi2", 11, record);
+
+        PlayerProfile reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config)).Active!;
+        OpenIGI.Game.Scoring.TitleMissionRecord? read = reloaded.MissionRecordOf("igi2", 11);
+        Assert.NotNull(read);
+        Assert.Equal(record.Counts, read.Counts);
+        Assert.Equal(record.Figures, read.Figures);
+        Assert.Null(reloaded.MissionRecordOf("igi2", 12));
+        Assert.Null(reloaded.MissionRecordOf("igi1", 11));
+        Assert.Null(profile.Clone().MissionRecordOf("igi2", 11));
+    }
+
     [Fact]
     public void AProfileItsPlayerReboundKeepsItsControlsAndItsInversion()
     {

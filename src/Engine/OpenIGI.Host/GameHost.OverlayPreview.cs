@@ -4,6 +4,7 @@ using OpenIGI.Core.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
+using OpenIGI.Game.Scoring;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
@@ -92,6 +93,62 @@ public sealed partial class GameHost
 
         state.Batch.End();
     }
+
+    // A completed mission's rank screen, as r_hud_overlay_preview missionscore asks -- one figure short of the next rank -- or
+    // missionscore_coop, a squad of six scored as one, counting down.
+    private static MissionScoreCard? PreviewScoreCard()
+    {
+        string asked = HudCVars.OverlayPreview.Value.Trim().ToLowerInvariant();
+        if (asked is not ("missionscore" or "missionscore_coop"))
+        {
+            return null;
+        }
+
+        var card = new MissionScoreCard(
+            "MISSION STATS",
+            "Category",
+            "Achieved",
+            "Target",
+            [
+                new("Time To Complete Mission:", "0:14:52", true, "0:20:00"),
+                new("Times Spotted:", "3", false, "1"),
+                new("Health:", "76%", true, "50%"),
+                new("Accuracy:", "41%", true, "40%"),
+            ],
+            "Rank:",
+            "Covert Operative",
+            1,
+            3);
+        return asked == "missionscore"
+            ? card
+            : card with
+            {
+                Lines =
+                [
+                    new("Time To Complete Mission:", "0:14:52", true, "0:20:00"),
+                    new("Times Spotted:", "4", false, "2"),
+                    new("Health:", "38%", false, "50%"),
+                    new("Accuracy:", "44%", true, "30%"),
+                ],
+                RankName = "Field Officer",
+                Rank = 0,
+                Squad =
+                [
+                    new("Jones", 3, "76%", "41%", 14, IsOwn: true),
+                    new("Anya", 0, "92%", "63%", 9, IsOwn: false),
+                    new("Phillips", 1, "38%", "22%", 6, IsOwn: false),
+                    new("Priboi", 0, "64%", "N/A", 0, IsOwn: false),
+                    new("Ekk", 0, "81%", "35%", 11, IsOwn: false),
+                    new("Lagatin", 0, "100%", "58%", 7, IsOwn: false),
+                ],
+            };
+    }
+
+    // The preview's foot: the host's, counting down in the co-op sample.
+    private static Presentation.MissionScorePrompt PreviewScorePrompt() =>
+        HudCVars.OverlayPreview.Value.Trim().Equals("missionscore_coop", StringComparison.OrdinalIgnoreCase)
+            ? new Presentation.MissionScorePrompt("SPACE", SecondsLeft: 7)
+            : new Presentation.MissionScorePrompt("SPACE");
 
     // A team match under way -- or decided, with the vote open -- and its menus, as the preview asks.
     private static void DrawPreviewMatch(FrameLoopState state, IRemasteredHudPresenter hud, string asked, int width, int height)

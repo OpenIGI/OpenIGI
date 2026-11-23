@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Multiplayer;
 /// are kept in <see cref="SentCommands"/>, which prediction runs again over a correction from the server.
 /// </para>
 /// </remarks>
-public sealed class ClientSession
+public sealed partial class ClientSession
 {
     private const int KeptCommands = 64;
 
@@ -862,6 +862,9 @@ public sealed class ClientSession
                     Feed.Add(note, now);
                 }
 
+                break;
+            case SessionMessage.MissionScore when SquadScoreMessage.Read(ref reader) is { } squad:
+                MissionScore = squad;
                 break;
             case SessionMessage.MapVote:
                 Modes.NextMapVote? vote = Modes.NextMapVote.Read(ref reader);

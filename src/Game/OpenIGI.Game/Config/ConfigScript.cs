@@ -179,6 +179,14 @@ public sealed class ConfigScript
                     p.SetMission(title, c.GetInt32(1));
                 }
             }), 2);
+            natives.RegisterFunction("GOTitleMissionRecord", c => OnProfile(p =>
+            {
+                // A line that can't be read is passed over, as a bad GOTitleMission is.
+                if (c.GetString(0) is { Length: > 0 } title && MissionRecordText.TryParse(c.GetString(2), c.GetString(3), out Scoring.TitleMissionRecord? record))
+                {
+                    p.SetMissionRecord(title, c.GetInt32(1), record);
+                }
+            }), 4);
             natives.RegisterFunction("GOInMouInv", c => OnProfile(p => p.InvertMouse = c.GetInt32(0) != 0), 1);
             natives.RegisterFunction("GOInMouSens", c => OnProfile(p => p.MouseSensitivity = c.GetSingle(0)), 1);
 

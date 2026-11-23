@@ -92,6 +92,7 @@ public sealed class Igi1SaveStates : ISaveStates
     {
         ArgumentNullException.ThrowIfNull(world);
         yield return Igi1PlayerSave.Section(world);
+        yield return Igi1MissionScoreSave.Section(world);
         yield return Igi1LevelSave.Section(world);
         if (world.Objectives is { } objectives)
         {

@@ -33,7 +33,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
+public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionMissionScore, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -212,6 +212,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
 
     /// <inheritdoc/>
     public void Foresee(string map) => _session?.Foresee(map);
+
+    /// <inheritdoc/>
+    public Game.Scoring.SquadScore? AnnounceMissionScore(Game.Scoring.MissionScoreSheet sheet) => _session?.TellMissionScore(sheet);
 
     /// <inheritdoc/>
     public bool HoldsLevel =>

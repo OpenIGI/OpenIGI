@@ -34,6 +34,15 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// </summary>
     public Func<Action<PlayerCamera>, bool>? Step { get; init; }
 
+    /// <summary>
+    /// Gets what reads the player's mission score where the player is the game's own mission's; <see langword="null"/> in another
+    /// game's level, which ranks its own.
+    /// </summary>
+    public Flow.Igi1MissionScorer? Scorer { get; init; }
+
+    /// <inheritdoc/>
+    public Scoring.MissionScoreSheet? ScoreSheet(int missionId) => Scorer?.Sheet(missionId);
+
     /// <inheritdoc/>
     /// <remarks>Not while dead, nor on a mounted gun, whose look turns the gun rather than the head.</remarks>
     public bool CanPreviewLook => !Human.Life.IsDead && Human.Rig.MountedStationaryGun is null;

@@ -79,7 +79,7 @@ public sealed partial class GameHost
 
     /// <summary>
     /// Whether the presentation still owns the level -- it is withheld, the card is up, or the shot has
-    /// the camera -- so nothing in it may run yet: a cut-scene that started under the card, or a patrol
+    /// the camera, or a completed mission's rank screen is up over it -- so nothing in it may run yet: a cut-scene that started under the card, or a patrol
     /// that walked off during the hold, would be one the player never saw begin.
     /// </summary>
     /// <remarks>
@@ -92,7 +92,8 @@ public sealed partial class GameHost
         IsWarmingUp
         || CoopHoldsLevel
         || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
-        || _entry.IsCameraActive;
+        || _entry.IsCameraActive
+        || _session.Score is not null;
 
     /// <summary>Whether a co-op level is held for the other players to have it loaded too, so all of them begin it at once.</summary>
     private bool CoopHoldsLevel => TickObserver is Multiplayer.ISessionHold { HoldsLevel: true };

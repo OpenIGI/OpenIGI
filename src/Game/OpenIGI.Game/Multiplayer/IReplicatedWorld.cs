@@ -85,6 +85,20 @@ public interface IReplicatedWorld
     /// <returns><see langword="false"/> when the world can't be played so: its mode stays its own.</returns>
     bool TryPlayVersus(bool teams) => false;
 
+    /// <summary>
+    /// Gets how a player has played the mission, for its rank: their own counts -- times spotted, health, rounds, hits and kills --
+    /// which the squad's score stands against the squad's clock (<see cref="Scoring.SquadScore.Of"/>).
+    /// </summary>
+    /// <param name="slot">The player's slot, the host's own (<see cref="ServerSession.HostSlot"/>) among them.</param>
+    /// <returns>The score, or <see langword="null"/> when the player isn't in the world (or the world keeps none).</returns>
+    Scoring.MissionScore? ScoreOf(int slot) => null;
+
+    /// <summary>
+    /// Gets the times the squad as a whole was spotted, where the world counts sightings so rather than player by player;
+    /// <see langword="null"/> to add up each player's (<see cref="Scoring.SquadScore.Of"/>).
+    /// </summary>
+    int? SquadTimesSpotted => null;
+
     /// <summary>Gets where a player stands, or <see langword="null"/> when it isn't in the world (or the world doesn't say).</summary>
     /// <param name="slot">The player's slot.</param>
     /// <returns>Its feet, in world units.</returns>
@@ -622,6 +636,12 @@ public enum SessionMessage : byte
 
     /// <summary>Client to server, reliable: the pieces of a file it lacks, by place in its table (<see cref="ChunkWant"/>).</summary>
     ChunkWant = 27,
+
+    /// <summary>
+    /// Server to client, reliable: a co-op mission's score at its end (<see cref="SquadScoreMessage"/>), every player's, which each
+    /// shows until the squad goes on.
+    /// </summary>
+    MissionScore = 28,
 }
 
 /// <summary>A player spawn protection shields: who, and for how many ticks more at most (firing ends it sooner).</summary>

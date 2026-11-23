@@ -173,6 +173,11 @@ public sealed partial class Igi2ReplicatedWorld
         return members;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Each player's own <c>tMissionScoreData</c>, the host's and every partner's alike.</remarks>
+    public Scoring.MissionScore? ScoreOf(int slot) =>
+        HumanOf(slot == ServerSession.HostSlot ? HostEntity : slot + 1) is { } human ? Igi2TitlePlayer.ScoreOf(human, 0) : null;
+
     // A player of the session by its entity: the level's own, or a client's.
     private Igi2HumanPlayer? HumanOf(int entity) =>
         entity == HostEntity ? (IncludesHost ? _level.Human : null) : _bySlot.GetValueOrDefault(entity - 1)?.Human;

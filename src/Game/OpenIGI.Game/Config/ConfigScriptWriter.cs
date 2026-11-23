@@ -55,6 +55,12 @@ public static class ConfigScriptWriter
                 Call("GOTitleMission", Text(title), Number(mission));
             }
 
+            // OpenIGI's own: the best done in each mission, a title's own figures as two lists of words.
+            foreach ((string title, int mission, Scoring.TitleMissionRecord record) in profile.MissionRecords)
+            {
+                Call("GOTitleMissionRecord", Text(title), Number(mission), Text(MissionRecordText.Counts(record)), Text(MissionRecordText.Figures(record)));
+            }
+
             Call("GOInMouInv", Number(profile.InvertMouse ? 1 : 0));
             Call("GOInMouSens", Real(profile.MouseSensitivity));
 

@@ -130,6 +130,11 @@ internal sealed class FakeHost : IShellHost
 
     public UiPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
 
+    /// <summary>The missions' best scores, by mission, or null for none.</summary>
+    public Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? Scores { get; set; }
+
+    public OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => Scores?.Invoke(missionId);
+
     public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
 
     public void ResetInputBindings(PlayerProfile profile) => TitleInputBindings.Reset(profile, Controls);

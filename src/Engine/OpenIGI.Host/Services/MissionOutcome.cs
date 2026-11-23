@@ -4,6 +4,7 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Scoring;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
@@ -60,6 +61,21 @@ internal interface IMissionOutcomeHost
 
     // A dedicated server's: nobody sits at it to choose what a failed mission's page offers.
     bool RunsUnattended { get; }
+
+    // No session with other players: a single player's mission, the only kind retail ranks.
+    bool PlaysSolo { get; }
+
+    /// <summary>Gets the co-op session's part in a mission's score, or <see langword="null"/> for a mission played alone.</summary>
+    Multiplayer.ISessionMissionScore? ScoreSession { get; }
+
+    /// <summary>Gets the host clock's time now, in milliseconds, which a co-op score's countdown runs on.</summary>
+    long Milliseconds { get; }
+
+    // Whether the rank screen is put up at a mission's end: not where nothing is drawn to read it.
+    bool ShowsScoreScreen { get; }
+
+    /// <summary>Gets the words a mission's score is told in, in the language being played.</summary>
+    MissionScoreWords ScoreWords { get; }
 
     /// <summary>Lets go of the mission being played.</summary>
     void ReleasePlayedMission();
@@ -168,10 +184,12 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         {
             session.ResultHandled = true;
             host.Events?.Raise(new MissionEnded(completedMission.Id, Completed: true));
+            bool recorded = KeepScore(completedMission);
+
             // A successor the catalogue does not offer ends the campaign the way the last mission
             // does -- in a build cut to the opening missions, the last one offered is its finale.
             int nextMissionId = completedMission.NextMissionId;
-            if (nextMissionId != MissionDescriptor.NextMissionUndefined && host.Missions.TryGet(nextMissionId, out _))
+            if (HasNext(completedMission))
             {
                 if (host.ActiveProfile is { } activeProfile)
                 {
@@ -182,30 +200,194 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
                 }
 
                 host.TitlePlayer?.MissionCompleted(nextMissionId);
-                if (host.FollowsSession)
-                {
-                    // The server loads the next one, and this client follows it there.
-                    logger.Information("Mission", $"Completed mission {completedMission.Id}; following the room's host to {nextMissionId}.");
-                }
-                else
-                {
-                    logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
-                    host.StartMission(nextMissionId);
-                }
+            }
+            else if (recorded)
+            {
+                host.SaveConfiguration();
+            }
+
+            // The rank screen holds the level until the player goes on (MissionScoreScreen_RunHandler: Space), or a co-op squad's
+            // countdown runs out.
+            _completed = completedMission;
+            if (session.Score is not null)
+            {
+                logger.Information("Mission", $"Completed mission {completedMission.Id}; its rank screen is up until the squad goes on.");
+                return;
+            }
+
+            GoOn(state);
+        }
+    }
+
+    /// <summary>Takes the rank screen down and goes on to what follows the mission it scored.</summary>
+    /// <param name="state">The frame loop's state, whose shell the campaign's end opens on.</param>
+    public void ContinueFromScore(FrameLoopState state)
+    {
+        if (session.Score is null)
+        {
+            return;
+        }
+
+        session.Score = null;
+        GoOn(state);
+    }
+
+    /// <summary>
+    /// Puts up the score a co-op client's server told at the mission's end: this player's own card with the squad's table, held
+    /// until the server goes on -- which the client then follows -- and kept as this player's best where it improves on it.
+    /// </summary>
+    /// <param name="squad">The squad's score.</param>
+    public void HearSquadScore(SquadScore squad)
+    {
+        ArgumentNullException.ThrowIfNull(squad);
+        if (session.Mission is not { } mission || host.ScoreSession?.LocalEntity is not { } own)
+        {
+            return;
+        }
+
+        PlayerProfile? profile = host.ActiveProfile;
+        if (MissionScoring.ForSquadMember(squad, own, profile?.MissionRecordOf(host.TitleId, mission.Id), host.ScoreWords) is not { } score)
+        {
+            return;
+        }
+
+        Keep(mission, score, new ScoreHold(score.Card, host.Milliseconds + (squad.SecondsLeft * 1000L), CanContinue: false));
+        if (score.Record is not null)
+        {
+            host.SaveConfiguration();
+        }
+    }
+
+    // The mission completed last, which the rank screen holds the way on from.
+    private MissionDescriptor? _completed;
+
+    private bool HasNext(MissionDescriptor mission) =>
+        mission.NextMissionId != MissionDescriptor.NextMissionUndefined && host.Missions.TryGet(mission.NextMissionId, out _);
+
+    /// <summary>
+    /// Scores the mission just completed: a single player's alone, as retail does (<c>Game_CreateMissionScoreScreen</c>); a co-op
+    /// squad's, which a server scores player by player and tells them all, each held for <see cref="SquadScore.AutoAdvanceSeconds"/>
+    /// unless the host goes on sooner. The record this end's player keeps, and its rank screen where somebody is there to read it.
+    /// A co-op client's score comes from its server (<see cref="HearSquadScore"/>).
+    /// </summary>
+    /// <param name="mission">The mission.</param>
+    /// <returns>Whether the profile's record changed.</returns>
+    private bool KeepScore(MissionDescriptor mission)
+    {
+        // A client's score is its server's to tell, and may already be up: its own level deciding late must not take it down.
+        if (host.FollowsSession)
+        {
+            return false;
+        }
+
+        session.Score = null;
+        if (host.PlaysArena || host.TitlePlayer?.ScoreSheet(mission.Id) is not { } sheet)
+        {
+            return false;
+        }
+
+        TitleMissionRecord? best = host.ActiveProfile?.MissionRecordOf(host.TitleId, mission.Id);
+        if (host.PlaysSolo)
+        {
+            MissionScoreResult score = MissionScoring.Score(sheet, best, host.ScoreWords);
+            return Keep(mission, score, new ScoreHold(score.Card, DeadlineMilliseconds: null, CanContinue: true));
+        }
+
+        if (host.ScoreSession?.AnnounceMissionScore(sheet) is not { } squad)
+        {
+            return false;
+        }
+
+        // The server's own player, where it has one; a dedicated server shows nothing and only waits out the countdown.
+        long deadline = host.Milliseconds + (squad.SecondsLeft * 1000L);
+        MissionScoreResult? own = MissionScoring.ForSquadMember(squad, host.ScoreSession.LocalEntity, best, host.ScoreWords);
+        logger.Information("Mission", $"Mission {mission.Id} scored for {squad.Members.Count} player(s); the squad goes on in {squad.SecondsLeft} s unless the host goes on sooner.");
+        if (own is null)
+        {
+            session.Score = new ScoreHold(null, deadline, CanContinue: false);
+            return false;
+        }
+
+        return Keep(mission, own, new ScoreHold(own.Card, deadline, CanContinue: !host.RunsUnattended));
+    }
+
+    // Puts a score's hold on the level -- its card only where somebody is there to read it -- and keeps its record as the profile's
+    // best where it is better.
+    private bool Keep(MissionDescriptor mission, MissionScoreResult score, ScoreHold hold)
+    {
+        logger.Information("Mission", $"Mission {mission.Id} earned the rank '{score.Card.RankName}'{(score.Record is null ? string.Empty : "; it is the profile's best")}.");
+        // Where nothing is drawn, a score nobody can see holds nothing -- unless a co-op squad's countdown has others to wait for.
+        MissionScoreCard? card = host.ShowsScoreScreen ? hold.Card : null;
+        session.Score = card is null && hold.DeadlineMilliseconds is null ? null : hold with { Card = card };
+        if (score.Record is { } record && host.ActiveProfile is { } profile)
+        {
+            profile.SetMissionRecord(host.TitleId, mission.Id, record);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Keeps a record of a mission -- a single player's or a co-op player's -- from the moment it is first played, as retail's level load does
+    /// (<c>Game_LoadHandler</c> calls <c>MissionScoreSettings_UpdateMissionStats</c>): nothing played yet, beside the mission's
+    /// requirements, so the menu can show what its ranks ask before it is ever completed.
+    /// </summary>
+    /// <remarks>
+    /// Only where the profile keeps none. Retail also weighs a loaded save's score here, which would keep a mission half played
+    /// -- taken in a fraction of the time it allows -- as earning its top rank; the remaster ranks completed missions only.
+    /// </remarks>
+    public void MissionBegun()
+    {
+        if (host.PlaysArena
+            || host.RunsUnattended
+            || session.Mission is not { } mission
+            || host.ActiveProfile is not { } profile
+            || profile.MissionRecordOf(host.TitleId, mission.Id) is not null
+            || host.TitlePlayer?.ScoreSheet(mission.Id) is not { } sheet)
+        {
+            return;
+        }
+
+        profile.SetMissionRecord(host.TitleId, mission.Id, MissionScoring.FreshRecord(sheet));
+        host.SaveConfiguration();
+    }
+
+    // On from a completed mission: the next one, or the campaign's end.
+    private void GoOn(FrameLoopState state)
+    {
+        if (_completed is not { } completedMission)
+        {
+            return;
+        }
+
+        _completed = null;
+        int nextMissionId = completedMission.NextMissionId;
+        if (HasNext(completedMission))
+        {
+            if (host.FollowsSession)
+            {
+                // The server loads the next one, and this client follows it there.
+                logger.Information("Mission", $"Completed mission {completedMission.Id}; following the room's host to {nextMissionId}.");
             }
             else
             {
-                logger.Information("Mission", $"Completed final mission {completedMission.Id}; campaign complete.");
-                host.ReleasePlayedMission();
-                if (state.Shell is not null)
-                {
-                    // Event 7 is the retail outro-screen path. The authored final cutscene has
-                    // completed before LevelFlow reaches here, so the shell now continues to its
-                    // campaign-complete destination.
-                    state.Shell.OpenOn("extras");
-                    host.Menu.MenuMode = true;
-                    host.Menu.ShowcasePending = true;
-                }
+                logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
+                host.StartMission(nextMissionId);
+            }
+        }
+        else
+        {
+            logger.Information("Mission", $"Completed final mission {completedMission.Id}; campaign complete.");
+            host.ReleasePlayedMission();
+            if (state.Shell is not null)
+            {
+                // Event 7 is the retail outro-screen path. The authored final cutscene has
+                // completed before LevelFlow reaches here, so the shell now continues to its
+                // campaign-complete destination.
+                state.Shell.OpenOn("extras");
+                host.Menu.MenuMode = true;
+                host.Menu.ShowcasePending = true;
             }
         }
     }

@@ -197,6 +197,14 @@ public interface ITitlePlayer
     {
     }
 
+    /// <summary>
+    /// Gets how the player is playing a mission and what its ranks ask, which its rank is reckoned from at its end
+    /// (<see cref="Scoring.MissionScoring"/>).
+    /// </summary>
+    /// <param name="missionId">The mission being played.</param>
+    /// <returns>The sheet, or <see langword="null"/> for a title or a mission that is not ranked.</returns>
+    Scoring.MissionScoreSheet? ScoreSheet(int missionId) => null;
+
     /// <summary>Runs one game tick.</summary>
     /// <param name="input">The tick's input.</param>
     void Tick(in TitlePlayerInput input);

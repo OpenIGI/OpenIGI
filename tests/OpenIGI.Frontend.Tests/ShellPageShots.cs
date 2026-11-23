@@ -103,6 +103,7 @@ public sealed class ShellPageShots
                     Pictures = mission => MultiplayerScreenshots.Picture(images, pictures, mission),
                     Maps = new FakeMaps(),
                     Account = AccountFor(name),
+                    Scores = SampleScore,
                 };
                 GameConfig config = GameConfig.CreateDefault();
                 if (config.Active is { } active)
@@ -196,6 +197,22 @@ public sealed class ShellPageShots
                 cvar.TrySetText(value, out _);
             }
         }
+    }
+
+    // A best for each mission played up to the ninth: ranks of every kind before it, and the ninth begun but not yet completed.
+    private static OpenIGI.Game.Scoring.MissionScoreCard? SampleScore(int missionId)
+    {
+        if (missionId > 9)
+        {
+            return null;
+        }
+
+        var requirements = OpenIGI.Game.Scoring.MissionRankRequirements.FromRows(
+            [1500f, 5f, 3f, 20f, 10f], [900f, 2f, 1f, 50f, 25f], [600f, 0f, 0f, 80f, 40f]);
+        OpenIGI.Game.Scoring.MissionScore score = missionId == 9
+            ? OpenIGI.Game.Scoring.MissionScore.Fresh(missionId, 1)
+            : new OpenIGI.Game.Scoring.MissionScore((uint)(30 * (400 + (missionId * 90))), missionId % 3, 95 - (missionId * 5), 120, (uint)(60 - (missionId * 4))) { Difficulty = 1, MissionId = missionId };
+        return OpenIGI.Game.Scoring.MissionScoreCardBuilder.Build(requirements, score, OpenIGI.Game.Scoring.MissionScoreWords.InEnglish);
     }
 
     // The game's fourteen, as the campaign page lists them.

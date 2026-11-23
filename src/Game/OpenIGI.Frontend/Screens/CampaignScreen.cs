@@ -52,6 +52,7 @@ public sealed class CampaignScreen : ShellScreen
 
     private CampaignHeader? _header;
     private MissionHero? _hero;
+    private MissionBestPanel? _best;
     private PrimaryAction? _play;
     private OptionCycler? _difficulty;
     private int _selected = -1;
@@ -236,6 +237,10 @@ public sealed class CampaignScreen : ShellScreen
         _hero = new MissionHero(theme, _reveal, Size);
         column.AddChild(_hero);
 
+        // The mission's best, as retail's Select Mission screen shows the stats of the mission its list has chosen.
+        _best = new MissionBestPanel(theme, Size) { MaxWidth = wide ? 760f : 640f, HorizontalAlignment = HorizontalAlignment.Left };
+        column.AddChild(_best);
+
         // How the mission is played, chosen right where it is started. Seeded from the context rather than a fresh
         // default, so a player three missions into a night run is shown the run they are on.
         _difficulty = new OptionCycler(theme, "Difficulty", Difficulties, DefaultDifficultyIndex());
@@ -370,7 +375,10 @@ public sealed class CampaignScreen : ShellScreen
 
         for (int i = 0; i < _cards.Count && i < _missions.Count; i++)
         {
-            _cards[i].Tag = StatusOf(i, frontier, playable);
+            // A completed mission that earned a rank is tagged with it.
+            _cards[i].Tag = i < frontier && Context.Host.BestScore(_missions[i].Id) is { Rank: >= 0 } best
+                ? best.RankName.ToUpperInvariant()
+                : StatusOf(i, frontier, playable);
             _cards[i].TagColor = i < frontier ? Context.Theme.TextSecondary
                 : i <= playable ? Context.Theme.Accent : Context.Theme.TextMuted;
             _cards[i].Mark = i < frontier ? ListCardMark.Done : i <= playable ? ListCardMark.Open : ListCardMark.Locked;
@@ -386,6 +394,7 @@ public sealed class CampaignScreen : ShellScreen
             StatusOf(shown, frontier, playable),
             mission.Name,
             mission.Description);
+        _best?.Show(Context.Host.BestScore(mission.Id));
 
         if (_play is not null)
         {

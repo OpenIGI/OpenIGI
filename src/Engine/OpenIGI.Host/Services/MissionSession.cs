@@ -33,6 +33,12 @@ internal sealed class MissionSession : IHostService
     /// <summary>Gets or sets whether the failure page is up over the level.</summary>
     public bool FailedMenu { get; set; }
 
+    /// <summary>
+    /// Gets or sets the hold a completed mission's score puts on the level -- which stands still under it until the squad goes on
+    /// -- and the card shown over it; <see langword="null"/> otherwise.
+    /// </summary>
+    public ScoreHold? Score { get; set; }
+
     /// <summary>Starts a mission's session in a level tree.</summary>
     /// <param name="mission">The mission.</param>
     /// <param name="levelRoot">The level task its tree hangs off.</param>
@@ -43,6 +49,7 @@ internal sealed class MissionSession : IHostService
         LevelRoot = levelRoot;
         Mission = mission;
         ResultHandled = false;
+        Score = null;
     }
 
     /// <summary>Forgets how the last mission was settling, as a mission being let go of does.</summary>
@@ -51,6 +58,7 @@ internal sealed class MissionSession : IHostService
         FailureTicks = 0;
         FailedMenu = false;
         ResultHandled = false;
+        Score = null;
     }
 
     /// <summary>Counts one more tick of the mission standing failed.</summary>
@@ -66,3 +74,11 @@ internal sealed class MissionSession : IHostService
     {
     }
 }
+
+/// <summary>A completed mission's score holding its level: the card shown, and when and by whom the squad goes on.</summary>
+/// <param name="Card">The card shown over the level, or <see langword="null"/> where nobody is there to read one.</param>
+/// <param name="DeadlineMilliseconds">
+/// The host clock's time the squad goes on by itself, or <see langword="null"/> for a single player's score, which waits for them.
+/// </param>
+/// <param name="CanContinue">Whether this end goes on when its player says so: a single player's, or a co-op host's.</param>
+internal sealed record ScoreHold(Game.Scoring.MissionScoreCard? Card, long? DeadlineMilliseconds, bool CanContinue);

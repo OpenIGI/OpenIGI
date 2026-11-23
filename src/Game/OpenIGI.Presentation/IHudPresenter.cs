@@ -255,6 +255,20 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>
+    /// Draws a completed mission's rank screen: what was achieved beside what the next rank asks, the rank earned, and in a co-op
+    /// mission every player's result.
+    /// </summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="card">What to show.</param>
+    /// <param name="prompt">What its foot says: the key that goes on, and a co-op squad's countdown.</param>
+    /// <param name="opacity">How far it has faded in, nought to one.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawMissionScore(SpriteBatch batch, Game.Scoring.MissionScoreCard card, MissionScorePrompt prompt, float opacity, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws a multiplayer mode's HUD: the score strip, the bomb, a plant or defuse under way, a decided round's card.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="hud">What to show.</param>

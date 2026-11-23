@@ -132,6 +132,14 @@ public interface IShellHost
     /// <returns>The picture, or <see langword="null"/> where the host has none of it.</returns>
     UiPicture? MissionPicture(int missionId) => null;
 
+    /// <summary>
+    /// The best the active profile has done in a mission of the running game, as its score card: what retail's Select Mission
+    /// screen shows beside the list (<c>MenuStatsScreen</c>).
+    /// </summary>
+    /// <param name="missionId">The mission.</param>
+    /// <returns>The card, or <see langword="null"/> where the mission has never been played or is not ranked.</returns>
+    OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => null;
+
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;
 
