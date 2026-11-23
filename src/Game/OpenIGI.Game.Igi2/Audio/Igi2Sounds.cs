@@ -149,6 +149,19 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
 
     /// <summary>Lets go of a deleted sound.</summary>
     internal void Forget(Igi2Sound sound) => _playing.Remove(sound);
+
+    /// <summary>
+    /// Deletes every sound the level has made, <c>Game_KillSoundTasks</c> as <c>Game_LoadFromSlot</c> calls it: a save keeps no sound,
+    /// and each owner makes again what it should be playing as it runs (an ambient area its bed, a sound generator what its save had
+    /// playing).
+    /// </summary>
+    public void DeleteAll()
+    {
+        foreach (Igi2Sound sound in _playing.ToArray())
+        {
+            sound.Delete();
+        }
+    }
 }
 
 /// <summary>One sound the level made: its voice, and what it follows.</summary>
@@ -223,6 +236,9 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     /// its sample is done; one never heard -- no mixer, as on a server or in a test -- has not.
     /// </summary>
     public bool HasPlayedOut => !_deleted && !_isSet && _voice is { IsPlaying: false };
+
+    /// <summary>Gets a value indicating whether it was deleted, by its owner or by a load (<see cref="Igi2Sounds.DeleteAll"/>).</summary>
+    public bool IsDeleted => _deleted;
 
     /// <inheritdoc/>
     public void MoveToHuman()

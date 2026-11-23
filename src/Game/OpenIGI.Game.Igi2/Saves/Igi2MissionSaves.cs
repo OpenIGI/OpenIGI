@@ -58,6 +58,13 @@ public sealed class Igi2MissionSaves : MissionSaves
         set => _level.Pickups = value;
     }
 
+    /// <summary>Gets or sets the level's sounds, every one of which a load deletes before it reads its save.</summary>
+    public Audio.Igi2Sounds? Sounds
+    {
+        get => _level.Sounds;
+        set => _level.Sounds = value;
+    }
+
     /// <summary>Gets or sets the screen's messages and the computer's log, which a load clears before it reads its save.</summary>
     public Igi2StatusMessageScreen? StatusMessages
     {
@@ -123,6 +130,8 @@ public sealed class Igi2MissionSaves : MissionSaves
 
         public Igi2StatusMessageScreen? StatusMessages { get; set; }
 
+        public Audio.Igi2Sounds? Sounds { get; set; }
+
         public GameTask Root => level.Root;
 
         public bool HostsUnsavedGuests => level.Joined.HasUnsavedGuests;
@@ -144,12 +153,14 @@ public sealed class Igi2MissionSaves : MissionSaves
         // Its tasks, its dropped weapons, its mines and its glass.
         public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines(), level.Joined.SaveSections);
 
-        // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds;
-        // the messages on the screen and the computer's log go too; and the grenades, missiles and explosions in flight, which
-        // their DeSerializeDone handlers delete, since a save keeps none. Bullet holes are the picture's here. A level sound is
-        // put right by its owner as the owner is read back (a sound generator plays again what its save had playing).
+        // Game_LoadFromSlot: every sound the level made is deleted (Game_KillSoundTasks), each owner making again what it should
+        // play -- a sound generator what its save had playing as it is read, an ambient area its bed as it runs; every mine and
+        // every pickup in the level is deleted, and the load makes again each the save holds; the messages on the screen and the
+        // computer's log go too; and the grenades, missiles and explosions in flight, which their DeSerializeDone handlers
+        // delete, since a save keeps none.
         public void BeforeLoad()
         {
+            Sounds?.DeleteAll();
             Mines()?.DeleteAll();
             StatusMessages?.ClearForLoad();
             Pickups?.DeleteAll();

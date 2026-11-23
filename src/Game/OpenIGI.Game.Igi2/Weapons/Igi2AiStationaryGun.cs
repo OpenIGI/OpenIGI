@@ -337,7 +337,7 @@ public sealed partial class Igi2AiStationaryGun : IIgi2WeaponOwner
         float heldTurn = aimTurn < -_maxGamma ? -_maxGamma : aimTurn > _maxGamma ? _maxGamma : aimTurn;
         if (Math.Abs(_tilt - heldTilt) > Turning || Math.Abs(_turn - heldTurn) > Turning)
         {
-            if (_rotationSound is null && _parameters.RotationSound.Length > 0)
+            if (_rotationSound is not { IsDeleted: false } && _parameters.RotationSound.Length > 0)
             {
                 _rotationSound = Sounds?.New(_parameters.RotationSound, from, () => _base?.Position ?? from);
             }
