@@ -738,11 +738,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
     }
 
-    /// <summary>The player's delayed half: its pickups, zoom, update and delayed handler (<c>HumanPlayer_RunDelayedHandler</c>, <c>igi2 0x4B8A50</c>).</summary>
+    /// <summary>The player's delayed half: its pickups, update, zoom and delayed handler (<c>HumanPlayer_RunDelayedHandler</c>, <c>igi2 0x4B8A50</c>).</summary>
     private void RunPlayerDelayed()
     {
         Human.Pickups?.Run();
-        Human.View.RunZoom();
         if (Human.UnfilteredMouse) { WriteSmoothLook(); }
         Human.Ticks = (int)_ticks;
 
@@ -765,8 +764,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             Human.Igi1Weight,
             seed);
         Human.Update(_frame);
+
+        // HumanView_RunHandler: the view is a child of the player run after HumanPlayerInput, whose run handler reads the
+        // channels and updates the player at once, so a zoom fired this tick takes its first step this tick.
+        Human.View.RunZoom();
         Human.RunDelayed();
-        ZoomProbeTrace();
 
         // HumanPlayer_RunDelayedHandler: in the world, the inventory key pressed shows or hides the inventory, a profile option.
         if (Human.IsActive && Human.Channels.WasPressed(Humans.Igi2HumanChannel.Inventory) && GameConfig?.Active is { } profile)
