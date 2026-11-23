@@ -228,6 +228,16 @@ public sealed class Igi1MissionSaves : MissionSaves
             }
         }
 
+        // Said as a line on the screen, as I.G.I. 2 says it. A save that will not read onto the level that is up is read again
+        // onto the mission brought up afresh, so only a failure there is the load's.
+        public void Report(SaveReport report)
+        {
+            if (report != SaveReport.LoadFailed || IsFresh)
+            {
+                world.Objectives?.ShowTransientMessage(SaveReports.Line(report));
+            }
+        }
+
         public GameTask Root => world.LevelRoot ?? throw new InvalidOperationException("No level is up to save.");
 
         public int MissionTime => (int)world.PlayerTicks;

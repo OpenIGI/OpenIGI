@@ -68,6 +68,13 @@ public sealed class Igi2MissionSaves : MissionSaves
         set => _level.Loaded = value;
     }
 
+    /// <summary>Gets or sets what tells the player how a save or a load went (<see cref="SaveReport"/>), or nothing.</summary>
+    public Action<SaveReport>? Reported
+    {
+        get => _level.Reported;
+        set => _level.Reported = value;
+    }
+
     /// <summary>Gets or sets the level's sounds, every one of which a load deletes before it reads its save.</summary>
     public Audio.Igi2Sounds? Sounds
     {
@@ -143,6 +150,10 @@ public sealed class Igi2MissionSaves : MissionSaves
         public Audio.Igi2Sounds? Sounds { get; set; }
 
         public Action? Loaded { get; set; }
+
+        public Action<SaveReport>? Reported { get; set; }
+
+        public void Report(SaveReport report) => Reported?.Invoke(report);
 
         public void AfterLoad() => Loaded?.Invoke();
 

@@ -132,6 +132,31 @@ public sealed class MissionSavesTests : IDisposable
         Assert.Equal(1, level.SavesUsed);
     }
 
+    /// <summary>
+    /// Each save and load says how it went, as <c>Game_SaveToSlot</c> and <c>Game_LoadFromSlot</c> make a status message of it: a save
+    /// and a quick save are said written, a load read; with the battery spent, a save says no saves are left and writes nothing;
+    /// a slot with no save in it says nothing, as retail's load says nothing when the header does not check.
+    /// </summary>
+    [Fact]
+    public void Each_save_and_load_says_how_it_went()
+    {
+        (MissionSaves saves, Level level) = Saves(difficulty: 0);
+        Assert.False(saves.Load(0));
+        Assert.Empty(level.Reports);
+
+        Assert.True(saves.Save(0));
+        Assert.True(saves.QuickSave());
+        Assert.True(saves.QuickLoad());
+        Assert.Equal([SaveReport.Saved, SaveReport.Saved, SaveReport.Loaded], level.Reports);
+
+        level.Reports.Clear();
+        level.SavesUsed = SaveRules.SavesAllowed(0);
+        Assert.False(saves.QuickSave());
+        Assert.Equal([SaveReport.NoSavesLeft], level.Reports);
+        Assert.Equal("Loading complete", SaveReports.Line(SaveReport.Loaded));
+        Assert.Equal("Saving complete", SaveReports.Line(SaveReport.Saved));
+    }
+
     private (MissionSaves Saves, Level Level) Saves(int difficulty)
     {
         Level level = new();
@@ -169,6 +194,10 @@ public sealed class MissionSavesTests : IDisposable
         public int GameLoads { get; set; }
 
         public SaveContext Context => new() { Version = 3 };
+
+        public List<SaveReport> Reports { get; } = [];
+
+        public void Report(SaveReport report) => Reports.Add(report);
     }
 
     private sealed class Kept(Level level) : GameTask, IExchangedState

@@ -533,6 +533,9 @@ public abstract class Screen
             }
             else
             {
+                // A click the page acts on is the page's: it may shut the menu, and the game it hands back to must not take the
+                // button still down for a press of its own -- a load chosen from a list firing the player's gun.
+                mouse.TakePress(MouseButton.Left);
                 clicked.ActivateAt(pointer);
             }
         }

@@ -75,8 +75,8 @@ public sealed partial class GameHost
 
         if (said is not null)
         {
+            // The save games say how it went on the screen themselves (SaveReport).
             _logger.Information("Saves", said + ".");
-            _mission.Progress?.ShowTransientMessage(said);
         }
     }
 

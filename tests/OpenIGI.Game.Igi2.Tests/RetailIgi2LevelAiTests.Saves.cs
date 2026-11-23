@@ -185,9 +185,15 @@ public sealed partial class RetailIgi2LevelAiTests
         string folder = Path.Combine(Path.GetTempPath(), "openigi-igi2-look-" + Guid.NewGuid().ToString("N"));
         try
         {
+            List<SaveReport> reports = [];
             Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), static () => new SaveOwner(0, 0, 11), m.Run, player.Human)
             {
                 Loaded = player.ResetLook,
+                Reported = report =>
+                {
+                    reports.Add(report);
+                    player.TellSaveReport(report);
+                },
             };
             SkipIntro(m);
             Run(m, player, 60, RetailIgi2Mission1.Idle with { MouseX = 30f, MouseY = 15f });
@@ -202,6 +208,7 @@ public sealed partial class RetailIgi2LevelAiTests
 
             Assert.Equal(gamma, player.Human.Gamma, 0.0001f);
             Assert.Equal(pitch, player.Human.View.IdealPitch, 0.0001f);
+            Assert.Equal([SaveReport.Saved, SaveReport.Loaded], reports);
         }
         finally
         {

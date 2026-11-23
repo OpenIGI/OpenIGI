@@ -54,7 +54,7 @@ public sealed partial class GameHost
         console.Commands.Add("quickload", "Loads the mission's newest save, as F9 does.", _ => QuickSaveOrLoad(save: false));
     }
 
-    // One quick save or quick load, said on the screen and in the log.
+    // One quick save or quick load, written in the log; the save games say how it went on the screen themselves (SaveReport).
     private void QuickSaveOrLoad(bool save)
     {
         if (MissionSaveGames is not { } saves)
@@ -74,6 +74,5 @@ public sealed partial class GameHost
         }
 
         _logger.Information("Saves", said + ".");
-        _mission.Progress?.ShowTransientMessage(said);
     }
 }

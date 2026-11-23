@@ -23,6 +23,25 @@ public sealed partial class Igi2TitlePlayer
     /// <param name="text">The line.</param>
     public void ShowStatusText(string text) => Say(text, localized: false, string.Empty, string.Empty);
 
+    /// <summary>
+    /// Says how a save or a load went, as <c>Game_SaveToSlot</c> and <c>Game_LoadFromSlot</c> do (<c>StatusMessage_New</c> with
+    /// <c>Saving complete</c>, <c>Loading complete</c> and their failures, looked up in the language); the remaster's own line as
+    /// it is written.
+    /// </summary>
+    /// <param name="report">How it went.</param>
+    public void TellSaveReport(SaveReport report)
+    {
+        string line = SaveReports.Line(report);
+        if (SaveReports.IsRetailLine(report))
+        {
+            ShowStatusMessage(line);
+        }
+        else
+        {
+            ShowStatusText(line);
+        }
+    }
+
     private void Say(string text, bool localized, string sprite, string sound)
     {
         ArgumentException.ThrowIfNullOrEmpty(text);

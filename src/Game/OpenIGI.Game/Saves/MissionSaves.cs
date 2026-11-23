@@ -31,6 +31,15 @@ public interface IMissionSaveSource
     }
 
     /// <summary>
+    /// Says how a save or a load went, as <c>Game_SaveToSlot</c> and <c>Game_LoadFromSlot</c> make a status message of it: each game
+    /// on its own screen.
+    /// </summary>
+    /// <param name="report">How it went.</param>
+    void Report(SaveReport report)
+    {
+    }
+
+    /// <summary>
     /// Lets go of what the host holds of the level as it was before a load, once the save's state has been read: a look gathered
     /// between ticks, which the next tick would otherwise turn the loaded player back to.
     /// </summary>
@@ -107,16 +116,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     public virtual bool CanSave => true;
 
     /// <inheritdoc/>
-    public bool QuickSave()
-    {
-        if (SaveGameLock.IsHeld || !CanSave || SavesLeft <= 0)
-        {
-            return false;
-        }
-
-        _source.SavesUsed++;
-        return Write(SaveRules.QuickSave);
-    }
+    public bool QuickSave() => Spend(SaveRules.QuickSave);
 
     /// <inheritdoc/>
     /// <remarks>The newest valid save of the six, by when its file was written (<c>Game_FindNewestSaveGame</c>).</remarks>
@@ -141,17 +141,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// A save uses one of the battery's charges before it is written, so the count it keeps includes itself; with none left, or to a
     /// slot that is not one of the five, nothing is saved.
     /// </remarks>
-    public bool Save(int slot)
-    {
-        SaveOwner whose = _owner();
-        if (SaveGameLock.IsHeld || !CanSave || SavesLeft <= 0 || slot < 0 || slot >= SaveRules.MenuSlots)
-        {
-            return false;
-        }
-
-        _source.SavesUsed++;
-        return Recorded(whose, slot, _slots.Save(whose, slot, _source.Root, _source.MissionTime, _source.Context));
-    }
+    public bool Save(int slot) => slot >= 0 && slot < SaveRules.MenuSlots && Spend(slot);
 
     /// <summary>
     /// Writes a slot that has already been counted against the battery, <c>Game_SaveToSlot</c> as the player's delayed run calls it
@@ -159,13 +149,37 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// </summary>
     /// <param name="slot">The slot.</param>
     /// <returns><see langword="true"/> once written.</returns>
+    /// <remarks>Said on the screen either way, as <c>Game_SaveToSlot</c> makes its status message.</remarks>
     public bool Write(int slot)
     {
+        if (SaveGameLock.IsHeld || slot < 0 || slot > SaveRules.QuickSave)
+        {
+            return false;
+        }
+
         SaveOwner whose = _owner();
-        return !SaveGameLock.IsHeld
-            && slot >= 0
-            && slot <= SaveRules.QuickSave
-            && Recorded(whose, slot, _slots.Save(whose, slot, _source.Root, _source.MissionTime, _source.Context));
+        bool written = Recorded(whose, slot, _slots.Save(whose, slot, _source.Root, _source.MissionTime, _source.Context));
+        _source.Report(written ? SaveReport.Saved : SaveReport.SaveFailed);
+        return written;
+    }
+
+    // A save that uses one of the battery's charges before it is written: none while saves are shut or not allowed now; with no
+    // charge left, said so on the screen and nothing written.
+    private bool Spend(int slot)
+    {
+        if (SaveGameLock.IsHeld || !CanSave)
+        {
+            return false;
+        }
+
+        if (SavesLeft <= 0)
+        {
+            _source.Report(SaveReport.NoSavesLeft);
+            return false;
+        }
+
+        _source.SavesUsed++;
+        return Write(slot);
     }
 
     /// <inheritdoc/>
@@ -186,11 +200,13 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
         _source.BeforeLoad();
         if (!_slots.Load(whose, slot, _source.Root, _source.Context).IsValid)
         {
+            _source.Report(SaveReport.LoadFailed);
             return false;
         }
 
         _source.AfterLoad();
         _source.GameLoads++;
+        _source.Report(SaveReport.Loaded);
         return true;
     }
 
