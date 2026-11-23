@@ -1,3 +1,4 @@
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Level;
 using OpenIGI.Scripting.Expressions;
 
@@ -24,8 +25,25 @@ public sealed class ComputerObjective
     /// <summary>Gets a value indicating whether it had failed when its definition last ran.</summary>
     public bool IsFailed { get; internal set; }
 
+    /// <summary>Gets the placed things it is done by that are not done yet, two or more, as of its definition's last run.</summary>
+    /// <remarks>Empty for a row that is complete, failed, or done by fewer than two; see <see cref="ComputerObjectiveTargets"/>.</remarks>
+    public IReadOnlyList<GameTask> OpenTargets => Targets?.Open ?? [];
+
+    /// <summary>Gets a value indicating whether it is done by two or more placed things, which are marked in place of its link.</summary>
+    public bool HasTargets => Targets is { Any: true };
+
+    /// <summary>Gets a value indicating whether its link names a place: retail levels write <c>1</c> for an objective of none.</summary>
+    /// <remarks>
+    /// Not retail, which centres the map on whatever answers to the id. Id 1 is the one level data gives every task it
+    /// leaves unnumbered, so in the levels that link there it names a container or a tunnel piece, not the objective.
+    /// </remarks>
+    public bool LinksToPlace => LinkToPosition > 1;
+
     /// <summary>Gets or sets the complete expression, compiled.</summary>
     internal LevelExpression? Complete { get; set; }
+
+    /// <summary>Gets or sets the targets the complete expression names.</summary>
+    internal ComputerObjectiveTargets? Targets { get; set; }
 
     /// <summary>Gets or sets the failed expression, compiled.</summary>
     internal LevelExpression? Failed { get; set; }
@@ -95,6 +113,8 @@ public abstract class DefineComputerObjectiveTask : TickedTask
             objective.Failed ??= level.Compile(objective.FailedExpression, this);
             objective.IsComplete = !objective.Complete.IsEmpty && Flag(level.Evaluate(objective.Complete));
             objective.IsFailed = !objective.Failed.IsEmpty && Flag(level.Evaluate(objective.Failed));
+            objective.Targets ??= ComputerObjectiveTargets.Read(objective.CompleteExpression, this, level);
+            objective.Targets.Update(level, objective.IsComplete || objective.IsFailed);
         }
     }
 

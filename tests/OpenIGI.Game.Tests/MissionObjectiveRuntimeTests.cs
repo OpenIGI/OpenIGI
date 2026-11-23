@@ -705,6 +705,55 @@ public sealed class MissionObjectiveRuntimeTests
         Assert.True(tickReaderCount >= 2, "Levels 6 and 14 should both read a LevelFlow nTick field.");
     }
 
+    /// <summary>
+    /// Mission 2's second objective, the tanks: its link is one prop by one tank, but it is done by the C4 at three
+    /// (<c>GenericTBA_282</c>, <c>_284</c>, <c>_286</c>, each latched by a counter), so each is a place until it is set.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void MissionTwoMarksEachTankUntilItsChargeIsSet()
+    {
+        string script = Assert.Single(
+            GameData.EnumerateFiles("objects.qvm"),
+            path => path.EndsWith(@"level2\objects.qvm", StringComparison.OrdinalIgnoreCase));
+        GameLoop loop = new();
+        OpenIGI.Game.Flow.Igi1LevelTaskTypes.RegisterFlow(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        ResourceRegistry resources = new(new VirtualFileSystem());
+        const string resourceName = "LOCAL:level/objects.qvm";
+        resources.Register(resourceName, File.ReadAllBytes(script));
+        new LevelLoader(root, loop.TaskCommands, loop.Natives, resources).LoadScript(resourceName);
+
+        bool[] set = new bool[3];
+        int[] charges = [282, 284, 286];
+        for (int i = 0; i < charges.Length; i++)
+        {
+            int index = i;
+            loop.Variables.BindBool(Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(charges[i])), "isFinished", () => set[index], _ => { });
+        }
+
+        MissionObjectiveRuntime runtime = new(root, loop.Variables);
+        runtime.Tick();
+        MissionObjective tanks = Assert.Single(runtime.Objectives, objective => objective.TextResource == "M2_OBJ2");
+        Assert.Equal(444, tanks.LinkTaskId);
+        Assert.Equal(3, tanks.Places.Count);
+        Assert.Single(Assert.Single(runtime.Objectives, objective => objective.TextResource == "M2_OBJ1").Places);
+
+        set[1] = true;
+        runtime.Tick();
+        runtime.Tick();
+        tanks = Assert.Single(runtime.Objectives, objective => objective.TextResource == "M2_OBJ2");
+        Assert.Equal(2, tanks.Places.Count);
+        Assert.Equal(MissionObjectiveState.Incomplete, tanks.State);
+
+        set[0] = set[2] = true;
+        runtime.Tick();
+        runtime.Tick();
+        tanks = Assert.Single(runtime.Objectives, objective => objective.TextResource == "M2_OBJ2");
+        Assert.Equal(MissionObjectiveState.Complete, tanks.State);
+        Assert.Empty(tanks.Places);
+        runtime.Release();
+    }
+
     /// <summary>The LevelFlow fields retail's export handler (0x488F90) binds on the task itself.</summary>
     private static readonly string[] LevelFlowFields = ["isComplete", "isFailed", "nTick", "eDifficulty"];
 

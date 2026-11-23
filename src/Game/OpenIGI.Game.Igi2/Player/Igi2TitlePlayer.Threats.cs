@@ -211,30 +211,4 @@ public sealed partial class Igi2TitlePlayer
 
         return status;
     }
-
-    /// <summary>
-    /// The objective being worked on: the first of the map computer's not yet done or failed, its words in the game's own text,
-    /// and where its map would look (<c>LinkToPosition</c>), where it names a place.
-    /// </summary>
-    /// <returns>The objective's words and place, or <see langword="null"/> for none.</returns>
-    public (string Text, Vector3d? Position)? CurrentObjective()
-    {
-        if (Human.Computer?.Objectives?.Objectives is not { } objectives)
-        {
-            return null;
-        }
-
-        foreach (OpenIGI.Game.Flow.ComputerObjective objective in objectives)
-        {
-            if (objective.TextResource.Length == 0 || objective.IsComplete || objective.IsFailed)
-            {
-                continue;
-            }
-
-            string text = Strings?.Get(objective.TextResource) ?? objective.TextResource;
-            return (text, ObjectivePlace(objective));
-        }
-
-        return null;
-    }
 }

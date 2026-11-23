@@ -100,7 +100,7 @@ public static class Igi1HudTheme
     /// <param name="health">Its health, nought to one.</param>
     /// <param name="soldiers">The game's soldiers about it, who see it and are seen; <see langword="null"/> for none.</param>
     /// <param name="messages">The mission's status messages the display shows, or <see langword="null"/> for none.</param>
-    /// <param name="objectives">The mission's objectives, the first not yet done shown where it lies; <see langword="null"/> for none.</param>
+    /// <param name="objectives">The mission's objectives, each not yet done shown where it lies; <see langword="null"/> for none.</param>
     /// <param name="worldPrompt">Whether the world-anchored prompt shows what may be done, so the row does not.</param>
     /// <param name="iconFor">The status screen's picture for a weapon.</param>
     /// <param name="model">The model, refilled.</param>
@@ -192,22 +192,12 @@ public static class Igi1HudTheme
             model.Show &= ~HudParts.Crosshair;
         }
 
-        // The objective being worked on: the first not yet done, where it has a place in the level.
+        // Every objective not yet done, at each place it is still to be done.
         if (objectives is not null)
         {
             foreach (OpenIGI.Game.World.MissionObjective objective in objectives)
             {
-                if (objective.State != OpenIGI.Game.World.MissionObjectiveState.Incomplete || objective.Position is not { } place)
-                {
-                    continue;
-                }
-
-                model.Objective = objective.Text;
-                model.ObjectivePosition = place;
-                OpenIGI.Core.Numerics.Vector3d feet = player.Body.Position;
-                double dx = place.X - feet.X, dy = place.Y - feet.Y, dz = place.Z - feet.Z;
-                model.ObjectiveDistanceMetres = (float)(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 4096.0);
-                break;
+                model.AddObjective(objective, player.Body.Position);
             }
         }
     }

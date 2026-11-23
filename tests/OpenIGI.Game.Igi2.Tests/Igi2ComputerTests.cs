@@ -61,4 +61,23 @@ public sealed class Igi2ComputerTests
         Assert.NotEmpty(m.Tree.OfType<Igi2ComputerHilightTask>());
         Assert.Single(m.Tree.OfType<Igi2MissionScoreSettingsTask>());
     }
+
+    /// <summary>
+    /// The rocket base's objectives done in more than one place have each place as a target: the two fuel pipes (one through
+    /// its counter), the gantry's three levels and the bunker's doors; one done in one place has none, and is marked at its link.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_rocket_bases_objectives_have_every_place_they_are_done_at()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(location: "location3", levelName: "LEVEL6");
+        m.Step();
+        Igi2DefineComputerObjectiveTask objectives = Assert.Single(m.Tree.OfType<Igi2DefineComputerObjectiveTask>());
+        int[] Open(int row) => [.. objectives.Objectives[row].OpenTargets.Select(task => task.Id).Order()];
+
+        Assert.Equal([2615, 2616], Open(0));
+        Assert.Empty(Open(1));
+        Assert.False(objectives.Objectives[1].HasTargets);
+        Assert.Equal([1400, 1401, 1403], Open(2));
+        Assert.Contains(4062, Open(3));
+    }
 }

@@ -684,13 +684,14 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 MissionObjectiveState state = row.IsFailed ? MissionObjectiveState.Failed
                     : row.IsComplete ? MissionObjectiveState.Complete
                     : MissionObjectiveState.Incomplete;
-                Vector3d? position = row.LinkToPosition >= 0 && _levelRoot.Tree.FromId(row.LinkToPosition) is { } linked
+                Vector3d? position = row.LinksToPlace && _levelRoot.Tree.FromId(row.LinkToPosition) is { } linked
                     ? FindPosition(linked)
                     : null;
                 current.Add(new MissionObjective(text, row.LinkToPosition, position, state)
                 {
                     Text = _resolveText(text),
                     Slot = index,
+                    Places = MissionObjective.PlacesOf(row, position, static target => FindPosition(target)),
                 });
             }
         }

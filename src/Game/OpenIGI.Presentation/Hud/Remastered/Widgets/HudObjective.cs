@@ -6,13 +6,13 @@ using OpenIGI.UI.Layout;
 namespace OpenIGI.Presentation.Hud.Remastered.Widgets;
 
 /// <summary>
-/// The objective projected onto its place in the level, as a mark the player reads where the objective is: a diamond in a
+/// Each objective not yet done projected onto every place in the level it is still to be done at, as a mark the player reads where the objective is: a diamond in a
 /// ring, the objective's words beside it and how far it is; off the screen, held at its edge and pointing the way.
 /// </summary>
 /// <remarks>It fades as the view comes square onto it, so it does not sit over what the player is aiming at.</remarks>
 public static class HudObjective
 {
-    /// <summary>Draws the mark.</summary>
+    /// <summary>Draws a mark at each place an objective is still to be done.</summary>
     /// <param name="context">The frame's drawing.</param>
     /// <param name="model">The frame's model.</param>
     /// <param name="projector">The player's view.</param>
@@ -20,12 +20,21 @@ public static class HudObjective
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(model);
-        if ((model.Show & HudParts.Status) == 0 || model.ObjectivePosition is not { } place)
+        if ((model.Show & HudParts.Status) == 0)
         {
             return;
         }
 
+        foreach (HudObjectiveMark mark in model.Objectives)
+        {
+            DrawMark(context, mark, projector);
+        }
+    }
+
+    private static void DrawMark(HudDrawContext context, in HudObjectiveMark mark, HudProjector projector)
+    {
         HudPalette palette = context.Palette;
+        OpenIGI.Core.Numerics.Vector3d place = mark.Position;
         bool ahead = projector.TryProject(place, out UiVec2 at);
         float margin = context.Px(48f);
         float cx = context.Width * 0.5f, cy = context.Height * 0.5f;
@@ -72,8 +81,8 @@ public static class HudObjective
         }
 
         // Its words and its distance, beside it, on the side towards the middle.
-        string distance = string.Create(CultureInfo.InvariantCulture, $"{model.ObjectiveDistanceMetres:0} M");
-        string text = model.Objective is { Length: > 0 } words ? words : string.Empty;
+        string distance = string.Create(CultureInfo.InvariantCulture, $"{mark.DistanceMetres:0} M");
+        string text = mark.Text;
         float textSize = context.Px(14f);
         float width = MathF.Max(
             UiPainter.MeasureLabel(context.Fonts.Name, text, textSize, 0.03f),

@@ -163,13 +163,13 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
             model.Progress = human.TimedActionTime > 0 ? Math.Clamp((float)human.TimedActionTimer / human.TimedActionTime, 0f, 1f) : 1f;
         }
 
-        // The objective being worked on, where it has a place in the level.
-        if (playing && title.CurrentObjective() is { Position: { } place } objective)
+        // Every objective not yet done, at each place it is still to be done.
+        if (playing && title.ComputerObjectives is { } computer)
         {
-            model.Objective = objective.Text;
-            model.ObjectivePosition = place;
-            double dx = place.X - human.Position.X, dy = place.Y - human.Position.Y, dz = place.Z - human.Position.Z;
-            model.ObjectiveDistanceMetres = (float)(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 4096.0);
+            foreach (OpenIGI.Game.World.MissionObjective objective in computer.Objectives)
+            {
+                model.AddObjective(objective, human.Position);
+            }
         }
 
         if (title.Level?.LevelFlow is { InterfaceTimerEnabled: true, MaxPlayTime: > 0f } flow)
