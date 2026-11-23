@@ -167,6 +167,18 @@ public sealed partial class Igi2AiSquad
     }
 
     /// <summary>
+    /// The minds of a squad's soldiers, in its children's order, <c>AISquad_BuildTeamFromChildren</c>: a soldier another game's
+    /// stands for is in its squad through its double, for the level's cutscenes to move with it.
+    /// </summary>
+    /// <param name="task">The squad's task.</param>
+    /// <returns>The minds.</returns>
+    public static IEnumerable<Igi2HumanAi> MembersOf(Igi2AiSquadTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return task.Soldiers.Select(static soldier => (soldier.Body ?? soldier.Double)?.Mind).OfType<Igi2HumanAi>();
+    }
+
+    /// <summary>
     /// Builds its one team from its soldiers' minds, in order, at most eight (<c>AISquad_BuildTeamFromChildren</c>, run once the
     /// level is loaded).
     /// </summary>

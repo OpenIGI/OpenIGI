@@ -116,7 +116,8 @@ public sealed partial class Igi2AiSquad
     /// <summary>
     /// Reads its save state back, <c>AISquad_DeSerializeHandler</c>: its actions are popped without their lines or the members' stacks,
     /// the voices are free to play again, its enemy targets (<c>atEnemyTarget</c>) and the lines it was playing are let go, its events
-    /// are dropped, and each saved action is put back by its kind with its state.
+    /// are dropped, each saved action is put back by its kind with its state, and its team is made again from its soldiers
+    /// (<c>AISquad_BuildTeamFromChildren</c>).
     /// </summary>
     /// <param name="reader">The reader.</param>
     /// <remarks>
@@ -149,6 +150,8 @@ public sealed partial class Igi2AiSquad
             action.LoadState(words, this);
             _actions.Add(action);
         }
+
+        BuildTeam(MembersOf(Task));
     }
 
     // The action of a saved kind; anything else is idle.

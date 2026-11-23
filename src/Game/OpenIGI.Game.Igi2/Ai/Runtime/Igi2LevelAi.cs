@@ -167,8 +167,7 @@ public static class Igi2LevelAi
 
         foreach (Igi2AiSquad squad in world.Squads)
         {
-            // A soldier another game's stands for is in its squad through its double, for the level's cutscenes to move with it.
-            squad.BuildTeam(squad.Task.Soldiers.Select(static soldier => (soldier.Body ?? soldier.Double)?.Mind).OfType<Igi2HumanAi>());
+            squad.BuildTeam(Igi2AiSquad.MembersOf(squad.Task));
         }
 
         foreach (Igi2HumanAi mind in minds)

@@ -114,4 +114,16 @@ public sealed class HumanShadow(float maxDistance)
             Growth = PoolGrowth;
         }
     }
+
+    /// <summary>
+    /// Turns a pool of blood back into the body's shadow: the shadow texture, uncoloured, at its full size and no longer growing,
+    /// for a body a save game reads back alive.
+    /// </summary>
+    public void BecomeShadow()
+    {
+        Texture = ShadowTexture;
+        Light = null;
+        Size = Radius;
+        Growth = 0f;
+    }
 }

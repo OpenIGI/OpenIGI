@@ -23,7 +23,7 @@ using OpenIGI.Rendering.Headless;
 namespace OpenIGI.Game.Igi2.Tests;
 
 /// <summary>Mission 1's soldiers given their minds and squads, and run, as <c>HumanAI</c> and <c>AISquad</c> load and run them.</summary>
-public sealed class RetailIgi2LevelAiTests
+public sealed partial class RetailIgi2LevelAiTests
 {
     /// <summary>A registration-only backdrop must not redirect the playing AI's script namespace.</summary>
     [RequiresTitleDataFact("igi2")]

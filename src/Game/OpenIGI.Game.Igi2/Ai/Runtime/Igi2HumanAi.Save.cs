@@ -3,7 +3,8 @@ using OpenIGI.Game.Igi2.Detection;
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
 /// <content>
-/// Its save state, <c>HumanAI_ptSerializeParameterList</c> (humanai.c): its flags, whether it has yet to run, its visibility timer, its
+/// Its save state, <c>HumanAI_ptSerializeParameterList</c> (humanai.c): its flags, whether it has had its first update
+/// (<c>FirstUpdate</c>, the byte <c>HumanAI_RunHandler</c> sets once it has), its visibility timer, its
 /// nodes, its legal nodes, and its patrols, each by its command's, last end's and path's level ids. Its detection, events, actions,
 /// search and movement are not kept; <c>HumanAI_DeSerializeHandler</c> starts them afresh and sends a patrolling soldier on again.
 /// </content>
@@ -18,7 +19,7 @@ public sealed partial class Igi2HumanAi
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Int(Flags);
-        writer.Bool(!HasStarted);
+        writer.Bool(HasStarted);
         writer.Int(IgnoreVisibilityFactorTimer);
         writer.Int(CurrentNode);
         writer.Int(CurrentStartNode);
@@ -41,7 +42,8 @@ public sealed partial class Igi2HumanAi
     /// whether it is switched on), events and actions are cleared and its weight moved to its saved node; its channels are let go,
     /// its view is the idle one, its detection looks at how lit things are again, and its search and movement are dropped; a door it
     /// had triggered is let go, its queued lines are dropped and its legal nodes no longer hold it; its patrols are found again by
-    /// id; and a soldier that was patrolling with somewhere to go patrols again, its way there searched from its node.
+    /// id; a soldier that was patrolling with somewhere to go patrols again, its way there searched from its node; and its next
+    /// tick is its first update again.
     /// </summary>
     /// <param name="reader">The reader.</param>
     /// <remarks>
@@ -74,7 +76,10 @@ public sealed partial class Igi2HumanAi
         }
 
         SetCurrentNode(current);
-        HasStarted = true;
+
+        // HumanAI_DeSerializeHandler clears FirstUpdate whatever the save held: the mind's next tick is its first again -- its
+        // body updated, its weapons found and its script told it is made -- and until then it hears only that.
+        HasStarted = false;
         for (int i = 0; i < 11; i++)
         {
             SetChannel(i, 0f);

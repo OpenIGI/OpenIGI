@@ -51,6 +51,15 @@ public sealed class Igi2HumanSaveExtras
 
     /// <summary>Gets or sets its health, <c>nHealth</c>.</summary>
     public int Health { get; set; } = 100;
+
+    /// <summary>Gets or sets its state machine's signal as saved, <c>State.bStateSignal</c>.</summary>
+    public uint StateSignal { get; set; }
+
+    /// <summary>Gets or sets the state before the saved one, <c>State.nStatePreviousState</c>.</summary>
+    public int PreviousState { get; set; }
+
+    /// <summary>Gets or sets the state it was saved in, <c>State.nStateState</c>.</summary>
+    public int State { get; set; }
 }
 
 /// <content>
@@ -164,8 +173,8 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>
-    /// Reads the save state every human keeps back. Where it stands is its shadow's position; its state is entered afresh, which sets
-    /// up its state's running as retail's resumed sequence would.
+    /// Reads the save state every human keeps back. Its state machine is left to its kind, whose deserialize handler enters the
+    /// state the load puts it in (<see cref="Igi2HumanSaveExtras.State"/> is the one it was saved in).
     /// </summary>
     /// <param name="reader">The reader.</param>
     /// <returns>The fields its kind keeps.</returns>
@@ -268,18 +277,36 @@ public abstract partial class Igi2Human
         SlidingSpeed = reader.Real3();
         DeadOrientation = Matrix(reader.Real9());
 
-        if (state >= 0 && state < Locomotion.StateCount)
-        {
-            // Entering the state sets its running up; what the save held of the body's flags and of the state before is what
-            // retail's own load leaves, so they are put back over what the entry set.
-            var kept = (IsLockOrientation, IsDisableDeltaTranslation, IsRotateUpperBody, IsDisableCollision, IsGroundCollision, IsObjectCollision, IsHumanCollision);
-            Locomotion.Enter(state, this);
-            Locomotion.RestorePreviousState(previous);
-            (IsLockOrientation, IsDisableDeltaTranslation, IsRotateUpperBody, IsDisableCollision, IsGroundCollision, IsObjectCollision, IsHumanCollision) = kept;
-        }
-
-        Locomotion.Flags = flags;
+        extras.StateSignal = flags;
+        extras.PreviousState = previous;
+        extras.State = state;
         return extras;
+    }
+
+    /// <summary>
+    /// Enters the state a load puts a state machine in, as a kind's deserialize handler does: the saved fields put back, then the
+    /// state entered from the saved one -- its exit run, the saved state left as the one before, the new state's entry run.
+    /// </summary>
+    /// <param name="machine">The state machine: the body's, or the player's action machine.</param>
+    /// <param name="state">The state to enter.</param>
+    /// <param name="signal">The saved signal, <c>bStateSignal</c>.</param>
+    /// <param name="previous">The saved previous state.</param>
+    /// <param name="saved">The saved state.</param>
+    protected void EnterLoadedState(Engine.Tasks.TaskStateMachine machine, int state, uint signal, int previous, int saved)
+    {
+        ArgumentNullException.ThrowIfNull(machine);
+        machine.Flags = signal;
+        machine.RestoreSaved(previous, saved);
+        machine.Enter(state, this);
+    }
+
+    /// <summary>Enters the state a load puts the body in (<see cref="EnterLoadedState(Engine.Tasks.TaskStateMachine, int, uint, int, int)"/>).</summary>
+    /// <param name="state">The state to enter.</param>
+    /// <param name="saved">What the save held.</param>
+    protected void EnterLoadedState(int state, Igi2HumanSaveExtras saved)
+    {
+        ArgumentNullException.ThrowIfNull(saved);
+        EnterLoadedState(Locomotion, state, saved.StateSignal, saved.PreviousState, saved.State);
     }
 
     /// <summary>

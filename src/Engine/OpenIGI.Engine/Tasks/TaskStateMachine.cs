@@ -146,6 +146,26 @@ public sealed class TaskStateMachine
         Current?.Invoke(this, owner);
     }
 
+    /// <summary>
+    /// Puts back the state fields a save game holds (<c>nStatePreviousState</c>, <c>nStateState</c>) as the deserializer writes them,
+    /// without running anything: a load's handler then <see cref="Enter"/>s the state it puts the body in, leaving the saved one.
+    /// </summary>
+    /// <param name="previous">The saved previous state; out of range, the previous state is left as it is.</param>
+    /// <param name="current">The saved current state; out of range, the current state is left as it is.</param>
+    public void RestoreSaved(int previous, int current)
+    {
+        if ((uint)previous < (uint)_states.Length)
+        {
+            PreviousState = previous;
+        }
+
+        if ((uint)current < (uint)_states.Length)
+        {
+            CurrentState = current;
+            Current = _states[current];
+        }
+    }
+
     /// <summary>Gets a state's function without entering it.</summary>
     /// <param name="state">The state.</param>
     /// <returns>The table entry.</returns>

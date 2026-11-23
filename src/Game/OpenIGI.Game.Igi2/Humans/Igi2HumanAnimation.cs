@@ -150,7 +150,7 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     public Igi2AnimController? UpperBody { get; private set; }
 
     /// <inheritdoc/>
-    public int LastState { get; private set; } = -1;
+    public int LastState { get; set; } = -1;
 
     /// <inheritdoc/>
     public int LastUpperBodyState { get; set; } = -1;

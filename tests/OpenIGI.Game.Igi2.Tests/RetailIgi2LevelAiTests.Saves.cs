@@ -1,0 +1,108 @@
+using OpenIGI.Game.Igi2.Ai;
+using OpenIGI.Game.Igi2.Ai.Runtime;
+using OpenIGI.Game.Igi2.Soldiers;
+using OpenIGI.Game.Saves;
+using OpenIGI.TestSupport;
+using Xunit;
+
+namespace OpenIGI.Game.Igi2.Tests;
+
+/// <content>
+/// Soldiers read back from a save as <c>HumanSoldier_DeSerializeHandler</c> leaves them: a body dead in the save lies dead at the end of
+/// the clip it died by, and one alive in it stands, whatever became of either after the save.
+/// </content>
+public sealed partial class RetailIgi2LevelAiTests
+{
+    // The soldier the tests kill: the one the fight tests face.
+    private const int Victim = 400;
+
+    /// <summary>
+    /// A soldier killed after the save, the save loaded over the same level: he stands again, his pool a shadow, not dying, and his
+    /// mind alive -- it hears and thinks again, and has its first update once more as retail's load leaves it to.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_soldier_killed_after_the_save_stands_again_once_it_is_loaded()
+    {
+        (RetailIgi2Mission1 m, _, _, _) = Build();
+        SkipIntro(m);
+        Run(m, 300);
+        string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
+        Igi2HumanSoldier body = Body(m);
+        Igi2HumanAi mind = Assert.IsType<Igi2HumanAi>(body.Mind);
+        Assert.False(body.IsDead);
+
+        body.KillOutright();
+        Run(m, 200);
+        Assert.True(body.IsDead);
+        Assert.True(mind.IsDead);
+
+        SaveScript.Load(script, m.Tree[0], Saves.Igi2SaveFormat.Context());
+
+        Assert.False(body.IsDead);
+        Assert.False(mind.IsDead);
+        Assert.False(mind.HasStarted);
+        Assert.False(body.IsBloodPuddle);
+        Assert.Equal(0, body.LifeState);
+        Assert.Equal(Igi2SoldierState.Stand, body.Locomotion.CurrentState);
+
+        Run(m, 60);
+        Assert.False(body.IsDead);
+        Assert.True(mind.HasStarted);
+    }
+
+    /// <summary>
+    /// A soldier dead in the save, read onto the mission built afresh where he still stands: he lies dead where he fell, at the end of
+    /// the clip his death last set (<c>iStateLastUsedToSetMainAnimation</c>), in his pool, his mind dead with no death run again, and
+    /// the squads that had seen his body still have.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_soldier_dead_in_the_save_lies_dead_by_his_death_clip_on_a_fresh_level()
+    {
+        (RetailIgi2Mission1 played, _, _, _) = Build();
+        SkipIntro(played);
+        Run(played, 60);
+        Igi2HumanSoldier killed = Body(played);
+        killed.KillOutright();
+        Run(played, 300);
+        Assert.True(killed.IsDead);
+        int deathClip = killed.Animation.LastState;
+        Core.Numerics.Vector3d where = killed.Position;
+        Igi2AiSquad squad = ((Igi2HumanAi)killed.Mind!).Squad!;
+        killed.ReportTo(squad);
+        string script = SaveScript.Create(played.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
+
+        (RetailIgi2Mission1 fresh, _, _, _) = Build();
+        Igi2HumanSoldier body = Body(fresh);
+        Igi2HumanAi mind = Assert.IsType<Igi2HumanAi>(body.Mind);
+        Assert.False(body.IsDead);
+        SaveScript.Load(script, fresh.Tree[0], Saves.Igi2SaveFormat.Context());
+
+        Assert.True(body.IsDead);
+        Assert.True(mind.IsDead);
+        Assert.True(body.IsBloodPuddle);
+        Assert.Equal(Igi2HumanSoldier.DeadAndStill, body.LifeState);
+        Assert.Equal(Igi2SoldierState.Dead, body.Locomotion.CurrentState);
+        Assert.Equal(deathClip, body.Animation.LastState);
+        Assert.Equal(where, body.Position);
+        Assert.True(body.HasReportedTo(mind.Squad!));
+
+        Run(fresh, 60);
+        Assert.True(body.IsDead);
+        Assert.True(Math.Abs(body.Position.Z - where.Z) < 64.0, $"The body moved from {where} to {body.Position}.");
+    }
+
+    // EditVariable_2112 ends the intro and lets the soldiers' containers run.
+    private static void SkipIntro(RetailIgi2Mission1 m) =>
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+
+    private static void Run(RetailIgi2Mission1 m, int ticks)
+    {
+        for (int tick = 0; tick < ticks; tick++)
+        {
+            m.Run.Tick();
+        }
+    }
+
+    private static Igi2HumanSoldier Body(RetailIgi2Mission1 m) =>
+        m.Tree.OfType<Igi2HumanSoldierTask>().Single(static t => t.Id == Victim).Body!;
+}
