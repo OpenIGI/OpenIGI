@@ -13,9 +13,9 @@ public sealed class PlayerInputTests
     {
         Assert.Equal(40, PlayerInputFrame.RetailSlotCount);
         Assert.Equal(PlayerInputFrame.RetailSlotCount, (int)PlayerInputSlot.Underbarrel);
-        Assert.Equal(44, PlayerInputFrame.SlotCount);
-        Assert.Equal(176, PlayerInputFrame.SizeInBytes);
-        Assert.Equal(176, System.Runtime.InteropServices.Marshal.SizeOf<PlayerInputFrame>());
+        Assert.Equal(46, PlayerInputFrame.SlotCount);
+        Assert.Equal(184, PlayerInputFrame.SizeInBytes);
+        Assert.Equal(184, System.Runtime.InteropServices.Marshal.SizeOf<PlayerInputFrame>());
     }
 
     [Fact]

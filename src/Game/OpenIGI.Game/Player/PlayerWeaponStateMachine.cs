@@ -456,7 +456,10 @@ internal sealed class PlayerWeaponStateMachine
             return HumanWeaponState.ChangingWeapon;
         }
 
-        if (input.IsRisingEdge(PlayerInputSlot.MapComputer) && Flags.HasFlag(HumanWeaponFlagWord.OnGround))
+        // The objectives' and the log's keys open it too, on their page (not retail: I.G.I. 2's keys, see ComputerPageKeys).
+        bool computerKey = input.IsRisingEdge(PlayerInputSlot.MapComputer)
+            || OpenIGI.Game.Computer.ComputerPageKeys.Asked(input) != OpenIGI.Game.Computer.ComputerPageKind.None;
+        if (computerKey && Flags.HasFlag(HumanWeaponFlagWord.OnGround))
         {
             return HumanWeaponState.MapComputer;
         }

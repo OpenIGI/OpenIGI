@@ -8,4 +8,11 @@ namespace OpenIGI.Game.Computer;
 /// Whether the map key went down since the last tick. Read by the host as it gathers the mouse, because the open computer
 /// holds the keyboard from everything else.
 /// </param>
-public readonly record struct ComputerPointerInput(float CountsX, float CountsY, int Buttons, bool MapKey = false);
+public readonly record struct ComputerPointerInput(float CountsX, float CountsY, int Buttons, bool MapKey = false)
+{
+    /// <summary>
+    /// Gets the page whose key -- the objectives' or the log's -- went down since the last tick, or none; gathered as
+    /// <see cref="MapKey"/> is.
+    /// </summary>
+    public ComputerPageKind PageKey { get; init; }
+}

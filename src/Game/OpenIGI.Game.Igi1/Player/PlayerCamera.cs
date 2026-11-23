@@ -549,6 +549,12 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public bool IsMapComputerOpen => _mapComputerOpen;
 
     /// <summary>
+    /// Gets the page whose key -- the objectives' or the log's -- went down on this tick's input, or none: the page the computer
+    /// opens on when that key took the weapon machine into its state, or turns to while it is up.
+    /// </summary>
+    public OpenIGI.Game.Computer.ComputerPageKind AskedComputerPage => OpenIGI.Game.Computer.ComputerPageKeys.Asked(_input);
+
+    /// <summary>
     /// Enters or leaves the map-computer state without letting the normal movement tick consume the
     /// opening key. Retail weapon state 11 immediately installs human locomotion state 45
     /// (<c>0x40FDA0</c>), whose declared weapon action is the crouched hold pose.
@@ -579,6 +585,10 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
             // as held, the key has to be let go before it can open the computer; one already let go is no worse off.
             PlayerInputFrame keyHeld = _input.Current;
             keyHeld[(int)PlayerInputSlot.MapComputer] = 1f;
+            foreach ((PlayerAction _, PlayerInputSlot pageSlot, OpenIGI.Game.Computer.ComputerPageKind _) in OpenIGI.Game.Computer.ComputerPageKeys.All)
+            {
+                keyHeld[(int)pageSlot] = 1f;
+            }
             _input.Accept(keyHeld);
             _lastRawFrame = keyHeld;
         }

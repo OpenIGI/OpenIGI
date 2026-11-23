@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -68,6 +69,47 @@ public sealed class PlayerCameraMapKeyHeldTests
         Tick(camera, input, mapKeyDown: true, computerOpen: false);
 
         Assert.Equal(HumanWeaponState.MapComputer, camera.Weapons!.State);
+    }
+
+    [Theory]
+    [InlineData(KeyCode.O, ComputerPageKind.Objectives)]
+    [InlineData(KeyCode.J, ComputerPageKind.Log)]
+    public void APageKeyOpensTheComputerOnItsPageAndHeldAfterClosingDoesNotOpenItAgain(KeyCode key, ComputerPageKind page)
+    {
+        PlayerCamera camera = ReadyPlayer();
+        camera.InputProfile = Game.Config.PlayerProfile.CreateDefault();
+        InputState input = new();
+
+        Tick(camera, input, key, down: true, computerOpen: false);
+        Assert.Equal(HumanWeaponState.MapComputer, camera.Weapons!.State);
+        Assert.Equal(page, camera.AskedComputerPage);
+        camera.SetMapComputerOpen(true);
+        Tick(camera, input, key, down: false, computerOpen: true);
+
+        // Its key again, while the computer is up, is seen on the player's own input: the host closes it.
+        Tick(camera, input, key, down: true, computerOpen: true);
+        Assert.Equal(page, camera.AskedComputerPage);
+        camera.SetMapComputerOpen(false);
+        for (int tick = 0; tick < 3; tick++)
+        {
+            Tick(camera, input, key, down: true, computerOpen: false);
+            Assert.Equal(HumanWeaponState.Ready, camera.Weapons.State);
+        }
+    }
+
+    // One tick with one key of the profile's held or not.
+    private static void Tick(PlayerCamera camera, InputState input, KeyCode key, bool down, bool computerOpen)
+    {
+        input.BeginFrame();
+        input.Keyboard.SetKey(key, down);
+        if (computerOpen)
+        {
+            camera.TickMapComputer(input);
+        }
+        else
+        {
+            camera.Tick(input, new FlatGround());
+        }
     }
 
     private static PlayerCamera ReadyPlayer()

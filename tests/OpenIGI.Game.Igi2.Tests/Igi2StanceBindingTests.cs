@@ -66,6 +66,21 @@ public sealed class Igi2StanceBindingTests
         Assert.Equal(0f, player.Human.Channels[channel]);
     }
 
+    /// <summary>The shared computer keys reach the original's own computer channels, which open it on their screens.</summary>
+    [Theory]
+    [InlineData(PlayerAction.MapComputer, Igi2HumanChannel.ComputerMap)]
+    [InlineData(PlayerAction.ComputerObjectives, Igi2HumanChannel.ComputerObjectives)]
+    [InlineData(PlayerAction.ComputerLog, Igi2HumanChannel.ComputerLog)]
+    public void Computer_keys_reach_the_retail_computer_channels(PlayerAction key, Igi2HumanChannel channel)
+    {
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
+            Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0f, Game.Ai.AiDifficulty.Normal);
+        player.Tick(new TitlePlayerInput(0f, 0f, key, key, 0.4f, false));
+        Assert.Equal(1f, player.Human.Channels[channel]);
+        player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
+        Assert.Equal(0f, player.Human.Channels[channel]);
+    }
+
     /// <summary>Saved rebindings and unbound controls survive startup; occupied defaults never acquire a second action.</summary>
     [Fact]
     public void Profile_assignments_survive_repair()

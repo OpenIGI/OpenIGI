@@ -74,6 +74,17 @@ public enum PlayerAction : long
     /// <remarks><b>Not retail</b>, as <see cref="Underbarrel"/>. Aiming at a surface braces on its own unless that is turned off.</remarks>
     Mount = 0x8_0000_0000,
 
+    /// <summary>Open the computer on its objectives, or turn it to them; again, close it.</summary>
+    /// <remarks>
+    /// <b>Not retail</b> in Project I.G.I., whose computer opens only on the map key. I.G.I. 2 binds it itself
+    /// (<c>ComputerObjectives</c>, <c>KEY_O</c> in its <c>config.qvm</c>), and both games take it as that game does.
+    /// </remarks>
+    ComputerObjectives = 0x10_0000_0000,
+
+    /// <summary>Open the computer on its log of messages, or turn it to it; again, close it.</summary>
+    /// <remarks><b>Not retail</b> in Project I.G.I., as <see cref="ComputerObjectives"/>; I.G.I. 2's <c>ComputerLog</c>.</remarks>
+    ComputerLog = 0x20_0000_0000,
+
     /// <summary>Fire the held weapon.</summary>
     Fire = 0x100,
 

@@ -40,7 +40,7 @@ public sealed partial class Igi1MissionTick
         computer.Saves = host.ComputerSaves;
         player.SetMapComputerOpen(true);
         (int width, int height) = host.ComputerDisplay;
-        computer.Open(mission.PlayerTask, width, height);
+        computer.Open(mission.PlayerTask, width, height, player.AskedComputerPage);
         host.TakeComputerInput();
         host.ComputerChanged(true);
     }
@@ -59,6 +59,23 @@ public sealed partial class Igi1MissionTick
 
         // 0x40E3C0: the map key closes it. The open computer holds the window's input, so the key comes with the mouse.
         bool mapKey = player.TickMapComputer(host.ViewInput) | mouse.MapKey;
+
+        // The objectives' and the log's keys turn it to their page, and close it from that page (not retail: I.G.I. 2's keys).
+        ComputerPageKind pageKey = player.AskedComputerPage;
+        if (pageKey == ComputerPageKind.None)
+        {
+            pageKey = mouse.PageKey;
+        }
+
+        if (!mapKey && pageKey != ComputerPageKind.None && computer.ShownPage != pageKey && Igi1Computer.ScreenFor(pageKey) is { } screen)
+        {
+            computer.SetScreen(screen);
+        }
+        else if (pageKey != ComputerPageKind.None)
+        {
+            mapKey = true;
+        }
+
         if (mapKey)
         {
             computer.Close();

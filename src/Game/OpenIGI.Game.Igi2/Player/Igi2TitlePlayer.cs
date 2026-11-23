@@ -45,6 +45,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         (PlayerAction.ToggleWalkRun, Igi2PlayerAction.ToggleWalkRun),
         (PlayerAction.Binoculars, Igi2PlayerAction.Binoculars),
         (PlayerAction.MapComputer, Igi2PlayerAction.ComputerMap),
+        (PlayerAction.ComputerObjectives, Igi2PlayerAction.ComputerObjectives),
+        (PlayerAction.ComputerLog, Igi2PlayerAction.ComputerLog),
 
         // The number keys, as the original's config.qvm binds them: 1 is its third category and 3 its first, 4 to 7 their
         // own, 9 the ninth; it binds nothing to 8.

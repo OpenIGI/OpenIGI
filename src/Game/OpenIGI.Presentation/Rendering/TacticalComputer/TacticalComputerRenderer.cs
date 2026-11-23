@@ -209,6 +209,37 @@ public sealed partial class TacticalComputerRenderer : ITacticalComputerPresente
         PlaySound?.Invoke(StaticSound);
     }
 
+    /// <inheritdoc/>
+    public OpenIGI.Game.Computer.ComputerPageKind ShownPage => _page switch
+    {
+        Page.Map => OpenIGI.Game.Computer.ComputerPageKind.Map,
+        Page.Objectives => OpenIGI.Game.Computer.ComputerPageKind.Objectives,
+        Page.Log => OpenIGI.Game.Computer.ComputerPageKind.Log,
+        _ => OpenIGI.Game.Computer.ComputerPageKind.None,
+    };
+
+    /// <inheritdoc/>
+    public void ShowPage(OpenIGI.Game.Computer.ComputerPageKind page)
+    {
+        Page? asked = page switch
+        {
+            OpenIGI.Game.Computer.ComputerPageKind.Map => Page.Map,
+            OpenIGI.Game.Computer.ComputerPageKind.Objectives => Page.Objectives,
+            OpenIGI.Game.Computer.ComputerPageKind.Log => Page.Log,
+            _ => null,
+        };
+
+        // An upload under way keeps its page, as it does against a tab.
+        if (asked is not { } next || next == _page || !IsSelectable(next) || SaveBusy)
+        {
+            return;
+        }
+
+        _page = next;
+        PlaySound?.Invoke(ClickSound);
+        _burst = 1f;
+    }
+
     /// <summary>Takes a frame's input: page selection, pan, and cursor-anchored zoom.</summary>
     /// <param name="input">The frame's input.</param>
     /// <param name="elapsedSeconds">The real seconds since the last call.</param>

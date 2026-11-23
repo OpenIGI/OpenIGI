@@ -415,7 +415,8 @@ internal static class ControlsSettingsTab
         }
 
         if (action.StartsWith("Zoom", StringComparison.OrdinalIgnoreCase)
-            || action is "Activate" or "Flashlight" or "Binoculars" or "MapComputer" or "NightVision" or "Thermal" or "Medkit")
+            || action is "Activate" or "Flashlight" or "Binoculars" or "MapComputer" or "ComputerObjectives" or "ComputerLog"
+                or "NightVision" or "Thermal" or "Medkit")
         {
             return "Equipment";
         }
@@ -440,6 +441,8 @@ internal static class ControlsSettingsTab
             "PrevWeapon" => "Previous weapon",
             "Underbarrel" => "Underbarrel launcher",
             "Mount" => "Mount weapon",
+            "ComputerObjectives" => "Computer: objectives",
+            "ComputerLog" => "Computer: log",
             "ThirdPersonView" => "Third-person view",
             "CoopMark" => "Mark for team",
             "CoopChat" => "Chat",

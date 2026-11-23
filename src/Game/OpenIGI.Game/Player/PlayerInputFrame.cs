@@ -27,9 +27,10 @@ public struct PlayerInputFrame : IEquatable<PlayerInputFrame>
     /// <summary>The number of <see cref="float"/> slots in a frame.</summary>
     /// <remarks>
     /// The original's 40, then the four modern aim adds (<see cref="PlayerInputSlot.Underbarrel"/> to
-    /// <see cref="PlayerInputSlot.Mount"/>), which the original's sampler never writes.
+    /// <see cref="PlayerInputSlot.Mount"/>) and the computer's two page keys (<see cref="PlayerInputSlot.ComputerObjectives"/>,
+    /// <see cref="PlayerInputSlot.ComputerLog"/>), which the original's sampler never writes.
     /// </remarks>
-    public const int SlotCount = 44;
+    public const int SlotCount = 46;
 
     /// <summary>The slots of the original's own frame, <c>0x45E060</c>'s forty, which it memcpys, records and replays.</summary>
     public const int RetailSlotCount = 40;

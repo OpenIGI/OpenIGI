@@ -199,6 +199,14 @@ public enum PlayerInputSlot
     /// <summary><see cref="PlayerAction.Mount"/>.</summary>
     /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
     Mount = 43,
+
+    /// <summary><see cref="PlayerAction.ComputerObjectives"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    ComputerObjectives = 44,
+
+    /// <summary><see cref="PlayerAction.ComputerLog"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    ComputerLog = 45,
 }
 
 /// <summary>The join between an input slot and the action its bit binds.</summary>
@@ -256,6 +264,8 @@ public static class PlayerInputBindings
         (PlayerInputSlot.LeanLeft, PlayerAction.LeanLeft),
         (PlayerInputSlot.LeanRight, PlayerAction.LeanRight),
         (PlayerInputSlot.Mount, PlayerAction.Mount),
+        (PlayerInputSlot.ComputerObjectives, PlayerAction.ComputerObjectives),
+        (PlayerInputSlot.ComputerLog, PlayerAction.ComputerLog),
     ];
 
     /// <summary>Gets the action name used by the persisted retail configuration.</summary>

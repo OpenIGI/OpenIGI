@@ -301,10 +301,10 @@ public sealed partial class GameHost
         held = crouch ? held | PlayerAction.Crouch : held & ~PlayerAction.Crouch;
         titleHeld = crouch ? titleHeld | titleCrouch : titleHeld & ~titleCrouch;
 
-        // The computer's key opens the mission's computer, not the title's own, where the mission's serves it.
+        // The computer's keys open the mission's computer, not the title's own, where the mission's serves it.
         if (TitleUsesMissionComputer)
         {
-            replaced |= PlayerAction.MapComputer;
+            replaced |= PlayerAction.MapComputer | PlayerAction.ComputerObjectives | PlayerAction.ComputerLog;
         }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         // A mission that serves a session itself is observed around its own tick (GameHost.Mission), which this one is

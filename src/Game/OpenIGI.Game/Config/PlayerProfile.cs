@@ -24,10 +24,10 @@ public sealed partial class PlayerProfile
     /// <summary>The number of key bindings a profile carries.</summary>
     /// <remarks>
     /// The <see cref="RetailBindingCount"/> the original writes, plus the remaster's flashlight, weapon wheel, multiplayer
-    /// scoreboard, buy menu and weapon drop, and modern aim's underbarrel, two leans and mount — the nine actions the original
-    /// does not have.
+    /// scoreboard, buy menu and weapon drop, modern aim's underbarrel, two leans and mount, and the computer's objectives and
+    /// log keys — the eleven actions the original does not have.
     /// </remarks>
-    public const int BindingCount = RetailBindingCount + 9;
+    public const int BindingCount = RetailBindingCount + 11;
 
     /// <summary>The number of key bindings the original's profile carries.</summary>
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
@@ -87,6 +87,11 @@ public sealed partial class PlayerProfile
         new(nameof(Player.PlayerAction.LeanLeft), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Q"),
         new(nameof(Player.PlayerAction.LeanRight), "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
         new(nameof(Player.PlayerAction.Mount), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Z"),
+
+        // The computer's pages: objectives on O, as I.G.I. 2's own config.qvm binds them; the log on J, for journal, since L
+        // (I.G.I. 2's) is the flashlight's.
+        new(nameof(Player.PlayerAction.ComputerObjectives), "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
+        new(nameof(Player.PlayerAction.ComputerLog), "INPUTPORT_DEVICE_KEYBOARD", "KEY_J"),
     ];
 
     /// <summary>What a fresh profile's bindings were before <see cref="GameConfig.CurrentControlsVersion"/> two, where they differ from today's.</summary>
