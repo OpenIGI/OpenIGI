@@ -66,6 +66,18 @@ public sealed class Igi2StanceBindingTests
         Assert.Equal(0f, player.Human.Channels[channel]);
     }
 
+    /// <summary>The shared drop key reaches the original's drop channel, which drops in a single-player game too.</summary>
+    [Fact]
+    public void Drop_key_reaches_the_retail_drop_channel()
+    {
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
+            Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0f, Game.Ai.AiDifficulty.Normal);
+        player.Tick(new TitlePlayerInput(0f, 0f, PlayerAction.DropWeapon, PlayerAction.DropWeapon, 0.4f, false));
+        Assert.Equal(1f, player.Human.Channels[Igi2HumanChannel.DropWeapon]);
+        player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
+        Assert.Equal(0f, player.Human.Channels[Igi2HumanChannel.DropWeapon]);
+    }
+
     /// <summary>The shared computer keys reach the original's own computer channels, which open it on their screens.</summary>
     [Theory]
     [InlineData(PlayerAction.MapComputer, Igi2HumanChannel.ComputerMap)]

@@ -387,8 +387,9 @@ internal static class ControlsSettingsTab
     // Which group an action's row stands in.
     private static string GroupOf(string action)
     {
-        // Before the weapon test below: dropping a weapon is a multiplayer key, not a combat one.
-        if (action is "Scoreboard" or "BuyMenu" or "DropWeapon")
+        // Dropping a weapon falls to the weapon test below: I.G.I. 2 drops in a single-player game too, and files the key with
+        // its combat ones.
+        if (action is "Scoreboard" or "BuyMenu")
         {
             return Multiplayer;
         }

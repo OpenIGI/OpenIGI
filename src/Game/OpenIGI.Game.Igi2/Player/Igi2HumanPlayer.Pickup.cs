@@ -18,7 +18,25 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
     public IReadOnlyList<Pickups.Igi2GenericPickupTask> GenericPickups { get; set; } = [];
 
     /// <summary>Gets or sets the level's pickups, or <see langword="null"/> for a level with none.</summary>
-    public Igi2PickupList? Pickups { get; set; }
+    /// <remarks>
+    /// The level's surroundings are given them too: a weapon the player drops or swaps away joins the level's list as
+    /// <c>GunPickup_New</c> makes it under <c>Level_ptDynamicQTask</c>. Without them the throw found no list, made nothing, and the
+    /// weapon was still taken from the inventory.
+    /// </remarks>
+    public Igi2PickupList? Pickups
+    {
+        get => _pickups;
+        set
+        {
+            _pickups = value;
+            if (Surroundings is Igi2LevelSurroundings level)
+            {
+                level.Pickups = value;
+            }
+        }
+    }
+
+    private Igi2PickupList? _pickups;
 
     /// <inheritdoc/>
     Igi2Inventory? IIgi2PickupTaker.Inventory => Weapon.Inventory;

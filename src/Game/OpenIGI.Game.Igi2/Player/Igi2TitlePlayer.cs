@@ -42,6 +42,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         (PlayerAction.ZoomOut, Igi2PlayerAction.ZoomOut),
         (PlayerAction.NextWeapon, Igi2PlayerAction.NextWeapon),
         (PlayerAction.PreviousWeapon, Igi2PlayerAction.PrevWeapon),
+
+        // The drop key is the original's in a single-player game too (HumanPlayer_RunActionIdle drops a weapon its type marks
+        // isDropWeaponInSinglePlayer); its config files it with the combat keys, not the multiplayer ones.
+        (PlayerAction.DropWeapon, Igi2PlayerAction.DropWeapon),
         (PlayerAction.ToggleWalkRun, Igi2PlayerAction.ToggleWalkRun),
         (PlayerAction.Binoculars, Igi2PlayerAction.Binoculars),
         (PlayerAction.MapComputer, Igi2PlayerAction.ComputerMap),

@@ -53,18 +53,25 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         IReadOnlyList<int> ammoCount,
         bool isThrowShort = true)
     {
-        Weapons.Igi2WeaponTables? tables = Owner switch
+        if (Pickups is not { } pickups)
+        {
+            return;
+        }
+
+        Weapons.Igi2WeaponTables? held = Owner switch
         {
             Soldiers.Igi2HumanSoldier soldier => soldier.Weapon.Inventory?.Tables,
             Igi2HumanPlayer player => player.Weapon.Inventory?.Tables,
             _ => null,
         };
-        if (Pickups is not { } pickups || tables is null)
+        if ((held ?? pickups.Tables) is not { } tables)
         {
             return;
         }
 
-        float radius = weaponType.FixedModel.Length > 0 && Models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
+        // The weapon's fixed model sizes the throw as a placed pickup's does; the list resolves it when these surroundings do not.
+        Func<string, Formats.World.MefModel?>? models = Models ?? pickups.Models;
+        float radius = weaponType.FixedModel.Length > 0 && models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
         pickups.Add(OpenIGI.Game.Igi2.Pickups.Igi2GunPickup.Thrown(weaponType, tables, position, orientation, throwGamma, isMoving: true, isThrowShort, ammoInClip, ammoCount, radius));
     }
 

@@ -29,6 +29,23 @@ public sealed class RetailIgi2GunPickupTests
     });
 
     /// <summary>
+    /// The level's pickups given to the player reach its level surroundings too, which a weapon it drops or swaps away joins: without
+    /// them the throw made nothing and the weapon was lost.
+    /// </summary>
+    [Fact]
+    public void The_players_surroundings_take_the_levels_pickups()
+    {
+        Igi2CollisionWorld world = new([], null);
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world,
+            Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0f, Game.Ai.AiDifficulty.Normal);
+        Igi2PickupList pickups = new([], world, new Igi2GameMaterials());
+
+        player.Human.Pickups = pickups;
+
+        Assert.Same(pickups, Assert.IsType<Igi2LevelSurroundings>(player.Human.Surroundings).Pickups);
+    }
+
+    /// <summary>
     /// Mission 1 lays four grenades, in the order it declares them. Each gives one round in its load and one for its first
     /// fire type, and a full load for its second; each reaches at least a metre.
     /// </summary>
