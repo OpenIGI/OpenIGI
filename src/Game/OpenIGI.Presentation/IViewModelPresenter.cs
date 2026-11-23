@@ -202,11 +202,11 @@ public interface ITitleWorldModelPresenter : IDisposable
     /// <param name="projection">The world projection.</param>
     void DrawWorldMuzzleFlashes(in Camera3D camera, in Matrix4f projection) { }
 
-    /// <summary>Draws marks lying on the ground, blended over the world and tested against its depth.</summary>
-    /// <param name="decals">The marks.</param>
+    /// <summary>Draws marks laid on surfaces, blended over the world or added to it, and tested against its depth.</summary>
+    /// <param name="marks">The marks.</param>
     /// <param name="camera">The world camera.</param>
     /// <param name="projection">The world projection.</param>
-    void DrawGroundDecals(IReadOnlyList<TitleGroundDecal> decals, in Camera3D camera, in Matrix4f projection) { }
+    void DrawSurfaceMarks(IReadOnlyList<TitleSurfaceMark> marks, in Camera3D camera, in Matrix4f projection) { }
 
     /// <summary>Draws untextured triangles flat in the scene's ambient colour, tested against the world's depth.</summary>
     /// <param name="polygons">The triangle lists.</param>

@@ -558,15 +558,15 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>Draws the marks the title's player has lying on the ground, over the lit picture.</summary>
+    /// <summary>Draws the marks the title's player has laid on surfaces, over the lit picture.</summary>
     /// <param name="eye">The camera the frame is drawn from.</param>
     /// <param name="projection">The world's projection.</param>
     /// <remarks>They blend, so they follow the lit world as the water does; drawn into the G-buffer they would be opaque squares.</remarks>
-    private void DrawTitleGroundDecals(in Camera3D eye, in Matrix4f projection)
+    private void DrawTitleSurfaceMarks(in Camera3D eye, in Matrix4f projection)
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
-            models.DrawGroundDecals(owned.GroundDecals, eye, projection);
+            models.DrawSurfaceMarks(owned.SurfaceMarks, eye, projection);
             models.DrawWorldPolygons(owned.WorldPolygons, eye, projection);
         }
     }

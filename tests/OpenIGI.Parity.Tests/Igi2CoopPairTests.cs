@@ -1013,7 +1013,7 @@ public sealed class Igi2CoopPairTests
         partner.Damage.Damage = partner.Damage.MaxDamage + 1f;
         partner.UpdateDie();
         Assert.True(
-            pair.RunUntil(() => pair.Host.GroundDecals.Any(d => d.Texture.EndsWith(OpenIGI.Game.World.HumanShadow.PoolTexture, StringComparison.Ordinal)
+            pair.RunUntil(() => pair.Host.SurfaceMarks.Any(d => d.Texture.EndsWith(OpenIGI.Game.World.HumanShadow.PoolTexture, StringComparison.Ordinal)
                 && Math.Abs(d.Position.X - partner.Position.X) + Math.Abs(d.Position.Y - partner.Position.Y) < 4096), 400) >= 0,
             $"the fallen partner left no pool of blood: dead {partner.IsDead}, clip done {partner.IsDeathAnimationDone}, settled {partner.IsDeathPositionStabilized}, puddle {partner.IsBloodPuddle}, mark on {partner.Shadow.IsEnabled} valid {partner.Shadow.IsPositionValid} size {partner.Shadow.Size}, state {partner.Locomotion.CurrentState}");
     }

@@ -531,7 +531,7 @@ public sealed partial class GameHost
         // G-buffer it was written as if opaque and then lit away: the deferred frame showed no sea.
         _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
         EndStageIfSlow("the water");
-        DrawTitleGroundDecals(eye, projection);
+        DrawTitleSurfaceMarks(eye, projection);
 
         // And the level's own bodies' marks on the ground, on the original's look (Shadow_MagicObjEnterHandler).
         if (_world.FaceGroupBlending)

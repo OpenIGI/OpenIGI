@@ -509,6 +509,38 @@ public sealed class RetailIgi2FiringTests
     }
 
     /// <summary>
+    /// The SOCOM's dot shows only while switched on (<c>Weapon_StatusDisplayHandler</c>): its type has one, and then a line from
+    /// where it fires runs 409600 units along the aim and the dot lies where it meets the world, added to the picture.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_socoms_laser_dot_lies_where_its_aim_meets_the_world()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        Assert.True(inventory.EnableWeaponType("WEAPON_ID_SOCOM", addAmmo: true));
+        Igi2WeaponItem socom = inventory.FindWeapon("WEAPON_ID_SOCOM")!;
+        Assert.True(inventory.Activate(socom));
+        Assert.True(socom.WeaponType.LaserDot);
+        StrikeOnCall world = new(Mission1.Value.Session.Require<Igi2GameMaterials>(), strikeOn: 1, material: 11);
+        weapons.World = world;
+        Igi2LaserDot dot = new();
+        socom.IsLaserDotOn = false;
+        Assert.Null(dot.Place(weapons.Firing));
+        Assert.Empty(world.Calls);
+
+        socom.IsLaserDotOn = true;
+        TitleSurfaceMark mark = Assert.IsType<TitleSurfaceMark>(dot.Place(weapons.Firing));
+
+        (Vector3d start, Vector3d end) = Assert.Single(world.Calls);
+        Assert.Equal(player.View.Position, start);
+        Assert.InRange(Vector3d.Distance(start, end), Igi2LaserDot.Range - 0.01, Igi2LaserDot.Range + 0.01);
+        Assert.Equal(new Vector3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2), mark.Position);
+        Assert.EndsWith(Igi2LaserDot.Texture, mark.Texture, StringComparison.Ordinal);
+        Assert.True(mark.IsAdditive);
+        Assert.Equal(Igi2LaserDot.HalfSize, mark.HalfSize);
+    }
+
+    /// <summary>
     /// The drop key on a weapon its type lets be dropped in a single-player game puts it away for another: the AI hears it handled,
     /// it lands as a pickup, not thrown short, with its load, and is carried no more.
     /// </summary>

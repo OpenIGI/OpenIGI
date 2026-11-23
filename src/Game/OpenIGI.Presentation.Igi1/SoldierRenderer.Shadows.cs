@@ -19,9 +19,9 @@ public sealed partial class SoldierRenderer
     // How far below the origin an object's collision is looked for: ten metres.
     private const double ShadowProbeDepth = 40960.0;
 
-    private readonly List<TitleGroundDecal> _shadowDecals = [];
+    private readonly List<TitleSurfaceMark> _shadowDecals = [];
     private readonly HumanShadow _shadow = new(HumanShadow.Igi1MaxDistance);
-    private GroundDecalDrawer? _shadowDrawer;
+    private SurfaceMarkDrawer? _shadowDrawer;
     private TexTextureCache? _shadowTextures;
     private ShadowGround _playerShadowGround;
 
@@ -54,7 +54,7 @@ public sealed partial class SoldierRenderer
             return;
         }
 
-        _shadowDrawer ??= new GroundDecalDrawer(_device);
+        _shadowDrawer ??= new SurfaceMarkDrawer(_device);
         _shadowTextures ??= new TexTextureCache(
             _device, _resources, _logger, LogCategory, TextureAddressMode.Clamp, static name => [$"LOCAL:common/textures/{name}"]);
         _shadowDrawer.Draw(_shadowDecals, _shadowTextures.Get, camera, projection);
@@ -82,7 +82,7 @@ public sealed partial class SoldierRenderer
         double height = ground.Height;
         _shadow.Place(new Vector3d(origin.X, origin.Y, height), ground.Normal, (float)(origin.Z - height));
         byte grey = (byte)Math.Clamp((int)(0.9f * _shadow.Strength * 255f), 0, 255);
-        _shadowDecals.Add(new TitleGroundDecal(
+        _shadowDecals.Add(new TitleSurfaceMark(
             HumanShadow.ShadowTexture, _shadow.Position, _shadow.Normal, HumanShadow.Radius, HumanShadow.Hover, Bgra32.FromRgba(grey, grey, grey, 255)));
     }
 

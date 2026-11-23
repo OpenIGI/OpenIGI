@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Physics;
-using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -56,17 +55,7 @@ internal sealed class Igi2LaserDesignatorFire : IIgi2FireHandler
     internal static void Designate(
         Igi2LaserDesignatorState state, IIgi2GunShotWorld world, WorldLineTrace trace, Vector3d from, Vector3d to, object? holder)
     {
-        trace.Starts[0] = from;
-        trace.Ends[0] = to;
-        trace.Mesh = 0;
-        trace.TracePortals = false;
-        trace.IgnoreMaterial = WorldLineTrace.AirMaterial;
-        WeaponCollisionQuery query = new(holder, null, 1f);
-        trace.Includes = owner => !ReferenceEquals(owner, holder)
-            && (owner is not IWeaponCollisionTarget target || target.EvaluateWeaponCollision(query));
-        world.Collision.TraceLines(trace, uint.MaxValue);
-
-        WorldIntersection hit = trace.Intersections[0];
+        WorldIntersection hit = Igi2WeaponSightLine.Cast(world, trace, from, to, holder);
         if (!hit.IsHit || hit.HitObject is not { } struck)
         {
             state.LoseLock();

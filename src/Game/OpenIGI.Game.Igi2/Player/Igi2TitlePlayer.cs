@@ -94,32 +94,35 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public OpenIGI.Game.World.Particles.Particle2DModule? Particles => Human.Surroundings.Particles?.Module;
 
-    private TitleGroundDecal[] _decals = [];
-    private long _decalsTick = -1;
+    private TitleSurfaceMark[] _surfaceMarks = [];
+    private long _surfaceMarksTick = -1;
+    private readonly Igi2LaserDot _laserDot = new();
 
     /// <inheritdoc/>
     /// <remarks>
     /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>) -- in I.G.I. 2 a dead body's pool of blood --
     /// the player's, the soldiers' and the other players' in a co-op session (whose pools showed on no screen): coloured by the
-    /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>).
+    /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>). Then the
+    /// player's weapon's laser dot where it points, when the weapon shows one (<see cref="Igi2LaserDot"/>).
     /// </remarks>
-    public IReadOnlyList<TitleGroundDecal> GroundDecals
+    public IReadOnlyList<TitleSurfaceMark> SurfaceMarks
     {
         get
         {
-            if (_decalsTick != _ticks)
+            if (_surfaceMarksTick != _ticks)
             {
                 IEnumerable<Humans.Igi2Human> bodies = Soldiers?.Bodies ?? [];
                 IEnumerable<Humans.Igi2Human> others = _networkHumans.Select(static n => (Humans.Igi2Human)n.Human);
-                _decals = [.. bodies.Prepend(Human).Concat(others).Select(static h => Decal(h.Shadow)).OfType<TitleGroundDecal>()];
-                _decalsTick = _ticks;
+                IEnumerable<TitleSurfaceMark?> marks = bodies.Prepend(Human).Concat(others).Select(static h => ShadowMark(h.Shadow));
+                _surfaceMarks = [.. marks.Append(Weapons is { } weapons ? _laserDot.Place(weapons.Firing) : null).OfType<TitleSurfaceMark>()];
+                _surfaceMarksTick = _ticks;
             }
 
-            return _decals;
+            return _surfaceMarks;
         }
     }
 
-    private static TitleGroundDecal? Decal(OpenIGI.Game.World.HumanShadow shadow)
+    private static TitleSurfaceMark? ShadowMark(OpenIGI.Game.World.HumanShadow shadow)
     {
         if (!shadow.IsEnabled || !shadow.IsPositionValid || shadow.Size <= 0f)
         {
@@ -128,7 +131,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         float shade = (shadow.Light ?? 0.9f) * shadow.Strength;
         byte channel = (byte)Math.Clamp((int)(shade * 255f), 0, 255);
-        return new TitleGroundDecal(
+        return new TitleSurfaceMark(
             "LOCAL:common/textures/" + shadow.Texture,
             shadow.Position,
             shadow.Normal,
@@ -763,6 +766,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             seed);
         Human.Update(_frame);
         Human.RunDelayed();
+        ZoomProbeTrace();
 
         // HumanPlayer_RunDelayedHandler: in the world, the inventory key pressed shows or hides the inventory, a profile option.
         if (Human.IsActive && Human.Channels.WasPressed(Humans.Igi2HumanChannel.Inventory) && GameConfig?.Active is { } profile)

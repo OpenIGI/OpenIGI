@@ -23,8 +23,8 @@ public interface ITitleWorldModels
     /// <summary>Gets depth-tested light sprites as of the last tick.</summary>
     IReadOnlyList<TitleWorldSprite> WorldSprites => [];
 
-    /// <summary>Gets the marks lying on the ground as of the last tick: shadows and pools of blood.</summary>
-    IReadOnlyList<TitleGroundDecal> GroundDecals => [];
+    /// <summary>Gets the marks laid on surfaces as of the last tick: shadows, pools of blood, a laser sight's dot.</summary>
+    IReadOnlyList<TitleSurfaceMark> SurfaceMarks => [];
 
     /// <summary>Gets the untextured triangles drawn flat in the scene's ambient colour as of the last frame: I.G.I. 2's birds.</summary>
     IReadOnlyList<TitleWorldPolygons> WorldPolygons => [];
@@ -36,14 +36,18 @@ public interface ITitleWorldModels
     OpenIGI.Game.World.IExplosionScene? Explosions => null;
 }
 
-/// <summary>A square laid on the ground, blended over it.</summary>
+/// <summary>A square laid on a surface, the ground or a wall, blended over it.</summary>
 /// <param name="Texture">The resource name of its texture.</param>
 /// <param name="Position">Where it lies, in world units.</param>
-/// <param name="Normal">The ground's normal there, of unit length.</param>
+/// <param name="Normal">The surface's normal there, of unit length.</param>
 /// <param name="HalfSize">Half its width, in world units.</param>
-/// <param name="Hover">How far above the ground it is drawn, in world units.</param>
+/// <param name="Hover">How far off the surface it is drawn, in world units.</param>
 /// <param name="Colour">The colour its texture is multiplied by; the texture's alpha is multiplied by the colour's.</param>
-public sealed record TitleGroundDecal(string Texture, Vector3d Position, Vector3f Normal, float HalfSize, float Hover, OpenIGI.Core.Graphics.Bgra32 Colour);
+/// <param name="IsAdditive">
+/// Whether it is added to what lies under it at its alpha (<c>SRCALPHA, ONE</c>), as a light is, rather than laid over it.
+/// </param>
+public sealed record TitleSurfaceMark(
+    string Texture, Vector3d Position, Vector3f Normal, float HalfSize, float Hover, OpenIGI.Core.Graphics.Bgra32 Colour, bool IsAdditive = false);
 
 /// <summary>
 /// Triangles drawn flat and untextured in the scene's ambient colour, tested against the world's depth and written into none, as

@@ -6,9 +6,12 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;
 
-/// <summary>Marks lying on the ground, both games' bodies' shadows and I.G.I. 2's pools of blood (<c>Shadow_MagicObjEnterHandler</c>).</summary>
+/// <summary>
+/// Marks laid on surfaces: both games' bodies' shadows and I.G.I. 2's pools of blood (<c>Shadow_MagicObjEnterHandler</c>), and its
+/// laser sights' dots (<c>LaserDot_EnterHandler</c>).
+/// </summary>
 /// <param name="device">The device the squares are drawn with.</param>
-public sealed class GroundDecalDrawer(IGraphicsDevice device) : IDisposable
+public sealed class SurfaceMarkDrawer(IGraphicsDevice device) : IDisposable
 {
     private static readonly ushort[] Indices = [0, 1, 2, 0, 2, 3];
     private readonly IGraphicsDevice _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -16,19 +19,19 @@ public sealed class GroundDecalDrawer(IGraphicsDevice device) : IDisposable
     private readonly Vertex3D[] _vertices = new Vertex3D[4];
 
     /// <summary>Draws the marks over the world.</summary>
-    /// <param name="decals">The marks.</param>
+    /// <param name="marks">The marks.</param>
     /// <param name="texture">Resolves a mark's texture by its name, or none to leave the mark out.</param>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The world's projection.</param>
     /// <remarks>
-    /// A square in the ground's own plane (<c>Real32x9_FromReal32x3</c> of its normal), its half-width either way of the point and
-    /// a hover above it, blended over the world and tested against its depth, written into none.
+    /// A square in the surface's own plane (<c>Real32x9_FromReal32x3</c> of its normal), its half-width either way of the point and
+    /// a hover off it, blended over the world, or added to it, and tested against its depth, written into none.
     /// </remarks>
-    public void Draw(IReadOnlyList<TitleGroundDecal> decals, Func<string, TextureHandle> texture, in Camera3D camera, in Matrix4f projection)
+    public void Draw(IReadOnlyList<TitleSurfaceMark> marks, Func<string, TextureHandle> texture, in Camera3D camera, in Matrix4f projection)
     {
-        ArgumentNullException.ThrowIfNull(decals);
+        ArgumentNullException.ThrowIfNull(marks);
         ArgumentNullException.ThrowIfNull(texture);
-        if (decals.Count == 0)
+        if (marks.Count == 0)
         {
             return;
         }
@@ -41,9 +44,9 @@ public sealed class GroundDecalDrawer(IGraphicsDevice device) : IDisposable
         _device.SetModelAmbient(Vector3f.One);
         _device.ClearPoseInterpolation();
         const float metres = (float)(1.0 / WorldScene.UnitsPerMetre);
-        for (int i = 0; i < decals.Count; i++)
+        for (int i = 0; i < marks.Count; i++)
         {
-            TitleGroundDecal decal = decals[i];
+            TitleSurfaceMark decal = marks[i];
             TextureHandle handle = texture(decal.Texture);
             if (handle == TextureHandle.None)
             {
@@ -67,7 +70,7 @@ public sealed class GroundDecalDrawer(IGraphicsDevice device) : IDisposable
             MeshHandle mesh = _meshes[i];
             _device.UploadMeshRange(mesh, 0, _vertices, 0, Indices);
             _device.DrawMesh(mesh, 0, 6, camera.CreateModelView(WorldScene.ToMetres(decal.Position), Matrix3f.Identity), handle,
-                TextureHandle.None, BlendMode.AlphaBlend);
+                TextureHandle.None, decal.IsAdditive ? BlendMode.Additive : BlendMode.AlphaBlend);
         }
 
         _device.SetModelAmbient(ambient);
