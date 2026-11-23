@@ -248,9 +248,9 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
             Stop();
             if (_delay == 0 && pick < _sounds.Count && Audio is { } audio)
             {
-                // Played at the microphone (SoundSys_SetSoundRelativeToMicrophone): it follows the listener wherever it goes. The
+                // Played at the microphone (SoundSys_SetSoundRelativeToMicrophone): heard flat wherever the listener goes. The
                 // music-volume flag (0x20) waits on the mixer's volume settings.
-                _playing = audio.New(_sounds[pick], listener.Position, () => listener.Position);
+                _playing = audio.AtMicrophone(_sounds[pick], () => listener.Position);
                 _playing?.SetVolumes(-1f, (float)_volume);
             }
         }

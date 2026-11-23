@@ -144,7 +144,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task, World.IIgi2WorldMe
     [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
-    /// <summary>Gets or sets where the listener is, which its sound plays at.</summary>
+    /// <summary>Gets or sets where the listener is: its sound is said there, flat, and a set of sounds follows it.</summary>
     public Func<Vector3d>? Listener { get; set; }
 
     /// <summary>Gets or sets the level's task with an id, a human standing for its task; what <see cref="MorphTaskIds"/> name.</summary>
@@ -414,8 +414,9 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task, World.IIgi2WorldMe
             return;
         }
 
-        Vector3d at = Listener?.Invoke() ?? Position;
-        if (sounds.New(Sound, at, Listener) is { } sound)
+        // Said at the microphone (StatusMessage_PlaySound sets it relative to it): heard flat, however the camera moves.
+        Func<Vector3d> microphone = Listener ?? (() => Position);
+        if (sounds.AtMicrophone(Sound, microphone) is { } sound)
         {
             _sound = sound;
 

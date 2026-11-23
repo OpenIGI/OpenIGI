@@ -281,12 +281,13 @@ public sealed class SoundSystem : IDisposable
     /// <remarks>
     /// Retail's sound update asks the owning task for its current transform every tick. Moving
     /// platforms therefore carry their looped sound with them; updating only at the start leaves a
-    /// multi-floor elevator's travel sound at the floor where it began.
+    /// multi-floor elevator's travel sound at the floor where it began. A position of <see langword="null"/> keeps a voice
+    /// started flat, at the listener, flat.
     /// </remarks>
     public void SetDefinitionVoicePosition(
         string name,
         AudioVoiceHandle voice,
-        Vector3d positionInUnits,
+        Vector3d? positionInUnits,
         float gain = 1f,
         int priority = 0,
         float pitch = 1f,

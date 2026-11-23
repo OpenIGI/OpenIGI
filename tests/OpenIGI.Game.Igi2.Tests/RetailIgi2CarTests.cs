@@ -280,7 +280,7 @@ public sealed class RetailIgi2CarTests
         {
         }
 
-        public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null) => null;
+        public ITitleVoice? Play(string definition, Vector3d? positionInUnits, bool? looping = null) => null;
 
         public ITitleSoundSet? PlaySet(string definition)
         {

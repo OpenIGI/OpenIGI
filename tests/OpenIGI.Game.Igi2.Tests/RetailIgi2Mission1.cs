@@ -172,7 +172,7 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
         {
         }
 
-        public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null) => new Voice();
+        public ITitleVoice? Play(string definition, Vector3d? positionInUnits, bool? looping = null) => new Voice();
 
         private sealed class Voice : ITitleVoice
         {

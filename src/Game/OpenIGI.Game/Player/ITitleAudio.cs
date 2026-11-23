@@ -24,10 +24,13 @@ public interface ITitleAudio
 
     /// <summary>Plays a definition.</summary>
     /// <param name="definition">The definition's name.</param>
-    /// <param name="positionInUnits">Where it sounds, in world units.</param>
+    /// <param name="positionInUnits">
+    /// Where it sounds, in world units, or <see langword="null"/> for one played at the microphone: heard flat, the same
+    /// wherever the ear is and however fast it moves (<c>SoundSys_SetSoundRelativeToMicrophone</c>).
+    /// </param>
     /// <param name="looping">Whether it loops, or <see langword="null"/> for as the definition says.</param>
     /// <returns>The voice, or <see langword="null"/> when nothing could be played.</returns>
-    ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null);
+    ITitleVoice? Play(string definition, Vector3d? positionInUnits, bool? looping = null);
 
     /// <summary>
     /// Gets how long a bank's sound lasts, in seconds, from its data rather than from any device: its frames over its rate,
@@ -91,7 +94,7 @@ public interface ITitleVoice
     /// <summary>Gets a value indicating whether it still sounds.</summary>
     bool IsPlaying { get; }
 
-    /// <summary>Moves it.</summary>
+    /// <summary>Moves it; one played at the microphone stays there.</summary>
     /// <param name="positionInUnits">Where it now sounds, in world units.</param>
     void MoveTo(Vector3d positionInUnits);
 

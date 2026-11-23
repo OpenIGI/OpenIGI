@@ -59,9 +59,9 @@ public sealed class Igi1GuestWeaponSoundsTests
         {
         }
 
-        public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null)
+        public ITitleVoice? Play(string definition, Vector3d? positionInUnits, bool? looping = null)
         {
-            Played.Add((definition, positionInUnits, looping == true));
+            Played.Add((definition, positionInUnits ?? default, looping == true));
             return new Voice(this);
         }
 

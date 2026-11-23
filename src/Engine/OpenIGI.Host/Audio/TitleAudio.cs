@@ -32,7 +32,7 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank, Func<SoundS
     }
 
     /// <inheritdoc/>
-    public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null)
+    public ITitleVoice? Play(string definition, Vector3d? positionInUnits, bool? looping = null)
     {
         AudioVoiceHandle voice = sounds.PlayDefinition(definition, positionInUnits, looping: looping);
         if (voice != AudioVoiceHandle.None)
@@ -90,12 +90,18 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank, Func<SoundS
     {
         private float _gain = 1f;
 
-        public Vector3d Position { get; set; }
+        // Where it sounds, or null for one at the microphone, which no move takes out into the world.
+        public Vector3d? Position { get; set; }
 
         public bool IsPlaying => sounds.IsPlaying(voice);
 
         public void MoveTo(Vector3d positionInUnits)
         {
+            if (Position is null)
+            {
+                return;
+            }
+
             Position = positionInUnits;
             sounds.SetDefinitionVoicePosition(definition, voice, positionInUnits, _gain, looping: looping);
         }
