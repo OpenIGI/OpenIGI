@@ -206,6 +206,28 @@ public sealed partial class GameHost
         state.Batch.End();
     }
 
+    /// <summary>The player's brightness over a world drawn straight into the back buffer, which no resolve exposes.</summary>
+    /// <remarks>Drawn where the resolve would have run, so it reaches the world and not the interface; see <see cref="DirectBrightness"/>.</remarks>
+    private void DrawDirectBrightness(FrameLoopState state)
+    {
+        Span<OpenIGI.Core.Graphics.Bgra32> fills = stackalloc OpenIGI.Core.Graphics.Bgra32[DirectBrightness.MaximumFills];
+        int count = DirectBrightness.Fills(ExposureCVars.Exposure.Value, _device.DisplayEncodes, fills);
+        if (count == 0)
+        {
+            return;
+        }
+
+        _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+        state.Batch.Begin();
+        var screen = new RectF(0f, 0f, SafeWindowWidth, SafeWindowHeight);
+        foreach (OpenIGI.Core.Graphics.Bgra32 fill in fills[..count])
+        {
+            state.Batch.FillRect(screen, fill, BlendMode.Modulate2X);
+        }
+
+        state.Batch.End();
+    }
+
     /// <summary>Resolves the frame and draws everything 2D over it: the HUD, the messages, the computer, the damage wash and the flash.</summary>
     private void DrawScreenOverlays(
         FrameLoopState state, bool captured, in FrameView view, float? binocularRangeMetres, bool cameraIndoors)
@@ -243,6 +265,10 @@ public sealed partial class GameHost
             UpdateModPostPasses();
             _device.ResolveScene(postProcess);
             EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
+        }
+        else
+        {
+            DrawDirectBrightness(state);
         }
 
         _device.BeginStageTiming(RenderStage.UserInterface);

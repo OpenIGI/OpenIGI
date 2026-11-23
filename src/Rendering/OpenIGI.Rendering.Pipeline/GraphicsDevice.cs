@@ -197,6 +197,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// </remarks>
     public RhiTextureFormat PresentFormat { get; }
 
+    /// <inheritdoc/>
+    public bool DisplayEncodes => PresentFormat.IsSrgb();
+
     /// <summary>The format an offscreen frame is taken in when nothing else says.</summary>
     /// <remarks>
     /// Only for a caller attaching its own offscreen target — a headless capture, a test — which has no

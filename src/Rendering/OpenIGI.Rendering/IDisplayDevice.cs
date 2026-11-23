@@ -15,6 +15,9 @@ public interface IDisplayDevice
     /// <summary>Gets or sets a value indicating whether presentation waits for the vertical blank. Mirrors <c>DisplayVSync</c>.</summary>
     bool VSyncEnabled { get; set; }
 
+    /// <summary>Gets a value indicating whether the back buffer applies the sRGB transfer as it stores, so blending into it runs in linear light.</summary>
+    bool DisplayEncodes { get; }
+
     /// <summary>Sets the back-buffer size and colour depth. Mirrors <c>DisplaySetMode</c>.</summary>
     /// <param name="mode">The mode to apply.</param>
     /// <exception cref="GraphicsDeviceException">The mode could not be applied.</exception>

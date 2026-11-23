@@ -93,9 +93,9 @@ public static class ExposureCVars
         // and r_screen_gi_max bounds its feedback loop. Change the lighting model on a preset without
         // bringing all of them and the frame is mis-exposed, not merely cheaper.
         //
-        // Vanilla stays at one, and not because it would be ignored: vanilla never tone maps, so the
-        // value genuinely does nothing there, and the preset that has to stay pixel-identical to the
-        // retail build is the last place to carry a number that says the picture was graded.
+        // Vanilla stays at one, the neutral: the preset that has to stay pixel-identical to the retail
+        // build is the last place to carry a number that says the picture was graded. The player can still
+        // move it there -- with r_hdr off no resolve runs, so DirectBrightness applies it over the world.
         vanilla: "1",
         enhanced: "1.414",
         high: "1.414",
