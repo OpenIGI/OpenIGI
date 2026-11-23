@@ -232,24 +232,29 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
         string mode = held.ActiveFireMode switch { 1 => type.FiremodeName1, 2 => type.FiremodeName2, _ => type.FiremodeName };
         Igi2FireTypeRounds rounds = inventory.FireTypeRounds(held, 0);
         bool counted = rounds.AmmoType is not null;
+        bool loads = counted && LoadsRounds(type);
         int? secondary = type.WeaponId == "WEAPON_ID_M16A2" ? inventory.FireTypeRounds(held, 1).Available : null;
         int action = title.Human.ActionState;
         HudWeaponState state = action == Igi2PlayerActionState.Reload ? HudWeaponState.Reloading
             : action == Igi2PlayerActionState.ChangeWeapon ? HudWeaponState.Switching
-            : counted && rounds.Loaded == 0 ? HudWeaponState.Empty
+            : (loads ? rounds.Loaded == 0 : counted && rounds.Available == 0) ? HudWeaponState.Empty
             : HudWeaponState.Ready;
         model.Weapon = new HudWeaponView(
             type.WeaponId,
             type.WeaponName,
             mode,
             new HudIcon(type.WeaponSprite),
-            counted ? rounds.Loaded : null,
-            counted ? rounds.RoundsPerClip : 0,
+            loads ? rounds.Loaded : null,
+            loads ? rounds.RoundsPerClip : 0,
             counted ? rounds.Available : null,
             secondary,
-            counted ? HudGauge.Clip : HudGauge.None,
+            loads ? HudGauge.Clip : HudGauge.None,
             state);
     }
+
+    // Whether the rounds loaded are worth counting: not for the medipack, which uses the packs carried and never one loaded
+    // (Medipack_StatusDisplayHandler counts only those), as I.G.I. 1's display has it.
+    private static bool LoadsRounds(Igi2WeaponTypeTask type) => type.FireType(0) is not Igi2MedipackTask;
 
     // The weapon wheel while it is open: each weapon it offers with its picture, its short name and its rounds, loaded over
     // carried, as the inventory counts them.
@@ -282,7 +287,8 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
 
             Igi2FireTypeRounds rounds = inventory.FireTypeRounds(item, 0);
             string count = rounds.AmmoType is null ? string.Empty
-                : string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded}/{rounds.Available}");
+                : LoadsRounds(item.WeaponType) ? string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded}/{rounds.Available}")
+                : rounds.Available.ToString(CultureInfo.InvariantCulture);
             string name = title.Strings?.WeaponShortName(item.WeaponType.WeaponName) ?? item.WeaponType.WeaponName;
             model.Wheel.Add(new HudWheelEntry(new HudIcon(item.WeaponType.WeaponSprite), name, count));
         }

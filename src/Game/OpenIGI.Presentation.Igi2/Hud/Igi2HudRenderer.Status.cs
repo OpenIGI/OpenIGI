@@ -22,9 +22,7 @@ public sealed partial class Igi2HudRenderer
     private Igi2SpriteResources? _assets;
     private BitmapTextRenderer? _font;
     private BitmapTextRenderer? _timerFont;
-    private int _loadedRounds = -1;
-    private int _availableRounds = -1;
-    private string _ammunition = string.Empty;
+    private readonly RoundsText[] _rounds = [new(), new()];
     private int _timerSeconds = -1;
     private string _timer = string.Empty;
     private float _scale = 1f;
@@ -151,15 +149,18 @@ public sealed partial class Igi2HudRenderer
             }
             float lineWidth = MathF.Max(iconWidth, nameWidth + 3f);
             Fill(batch, new RectF(right - lineWidth, baseline, lineWidth, 1f), Bgra32.FromRgba(102, 153, 255, 128));
-            OpenIGI.Game.Igi2.Weapons.Igi2FireTypeRounds rounds = title.Inventory.FireTypeRounds(held, 0);
-            if (_loadedRounds != rounds.Loaded || _availableRounds != rounds.Available)
+            // WeaponType_StatusDisplayHandler: each fire type its own handler's text, placed by WeaponType_GetFireTypeScreenPosition
+            // ten pixels in from the line's right end, the first ending there and the second starting there.
+            for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
             {
-                _loadedRounds = rounds.Loaded;
-                _availableRounds = rounds.Available;
-                _ammunition = string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded,4}/{rounds.Available,4}");
+                if (_rounds[slot].Update(held.WeaponType.Readout(slot), title.Inventory.FireTypeRounds(held, slot)) is not { } text)
+                {
+                    continue;
+                }
+
+                float textWidth = slot == 0 ? _font?.Measure(text).Width ?? 0f : 0f;
+                Text(batch, text, right - 10f - textWidth, baseline + 4f, Blue);
             }
-            float ammoWidth = _font?.Measure(_ammunition).Width ?? 0f;
-            Text(batch, _ammunition, right - 10f - ammoWidth, baseline + 4f, Blue);
         }
         if (title.Level?.LevelFlow is { InterfaceTimerEnabled: true, MaxPlayTime: > 0f } flow)
         {
@@ -394,5 +395,39 @@ public sealed partial class Igi2HudRenderer
         float top = vertical ? 1f - fraction : 0f;
         batch.Draw(sprite.Textures[frame.TextureIndex], new RectF(x * _scale, (y + (frame.Height - h)) * _scale, w * _scale, h * _scale),
             new RectF(frame.U0, frame.V0 + ((frame.V1 - frame.V0) * top), (frame.U1 - frame.U0) * (vertical ? 1f : fraction), (frame.V1 - frame.V0) * (vertical ? fraction : 1f)), colour);
+    }
+
+    /// <summary>One fire type's rounds as its status display handler prints them, made again only when they change.</summary>
+    private sealed class RoundsText
+    {
+        private Igi2RoundsReadout _readout;
+        private int _loaded = -1;
+        private int _carried = -1;
+        private string? _text;
+
+        /// <summary>The text for the fire type's rounds now, or <see langword="null"/> when it shows none.</summary>
+        /// <param name="readout">What the fire type shows.</param>
+        /// <param name="rounds">Its rounds.</param>
+        /// <returns>The text, or <see langword="null"/>.</returns>
+        /// <remarks>A fire type that uses no ammunition shows nothing, as <c>Gun_StatusDisplayHandler</c> declines then.</remarks>
+        public string? Update(Igi2RoundsReadout readout, Igi2FireTypeRounds rounds)
+        {
+            if (readout == Igi2RoundsReadout.None || rounds.AmmoType is null)
+            {
+                return null;
+            }
+
+            if (_text is null || _readout != readout || _loaded != rounds.Loaded || _carried != rounds.Available)
+            {
+                _readout = readout;
+                _loaded = rounds.Loaded;
+                _carried = rounds.Available;
+                _text = readout == Igi2RoundsReadout.LoadedOverCarried
+                    ? string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded,4}/{rounds.Available,4}")
+                    : string.Create(CultureInfo.InvariantCulture, $"{rounds.Available,4}");
+            }
+
+            return _text;
+        }
     }
 }
