@@ -57,7 +57,9 @@ public sealed partial class Igi2HumanSoldier
 
         float[] facing = EngineEuler.Rotation(0f, 0f, Gamma);
         Orientation = new Matrix3f(facing[0], facing[1], facing[2], facing[3], facing[4], facing[5], facing[6], facing[7], facing[8]);
-        StopWeapon(onlyWhenBusy: false);
+        // A weapon still firing lets go of both triggers, and every sound it has stops: the block HumanPlayer_InitStateSwim
+        // runs too.
+        Weapon.Firing?.ReleaseAutoFire();
         Weapon.Firing?.Effects.StopAllSounds();
         UpperBodyFlags = 0;
         UpperBodyState = Igi2SoldierUpperBody.Idle;
@@ -72,8 +74,9 @@ public sealed partial class Igi2HumanSoldier
         }
     }
 
-    // The dead branch: the body lies in its pool, already spread, heading fixed, settled, its mind dead too (no death checks run
-    // again), and it lies dead at the end of the clip the state it died in last set (HumanSoldier_InitStateDead).
+    // The dead branch: the body lies in its pool, already spread, its light the body's (vLightmap); heading fixed, still
+    // (tBoneCollisionData.tDeltaMovement cleared), settled, its mind dead too (no death checks run again), and it lies dead at
+    // the end of the clip the state it died in last set (HumanSoldier_InitStateDead).
     private void LoadDead(int lastMainState, Igi2HumanSaveExtras saved)
     {
         IsBloodPuddle = true;
@@ -82,6 +85,7 @@ public sealed partial class Igi2HumanSoldier
         IsRotateUpperBody = false;
         IsDisableDeltaTranslation = false;
         BoneDeltaMovement = default;
+        BoneCollisionDelta = default;
         Animation.SetMainFlags(raise: Igi2AnimControllerBits.NoRootTranslation, clear: Igi2AnimControllerBits.None);
         LifeState = DeadAndStill;
         IsDeathPositionStabilized = true;
@@ -90,8 +94,10 @@ public sealed partial class Igi2HumanSoldier
         EnterLoadedState(Igi2SoldierState.Dead, saved);
     }
 
-    // The living branch: its mark is a shadow again, its clip the stand's from the start, free to turn and move by its clip, not
-    // dying, its mind alive, and it stands (HumanSoldier_InitStateStand).
+    // The living branch, in the handler's order: its mark is a shadow again; the stand's clip from its start
+    // (HumanAnim_SetAnimationAndTimeFromState with state 0, time 0, no blend); free to turn and move by its clip, still, not
+    // settled, not dying, its mind alive; a death's 0x40 cleared from every controller it has, so each moves the body by its
+    // root again; the main clip stepped once; and it stands (HumanSoldier_InitStateStand).
     private void LoadAlive(Igi2HumanSaveExtras saved)
     {
         IsBloodPuddle = false;
@@ -101,12 +107,12 @@ public sealed partial class Igi2HumanSoldier
         IsRotateUpperBody = true;
         IsDisableDeltaTranslation = false;
         BoneDeltaMovement = default;
+        BoneCollisionDelta = default;
         IsDeathPositionStabilized = false;
-        IsDeathSoundPlayed = false;
         LifeState = 0;
-        GroundTolerance = LandingGroundTolerance;
         MarkMindDead(false);
-        Animation.SetMainFlags(raise: Igi2AnimControllerBits.None, clear: Igi2AnimControllerBits.NoRootTranslation);
+        Animation.ClearFlagsOnEveryController(Igi2AnimControllerBits.NoRootTranslation);
+        Animation.StepMain();
         EnterLoadedState(Igi2SoldierState.Stand, saved);
     }
 

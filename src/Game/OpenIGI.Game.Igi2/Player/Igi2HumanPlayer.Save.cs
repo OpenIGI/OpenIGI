@@ -125,8 +125,11 @@ public sealed partial class Igi2HumanPlayer
             IsDisableDeltaTranslationScale = false;
         }
 
+        // Before the list is read: the activation and the binoculars' weapon forgotten, the body attached to nothing.
         ActivatingTarget = null;
         Weapon.Firing?.SetOverlayStatus(Weapons.Igi2WeaponOverlayStatus.None);
+        PreviousWeaponType = null;
+        Detach();
         Igi2HumanSaveExtras extras = ReadHumanState(reader);
         IsWeaponReady = extras.IsWeaponReady;
         IsDisableDeltaTranslationScale = extras.IsDisableDeltaTranslationScale;
@@ -212,16 +215,22 @@ public sealed partial class Igi2HumanPlayer
         AfterLoad(extras, (actionFlags, previousAction, action));
     }
 
-    // The rest of HumanPlayer_DeSerializeHandler: the heading free; not dying, its mark a shadow again; its weapon let go and
-    // silent, and back in hand -- binoculars or goggles give way to the primary weapon; the action menu's history forgotten; the
-    // action machine idle; and the body in the stance it was saved in, standing, crouching or lying, whatever state it was saved in.
+    // The rest of HumanPlayer_DeSerializeHandler, in its order: not quitting the computer; the heading free; no speed carried
+    // from before the load (its legs', its take-off's, its last move's); not dying, its mark a shadow again; its weapon let go and
+    // silent, its timed action's and slide's sounds gone, and back in hand -- binoculars or goggles give way to the primary weapon
+    // -- with no upper-body clip; still; the action menu's history forgotten; the action machine idle; and the body in the stance
+    // it was saved in, standing, crouching or lying, whatever state it was saved in.
     private void AfterLoad(Igi2HumanSaveExtras saved, (uint Signal, int Previous, int State) action)
     {
+        IsQuitComputer = false;
         IsLockOrientation = false;
         View.IsLockOrientation = false;
+        GroundMovementSpeed = default;
+        ForgetCarriedSpeedsForLoad();
         IsBloodPuddle = false;
         Shadow.BecomeShadow();
         BoneDeltaMovement = default;
+        BoneCollisionDelta = default;
         IsDeathPositionStabilized = false;
         if (Weapon.Firing is { } firing)
         {
@@ -239,6 +248,10 @@ public sealed partial class Igi2HumanPlayer
                 inventory.Activate(item);
             }
         }
+
+        _timedActionSound?.Delete();
+        _timedActionSound = null;
+        CurrentUpperBody = 0;
 
         ActionMenu.ClearHistory();
         EnterLoadedState(Action, Igi2PlayerActionState.Idle, action.Signal, action.Previous, action.State);

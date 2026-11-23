@@ -90,6 +90,12 @@ public abstract partial class Igi2Human
     /// <summary>Gets where the body stands relative to the platform, <c>tGroundRelativePos</c>.</summary>
     public Vector3d GroundRelativePosition { get; private set; }
 
+    /// <summary>
+    /// Gets where the platform stood when the body was placed on it, <c>Human_s.tGroundOriginalPos</c>: kept, as the original keeps
+    /// it, for a save to write.
+    /// </summary>
+    public Vector3d GroundOriginalPosition { get; private set; }
+
     private readonly float[] _groundInverseOriginal = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
     private readonly float[] _groundRelativeOrientation = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
 
@@ -373,6 +379,7 @@ public abstract partial class Igi2Human
                 ((Fpu)here.Y - platformPosition.Y).Value,
                 ((Fpu)here.Z - platformPosition.Z).Value);
             GroundPreviousPosition = platformPosition;
+            GroundOriginalPosition = platformPosition;
             GroundSpeed = default;
             float[] inverse = [p[0], p[3], p[6], p[1], p[4], p[7], p[2], p[5], p[8]];
             inverse.CopyTo(_groundInverseOriginal, 0);

@@ -1,6 +1,8 @@
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
+using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Saves;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -89,6 +91,55 @@ public sealed partial class RetailIgi2LevelAiTests
         Run(fresh, 60);
         Assert.True(body.IsDead);
         Assert.True(Math.Abs(body.Position.Z - where.Z) < 64.0, $"The body moved from {where} to {body.Position}.");
+    }
+
+    /// <summary>
+    /// A save loaded over the level played on puts its humans back as they were saved and leaves them there: the player walked away
+    /// stands where it was saved and does not slide on with the speed it walked off with (<c>HumanPlayer_DeSerializeHandler</c>
+    /// clears <c>tAccumulatedSpeed</c> and <c>tWorldSpeed</c>); a guard killed since stands at his full height, every controller
+    /// rid of his death's <c>0x40</c>; and no guard's gun sounds its firing's end, as only a weapon still firing is let go.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_load_puts_its_humans_back_where_they_were_saved_and_keeps_them_there()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, Igi2AiWorld ai, Igi2TitlePlayer player) = Build();
+        m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
+        Collision.Igi2LevelGrounds grounds = new(m.Tree[0], m.Collision!, () => ai.Graphs);
+        foreach (Humans.Igi2Human human in soldiers.Bodies.Cast<Humans.Igi2Human>().Append(player.Human))
+        {
+            ((Igi2LevelSurroundings)human.Surroundings).Grounds = grounds;
+        }
+
+        SkipIntro(m);
+        Run(m, player, 300, RetailIgi2Mission1.Idle);
+        Igi2HumanSoldier victim = Body(m);
+        double standingHeight = Height(victim);
+        Core.Numerics.Vector3d saved = player.Human.Position;
+        string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
+
+        victim.KillOutright();
+        Run(m, player, 300, RetailIgi2Mission1.Idle with { Held = PlayerAction.MoveUp });
+        Assert.NotEqual(saved, player.Human.Position);
+
+        HashSet<Audio.Igi2Sound> before = [.. m.Sounds.Playing];
+        SaveScript.Load(script, m.Tree[0], Saves.Igi2SaveFormat.Context());
+        Run(m, player, 3, RetailIgi2Mission1.Idle);
+
+        Assert.Equal(saved, player.Human.Position);
+        Assert.False(victim.IsDead);
+        Assert.Equal(standingHeight, Height(victim), 1.0);
+        Assert.DoesNotContain(m.Sounds.Playing, s => !before.Contains(s) && s.Name.EndsWith("_loop_e", StringComparison.Ordinal));
+
+        static double Height(Igi2HumanSoldier body) => body.BonePosition("center").Z - body.Position.Z;
+    }
+
+    private static void Run(RetailIgi2Mission1 m, Igi2TitlePlayer player, int ticks, TitlePlayerInput input)
+    {
+        for (int tick = 0; tick < ticks; tick++)
+        {
+            m.Run.Tick();
+            player.Tick(input);
+        }
     }
 
     // EditVariable_2112 ends the intro and lets the soldiers' containers run.

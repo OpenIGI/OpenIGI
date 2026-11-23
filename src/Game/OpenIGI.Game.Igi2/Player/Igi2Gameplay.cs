@@ -279,12 +279,17 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             grenadeEffects.Humans = humans;
             grenadeEffects.Particles = particles;
         }
+        // Human_s.ptGroundQTaskRef as a save names it: the level's tasks, and its AI's graphs once they are made.
+        Collision.Igi2LevelGrounds? grounds = request.World.LevelRoot is { } groundsRoot
+            ? new Collision.Igi2LevelGrounds(groundsRoot, world, () => player.Ai?.Graphs)
+            : null;
         foreach (Igi2Human human in humans)
         {
             if (human.Surroundings is Igi2LevelSurroundings surroundings)
             {
                 surroundings.Humans = humans;
                 surroundings.Particles = particles;
+                surroundings.Grounds = grounds;
             }
         }
 

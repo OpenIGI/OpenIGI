@@ -184,6 +184,15 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     public void SetMainFlags(Igi2AnimControllerBits raise, Igi2AnimControllerBits clear) => Main.Flags = (Main.Flags & ~clear) | raise;
 
     /// <inheritdoc/>
+    public void ClearFlagsOnEveryController(Igi2AnimControllerBits clear)
+    {
+        foreach (Igi2AnimController controller in (Igi2AnimController[])[_first, _second, _third, _fourth])
+        {
+            controller.Flags &= ~clear;
+        }
+    }
+
+    /// <inheritdoc/>
     public void StepMain() => Main.Step(Main.Time + Main.TimeStep);
 
     /// <inheritdoc/>

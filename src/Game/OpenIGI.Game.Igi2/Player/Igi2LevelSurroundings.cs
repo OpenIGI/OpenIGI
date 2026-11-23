@@ -184,7 +184,17 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         AiEvents = AiEvents,
         Activatables = Activatables,
         ById = ById,
+        Grounds = Grounds,
     };
+
+    /// <summary>Gets or sets the level's grounds by task, which a save names a body's footing by.</summary>
+    public Igi2LevelGrounds? Grounds { get; set; }
+
+    /// <inheritdoc/>
+    public Engine.Tasks.GameTask? GroundTaskOf(IWorldCollider? ground) => Grounds?.TaskOf(ground);
+
+    /// <inheritdoc/>
+    public IWorldCollider? GroundOf(Engine.Tasks.GameTask? task) => Grounds?.GroundOf(task);
 
     /// <summary>Gets or sets the level's things by task id, which a soldier's activation names.</summary>
     public IReadOnlyDictionary<int, Interaction.IIgi2Activatable>? ById { get; set; }

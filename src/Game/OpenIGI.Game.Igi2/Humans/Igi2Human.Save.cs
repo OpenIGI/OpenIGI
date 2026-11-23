@@ -69,8 +69,6 @@ public sealed class Igi2HumanSaveExtras
 /// </content>
 public abstract partial class Igi2Human
 {
-    private static readonly byte[] IdentityFrame = Frame(Matrix3f.Identity);
-
     /// <summary>Writes the save state every human keeps, in its list's order.</summary>
     /// <param name="writer">The writer.</param>
     /// <param name="extras">The fields its kind keeps.</param>
@@ -156,13 +154,14 @@ public abstract partial class Igi2Human
         writer.Int(Locomotion.CurrentState);
         writer.Array(ReadOnlySpan<byte>.Empty);
 
-        writer.TaskReference(GroundCollider?.Owner as GameTask);
+        // What it stands on, and where on it: the task the footing struck, as the save names it, and the platform's notes.
+        writer.TaskReference(Surroundings.GroundTaskOf(GroundCollider));
         writer.Real64x3(GroundRelativePosition);
         writer.Real64x3(GroundPreviousPosition);
-        writer.Real64x3(Position);
+        writer.Real64x3(GroundOriginalPosition);
         writer.Real3(GroundSpeed);
-        writer.Array(IdentityFrame);
-        writer.Array(IdentityFrame);
+        writer.Array(Frame(_groundInverseOriginal));
+        writer.Array(Frame(_groundRelativeOrientation));
         writer.Bool(IsUpdatePlatformPos);
         writer.Bool(IsPlatformMoving);
         writer.Bool(IsGroundRigidObject);
@@ -228,7 +227,7 @@ public abstract partial class Igi2Human
         Gamma = reader.Real();
         IdealGamma = reader.Real();
         reader.Real();
-        reader.Real();
+        GroundAngle = reader.Real();
         GroundAngleFactor = reader.Real();
         reader.Real();
         extras.VisibilityFactor = reader.Real();
@@ -238,8 +237,8 @@ public abstract partial class Igi2Human
         TotalSpeed = reader.Real3();
         reader.Real3();
         reader.Quaternion();
-        reader.Real64();
-        reader.Real64();
+        DistanceToGround = reader.Real64();
+        DistanceToRoof = reader.Real64();
         reader.Real64x3();
         reader.Real64x3();
         reader.Real9();
@@ -262,16 +261,18 @@ public abstract partial class Igi2Human
         int state = reader.Int();
         reader.Array();
 
-        reader.TaskReference();
-        reader.Real64x3();
+        // ModelObjParameters_DeSerializeHandler parses the ground's reference and notes as they were written: the body stands on
+        // the platform it was saved on, at its saved place on it, so the platform's next carry puts it where it was saved.
+        GroundCollider = Surroundings.GroundOf(reader.TaskReference());
+        GroundRelativePosition = reader.Real64x3();
         GroundPreviousPosition = reader.Real64x3();
-        reader.Real64x3();
-        reader.Real3();
-        reader.Array();
-        reader.Array();
+        GroundOriginalPosition = reader.Real64x3();
+        GroundSpeed = reader.Real3();
+        ReadFrame(reader, _groundInverseOriginal);
+        ReadFrame(reader, _groundRelativeOrientation);
         IsUpdatePlatformPos = reader.Bool();
         IsPlatformMoving = reader.Bool();
-        reader.Bool();
+        IsGroundRigidObject = reader.Bool();
         IsProtectedFromFallDamage = reader.Bool();
         AveragedGroundNormal = reader.Real3();
         SlidingSpeed = reader.Real3();
@@ -281,6 +282,17 @@ public abstract partial class Igi2Human
         extras.PreviousState = previous;
         extras.State = state;
         return extras;
+    }
+
+    /// <summary>
+    /// Stops what a body carried from before a load, as <c>HumanPlayer_DeSerializeHandler</c> does once its list is read: the
+    /// speed it took off with (<c>tAccumulatedSpeed</c>) and how far it moved over its last move (<c>tWorldSpeed</c>), neither of
+    /// which a save keeps.
+    /// </summary>
+    protected void ForgetCarriedSpeedsForLoad()
+    {
+        AccumulatedSpeed = default;
+        WorldSpeed = default;
     }
 
     /// <summary>
@@ -325,16 +337,25 @@ public abstract partial class Igi2Human
     private static Matrix3f Matrix(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
     // A frame as it lies in memory: nine floats, then its operation count.
-    private static byte[] Frame(Matrix3f m)
+    private static byte[] Frame(float[] rows)
     {
         byte[] bytes = new byte[40];
-        float[] rows = Rows(m);
         for (int i = 0; i < 9; i++)
         {
             BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), rows[i]);
         }
 
         return bytes;
+    }
+
+    // A frame read back as it lay in memory: its nine floats, its operation count dropped.
+    private static void ReadFrame(StateReader reader, float[] into)
+    {
+        float[] read = reader.FloatArray();
+        if (read.Length >= 9)
+        {
+            Array.Copy(read, into, 9);
+        }
     }
 
     private sealed class ViewState(Igi2HumanView view) : ISavedState
