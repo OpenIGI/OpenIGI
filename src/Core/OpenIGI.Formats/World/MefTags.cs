@@ -63,7 +63,7 @@ public static class MefTags
     /// <summary>Chunk <c>XVTP</c> (<c>PTVX</c>): portal vertices.</summary>
     public static FourCc PortalVertices { get; } = FourCc.FromString("XVTP");
 
-    /// <summary>Chunk <c>TXAN</c> (<c>NAXT</c>): optional, repeatable, 20-byte records of unknown purpose.</summary>
+    /// <summary>Chunk <c>TXAN</c> (<c>NAXT</c>): optional, repeatable, one animated texture each; see <see cref="MefTextureAnimation"/>.</summary>
     public static FourCc TextureAnimation { get; } = FourCc.FromString("TXAN");
 
     /// <summary>Chunk <c>D3DR</c> (<c>RD3D</c>): the render header — counts plus sub-chunk pointer slots.</summary>

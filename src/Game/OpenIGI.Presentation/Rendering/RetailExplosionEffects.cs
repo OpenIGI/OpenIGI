@@ -30,6 +30,7 @@ public sealed class RetailExplosionEffects
     private MeshHandle _retailFireballMesh = MeshHandle.None;
     private TextureHandle[] _retailFireballFrameTextures = [];
     private BlendMode _retailFireballBlend = BlendMode.Additive;
+    private int _retailFireballOwnFrame;
     private bool _ownsFireballTextures = true;
 
     /// <summary>Initializes the drawer over a device and the bound resources.</summary>
@@ -75,12 +76,20 @@ public sealed class RetailExplosionEffects
                 }
 
                 MeshGeometry? geometry = MefMeshBuilder.Build(model, 1f / UnitsPerMetre);
-                if (geometry is null || !pack.TryGetTextureName(instance, 0, out string textureName))
+                if (geometry is null)
                 {
                     continue;
                 }
 
-                TextureHandle[] frames = LoadRetailAnimationFrames(textureName);
+                LoadedPack owner = pack;
+                MtpInstance named = instance;
+                int faceGroupSlot = FireBallSlot(model);
+                TextureHandle[] frames = AnimationFrames(
+                    model,
+                    faceGroupSlot,
+                    slot => owner.TryGetTextureName(named, slot, out string textureName)
+                        ? SpriteStrip.LoadTexture(_device, _resources, textureName)
+                        : TextureHandle.None);
                 if (frames.Length == 0)
                 {
                     continue;
@@ -89,6 +98,7 @@ public sealed class RetailExplosionEffects
                 ReleaseRetailFireballModel();
                 _retailFireballGeometry = geometry;
                 _retailFireballFrameTextures = frames;
+                _retailFireballOwnFrame = OwnFrame(faceGroupSlot, frames.Length);
                 // Project I.G.I.'s own model: its additive face group adds at full strength (0x49EC70).
                 _retailFireballBlend = BlendOf(model) == BlendMode.Additive ? BlendMode.AddColour : BlendOf(model);
             }
@@ -101,8 +111,9 @@ public sealed class RetailExplosionEffects
     /// <param name="geometry">The <c>1006_01_1</c> model, in metres.</param>
     /// <param name="frames">Its animated texture's frames, in order.</param>
     /// <param name="blend">The blend its face group asks for (<see cref="BlendOf"/>).</param>
+    /// <param name="slot">The material slot its face group draws with (<see cref="FireBallSlot"/>).</param>
     /// <returns><see langword="true"/> when there is something to draw.</returns>
-    public bool UseFireBall(MeshGeometry geometry, TextureHandle[] frames, BlendMode blend)
+    public bool UseFireBall(MeshGeometry geometry, TextureHandle[] frames, BlendMode blend, int slot)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(frames);
@@ -111,6 +122,7 @@ public sealed class RetailExplosionEffects
         _retailFireballGeometry = geometry;
         _retailFireballFrameTextures = [.. frames.Where(static frame => frame.IsValid)];
         _retailFireballBlend = blend;
+        _retailFireballOwnFrame = OwnFrame(slot, _retailFireballFrameTextures.Length);
         return UsesRetailFireballModel;
     }
 
@@ -174,8 +186,11 @@ public sealed class RetailExplosionEffects
                     continue;
                 }
 
-                // 0x4806E0 steps the texture once over the FireBall's animation; the game's FPU chops the frame.
-                int frame = (int)((double)(fireball.TotalLifetime - fireball.Lifetime) / fireball.AnimationDuration * frames) % frames;
+                // The run handler steps the texture once over the FireBall's animation, from the ticks shown before it counted
+                // the life down; the game's FPU chops the frame. Not yet stepped, the face group keeps its own slot's texture.
+                int frame = fireball.AnimationTicks < 0
+                    ? _retailFireballOwnFrame
+                    : (int)((double)fireball.AnimationTicks / fireball.AnimationDuration * frames) % frames;
                 float across = fireball.Size / RetailFireballSizeDivisor;
                 float depth = ((1f - ((float)fireball.Lifetime / fireball.TotalLifetime)) * across)
                     + RetailFireballDepthFloor;
@@ -263,44 +278,58 @@ public sealed class RetailExplosionEffects
         _retailFireballGeometry = null;
     }
 
-    /// <summary>Loads an animated model texture's frames, <c>name000</c> onwards, until one is missing.</summary>
-    /// <remarks>
-    /// The FireBall's material names the first frame (<c>1006_anim000</c>); its animation is the
-    /// numbered run the texture archive carries after it, which <c>Mesh3D_SetAnimTextureFrame</c> steps.
-    /// A name that does not end in a three-digit frame number is a single still frame.
-    /// </remarks>
-    private TextureHandle[] LoadRetailAnimationFrames(string firstFrame) =>
-        AnimationFrames(firstFrame, name => SpriteStrip.LoadTexture(_device, _resources, name));
-
-    /// <summary>Loads an animated texture's frames, <c>name000</c> onwards, until one is missing, through a title's loader.</summary>
-    /// <param name="firstFrame">The name the model's material carries, its first frame.</param>
-    /// <param name="load">Loads one frame by name, <see cref="TextureHandle.None"/> when there is none.</param>
-    /// <returns>The frames; one for a name without a frame number.</returns>
-    public static TextureHandle[] AnimationFrames(string firstFrame, Func<string, TextureHandle> load)
+    /// <summary>Gets the material slot the FireBall's textured face group draws with, or -1 for none.</summary>
+    /// <param name="model">The <c>1006_01_1</c> model.</param>
+    /// <returns>The slot.</returns>
+    public static int FireBallSlot(MefModel model)
     {
-        ArgumentNullException.ThrowIfNull(firstFrame);
-        ArgumentNullException.ThrowIfNull(load);
-        if (firstFrame.Length < 3 || !firstFrame[^3..].All(char.IsAsciiDigit))
+        ArgumentNullException.ThrowIfNull(model);
+        foreach (MefDrawRecord record in model.DrawRecords)
         {
-            TextureHandle still = load(firstFrame);
+            if (record.MaterialSlot != MefDrawRecord.NoMaterialSlot)
+            {
+                return record.MaterialSlot;
+            }
+        }
+
+        return -1;
+    }
+
+    // The frame that draws a face group's own slot: that slot's frame when animated, the one still frame otherwise.
+    private static int OwnFrame(int slot, int frameCount) => Math.Clamp(slot, 0, Math.Max(frameCount - 1, 0));
+
+    /// <summary>Loads the frames of the texture a model's face group draws with, through a title's loader.</summary>
+    /// <param name="model">The model.</param>
+    /// <param name="slot">The face group's material slot.</param>
+    /// <param name="load">Loads the texture of one of the instance's material slots, <see cref="TextureHandle.None"/> when there is none.</param>
+    /// <returns>The frames, in order; one for a slot that is not animated, none when nothing loads.</returns>
+    /// <remarks>
+    /// The model's <c>TXAN</c> chunk for the slot gives the frame count, and the game draws frame <c>n</c> with the texture of
+    /// slot <c>n</c> (<c>Mesh3D_SetDrawAnimTextures</c>). The FireBall's face group draws with slot 25, the last frame
+    /// (<c>1006_anim025</c>), and its <c>TXAN</c> steps it through slots 0 to 25. Counting texture names up from the face group's
+    /// own slot found only that last frame, so the flame showed its faded end for its whole life.
+    /// </remarks>
+    public static TextureHandle[] AnimationFrames(MefModel model, int slot, Func<int, TextureHandle> load)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(load);
+        if (model.TextureAnimations.FirstOrDefault(animation => animation.Slot == slot) is not { FrameCount: > 0 } animated)
+        {
+            TextureHandle still = load(slot);
             return still.IsValid ? [still] : [];
         }
 
-        List<TextureHandle> frames = [];
-        string stem = firstFrame[..^3];
-        int first = int.Parse(firstFrame[^3..], System.Globalization.CultureInfo.InvariantCulture);
-        for (int frame = first; frame < 1000; frame++)
+        TextureHandle[] frames = new TextureHandle[animated.FrameCount];
+        for (int frame = 0; frame < frames.Length; frame++)
         {
-            TextureHandle texture = load(stem + frame.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
-            if (!texture.IsValid)
+            frames[frame] = load(frame);
+            if (!frames[frame].IsValid)
             {
-                break;
+                return [.. frames[..frame]];
             }
-
-            frames.Add(texture);
         }
 
-        return [.. frames];
+        return frames;
     }
 
     /// <summary>Reads the blend a model's face groups ask the retail draw for.</summary>

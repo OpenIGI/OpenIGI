@@ -225,6 +225,9 @@ public sealed class MefModel
     /// </remarks>
     public MefPortalSet Portals => _portals ??= MefPortalSet.Read(Container);
 
+    /// <summary>Gets the model's animated textures, read from the chunks each time; empty for a model with none.</summary>
+    public IReadOnlyList<MefTextureAnimation> TextureAnimations => MefTextureAnimation.ReadAll(Container);
+
     /// <summary>Parses a model.</summary>
     /// <param name="data">The <c>.mef</c> bytes, starting at the ILFF header.</param>
     /// <returns>The parsed model.</returns>

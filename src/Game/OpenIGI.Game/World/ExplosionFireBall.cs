@@ -38,6 +38,14 @@ public sealed class ExplosionFireBall(Vector3d position, float size, int lifetim
     /// <summary>Gets the ticks its animation runs.</summary>
     public int AnimationDuration { get; } = animationDuration;
 
+    /// <summary>Gets the ticks it had shown when its animation was last stepped, or -1 before the first step.</summary>
+    /// <remarks>
+    /// Each tick after the delay the run handler takes the animation frame from the ticks shown so far, before it counts the life
+    /// down (Project I.G.I.'s <c>0x4806E0</c>, I.G.I. 2's <c>Explosion0_FireBallRunHandler</c>); until then the frame is -1,
+    /// which draws the model's own texture.
+    /// </remarks>
+    public int AnimationTicks { get; private set; } = -1;
+
     /// <inheritdoc/>
     /// <remarks>An explosion and what it leaves are deleted (<c>Explosion0_DeSerializeDoneHandler</c>).</remarks>
     public bool DeleteForLoad() => true;
@@ -51,6 +59,7 @@ public sealed class ExplosionFireBall(Vector3d position, float size, int lifetim
             return true;
         }
 
+        AnimationTicks = TotalLifetime - Lifetime;
         if (Lifetime == 0)
         {
             return false;
