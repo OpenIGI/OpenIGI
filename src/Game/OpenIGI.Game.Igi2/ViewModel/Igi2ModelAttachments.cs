@@ -17,14 +17,23 @@ public sealed class Igi2ModelAttachments(Func<string, MefModel?> models, Igi2Mag
 
     /// <summary>Expands a rigid model's complete attachment tree in the view's local frame.</summary>
     /// <param name="part">The root part, which is also returned.</param>
+    /// <param name="disabled">
+    /// Attach points not made anywhere in the tree, by exact name (<c>ModelObj_apzDisabledAttachObjects</c>), or <see langword="null"/>
+    /// for none.
+    /// </param>
     /// <returns>The root and its drawable children, in creation order.</returns>
-    public IEnumerable<TitleViewModelPart> Expand(TitleViewModelPart part)
+    /// <remarks>
+    /// <c>ModelObj_CreateAttachObject</c> makes nothing for an attach point named in the disabled list, nor anything under it. The list
+    /// is set only while a <c>WeaponMagicObj</c> makes its model (<c>WeaponMagicObj_GetModelName</c>): the names of the attach objects of
+    /// the clip of every controller above it, so a part the clip carries and moves itself is not also drawn standing on the weapon.
+    /// </remarks>
+    public IEnumerable<TitleViewModelPart> Expand(TitleViewModelPart part, IReadOnlyCollection<string>? disabled = null)
     {
         ArgumentNullException.ThrowIfNull(part);
-        return Walk(part, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        return Walk(part, new HashSet<string>(StringComparer.OrdinalIgnoreCase), disabled);
     }
 
-    private IEnumerable<TitleViewModelPart> Walk(TitleViewModelPart part, HashSet<string> ancestors)
+    private IEnumerable<TitleViewModelPart> Walk(TitleViewModelPart part, HashSet<string> ancestors, IReadOnlyCollection<string>? disabled)
     {
         yield return part;
         if (part.Pose is not null || ancestors.Count >= 16 || !ancestors.Add(part.Model))
@@ -37,6 +46,12 @@ public sealed class Igi2ModelAttachments(Func<string, MefModel?> models, Igi2Mag
             Igi2Pose parent = Igi2Pose.FromMatrix(new Vector3d(part.Position.X, part.Position.Y, part.Position.Z), part.Orientation);
             foreach (MefAttachment attachment in model.Attachments)
             {
+                // A strcmp over the disabled list: an exact match makes nothing.
+                if (disabled is not null && disabled.Contains(attachment.Name, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
                 // modelobj.c ModelObj_CreateAttachObject: names are resolved through MagicObj_GetMagicObjType;
                 // unknown names are rigid models, while configured "none" and shadows draw nothing.
                 string? name = ModelOf(attachment.Name);
@@ -48,7 +63,7 @@ public sealed class Igi2ModelAttachments(Func<string, MefModel?> models, Igi2Mag
                 Igi2Pose child = parent.Attach(attachment);
                 TitleViewModelPart attached = new(name, null,
                     new Vector3f((float)child.Position.X, (float)child.Position.Y, (float)child.Position.Z), child.ToMatrix());
-                foreach (TitleViewModelPart nested in Walk(attached, ancestors))
+                foreach (TitleViewModelPart nested in Walk(attached, ancestors, disabled))
                 {
                     yield return nested;
                 }

@@ -13,13 +13,13 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 /// (<c>BoneDynCubeObj_UpdateHierarchy</c>, <c>0x564B50</c>).
 /// </para>
 /// <para>
-/// The clip's attach objects hang their models on the pose (<see cref="Igi2AttachedParts"/>), the <c>weapon</c> one the weapon in
-/// hand.
+/// The clip's attach objects hang their models on the pose (<see cref="Igi2AttachedParts"/>), each moved by its own key track, the
+/// <c>weapon</c> one the weapon in hand. The weapon's model makes none of its own attach points that share a name with one of the
+/// clip's (<c>WeaponMagicObj_GetModelName</c>): a reload's magazine is the clip's, moving in the hand, not the one standing on the gun.
 /// </para>
 /// <para>
 /// Nothing is drawn while the view is zoomed or its owner is dead, as <c>HumanView_EnterHandler</c> (<c>0x4D5DB0</c>)
-/// declines then. Not yet: an attach object's own key track, the grenade pin and the rocket, which have handlers of
-/// their own.
+/// declines then. Not yet: the grenade pin and the rocket, which have handlers of their own.
 /// </para>
 /// </remarks>
 public sealed class Igi2FirstPersonFrame
@@ -29,6 +29,8 @@ public sealed class Igi2FirstPersonFrame
 
     private readonly Dictionary<Igi2BoneHierarchy, BoneSkeleton> _skeletons = new(ReferenceEqualityComparer.Instance);
     private Quaternion32[] _rotations = [];
+    private Igi2AnimationClip? _namesClip;
+    private string[] _names = [];
 
     /// <summary>Builds the frame for a human's view.</summary>
     /// <param name="human">The human whose view it is.</param>
@@ -71,9 +73,10 @@ public sealed class Igi2FirstPersonFrame
         foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, view.ObjectAnimation.Time, pose, heldModel,
             attachments is null ? null : attachments.ModelOf))
         {
+            bool isWeapon = Igi2BodyFrame.IsWeaponObject(part, heldModel);
             TitleViewModelPart rootPart = new(part.Model, null, part.Position, part.Orientation)
             {
-                MuzzleFlashes = Igi2BodyFrame.IsWeaponObject(part, heldModel) ? flashes?.Present(weaponObject++) : null,
+                MuzzleFlashes = isWeapon ? flashes?.Present(weaponObject++) : null,
             };
             if (attachments is null)
             {
@@ -81,10 +84,22 @@ public sealed class Igi2FirstPersonFrame
             }
             else
             {
-                parts.AddRange(attachments.Expand(rootPart));
+                parts.AddRange(attachments.Expand(rootPart, isWeapon ? ClipAttachNames(clip) : null));
             }
         }
 
         return new TitleFirstPersonView(view.ObjectPosition, view.ObjectOrientation, view.ObjectFieldOfView, tick, parts);
+    }
+
+    /// <summary>The names of a clip's attach objects, which the weapon's own model does not make (<c>ModelObj_apzDisabledAttachObjects</c>).</summary>
+    private string[] ClipAttachNames(Igi2AnimationClip clip)
+    {
+        if (!ReferenceEquals(_namesClip, clip))
+        {
+            _namesClip = clip;
+            _names = [.. clip.AttachObjects.Select(static attached => attached.Name)];
+        }
+
+        return _names;
     }
 }
