@@ -68,8 +68,15 @@ public interface IIgi2GunOperator
 /// <c>StationaryGun_Fire</c>: a shot fired this tick adds two fifths of the weapon's kick, in degrees, to the precision, and the kick,
 /// in radians, to the gun's.
 /// </para>
+/// <para>
+/// It is a model object held to what the level put it beneath (<c>StationaryGun_CreateHandler</c>'s <c>Attach_eAttachEvent</c> and
+/// <c>ModelObj_CalcRelativePosAndOrientation</c>): beneath something that moves -- the door gun of the helicopter the player rides in
+/// <c>location2/level5</c> -- <c>StationaryGun_UpdateAttachmentHandler</c> puts it where its carrier now holds it, takes that as its
+/// standing place and frame, and places the barrel, the seat and whoever works it there.
+/// </para>
 /// </remarks>
-public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2WeaponOwner, IIgi2AiMountedGun, IIgi2Mover, IAttachParent
+public sealed partial class Igi2StationaryGunTask
+    : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2WeaponOwner, IIgi2AiMountedGun, IIgi2Mover, IAttachParent, IIgi2Carried
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StationaryGun";
@@ -90,6 +97,10 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     private float[] _modelFrame = EngineEuler.Rotation(0f, 0f, 0f);
     private float[] _lastModelFrame = EngineEuler.Rotation(0f, 0f, 0f);
     private float[] _gunFrame = EngineEuler.Rotation(0f, 0f, 0f);
+    private readonly Igi2Attachment _attachment = new();
+    private Igi2Pose? _built;
+    private Vector3d _place;
+    private Vector3d _lastPlace;
     private Vector3d _mount;
     private float _tilt;
     private float _turn;
@@ -213,7 +224,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     public bool HasFireFrame => true;
 
     /// <inheritdoc/>
-    public Vector3d Centre => Position;
+    public Vector3d Centre => _place;
 
     /// <inheritdoc/>
     public float Radius => Models?.Invoke(HolderModel)?.NativeMarkerBound ?? 0f;
@@ -240,23 +251,24 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     public Igi2SeatView Seat => new(SeatPosition(), [.. _gunFrame]);
 
     /// <inheritdoc/>
-    public Igi2Pose Built => Igi2Pose.FromMatrix(Position, Rows(_paramFrame));
+    /// <remarks>Where the level placed it, which the scene built its holder against; a carrier moving it does not change it.</remarks>
+    public Igi2Pose Built => _built ??= Igi2Pose.FromMatrix(Position, Rows(EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z)));
 
     /// <inheritdoc/>
-    public Vector3d CurrentPosition => Position;
+    public Vector3d CurrentPosition => _place;
 
     /// <inheritdoc/>
     public IReadOnlyList<float> CurrentOrientation => _modelFrame;
 
     /// <inheritdoc/>
     /// <remarks>Its operator rides it, and swings round with the holder as the gun turns.</remarks>
-    public Vector3d AttachPosition => Position;
+    public Vector3d AttachPosition => _place;
 
     /// <inheritdoc/>
     public IReadOnlyList<float> AttachOrientation => _modelFrame;
 
     /// <inheritdoc/>
-    public Vector3d LastPosition => Position;
+    public Vector3d LastPosition => _lastPlace;
 
     /// <inheritdoc/>
     public IReadOnlyList<float> LastOrientation => _lastModelFrame;
@@ -272,9 +284,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         ArgumentNullException.ThrowIfNull(weapons);
         ArgumentNullException.ThrowIfNull(models);
         Models = models;
-        _paramFrame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
-        _modelFrame = [.. _paramFrame];
-        _lastModelFrame = [.. _paramFrame];
+        Place();
         (_tilt, _turn, _finalTilt, _finalTurn, _tiltOffset, _turnOffset) = (0f, 0f, 0f, 0f, 0f, 0f);
         _runTick = -1;
         _isActivated = false;
@@ -345,7 +355,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         }
 
         // StationaryGun_EvaluateActivateHandler: offered from its first magic vertex to a view behind it.
-        Vector3d at = Igi2MagicVertex.Position(Models?.Invoke(HolderModel), 0, _modelFrame, Position);
+        Vector3d at = Igi2MagicVertex.Position(Models?.Invoke(HolderModel), 0, _modelFrame, _place);
         Vector3d view = context.ViewPosition;
         double ahead = (_modelFrame[7] * (view.Z - at.Z)) + (_modelFrame[4] * (view.Y - at.Y)) + (_modelFrame[1] * (view.X - at.X));
         if (ahead <= 0.0)
@@ -413,7 +423,41 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     public Vector3d ActivatePosition(out IReadOnlyList<float> frame)
     {
         frame = _modelFrame;
-        return Igi2MagicVertex.Position(Models?.Invoke(HolderModel), 0, _modelFrame, Position);
+        return Igi2MagicVertex.Position(Models?.Invoke(HolderModel), 0, _modelFrame, _place);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>StationaryGun_CreateHandler</c>'s <c>Attach_eAttachEvent</c> and <c>ModelObj_CalcRelativePosAndOrientation</c>: held to its
+    /// carrier as the level placed the two.
+    /// </remarks>
+    public bool AttachTo(IAttachParent parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        _attachment.Attach(parent, _place, _paramFrame);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>StationaryGun_UpdateAttachmentHandler</c> over <c>ModelObj_UpdateAttachment</c> (<c>igi2 0x56CB40</c>): where its carrier now
+    /// holds it becomes its standing place and its frame before the turn (<c>tParamPos</c>, <c>tParamOrientation</c>); the holder, the
+    /// barrel, the seat and whoever works the gun are placed there (<c>StationaryGun_PositionWeapon</c>), in the tick the carrier moved;
+    /// and what it carries follows in its turn.
+    /// </remarks>
+    public void UpdateAttachment()
+    {
+        if (!_attachment.TryResolve(out Vector3d position, out float[] frame))
+        {
+            return;
+        }
+
+        int tick = (_attachment.Parent as IIgi2MovedTick)?.MovedTick ?? _movedTick;
+        BeginMove(tick);
+        _place = position;
+        _paramFrame = frame;
+        PositionWeapon(tick);
+        Igi2Attachment.UpdateChildren(this);
     }
 
     /// <inheritdoc/>
@@ -435,7 +479,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         // rounds harmless (the server's do the harm). Held to the server's aim, it trailed the mouse by the round trip.
         if (IsPuppet && Operator is null)
         {
-            RunPuppet(level, firing, tick);
+            RunPuppet(level, firing, level.Ticks);
             return;
         }
 
@@ -501,7 +545,9 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
             _turn = 0f;
         }
 
-        PositionWeapon(tick);
+        // Counted as its carrier counts the ticks it moves in, so a gun a helicopter carried this tick keeps where it stood at the
+        // tick's start for drawing between.
+        PositionWeapon(level.Ticks);
         firing.UpdateStatus();
         level.RunChildren(this);
         firing.RunDelayed();
@@ -669,12 +715,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     // the tilt and the turn, and the operator's eyes seated half a metre behind and a fifth of a metre above the mount.
     private void PositionWeapon(int tick = int.MinValue)
     {
-        if (tick != _movedTick)
-        {
-            _movedTick = tick;
-            _lastModelFrame = [.. _modelFrame];
-        }
-
+        BeginMove(tick);
         float[] p = _paramFrame;
         float[] r = EngineEuler.Rotation(0f, 0f, _finalTurn);
         _modelFrame =
@@ -686,7 +727,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
 
         MefModel? holder = Models?.Invoke(HolderModel);
         int vertex = holder is { } h && h.TryGetMagicVertex(1, out _) ? 1 : 0;
-        _mount = Igi2MagicVertex.Position(holder, vertex, _modelFrame, Position);
+        _mount = Igi2MagicVertex.Position(holder, vertex, _modelFrame, _place);
 
         float[] g = EngineEuler.Rotation(_finalTilt, 0f, _finalTurn);
         _gunFrame =
@@ -703,9 +744,34 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
 
         if (_solids.Count > 0 && Models is { } models)
         {
-            Igi2CollisionWorld.Repose(_solids, models, HolderModel, Igi2Pose.FromMatrix(Position, Rows(_modelFrame)), Magic);
+            Igi2CollisionWorld.Repose(_solids, models, HolderModel, Igi2Pose.FromMatrix(_place, Rows(_modelFrame)), Magic);
         }
     }
+
+    // The first move in a tick keeps where it stood at the tick's start, for drawing between.
+    private void BeginMove(int tick)
+    {
+        if (tick != _movedTick)
+        {
+            _movedTick = tick;
+            _lastModelFrame = [.. _modelFrame];
+            _lastPlace = _place;
+        }
+    }
+
+    // Stands it where the level placed it, its frame before the turn taken from its angles.
+    private void Place()
+    {
+        _paramFrame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        _modelFrame = [.. _paramFrame];
+        _lastModelFrame = [.. _paramFrame];
+        _place = Position;
+        _lastPlace = Position;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Placed before the build holds it to a carrier, which is done before the gun is armed.</remarks>
+    protected override void OnParsed() => Place();
 
     // Half a metre behind and a fifth of a metre above the mount, along the barrel.
     private Vector3d SeatPosition()
