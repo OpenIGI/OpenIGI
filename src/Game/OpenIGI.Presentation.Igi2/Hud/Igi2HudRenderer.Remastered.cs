@@ -148,6 +148,12 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
         if (title.Inventory is { } inventory)
         {
             BuildWeapon(title, inventory, model);
+            if (playing && InventoryShown(title))
+            {
+                model.Show |= HudParts.Inventory;
+                BuildSlots(title, inventory, model);
+            }
+
             BuildWheel(title, inventory, model);
         }
 
@@ -188,6 +194,29 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
             }
 
             model.AddMessage(new HudMessageView(slot.Text[..Math.Min(slot.Printed, slot.Text.Length)], slot.Opacity, key));
+        }
+    }
+
+    // The weapons carried, column by column as the original's inventory shows them (CarriedSlots), the grenades sharing theirs;
+    // hidden with it by the profile's option, which the inventory key flips.
+    private static void BuildSlots(Igi2TitlePlayer title, Igi2Inventory inventory, HudModel model)
+    {
+        int column = -1;
+        foreach (CarriedSlot carried in new CarriedSlots(inventory))
+        {
+            if (carried.Head)
+            {
+                column++;
+            }
+
+            model.AddSlot(new HudSlotView(
+                column,
+                carried.Head ? carried.Slot.Key : string.Empty,
+                WeaponShortName(title, carried.Item),
+                carried.Head ? new HudIcon(carried.Item.WeaponType.WeaponSprite) : HudIcon.None,
+                RoundsCarried(inventory, carried) ?? string.Empty,
+                carried.Selected,
+                carried.Head));
         }
     }
 
