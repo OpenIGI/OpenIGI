@@ -72,6 +72,7 @@ internal static class SettingsPanelBuilder
             if (control is not null)
             {
                 rows.Add(new PanelRow(control, setting.ShownWhen, setting.Advanced));
+                Follow(rowBuilder, setting);
             }
         }
 
@@ -177,6 +178,31 @@ internal static class SettingsPanelBuilder
             $"{unavailable}{group.Help}{restart}\n\nSets: {string.Join(", ", group.Variables)}\n\nReachable from the console by name.";
         rowBuilder.TrackForReset(group.Variables);
         return control;
+    }
+
+    /// <summary>Sets what a row's chosen value also sets, as the page reads both: through the draft on a staged page.</summary>
+    private static void Follow(SettingsRowBuilder rowBuilder, SettingRow setting)
+    {
+        if (setting.OnChosen is not { } effect
+            || rowBuilder.Find(setting.Variable) is not { } cvar
+            || rowBuilder.Find(effect.Variable) is not { } target)
+        {
+            return;
+        }
+
+        string previous = cvar.ValueText;
+        EventHandler<CVarChangedEventArgs> changed = (_, _) =>
+        {
+            string current = cvar.ValueText;
+            bool fires = effect.Fires(previous, current);
+            previous = current;
+            if (fires)
+            {
+                target.TrySetText(effect.Sets, out _);
+            }
+        };
+        cvar.Changed += changed;
+        rowBuilder.Bindings.Add(new Unsubscribe(() => cvar.Changed -= changed));
     }
 
     /// <summary>Whether the player left a panel's Advanced rows open.</summary>

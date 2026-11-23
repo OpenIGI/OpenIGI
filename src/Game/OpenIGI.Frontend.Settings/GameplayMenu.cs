@@ -32,12 +32,17 @@ public static class GameplayMenu
                     {
                         ["igi2"] = "I.G.I. 2",
                         ["igi1"] = "Project I.G.I.",
-                    }),
+                    })
+                {
+                    // The first game's movement comes as the first game had it: no weapon weight, which can be turned on after.
+                    OnChosen = new RowEffect("igi1", "g_igi2_igi1_weight", "0"),
+                },
                 new SettingRow(
                     "g_igi2_igi1_weight",
                     "Project I.G.I. Weapon Weight",
                     "On Project I.G.I. movement in I.G.I. 2, the weapons you carry slow you as they do in I.G.I. 2: the one in hand in "
-                        + "full, the rest by half, never below half speed. Off moves as freely as the first game."),
+                        + "full, the rest by half, never below half speed. Off moves as freely as the first game. Choosing "
+                        + "Project I.G.I. movement turns it off."),
             ]),
 
         new SettingsPanel(

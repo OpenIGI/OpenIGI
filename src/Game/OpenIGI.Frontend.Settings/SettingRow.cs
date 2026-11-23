@@ -34,4 +34,7 @@ public sealed record SettingRow(
 
     /// <summary>Gets the setting the row is shown only while it is on, or <see langword="null"/> for a row always shown.</summary>
     public RowCondition? ShownWhen { get; init; }
+
+    /// <summary>Gets what choosing one of the row's values also sets, or <see langword="null"/> for nothing.</summary>
+    public RowEffect? OnChosen { get; init; }
 }
