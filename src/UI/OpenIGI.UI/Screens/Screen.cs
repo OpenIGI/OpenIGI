@@ -79,6 +79,9 @@ public abstract class Screen
 
     // The viewport whose scrollbar is being dragged, or null. It holds the pointer as _captured does.
     private ScrollView? _scrollbarDrag;
+
+    // The modal text entry whose first frame has passed; see HandleTextEntry.
+    private ITextEntry? _armedEntry;
     private Control? _tooltipTarget;
     private UiVec2 _tooltipAnchor;
     private float _tooltipDwell;
@@ -279,12 +282,76 @@ public abstract class Screen
         bool popRequested = false;
         if (Phase == ScreenPhase.Active)
         {
-            popRequested = HandleInput(nav, input);
+            popRequested = !HandleTextEntry(nav, input) && HandleInput(nav, input);
+        }
+        else
+        {
+            _armedEntry = null;
         }
 
         UpdateTooltip(elapsedSeconds, input);
         OnUpdate(elapsedSeconds);
         return popRequested;
+    }
+
+    /// <summary>Feeds typed characters to the focused control that takes them, and runs a modal entry's frame.</summary>
+    /// <param name="nav">The frame's navigation intents.</param>
+    /// <param name="input">The frame's raw input.</param>
+    /// <returns><see langword="true"/> when a modal entry took the whole frame and the page is not to see it.</returns>
+    /// <remarks>
+    /// Text is decoded by the platform, not inferred from scan codes. Only the focused control drains the queue, so
+    /// opening a profile form cannot leak its name into another screen or the console. This runs ahead of
+    /// <see cref="HandleInput"/> so that a page's own keys -- Escape leaving it, Backspace discarding its changes, a
+    /// letter switching its tab -- never fire while a number is being typed into one of its sliders.
+    /// </remarks>
+    private bool HandleTextEntry(UiNavigation nav, InputState input)
+    {
+        if (Focus?.Focused is not ITextEntry { IsTakingText: true } entry)
+        {
+            _armedEntry = null;
+            return false;
+        }
+
+        KeyboardState keyboard = input.Keyboard;
+        if (entry.IsModal && !ReferenceEquals(_armedEntry, entry))
+        {
+            // The entry opened last frame. Whatever is still queued was typed before it did -- a weapon key in the
+            // mission behind the menu -- and is not meant for it.
+            while (keyboard.TryDequeueCharacter(out _))
+            {
+                // The loop's condition does the work.
+            }
+
+            _armedEntry = entry;
+            return true;
+        }
+
+        while (keyboard.TryDequeueCharacter(out char typed))
+        {
+            entry.Type(typed);
+        }
+
+        if (keyboard.WasPressed(KeyCode.Backspace))
+        {
+            entry.Backspace();
+        }
+
+        if (!entry.IsModal)
+        {
+            return false;
+        }
+
+        // Enter keeps the number and Escape drops it. A press anywhere keeps it too, and then lands as it would have,
+        // so a click on the next row's track is not lost to closing this one.
+        bool pressed = input.Mouse.WasPressed(MouseButton.Left);
+        if (nav.Accept || nav.Back || pressed)
+        {
+            entry.EndEntry(commit: !nav.Back);
+            _armedEntry = null;
+            return !pressed || nav.Back;
+        }
+
+        return true;
     }
 
     /// <summary>Times how long the pointer has rested where it is, which is what a tooltip waits on.</summary>
@@ -437,21 +504,6 @@ public abstract class Screen
         if (Focus is not { } focus)
         {
             return nav.Back;
-        }
-
-        // Text is decoded by the platform, not inferred from scan codes.  Only the focused field drains
-        // the queue, so opening a profile form cannot leak its name into another screen or the console.
-        if (focus.Focused is TextBox textBox)
-        {
-            while (input.Keyboard.TryDequeueCharacter(out char typed))
-            {
-                textBox.Append(typed);
-            }
-
-            if (input.Keyboard.WasPressed(KeyCode.Backspace))
-            {
-                textBox.Backspace();
-            }
         }
 
         MouseState mouse = input.Mouse;

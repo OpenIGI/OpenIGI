@@ -78,7 +78,11 @@ public abstract class Control : UiElement, IFocusable
         IsFocusable && IsEnabled && Visibility == Visibility.Visible && !Bounds.IsEmpty;
 
     /// <inheritdoc/>
-    public void SetFocused(bool focused) => Visual.SetFocused(focused && IsEnabled);
+    public void SetFocused(bool focused)
+    {
+        Visual.SetFocused(focused && IsEnabled);
+        OnFocusChanged(focused);
+    }
 
     /// <summary>Tells the control whether the pointer is over it.</summary>
     /// <param name="over">Whether the pointer is inside the control.</param>
@@ -183,6 +187,12 @@ public abstract class Control : UiElement, IFocusable
 
     /// <summary>Called when the control is activated, before <see cref="Activated"/> is raised.</summary>
     protected virtual void OnActivate()
+    {
+    }
+
+    /// <summary>Called when the control takes or loses the focus.</summary>
+    /// <param name="focused">Whether the control now has the focus.</param>
+    protected virtual void OnFocusChanged(bool focused)
     {
     }
 

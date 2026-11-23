@@ -109,6 +109,9 @@ internal static class ControlsSettingsTab
             Format = v => string.Create(
                 CultureInfo.InvariantCulture,
                 $"{MouseLookSettings.FromSensitivity(v, invertPitch: false).TurnDistanceCentimetres():0} cm/360°"),
+
+            // A typed number is that distance too.
+            FromTyped = centimetres => MouseLookSettings.SensitivityForTurnDistance(centimetres),
             Tooltip = "How far the mouse turns the view.\n\nThe readout is how much desk a full turn takes on "
                 + "an 800 DPI mouse — halve it for 1600 DPI. Lower is slower and more precise.",
         };

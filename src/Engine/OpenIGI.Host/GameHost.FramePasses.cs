@@ -106,10 +106,11 @@ public sealed partial class GameHost
         UpdatePresence();
         FollowSession(state);
 
-        // Typing wanted -- a text box with the focus, or a co-op line -- for a touch screen to raise its keyboard.
+        // Typing wanted -- a text box with the focus, a number being typed into a slider, or a co-op line -- for a
+        // touch screen to raise its keyboard.
         _window.SetTextEntry(
             _chatEntry is not null
-            || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.TextBox));
+            || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.ITextEntry { IsTakingText: true }));
         TellPlatformAboutChat();
         UpdateLookPreview();
 
