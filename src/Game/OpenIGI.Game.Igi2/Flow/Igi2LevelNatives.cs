@@ -17,10 +17,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 public sealed class Igi2LevelNatives
 {
     /// <summary>The weapon a player with no primary weapon is taken to hold.</summary>
-    public const string KnifeId = "WEAPON_ID_KNIFE";
-
-    /// <summary>The primary weapon category, <c>WEAPONCATEGORY_PRIMARY</c>.</summary>
-    public const int PrimaryCategory = 3;
+    public const string KnifeId = Igi2Inventory.KnifeId;
 
     /// <summary>Gets the player the <c>HumanPlayer_*</c> natives address, the roster's first, or <see langword="null"/> between levels.</summary>
     public Igi2HumanPlayer? Player => Players.Primary;
@@ -182,14 +179,5 @@ public sealed class Igi2LevelNatives
     /// inventory's order; with none, or no player, the knife.
     /// </summary>
     /// <returns>The weapon type, or <see langword="null"/> when there is no knife either.</returns>
-    public Igi2WeaponTypeTask? PrimaryWeapon()
-    {
-        Igi2Inventory? inventory = (Player?.Weapon as Igi2PlayerWeapons)?.Inventory;
-        if (inventory?.Weapons.FirstOrDefault(static w => w.IsActive && w.WeaponType.WeaponCategory == PrimaryCategory) is { } primary)
-        {
-            return primary.WeaponType;
-        }
-
-        return inventory?.FindWeapon(KnifeId)?.WeaponType;
-    }
+    public Igi2WeaponTypeTask? PrimaryWeapon() => ((Player?.Weapon as Igi2PlayerWeapons)?.Inventory)?.PrimaryWeapon();
 }

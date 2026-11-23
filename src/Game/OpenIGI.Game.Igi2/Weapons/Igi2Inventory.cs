@@ -192,6 +192,18 @@ public sealed class Igi2Inventory : ISavedState
     public Igi2WeaponItem? FindWeapon(string weaponId) =>
         Array.Find(_weapons, w => string.Equals(w.WeaponType.WeaponId, weaponId, StringComparison.Ordinal));
 
+    /// <summary>The weapon a player with no primary weapon is taken to hold, <c>WEAPON_ID_KNIFE</c>.</summary>
+    public const string KnifeId = "WEAPON_ID_KNIFE";
+
+    /// <summary>
+    /// The primary weapon, <c>HumanPlayer_GetPrimaryWeaponType</c>: the first weapon carried in the primary category, in the
+    /// inventory's order; with none, the knife.
+    /// </summary>
+    /// <returns>The weapon type, or <see langword="null"/> when there is no knife either.</returns>
+    public Igi2WeaponTypeTask? PrimaryWeapon() =>
+        (Array.Find(_weapons, static w => w.IsActive && w.WeaponType.WeaponCategory == Igi2WeaponCategory.Primary)
+            ?? FindWeapon(KnifeId))?.WeaponType;
+
     /// <summary>Finds an ammunition by the name of its constant.</summary>
     /// <param name="ammoId">The name, <c>AMMO_ID_*</c>.</param>
     /// <returns>The item, or <see langword="null"/>.</returns>
@@ -696,6 +708,9 @@ internal static class Igi2WeaponCategory
 
     /// <summary><c>WEAPONCATEGORY_SMOKEGRENADE</c>.</summary>
     public const int SmokeGrenade = 7;
+
+    /// <summary><c>WEAPONCATEGORY_PRIMARY</c>.</summary>
+    public const int Primary = 3;
 
     /// <summary><c>WEAPONCATEGORY_MEDIPACK</c>.</summary>
     public const int Medipack = 8;

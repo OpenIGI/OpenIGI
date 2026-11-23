@@ -109,15 +109,25 @@ public sealed partial class Igi2HumanPlayer
         writer.Int(TbaTimeout);
     }
 
-    /// <summary>Reads the player's save state back; its action state is entered afresh.</summary>
+    /// <summary>
+    /// Reads the player's save state back, <c>HumanPlayer_DeSerializeHandler</c> (humanplayer.c): a gun it mans is let go and its
+    /// weapon's overlay taken down first; once read, it is as <see cref="AfterLoad"/> leaves it.
+    /// </summary>
     /// <param name="reader">The reader.</param>
     public void ReadPlayerState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        Igi2HumanSaveExtras extras = ReadHumanState(reader);
+        if (AttachParent is Weapons.Igi2StationaryGunTask gun)
+        {
+            gun.Deactivate();
+            Detach();
+            EndActivate();
+            IsDisableDeltaTranslationScale = false;
+        }
 
-        // HumanPlayer_DeSerializeHandler forgets what the action menu held.
-        ActionMenu.ClearHistory();
+        ActivatingTarget = null;
+        Weapon.Firing?.SetOverlayStatus(Weapons.Igi2WeaponOverlayStatus.None);
+        Igi2HumanSaveExtras extras = ReadHumanState(reader);
         IsWeaponReady = extras.IsWeaponReady;
         IsDisableDeltaTranslationScale = extras.IsDisableDeltaTranslationScale;
         IsCheckActivateButton = extras.IsCheckActivateButton;
@@ -131,13 +141,6 @@ public sealed partial class Igi2HumanPlayer
         reader.Int();
         int action = reader.Int();
         reader.Array();
-        if (action >= 0 && action < Action.StateCount)
-        {
-            Action.Enter(action, this);
-            Action.RestorePreviousState(previousAction);
-        }
-
-        Action.Flags = actionFlags;
         IsLockAction = reader.Bool();
         IsWalk = reader.Bool();
         WeaponCycleIndex = reader.Int();
@@ -206,5 +209,45 @@ public sealed partial class Igi2HumanPlayer
         JumpWaitTimer = reader.Int();
         CrossHairDamping = reader.Real();
         TbaTimeout = reader.Int();
+        AfterLoad(extras, (actionFlags, previousAction, action));
+    }
+
+    // The rest of HumanPlayer_DeSerializeHandler: the heading free; not dying, its mark a shadow again; its weapon let go and
+    // silent, and back in hand -- binoculars or goggles give way to the primary weapon; the action menu's history forgotten; the
+    // action machine idle; and the body in the stance it was saved in, standing, crouching or lying, whatever state it was saved in.
+    private void AfterLoad(Igi2HumanSaveExtras saved, (uint Signal, int Previous, int State) action)
+    {
+        IsLockOrientation = false;
+        View.IsLockOrientation = false;
+        IsBloodPuddle = false;
+        Shadow.BecomeShadow();
+        BoneDeltaMovement = default;
+        IsDeathPositionStabilized = false;
+        if (Weapon.Firing is { } firing)
+        {
+            firing.ReleaseAutoFire();
+            firing.Effects.StopAllSounds();
+        }
+
+        if (Weapon.Inventory is { } inventory && inventory.Current?.WeaponType is { } held)
+        {
+            Weapons.Igi2WeaponTypeTask? wanted = held.WeaponCategory is Weapons.Igi2WeaponCategory.Binoculars or Weapons.Igi2WeaponCategory.ThermoChemical
+                ? inventory.PrimaryWeapon()
+                : held;
+            if (wanted is not null && inventory.FindWeapon(wanted.WeaponId) is { } item)
+            {
+                inventory.Activate(item);
+            }
+        }
+
+        ActionMenu.ClearHistory();
+        EnterLoadedState(Action, Igi2PlayerActionState.Idle, action.Signal, action.Previous, action.State);
+        int stance = Pose switch
+        {
+            Igi2HumanPose.Crouching => Igi2PlayerState.Crouch,
+            Igi2HumanPose.LyingFlat => Igi2PlayerState.Flat,
+            _ => Igi2PlayerState.Stand,
+        };
+        EnterLoadedState(stance, saved);
     }
 }
