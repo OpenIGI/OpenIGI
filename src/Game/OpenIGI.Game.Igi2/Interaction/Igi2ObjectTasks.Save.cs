@@ -146,6 +146,20 @@ public sealed partial class Igi2CabinetTask : ISavedState
         _isLastInUse = reader.Bool() ? (byte)1 : (byte)0;
         _lastInUseTick = reader.Int();
         _isSearched = reader.Bool() ? (byte)1 : (byte)0;
+
+        // Cabinet_DeSerializeHandler: how far out the drawer is is not kept, so a drawer saved opening snaps out and one saved
+        // closing snaps in as it next runs.
+        if (_isOpening)
+        {
+            _isSnapOpen = true;
+            _isDrawerMoving = true;
+        }
+
+        if (_isClosing)
+        {
+            _isSnapClosed = true;
+            _isDrawerMoving = true;
+        }
     }
 }
 

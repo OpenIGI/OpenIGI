@@ -92,7 +92,7 @@ public sealed class Igi2WorldEffectTests
 
     /// <summary>
     /// A figure's controllers step themselves, as every new <c>AnimController</c> does (<c>AnimController_CreateHandler</c>): its clip plays,
-    /// and as one ends the next of its list plays (<c>EditBoneObj_RunHandler</c>).
+    /// and as one ends the next of its list plays (<c>EditBoneObj_RunHandler</c>); a save read back starts its list again.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void A_figure_plays_its_clips_in_turn()
@@ -129,6 +129,11 @@ public sealed class Igi2WorldEffectTests
         }
 
         Assert.Equal(figure.Clips[1], figure.Clip!.Name);
+
+        // EditBoneObj_DeSerializeDoneHandler: once a save is read, the figure's list plays again from its first clip.
+        ((Game.Saves.ISavedState)figure).LoadDone();
+        Assert.Equal(figure.Clips[0], figure.Clip!.Name);
+        Assert.Equal(0, figure.ClipTime);
     }
 
     /// <summary>A spline's waypoint is in the world only while its spline displays its waypoints (<c>SplineObjWaypoint_UpdateInternalDataHandler</c>).</summary>

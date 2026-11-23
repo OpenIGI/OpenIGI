@@ -133,6 +133,17 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         WornModel = wornModel;
         _clips = clips;
         _rig = models(WornModel)?.BoneHierarchy;
+        StartAnimation();
+    }
+
+    // Its clip controllers made anew, a blend between two when it has a transition, and its list played from its first clip
+    // (EditBoneObj_UpdateInternalDataHandler; EditBoneObj_DeSerializeDoneHandler does the same once a save is read).
+    private void StartAnimation()
+    {
+        _current = null;
+        _other = null;
+        _blend = null;
+        Array.Clear(_made);
         if (_rig is null)
         {
             return;
