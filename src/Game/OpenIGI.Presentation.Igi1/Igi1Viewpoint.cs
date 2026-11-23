@@ -67,6 +67,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
     // Whether another player is watched while the player's own body is left aside (a demo's viewer), and what pulls that
     // camera in off the walls.
     private bool _following;
+
+    // How far the current tick's eye stood ahead of the one last composed; see EarLead.
+    private Vector3d _earLead;
     private WorldRayCast? _followWalls;
 
     /// <inheritdoc/>
@@ -89,6 +92,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
 
     /// <inheritdoc/>
     public bool IsThirdPersonEngaged => _thirdPerson.IsEngaged;
+
+    /// <inheritdoc/>
+    public Vector3d EarLead => _earLead;
 
     /// <inheritdoc/>
     public bool HasPlayer => gameplay.World.Player is not null;
@@ -243,6 +249,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
         }
 
         // A downed co-op player watching a teammate sees what the teammate sees.
+        bool takenView = ((mission.IsPlayerDead || _following) && _teammate.IsActive)
+            || (mission.IsPlayerDead && _death.IsActive)
+            || ((mission.Player is { IsOnLadder: true } or { IsInWorldInteraction: true }) && _interaction.IsActive);
         Camera3D eye = (mission.IsPlayerDead || _following) && _teammate.IsActive
             ? _teammate.Present(frame.Smooth ? frame.TickBlend : 1f, _following ? _followWalls : _deathWalls)
             : mission.IsPlayerDead && _death.IsActive
@@ -253,6 +262,10 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
                 : frame.PlayerMode && frame.TitleEye is { } titleEye ? titleEye
                 : frame.PlayerMode && mission.Player is not null ? mission.Player.Camera : frame.FreeEye;
 
+        // Only the title's walking eye and the player's own are drawn behind the tick their sounds were placed on; the
+        // cameras that take the view are heard from where they are drawn.
+        _earLead = !takenView && frame.PlayerMode && frame.TitleEye is not null ? frame.TitleEyeLead : default;
+
         // The walking eye glides between its tick pair, and so does the recoil kick inside its
         // orientation; the mouse half of the look is this frame's own. The fly and death cameras
         // move per frame on their own and need nothing.
@@ -262,6 +275,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
             && mission.Player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
         {
             eye = mission.Player.SmoothedCamera(frame.TickBlend);
+            _earLead = mission.Player.SmoothedEyeMetres(1f) - eye.Position;
         }
 
         // A mod has taken the view (MissionWorld.ViewTakeover): its eye, whatever else would have had it, with no
@@ -271,6 +285,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
         {
             eye = eyeTaken;
             bodyEye = eye;
+            _earLead = default;
             _thirdPerson.Reset();
             _thirdPersonMilliseconds = frame.NowMilliseconds;
             if (mission.Player is not null)

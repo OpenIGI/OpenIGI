@@ -439,8 +439,12 @@ public sealed partial class GameHost
         // camera and a title player's eye, which are the host's. A title with no viewpoint of its
         // own looks through those two alone.
         Camera3D? titlePlayerEye = _playerMode && TitlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend) : null;
+        Vector3d titleEyeLead = titlePlayerEye is { } drawnTitleEye && _titlePresentationBlend < 1f
+            ? _titlePresentation.Camera(1f).Position - drawnTitleEye.Position
+            : default;
         Camera3D eye;
         Camera3D flashlightBody;
+        Vector3d earLead;
         if (Viewpoint is { } viewpoint)
         {
             eye = viewpoint.ComposeEye(
@@ -458,19 +462,28 @@ public sealed partial class GameHost
                         && !_menuFlow.OverShowcase,
                     Paused: _menuFlow.MenuMode,
                     _loop.TimeSource.Milliseconds,
-                    ThirdPersonWalls()),
+                    ThirdPersonWalls(),
+                    titleEyeLead),
                 out flashlightBody);
+            earLead = viewpoint.EarLead;
         }
         else
         {
             eye = titlePlayerEye ?? _camera.Camera;
             flashlightBody = eye;
+            earLead = titlePlayerEye is not null ? titleEyeLead : default;
         }
 
         // The ear goes where the picture is taken from: the original's microphone is the camera controller's own
         // (0x4EBBF0, set from the camera each frame), so a cut-scene, the camera over a dead body or the orbit round a
         // climber is heard from there, not from the head the player no longer looks out of.
-        _earCamera = eye;
+        //
+        // But from where the CURRENT tick has the eye, turned as the frame is: every sound is placed on the tick -- a voice
+        // at the player's eye, a line at the microphone, an engine on its car -- while the eye is drawn between the last
+        // two, a share of a tick behind. An ear on the drawn eye left a moving player's own sounds that far ahead of it,
+        // and snapped back each tick, so they swung across the stereo image thirty times a second: a crackle in a plane, a
+        // car or a fall. Retail draws no tick blend, so its eye and its sounds always agree.
+        _earCamera = new Camera3D(eye.Position + earLead, eye.Orientation);
 
         bool flashlightShown = _playerMode
             && !_mission.IsPlayerDead
