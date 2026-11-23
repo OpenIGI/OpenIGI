@@ -68,8 +68,9 @@ public sealed partial class Igi2CarTask : ISavedState
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <c>Car_DeSerializeHandler</c>: what it had seen is forgotten, its speed approximated from its velocity again, and a car that had
-    /// blown up is out of the world. One that blew up after the save stays a wreck: its solids and gun are not made again here.
+    /// <c>Car_DeSerializeHandler</c>: what it had seen is forgotten, it is no longer blowing up (<c>isExplode</c> cleared, its ticks to
+    /// die none), its speed approximated from its velocity again, and a car that had blown up is out of the world; one that blew up
+    /// after the save is whole again, its solids and gun back.
     /// </remarks>
     public void ReadState(StateReader reader)
     {
@@ -96,10 +97,16 @@ public sealed partial class Igi2CarTask : ISavedState
             }
         }
 
+        _isExplode = false;
+        _ticksToDie = -1;
         if (exploded && _isExploded == 0)
         {
             Remove();
             _isExploded = 1;
+        }
+        else if (!exploded && _isExploded != 0)
+        {
+            RestoreWhole();
         }
     }
 }

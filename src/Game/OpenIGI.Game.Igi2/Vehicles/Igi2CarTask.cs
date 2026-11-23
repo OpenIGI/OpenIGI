@@ -85,6 +85,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     private bool _isFire;
     private int _ticksToDie = -1;
     private byte _isExploded;
+    private IReadOnlyList<(IReadOnlyList<Igi2CollisionMesh?> Meshes, float Radius)>? _wholeSolids;
+    private Igi2AiStationaryGun? _wholeGun;
     private bool _isWeaponSystemsRun;
     private IReadOnlyList<Igi2DeathZone> _deathZones = [];
     private IReadOnlyList<Igi2CarDoor> _doors = [];
@@ -741,7 +743,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             return;
         }
 
-        if (_engineSound is null && _type is { EngineSound.Length: > 0 } type)
+        // A load deletes every sound the level made; one deleted so is made again, as a deleted task's reference reads as none.
+        if (_engineSound is not { IsDeleted: false } && _type is { EngineSound.Length: > 0 } type)
         {
             // Car_SoundUpdateParameterListHandler: its sounds read its channels -- the thrust, whether it drives, its speed.
             _engineSound = Sounds?.New(type.EngineSound, CurrentPosition, () => CurrentPosition, parameters: () => SoundChannels);
@@ -853,17 +856,42 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         Gun?.StopSound();
     }
 
-    // Car_RemoveHandler on blowing up: its engine sound and its gun gone, and it out of the world.
+    // Car_RemoveHandler on blowing up: its engine sound and its gun gone, and it out of the world. What it wore whole is kept
+    // aside, for a save read back from before it blew up to give back (RestoreWhole).
     private void Remove()
     {
         _engineSound?.Delete();
         _engineSound = null;
         Gun?.StopSound();
+        _wholeGun ??= Gun;
         Gun = null;
+        if (_wholeSolids is null)
+        {
+            _wholeSolids = [.. _solids.Select(static solid => (solid.Meshes, solid.Radius))];
+        }
+
         foreach (Igi2RigidObject solid in _solids)
         {
             solid.ChangeModel([], 0f);
         }
+    }
+
+    // A wreck put back whole, as a save from before it blew up holds it (Car_DeSerializeHandler makes its attach objects again):
+    // its solids and its gun as they were, no longer blowing up; its run makes its engine sound again.
+    private void RestoreWhole()
+    {
+        if (_wholeSolids is { } whole)
+        {
+            for (int i = 0; i < _solids.Count && i < whole.Count; i++)
+            {
+                _solids[i].ChangeModel(whole[i].Meshes, whole[i].Radius);
+            }
+        }
+
+        Gun = _wholeGun ?? Gun;
+        _wholeSolids = null;
+        _wholeGun = null;
+        _isExploded = 0;
     }
 }
 
