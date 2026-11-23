@@ -16,7 +16,11 @@ public sealed record SquadScoreMember(int Entity, string Name, MissionScore Scor
 /// <param name="Squad">The squad's one score, which its rank is reckoned from.</param>
 /// <param name="Members">Every player's part in it.</param>
 /// <param name="SecondsLeft">The whole seconds before the squad goes on to what follows, as the server counts them.</param>
-public sealed record SquadScore(MissionRankRequirements Requirements, MissionScore Squad, IReadOnlyList<SquadScoreMember> Members, int SecondsLeft)
+/// <param name="HostCanContinue">
+/// Whether a player at the server can go on sooner: a listen server's host; not a dedicated server, whose countdown always runs out.
+/// </param>
+public sealed record SquadScore(
+    MissionRankRequirements Requirements, MissionScore Squad, IReadOnlyList<SquadScoreMember> Members, int SecondsLeft, bool HostCanContinue = true)
 {
     /// <summary>The seconds a co-op squad's score stays up before it goes on by itself.</summary>
     public const int AutoAdvanceSeconds = 10;
@@ -42,8 +46,14 @@ public sealed record SquadScore(MissionRankRequirements Requirements, MissionSco
     /// as one target); <see langword="null"/> to add up each player's.
     /// </param>
     /// <param name="secondsLeft">The seconds before the squad goes on.</param>
+    /// <param name="hostCanContinue">Whether a player at the server can go on sooner: not a dedicated server.</param>
     /// <returns>The squad's score.</returns>
-    public static SquadScore Of(MissionScoreSheet sheet, IEnumerable<SquadScoreMember> players, int? squadSightings = null, int secondsLeft = AutoAdvanceSeconds)
+    public static SquadScore Of(
+        MissionScoreSheet sheet,
+        IEnumerable<SquadScoreMember> players,
+        int? squadSightings = null,
+        int secondsLeft = AutoAdvanceSeconds,
+        bool hostCanContinue = true)
     {
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(players);
@@ -73,6 +83,6 @@ public sealed record SquadScore(MissionRankRequirements Requirements, MissionSco
                 GameLoads = members.Max(static m => m.Score.GameLoads),
                 TimesAlarmTriggered = members.Max(static m => m.Score.TimesAlarmTriggered),
             };
-        return new SquadScore(sheet.Requirements, squad, members, secondsLeft);
+        return new SquadScore(sheet.Requirements, squad, members, secondsLeft, hostCanContinue);
     }
 }

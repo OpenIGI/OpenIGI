@@ -5,7 +5,8 @@ namespace OpenIGI.Game.Multiplayer;
 
 /// <summary>
 /// A co-op mission's score as the server sends it, <see cref="SessionMessage.MissionScore"/>: what its ranks ask, the seconds left
-/// before the squad goes on, the squad's own counts, then each player's entity, name and counts. Each client builds its own card from it, in
+/// before the squad goes on and whether the host can go on sooner, the squad's own counts, then each player's entity, name and
+/// counts. Each client builds its own card from it, in
 /// its own language.
 /// </summary>
 public static class SquadScoreMessage
@@ -29,6 +30,7 @@ public static class SquadScoreMessage
         }
 
         writer.WriteVarUInt((uint)Math.Clamp(squad.SecondsLeft, 0, 255));
+        writer.WriteBool(squad.HostCanContinue);
         WriteCounts(writer, squad.Squad, squad.Requirements);
         SquadScoreMember[] members = [.. squad.Members.Take(MaxMembers)];
         writer.WriteVarUInt((uint)members.Length);
@@ -73,6 +75,7 @@ public static class SquadScoreMessage
         }
 
         int secondsLeft = (int)Math.Min(reader.ReadVarUInt(), 255u);
+        bool hostCanContinue = reader.ReadBool();
         MissionScore? squad = ReadCounts(ref reader);
         uint count = reader.ReadVarUInt();
         if (squad is not { } together || count > MaxMembers || !MissionScoreRecord.TryReadRequirements(figures, out MissionRankRequirements? requirements))
@@ -93,6 +96,6 @@ public static class SquadScoreMessage
             members.Add(new SquadScoreMember(entity, name, score));
         }
 
-        return reader.IsOverflowed ? null : new SquadScore(requirements, together, members, secondsLeft);
+        return reader.IsOverflowed ? null : new SquadScore(requirements, together, members, secondsLeft, hostCanContinue);
     }
 }

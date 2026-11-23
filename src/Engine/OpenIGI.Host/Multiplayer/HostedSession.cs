@@ -214,7 +214,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     public void Foresee(string map) => _session?.Foresee(map);
 
     /// <inheritdoc/>
-    public Game.Scoring.SquadScore? AnnounceMissionScore(Game.Scoring.MissionScoreSheet sheet) => _session?.TellMissionScore(sheet);
+    public Game.Scoring.SquadScore? AnnounceMissionScore(Game.Scoring.MissionScoreSheet sheet) => _session?.TellMissionScore(sheet, hostCanContinue: _options.IncludesHost);
 
     /// <inheritdoc/>
     public bool HoldsLevel =>

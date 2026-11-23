@@ -103,7 +103,7 @@ public sealed partial class GameHost
         int? secondsLeft = hold.DeadlineMilliseconds is { } deadline
             ? (int)Math.Max(0L, (deadline - _loop.TimeSource.Milliseconds + 999L) / 1000L)
             : null;
-        return new Presentation.MissionScorePrompt(hold.CanContinue ? ContinueKey : null, secondsLeft, WaitsForHost: !hold.CanContinue);
+        return new Presentation.MissionScorePrompt(hold.CanContinue ? ContinueKey : null, secondsLeft, WaitsForHost: hold.HostCanContinue);
     }
 
     // The key the screen's cap names.

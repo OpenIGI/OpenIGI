@@ -67,9 +67,21 @@ public sealed class SquadScoringTests
 
         Assert.NotNull(read);
         Assert.Equal(squad.SecondsLeft, read.SecondsLeft);
+        Assert.True(read.HostCanContinue);
         Assert.Equal(squad.Squad, read.Squad);
         Assert.Equal(squad.Members, read.Members);
         Assert.Equal(300f, read.Requirements[2, MissionRankItem.Time]);
+    }
+
+    /// <summary>A dedicated server's score says nobody there can go on sooner, and it says so over the wire.</summary>
+    [Fact]
+    public void A_dedicated_servers_score_says_nobody_goes_on_sooner()
+    {
+        SquadScore squad = SquadScore.Of(Host, Squad().Members, hostCanContinue: false);
+        var writer = new BitWriter();
+        SquadScoreMessage.Write(writer, squad);
+        var reader = new BitReader(writer.AsSpan());
+        Assert.False(SquadScoreMessage.Read(ref reader)!.HostCanContinue);
     }
 
     /// <summary>

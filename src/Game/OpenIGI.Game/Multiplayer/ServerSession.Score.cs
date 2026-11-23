@@ -11,9 +11,10 @@ public sealed partial class ServerSession
     /// each player's own counts from the world, put together into what holds for all of them (<see cref="SquadScore.Of"/>).
     /// </summary>
     /// <param name="sheet">The mission as the host's player played it: the squad's clock, difficulty and requirements.</param>
+    /// <param name="hostCanContinue">Whether a player at the server can go on sooner: a listen server's host, not a dedicated server.</param>
     /// <param name="secondsLeft">The seconds before the squad goes on by itself.</param>
     /// <returns>The squad's score, as told.</returns>
-    public SquadScore TellMissionScore(MissionScoreSheet sheet, int secondsLeft = SquadScore.AutoAdvanceSeconds)
+    public SquadScore TellMissionScore(MissionScoreSheet sheet, bool hostCanContinue, int secondsLeft = SquadScore.AutoAdvanceSeconds)
     {
         ArgumentNullException.ThrowIfNull(sheet);
         List<SquadScoreMember> players = [];
@@ -25,7 +26,7 @@ public sealed partial class ServerSession
             }
         }
 
-        SquadScore squad = SquadScore.Of(sheet, players, _world.SquadTimesSpotted, secondsLeft);
+        SquadScore squad = SquadScore.Of(sheet, players, _world.SquadTimesSpotted, secondsLeft, hostCanContinue);
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.MissionScore, 8);
         SquadScoreMessage.Write(_writer, squad);

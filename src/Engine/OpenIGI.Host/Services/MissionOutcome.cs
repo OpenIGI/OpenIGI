@@ -251,7 +251,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             return;
         }
 
-        Keep(mission, score, new ScoreHold(score.Card, host.Milliseconds + (squad.SecondsLeft * 1000L), CanContinue: false));
+        Keep(mission, score, new ScoreHold(score.Card, host.Milliseconds + (squad.SecondsLeft * 1000L), CanContinue: false, squad.HostCanContinue));
         if (score.Record is not null)
         {
             host.SaveConfiguration();
@@ -301,7 +301,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         // The server's own player, where it has one; a dedicated server shows nothing and only waits out the countdown.
         long deadline = host.Milliseconds + (squad.SecondsLeft * 1000L);
         MissionScoreResult? own = MissionScoring.ForSquadMember(squad, host.ScoreSession.LocalEntity, best, host.ScoreWords);
-        logger.Information("Mission", $"Mission {mission.Id} scored for {squad.Members.Count} player(s); the squad goes on in {squad.SecondsLeft} s unless the host goes on sooner.");
+        logger.Information("Mission", $"Mission {mission.Id} scored for {squad.Members.Count} player(s); the squad goes on in {squad.SecondsLeft} s{(squad.HostCanContinue ? " unless the host goes on sooner" : string.Empty)}.");
         if (own is null)
         {
             session.Score = new ScoreHold(null, deadline, CanContinue: false);

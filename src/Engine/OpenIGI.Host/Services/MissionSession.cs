@@ -81,4 +81,7 @@ internal sealed class MissionSession : IHostService
 /// The host clock's time the squad goes on by itself, or <see langword="null"/> for a single player's score, which waits for them.
 /// </param>
 /// <param name="CanContinue">Whether this end goes on when its player says so: a single player's, or a co-op host's.</param>
-internal sealed record ScoreHold(Game.Scoring.MissionScoreCard? Card, long? DeadlineMilliseconds, bool CanContinue);
+/// <param name="HostCanContinue">
+/// Whether, at a co-op client, the host can go on before the countdown runs out: a listen server's can, a dedicated server's cannot.
+/// </param>
+internal sealed record ScoreHold(Game.Scoring.MissionScoreCard? Card, long? DeadlineMilliseconds, bool CanContinue, bool HostCanContinue = false);
