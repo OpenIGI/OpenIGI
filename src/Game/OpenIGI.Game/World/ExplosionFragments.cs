@@ -46,6 +46,10 @@ public sealed class ExplosionFragments(string model, int lifetime, float gravity
     }
 
     /// <inheritdoc/>
+    /// <remarks>An explosion and what it leaves are deleted (<c>Explosion0_DeSerializeDoneHandler</c>).</remarks>
+    public bool DeleteForLoad() => true;
+
+    /// <inheritdoc/>
     public bool Run()
     {
         if (_fragments.Count == 0)

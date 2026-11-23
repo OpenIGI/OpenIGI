@@ -125,6 +125,10 @@ public sealed class Igi2ImpactGrenade : IDynamicTask
     public Vector3f Speed => _speed;
 
     /// <inheritdoc/>
+    /// <remarks><c>Grenade_DeSerializeDoneHandler</c> deletes it.</remarks>
+    public bool DeleteForLoad() => true;
+
+    /// <inheritdoc/>
     public bool Run()
     {
         Vector3d from = Position, to = from;

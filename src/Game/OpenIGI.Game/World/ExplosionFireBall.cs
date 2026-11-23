@@ -39,6 +39,10 @@ public sealed class ExplosionFireBall(Vector3d position, float size, int lifetim
     public int AnimationDuration { get; } = animationDuration;
 
     /// <inheritdoc/>
+    /// <remarks>An explosion and what it leaves are deleted (<c>Explosion0_DeSerializeDoneHandler</c>).</remarks>
+    public bool DeleteForLoad() => true;
+
+    /// <inheritdoc/>
     public bool Run()
     {
         if (Delay > 0)

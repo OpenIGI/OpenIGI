@@ -23,11 +23,15 @@ public sealed partial class Igi2TrainTask : ISavedState
     /// Each car stands where it was saved, its model object's place read back as the original's is, and it stood there as the tick
     /// began too: <c>Train_UpdateInternalDataAfterLoadHandler</c>'s <c>Train_Move</c> takes the last place from the place just
     /// read. Where it stood before the load is not kept as its last place, or a train standing still is drawn swept from there to
-    /// here every tick until it next moves. A locomotive is then put back on its rails, its carriages with it.
+    /// here every tick until it next moves. A locomotive is then put back on its rails, its carriages with it. First
+    /// (<c>Train_DeSerializeHandler</c>) its sound is deleted and the tick it last ran forgotten, so it plays again as it next runs.
     /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _sound?.Delete();
+        _sound = null;
+        _runTick = -1;
         (Vector3d at, float[] orientation, _) = Igi2ModelObjState.Read(reader);
         _realThrust = reader.Real();
         _idealThrust = reader.Real();
@@ -63,10 +67,14 @@ public sealed partial class Igi2CarTask : ISavedState
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>Car_DeSerializeHandler</c>: its speed approximated from its velocity again; a car that had blown up is out of the world.</remarks>
+    /// <remarks>
+    /// <c>Car_DeSerializeHandler</c>: what it had seen is forgotten, its speed approximated from its velocity again, and a car that had
+    /// blown up is out of the world. One that blew up after the save stays a wreck: its solids and gun are not made again here.
+    /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _detection?.Clear();
         (Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
         Vector3f velocity = reader.Real3();
         reader.Real3();

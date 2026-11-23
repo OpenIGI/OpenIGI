@@ -218,6 +218,12 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     /// </remarks>
     public bool IsAlive => !_deleted && (_isSet || _voice is { IsPlaying: true });
 
+    /// <summary>
+    /// Gets a value indicating whether a voice was made for it and has played to its end, as a sound task the original deletes once
+    /// its sample is done; one never heard -- no mixer, as on a server or in a test -- has not.
+    /// </summary>
+    public bool HasPlayedOut => !_deleted && !_isSet && _voice is { IsPlaying: false };
+
     /// <inheritdoc/>
     public void MoveToHuman()
     {

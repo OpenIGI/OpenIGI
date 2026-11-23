@@ -381,7 +381,31 @@ public sealed class Igi2Explosive
         }
         else
         {
-            _isExploded = 0;
+            SetIntact();
         }
+    }
+
+    /// <summary>
+    /// Wears its whole model and solid again, as <c>ExplodeObject_DeSerializeHandler</c> does for one a save holds unexploded: a
+    /// save read onto the level after it was blown up puts it back as it stood.
+    /// </summary>
+    private void SetIntact()
+    {
+        _isExploded = 0;
+        if (!_wornExploded)
+        {
+            return;
+        }
+
+        if (!string.Equals(Model, _parameters.Model, StringComparison.Ordinal)
+            && _solids.Count > 0
+            && Models?.Invoke(_parameters.Model) is { } whole
+            && Igi2CollisionWorld.Meshes(whole) is { } meshes)
+        {
+            _solids[0].ChangeModel(meshes, whole.NativeMarkerBound);
+        }
+
+        Model = _parameters.Model;
+        _wornExploded = false;
     }
 }

@@ -6,6 +6,13 @@ public interface IDynamicTask
     /// <summary>A tick of the task, its run handler.</summary>
     /// <returns><see langword="false"/> once the task has deleted itself.</returns>
     bool Run();
+
+    /// <summary>
+    /// Deletes the task as a save game read onto the level does, when its kind's <c>DeSerializeDoneHandler</c> deletes it (I.G.I. 2's
+    /// grenades, missiles and explosions): nothing a save keeps is in flight, so nothing made since may go on.
+    /// </summary>
+    /// <returns><see langword="true"/> when it is deleted; by default a load keeps it.</returns>
+    bool DeleteForLoad() => false;
 }
 
 /// <summary>
@@ -39,6 +46,9 @@ public sealed class DynamicTasks
 
     /// <summary>Drops every task, as a level that ends does.</summary>
     public void Clear() => _tasks.Clear();
+
+    /// <summary>Drops each task a save game read onto the level deletes (<see cref="IDynamicTask.DeleteForLoad"/>).</summary>
+    public void DeleteForLoad() => _tasks.RemoveAll(static task => task.DeleteForLoad());
 
     /// <summary>A tick of every task, in order.</summary>
     public void Run()

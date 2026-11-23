@@ -197,6 +197,10 @@ public sealed class Igi2Grenade : IDynamicTask
     public float[] Orientation => Body?.Orientation ?? Throw.Orientation;
 
     /// <inheritdoc/>
+    /// <remarks><c>Grenade_DeSerializeDoneHandler</c> deletes it.</remarks>
+    public bool DeleteForLoad() => true;
+
+    /// <inheritdoc/>
     /// <remarks>Run in the level's dynamic tasks, with its grenade world's world and effects.</remarks>
     /// <exception cref="InvalidOperationException">The grenade belongs to no grenade world.</exception>
     public bool Run() =>

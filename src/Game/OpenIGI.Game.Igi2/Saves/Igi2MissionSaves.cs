@@ -145,13 +145,15 @@ public sealed class Igi2MissionSaves : MissionSaves
         public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines(), level.Joined.SaveSections);
 
         // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds;
-        // the messages on the screen and the computer's log go too. Its missile smoke, level sounds and bullet holes are the
-        // picture's and the mixer's here, which follow the level as it is read back.
+        // the messages on the screen and the computer's log go too; and the grenades, missiles and explosions in flight, which
+        // their DeSerializeDone handlers delete, since a save keeps none. Bullet holes are the picture's here. A level sound is
+        // put right by its owner as the owner is read back (a sound generator plays again what its save had playing).
         public void BeforeLoad()
         {
             Mines()?.DeleteAll();
             StatusMessages?.ClearForLoad();
             Pickups?.DeleteAll();
+            level.Dynamic?.DeleteForLoad();
         }
     }
 }

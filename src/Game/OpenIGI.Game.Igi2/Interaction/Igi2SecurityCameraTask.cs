@@ -556,16 +556,24 @@ public sealed partial class Igi2SecurityCameraTask
     }
 
     // The lens in its destroyed model, its solid with it.
-    private void WearDestroyedLens(Lens lens)
+    private void WearDestroyedLens(Lens lens) => WearLens(lens, CameraDestroyedModel);
+
+    // The lens in a model, its solid with it; nothing changes when it already wears it.
+    private void WearLens(Lens lens, string model)
     {
-        lens.Model = CameraDestroyedModel;
-        if (Models?.Invoke(CameraDestroyedModel) is { } destroyed && Igi2CollisionWorld.Meshes(destroyed) is { } meshes)
+        if (string.Equals(lens.Model ?? CameraModel, model, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lens.Model = model;
+        if (Models?.Invoke(model) is { } worn && Igi2CollisionWorld.Meshes(worn) is { } meshes)
         {
             foreach (Igi2RigidObject solid in _solids)
             {
                 if (solid.Owner is Igi2CollisionOwner { Depth: > 0 })
                 {
-                    solid.ChangeModel(meshes, destroyed.NativeMarkerBound);
+                    solid.ChangeModel(meshes, worn.NativeMarkerBound);
                 }
             }
         }

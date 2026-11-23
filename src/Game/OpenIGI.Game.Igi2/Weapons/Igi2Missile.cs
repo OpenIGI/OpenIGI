@@ -189,6 +189,15 @@ public sealed class Igi2Missile : IDynamicTask
     }
 
     /// <inheritdoc/>
+    /// <remarks><c>Missile_DeSerializeDoneHandler</c>: its sound goes with it, as a missile's deleted in flight does.</remarks>
+    public bool DeleteForLoad()
+    {
+        FlightSound?.Delete();
+        FlightSound = null;
+        return true;
+    }
+
+    /// <inheritdoc/>
     public bool Run()
     {
         bool flying = Fly();
