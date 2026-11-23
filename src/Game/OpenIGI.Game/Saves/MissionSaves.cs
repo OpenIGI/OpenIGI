@@ -29,6 +29,14 @@ public interface IMissionSaveSource
     void BeforeLoad()
     {
     }
+
+    /// <summary>
+    /// Lets go of what the host holds of the level as it was before a load, once the save's state has been read: a look gathered
+    /// between ticks, which the next tick would otherwise turn the loaded player back to.
+    /// </summary>
+    void AfterLoad()
+    {
+    }
 }
 
 /// <summary>
@@ -181,6 +189,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
             return false;
         }
 
+        _source.AfterLoad();
         _source.GameLoads++;
         return true;
     }

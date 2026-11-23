@@ -58,6 +58,16 @@ public sealed class Igi2MissionSaves : MissionSaves
         set => _level.Pickups = value;
     }
 
+    /// <summary>
+    /// Gets or sets what the player's host lets go of once a save is read: the look it gathered from the mouse since the last tick,
+    /// a heading and pitch turned from where the player faced before the load. Not retail, whose look has no such gathering.
+    /// </summary>
+    public Action? Loaded
+    {
+        get => _level.Loaded;
+        set => _level.Loaded = value;
+    }
+
     /// <summary>Gets or sets the level's sounds, every one of which a load deletes before it reads its save.</summary>
     public Audio.Igi2Sounds? Sounds
     {
@@ -131,6 +141,10 @@ public sealed class Igi2MissionSaves : MissionSaves
         public Igi2StatusMessageScreen? StatusMessages { get; set; }
 
         public Audio.Igi2Sounds? Sounds { get; set; }
+
+        public Action? Loaded { get; set; }
+
+        public void AfterLoad() => Loaded?.Invoke();
 
         public GameTask Root => level.Root;
 

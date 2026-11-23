@@ -133,6 +133,85 @@ public sealed partial class RetailIgi2LevelAiTests
         static double Height(Igi2HumanSoldier body) => body.BonePosition("center").Z - body.Position.Z;
     }
 
+    /// <summary>
+    /// A guard saved while his death still threw him through the air, the save loaded over the level after he came to rest: he
+    /// falls on as a death does and comes to rest where one left to fall rests, not sunk to the ground with his limbs in it. Not
+    /// retail, whose load takes every body read back dead for one at rest.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_guard_saved_falling_dead_falls_on_and_rests_as_one_left_to_fall()
+    {
+        (RetailIgi2Mission1 left, _, _, Igi2TitlePlayer leftPlayer) = Build();
+        SkipIntro(left);
+        Run(left, leftPlayer, 300, RetailIgi2Mission1.Idle);
+        Igi2HumanSoldier fell = Body(left);
+        fell.KillOutright();
+        Run(left, leftPlayer, 300, RetailIgi2Mission1.Idle);
+        Assert.True(fell.IsDeathPositionStabilized);
+
+        (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
+        SkipIntro(m);
+        Run(m, player, 300, RetailIgi2Mission1.Idle);
+        Igi2HumanSoldier body = Body(m);
+        body.KillOutright();
+        Run(m, player, 10, RetailIgi2Mission1.Idle);
+        Assert.NotEqual(default, body.Speed);
+        string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
+        Run(m, player, 300, RetailIgi2Mission1.Idle);
+
+        SaveScript.Load(script, m.Tree[0], Saves.Igi2SaveFormat.Context());
+        Assert.False(body.IsDeathPositionStabilized);
+        Run(m, player, 300, RetailIgi2Mission1.Idle);
+
+        // Both lie still, the loaded one's hips where the other's are: the loaded body wears its clip's last frame lifted by its
+        // root (the controller its load turns to has no 0x40, as in retail), the other its clip unlifted, so their places differ.
+        Assert.True(body.IsDeathPositionStabilized);
+        double rested = body.Position.Z;
+        Run(m, player, 10, RetailIgi2Mission1.Idle);
+        Assert.Equal(rested, body.Position.Z);
+        Assert.Equal(fell.BonePosition("center").Z, body.BonePosition("center").Z, 160.0);
+    }
+
+    /// <summary>
+    /// The look the host gathered from the mouse since the last tick is let go of once a save is read: the loaded player faces the
+    /// way the save has it on the next tick, not back to where it faced before the load turned by the mouse.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_loaded_player_faces_the_way_the_save_has_it()
+    {
+        (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
+        m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
+        player.Human.Movement = Igi2PlayerMovement.Igi1;
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-igi2-look-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), static () => new SaveOwner(0, 0, 11), m.Run, player.Human)
+            {
+                Loaded = player.ResetLook,
+            };
+            SkipIntro(m);
+            Run(m, player, 60, RetailIgi2Mission1.Idle with { MouseX = 30f, MouseY = 15f });
+            Run(m, player, 5, RetailIgi2Mission1.Idle);
+            (float gamma, float pitch) = (player.Human.Gamma, player.Human.View.IdealPitch);
+            Assert.True(saves.Write(SaveRules.QuickSave));
+
+            Run(m, player, 60, RetailIgi2Mission1.Idle with { MouseX = -50f, MouseY = -40f });
+            player.GatherLook(40f, 20f, 0.5f, invertMouse: false);
+            Assert.True(saves.Load(SaveRules.QuickSave));
+            Run(m, player, 1, RetailIgi2Mission1.Idle);
+
+            Assert.Equal(gamma, player.Human.Gamma, 0.0001f);
+            Assert.Equal(pitch, player.Human.View.IdealPitch, 0.0001f);
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
     private static void Run(RetailIgi2Mission1 m, Igi2TitlePlayer player, int ticks, TitlePlayerInput input)
     {
         for (int tick = 0; tick < ticks; tick++)

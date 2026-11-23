@@ -88,7 +88,7 @@ public sealed partial class Igi2HumanSoldier
         BoneCollisionDelta = default;
         Animation.SetMainFlags(raise: Igi2AnimControllerBits.NoRootTranslation, clear: Igi2AnimControllerBits.None);
         LifeState = DeadAndStill;
-        IsDeathPositionStabilized = true;
+        SettleLoadedBody();
         MarkMindDead(true);
         Animation.LastState = lastMainState;
         EnterLoadedState(Igi2SoldierState.Dead, saved);
@@ -114,6 +114,22 @@ public sealed partial class Igi2HumanSoldier
         Animation.ClearFlagsOnEveryController(Igi2AnimControllerBits.NoRootTranslation);
         Animation.StepMain();
         EnterLoadedState(Igi2SoldierState.Stand, saved);
+    }
+
+    // Whether the body read back dead lies still. HumanSoldier_DeSerializeHandler says it does whatever the save held, and
+    // Human_Move then never falls, slides or pushes it out of the ground again (Human_HandleDeathCollision): a body saved while
+    // it still fell came back where it hung, sank at the speed it was saved with until the ground stopped its feet, and lay
+    // with its limbs in the ground. Not retail: a body saved still moving -- the death collision leaves a body at rest with no
+    // speed -- falls on as a death does, its count of ticks near the ground (not saved) begun again; one saved at rest lies
+    // still as retail's does.
+    private void SettleLoadedBody()
+    {
+        bool isStillMoving = Speed != default;
+        IsDeathPositionStabilized = !isStillMoving;
+        if (isStillMoving)
+        {
+            DeathStabilizationTimer = 0;
+        }
     }
 
     // HumanAI's own dead byte, which the soldier's handler sets with the body's (HumanSoldier_DeSerializeHandler).

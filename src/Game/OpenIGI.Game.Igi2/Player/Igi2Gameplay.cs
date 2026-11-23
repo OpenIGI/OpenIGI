@@ -338,6 +338,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             Pickups = player.Human.Pickups,
             Mines = () => player.Mines,
             Sounds = player.Sounds,
+            Loaded = player.ResetLook,
             StatusMessages = player.StatusMessages,
             PlayedMods = request.Services.TryGet(out Engine.Titles.PlayedMods? played) ? played.Mods : [],
         };
