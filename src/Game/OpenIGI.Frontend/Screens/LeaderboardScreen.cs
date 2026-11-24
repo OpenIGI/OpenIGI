@@ -79,8 +79,26 @@ public sealed class LeaderboardScreen : ShellScreen
                 : new Thickness(SideMargin, roomy ? 32f : 24f, SideMargin, roomy ? 24f : 16f),
         };
         page.ColumnDefinitions.Add(GridLength.Star);
+
+        // The matches' boards or the missions', switched at the top of the page as well as by M.
+        if (_missions is not null)
+        {
+            var which = new TabStrip(theme, ["Multiplayer", "Single player"])
+            {
+                SelectedIndex = _showMissions ? 1 : 0,
+                SegmentHeight = compact ? 30f : 34f,
+                TabPadding = compact ? 12f : 18f,
+                TextSize = compact ? 13f : 14f,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0f, 0f, 0f, compact ? 8f : 14f),
+            };
+            which.SelectionChanged += index => ShowMissions(index == 1);
+            page.RowDefinitions.Add(GridLength.Auto);
+            page.Add(which, 0, 0);
+        }
+
         page.RowDefinitions.Add(GridLength.Star);
-        page.Add(ShowingMissions ? _missions!.Root : _view.Root, 0, 0);
+        page.Add(ShowingMissions ? _missions!.Root : _view.Root, page.RowDefinitions.Count - 1, 0);
         return page;
     }
 
@@ -118,6 +136,19 @@ public sealed class LeaderboardScreen : ShellScreen
         }
     }
 
+    // The page rebuilt on the matches' boards or the missions'.
+    private void ShowMissions(bool missions)
+    {
+        if (_showMissions == missions)
+        {
+            return;
+        }
+
+        _showMissions = missions;
+        Invalidate();
+        RefreshHints();
+    }
+
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)
     {
@@ -126,9 +157,7 @@ public sealed class LeaderboardScreen : ShellScreen
         // M switches between the matches' boards and the missions'.
         if (_missions is not null && input.Keyboard.WasPressed(KeyCode.M) && _view?.ShowingRecord != true)
         {
-            _showMissions = !_showMissions;
-            Invalidate();
-            RefreshHints();
+            ShowMissions(!_showMissions);
             return false;
         }
 
