@@ -205,6 +205,10 @@ public class MissionState
     /// <summary>Gets or sets the title's weapon table.</summary>
     public WeaponTypeRegistry? WeaponTypes { get; set; }
 
+    /// <summary>Gets or sets the level's own view culling as its walk built it -- Project I.G.I.'s sector cull -- or <see langword="null"/>.</summary>
+    /// <remarks>The same cull the picture is drawn through; the simulation decides it from its own camera once a tick.</remarks>
+    public IPlacementVisibility? SectorCull { get; set; }
+
     /// <summary>What <see cref="ShotRandom"/> is seeded with as each level starts.</summary>
     public const int ShotRandomSeed = 20000101;
 

@@ -214,8 +214,6 @@ internal sealed class SoldierWeaponDrawer(
     public bool IsSectorVisible(SoldierGroup group, SoldierMember member) =>
         Visibility is not { } cull || IsDrawn(cull, group, member);
 
-    // The soldier's own position is what the inside sphere is measured to; its exclusion sphere is its mesh's render sphere,
-    // moved by the root bone and turned by the body, as a bone object is excluded.
     /// <summary>How far past its render sphere a soldier's pose and the gun in its hand can reach, as a multiple.</summary>
     /// <remarks>
     /// A bounds scale: the sphere is the mesh's rest pose, and the frame's pose -- a
@@ -240,18 +238,8 @@ internal sealed class SoldierWeaponDrawer(
             model.RenderSphereRadius * toMetres * ViewBoundsScale);
     }
 
-    private static bool IsDrawn(Game.Igi1.World.Igi1SectorVisibility cull, SoldierGroup group, SoldierMember member)
-    {
-        Vector3d origin = WorldScene.ToUnits(member.DrawnWhere);
-        if (group.Body.Model is not { } model)
-        {
-            return cull.IsObjectVisible(origin, origin, 0f);
-        }
-
-        Vector3f root = model.BoneHierarchy is { BoneCount: > 0 } rig ? rig.Translations[0] : Vector3f.Zero;
-        Vector3f turned = member.DrawnOrientation.Transposed().Transform(model.RenderSphereCentre + root);
-        return cull.IsObjectVisible(origin, new Vector3d(origin.X + turned.X, origin.Y + turned.Y, origin.Z + turned.Z), model.RenderSphereRadius);
-    }
+    private static bool IsDrawn(Game.Igi1.World.Igi1SectorVisibility cull, SoldierGroup group, SoldierMember member) =>
+        Game.Igi1.Ai.SoldierViewBounds.IsInSector(cull, group.Body, WorldScene.ToUnits(member.DrawnWhere), member.DrawnOrientation);
 
     private void DrawStationaryGuns(in Camera3D camera, in Matrix4f projection)
     {

@@ -140,15 +140,23 @@ public interface ISoldierBodies : IDisposable
     /// </remarks>
     int Arm(LoadedMission mission, WeaponTypeRegistry roster);
 
-    /// <summary>
-    /// Records which soldiers the main view draws closely enough to refresh their eyes this frame -- the
-    /// frustum sphere test retail's draw callback makes before it skins a body (<c>0x4D06C0</c>, the model's
-    /// radius times 1.41), and the LOD range within which that skinning reaches the eye bone.
-    /// </summary>
+    /// <summary>Tells the bodies the frame's main camera, for what the picture needs of it.</summary>
     /// <param name="camera">The frame's main camera.</param>
     /// <param name="projection">Its projection.</param>
-    /// <remarks>Only the main view counts: the shadow cascades' light cameras skin nothing in the original.</remarks>
+    /// <remarks>
+    /// Which soldiers the original's render drew and re-skinned is not read from here: the simulation looks for itself, once a
+    /// tick, from the original's camera, so the level plays the same however it is watched.
+    /// </remarks>
     void ObserveView(in Camera3D camera, in Matrix4f projection);
+
+    /// <summary>
+    /// Sets how far between their last two ticks the player's last picture drew the soldiers, from the tick's input -- the blend
+    /// the player's rounds meet them at; <see langword="null"/> when the picture was the tick itself.
+    /// </summary>
+    float? ShotViewBlend
+    {
+        set { }
+    }
 
     /// <summary>Resolves where every soldier is drawn for one rendered frame.</summary>
     /// <param name="tickFraction">How far the frame sits between the last two ticks, 0 to 1.</param>

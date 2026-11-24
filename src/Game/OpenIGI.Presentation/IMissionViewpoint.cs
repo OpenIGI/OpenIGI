@@ -45,6 +45,12 @@ public interface IMissionViewpoint
     /// <summary>Gets a value indicating whether the dead player is watched from the camera over the body.</summary>
     bool IsDeathViewActive { get; }
 
+    /// <summary>
+    /// Gets the ray the player's crosshair sits on with the camera over the shoulder, in world units, which the host hands the
+    /// player's next tick as its input; <see langword="null"/> while the camera is at the eye.
+    /// </summary>
+    (Vector3d OriginUnits, Vector3f Direction)? AimRay => null;
+
     /// <summary>Gets a value indicating whether the orbit around a climbing or interacting body has the view.</summary>
     bool IsInteractionViewActive { get; }
 

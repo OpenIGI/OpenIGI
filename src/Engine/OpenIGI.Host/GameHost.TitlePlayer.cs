@@ -313,7 +313,7 @@ public sealed partial class GameHost
         IHostTickObserver? observer = _hosted is Game.Multiplayer.IReplicatedTitle ? null : TickObserver;
         observer?.BeforeTitleTick(player);
         // Recorded for a play-test's replay, or replaced by the recording being played back.
-        player.Tick(PlaytestInput(new TitlePlayerInput(
+        TitlePlayerInput given = PlaytestInput(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
             held & ~replaced,
@@ -324,7 +324,13 @@ public sealed partial class GameHost
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
             TitleHeld: titleHeld,
             TitlePressed: _titleExtraPressed | (still ? 0UL : titleScriptPressed),
-            Raw: SampleRawKeys())));
+            Raw: SampleRawKeys(),
+            ViewBlend: _drawnTickBlend,
+            Aim: TickAim(player)));
+
+        // The blend the player saw the soldiers at, from the input as given (a replay's as recorded): what its rounds meet.
+        _soldiers?.ShotViewBlend = given.ViewBlend;
+        player.Tick(given);
         observer?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
@@ -334,6 +340,18 @@ public sealed partial class GameHost
         ForgetTitleInput();
         _titleWheel = 0f;
         return true;
+    }
+
+    /// <summary>
+    /// Where the crosshair pointed with the camera over the shoulder as the last frame drew it, from the player's eye as this tick
+    /// begins: the title's own over-the-shoulder camera, or Project I.G.I.'s viewpoint's. <see langword="null"/> at the eye.
+    /// </summary>
+    private Game.Player.TitleAim? TickAim(Game.Player.ITitlePlayer player)
+    {
+        (Core.Numerics.Vector3d OriginUnits, Core.Numerics.Vector3f Direction)? ray = player is Game.Player.ITitleOverShoulder
+            ? _titleOverShoulder.AimRay
+            : Viewpoint?.AimRay;
+        return ray is { } aim ? new Game.Player.TitleAim(aim.OriginUnits - player.EyePosition, aim.Direction) : null;
     }
 
     /// <summary>The fixed keys and buttons a title's own screens read, held now, and the wheel turned since the last tick.</summary>

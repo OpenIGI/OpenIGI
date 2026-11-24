@@ -125,6 +125,9 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     {
         TitlePlayerInput given = input;
 
+        // The crosshair's ray over the shoulder, from the eye it was measured from as the tick began.
+        Human.Rig.AimConvergenceRay = input.Aim is { } aim ? (EyePosition + aim.EyeOffset, aim.Direction) : null;
+
         // Whatever look the frames were shown is the rig's own from here: this tick takes it.
         Human.Rig.ShowLook(null);
 

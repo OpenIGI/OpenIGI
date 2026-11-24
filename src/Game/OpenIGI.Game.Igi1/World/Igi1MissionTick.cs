@@ -140,8 +140,32 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         EndTick();
 
+        // The original's render of this tick, made by the simulation itself: which soldiers it drew and re-skinned, read by
+        // the next tick (a dead body not drawn leaves the world; a guard's eye is the one its last re-skin left).
+        ObserveSoldiers();
+
         // What the tick changed, told once it is over; nothing in it reads what a listener does.
         mission.EventWatch?.Observe();
+    }
+
+    // From the camera the original renders the tick through: the cutscene's while one plays, else the player's own eye, at
+    // the zoom the sights have this tick. Never the picture's camera, which may be smoothed, over the shoulder or not there.
+    private void ObserveSoldiers()
+    {
+        if (mission.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        Igi1SectorVisibility? cull = mission.SectorCull as Igi1SectorVisibility;
+        if (mission.Cutscenes is { IsPlaying: true, Frame: { } frame })
+        {
+            soldiers.ObserveFrom(frame.Camera, frame.FieldOfView, cull);
+        }
+        else if (mission.Player is { } player)
+        {
+            soldiers.ObserveFrom(player.Camera, player.SmoothedSightZoom(1f).TanX, cull);
+        }
     }
 
     /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>

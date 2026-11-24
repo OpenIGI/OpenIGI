@@ -80,16 +80,7 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
             CaptureTickState(member);
         }
 
-        // The rigid half. When nothing moved — or smoothing is off — the tick's own values pass
-        // through verbatim, so the vanilla picture is not merely close but identical.
-        Vector3d where = smooth && member.PrevTickWhere != member.TickWhere
-            ? Vector3d.Lerp(member.PrevTickWhere, member.TickWhere, alpha)
-            : member.TickWhere;
-
-        Matrix3f orientation = smooth && member.PrevTickFacing != member.TickFacing
-            ? Matrix3f.FromEngineEulerAngles(0f, 0f, Interpolation.LerpAngle(member.PrevTickFacing, member.TickFacing, alpha))
-            : member.TickOrientation;
-
+        (Vector3d where, Matrix3f orientation) = Displayed(member, alpha, smooth);
         member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
         member.DrawnWhere = where;
         member.DrawnOrientation = orientation;
@@ -317,6 +308,28 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
         }
 
         return (member.Agent.Position, soldier.Orientation);
+    }
+
+    /// <summary>Where a soldier is drawn between its last two ticks, and how it faces there.</summary>
+    /// <param name="member">The soldier, its last two ticks recorded.</param>
+    /// <param name="alpha">How far between them, 0 to 1.</param>
+    /// <param name="smooth">Whether the picture blends the ticks at all; off, the tick's own values pass through.</param>
+    /// <returns>The placement, in metres, and the orientation.</returns>
+    /// <remarks>
+    /// The rigid half of a frame: when nothing moved -- or smoothing is off -- the tick's own values pass through verbatim, so
+    /// the vanilla picture is not merely close but identical. The player's rounds meet a body by the same formula, at the blend
+    /// the tick's input says the player saw (<see cref="SoldierHitTesting.ShotBlend"/>).
+    /// </remarks>
+    internal static (Vector3d Where, Matrix3f Orientation) Displayed(SoldierMember member, float alpha, bool smooth)
+    {
+        Vector3d where = smooth && member.PrevTickWhere != member.TickWhere
+            ? Vector3d.Lerp(member.PrevTickWhere, member.TickWhere, alpha)
+            : member.TickWhere;
+
+        Matrix3f orientation = smooth && member.PrevTickFacing != member.TickFacing
+            ? Matrix3f.FromEngineEulerAngles(0f, 0f, Interpolation.LerpAngle(member.PrevTickFacing, member.TickFacing, alpha))
+            : member.TickOrientation;
+        return (where, orientation);
     }
 
     /// <summary>The pose a body is skinned from this tick — its rig's, or its corpse's.</summary>

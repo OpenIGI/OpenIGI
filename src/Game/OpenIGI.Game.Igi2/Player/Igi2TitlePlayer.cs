@@ -650,6 +650,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
     {
+        TakeTickAim(input);
         ViewError.Tick();
         TakeCheats();
         Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);

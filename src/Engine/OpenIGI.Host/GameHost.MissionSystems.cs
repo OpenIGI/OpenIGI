@@ -175,6 +175,7 @@ public sealed partial class GameHost
             // The title's own view culling, when its walk decides it -- Project I.G.I.'s sector cull. The sequel's arrives
             // with its player instead.
             world.Visibility = built.Visibility;
+            _mission.SectorCull = built.Visibility;
             _world = world;
             solids = built.Solids ?? ObjectCollisionIndex.Build([]);
             _mission.Solids = solids;

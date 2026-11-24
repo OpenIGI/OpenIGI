@@ -37,6 +37,7 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionState.VehiclePhysics)] = "data",
         [nameof(MissionState.Terrain)] = "data",
         [nameof(MissionState.Ground)] = "data",
+        [nameof(MissionState.SectorCull)] = "data: the level's buildings and rooms, decided afresh for every view",
         [nameof(MissionState.LevelRoot)] = "data: an arena keeps every task (pickups keep theirs when taken)",
         [nameof(MissionWorld.AiConfig)] = "data",
         [nameof(MissionWorld.AnimationTriggers)] = "data",

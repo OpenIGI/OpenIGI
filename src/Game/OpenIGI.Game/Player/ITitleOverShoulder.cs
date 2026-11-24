@@ -27,9 +27,6 @@ public interface ITitleOverShoulder
 
     /// <summary>Tells the player what the over-the-shoulder move left showing this frame.</summary>
     /// <param name="showsBody">Whether the camera is far enough from the eye for the body to be drawn.</param>
-    /// <param name="aimRay">
-    /// The ray the crosshair sits on, from the drawn camera, in world units; <see langword="null"/> while the camera is at the eye,
-    /// which leaves the shots on the eye's own forward.
-    /// </param>
-    void PresentOverShoulder(bool showsBody, (Vector3d OriginUnits, Vector3f Direction)? aimRay);
+    /// <remarks>Where the crosshair points comes with the next tick's input (<see cref="TitlePlayerInput.Aim"/>), not from here.</remarks>
+    void PresentOverShoulder(bool showsBody);
 }
