@@ -143,7 +143,7 @@ public sealed class ReplayInputRoundTripTests : IDisposable
     public void A_race_against_a_run_changes_nothing_of_the_level_and_draws_its_ghost()
     {
         // The same minute played again against the first's ghost: every second of the level the same as it was without one, under
-        // the run's own settings and difficulty, and the ghost drawn in the out-of-the-fight look.
+        // the run's own settings and difficulty, and the ghost handed to the picture's ghost pass.
         ReplayFile first = ReplayFile.Read(Record(mission: 1).ToBytes());
         using RecordingGraphicsDevice device = new() { IsRecording = false };
         GameHost host = _support.Host(
@@ -169,8 +169,8 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         int compared = Math.Min(first.Tape.Digests.Count, second.Tape.Digests.Count);
         Assert.True(compared >= first.Tape.Digests.Count - 1, $"Only {compared} of {first.Tape.Digests.Count} seconds were raced.");
         Assert.Equal(first.Tape.Digests.Take(compared), second.Tape.Digests.Take(compared));
-        Assert.True(device.SilhouetteDrawCount > 0, "The ghost was never drawn.");
-        Assert.Equal(Rendering.SilhouetteGroup.Disabled, device.LastSilhouetteGroup);
+        Assert.True(device.GhostDrawCount > 0, "The ghost was never drawn.");
+        Assert.True(device.LastGhostLook.Seconds > 0f, "The ghost's look never moved on.");
     }
 
     private static Game.Multiplayer.Int3 Int3Of(Core.Numerics.Vector3d at) => Game.Multiplayer.Int3.From(at);

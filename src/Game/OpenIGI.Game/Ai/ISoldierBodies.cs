@@ -69,9 +69,10 @@ public interface ISoldierBodies : IDisposable
     {
     }
 
-    /// <summary>Draws the ghost a race shows, in the out-of-the-fight look over the finished scene, seen through walls.</summary>
+    /// <summary>Hands the ghost a race shows to the picture's ghost pass, which lays it over the lit scene, seen through walls.</summary>
     /// <param name="camera">The eye the scene is being drawn through.</param>
-    void DrawGhost(in Camera3D camera)
+    /// <param name="look">How the ghost looks this frame: its time and its glitch.</param>
+    void DrawGhost(in Camera3D camera, in GhostLook look)
     {
     }
 

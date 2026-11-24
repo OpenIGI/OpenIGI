@@ -8,8 +8,8 @@ namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The ghost a race shows: a body built as a co-op partner's is, from the level's own player's look, posed each tick from the
-/// runner's track and drawn as a silhouette over the finished scene. It is never handed to the simulation, as a partner's body
-/// is: no round meets it, no guard sees it.
+/// runner's track and handed to the picture's ghost pass, which lays it over the lit scene glowing and glitching. It is never
+/// handed to the simulation, as a partner's body is: no round meets it, no guard sees it, it casts no shadow.
 /// </summary>
 public sealed partial class SoldierRenderer
 {
@@ -75,11 +75,11 @@ public sealed partial class SoldierRenderer
     }
 
     /// <inheritdoc/>
-    public void DrawGhost(in Camera3D camera)
+    public void DrawGhost(in Camera3D camera, in GhostLook look)
     {
         if (_ghostShown && !_partnersHidden && _ghost is { } ghost)
         {
-            ghost.DrawSilhouette(camera, SilhouetteGroup.Disabled, _ghostRanges);
+            ghost.DrawGhost(camera, look, _ghostRanges);
         }
     }
 

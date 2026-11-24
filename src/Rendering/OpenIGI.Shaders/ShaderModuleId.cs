@@ -247,6 +247,12 @@ public enum ShaderModuleId
     /// <summary>Post: the remastered thermal sensor, the lit scene re-imaged as heat before the tone map (<c>Post/Thermal.slang</c>).</summary>
     Thermal,
 
+    /// <summary>World: a race's ghost, its bodies drawn into the ghost's own mask (<c>World/GhostMask.slang</c>).</summary>
+    GhostMask,
+
+    /// <summary>Post: a race's ghost laid over the lit scene before the tone map, with its glitches (<c>Post/Ghost.slang</c>).</summary>
+    Ghost,
+
     /// <summary>Post: a bomb's after-blast, its front sweeping out over the lit scene before the tone map (<c>Post/BombAfterBlast.slang</c>).</summary>
     BombAfterBlast,
 

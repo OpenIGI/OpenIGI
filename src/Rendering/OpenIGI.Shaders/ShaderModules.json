@@ -624,6 +624,14 @@
       "source": "Post/Thermal.slang"
     },
     {
+      "id": "GhostMask",
+      "source": "World/GhostMask.slang"
+    },
+    {
+      "id": "Ghost",
+      "source": "Post/Ghost.slang"
+    },
+    {
       "id": "BombAfterBlast",
       "source": "Post/BombAfterBlast.slang"
     },

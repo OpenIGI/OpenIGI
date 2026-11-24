@@ -18,6 +18,10 @@ public sealed partial class GameHost
     // The mission a start is bringing up, while the one before it is let go of; null at any other time.
     private int? _missionStarting;
 
+    // When the ghost glitches, and the moment it was first shown, by the host's clock (null before).
+    private Presentation.Rendering.GhostGlitch _ghostGlitch = new();
+    private long? _ghostShownAt;
+
     /// <summary>Gets the run being raced, or <see langword="null"/> while none is.</summary>
     public ReplayFile? RacingAgainst => _race;
 
@@ -45,6 +49,8 @@ public sealed partial class GameHost
         BorrowSettings(run.Header.Settings);
         _race = run;
         _raceLoad = -1;
+        _ghostGlitch = new Presentation.Rendering.GhostGlitch();
+        _ghostShownAt = null;
         _logger.Information("Replays", $"Racing the ghost of a run of mission {run.Header.Mission}, {run.Tape.Length / 30.0:0.#} s.");
         StartMissionWhenReadable(run.Header.Mission);
         return null;
@@ -84,6 +90,7 @@ public sealed partial class GameHost
         _race = null;
         _raceLoad = -1;
         _soldiers?.FollowGhost(null);
+        _ghostShownAt = null;
         ReturnSettings();
     }
 
@@ -107,6 +114,20 @@ public sealed partial class GameHost
         {
             StopRace();
         }
+    }
+
+    // The ghost handed to the picture, as it looks this frame: how long it has been shown and how hard it glitches.
+    private void DrawRaceGhost(in Core.Graphics.Camera3D eye)
+    {
+        if (!Racing)
+        {
+            return;
+        }
+
+        long now = _loop.TimeSource.Milliseconds;
+        _ghostShownAt ??= now;
+        Core.Graphics.GhostLook look = _ghostGlitch.Look((now - _ghostShownAt.Value) / 1000.0);
+        _soldiers?.DrawGhost(eye, look);
     }
 
     // After a tick of the race's level: the ghost where its runner was after the same tick, or where it ended.
