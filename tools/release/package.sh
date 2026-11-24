@@ -139,14 +139,11 @@ if [[ "$RID" == osx-* ]]; then
     mv "$APP/Contents/MacOS/libvulkan.1.dylib" "$APP/Contents/Frameworks/libvulkan.1.dylib"
   fi
 
-  # Ad-hoc, without the hardened runtime: that needs JIT entitlements for .NET and buys nothing unnotarized.
-  # Inside out, as Apple asks (codesign --deep is deprecated): every native library, then the bundle, which seals
-  # the main executable and the managed assemblies beside it. rcodesign walks the bundle the same way itself.
-  # release.yml's macos job checks the result with codesign --verify --strict on a Mac.
+  # Ad-hoc (sign-macos.sh says how). rcodesign signs every library and the executable as codesign would, but its
+  # seal leaves out the files beside the executable; release.yml's macos job checks the code on a Mac and re-signs
+  # the launcher it puts in the disk image.
   if command -v codesign >/dev/null 2>&1; then
-    find "$APP/Contents" -type f \( -name '*.dylib' -o -name '*.so' \) -print0 \
-      | while IFS= read -r -d '' library; do codesign --force --sign - --timestamp=none "$library"; done
-    codesign --force --sign - --timestamp=none "$APP"
+    "$ROOT/tools/release/sign-macos.sh" "$APP"
   elif command -v rcodesign >/dev/null 2>&1; then
     rcodesign sign "$APP"
   else

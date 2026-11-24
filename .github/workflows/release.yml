@@ -393,6 +393,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          sparse-checkout: tools/release
+
       - name: Check the signatures
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -406,7 +411,12 @@ jobs:
             mkdir -p "$dest" && tar -C "$dest" -xzf "$archive"
             for app in "$dest"/*.app; do
               echo "== $(basename "$archive"): $(basename "$app")"
-              codesign --verify --deep --strict --verbose=2 "$app"
+              # The code (every library and the executable) is what Apple silicon checks at launch, and must hold.
+              codesign --verify --deep --strict --ignore-resources --verbose=2 "$app"
+              # rcodesign's seal leaves out the files beside the executable, which only Gatekeeper minds, on a
+              # quarantined copy: the launcher and install.sh never quarantine, and the disk image is re-signed below.
+              codesign --verify --deep --strict "$app" >/dev/null 2>&1 \
+                || echo "::warning::$(basename "$archive"): the bundle's seal leaves files out (Gatekeeper would reject a quarantined copy)"
               codesign --display --verbose=2 "$app" 2>&1 | grep -E "Identifier|Signature|Format" || true
               # Without notarization Gatekeeper rejects it; recorded so a change in that is noticed.
               spctl --assess --type execute --verbose "$app" 2>&1 || true
@@ -423,8 +433,10 @@ jobs:
         run: |
           name="openigi-launcher-$VERSION-osx-arm64"
           mkdir -p dmg
-          # ditto keeps the signature's extended attributes and symlinks exactly as the tarball had them.
+          # ditto keeps the bundle's symlinks and attributes. A disk image is downloaded through a browser and so
+          # quarantined, and Gatekeeper wants every file sealed, which only Apple's codesign does: re-signed here.
           ditto "apps/$name/OpenIGI Launcher.app" "dmg/OpenIGI Launcher.app"
+          tools/release/sign-macos.sh "dmg/OpenIGI Launcher.app"
           ln -s /Applications dmg/Applications
           hdiutil create -volname "OpenIGI Launcher" -srcfolder dmg -fs HFS+ -format UDZO -ov "$name.dmg"
           codesign --verify --deep --strict "dmg/OpenIGI Launcher.app"
