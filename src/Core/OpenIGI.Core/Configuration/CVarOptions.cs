@@ -1,4 +1,4 @@
-namespace OpenIGI.Core.Configuration;
+﻿namespace OpenIGI.Core.Configuration;
 
 /// <summary>
 /// Behavioural attributes of a console variable.
@@ -33,4 +33,12 @@ public enum CVarOptions
 
     /// <summary>The variable belongs to the development tooling rather than to player-facing settings.</summary>
     Developer = 1 << 5,
+
+    /// <summary>The value changes what the simulation does with the same inputs: how the level plays, not how it looks or sounds.</summary>
+    /// <remarks>
+    /// A replay records every such variable with its inputs and plays the level again under the same values, and a ranked run's
+    /// rules are the values these take. Something only drawn or heard is never flagged; something the player's input already
+    /// carries (a crouch held or toggled, a look's smoothing) is recorded with the input and needs no flag either.
+    /// </remarks>
+    Simulation = 1 << 6,
 }

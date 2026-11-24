@@ -33,7 +33,7 @@ public static class NetCVars
         0f,
         0f,
         120f,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "How long a team deathmatch or free-for-all lasts on a server this game hosts, in minutes; 0 for the mode's own ten. Read when a match starts on a new map.");
 
     /// <summary>How long a round of a mode with a buy phase sells for, in seconds, from the end of its freeze time.</summary>
@@ -42,7 +42,7 @@ public static class NetCVars
         20f,
         0f,
         300f,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "How long players may buy in a search and destroy round on a server this game hosts, in seconds after the freeze time; 0 for no buying. Read as each round begins.");
 
     /// <summary>How long a decided round's result is shown before the next round begins, in seconds.</summary>
@@ -51,7 +51,7 @@ public static class NetCVars
         5f,
         1f,
         60f,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "How long a round's result is shown before the next round begins in search and destroy and elimination on a server this game hosts, in seconds. Read as each round begins.");
 
     /// <summary>How long a round the bomb ended is shown before the next, in seconds: a while to watch what it brought down.</summary>
@@ -60,7 +60,7 @@ public static class NetCVars
         10f,
         1f,
         60f,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "How long a search and destroy round the bomb ended is shown before the next round begins, in seconds, to watch the blast and the collapse; never shorter than mp_roundendtime. Read as each round begins.");
 
     /// <summary>The money each player starts a map, and each half, with (I.G.I. 2's <c>moneystart</c>).</summary>
@@ -69,7 +69,7 @@ public static class NetCVars
         1000,
         0,
         100000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The money each player starts a map with on a server this game hosts, and starts again with at the half. Taken by players joining from then on, and at the next map.");
 
     /// <summary>The most money a player may hold (<c>moneycap</c>).</summary>
@@ -78,7 +78,7 @@ public static class NetCVars
         15000,
         0,
         100000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The most money a player may hold on a server this game hosts; pay that would take it past this is cut to it. Takes hold at once.");
 
     /// <summary>The money for killing an enemy (<c>moneykill</c>).</summary>
@@ -87,7 +87,7 @@ public static class NetCVars
         800,
         0,
         20000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The money a player is paid for killing an enemy on a server this game hosts. Takes hold at once.");
 
     /// <summary>The fine for killing a team mate, taken from the killer (<c>moneyteamkill</c>, there a negative pay).</summary>
@@ -96,7 +96,7 @@ public static class NetCVars
         4000,
         0,
         20000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The money taken from a player for killing a team mate on a server this game hosts; 0 for no fine. Takes hold at once.");
 
     /// <summary>The money each player of the team that wins a round is paid (<c>moneymissionwin</c>).</summary>
@@ -105,7 +105,7 @@ public static class NetCVars
         1250,
         0,
         20000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The money each player of the team that wins a round is paid on a server this game hosts. Takes hold at once.");
 
     /// <summary>The money each player of the team that loses a round is paid (<c>moneymissionlost</c>).</summary>
@@ -114,7 +114,7 @@ public static class NetCVars
         750,
         0,
         20000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The money each player of the team that loses a round (or of either team, in a draw) is paid on a server this game hosts. Takes hold at once.");
 
     /// <summary>The money the attacker who plants the bomb is paid.</summary>
@@ -123,7 +123,7 @@ public static class NetCVars
         300,
         0,
         20000,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "The money the attacker who plants the bomb is paid on a server this game hosts. Takes hold at once.");
 
     /// <summary>Gets a server's rules with the money the settings above give.</summary>

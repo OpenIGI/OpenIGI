@@ -13,10 +13,10 @@ namespace OpenIGI.Game;
 /// here appear in the menu, the console and <c>settings.cfg</c> without any of the three being told.
 /// </para>
 /// <para>
-/// <b>Nothing declared here may change what the simulation does, with one named exception.</b> These
-/// gate presentation only — what is drawn, not what is recorded — so the determinism contract and the
-/// vanilla regression gate both stand whatever they are set to. Anything that would alter observable game
-/// logic belongs with the faithfulness work instead. The exception is <see cref="RealisticDrops"/>.
+/// Most of these only change what is drawn or heard. Those that change how the level plays -- the movement, the loadout, the
+/// grenade's cook, the drops, the bodies kept -- are flagged <see cref="CVarOptions.Simulation"/>: a replay records them
+/// with its inputs and plays the level again under the same values, and a ranked run's rules are the values they take.
+/// <c>SimulationCVarTests</c> holds every one the simulation reads to that flag.
 /// </para>
 /// </remarks>
 [CVarContainer]
@@ -69,7 +69,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_ragdoll",
             false,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Simulate the dead instead of playing the original's canned death animations."),
         vanilla: "0",
         enhanced: null);
@@ -95,7 +95,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_realistic_drops",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Dropped weapons fall as real rigid bodies. Off drops them the way the original does."),
         vanilla: "0",
         enhanced: "1");
@@ -111,7 +111,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_steady_turns",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "I.G.I. 2's player keeps moving the way he faces as he turns. Off drifts sideways after a turn, as the original does."),
         vanilla: "0",
         enhanced: "1");
@@ -133,7 +133,7 @@ public static class GameplayCVars
         CVar.Choice(
             "g_igi2_movement",
             Igi2PlayerMovement.Igi2,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look."),
         vanilla: "igi2",
         enhanced: null);
@@ -147,7 +147,7 @@ public static class GameplayCVars
     public static readonly BoolCVar Igi2Igi1Weight = CVar.Bool(
         "g_igi2_igi1_weight",
         false,
-        CVarOptions.Archive,
+        CVarOptions.Archive | CVarOptions.Simulation,
         "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.");
 
     /// <summary>What I.G.I. 2's player may carry of its primary weapons: one, as the original has it, or one of each kind.</summary>
@@ -167,7 +167,7 @@ public static class GameplayCVars
         CVar.Choice(
             "g_igi2_loadout",
             Game.Igi2Loadout.Tactical,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher."),
         vanilla: "original",
         enhanced: "tactical");
@@ -190,7 +190,7 @@ public static class GameplayCVars
         CVar.Choice(
             "g_grenade_cook",
             Game.GrenadeCook.Manual,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "When grenades cook: original, as each game shipped; or manual, fire only winds the throw up and the reload key pulls the pin."),
         vanilla: "original",
         enhanced: "manual");
@@ -204,7 +204,7 @@ public static class GameplayCVars
     public static readonly EnumCVar<Igi2MovementCompare> Igi2MovementCompare = CVar.Choice(
         "g_igi2_movement_compare",
         Game.Igi2MovementCompare.Off,
-        CVarOptions.None,
+        CVarOptions.None | CVarOptions.Simulation,
         "Stand in for I.G.I. 2's movement this session, to compare the two: off, igi2 or igi1.");
 
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
@@ -227,7 +227,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_bodies_stay",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Dead soldiers stay where they fell. Off takes a body away once it is out of sight, as the original does."),
         vanilla: "0",
         enhanced: "1");
@@ -250,7 +250,7 @@ public static class GameplayCVars
         1f,
         0f,
         8f,
-        CVarOptions.Archive,
+        CVarOptions.Archive | CVarOptions.Simulation,
         "How hard a round throws the body it kills. 0 makes them simply fall.");
 
     /// <summary>What fraction of real gravity a corpse falls at.</summary>
@@ -271,7 +271,7 @@ public static class GameplayCVars
         1f,
         0.1f,
         2f,
-        CVarOptions.Archive,
+        CVarOptions.Archive | CVarOptions.Simulation,
         "How fast a corpse falls, as a fraction of real gravity. 1 is physically honest.");
 
     /// <summary>For how long a corpse keeps any muscle tone, in seconds.</summary>
@@ -293,7 +293,7 @@ public static class GameplayCVars
         0.5f,
         0f,
         3f,
-        CVarOptions.Archive,
+        CVarOptions.Archive | CVarOptions.Simulation,
         "Seconds a corpse keeps any muscle tone before it goes limp. 0 is limp at once.");
 
     /// <summary>Whether a corpse's muscles follow the death animation rather than hold the pose it died in.</summary>
@@ -313,7 +313,7 @@ public static class GameplayCVars
     public static readonly BoolCVar RagdollMuscleClip = CVar.Bool(
         "g_ragdoll_muscle_clip",
         false,
-        CVarOptions.Archive,
+        CVarOptions.Archive | CVarOptions.Simulation,
         "Corpses play the original death animation first, then go limp: authored falls instead of physical ones.");
 
     /// <summary>Draws every soldier's bones and corpse shapes over the frame.</summary>
@@ -348,7 +348,7 @@ public static class GameplayCVars
         8,
         1,
         64,
-        CVarOptions.Archive,
+        CVarOptions.Archive | CVarOptions.Simulation,
         "Ragdoll solver substeps per tick. Higher is stiffer and more expensive.");
 
     /// <summary>Whether bullet impacts are heard as well as seen.</summary>

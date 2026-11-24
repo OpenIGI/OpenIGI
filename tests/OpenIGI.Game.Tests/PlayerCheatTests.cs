@@ -247,8 +247,8 @@ public sealed class PlayerCheatTests
     [Fact]
     public void CheatVariablesAreCheatGatedAndRetailByDefault()
     {
-        Assert.Equal(CVarOptions.Cheat, PlayerCheatCVars.Speed.Flags);
-        Assert.Equal(CVarOptions.Cheat, PlayerCheatCVars.InfiniteAmmo.Flags);
+        Assert.Equal(CVarOptions.Cheat | CVarOptions.Simulation, PlayerCheatCVars.Speed.Flags);
+        Assert.Equal(CVarOptions.Cheat | CVarOptions.Simulation, PlayerCheatCVars.InfiniteAmmo.Flags);
         Assert.Equal(CVarOptions.Cheat, PlayerCheatCVars.UnlockAllLevels.Flags);
         Assert.Equal(CVarOptions.Developer | CVarOptions.Hidden, PlayerCheatCVars.DeveloperMode.Flags);
         Assert.Equal(CVarOptions.Developer | CVarOptions.Hidden, PlayerCheatCVars.CheatsEnabled.Flags);

@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Player.Aim;
 [CVarContainer]
 public static class AdsTuningCVars
 {
-    private const CVarOptions Flags = CVarOptions.Developer;
+    private const CVarOptions Flags = CVarOptions.Developer | CVarOptions.Simulation;
 
     /// <summary>Whether the live tuning is on.</summary>
     public static readonly BoolCVar Tune = CVar.Bool(
