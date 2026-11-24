@@ -270,6 +270,11 @@ public static class GameplayMenu
                     "g_replay_keep",
                     "Replays Kept",
                     "How many of each mission's latest runs are kept. Its best runs are kept besides, however many this is.") { ShownWhen = new("g_replay_record") },
+                new SettingRow(
+                    "g_replay_submit",
+                    "Send Runs to the Boards",
+                    "When you are signed in with Discord, a completed run that betters your best is sent to the mission's board. "
+                        + "The server plays it again to check it before it counts.") { ShownWhen = new("g_replay_record") },
             ]),
 
         new SettingsPanel(

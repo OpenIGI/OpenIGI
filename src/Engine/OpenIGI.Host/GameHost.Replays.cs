@@ -295,6 +295,7 @@ public sealed partial class GameHost
 
         ReplayFile replay = new(header, new ReplayResult(outcome, Math.Max(0, run.Length - 1), score, unranked), run) { Ghost = ghost };
         ReplayMade?.Invoke(replay);
+        OfferRunToBoards(replay, sheet);
         if (!_options.SavesUserFiles)
         {
             return;

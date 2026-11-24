@@ -175,7 +175,7 @@ public sealed partial class GameHost
     private static Presentation.MissionScorePrompt PreviewScorePrompt() =>
         HudCVars.OverlayPreview.Value.Trim().Equals("missionscore_coop", StringComparison.OrdinalIgnoreCase)
             ? new Presentation.MissionScorePrompt("SPACE", SecondsLeft: 7)
-            : new Presentation.MissionScorePrompt("SPACE");
+            : new Presentation.MissionScorePrompt("SPACE", Board: "On the boards: #4 fastest", BoardGood: true);
 
     // A team match under way -- or decided, with the vote open -- and its menus, as the preview asks.
     private static void DrawPreviewMatch(FrameLoopState state, IRemasteredHudPresenter hud, string asked, int width, int height)
