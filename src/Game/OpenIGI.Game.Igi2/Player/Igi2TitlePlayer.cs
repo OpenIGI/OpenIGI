@@ -656,6 +656,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         _pressedThisTick = pressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
         Human.SteadyTurns = GameplayCVars.SteadyTurns.Value;
+        Human.Loadout = GameplayCVars.Igi2Loadout.Value;
         TakeMovementChoice(Igi2MovementChoice.Current);
         // Retail keeps the profile's flag the other way round from its menu (config.c: isInvertMouse is 1 by default, and the menu's
         // get and set negate it); the host's says what the player chose.
@@ -766,7 +767,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             Human.InvertMouse,
             Human.Movement,
             Human.Igi1Weight,
-            seed);
+            seed,
+            Human.Loadout);
         Human.Update(_frame);
 
         // HumanView_RunHandler: the view is a child of the player run after HumanPlayerInput, whose run handler reads the

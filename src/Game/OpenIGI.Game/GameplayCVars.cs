@@ -150,6 +150,28 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.");
 
+    /// <summary>What I.G.I. 2's player may carry of its primary weapons: one, as the original has it, or one of each kind.</summary>
+    /// <remarks>
+    /// <para>
+    /// The original carries one weapon of each category, and every rifle, sniper rifle, shotgun, machine gun, submachine gun and
+    /// launcher is the primary category, so taking a launcher costs the rifle. <see cref="Game.Igi2Loadout.Tactical"/> splits the
+    /// primary category by the sight each weapon is defined with: the submachine guns, the launchers and the rest, one of each.
+    /// The weight of every gun carried still slows the player as the original's does.
+    /// </para>
+    /// <para>
+    /// Another exception to the rule above: what the player carries is game logic. The Vanilla preset forces the original's, as
+    /// with <see cref="SteadyTurns"/>, and a co-op client's player is held to its command's choice on the server.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<Igi2Loadout> Igi2Loadout = Experience.Define(
+        CVar.Choice(
+            "g_igi2_loadout",
+            Game.Igi2Loadout.Tactical,
+            CVarOptions.Archive,
+            "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher."),
+        vanilla: "original",
+        enhanced: "tactical");
+
     /// <summary>A movement to compare against the chosen one, stepped by a key while playing and never saved.</summary>
     /// <remarks>
     /// <see cref="Igi2MovementCompare.Off"/> plays what <see cref="Igi2Movement"/> says; any other value stands in for it for the

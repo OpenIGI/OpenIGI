@@ -109,6 +109,50 @@ public sealed class Igi2StatusPresentationTests
         Assert.All(glyphs, v => Assert.InRange(v.Y, 0f, 720f));
     }
 
+    /// <summary>
+    /// Every primary weapon carried has a column of its own in the inventory: a second one, as a tactical loadout carries, adds a
+    /// column with its own picture, rounds and name beside the first's.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Each_primary_weapon_carried_has_its_own_inventory_column()
+    {
+        Igi2Session session = Igi2Session.Start();
+        Igi2Level level = Igi2Level.Find("location1", "level1");
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(session.Session.Services, level.Root, session.Require<Igi2PlayerTuning>())!;
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
+            session.Require<Igi2PlayerTuning>().General, default, 0f, Game.Ai.AiDifficulty.Normal, weapons: weapons);
+        Weapons.Igi2Inventory inventory = weapons.Inventory;
+        foreach (Weapons.Igi2WeaponItem primary in inventory.Weapons.Where(static w => w.IsActive && w.WeaponType.WeaponCategory == 3).ToArray())
+        {
+            inventory.Disable(primary, removeCarriedAmmo: false);
+        }
+
+        inventory.EnableWeaponType("WEAPON_ID_AK47", addAmmo: true);
+        Assert.True(weapons.Activate(inventory.FindWeapon("WEAPON_ID_AK47")!));
+        using RecordingGraphicsDevice device = new();
+        using Igi2HudRenderer hud = new(device, NullLogger.Instance);
+        hud.Load(Files());
+        SpriteBatch batch = new(device);
+
+        float[] one = PrimaryHeads();
+        inventory.EnableWeaponType("WEAPON_ID_MP5SD", addAmmo: true);
+        float[] two = PrimaryHeads();
+
+        Assert.Equal([5f], one);
+        Assert.Equal([5f, 126f], two);
+
+        // Where the half-dark column heads 120 wide and 56 high begin across: one for each primary weapon carried, a pixel apart.
+        float[] PrimaryHeads()
+        {
+            device.Draws.Clear();
+            batch.Begin(); hud.Draw(batch, player, 1280, 720); batch.End();
+            return [.. device.Draws.Where(static d => !d.Texture.IsValid && d.Vertices.Length > 0 && d.Vertices.All(static v => v.Color.A == 128)
+                    && d.Vertices.Max(static v => v.X) - d.Vertices.Min(static v => v.X) == 120f
+                    && d.Vertices.Max(static v => v.Y) - d.Vertices.Min(static v => v.Y) == 56f)
+                .Select(static d => d.Vertices.Min(static v => v.X)).Order()];
+        }
+    }
+
     /// <summary>A hit adds a red screen quad that fades away through simulation ticks; status remains without a crosshair.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Hud_draws_status_and_a_fading_directional_hit()

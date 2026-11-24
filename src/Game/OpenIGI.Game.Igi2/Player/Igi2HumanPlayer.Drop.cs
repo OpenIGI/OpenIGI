@@ -64,7 +64,8 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>
     /// Throws a carried weapon down as a pickup, <c>GunPickup_NewFromWeapon</c> and <c>Weapon_DisableWeaponType</c>: turned as the
     /// hand holds it, at the body's root raised 1228.8, thrown along the heading give or take an eighth of a turn (one draw of the
-    /// run stream), with its load and, if asked, the ammunition carried for it, which then goes with it.
+    /// run stream), with its load and, if asked, the ammunition carried for it, which then goes with it. Under a tactical loadout an
+    /// ammunition another weapon carried fires stays with the player instead (<see cref="Igi2Inventory.IsAmmoFiredByAnother"/>).
     /// </summary>
     /// <param name="type">The weapon.</param>
     /// <param name="removeCarriedAmmo">Whether its carried ammunition goes with it.</param>
@@ -82,11 +83,14 @@ public sealed partial class Igi2HumanPlayer
         (_, _, float gamma) = Igi2Pose.Angles([o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33]);
         float spread = (float)((ushort)Random.NextRaw() * IgiRandom.Scale);
         float throwGamma = (((Fpu)spread * 1.5707963705062866) + gamma - 0.7853981852531433).F;
+        bool keepShared = Loadout == Igi2Loadout.Tactical;
         int[] pockets = new int[2];
         for (int slot = 0; slot < pockets.Length; slot++)
         {
             Igi2FireTypeRounds rounds = inventory.FireTypeRounds(item, slot);
-            pockets[slot] = rounds.AmmoType is null || !removeCarriedAmmo ? 0 : rounds.Available;
+            pockets[slot] = rounds.AmmoType is null || !removeCarriedAmmo || (keepShared && inventory.IsAmmoFiredByAnother(item, slot))
+                ? 0
+                : rounds.Available;
         }
 
         Surroundings.ThrowGunPickup(
@@ -97,6 +101,6 @@ public sealed partial class Igi2HumanPlayer
             item.Loaded(0),
             pockets,
             isThrowShort: false);
-        inventory.Disable(item, removeCarriedAmmo);
+        inventory.Disable(item, removeCarriedAmmo, keepShared);
     }
 }

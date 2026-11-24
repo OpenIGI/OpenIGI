@@ -483,7 +483,16 @@ public sealed class Igi2Inventory : ISavedState
     /// <param name="category">The <c>WEAPONCATEGORY_*</c> value.</param>
     /// <param name="after">The weapon to start after, or <see langword="null"/> to start from the first.</param>
     /// <returns>The weapon, or <see langword="null"/> when none follows.</returns>
-    public Igi2WeaponItem? NextInCategory(int category, Igi2WeaponTypeTask? after)
+    public Igi2WeaponItem? NextInCategory(int category, Igi2WeaponTypeTask? after) =>
+        NextInSlot(new Igi2CarrySlot(category, Igi2PrimaryRole.None), Igi2Loadout.Original, after);
+
+    /// <summary>Finds the next carried weapon of a carry slot after a given one, without wrapping.</summary>
+    /// <param name="slot">The slot.</param>
+    /// <param name="loadout">What the player may carry, which decides each weapon's slot.</param>
+    /// <param name="after">The weapon to start after, or <see langword="null"/> to start from the first.</param>
+    /// <returns>The weapon, or <see langword="null"/> when none follows.</returns>
+    /// <remarks>Under <see cref="Igi2Loadout.Original"/> a slot is its category, and this is <see cref="NextInCategory"/>.</remarks>
+    public Igi2WeaponItem? NextInSlot(Igi2CarrySlot slot, Igi2Loadout loadout, Igi2WeaponTypeTask? after)
     {
         foreach (Igi2WeaponItem item in _weapons)
         {
@@ -497,7 +506,7 @@ public sealed class Igi2Inventory : ISavedState
                 continue;
             }
 
-            if (item.IsActive && item.WeaponType.WeaponCategory == category)
+            if (item.IsActive && Igi2CarrySlot.Of(item.WeaponType, loadout) == slot)
             {
                 return item;
             }
@@ -506,17 +515,58 @@ public sealed class Igi2Inventory : ISavedState
         return null;
     }
 
+    /// <summary>Gets whether a weapon other than the one given is carried that fires a fire type's ammunition.</summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
+    /// <returns><see langword="true"/> when another carried weapon fires it in either of its fire types.</returns>
+    public bool IsAmmoFiredByAnother(Igi2WeaponItem item, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (item.WeaponType.AmmoInfo(slot, _tables).AmmoType is not { } ammoType)
+        {
+            return false;
+        }
+
+        foreach (Igi2WeaponItem other in _weapons)
+        {
+            if (!other.IsActive || ReferenceEquals(other, item))
+            {
+                continue;
+            }
+
+            for (int otherSlot = 0; otherSlot < Igi2WeaponTypeTask.FireTypeSlots; otherSlot++)
+            {
+                if (ReferenceEquals(other.WeaponType.AmmoInfo(otherSlot, _tables).AmmoType, ammoType))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Stops carrying a weapon, emptying it and, when asked, its ammunition too (<c>Weapon_DisableWeaponType</c>, <c>igi2 0x51F060</c>).</summary>
     /// <param name="item">The weapon.</param>
     /// <param name="removeCarriedAmmo">Whether the carried rounds of its fire types' ammunition go too.</param>
-    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo)
+    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo) => Disable(item, removeCarriedAmmo, keepAmmoFiredByAnother: false);
+
+    /// <summary>Stops carrying a weapon, emptying it and, when asked, its ammunition too, unless another weapon carried fires it.</summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="removeCarriedAmmo">Whether the carried rounds of its fire types' ammunition go too.</param>
+    /// <param name="keepAmmoFiredByAnother">
+    /// Whether an ammunition another carried weapon fires stays (<see cref="IsAmmoFiredByAnother"/>): <b>not retail</b>, which
+    /// carries one weapon of each category and empties it regardless.
+    /// </param>
+    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo, bool keepAmmoFiredByAnother)
     {
         ArgumentNullException.ThrowIfNull(item);
         item.IsActive = false;
         for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
         {
             item.SetLoaded(slot, 0);
-            if (removeCarriedAmmo && item.WeaponType.AmmoInfo(slot, _tables).AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried)
+            if (removeCarriedAmmo && !(keepAmmoFiredByAnother && IsAmmoFiredByAnother(item, slot))
+                && item.WeaponType.AmmoInfo(slot, _tables).AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried)
             {
                 carried.Empty();
             }

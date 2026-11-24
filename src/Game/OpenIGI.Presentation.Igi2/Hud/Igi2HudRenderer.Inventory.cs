@@ -12,10 +12,10 @@ public sealed partial class Igi2HudRenderer
 {
     // The slots, left to right: the weapon category each shows, whether it shows the rounds carried and, if so, whether those
     // leave out the rounds loaded, its width, and the key that selects it. The three grenades share one column, the one in hand
-    // at its head.
+    // at its head. Each primary weapon carried has a column of its own, as a tactical loadout carries more than one.
     private static readonly InventorySlot[] InventorySlots =
     [
-        new(3, true, false, 120, "1"),
+        new(3, true, false, 120, "1", ColumnEach: true),
         new(2, true, false, 72, "2"),
         new(1, false, false, 64, "3"),
         new(4, true, true, 64, "4"),
@@ -45,7 +45,8 @@ public sealed partial class Igi2HudRenderer
     /// goes the weapon's short name, brighter for the weapon in hand. Each head and each name line lies on a half-dark panel.
     /// </para>
     /// <para>
-    /// The grenades are one column: the one in hand at its head, the others' names below it, each on its own line.
+    /// The grenades are one column: the one in hand at its head, the others' names below it, each on its own line. The primary
+    /// weapons are the other way round: each carried has its own column.
     /// </para>
     /// </remarks>
     private void DrawInventory(SpriteBatch batch, Igi2TitlePlayer title)
@@ -121,7 +122,17 @@ public sealed partial class Igi2HudRenderer
             : (rounds.Available + (carried.Slot.LeavesOutLoaded ? 0 : rounds.Loaded)).ToString(CultureInfo.InvariantCulture);
     }
 
-    private readonly record struct InventorySlot(int Category, bool CountsRounds, bool LeavesOutLoaded, int Width, string Key);
+    /// <summary>A column of the inventory.</summary>
+    /// <param name="Category">The weapon category it shows.</param>
+    /// <param name="CountsRounds">Whether its head shows the rounds carried.</param>
+    /// <param name="LeavesOutLoaded">Whether those leave out the rounds loaded.</param>
+    /// <param name="Width">Its width.</param>
+    /// <param name="Key">The key that selects it.</param>
+    /// <param name="ColumnEach">
+    /// Whether every weapon of its category carried has a column of its own, in the inventory's order.
+    /// <b>Not retail</b>, which carries one of each and shows the first.
+    /// </param>
+    private readonly record struct InventorySlot(int Category, bool CountsRounds, bool LeavesOutLoaded, int Width, string Key, bool ColumnEach = false);
 
     /// <summary>A weapon the inventory shows.</summary>
     /// <param name="Slot">The slot it is shown in.</param>
@@ -132,7 +143,9 @@ public sealed partial class Igi2HudRenderer
 
     /// <summary>
     /// The weapons the inventory shows, slot by slot, for both displays: the first active weapon of each slot's category, the
-    /// grenade in hand heading the grenades' column. A struct enumerator, so a frame's walk allocates nothing.
+    /// grenade in hand heading the grenades' column, and in a slot that gives each its own column every weapon of its category
+    /// carried, in the inventory's order so the columns stay put as the weapon in hand changes. A struct enumerator, so a frame's
+    /// walk allocates nothing.
     /// </summary>
     private struct CarriedSlots
     {
@@ -143,6 +156,10 @@ public sealed partial class Igi2HudRenderer
         private readonly int _swap;
         private int _index;
         private bool _inGrenades;
+
+        // In a slot that gives each weapon carried a column: whether the walk is in it, and the place reached in the inventory.
+        private bool _columnEach;
+        private int _columnAt;
 
         /// <summary>Initializes a new instance of the <see cref="CarriedSlots"/> struct.</summary>
         /// <param name="inventory">The inventory walked.</param>
@@ -163,6 +180,8 @@ public sealed partial class Igi2HudRenderer
 
             _index = -1;
             _inGrenades = false;
+            _columnEach = false;
+            _columnAt = -1;
             Current = default;
         }
 
@@ -177,24 +196,25 @@ public sealed partial class Igi2HudRenderer
         /// <returns>Whether there was one.</returns>
         public bool MoveNext()
         {
+            if (_columnEach && NextCarried(Current.Slot.Category) is { } next)
+            {
+                Current = new CarriedSlot(Current.Slot, next, true, ReferenceEquals(next, _held));
+                return true;
+            }
+
+            _columnEach = false;
             while (++_index < InventorySlots.Length)
             {
                 int at = _index == GrenadeSlot ? _swap : _index == _swap ? GrenadeSlot : _index;
                 InventorySlot slot = InventorySlots[at];
-                Igi2WeaponItem? item = null;
-                foreach (Igi2WeaponItem candidate in _inventory.Weapons)
-                {
-                    if (candidate.IsActive && candidate.WeaponType.WeaponCategory == slot.Category)
-                    {
-                        item = candidate;
-                        break;
-                    }
-                }
-
+                _columnAt = -1;
+                Igi2WeaponItem? item = NextCarried(slot.Category);
                 if (item is null)
                 {
                     continue;
                 }
+
+                _columnEach = slot.ColumnEach;
 
                 bool grenade = _index is >= GrenadeSlot and < GrenadeSlot + 3;
                 bool head = !grenade || !_inGrenades;
@@ -204,6 +224,22 @@ public sealed partial class Igi2HudRenderer
             }
 
             return false;
+        }
+
+        // The next weapon carried of a category after the place reached, in the inventory's order.
+        private Igi2WeaponItem? NextCarried(int category)
+        {
+            IReadOnlyList<Igi2WeaponItem> weapons = _inventory.Weapons;
+            while (++_columnAt < weapons.Count)
+            {
+                Igi2WeaponItem candidate = weapons[_columnAt];
+                if (candidate.IsActive && candidate.WeaponType.WeaponCategory == category)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
     }
 }

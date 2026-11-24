@@ -43,6 +43,17 @@ public static class GameplayMenu
                     "On Project I.G.I. movement in I.G.I. 2, the weapons you carry slow you as they do in I.G.I. 2: the one in hand in "
                         + "full, the rest by half, never below half speed. Off moves as freely as the first game. Choosing "
                         + "Project I.G.I. movement turns it off."),
+                new SettingRow(
+                    "g_igi2_loadout",
+                    "I.G.I. 2 Loadout",
+                    "What you carry in I.G.I. 2. Tactical carries a long gun, a submachine gun and a launcher side by side, so "
+                        + "taking a rocket launcher keeps your rifle. Original carries one primary weapon and swaps it, as the original "
+                        + "does. Every gun you carry still slows you.",
+                    Choices: new Dictionary<string, string>
+                    {
+                        ["original"] = "Original",
+                        ["tactical"] = "Tactical",
+                    }),
             ]),
 
         new SettingsPanel(

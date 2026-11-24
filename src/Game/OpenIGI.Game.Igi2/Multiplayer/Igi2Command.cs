@@ -12,6 +12,7 @@ namespace OpenIGI.Game.Igi2.Multiplayer;
 /// <param name="Movement">Whose movement the player has (<c>g_igi2_movement</c>).</param>
 /// <param name="Igi1Weight">Whether its weapons slow Project I.G.I.'s walk (<c>g_igi2_igi1_weight</c>).</param>
 /// <param name="Seed">The seed the player's stream is set to before the command runs, at most <see cref="Igi2Command.SeedLimit"/>.</param>
+/// <param name="Loadout">What the player may carry of its primary weapons (<c>g_igi2_loadout</c>).</param>
 public readonly record struct Igi2CommandStart(
     float IdealGamma,
     float IdealPitch,
@@ -20,7 +21,8 @@ public readonly record struct Igi2CommandStart(
     bool InvertMouse,
     Igi2PlayerMovement Movement,
     bool Igi1Weight,
-    uint Seed);
+    uint Seed,
+    Igi2Loadout Loadout = Igi2Loadout.Original);
 
 /// <summary>What a command left the player with that a lost key press would leave otherwise on the two machines.</summary>
 /// <param name="Chosen">The weapon chosen, by number, or -1 for none.</param>
@@ -45,9 +47,9 @@ public readonly record struct Igi2CommandEnd(int Chosen, bool Walk, float FieldO
 /// The same for everything else the two copies must agree on. The player's draws -- a round's scatter, a gun's kick -- come from
 /// its own stream, which the server's copy began afresh when the client joined: both are set from the command's seed before it
 /// runs (Source's <c>random_seed</c>). The client's own settings that steer the simulation -- steady turns, the inverted mouse
-/// a peek reads -- were the server's defaults on its copy. And the toggles a key press flips -- walk or run, the field of view,
-/// the weapon -- are carried as what they came to: a press lost with a dropped command left the two copies apart for good,
-/// and the client was put back on every step after.
+/// a peek reads, the loadout a pickup is held to -- were the server's defaults on its copy. And the toggles a key press flips --
+/// walk or run, the field of view, the weapon -- are carried as what they came to: a press lost with a dropped command left the
+/// two copies apart for good, and the client was put back on every step after.
 /// </para>
 /// </remarks>
 public static class Igi2Command
@@ -81,6 +83,9 @@ public static class Igi2Command
     private const int Igi1MovementFlag = 128;
     private const int Igi1WeightFlag = 256;
 
+    // A tactical loadout: a client that never sends it carries one primary weapon on the server, as the original does.
+    private const int TacticalLoadoutFlag = 512;
+
     // The keys that step the weapon from what is in hand, which the chosen weapon stands in for on the server.
     private static readonly Igi2HumanChannel[] WeaponSteps =
     [
@@ -113,7 +118,8 @@ public static class Igi2Command
             | (end.Walk ? WalkFlag : 0)
             | ((end.Climb & ClimbMask) << ClimbShift)
             | (start.Movement == Igi2PlayerMovement.Igi1 ? Igi1MovementFlag : 0)
-            | (start.Igi1Weight ? Igi1WeightFlag : 0);
+            | (start.Igi1Weight ? Igi1WeightFlag : 0)
+            | (start.Loadout == Igi2Loadout.Tactical ? TacticalLoadoutFlag : 0);
         command[Chosen] = end.Chosen < 0 ? 0f : end.Chosen + 1;
         command[SeedAt] = start.Seed & SeedLimit;
         command[FieldOfViewAt] = end.FieldOfView;
@@ -172,7 +178,8 @@ public static class Igi2Command
             (flags & InvertMouseFlag) != 0,
             (flags & Igi1MovementFlag) != 0 ? Igi2PlayerMovement.Igi1 : Igi2PlayerMovement.Igi2,
             (flags & Igi1WeightFlag) != 0,
-            float.IsFinite(seed) && seed >= 0f ? (uint)Math.Min(seed, SeedLimit) : 0u);
+            float.IsFinite(seed) && seed >= 0f ? (uint)Math.Min(seed, SeedLimit) : 0u,
+            (flags & TacticalLoadoutFlag) != 0 ? Igi2Loadout.Tactical : Igi2Loadout.Original);
     }
 
     /// <summary>Sets a player's stream from a command's seed, as both machines do before the command runs.</summary>
