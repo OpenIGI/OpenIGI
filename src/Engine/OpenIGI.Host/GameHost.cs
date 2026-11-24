@@ -853,6 +853,7 @@ public sealed partial class GameHost : IDisposable
             if (outcome == FrameOutcome.Tick)
             {
                 PlaytestTicked();
+                DigestTick();
             }
 
             if (outcome != FrameOutcome.Render || _options.SimulationOnly)
