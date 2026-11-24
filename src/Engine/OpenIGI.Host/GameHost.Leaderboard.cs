@@ -1,3 +1,5 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Replays;
 using OpenIGI.Net.Identity;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.Releases.Maps;
@@ -14,10 +16,52 @@ namespace OpenIGI.Host;
 public sealed partial class GameHost
 {
     private LeaderboardFeed? _leaderboardFeed;
+    private MissionBoardFeed? _missionBoardFeed;
+
+    // A board's run asked to be watched or raced, its replay coming down; taken up on the frame it arrives.
+    private (Task<byte[]?> Replay, bool Race)? _boardReplay;
 
     // The menu's leaderboards, where this run reaches the servers at all: a server, a benchmark or a capture never asks.
     private LeaderboardSource? LeaderboardSourceFor() =>
         _options.SimulationOnly || !_options.SavesUserFiles ? null : new LeaderboardSource(this);
+
+    // The single-player boards, opened on the game being played.
+    private MissionBoardFeed MissionBoardFeed => _missionBoardFeed ??= new MissionBoardFeed(new MasterRunBoardReader(RunsService), _titleRuntime.Title.Id);
+
+    // A board's run asked for: its replay brought down, to be watched or raced once it is here.
+    private void AskBoardReplay(string run, bool race)
+    {
+        if (_boardReplay is null)
+        {
+            _boardReplay = (RunsService.ReplayAsync(run), race);
+        }
+    }
+
+    /// <summary>A board's replay come down: watched or raced, the menu put away for it; or said why not.</summary>
+    /// <param name="state">The frame loop's state.</param>
+    private void CollectBoardReplay(FrameLoopState state)
+    {
+        if (_boardReplay is not { Replay.IsCompleted: true } asked)
+        {
+            return;
+        }
+
+        _boardReplay = null;
+        string? problem;
+        try
+        {
+            problem = asked.Replay.Result is { } bytes ? FromMenu(state, ReplayFile.Read(bytes), asked.Race) : "its replay is no longer kept";
+        }
+        catch (Exception ex) when (ex is AggregateException or InvalidDataException)
+        {
+            problem = (ex.InnerException ?? ex).Message.TrimEnd('.');
+        }
+
+        if (problem is not null)
+        {
+            _logger.Warning("Replays", $"A board's run was not {(asked.Race ? "raced" : "watched")}: {problem}.");
+        }
+    }
 
     // The boards, opened on the game being played.
     private LeaderboardFeed LeaderboardFeed => _leaderboardFeed ??= new LeaderboardFeed(new MasterLeaderboardReader(AccountHttp, MapService.Master), _titleRuntime.Title.Id);
@@ -30,6 +74,25 @@ public sealed partial class GameHost
     // The boards as the page sees them: the account's name and pictures, and the browser.
     private sealed class LeaderboardSource(GameHost host) : ILeaderboardSource
     {
+        public MissionBoardFeed Missions
+        {
+            get
+            {
+                MissionBoardFeed feed = host.MissionBoardFeed;
+                feed.You = host._account is { State: AccountLinkState.Linked, Account: { } account } ? account.Id : null;
+                return feed;
+            }
+        }
+
+        public IReadOnlyList<(int Id, string Name)> MissionsOf(string title) =>
+            title == host._titleRuntime.Title.Id
+                ? [.. host.ShellMissions().Where(static m => m.Campaign is null).Select(static m => (m.Id, m.Name))]
+                : [.. (Core.Titles.GameTitle.All.FirstOrDefault(game => game.Id == title)?.MissionNames ?? []).Select(static (name, i) => (i + 1, name))];
+
+        public void Watch(string run) => host.AskBoardReplay(run, race: false);
+
+        public void Race(string run) => host.AskBoardReplay(run, race: true);
+
         public LeaderboardFeed Feed
         {
             get

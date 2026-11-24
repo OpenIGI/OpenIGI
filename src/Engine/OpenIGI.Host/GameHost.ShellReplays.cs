@@ -52,19 +52,22 @@ public sealed partial class GameHost
     // A replay read from the library, then watched or raced from the menu.
     private string? FromMenu(FrameLoopState state, string path, bool race)
     {
-        if (_loadSequence.IsActive)
-        {
-            return "a mission is loading";
-        }
-
-        ReplayFile replay;
         try
         {
-            replay = ReplayFile.Read(File.ReadAllBytes(path));
+            return FromMenu(state, ReplayFile.Read(File.ReadAllBytes(path)), race);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             return ex.Message.TrimEnd('.');
+        }
+    }
+
+    // A replay watched or raced from the menu: checked, the menu put away and its mission brought up for it.
+    private string? FromMenu(FrameLoopState state, ReplayFile replay, bool race)
+    {
+        if (_loadSequence.IsActive)
+        {
+            return "a mission is loading";
         }
 
         if (ReplayProblem(replay) is { } problem)

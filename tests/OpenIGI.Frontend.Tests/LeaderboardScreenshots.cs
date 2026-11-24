@@ -49,13 +49,17 @@ public sealed class LeaderboardScreenshots
 
         foreach ((int width, int height, float density) in Sizes)
         {
-            foreach (string state in new[] { "board", "record", "loading", "empty", "failed", "alltime", "home" })
+            foreach (string state in new[] { "board", "record", "loading", "empty", "failed", "alltime", "home", "missions", "missions-all" })
             {
                 var reader = new FakeBoardReader { Hold = state == "loading", Fail = state == "failed", RowCount = state == "empty" ? 0 : 24 };
                 var boards = new FakeLeaderboard(reader);
                 if (state == "record")
                 {
                     boards.Feed.OpenRecord("900000000000000000");
+                }
+                else if (state == "missions")
+                {
+                    boards.Missions.ShowMission(1);
                 }
                 else if (state == "alltime")
                 {
@@ -78,7 +82,9 @@ public sealed class LeaderboardScreenshots
                     config,
                     new SaveSlotStore(Path.Combine(folder, "saves")));
                 var shell = new Shell(context);
-                context.Stack.Reset(state == "home" ? new MainMenuScreen(context) : new LeaderboardScreen(context), animate: false);
+                context.Stack.Reset(
+                    state == "home" ? new MainMenuScreen(context) : new LeaderboardScreen(context) { StartOnMissions = state.StartsWith("missions", StringComparison.Ordinal) },
+                    animate: false);
 
                 var layout = new LayoutContext(width, height, userScale: OpenIGI.Core.Graphics.UiScale.MenuBoost(width, height, density));
                 UiFont.MinimumPixelHeight = OpenIGI.Core.Graphics.UiScale.MenuSmallestTextPixels * MathF.Max(1f, density);

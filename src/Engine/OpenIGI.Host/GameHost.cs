@@ -766,6 +766,7 @@ public sealed partial class GameHost : IDisposable
                 UpdateEntryShot(state);
                 RunSessionCycles(state);
                 HandleReplayViewer(state);
+                CollectBoardReplay(state);
                 HandleEscape(state);
                 RunDeferredCommands(state);
                 UpdatePlayerDevices(state);
