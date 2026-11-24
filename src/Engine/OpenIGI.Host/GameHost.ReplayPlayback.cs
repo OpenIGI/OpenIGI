@@ -163,6 +163,9 @@ public sealed partial class GameHost
     /// </summary>
     internal Action<string[]>? ReplayCommandHandler { get; set; }
 
+    /// <summary>Starts the mission being played again, as the failed and pause menus' Restart does.</summary>
+    internal void RestartMissionForTesting() => _restartMission?.Invoke();
+
     /// <summary>Records a command into the run being recorded, before the tick about to run: a test's own move of its player.</summary>
     /// <param name="command">The command, its words space-separated.</param>
     internal void RecordRunCommandForTesting(string command)

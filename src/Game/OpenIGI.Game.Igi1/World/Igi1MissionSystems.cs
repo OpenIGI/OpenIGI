@@ -119,9 +119,15 @@ public static class Igi1MissionSystems
             }))
             .Add(new LevelSystem<MissionLevelBuild>(MissionSystemNames.Saves, _ =>
             {
-                // A level starts with its saves unused; a save read onto it brings its own counts.
+                // A level starts with its clock at nought and its saves unused; a save read onto it brings its own counts. The
+                // world outlives its levels -- the menu's backdrop ticked on it, a restart left the last attempt's time on it --
+                // so a level started afresh (a restarted mission, one begun from the menu) begins as one loaded cold does, as a
+                // run's replay begins it. The missiles' stream with it: drawn by the attempt before, it would not be the stream
+                // a replay of this level starts from.
+                game.World.PlayerTicks = 0;
                 game.World.SavesUsed = 0;
                 game.World.GameLoads = 0;
+                game.World.MissileStream.Restart();
                 game.Saves = new Saves.Igi1MissionSaves(game.World, game.SaveSession, host, game.MakeReadyForSave);
 
                 // A save game read onto this level may put back a gun or a box of rounds taken since: its task stays to come

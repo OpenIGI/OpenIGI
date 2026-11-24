@@ -108,7 +108,7 @@ internal static class VerifyMode
             File.WriteAllBytes(output, (replay with { Ghost = verdict.Ghost }).ToBytes());
         }
 
-        return Write(stdout, verdict.Verified ? Verified : Refused, verdict.Reason, verdict, replay.Header);
+        return Write(stdout, verdict.Verified ? Verified : Refused, verdict.Reason, verdict, replay.Header, replay);
     }
 
     /// <summary>
@@ -164,7 +164,7 @@ internal static class VerifyMode
 
     // The verdict as one line of JSON, and the exit code it goes with: with the run's header, what it says it is of and who
     // recorded it, which the boards hold against who submitted it.
-    private static int Write(Stream stdout, int code, string reason, ReplayVerdict? verdict, ReplayHeader? header = null)
+    private static int Write(Stream stdout, int code, string reason, ReplayVerdict? verdict, ReplayHeader? header = null, ReplayFile? replay = null)
     {
         using (Utf8JsonWriter json = new(stdout))
         {
@@ -183,6 +183,13 @@ internal static class VerifyMode
                 // When the run began by the player's clock: a run that reaches the boards sooner after it than it lasts was not
                 // played as it ran, which the boards flag for a person to look at.
                 json.WriteNumber("recordedAt", header.RecordedAt);
+            }
+
+            // What the file says of itself beside what was found: how many ticks it holds, and the mission time it claims.
+            if (replay is not null)
+            {
+                json.WriteNumber("length", replay.Tape.Length);
+                json.WriteNumber("claimedTicks", replay.Result.Score?.Ticks ?? 0);
             }
 
             if (verdict is not null)

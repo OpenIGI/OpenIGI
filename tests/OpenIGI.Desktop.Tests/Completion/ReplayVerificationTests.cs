@@ -4,6 +4,7 @@ using OpenIGI.Game.Replays;
 using OpenIGI.Game.Scoring;
 using OpenIGI.Host;
 using OpenIGI.Host.Replays;
+using OpenIGI.Input;
 using OpenIGI.Platform.Headless;
 using OpenIGI.Rendering.Headless;
 using OpenIGI.TestSupport;
@@ -135,12 +136,54 @@ public sealed class ReplayVerificationTests : IDisposable
             StringComparison.Ordinal);
     }
 
-    // A clean completed run of a mission: no cheat, its cutscenes played, as a player would make one.
-    private ReplayFile Record(int mission)
+    [RequiresGameDataFact]
+    public void A_run_begun_from_the_menu_is_verified_as_one_begun_straight()
+    {
+        // Played as a player plays: Play pressed over the menu's backdrop, the level it already holds brought up for the run.
+        ReplayFile run = Record(mission: 1, fromMenu: true);
+        ReplayVerdict verdict = Verify(run, "menu");
+        Assert.True(verdict.Verified, $"{verdict.Reason}: claimed {run.Result.Score}, came to {verdict.Score}, ended {run.Result.EndTick} / {verdict.EndTick}");
+    }
+
+    [RequiresGameDataFact]
+    public void A_run_begun_by_restarting_the_mission_is_verified_as_one_begun_fresh()
+    {
+        // A first attempt played for a while -- moving, turning, firing -- then the mission restarted, as after a death, and
+        // completed: the run from the restart is checked as one from a fresh start.
+        using RecordingGraphicsDevice device = new() { IsRecording = false };
+        GameHost host = _support.Host(device, new HeadlessGameWindow(), "-mission", "1", "-lockstep", "-frames", "100000000");
+        ReplayFile? completed = null;
+        host.ReplayMade = replay => completed = replay.Result.Outcome == ReplayOutcome.Completed ? replay : completed;
+        host.Start();
+        InputState input = new();
+        host.ScriptedViewInput = input;
+        for (int step = 0; host.TickOfLevel < 400 && step < 400_000 && host.Step(); step++)
+        {
+            input.BeginFrame();
+            input.Keyboard.SetKey(DefaultControls.KeyFor("MoveUp"), true);
+            input.Mouse.SetButton(MouseButton.Left, step % 40 < 4);
+            input.Mouse.AddMotion(2f, 0f);
+        }
+
+        host.RestartMissionForTesting();
+        MissionSolver solver = MissionSolver.Over(host, 1);
+        solver.Run(MaxTicks);
+        host.Stop();
+        Assert.True(solver.Outcome == true, solver.Log);
+
+        ReplayFile run = Assert.IsType<ReplayFile>(completed);
+        ReplayVerdict verdict = Verify(run, "restarted");
+        Assert.True(verdict.Verified, $"{verdict.Reason}: claimed {run.Result.Score}, came to {verdict.Score}, the tape {run.Tape.Length} ticks");
+    }
+
+    // A clean completed run of a mission: no cheat, its cutscenes played, as a player would make one; begun straight, or from the
+    // menu over the level its backdrop holds.
+    private ReplayFile Record(int mission, bool fromMenu = false)
     {
         using RecordingGraphicsDevice device = new() { IsRecording = false };
+        string id = mission.ToString(CultureInfo.InvariantCulture);
         GameHost host = _support.Host(
-            device, new HeadlessGameWindow(), "-mission", mission.ToString(CultureInfo.InvariantCulture), "-lockstep", "-frames", "100000000");
+            device, new HeadlessGameWindow(), fromMenu ? "-entrycam" : "-mission", id, "-lockstep", "-frames", "100000000");
         ReplayFile? made = null;
         host.ReplayMade = replay => made ??= replay;
         host.Start();

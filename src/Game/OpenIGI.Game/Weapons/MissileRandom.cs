@@ -11,4 +11,15 @@ public sealed class MissileRandom
 {
     /// <summary>Gets the stream.</summary>
     public IgiRandom Random { get; } = IgiRandom.Seeded();
+
+    /// <summary>
+    /// Seeds the stream again as the module opened it. <b>Not retail</b>, which seeds it once for the whole game: done as a level
+    /// starts, so a level played again begins from the stream a replay of it begins from, however many missiles the attempts
+    /// before it drew.
+    /// </summary>
+    public void Restart()
+    {
+        (uint a, uint b, uint c) = IgiRandom.Seeded().State;
+        Random.Seed(a, b, c);
+    }
 }
