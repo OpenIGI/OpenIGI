@@ -41,6 +41,12 @@ if (VerifyMode.Asked(args))
     return VerifyMode.Run(args);
 }
 
+// The boards' checker: the master's runs taken one at a time, each checked as -verify checks one (VerifyWorker).
+if (VerifyWorker.Asked(args))
+{
+    return await VerifyWorker.RunAsync(args);
+}
+
 using LogRouter logger = new();
 logger.AddSink(new ConsoleSink(minimumLevel: LogLevel.Information));
 
