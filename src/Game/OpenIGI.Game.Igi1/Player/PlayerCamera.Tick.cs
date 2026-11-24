@@ -7,6 +7,13 @@ namespace OpenIGI.Game.Igi1.Player;
 
 public sealed partial class PlayerCamera
 {
+    /// <summary>Gets or sets where the player's grenade cook comes from, or <see langword="null"/> for the setting (<see cref="GameplayCVars.GrenadeCook"/>).</summary>
+    /// <remarks>A co-op server's copy of a client's player reads the client's choice from its command.</remarks>
+    public Func<GrenadeCook>? GrenadeCookSource { get; set; }
+
+    /// <summary>Gets whether the grenade in hand ticks (<see cref="PlayerWeapons.IsGrenadeTicking"/>).</summary>
+    public bool IsGrenadeTicking => _weapons?.IsGrenadeTicking ?? false;
+
     /// <summary>Advances the body by one simulation tick.</summary>
     /// <param name="input">The window's input.</param>
     /// <param name="terrain">The level's terrain.</param>
@@ -38,6 +45,7 @@ public sealed partial class PlayerCamera
     public void TickFrame(in PlayerInputFrame frame, IGroundHeightField? terrain)
     {
         ApplyCheats(PlayerCheatOptions.Current);
+        _weapons?.GrenadeCook = GrenadeCookSource?.Invoke() ?? GameplayCVars.GrenadeCook.Value;
 
         FrameYaw = _body.Yaw;
         FramePitch = _body.Pitch;

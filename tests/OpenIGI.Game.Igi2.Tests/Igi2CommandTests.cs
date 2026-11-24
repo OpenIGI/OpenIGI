@@ -15,7 +15,7 @@ public sealed class Igi2CommandTests
         frame[(int)Igi2HumanChannel.MoveForwards] = 1f;
         frame[(int)Igi2HumanChannel.LookX] = 0.25f;
         float[] command = new float[Igi2Command.ChannelCount];
-        Igi2CommandStart start = new(1.5f, -0.2f, Unfiltered: true, SteadyTurns: true, InvertMouse: true, Igi2PlayerMovement.Igi1, Igi1Weight: true, Seed: 123456, Igi2Loadout.Tactical);
+        Igi2CommandStart start = new(1.5f, -0.2f, Unfiltered: true, SteadyTurns: true, InvertMouse: true, Igi2PlayerMovement.Igi1, Igi1Weight: true, Seed: 123456, Igi2Loadout.Tactical, GrenadeCook.Manual);
         Igi2Command.Pack(frame, start, new Igi2CommandEnd(-1, Walk: true, 0.5f, 0.6f, Climb: 3), command);
 
         float[] read = new float[Igi2HumanChannels.Count];
@@ -26,7 +26,7 @@ public sealed class Igi2CommandTests
         Assert.Equal(frame, read);
     }
 
-    /// <summary>A command that says nothing of the loadout holds its player to the original's one primary weapon.</summary>
+    /// <summary>A command that says nothing of the loadout or the cook holds its player to the original's one primary weapon and its cook.</summary>
     [Fact]
     public void A_command_without_the_loadout_carries_the_originals()
     {
@@ -36,6 +36,7 @@ public sealed class Igi2CommandTests
         Igi2CommandStart? began = Igi2Command.Unpack(command, new float[Igi2HumanChannels.Count], out _);
 
         Assert.Equal(Igi2Loadout.Original, began?.Loadout);
+        Assert.Equal(GrenadeCook.Original, began?.GrenadeCook);
     }
 
     /// <summary>What the client's player hung on after the command comes with it, for the server's copy to be weighed against.</summary>

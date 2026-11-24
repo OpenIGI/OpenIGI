@@ -244,7 +244,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             if (_game.World.Player is { } player)
             {
                 Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels, player.FrameAim, player.Weapons?.ChosenWeaponId ?? -1);
-                Igi1Command.PackAimPreferences(_channels, player.ModernAim);
+                Igi1Command.PackPreferences(_channels, player.ModernAim, player.Weapons?.GrenadeCook ?? GrenadeCook.Original);
             }
 
             return _channels;

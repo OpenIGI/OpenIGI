@@ -91,7 +91,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// </remarks>
     private void TickGrenadeCook()
     {
-        if (host.SoundOutput is null || mission.Player is null || !mission.Player.IsChargingThrow)
+        if (host.SoundOutput is null || mission.Player is null || !mission.Player.IsGrenadeTicking)
         {
             StopGrenadeCook();
             return;

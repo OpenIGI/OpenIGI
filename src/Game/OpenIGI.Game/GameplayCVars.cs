@@ -172,6 +172,29 @@ public static class GameplayCVars
         vanilla: "original",
         enhanced: "tactical");
 
+    /// <summary>When the player's grenades start to burn in hand, in both games: as each shipped, or only when the player cooks them.</summary>
+    /// <remarks>
+    /// <para>
+    /// Project I.G.I. never burns a grenade's fuse in the hand: it starts as the grenade leaves, however long the throw was held.
+    /// I.G.I. 2 pulls the pin as the throw winds up, so a throw held too long goes off in hand. <see cref="Game.GrenadeCook.Manual"/>
+    /// does neither: the fire key only winds the throw up, and the reload key pressed while it is held pulls the pin
+    /// (<see cref="Player.GrenadeCookLatch"/>). The fuse then burns in hand, is what the grenade flies with when let go, and
+    /// at nothing goes off where it is.
+    /// </para>
+    /// <para>
+    /// Another exception to the rule above: when a grenade goes off is game logic. The Vanilla preset forces each game's own, as
+    /// with <see cref="SteadyTurns"/>, and a co-op client's player is held to its command's choice on the server.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<GrenadeCook> GrenadeCook = Experience.Define(
+        CVar.Choice(
+            "g_grenade_cook",
+            Game.GrenadeCook.Manual,
+            CVarOptions.Archive,
+            "When grenades cook: original, as each game shipped; or manual, fire only winds the throw up and the reload key pulls the pin."),
+        vanilla: "original",
+        enhanced: "manual");
+
     /// <summary>A movement to compare against the chosen one, stepped by a key while playing and never saved.</summary>
     /// <remarks>
     /// <see cref="Igi2MovementCompare.Off"/> plays what <see cref="Igi2Movement"/> says; any other value stands in for it for the

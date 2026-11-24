@@ -155,6 +155,7 @@ public sealed class Igi2NetworkHuman
             Human.Movement = began.Movement;
             Human.Igi1Weight = began.Igi1Weight;
             Human.Loadout = began.Loadout;
+            Human.GrenadeCook = began.GrenadeCook;
         }
 
         Human.View.RunZoom();

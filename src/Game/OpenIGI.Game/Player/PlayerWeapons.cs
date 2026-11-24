@@ -779,6 +779,22 @@ public sealed class PlayerWeapons
     /// </remarks>
     public bool IsChargingThrow => State == HumanWeaponState.Throwing && _machine.ThrowCooking;
 
+    /// <summary>Gets or sets when the player's grenades cook (<see cref="GameplayCVars.GrenadeCook"/>); the original's by default.</summary>
+    /// <remarks>Its owner sets it each tick: from the setting for the player's own, from its command for a co-op client's.</remarks>
+    public GrenadeCook GrenadeCook { get; set; }
+
+    /// <summary>Gets the fuse the thrown grenade leaves with, in ticks: what a manual cook left of it, or the whole of it.</summary>
+    public int ThrowFuseTicks => _machine.ThrowFuseTicks is >= 0 and var left ? left : GrenadePhysics.FuseTicks;
+
+    /// <summary>Gets whether the last grenade went off in hand, its fuse burnt down before it was let go.</summary>
+    public bool ThrowExplodedInHand => _machine.ThrowExplodedInHand;
+
+    /// <summary>Gets whether the grenade in hand ticks, <c>grenade_tick_1</c>: while its fuse burns under a manual cook, otherwise retail's charge.</summary>
+    /// <remarks>Read by every sound that plays the tick, so the loop is heard over the fuse that is really burning.</remarks>
+    public bool IsGrenadeTicking => GrenadeCook == GrenadeCook.Manual
+        ? State == HumanWeaponState.Throwing && _machine.ThrowFuseBurning
+        : IsChargingThrow;
+
     /// <summary>Turns a throw's cook into the grenade's speed, in units a tick -- <c>0x462E50</c>'s grenade case.</summary>
     /// <param name="throwSpeed">The weapon row's thirteenth argument (record <c>+1632</c>), the muzzle velocity: 15 for both grenades.</param>
     /// <param name="chargeTicks">The cook, <c>Human+1248</c>.</param>

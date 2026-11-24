@@ -384,8 +384,11 @@ internal sealed class PlayerShotResolver
                 ? GrenadeExplosionType.Flashbang
                 : GrenadeExplosionType.Normal;
 
-            // 0x462E50 replaces the thrower's velocity with the cook's speed along the view's forward axis.
-            double throwSpeed = PlayerWeapons.ThrowSpeedUnitsPerTick(thrownWeapon.MuzzleVelocity, weapons.ThrowChargeTicks);
+            // 0x462E50 replaces the thrower's velocity with the cook's speed along the view's forward axis. A grenade gone
+            // off in hand (a manual cook held too long) never leaves it.
+            double throwSpeed = weapons.ThrowExplodedInHand
+                ? 0.0
+                : PlayerWeapons.ThrowSpeedUnitsPerTick(thrownWeapon.MuzzleVelocity, weapons.ThrowChargeTicks);
             Vector3f throwVelocity = new(
                 (float)(throwSpeed * forward.X),
                 (float)(throwSpeed * forward.Y),
@@ -416,6 +419,7 @@ internal sealed class PlayerShotResolver
                     shot.Origin,
                     throwVelocity,
                     explosion,
+                    fuseTicks: weapons.ThrowExplodedInHand ? 0 : weapons.ThrowFuseTicks,
                     radiusMetres: radius,
                     falloffMetres: falloff,
                     damageFactor: damage,

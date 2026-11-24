@@ -564,7 +564,9 @@ public sealed partial class Igi2HumanPlayer
             Channels[Igi2HumanChannel.Fire] = 1f;
         }
 
-        if (Channels[Igi2HumanChannel.Fire] == 0f && Channels[Igi2HumanChannel.AlternateFire] == 0f)
+        // A manual cook gone off in hand fires nothing more until fire has been let go.
+        bool awaitingRelease = AwaitsFireRelease();
+        if (awaitingRelease || (Channels[Igi2HumanChannel.Fire] == 0f && Channels[Igi2HumanChannel.AlternateFire] == 0f))
         {
             return WantsReload(held);
         }

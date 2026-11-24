@@ -28,6 +28,8 @@ internal sealed class PlayerWeaponStateMachine
     private int _throwChargeTicks;
     private bool _throwReleased;
     private bool _throwCooking;
+    private readonly GrenadeHandFuse _fuse = new();
+    private bool _throwAwaitingRelease;
     private bool _recovering;
     private bool _changeAtLowering;
     private bool _placeRemote;
@@ -103,6 +105,18 @@ internal sealed class PlayerWeaponStateMachine
     /// <summary>Gets whether the pin is out and the grenade not yet thrown -- <c>Human+1240</c>, while <c>grenade_tick_1</c> plays.</summary>
     internal bool ThrowCooking => _throwCooking;
 
+    /// <summary>
+    /// Gets the fuse left on the grenade in hand, in ticks, once a manual cook has lit it (<see cref="GrenadeCook.Manual"/>);
+    /// or -1 while it is unlit, when the grenade leaves with the whole of its fuse, as the original's always does.
+    /// </summary>
+    internal int ThrowFuseTicks => _fuse.TicksLeft;
+
+    /// <summary>Gets whether the fuse burnt down before the grenade was let go, so it goes off in hand.</summary>
+    internal bool ThrowExplodedInHand => _fuse.ExplodedInHand;
+
+    /// <summary>Gets whether a manual cook's fuse is alight on the grenade in hand.</summary>
+    internal bool ThrowFuseBurning => _throwCooking && _fuse.Burning;
+
     /// <summary>Gets whether this tick's placement is a remote mine -- the alternate-fire byte <c>Human+0x4D2</c>.</summary>
     internal bool WantRemoteMine => _wantRemoteMine;
 
@@ -159,6 +173,7 @@ internal sealed class PlayerWeaponStateMachine
         if (!input.IsSet(PlayerInputSlot.Fire))
         {
             _medipackAwaitingRelease = false;
+            _throwAwaitingRelease = false;
         }
         _locomotionAction = locomotionAction;
 
@@ -308,6 +323,7 @@ internal sealed class PlayerWeaponStateMachine
         _wantAlternateFire = false;
         _throwReleased = false;
         _throwCooking = false;
+        _fuse.Reset();
         _recovering = false;
         _actionComplete = false;
         Request(WeaponAction.None);
@@ -380,7 +396,8 @@ internal sealed class PlayerWeaponStateMachine
                     case (WeaponCategory)PlayerWeapons.StrikingCategory:
                         return HumanWeaponState.Striking;
 
-                    case (WeaponCategory)PlayerWeapons.ThrownCategory when clip != 0:
+                    // A grenade gone off in hand leaves fire still held: the next is only wound up once it has been let go.
+                    case (WeaponCategory)PlayerWeapons.ThrownCategory when clip != 0 && !_throwAwaitingRelease:
                         return HumanWeaponState.Throwing;
 
                     case (WeaponCategory)PlayerWeapons.PlacedCategory when clip != 0:
@@ -558,6 +575,11 @@ internal sealed class PlayerWeaponStateMachine
                 _throwChargeTicks++;
             }
 
+            if (BurnFuse(input))
+            {
+                return HumanWeaponState.Throwing;
+            }
+
             if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) && !input.IsSet(PlayerInputSlot.Fire))
             {
                 // Record +1672, the weapon's second fire clip.
@@ -569,13 +591,19 @@ internal sealed class PlayerWeaponStateMachine
         }
 
         _throwChargeTicks++;
-        if (_crossedEvent(ThrowReleaseEvent))
+        if (_throwCooking && BurnFuse(input))
+        {
+            return HumanWeaponState.Throwing;
+        }
+
+        if (!_fuse.ExplodedInHand && _crossedEvent(ThrowReleaseEvent))
         {
             _wantFire = true;
             _throwCooking = false;
         }
 
-        if (!Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
+        // Gone off in hand, there is no throw left to play out: the hand comes down as it would after one.
+        if (!_fuse.ExplodedInHand && !Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
         {
             return HumanWeaponState.Throwing;
         }
@@ -585,6 +613,23 @@ internal sealed class PlayerWeaponStateMachine
         Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
         Sway.Raise();
         return TakeNextRound(HumanWeaponState.Throwing);
+    }
+
+    // Not retail: the grenade in hand under a manual cook (GrenadeHandFuse), the reload key its cook key. Burnt down before the
+    // release event let it go, it goes off in hand: the trigger byte is raised as a release raises it, with the grenade where
+    // it is (ThrowExplodedInHand), and the throw goes to its recovery on the next tick. Returns true on that tick.
+    private bool BurnFuse(PlayerInputState input)
+    {
+        if (!_fuse.Burn(_owner.GrenadeCook, input.IsSet(PlayerInputSlot.Reload), _throwCooking))
+        {
+            return false;
+        }
+
+        _wantFire = true;
+        _throwCooking = false;
+        _throwReleased = true;
+        _throwAwaitingRelease = true;
+        return true;
     }
 
     // 0x40F930 raised the trigger byte on entry, and the mine weapon (0x4755A0) laid a mine that tick or found nowhere to
@@ -868,6 +913,7 @@ internal sealed class PlayerWeaponStateMachine
                 _throwChargeTicks = 0;
                 _throwReleased = false;
                 _throwCooking = false;
+                _fuse.Reset();
                 _recovering = false;
                 Request(WeaponAction.Fire);
                 break;

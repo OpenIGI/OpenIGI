@@ -54,6 +54,18 @@ public static class GameplayMenu
                         ["original"] = "Original",
                         ["tactical"] = "Tactical",
                     }),
+                new SettingRow(
+                    "g_grenade_cook",
+                    "Grenade Cooking",
+                    "When a grenade's fuse starts in your hand, in both games. Manual: holding fire only winds the throw up, and "
+                        + "pressing the reload key while you hold it pulls the pin, so the fuse burns down before you let go and goes "
+                        + "off in your hand if you wait too long. Original plays each game as shipped: Project I.G.I. never cooks, "
+                        + "I.G.I. 2 cooks as soon as you press fire.",
+                    Choices: new Dictionary<string, string>
+                    {
+                        ["original"] = "Original",
+                        ["manual"] = "Manual (Reload Key)",
+                    }),
             ]),
 
         new SettingsPanel(

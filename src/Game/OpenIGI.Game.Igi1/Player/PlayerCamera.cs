@@ -351,9 +351,6 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// </remarks>
     public bool M203LaunchedThisTick => _weapons is not null && _weapons.M203Shots.Count > 0;
 
-    /// <summary>Gets whether a grenade throw is being charged — the hand cooking it.</summary>
-    public bool IsChargingThrow => _weapons?.IsChargingThrow ?? false;
-
     /// <summary>Gets the serial of the last round fired.</summary>
     public int ShotSequence => _weapons?.ShotSequence ?? 0;
 

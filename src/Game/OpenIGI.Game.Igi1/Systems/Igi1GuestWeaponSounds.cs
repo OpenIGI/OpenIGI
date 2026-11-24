@@ -41,7 +41,7 @@ internal sealed class Igi1GuestWeaponSounds(ITitleAudio audio, Func<Vector3d> li
             audio.Play(TimedActionSounds.M203Launch, player.Weapons?.M203Shots is { Count: > 0 } shots ? shots[0].Origin : player.Body.Eye);
         }
 
-        Hold(ref _cook, player.IsChargingThrow ? TimedActionSounds.GrenadeCook : null, listener());
+        Hold(ref _cook, player.IsGrenadeTicking ? TimedActionSounds.GrenadeCook : null, listener());
         if (triggers is not null && player.View is { } view)
         {
             foreach (string sound in triggers.SoundsCrossed(view.CrossedEvent))
