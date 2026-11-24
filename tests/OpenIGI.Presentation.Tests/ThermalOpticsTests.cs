@@ -133,6 +133,6 @@ public sealed class ThermalOpticsTests
     [InlineData(false, true, true, false)]
     [InlineData(true, false, true, false)]
     [InlineData(true, true, false, false)]
-    public void TheSensorNeedsTheSettingTheOffscreenSceneAndItsFaces(bool chosen, bool offscreen, bool faces, bool used) =>
-        Assert.Equal(used, RemasteredHudPresentation.UsesRemasteredThermal(chosen, offscreen, faces));
+    public void TheSensorNeedsTheSettingADeviceThatCapturesTheSceneAndItsFaces(bool chosen, bool sceneCapture, bool faces, bool used) =>
+        Assert.Equal(used, RemasteredHudPresentation.UsesRemasteredThermal(chosen, sceneCapture, faces));
 }

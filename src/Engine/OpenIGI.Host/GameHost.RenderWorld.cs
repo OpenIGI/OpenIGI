@@ -165,7 +165,7 @@ public sealed partial class GameHost
         SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
         RenderResolution resolution)
     {
-        bool captured = FrameCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
+        bool captured = (FrameCVars.OffscreenScene.Value || ThermalNeedsScene) && _device.BeginSceneCapture(sceneTarget);
         if (captured)
         {
             // The scheduler cleared the back buffer; the target it did not know about needs it too.

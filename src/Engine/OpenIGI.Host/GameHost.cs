@@ -402,6 +402,7 @@ public sealed partial class GameHost : IDisposable
         _platform = platform;
         _window = window;
         _device = device;
+        Presentation.Rendering.RemasteredHudPresentation.SceneCaptureAvailable = device.Capabilities.SupportsSceneCapture;
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));

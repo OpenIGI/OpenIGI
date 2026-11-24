@@ -30,6 +30,16 @@ public sealed partial class GameHost
     /// <summary>Gets a value indicating whether the remastered sensor is raised now.</summary>
     private bool RemasteredThermalUp => TitleInfraredUp && RemasteredHudPresentation.UsesRemasteredTitleThermal;
 
+    /// <summary>Gets a value indicating whether this frame's scene is drawn offscreen and deferred for the sensor, whatever the preset asks.</summary>
+    /// <remarks>
+    /// The sensor's pass runs in the resolve of the offscreen scene, and the original's preset draws straight to the back buffer:
+    /// on Vanilla the sensor was never seen and the goggles fell back to the original's view. While it is up or fading the scene
+    /// goes offscreen for it alone -- nothing else the preset turned off comes on with it -- and under Vanilla's tone map and unit
+    /// exposure the detour is a copy of the original's picture.
+    /// </remarks>
+    private bool ThermalNeedsScene =>
+        RemasteredHudPresentation.UsesRemasteredTitleThermal && (TitleInfraredUp || _thermalOptics.Amount > 0f);
+
     /// <summary>Gets the palette the sensor colours heat with: the one the key chose, or the setting's.</summary>
     private ThermalPalette ThermalPaletteShown => _thermalPaletteChosen ?? HudCVars.ThermalPalette.Value;
 
