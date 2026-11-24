@@ -194,6 +194,22 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         Grounds = Grounds,
     };
 
+    /// <summary>
+    /// Makes the surroundings of a race's ghost: the level's collision and the things it may stand at, to read; its own silent
+    /// sounds; and nothing else -- no AI to hear it, no pickups, no water, no particles, no detection.
+    /// </summary>
+    /// <param name="silent">The ghost's own sounds, which play nothing.</param>
+    /// <returns>Its surroundings; its owner is set once it is made.</returns>
+    public Igi2LevelSurroundings ForGhost(Igi2Sounds silent) => new(World, silent)
+    {
+        IsRemote = true,
+        Models = Models,
+        Materials = Materials,
+        Activatables = Activatables,
+        ById = ById,
+        Grounds = Grounds,
+    };
+
     /// <summary>Gets or sets the level's grounds by task, which a save names a body's footing by.</summary>
     public Igi2LevelGrounds? Grounds { get; set; }
 

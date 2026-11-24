@@ -90,6 +90,7 @@ public sealed partial class GameHost
         _race = null;
         _raceLoad = -1;
         _soldiers?.FollowGhost(null);
+        _titleFeatures?.Ghost?.FollowGhost(null);
         _ghostShownAt = null;
         ReturnSettings();
     }
@@ -128,6 +129,10 @@ public sealed partial class GameHost
         _ghostShownAt ??= now;
         Core.Graphics.GhostLook look = _ghostGlitch.Look((now - _ghostShownAt.Value) / 1000.0);
         _soldiers?.DrawGhost(eye, look);
+        if (_titleFeatures?.WorldModels is { } owned && owned.GhostModels is { Count: > 0 } ghost && TitleWorldModelPresenter is { } models)
+        {
+            models.DrawWorldGhosts(ghost, eye, _titlePresentationBlend, look);
+        }
     }
 
     // After a tick of the race's level: the ghost where its runner was after the same tick, or where it ended.
@@ -138,6 +143,8 @@ public sealed partial class GameHost
             return;
         }
 
-        _soldiers?.FollowGhost(ghost.At(Math.Min(tick, ghost.Length - 1)));
+        Game.Multiplayer.ReplicatedHuman? frame = ghost.At(Math.Min(tick, ghost.Length - 1));
+        _soldiers?.FollowGhost(frame);
+        _titleFeatures?.Ghost?.FollowGhost(frame);
     }
 }

@@ -20,6 +20,12 @@ public interface ITitleWorldModels
     /// </summary>
     IReadOnlyList<TitleWorldModel> OutlineModels => WorldModels;
 
+    /// <summary>
+    /// Gets the models of a race's ghost (<see cref="ITitleGhost"/>) as of the last tick: drawn only by the ghost's own pass, never
+    /// among the world's models, into a shadow or into what a ray meets.
+    /// </summary>
+    IReadOnlyList<TitleWorldModel> GhostModels => [];
+
     /// <summary>Gets depth-tested light sprites as of the last tick.</summary>
     IReadOnlyList<TitleWorldSprite> WorldSprites => [];
 

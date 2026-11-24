@@ -67,6 +67,34 @@ public sealed class ReplayTests : IDisposable
         Assert.True(partedAt >= changed, $"It parted at tick {partedAt}, before the changed input at {changed}.");
     }
 
+    [RequiresTitleDataFact("igi2")]
+    public void Igi2_race_against_a_run_changes_nothing_of_the_level_and_draws_its_ghost()
+    {
+        ReplayFile first = ReplayFile.Read(Record(21).ToBytes());
+        using RecordingGraphicsDevice device = new() { IsRecording = false };
+        GameHost host = ParityHost.Create(GameDataSource.Igi2, GameTitle.Igi2, 21, device, frames: 400 * Ticks, simulationOnly: false, "-race", Write(first, "igi2-raced"));
+        InputState input = new();
+        host.ScriptedViewInput = input;
+        ReplayFile? raced = null;
+        host.ReplayMade = replay => raced ??= replay;
+        int ticks = -1;
+        host.TickDigested = (tick, _) => ticks = tick;
+        host.Start();
+        for (int step = 0; step < 400 * Ticks && ticks < first.Tape.Length - 1 && host.Step(); step++)
+        {
+            Steer(input, ticks);
+        }
+
+        Assert.NotNull(host.RacingAgainst);
+        host.Stop();
+
+        ReplayFile second = Assert.IsType<ReplayFile>(raced);
+        int compared = Math.Min(first.Tape.Digests.Count, second.Tape.Digests.Count);
+        Assert.True(compared >= first.Tape.Digests.Count - 1, $"Only {compared} of {first.Tape.Digests.Count} seconds were raced.");
+        Assert.Equal(first.Tape.Digests.Take(compared), second.Tape.Digests.Take(compared));
+        Assert.True(device.GhostDrawCount > 0, "The ghost was never drawn.");
+    }
+
     private static ReplayFile Record(int mission)
     {
         using RecordingGraphicsDevice device = new() { IsRecording = false };
@@ -75,7 +103,7 @@ public sealed class ReplayTests : IDisposable
         host.ScriptedViewInput = input;
         ReplayFile? made = null;
         host.ReplayMade = replay => made ??= replay;
-        int ticks = 0;
+        int ticks = -1;
         host.TickDigested = (tick, _) => ticks = tick;
         host.Start();
         for (int step = 0; step < 400 * Ticks && ticks < Ticks && host.Step(); step++)
@@ -87,10 +115,16 @@ public sealed class ReplayTests : IDisposable
         return made ?? throw new Xunit.Sdk.XunitException($"A minute of I.G.I. 2 mission {mission} was played and no replay was made of it.");
     }
 
-    // The controls as a player holds them: on, looking about, firing in bursts, ducking.
+    // The controls as a player holds them: on, looking about, firing in bursts, ducking. Nothing before the level's first tick:
+    // how many frames its warm-up takes is no part of the run, and a second level loaded in a process warms up faster.
     private static void Steer(InputState input, int tick)
     {
         input.BeginFrame();
+        if (tick < 0)
+        {
+            return;
+        }
+
         int phase = tick % 300;
         input.Keyboard.SetKey(DefaultControls.KeyFor("MoveUp"), phase < 200);
         input.Keyboard.SetKey(DefaultControls.KeyFor("Crouch"), phase is >= 200 and < 240);
