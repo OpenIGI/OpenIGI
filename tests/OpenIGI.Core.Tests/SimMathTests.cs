@@ -135,41 +135,7 @@ public sealed class SimMathTests
     /// functions are not portable there; should it fail everywhere, a function changed, and every recorded replay with it.
     /// </summary>
     [Fact]
-    public void Results_are_the_same_bits_everywhere()
-    {
-        ulong hash = 14695981039346656037UL;
-        Random random = new(7);
-        for (int i = 0; i < 10000; i++)
-        {
-            // The scales are literals, not powers of ten taken here: the platform's own pow must not choose the inputs.
-            double x = (random.NextDouble() - 0.5) * Scales[random.Next(Scales.Length)];
-            double y = (random.NextDouble() - 0.5) * Scales[random.Next(Scales.Length)];
-            Fold(SimMath.Sin(x));
-            Fold(SimMath.Cos(x));
-            Fold(SimMath.Tan(x));
-            Fold(SimMath.Atan(x));
-            Fold(SimMath.Atan2(y, x));
-            Fold(SimMath.Asin(Math.Clamp(x, -1, 1)));
-            Fold(SimMath.Acos(Math.Clamp(y, -1, 1)));
-            Fold(SimMath.Exp(Math.Clamp(x, -700, 700)));
-            Fold(SimMath.Log(Math.Abs(x)));
-            Fold(SimMath.Pow(Math.Abs(x), Math.Clamp(y, -30, 30)));
-            Fold(SimMath.Tanh(x));
-        }
-
-        Assert.Equal(ExpectedFingerprint, hash);
-
-        void Fold(double value)
-        {
-            hash ^= (ulong)BitConverter.DoubleToInt64Bits(value);
-            hash *= 1099511628211UL;
-        }
-    }
-
-    private static readonly double[] Scales = [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4];
-
-    // The fingerprint of Results_are_the_same_bits_everywhere, first computed on win-x64 (2026-11-24).
-    private const ulong ExpectedFingerprint = 10322098589236398023UL;
+    public void Results_are_the_same_bits_everywhere() => Assert.Equal(SimMathFingerprint.Expected, SimMathFingerprint.Compute());
 
     private static IEnumerable<double> Values(double scale, int seed)
     {

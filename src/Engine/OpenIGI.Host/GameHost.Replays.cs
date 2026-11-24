@@ -180,6 +180,11 @@ public sealed partial class GameHost
         {
             _runUnranked = "mods are on";
         }
+        else if (!Core.Numerics.SimMathFingerprint.MatchesHere)
+        {
+            // This machine's arithmetic is not the checker's: the run would part from its playing there, so it stays here.
+            _runUnranked = "this platform's arithmetic differs from the boards' checker";
+        }
 
         _logger.Debug("Replays", $"Recording mission {missionId} from its start.");
     }
