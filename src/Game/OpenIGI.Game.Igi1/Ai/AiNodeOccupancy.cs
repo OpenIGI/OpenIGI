@@ -113,8 +113,8 @@ public sealed class AiNodeOccupancy
         // The point in the node's own frame, in two-metre cells from the grid's corner, clamped into it.
         double dx = at.X - node.Position.X;
         double dy = at.Y - node.Position.Y;
-        double sin = Math.Sin(node.Gamma);
-        double cos = Math.Cos(node.Gamma);
+        double sin = SimMath.Sin(node.Gamma);
+        double cos = SimMath.Cos(node.Gamma);
         double localX = (cos * dx) + (sin * dy);
         double localY = (-sin * dx) + (cos * dy);
         int row = (int)Math.Clamp((record.Rows * 0.5) + (localX / CellSizeInUnits), 0.0, record.Rows);
@@ -284,8 +284,8 @@ public sealed class AiNodeOccupancy
         double limit = node.Radius * GraphNode.MetreInUnits;
         double localX = Math.Clamp((row - (record.Rows / 2)) * CellSizeInUnits, -limit, limit);
         double localY = Math.Clamp((col - (record.Cols / 2)) * CellSizeInUnits, -limit, limit);
-        double sin = Math.Sin(node.Gamma);
-        double cos = Math.Cos(node.Gamma);
+        double sin = SimMath.Sin(node.Gamma);
+        double cos = SimMath.Cos(node.Gamma);
         return new Vector3d(
             node.Position.X + ((cos * localX) - (sin * localY)),
             node.Position.Y + ((sin * localX) + (cos * localY)),

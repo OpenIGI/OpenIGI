@@ -515,8 +515,8 @@ public sealed partial class Igi1HumanAi
         }
 
         // Orientation column 0 is the body's right vector. At heading zero forward is +Y and right +X.
-        double rightX = Math.Cos(Facing);
-        double rightY = Math.Sin(Facing);
+        double rightX = SimMath.Cos(Facing);
+        double rightY = SimMath.Sin(Facing);
         const double Probe = 3.0 * GraphNode.MetreInUnits;
         AiRollSpace space = AiRollSpace.None;
         if (IsInsideNodeBox(
@@ -713,8 +713,8 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        double forwardX = -Math.Sin(Facing);
-        double forwardY = Math.Cos(Facing);
+        double forwardX = -SimMath.Sin(Facing);
+        double forwardY = SimMath.Cos(Facing);
         return ((forwardX * dx) + (forwardY * dy)) / length > FollowFireCosine;
     }
 

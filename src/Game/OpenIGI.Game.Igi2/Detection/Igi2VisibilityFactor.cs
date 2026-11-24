@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Igi2.Detection;
 
 /// <summary>
@@ -42,7 +44,7 @@ public static class Igi2VisibilityFactor
         {
             Fpu half = (Fpu)light * 0.5;
             double clamped = half.Value >= 0.0 ? (half.Value <= 1.0 ? half.Value : 1.0) : 0.0;
-            factor = (float)Math.Pow(clamped, gamma);
+            factor = (float)SimMath.Pow(clamped, gamma);
         }
 
         if (posture is { } low)

@@ -143,12 +143,12 @@ internal sealed class Igi2MovementCamera
         foreach (float pitch in SearchPitches)
         {
             float heading = -1.5707963705062866f;
-            float across = (float)Math.Cos(pitch);
-            float up = (float)Math.Sin(pitch);
+            float across = (float)SimMath.Cos(pitch);
+            float up = (float)SimMath.Sin(pitch);
             for (int i = 0; i < 8; i++)
             {
-                double x = Math.Cos(heading) * across;
-                double y = Math.Sin(heading) * across;
+                double x = SimMath.Cos(heading) * across;
+                double y = SimMath.Sin(heading) * across;
                 Vector3f direction = new(
                     (float)((x * frame.M11) + (up * frame.M13) + (y * frame.M12)),
                     (float)((x * frame.M21) + (up * frame.M23) + (y * frame.M22)),
@@ -201,10 +201,10 @@ internal sealed class Igi2MovementCamera
     // sub_4DE620: the place on the orbit, in the body's frame, at the distance.
     private Vector3d OnOrbit(Vector3d anchor, Matrix3f frame)
     {
-        double cosAlpha = Math.Cos(_alpha);
-        float x = (float)(Math.Cos(_gamma) * cosAlpha);
-        double y = cosAlpha * Math.Sin(_gamma);
-        double z = Math.Sin(_alpha);
+        double cosAlpha = SimMath.Cos(_alpha);
+        float x = (float)(SimMath.Cos(_gamma) * cosAlpha);
+        double y = cosAlpha * SimMath.Sin(_gamma);
+        double z = SimMath.Sin(_alpha);
         float wx = (float)((z * frame.M13) + (y * frame.M12) + ((double)x * frame.M11));
         float wy = (float)((z * frame.M23) + (y * frame.M22) + ((double)x * frame.M21));
         float wz = (float)((z * frame.M33) + (y * frame.M32) + ((double)x * frame.M31));
@@ -271,9 +271,9 @@ internal sealed class Igi2MovementCamera
         float lx = (float)((dz * frame.M31) + (dy * frame.M21) + (dx * frame.M11));
         float ly = (float)((dz * frame.M32) + (dy * frame.M22) + (dx * frame.M12));
         float lz = (float)((dz * frame.M33) + (dy * frame.M23) + (dx * frame.M13));
-        float gamma = lx == 0f ? 0f : (float)Math.Atan2(ly, lx);
+        float gamma = lx == 0f ? 0f : (float)SimMath.Atan2(ly, lx);
         double length = Math.Sqrt(((double)lz * lz) + ((double)ly * ly) + ((double)lx * lx));
-        float pitch = length == 0.0 ? 0f : (float)Math.Asin((float)(lz / length));
+        float pitch = length == 0.0 ? 0f : (float)SimMath.Asin((float)(lz / length));
         _distance = (float)length > IdealDistance ? IdealDistance : (float)length;
         _alpha = pitch;
         _gamma = gamma;

@@ -569,7 +569,7 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
 
         BombFlies = false;
         double ahead = far ? Bomb.DropAheadMetres * WorldUnits.PerMetre : 0.0;
-        DroppedAt = new Vector3d(stood.X + (Math.Sin(BombYaw) * ahead), stood.Y + (Math.Cos(BombYaw) * ahead), stood.Z);
+        DroppedAt = new Vector3d(stood.X + (SimMath.Sin(BombYaw) * ahead), stood.Y + (SimMath.Cos(BombYaw) * ahead), stood.Z);
     }
 
     // The attacker the bomb goes to next: the first standing after the one it went to last, round the team in slot order.

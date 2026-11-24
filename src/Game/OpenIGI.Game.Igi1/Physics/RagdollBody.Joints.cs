@@ -105,7 +105,7 @@ public sealed partial class RagdollBody
             float sine = apart.Length;
             if (sine > RagdollSolver.ParallelEpsilon)
             {
-                float angle = MathF.Atan2(sine, Vector3f.Dot(own, hinge));
+                float angle = SimMathF.Atan2(sine, Vector3f.Dot(own, hinge));
                 ApplyAngular(link.Child, link.Parent, apart / sine, angle * LimitStiffness);
             }
 
@@ -118,7 +118,7 @@ public sealed partial class RagdollBody
             Matrix3f centred = BonePose.ToMatrix(Quaternion32.FromAxisAngle(hinge, middle));
             Vector3f rest = RagdollSolver.Rotate(centred, RagdollSolver.Rotate(frame, axis));
             Vector3f along = Direction(link.Child, axis);
-            float bend = MathF.Atan2(
+            float bend = SimMathF.Atan2(
                 Vector3f.Dot(Vector3f.Cross(rest, along), hinge), Vector3f.Dot(rest, along));
             Bound(link, hinge, bend, link.BendLow - middle, link.BendHigh - middle);
             _bend[link.Child] = bend + middle;
@@ -130,7 +130,7 @@ public sealed partial class RagdollBody
             Vector3f centre = RagdollSolver.Rotate(frame, link.SwingAxis.LengthSquared > 0f ? link.SwingAxis : axis);
             Vector3f along = Direction(link.Child, axis);
             float cosine = Math.Clamp(Vector3f.Dot(along, centre), -1f, 1f);
-            float off = MathF.Acos(cosine);
+            float off = SimMathF.Acos(cosine);
             float limit = link.SwingSide > 0f ? OvalLimit(link, frame, centre, along) : link.SwingLimit;
             if (off > limit)
             {
@@ -204,7 +204,7 @@ public sealed partial class RagdollBody
     private void Hamstring(RagdollJoint link, Matrix3f frame, Vector3f axis)
     {
         Vector3f along = RagdollSolver.Rotate(frame.Transposed(), Direction(link.Child, axis));
-        float fold = MathF.Atan2(along.Y, -along.Z);
+        float fold = SimMathF.Atan2(along.Y, -along.Z);
         float knee = Math.Clamp(_bend[link.Coupled] / (MathF.PI * 0.5f), 0f, 1f);
         float allowed = link.FlexStraight + ((link.FlexBent - link.FlexStraight) * knee);
         if (fold > allowed)
@@ -291,7 +291,7 @@ public sealed partial class RagdollBody
                 continue;
             }
 
-            float angle = 2f * MathF.Atan2(sine, error.W);
+            float angle = 2f * SimMathF.Atan2(sine, error.W);
             ApplyAngular(link.Child, link.Parent, vector / sine, angle * strength);
         }
     }

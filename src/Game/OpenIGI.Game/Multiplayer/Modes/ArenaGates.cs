@@ -247,7 +247,7 @@ public static partial class ArenaGates
         // Which way a larger turn faces, in the scene's own frame, so the answer is right whichever way it turns.
         Vector3d ahead = Facing(gamma + 0.5f);
         double sense = Math.Sign((facing.X * ahead.Y) - (facing.Y * ahead.X));
-        double turn = Math.Atan2((facing.X * mirrored.Y) - (facing.Y * mirrored.X), Vector3d.Dot(facing, mirrored));
+        double turn = SimMath.Atan2((facing.X * mirrored.Y) - (facing.Y * mirrored.X), Vector3d.Dot(facing, mirrored));
         double result = gamma + (sense * turn);
         return (float)(((result % Math.Tau) + Math.Tau) % Math.Tau);
     }

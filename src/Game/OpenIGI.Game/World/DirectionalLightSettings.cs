@@ -129,11 +129,11 @@ public readonly record struct DirectionalLightSettings(
     /// </remarks>
     public static Vector3f DirectionFrom(float beta, float gamma)
     {
-        float cosBeta = MathF.Cos(beta);
+        float cosBeta = SimMathF.Cos(beta);
         return new Vector3f(
-            cosBeta * MathF.Cos(gamma),
-            -cosBeta * MathF.Sin(gamma),
-            MathF.Sin(beta));
+            cosBeta * SimMathF.Cos(gamma),
+            -cosBeta * SimMathF.Sin(gamma),
+            SimMathF.Sin(beta));
     }
 
     private static GameTask? SelectKeyframe(GameTask light)

@@ -436,14 +436,14 @@ public sealed class RetailPlaneBody : RetailRigidBody
     /// </summary>
     internal static double Sine(double angle)
     {
-        double s = Math.Sin(angle);
+        double s = SimMath.Sin(angle);
         return s == angle && angle != 0.0 ? (angle > 0 ? Math.BitDecrement(s) : Math.BitIncrement(s)) : s;
     }
 
     /// <summary><c>fcos</c> under chop rounding: just under 1 for any non-zero angle, where .NET rounds up to 1.</summary>
     internal static double Cosine(double angle)
     {
-        double c = Math.Cos(angle);
+        double c = SimMath.Cos(angle);
         return c == 1.0 && angle != 0.0 ? Math.BitDecrement(1.0) : c;
     }
 

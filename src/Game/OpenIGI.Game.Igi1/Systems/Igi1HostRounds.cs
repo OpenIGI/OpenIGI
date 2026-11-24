@@ -192,7 +192,7 @@ internal sealed class Igi1HostRounds(
                 : null;
         }
 
-        Vector3f facing = new(-MathF.Sin(target.Yaw), MathF.Cos(target.Yaw), 0f);
+        Vector3f facing = new(-SimMathF.Sin(target.Yaw), SimMathF.Cos(target.Yaw), 0f);
         return Igi1HumanLineCollider.TryMeet(start, limit, target.Feet, facing, out HumanHit hit, out bool leaving)
             ? hit with { IsExit = leaving }
             : null;

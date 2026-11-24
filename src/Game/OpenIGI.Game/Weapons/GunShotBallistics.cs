@@ -216,7 +216,7 @@ public static class GunShotBallistics
         double dot = ((-direction.X / length) * normal.X)
             + ((-direction.Y / length) * normal.Y)
             + ((-direction.Z / length) * normal.Z);
-        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
+        return (float)SimMath.Acos(Math.Clamp(dot, -1.0, 1.0));
     }
 
     /// <summary>How much range is left after travelling a distance.</summary>

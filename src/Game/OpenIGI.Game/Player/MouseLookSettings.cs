@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Config;
 
 namespace OpenIGI.Game.Player;
@@ -63,7 +64,7 @@ public readonly record struct MouseLookSettings(float RadiansPerCount, bool Inve
     {
         float t = Math.Clamp(sensitivity, 0f, 1f);
         float rate = MinRadiansPerCount
-            * MathF.Pow(MaxRadiansPerCount / MinRadiansPerCount, t);
+            * SimMathF.Pow(MaxRadiansPerCount / MinRadiansPerCount, t);
         return new MouseLookSettings(rate, invertPitch);
     }
 
@@ -97,7 +98,7 @@ public readonly record struct MouseLookSettings(float RadiansPerCount, bool Inve
         }
 
         double rate = (2.0 * Math.PI) * 2.54 / (centimetres * dotsPerInch);
-        double t = Math.Log(rate / MinRadiansPerCount) / Math.Log((double)MaxRadiansPerCount / MinRadiansPerCount);
+        double t = SimMath.Log(rate / MinRadiansPerCount) / SimMath.Log((double)MaxRadiansPerCount / MinRadiansPerCount);
         return (float)Math.Clamp(t, 0.0, 1.0);
     }
 

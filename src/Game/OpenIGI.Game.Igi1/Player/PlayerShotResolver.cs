@@ -941,8 +941,8 @@ internal sealed class PlayerShotResolver
     /// </remarks>
     internal static Vector3d KnifeBladeDirection(Vector3f forward, Vector3f right, float angle)
     {
-        double c = Math.Cos(angle);
-        double s = Math.Sin(angle);
+        double c = SimMath.Cos(angle);
+        double s = SimMath.Sin(angle);
         return new Vector3d(
             (c * forward.X) - (s * right.X),
             (c * forward.Y) - (s * right.Y),

@@ -71,7 +71,7 @@ public static class MountProbe
     {
         ArgumentNullException.ThrowIfNull(walls);
         double unitsPerMetre = WorldScene.UnitsPerMetre;
-        Vector3d forward = new(Math.Sin(yaw), Math.Cos(yaw), 0.0);
+        Vector3d forward = new(SimMath.Sin(yaw), SimMath.Cos(yaw), 0.0);
         Vector3d right = new(forward.Y, -forward.X, 0.0);
         return Top(eye, forward, walls, unitsPerMetre, crouchDrop) ?? Corner(eye, forward, right, walls, unitsPerMetre);
     }

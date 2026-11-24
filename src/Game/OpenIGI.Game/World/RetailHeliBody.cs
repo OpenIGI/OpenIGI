@@ -228,7 +228,7 @@ public sealed class RetailHeliBody : RetailRigidBody
                         angle = AngleBetween(m[1], m[4], 0.0f, m[2], m[5], m[8]);
                     }
 
-                    Push(Force(0f, ((X87)Math.Cos(angle) * lift).F, lift, 0f, 0f, 0f));
+                    Push(Force(0f, ((X87)SimMath.Cos(angle) * lift).F, lift, 0f, 0f, 0f));
                 }
             }
 
@@ -336,7 +336,7 @@ public sealed class RetailHeliBody : RetailRigidBody
         }
 
         float a = (s * gain * StabiliserScale).F;
-        float sine = X87.ToFloat(Math.Sin(a)), negSine = X87.ToFloat(-Math.Sin(a)), cosine = X87.ToFloat(Math.Cos(a));
+        float sine = X87.ToFloat(SimMath.Sin(a)), negSine = X87.ToFloat(-SimMath.Sin(a)), cosine = X87.ToFloat(SimMath.Cos(a));
         float[] xr = [1f, 0f, 0f, 0f, cosine, negSine, 0f, sine, cosine];
         float[] n =
         [
@@ -470,6 +470,6 @@ public sealed class RetailHeliBody : RetailRigidBody
             return 0.0;
         }
 
-        return c <= -1.0 ? PiF : Math.Atan2(Math.Sqrt((1.0 + c) * (1.0 - c)), c);
+        return c <= -1.0 ? PiF : SimMath.Atan2(Math.Sqrt((1.0 + c) * (1.0 - c)), c);
     }
 }

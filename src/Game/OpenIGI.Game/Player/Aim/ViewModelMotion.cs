@@ -118,14 +118,14 @@ public sealed class ViewModelMotion
         float unitsPerMetre = (float)WorldScene.UnitsPerMetre;
         float lagYaw = Math.Clamp(yawRate * 0.012f, -0.07f, 0.07f) * sway;
         float lagPitch = Math.Clamp(-pitchRate * 0.010f, -0.05f, 0.05f) * sway;
-        float swing = MathF.Sin(MathF.PI * aim);
+        float swing = SimMathF.Sin(MathF.PI * aim);
         _clock += seconds;
         float breathe = aim * sway;
         _springs[0].Target = -lagYaw * 0.10f * unitsPerMetre;
         _springs[1].Target = 0f;
         _springs[2].Target = (lagPitch * 0.08f * unitsPerMetre) - (swing * 0.006f * unitsPerMetre);
-        _springs[3].Target = lagPitch + (breathe * 0.0016f * MathF.Sin((_clock * 1.7f) + 1f));
-        _springs[4].Target = lagYaw + (breathe * 0.0020f * MathF.Sin(_clock * 1.1f));
+        _springs[3].Target = lagPitch + (breathe * 0.0016f * SimMathF.Sin((_clock * 1.7f) + 1f));
+        _springs[4].Target = lagYaw + (breathe * 0.0020f * SimMathF.Sin(_clock * 1.1f));
         _springs[5].Target = (-Math.Clamp(frame.Strafe, -1f, 1f) * 2.5f * Degrees * sway) - (swing * 4f * Degrees);
 
         for (float left = seconds; left > 0f; left -= Step)

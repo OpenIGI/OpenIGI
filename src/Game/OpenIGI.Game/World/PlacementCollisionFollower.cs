@@ -129,7 +129,7 @@ public sealed class PlacementCollisionFollower
             Vector3d local = before.Orientation.Transform(feet - WorldScene.ToUnits(before.Position));
             carried = WorldScene.ToUnits(now.Position) + now.Orientation.Transposed().Transform(local);
             Vector3d ahead = now.Orientation.Transposed().Transform(before.Orientation.Transform(new Vector3d(0.0, 1.0, 0.0)));
-            turn = (float)Math.Atan2(ahead.X, ahead.Y);
+            turn = (float)SimMath.Atan2(ahead.X, ahead.Y);
             return true;
         }
 

@@ -143,7 +143,7 @@ public sealed class Igi2GunFire : IIgi2FireHandler
     private static void Spread(IgiRandom random, float spreadDegrees, float[] o, float[] into)
     {
         Fpu theta = (Fpu)random.NextDouble() * 6.283185307179589;
-        Fpu tangent = Math.Tan(((Fpu)spreadDegrees * DegreesToRadians).Value);
+        Fpu tangent = SimMath.Tan(((Fpu)spreadDegrees * DegreesToRadians).Value);
         Fpu radius = tangent * random.NextDouble();
         float across = (Fpu.Sin(theta) * radius).F;
         Fpu up = Fpu.Cos(theta) * radius;
@@ -205,7 +205,7 @@ public sealed class Igi2GunFire : IIgi2FireHandler
 
         Fpu attack = (Fpu)(double)roundsFired / gun.KickbackFactorAttackTime;
         float progress = 1.0 < attack.Value ? 1f : attack.F;
-        Fpu factor = (Fpu)Math.Pow(progress, gun.KickbackFactorAcceleration) + gun.KickbackFactorFloor;
+        Fpu factor = (Fpu)SimMath.Pow(progress, gun.KickbackFactorAcceleration) + gun.KickbackFactorFloor;
         if (factor.Value < 0.0)
         {
             factor = 0.0;

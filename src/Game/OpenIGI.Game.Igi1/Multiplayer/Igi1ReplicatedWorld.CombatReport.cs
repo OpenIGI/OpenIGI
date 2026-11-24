@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
@@ -174,7 +175,7 @@ public sealed partial class Igi1ReplicatedWorld
 
         // In front of the other, along the way it faces, on the ground there; turned to face it.
         float yaw = before.Rig.Body.Yaw;
-        Core.Numerics.Vector3d facing = new(Math.Sin(yaw), Math.Cos(yaw), 0);
+        Core.Numerics.Vector3d facing = new(SimMath.Sin(yaw), SimMath.Cos(yaw), 0);
         Core.Numerics.Vector3d spot = before.Rig.Body.Position + (facing * metres * Core.Numerics.WorldUnits.PerMetre);
         if (_game.World.Ground is { } field && field.TryGetGround(spot.X, spot.Y, spot.Z, out Game.World.TerrainGround ground))
         {

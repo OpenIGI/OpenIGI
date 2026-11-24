@@ -85,7 +85,7 @@ public sealed partial class Igi1HumanAi
             $"cone={TargetSlot.IsInCone} vis={TargetSlot.IsVisible} alert={Alerted} inst={_combatInstalled} phase={CombatPhase} " +
             $"state={CombatState} trig={Combat.PullTrigger} pa={PatrolAction} route={_route.Count} dest={DestinationNode} node={CurrentNode} onNode={CurrentNode < 0 || IsStandingOnNode(CurrentNode)} latched={_repositionLatched} chooses={_chooserCalls} claim={_occupancy?.ClaimedNode(this)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} " +
             $"believed={(Target is { HasBeenSeen: true } seenRecord ? $"({seenRecord.Position.X / 4096.0:0.0},{seenRecord.Position.Y / 4096.0:0.0}) tnode={NearestNode(seenRecord.Position)}" : "-")} " +
-            $"enemies=[{enemies}] facing={Facing * 180.0 / Math.PI:0} eyeYaw={Math.Atan2(-Eye.Orientation.M12, Eye.Orientation.M22) * 180.0 / Math.PI:0} " +
+            $"enemies=[{enemies}] facing={Facing * 180.0 / Math.PI:0} eyeYaw={SimMath.Atan2(-Eye.Orientation.M12, Eye.Orientation.M22) * 180.0 / Math.PI:0} " +
             $"pos=({Position.X / 4096.0:0.0},{Position.Y / 4096.0:0.0},{Position.Z / 4096.0:0.0})";
     }
 

@@ -532,7 +532,7 @@ public sealed partial class Igi2CarAiTask : Igi2Task, IIgi2PlacedTask
 
         double cosine = ((a.X * b.X) + (a.Z * b.Z) + (a.Y * b.Y))
             / (Math.Sqrt((a.Y * a.Y) + (a.Z * a.Z) + (a.X * a.X)) * Math.Sqrt((b.Y * b.Y) + (b.Z * b.Z) + (b.X * b.X)));
-        return cosine >= 1.0 ? 0.0 : cosine > -1.0 ? Math.Acos(cosine) : 3.1415926535897944;
+        return cosine >= 1.0 ? 0.0 : cosine > -1.0 ? SimMath.Acos(cosine) : 3.1415926535897944;
     }
 }
 

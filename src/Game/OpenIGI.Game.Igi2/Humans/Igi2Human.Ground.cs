@@ -319,7 +319,7 @@ public abstract partial class Igi2Human
     private static double Asin(double value)
     {
         double x = value < -1.0 ? -1.0 : value <= 1.0 ? value : 1.0;
-        return Math.Atan2(x, Math.Sqrt((1.0 + x) * (1.0 - x)));
+        return SimMath.Atan2(x, Math.Sqrt((1.0 + x) * (1.0 - x)));
     }
 
     /// <summary>Takes hold of what is underfoot: <c>Human_SetGroundTask</c> (<c>igi2 0x502C70</c>).</summary>

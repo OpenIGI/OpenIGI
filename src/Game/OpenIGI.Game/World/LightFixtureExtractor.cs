@@ -601,8 +601,8 @@ public static class LightFixtureExtractor
         {
             double mu = su / sw, mv = sv / sw;
             double cuu = (suu / sw) - (mu * mu), cvv = (svv / sw) - (mv * mv), cuv = (suv / sw) - (mu * mv);
-            double angle = 0.5 * Math.Atan2(2.0 * cuv, cuu - cvv);
-            axis = (e1 * Math.Cos(angle)) + (e2 * Math.Sin(angle));
+            double angle = 0.5 * SimMath.Atan2(2.0 * cuv, cuu - cvv);
+            axis = (e1 * SimMath.Cos(angle)) + (e2 * SimMath.Sin(angle));
         }
 
         Vector3d across = Vector3d.Cross(n, axis);

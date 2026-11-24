@@ -335,8 +335,8 @@ public sealed class MissileSimulation
     /// <returns>The frame, <c>Z(yaw) X(pitch)</c>.</returns>
     public static Matrix3f LauncherFrame(Vector3f forward)
     {
-        float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
-        float yaw = MathF.Atan2(-forward.X, forward.Y);
+        float pitch = SimMathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
+        float yaw = SimMathF.Atan2(-forward.X, forward.Y);
         return Matrix3f.FromEngineEulerAngles(pitch, 0f, yaw);
     }
 

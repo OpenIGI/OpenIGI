@@ -38,6 +38,6 @@ public static class PickupThrow
     public static Vector3d Velocity(double heading, bool far)
     {
         double along = far ? Forward : Forward * ShortShare;
-        return new Vector3d(Math.Sin(heading) * along, Math.Cos(heading) * along, far ? Up : ShortUp);
+        return new Vector3d(SimMath.Sin(heading) * along, SimMath.Cos(heading) * along, far ? Up : ShortUp);
     }
 }

@@ -106,7 +106,7 @@ public sealed partial class Igi2TitlePlayer
             }
 
             double ahead = ((m[1] * dx) + (m[4] * dy) + (m[7] * dz)) / length;
-            float off = (float)Math.Acos(Math.Clamp(ahead, -1.0, 1.0));
+            float off = (float)SimMath.Acos(Math.Clamp(ahead, -1.0, 1.0));
             float strength = Math.Clamp((GlintNoAngle - off) / (GlintNoAngle - GlintFullAngle), 0f, 1f);
             if (strength <= 0f)
             {

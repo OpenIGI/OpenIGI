@@ -63,6 +63,8 @@ public sealed class SimMathTests
             AssertClose(Math.Exp(x), SimMath.Exp(x), 1, $"exp({x:R})");
             double positive = Math.Exp((random.NextDouble() - 0.5) * 1400);
             AssertClose(Math.Log(positive), SimMath.Log(positive), 1, $"log({positive:R})");
+            double h = (random.NextDouble() - 0.5) * 8;
+            Assert.True(Math.Abs(Math.Tanh(h) - SimMath.Tanh(h)) <= 4e-16, $"tanh({h:R})");
             double b = random.NextDouble() * 4;
             double e = (random.NextDouble() - 0.5) * 20;
             AssertClose(Math.Pow(b, e), SimMath.Pow(b, e), 2, $"pow({b:R}, {e:R})");

@@ -329,7 +329,7 @@ public sealed class MissionWorld : MissionState, IInspectableMission
             {
                 return true;
             }
-            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+            Vector3f facing = new(-SimMathF.Sin(player.Body.Yaw), SimMathF.Cos(player.Body.Yaw), 0f);
             return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
         }
         MissileWorldTraceCast? walls = Trace is { } trace

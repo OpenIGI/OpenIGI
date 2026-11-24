@@ -154,7 +154,7 @@ public sealed class AiStationaryGun
         + TurnedOrientation.Transposed().Transform(new Vector3d(0.0, 2867.2, 0.0));
 
     /// <summary>The heading state 36 takes from the gun's turned frame (<c>0x4B3C50</c>) and turns by π.</summary>
-    public float MountFacing => MathF.Atan2(TurnedOrientation.M21, TurnedOrientation.M11) + MathF.PI;
+    public float MountFacing => SimMathF.Atan2(TurnedOrientation.M21, TurnedOrientation.M11) + MathF.PI;
 
     /// <summary>Binds the task's authored <c>WEAPON_ID_*</c> after the weapon table is available.</summary>
     public void BindWeapon(WeaponType? weapon) => Weapon = weapon;
@@ -240,7 +240,7 @@ public sealed class AiStationaryGun
     {
         Vector3d local = -Orientation.Transform(target - GunPosition);
         float yaw = (float)SignedAngleFromPositiveY(local.Y, local.X, negateWhenSecondNegative: false);
-        float pitch = -(float)Math.Atan2(local.Z, Math.Sqrt((local.X * local.X) + (local.Y * local.Y)));
+        float pitch = -(float)SimMath.Atan2(local.Z, Math.Sqrt((local.X * local.X) + (local.Y * local.Y)));
         Steer(pitch - AimPitch, yaw - AimYaw);
     }
 
@@ -343,7 +343,7 @@ public sealed class AiStationaryGun
             return 0.0;
         }
 
-        double angle = Math.Acos(Math.Clamp(y / length, -1.0, 1.0));
+        double angle = SimMath.Acos(Math.Clamp(y / length, -1.0, 1.0));
         bool negate = negateWhenSecondNegative ? second < 0.0 : second > 0.0;
         return negate ? -angle : angle;
     }

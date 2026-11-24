@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Player;
 
 /// <summary>
@@ -87,7 +89,7 @@ public sealed class HumanLandingViewKick
         }
 
         // Sampled before the step, so the dip opens at zero and the arming tick shows no jump.
-        OffsetUnits = _amplitudeUnits * MathF.Sin(_phaseRadians);
+        OffsetUnits = _amplitudeUnits * SimMathF.Sin(_phaseRadians);
 
         _phaseRadians += PhaseStepRadians;
         if (_phaseRadians >= EndPhaseRadians)

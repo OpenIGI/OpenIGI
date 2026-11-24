@@ -83,18 +83,18 @@ public readonly struct X87Single(double value) : IX87<X87Single>
     /// <summary><c>fsin</c>: precision control does not apply to it.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The sine.</returns>
-    public static X87Single Sin(X87Single a) => new(Math.Sin(a.Value));
+    public static X87Single Sin(X87Single a) => new(SimMath.Sin(a.Value));
 
     /// <summary><c>fcos</c>: precision control does not apply to it.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The cosine.</returns>
-    public static X87Single Cos(X87Single a) => new(Math.Cos(a.Value));
+    public static X87Single Cos(X87Single a) => new(SimMath.Cos(a.Value));
 
     /// <summary>The arc tangent of <paramref name="y"/> over <paramref name="x"/>, <c>fpatan</c>, which precision control does not narrow.</summary>
     /// <param name="y">The rise.</param>
     /// <param name="x">The run.</param>
     /// <returns>The angle at full precision.</returns>
-    public static X87Single Atan2(X87Single y, X87Single x) => new(Math.Atan2(y.Value, x.Value));
+    public static X87Single Atan2(X87Single y, X87Single x) => new(SimMath.Atan2(y.Value, x.Value));
 
     /// <summary><c>fistp</c> under rounding toward zero: the integer part.</summary>
     /// <param name="a">The operand.</param>

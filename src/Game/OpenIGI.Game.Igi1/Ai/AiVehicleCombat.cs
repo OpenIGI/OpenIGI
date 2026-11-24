@@ -180,7 +180,7 @@ public sealed class AiVehicleCombat
             (localDirection.X * localDirection.X) + (localDirection.Y * localDirection.Y));
         if (input.ViewGammaDegrees < 360f && horizontalLength > 1e-6)
         {
-            double angle = Math.Acos(Math.Clamp(localDirection.Y / horizontalLength, -1d, 1d))
+            double angle = SimMath.Acos(Math.Clamp(localDirection.Y / horizontalLength, -1d, 1d))
                 * 180d / Math.PI;
             if (angle > input.ViewGammaDegrees * 0.5d)
             {
@@ -191,7 +191,7 @@ public sealed class AiVehicleCombat
         if (input.ViewAlphaDegrees < 180f)
         {
             double elevation = Math.Abs(
-                Math.Asin(Math.Clamp(localDirection.Z, -1f, 1f)) * 180d / Math.PI);
+                SimMath.Asin(Math.Clamp(localDirection.Z, -1f, 1f)) * 180d / Math.PI);
             if (elevation > input.ViewAlphaDegrees * 0.5d)
             {
                 return false;

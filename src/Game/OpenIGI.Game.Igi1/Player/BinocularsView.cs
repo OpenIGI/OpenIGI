@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Player;
 
@@ -200,7 +201,7 @@ public sealed class BinocularsView
     /// <param name="degrees">The field of view.</param>
     /// <returns>The tangent of half of it.</returns>
     public static float HalfAngleTangent(float degrees) =>
-        (float)Math.Tan(degrees * 0.5f * (double)WeaponTaskParameters.DegreesToRadians);
+        (float)SimMath.Tan(degrees * 0.5f * (double)WeaponTaskParameters.DegreesToRadians);
 
     // Put away, the weapon change resets the view (0x4659E0): the default tangent, at once.
     private SightZoomFrame Closed(float tanX)

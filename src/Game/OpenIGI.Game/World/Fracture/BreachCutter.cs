@@ -40,7 +40,7 @@ public static class BreachCutter
             float z = 1f - ((i + 0.5f) * 2f / planes.Length);
             float ring = MathF.Sqrt(MathF.Max(0f, 1f - (z * z)));
             float angle = (i * golden) + (random.NextSingle() * 0.6f);
-            Vector3f normal = new Vector3f(MathF.Cos(angle) * ring, MathF.Sin(angle) * ring, z)
+            Vector3f normal = new Vector3f(SimMathF.Cos(angle) * ring, SimMathF.Sin(angle) * ring, z)
                 + (new Vector3f(random.NextSingle() - 0.5f, random.NextSingle() - 0.5f, random.NextSingle() - 0.5f) * 0.35f);
             normal = normal.Normalized();
             float reach = radius * (0.78f + (random.NextSingle() * 0.4f));

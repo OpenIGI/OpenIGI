@@ -194,8 +194,8 @@ public static class CarDynamics
             double steer = wheel.Definition.IsSteering
                 ? wheel.Definition.MaxAngleRadians * steering
                 : 0d;
-            double cos = Math.Cos(steer);
-            double sin = Math.Sin(steer);
+            double cos = SimMath.Cos(steer);
+            double sin = SimMath.Sin(steer);
             Vector3d offset = (lateral * wheel.OffsetUnits.X) + (forward * wheel.OffsetUnits.Y);
 
             if (wheel.Definition.IsEngine && thrust != 0f && driven > 0)

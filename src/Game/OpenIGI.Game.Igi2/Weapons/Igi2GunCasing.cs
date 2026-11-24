@@ -102,7 +102,7 @@ public sealed class Igi2GunCasings(Func<string, MefModel?> models)
         Vector3d at = new(objectPosition.X + offset.X, objectPosition.Y + offset.Y, objectPosition.Z + offset.Z);
 
         double angle = ejection.Angle;
-        Vector3f local = new((float)(Math.Cos(angle) * EjectionSpeed), ejection.IsGun ? EjectionSpeed : 0f, (float)(Math.Sin(angle) * EjectionSpeed));
+        Vector3f local = new((float)(SimMath.Cos(angle) * EjectionSpeed), ejection.IsGun ? EjectionSpeed : 0f, (float)(SimMath.Sin(angle) * EjectionSpeed));
         Vector3f speed = objectOrientation.Transposed().Transform(local);
         speed = new Vector3f(speed.X + holderSpeed.X, speed.Y + holderSpeed.Y, speed.Z + holderSpeed.Z);
 

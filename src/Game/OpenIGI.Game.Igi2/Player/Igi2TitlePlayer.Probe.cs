@@ -27,7 +27,7 @@ public sealed partial class Igi2TitlePlayer
         float gamma = GammaToward(Human.View.Position, target);
 
         // Up positive, as the view's own (HumanView_UpdateView).
-        float pitch = Math.Clamp((float)Math.Atan2(d.Z, flat), -Igi2HumanView.PitchLimit, Igi2HumanView.PitchLimit);
+        float pitch = Math.Clamp((float)SimMath.Atan2(d.Z, flat), -Igi2HumanView.PitchLimit, Igi2HumanView.PitchLimit);
         Human.Gamma = gamma;
         Human.IdealGamma = gamma;
         Human.View.IdealPitch = pitch;
@@ -43,7 +43,7 @@ public sealed partial class Igi2TitlePlayer
     /// <remarks>Read off the pose the heading builds (<see cref="Igi2Pose.FromAngles"/>), whose forward is its second column.</remarks>
     public static float GammaToward(Vector3d from, Vector3d to)
     {
-        double want = Math.Atan2(to.Y - from.Y, to.X - from.X);
+        double want = SimMath.Atan2(to.Y - from.Y, to.X - from.X);
         double zero = ForwardAngle(0f);
         double turn = Wrap(ForwardAngle(0.5f) - zero) >= 0 ? 1 : -1;
         return (float)Wrap((want - zero) * turn);
@@ -52,7 +52,7 @@ public sealed partial class Igi2TitlePlayer
     private static double ForwardAngle(float gamma)
     {
         Matrix3f m = Igi2Pose.FromAngles(default, new Vector3f(0f, 0f, gamma)).ToMatrix();
-        return Math.Atan2(m.M22, m.M12);
+        return SimMath.Atan2(m.M22, m.M12);
     }
 
     private static double Wrap(double angle) => Math.IEEERemainder(angle, Math.Tau);

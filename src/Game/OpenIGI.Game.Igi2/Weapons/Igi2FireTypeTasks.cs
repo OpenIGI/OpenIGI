@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -204,7 +205,7 @@ public sealed partial class Igi2ZoomTask : Igi2Task
     public float MaximumFieldOfViewScale => HalfTangent(MaximumFOV);
 
     /// <summary>The tangent of half an angle in degrees, at the FPU's precision: <c>(a × 0.5) × 0.017453292</c> through <c>fptan</c>.</summary>
-    private static float HalfTangent(float degrees) => new Fpu(Math.Tan(((new Fpu(degrees) * 0.5f) * 0.017453292f).Value)).F;
+    private static float HalfTangent(float degrees) => new Fpu(SimMath.Tan(((new Fpu(degrees) * 0.5f) * 0.017453292f).Value)).F;
 
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "Zoom";

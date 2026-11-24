@@ -62,6 +62,11 @@ public static class SimMathF
     /// <returns>Its logarithm.</returns>
     public static float Log(float x) => (float)SimMath.Log(x);
 
+    /// <summary>The hyperbolic tangent.</summary>
+    /// <param name="x">The value.</param>
+    /// <returns>Its hyperbolic tangent.</returns>
+    public static float Tanh(float x) => (float)SimMath.Tanh(x);
+
     /// <summary>A value raised to a power.</summary>
     /// <param name="x">The base.</param>
     /// <param name="y">The power.</param>

@@ -276,7 +276,7 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
     /// <c>(-sin f, cos f)</c> (see <see cref="Igi1HumanAi"/>), so the angle reads straight back out.
     /// Orientations are pure Z rotations for every body this renderer draws.
     /// </remarks>
-    public static float FacingOf(in Matrix3f orientation) => MathF.Atan2(-orientation.M12, orientation.M22);
+    public static float FacingOf(in Matrix3f orientation) => SimMathF.Atan2(-orientation.M12, orientation.M22);
 
     /// <summary>Evaluates a soldier's current animation at the heading actually displayed for this frame.</summary>
     /// <remarks>

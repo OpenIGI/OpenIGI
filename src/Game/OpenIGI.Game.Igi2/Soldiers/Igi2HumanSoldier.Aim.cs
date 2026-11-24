@@ -103,7 +103,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
 
         // Half the heading about Z: the sine stored where the product reads it so, the cosine likewise.
         double half = (double)AimGamma * 0.5;
-        Fpu sinRaw = Math.Sin(half), cosRaw = Math.Cos(half);
+        Fpu sinRaw = SimMath.Sin(half), cosRaw = SimMath.Cos(half);
         Fpu sin = sinRaw.F, cos = cosRaw.F;
         ops++;
         float a = (((Fpu)q.Y - q.Z) * sin).F;
@@ -145,10 +145,10 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
 
         Fpu tilt = (Fpu)AimAlpha * (AimAlpha >= 0f ? upShare : downShare);
         Fpu headingHalf = (Fpu)AimGamma * 0.5f;
-        Fpu gs = ((Fpu)Math.Sin(headingHalf.Value)).F;
-        Fpu gcRaw = Math.Cos(headingHalf.Value);
+        Fpu gs = ((Fpu)SimMath.Sin(headingHalf.Value)).F;
+        Fpu gcRaw = SimMath.Cos(headingHalf.Value);
         Fpu tiltHalf = tilt * 0.5f;
-        Fpu asRaw = Math.Sin(tiltHalf.Value), acRaw = Math.Cos(tiltHalf.Value);
+        Fpu asRaw = SimMath.Sin(tiltHalf.Value), acRaw = SimMath.Cos(tiltHalf.Value);
         Fpu gc = gcRaw.F;
 
         float c0 = ((Fpu)0f * gs).F;
@@ -211,8 +211,8 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
         }
 
         double half = (double)mind.HeadTurn * 0.5;
-        Fpu s = Math.Sin(half);
-        Fpu c = ((Fpu)Math.Cos(half)).F;
+        Fpu s = SimMath.Sin(half);
+        Fpu c = ((Fpu)SimMath.Cos(half)).F;
         Quaternion32 q = bones.Orientations[bone];
         float a = (((Fpu)q.Z - q.Y) * -s).F;
         float cc = (((Fpu)q.W - q.X) * s).F;

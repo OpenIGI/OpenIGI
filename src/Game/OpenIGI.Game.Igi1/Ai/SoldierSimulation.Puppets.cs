@@ -18,7 +18,7 @@ public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int
     /// <summary>Gets the heading an orientation turns a soldier to, the inverse of <see cref="Matrix3f.RotationZ"/>.</summary>
     /// <param name="orientation">The orientation.</param>
     /// <returns>The heading, radians.</returns>
-    public static float FacingOf(Matrix3f orientation) => MathF.Atan2(orientation.M21, orientation.M11);
+    public static float FacingOf(Matrix3f orientation) => SimMathF.Atan2(orientation.M21, orientation.M11);
 }
 
 /// <summary>A co-op client's soldiers, posed by the server's rather than run by their own minds.</summary>

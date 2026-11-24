@@ -225,6 +225,6 @@ public sealed class CombatFeedback
         // Flattened to the ground: a shot from above or below still points round the screen, not off it.
         double side = (dx * right.X) + (dy * right.Y);
         double ahead = (dx * forward.X) + (dy * forward.Y);
-        return side == 0 && ahead == 0 ? 0f : (float)Math.Atan2(side, ahead);
+        return side == 0 && ahead == 0 ? 0f : (float)SimMath.Atan2(side, ahead);
     }
 }

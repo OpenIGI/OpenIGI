@@ -816,7 +816,7 @@ public sealed class PlayerWeapons
         }
 
         float tf = (float)t;
-        return (Math.Pow(t * 50.0, 0.7) + (tf * (double)0.1f)) * throwSpeed;
+        return (SimMath.Pow(t * 50.0, 0.7) + (tf * (double)0.1f)) * throwSpeed;
     }
 
     /// <summary>Gets whether a one-shot action finished on the last tick — the original's <c>Human+1232</c>.</summary>

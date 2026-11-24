@@ -27,7 +27,7 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm) 
         else if (mission.Player is { } player)
         {
             // Another game's round: where it meets the player's body is this game's to find.
-            TakeRound(harm.Own, Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, player.Body.Position, new Vector3f(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f))));
+            TakeRound(harm.Own, Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, player.Body.Position, new Vector3f(-SimMathF.Sin(player.Body.Yaw), SimMathF.Cos(player.Body.Yaw), 0f))));
         }
     }
 

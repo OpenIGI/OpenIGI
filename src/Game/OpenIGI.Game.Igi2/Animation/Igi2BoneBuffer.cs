@@ -141,7 +141,7 @@ public static class Igi2BoneMath
     {
         ArgumentNullException.ThrowIfNull(bones);
         Fpu half = angle * 0.5f;
-        Fpu s = Math.Sin(half.Value), c = Math.Cos(half.Value);
+        Fpu s = SimMath.Sin(half.Value), c = SimMath.Cos(half.Value);
         Quaternion32 q = bones.Orientations[bone];
         float a = (((Fpu)q.Y - q.Z) * 0f).F;
         float b = (((Fpu)q.W - q.X) * 0f).F;

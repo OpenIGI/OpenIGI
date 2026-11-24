@@ -590,7 +590,7 @@ public sealed class SecurityCamera : Saves.IExchangedState
         double localY = (orientation.M32 * delta.Z)
             + (orientation.M22 * delta.Y)
             + (orientation.M12 * delta.X);
-        float error = (float)-Math.Atan2(localX, localY);
+        float error = (float)-SimMath.Atan2(localX, localY);
         if (MathF.Abs(error) <= TrackingDeadZone)
         {
             return;

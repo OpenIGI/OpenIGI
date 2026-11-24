@@ -115,8 +115,8 @@ internal sealed class PlayerFirstPersonView
 
     /// <summary>The shake's eye displacement in world units: along the view's horizontal right, and up.</summary>
     private Vector3d ViewShakeOffsetUnits => new(
-        _viewShake.RightUnits * Math.Cos(_body.Yaw),
-        -_viewShake.RightUnits * Math.Sin(_body.Yaw),
+        _viewShake.RightUnits * SimMath.Cos(_body.Yaw),
+        -_viewShake.RightUnits * SimMath.Sin(_body.Yaw),
         _viewShake.UpUnits);
 
     /// <summary>Attaches a new first-person rig built over skeleton 5's set.</summary>
@@ -360,8 +360,8 @@ internal sealed class PlayerFirstPersonView
             return look;
         }
 
-        float c = MathF.Cos(shakeRoll);
-        float sn = MathF.Sin(shakeRoll);
+        float c = SimMathF.Cos(shakeRoll);
+        float sn = SimMathF.Sin(shakeRoll);
         Vector3f right = new(look.M11, look.M12, look.M13);
         Vector3f up = new(look.M21, look.M22, look.M23);
         Vector3f forward = new(look.M31, look.M32, look.M33);

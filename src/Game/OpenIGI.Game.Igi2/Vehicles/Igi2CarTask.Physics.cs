@@ -304,7 +304,7 @@ public sealed partial class Igi2CarTask
             Fpu lx = ((vx * m[0]) + (vz * m[6])) + (vy * m[3]);
             Fpu ly = ((vx * m[1]) + (vy * m[4])) + (vz * m[7]);
             Fpu lz = ((vx * m[2]) + (vz * m[8])) + (vy * m[5]);
-            double s = Math.Sin(-gamma), c = Math.Cos(-gamma);
+            double s = SimMath.Sin(-gamma), c = SimMath.Cos(-gamma);
             Fpu zero = lz * 0.0;
             Vector3f force = new(
                 (((lx * c) + (ly * -s)) + zero).F,
@@ -356,7 +356,7 @@ public sealed partial class Igi2CarTask
         Fpu lx = ((dy * m[3]) + (dx * m[0])) + (dz * m[6]);
         Fpu ly = ((dy * m[4]) + (dz * m[7])) + (dx * m[1]);
         Fpu lz = ((dy * m[5]) + (dx * m[2])) + (dz * m[8]);
-        double s = Math.Sin(gamma), c = Math.Cos(gamma);
+        double s = SimMath.Sin(gamma), c = SimMath.Cos(gamma);
         Fpu rx = ((lx * c) + (ly * -s)) + (lz * 0.0);
         Fpu ry = ((ly * c) + (lx * s)) + (lz * 0.0);
         Fpu rz = ((ly + lx) * 0.0) + lz;

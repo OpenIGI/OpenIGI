@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Player;
 
 /// <summary>
@@ -48,7 +50,7 @@ public sealed class WeaponWheel
 
     /// <summary>Gets the way the pointer points, in radians clockwise from straight up, or <see langword="null"/> inside the dead zone.</summary>
     public float? PointerAngle =>
-        (_pointerX * _pointerX) + (_pointerY * _pointerY) >= DeadZone * DeadZone ? MathF.Atan2(_pointerX, -_pointerY) : null;
+        (_pointerX * _pointerX) + (_pointerY * _pointerY) >= DeadZone * DeadZone ? SimMathF.Atan2(_pointerX, -_pointerY) : null;
 
     /// <summary>Opens the wheel on a ring of choices.</summary>
     /// <param name="count">How many choices there are.</param>

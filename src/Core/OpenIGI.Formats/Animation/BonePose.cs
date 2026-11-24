@@ -168,8 +168,8 @@ public sealed class BonePose
         }
 
         float half = angle * 0.5f;
-        float sin = MathF.Sin(half);
-        Matrix3f turn = ToMatrix(new Quaternion32(axis.X * sin, axis.Y * sin, axis.Z * sin, MathF.Cos(half)));
+        float sin = SimMathF.Sin(half);
+        Matrix3f turn = ToMatrix(new Quaternion32(axis.X * sin, axis.Y * sin, axis.Z * sin, SimMathF.Cos(half)));
 
         Matrix3f[] rotations = (Matrix3f[])_rotations.Clone();
         Vector3f[] positions = (Vector3f[])_positions.Clone();

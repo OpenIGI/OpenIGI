@@ -584,7 +584,7 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
 
         float facing = direction.X == 0.0
             ? MathF.PI / 2f
-            : (float)Math.Atan2(direction.Y, direction.X) + (MathF.PI / 2f);
+            : (float)SimMath.Atan2(direction.Y, direction.X) + (MathF.PI / 2f);
         Vector3d back = along.LengthSquared > 0.0 ? along.Normalized() * 2048.0 : default;
         return new ChargePlantPose(contact - back, facing, contact);
     }
@@ -719,8 +719,8 @@ public sealed partial class WorldInteraction : Saves.IExchangedState
         }
 
         Vector3d toHuman = from - Anchor;
-        Vector3d forward = new(Math.Sin(Facing), Math.Cos(Facing), 0.0);
-        Vector3d right = new(Math.Cos(Facing), -Math.Sin(Facing), 0.0);
+        Vector3d forward = new(SimMath.Sin(Facing), SimMath.Cos(Facing), 0.0);
+        Vector3d right = new(SimMath.Cos(Facing), -SimMath.Sin(Facing), 0.0);
         double inFront = Vector3d.Dot(toHuman, forward);
         double lateral = Math.Abs(Vector3d.Dot(toHuman, right));
 

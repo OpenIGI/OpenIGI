@@ -100,9 +100,9 @@ public sealed class ElevatorSplineFrame
     /// <returns>The segment's matrix.</returns>
     internal static Matrix3f HeadingFrame(float x, float y)
     {
-        float heading = x == 0f ? 0f : MathF.Atan2(y, x);
-        float s = MathF.Sin(heading);
-        float c = MathF.Cos(heading);
+        float heading = x == 0f ? 0f : SimMathF.Atan2(y, x);
+        float s = SimMathF.Sin(heading);
+        float c = SimMathF.Cos(heading);
         return new Matrix3f(
             c, -s, 0f,
             s, c, 0f,

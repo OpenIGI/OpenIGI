@@ -152,7 +152,7 @@ public sealed class GuardRounds
 
             if (!met)
             {
-                Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+                Vector3f facing = new(-SimMathF.Sin(player.Body.Yaw), SimMathF.Cos(player.Body.Yaw), 0f);
                 met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
             }
         }

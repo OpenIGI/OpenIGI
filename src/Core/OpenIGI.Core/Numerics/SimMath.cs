@@ -518,6 +518,36 @@ public static class SimMath
         return (s * (hfsq + r)) + (dk * Ln2Lo) - hfsq + f + (dk * Ln2Hi);
     }
 
+    /// <summary>The hyperbolic tangent.</summary>
+    /// <param name="x">The value.</param>
+    /// <returns>Its hyperbolic tangent, from minus one to one.</returns>
+    public static double Tanh(double x)
+    {
+        double magnitude = Math.Abs(x);
+        double t;
+        if (double.IsNaN(x))
+        {
+            return x;
+        }
+
+        if (magnitude > 22)
+        {
+            t = 1;
+        }
+        else if (magnitude < 1e-4)
+        {
+            // x - x^3/3: the exponentials' difference would cancel away its digits this near nought.
+            t = magnitude - (magnitude * magnitude * magnitude / 3);
+        }
+        else
+        {
+            double e = Exp(2 * magnitude);
+            t = (e - 1) / (e + 1);
+        }
+
+        return x < 0 ? -t : t;
+    }
+
     /// <summary>A value raised to a power.</summary>
     /// <param name="x">The base.</param>
     /// <param name="y">The power.</param>

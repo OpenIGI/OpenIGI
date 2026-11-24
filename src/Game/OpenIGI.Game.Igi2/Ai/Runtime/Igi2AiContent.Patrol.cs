@@ -495,7 +495,7 @@ public static partial class Igi2AiContent
 
         int sector = Fpu.ToInt32((double)context.SectorResolution * gamma * 0.15915494309189526);
         double angle = (((double)(ushort)ai.World.Random.NextRaw() * IgiRandom.Scale) + sector) * 6.283185307179589 / context.SectorResolution;
-        double s = Math.Sin(angle), c = Math.Cos(angle);
+        double s = SimMath.Sin(angle), c = SimMath.Cos(angle);
         float zero = (float)(dz * 0.0);
         float x = (float)((c * 0.0) + (-s * 20480.0) + zero);
         double y = (c * 20480.0) + (s * 0.0) + zero;

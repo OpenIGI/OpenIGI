@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game;
@@ -54,7 +56,7 @@ public static class EngineEuler
         }
 
         Fpu gamma = m0 != 0f
-            ? Math.Atan2(m3, m0)
+            ? SimMath.Atan2(m3, m0)
             : (Fpu)(m3 < 0f ? -1.0 : 1.0) * 1.570796326794897;
         if (gamma.Value < 0.0)
         {
@@ -92,7 +94,7 @@ public static class EngineEuler
         return (InRange(alpha), InRange(beta), Gamma(m[0], m[3]));
 
         static Fpu Atan2OrQuarter(Fpu y, Fpu x) =>
-            x.Value != 0.0 ? Math.Atan2(y.Value, x.Value) : y.Value == 0.0 ? 0.0 : (Fpu)(y.Value < 0.0 ? -1.0 : 1.0) * 1.570796326794897;
+            x.Value != 0.0 ? SimMath.Atan2(y.Value, x.Value) : y.Value == 0.0 ? 0.0 : (Fpu)(y.Value < 0.0 ? -1.0 : 1.0) * 1.570796326794897;
 
         static float InRange(Fpu angle) => (angle.Value < 0.0 ? angle + 6.283185307179589 : angle).F;
     }

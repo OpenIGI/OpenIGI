@@ -66,7 +66,7 @@ public sealed class Igi1HumanPlayer(PlayerCamera rig, Igi1PlayerLife life, IIgi1
         else
         {
             // Another game's round: where it meets the player's body is this game's to find.
-            TakeRound(Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, Rig.Body.Position, new Vector3f(-MathF.Sin(Rig.Body.Yaw), MathF.Cos(Rig.Body.Yaw), 0f))));
+            TakeRound(Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, Rig.Body.Position, new Vector3f(-SimMathF.Sin(Rig.Body.Yaw), SimMathF.Cos(Rig.Body.Yaw), 0f))));
         }
     }
 
