@@ -48,6 +48,12 @@ internal static class LeaderboardPage
             @media (max-width: 720px) { .switches { align-items: flex-start; } }
             .record-switch { margin-bottom: 16px; }
 
+            /* A season gone by: a pick of the months the game has had, under the period's pill. */
+            .past { appearance: none; padding: 9px 34px 9px 16px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23a3a39a'/%3E%3C/svg%3E") right 14px center no-repeat; color: var(--muted); font: 600 13px/1 var(--sans); cursor: pointer; }
+            .past:hover, .past.picked { color: var(--text); }
+            .past.picked { border-color: var(--accent); }
+            .past:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+
             /* The metric the board is ranked by: a row of tabs, the chosen one underlined in the accent. */
             .tabs { display: flex; gap: 4px; margin-bottom: 28px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
             .tabs::-webkit-scrollbar { display: none; }
@@ -115,6 +121,7 @@ internal static class LeaderboardPage
                     <button type="button" data-period="season" aria-pressed="true">This season</button>
                     <button type="button" data-period="all" aria-pressed="false">All time</button>
                   </div>
+                  <select class="past" id="past" aria-label="A season gone by" hidden></select>
                 </div>
               </div>
               <div class="tabs" role="tablist" aria-label="Ranked by" id="metrics"></div>
@@ -180,12 +187,32 @@ internal static class LeaderboardPage
               return tab;
             }));
 
+            // The period: this season, all time, or a season gone by from the pick under them.
+            function pickPeriod(id) {
+              period = id;
+              for (const other of document.querySelectorAll("#periods button")) other.setAttribute("aria-pressed", String(other.dataset.period === id));
+              const past = $("past");
+              past.classList.toggle("picked", /^\d{4}-\d{2}$/.test(id));
+              if (!past.classList.contains("picked")) past.value = "";
+              showBoard();
+            }
+
             for (const button of document.querySelectorAll("#periods button")) {
-              button.addEventListener("click", () => {
-                period = button.dataset.period;
-                for (const other of document.querySelectorAll("#periods button")) other.setAttribute("aria-pressed", String(other === button));
-                showBoard();
-              });
+              button.addEventListener("click", () => pickPeriod(button.dataset.period));
+            }
+
+            $("past").addEventListener("change", () => pickPeriod($("past").value || "season"));
+
+            // The seasons gone by that the board names (newest first, this one leading), offered once there is one.
+            function showPast(seasons) {
+              const past = $("past");
+              const gone = (seasons ?? []).slice(1);
+              past.hidden = gone.length === 0;
+              const chosen = /^\d{4}-\d{2}$/.test(period) ? period : "";
+              const first = el("option", null, "Past seasons");
+              first.value = "";
+              past.replaceChildren(first, ...gone.map((s) => Object.assign(el("option", null, seasonName(s)), { value: s })));
+              past.value = chosen;
             }
 
             async function showBoard() {
@@ -194,10 +221,12 @@ internal static class LeaderboardPage
               try {
                 const board = await ask(`/v1/leaderboard?title=${game}&period=${period}&metric=${metric}`);
                 const season = period !== "all";
+                const current = period === "season";
+                showPast(board.seasons);
                 $("eyebrow").textContent = season ? `${gameName()} · season ${seasonName(board.season)}` : `${gameName()} · all time`;
                 const clock = $("clock");
-                clock.hidden = !season;
-                if (season) {
+                clock.hidden = !current;
+                if (current) {
                   const left = daysLeft();
                   clock.replaceChildren("Season ends in ", el("b", null, `${left} ${left === 1 ? "day" : "days"}`));
                 }

@@ -90,8 +90,26 @@ const now = Date.UTC(2026, 10, 20);
   assert.equal((await get(`/v1/players/${BO}/stats?title=igi2`)).allTime.deaths, 5);
   assert.equal((await get(`/v1/players/${CY}/stats?title=igi2`)).allTime.wins, 1);
   assert.ok(!storage.store.has(`tot:all:${BO}`) && !storage.store.has(`last:${BO}`), "the shared totals are gone");
-  assert.equal(storage.store.get("schema"), 2);
+  assert.equal(storage.store.get("schema"), 3);
+  assert.deepEqual(storage.store.get("seasons:igi1"), ["2026-11"]);
   assert.deepEqual(storage.store.get(`last:igi1:${BO}`), ["match:1"]);
+}
+
+// A player's own place wherever they stand, how many are ranked, and the seasons a game has had.
+{
+  const stats = new Stats({ storage: fakeStorage() }, {}, () => now);
+  const get = async (path) => (await stats.fetch(new Request(`https://master${path}`))).json();
+  await stats.fetch(new Request("https://master/v1/admin/stats-servers", { method: "POST", body: JSON.stringify({ key: wire, name: "Official" }) }));
+  await stats.fetch(await signed(match("igi1", [line(BO, "Bo", 0, 7, 1, true), line(CY, "Cy", 1, 1, 7, false)])));
+
+  const board = await get(`/v1/leaderboard?title=igi1&metric=kills&you=${CY}`);
+  assert.equal(board.players, 2);
+  assert.deepEqual([board.you.rank, board.you.name], [2, "Cy"]);
+  assert.deepEqual(board.seasons, ["2026-11"]);
+  assert.equal((await get("/v1/leaderboard?title=igi1&you=dddddddddddddddd")).you, null);
+  assert.equal((await get("/v1/leaderboard?title=igi1")).you, null);
+  // A game without a match yet still has this season to show.
+  assert.deepEqual((await get("/v1/leaderboard?title=igi2")).seasons, ["2026-11"]);
 }
 
 console.log("titles: ok");

@@ -4,9 +4,11 @@
 //
 //   POST /v1/matches                      a server's result of a decided match, signed by its registered key
 //   GET  /v1/matches                      the latest results, newest first
-//   GET  /v1/leaderboard?title=&period=&metric=  the best players of one game (title igi1 or igi2; igi1 when not said): period
+//   GET  /v1/leaderboard?title=&period=&metric=&you=  the best players of one game (title igi1 or igi2; igi1 when not said): period
 //                                         season (this month, UTC), a month (2026-10) or all; metric score, kills, assists, wins,
-//                                         kd or matches
+//                                         kd or matches; with how many are ranked (players), the seasons the game has had
+//                                         (seasons, newest first), and with you (an account's id or a key's) that player's own
+//                                         row and place wherever they stand, top fifty or not (you, null when unranked)
 //   GET  /v1/players/<id>/stats?title=    one player's record in one game (a key's id or an account's): this season, all
 //                                         time, latest, and the medals earned (medals.js)
 //   GET  /internal/servers/<keyId>        a registered server by its key's id ({ name }), or 404: what marks a server
@@ -25,7 +27,8 @@
 //   tot:<title>:<period>:<player>   { name, matches, wins, kills, deaths, assists, objectives, seconds, score, flawless } in one
 //                           game (assists counted from the servers that report them; a total kept before has none, read as nought)
 //   last:<title>:<player>   the player's latest results in one game, their keys, newest first
-//   schema                  2 once the totals are kept by game (migrate)
+//   seasons:<title>         the seasons (yyyy-MM) a game has had a match in, newest first
+//   schema                  2 once the totals are kept by game, 3 once each game's seasons are listed (migrate)
 //
 // Each game is a board and a record of its own: Project I.G.I.'s and I.G.I. 2's matches never add up together.
 
@@ -50,6 +53,10 @@ const BATCH = 128;
 // Where a player's totals and latest results in one game are kept.
 const totKey = (title, period, player) => `tot:${title}:${period}:${player}`;
 const lastKey = (title, player) => `last:${title}:${player}`;
+const seasonsKey = (title) => `seasons:${title}`;
+
+// A list of seasons with one more in it, newest first, each once.
+const withSeason = (seasons, season) => [...new Set([season, ...(seasons ?? [])])].sort().reverse();
 
 // The game a request asks about: igi1 when it doesn't say, as an older build doesn't; anything else is refused.
 function titleAsked(url) {
@@ -135,7 +142,7 @@ export class Stats {
       }
 
       if (parts[1] === "leaderboard" && request.method === "GET") {
-        return json(await this.board(url.searchParams.get("period") ?? "season", url.searchParams.get("metric") ?? "score", titleAsked(url)));
+        return json(await this.board(url.searchParams.get("period") ?? "season", url.searchParams.get("metric") ?? "score", titleAsked(url), url.searchParams.get("you")));
       }
 
       if (parts[1] === "players" && parts[3] === "stats" && request.method === "GET") {
@@ -169,6 +176,7 @@ export class Stats {
     const kept = { id, at, server: server.name, ...result };
     const recent = [`match:${id}`, ...(await this.storage.get("recent") ?? [])];
     const writes = { [`match:${id}`]: kept, recent: recent.slice(0, RECENT) };
+    writes[seasonsKey(result.title)] = withSeason(await this.storage.get(seasonsKey(result.title)), seasonOf(at));
 
     const periods = [seasonOf(at), "all"];
     const counted = result.players.filter((line) => line.player);
@@ -192,8 +200,8 @@ export class Stats {
     return json({ id, counted: counted.length }, 201);
   }
 
-  // The best players of one game in a period by a metric, accounts gathered from their keys.
-  async board(period, metric, title = TITLES[0]) {
+  // The best players of one game in a period by a metric, accounts gathered from their keys; with one player's own place.
+  async board(period, metric, title = TITLES[0], you = null) {
     if (!METRICS.includes(metric)) {
       throw new Refusal(400, `A metric is one of ${METRICS.join(", ")}.`);
     }
@@ -201,11 +209,30 @@ export class Stats {
     // "all", a named month ("2026-10", a season gone by), or this month's season.
     const season = period === "all" ? "all" : /^\d{4}-\d{2}$/.test(period) ? period : seasonOf(this.now());
     const cacheKey = `${title}/${season}/${metric}`;
-    const cached = this.boards.get(cacheKey);
-    if (cached && cached.until > this.now()) {
-      return cached.board;
+    let cached = this.boards.get(cacheKey);
+    if (!cached || cached.until <= this.now()) {
+      cached = { ...(await this.rank(title, season, metric)), until: this.now() + BOARD_SECONDS * 1000 };
+      this.boards.set(cacheKey, cached);
     }
 
+    const { ranked, owners, seasons } = cached;
+    const wanted = typeof you === "string" && you.length > 0 ? owners.get(you) ?? you : null;
+    const mine = wanted === null ? null : ranked.find((row) => row.player === wanted) ?? null;
+    return {
+      title,
+      period: season === "all" ? "all" : "season",
+      season,
+      metric,
+      rows: ranked.slice(0, BOARD_SIZE),
+      players: ranked.length,
+      seasons,
+      you: mine,
+    };
+  }
+
+  // Every ranked player of one game in a period by a metric, best first, each numbered; which row each key counts under;
+  // and the game's seasons (this one always among them).
+  async rank(title, season, metric) {
     const prefix = totKey(title, season, "");
     const totals = await this.storage.list({ prefix });
     const byPlayer = new Map([...totals].map(([name, total]) => [name.slice(prefix.length), total]));
@@ -213,6 +240,7 @@ export class Stats {
 
     // A linked account's keys count together, under its name.
     const rows = new Map();
+    const owners = new Map();
     for (const [player, total] of byPlayer) {
       const account = accounts[player];
       const who = account ? `account:${account.id}` : `key:${player}`;
@@ -220,18 +248,17 @@ export class Stats {
       const shown = account ? { ...account, name: cleanName(account.name) } : null;
       const row = rows.get(who) ?? { player: account ? account.id : player, account: shown, name: cleanName(account?.name ?? total.name), ...zero() };
       rows.set(who, sum(row, total));
+      owners.set(player, row.player);
     }
 
     const ranked = [...rows.values()]
       .map(finish)
       .filter((row) => metric !== "kd" || row.matches >= MIN_KD_MATCHES)
       .sort((a, b) => b[metric] - a[metric] || b.score - a.score || a.name.localeCompare(b.name))
-      .slice(0, BOARD_SIZE)
       .map((row, index) => ({ rank: index + 1, ...row }));
 
-    const board = { title, period: season === "all" ? "all" : "season", season, metric, rows: ranked };
-    this.boards.set(cacheKey, { board, until: this.now() + BOARD_SECONDS * 1000 });
-    return board;
+    const seasons = withSeason(await this.storage.get(seasonsKey(title)), seasonOf(this.now()));
+    return { ranked, owners, seasons };
   }
 
   // One player's record in one game, by a key's id or an account's: this season, all time, and the latest results they were in.
@@ -311,11 +338,14 @@ export class Stats {
   // only ever the results added up.
   async migrate() {
     if (this.migrated) return;
-    if ((await this.storage.get("schema")) >= 2) {
-      this.migrated = true;
-      return;
-    }
+    const schema = (await this.storage.get("schema")) ?? 0;
+    if (schema < 2) await this.migrateByGame();
+    if (schema < 3) await this.migrateSeasons();
+    this.migrated = true;
+  }
 
+  // Schema 2: the totals and latest lists made again by game.
+  async migrateByGame() {
     const matches = [...(await this.storage.list({ prefix: "match:" })).values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
     const writes = {};
     for (const match of matches) {
@@ -338,7 +368,25 @@ export class Stats {
     await this.putAll(writes);
     for (let at = 0; at < old.length; at += BATCH) await this.storage.delete(old.slice(at, at + BATCH));
     await this.storage.put("schema", 2);
-    this.migrated = true;
+    this.boards.clear();
+  }
+
+  // Schema 3: each game's seasons listed, read once from the months its totals are kept under.
+  async migrateSeasons() {
+    const writes = {};
+    for (const title of TITLES) {
+      const prefix = `tot:${title}:`;
+      const months = new Set();
+      for (const name of (await this.storage.list({ prefix })).keys()) {
+        const period = name.slice(prefix.length, name.indexOf(":", prefix.length));
+        if (/^\d{4}-\d{2}$/.test(period)) months.add(period);
+      }
+
+      writes[seasonsKey(title)] = [...months].sort().reverse();
+    }
+
+    await this.storage.put(writes);
+    await this.storage.put("schema", 3);
     this.boards.clear();
   }
 
