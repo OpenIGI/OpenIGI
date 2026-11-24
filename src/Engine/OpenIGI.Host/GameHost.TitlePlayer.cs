@@ -338,6 +338,7 @@ public sealed partial class GameHost
             Computer: ComputerTickInput(heldForComputer)));
         _wheelPick = null;
         _tickInput = given;
+        RecordRunInput(given);
 
         // The remaster's computer holds the player from the tick it is up for, as the input says -- not from the frame it opened on.
         if (TacticalComputer is not null)
@@ -422,7 +423,7 @@ public sealed partial class GameHost
     /// </remarks>
     private bool TitleBreakKey() =>
         TickObserver is not Multiplayer.ISessionFollower
-        && (!_options.PlayCutscenes
+        && (!PlaysCutscenes
         || _cutsceneSkip.Breaking
         || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal));
 

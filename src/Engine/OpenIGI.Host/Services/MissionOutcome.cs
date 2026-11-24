@@ -22,6 +22,10 @@ internal interface IMissionOutcomeHost
     /// <summary>Gets a value indicating whether one of the mission's cut-scenes is playing.</summary>
     bool CutscenePlaying { get; }
 
+    /// <summary>Tells the host a single player's mission is decided, so its run is finished with how it ended.</summary>
+    /// <param name="completed">Whether it was completed.</param>
+    void MissionDecided(bool completed);
+
     /// <summary>Gets the title's own player, which can decide a mission itself; null for a title without one.</summary>
     ITitlePlayer? TitlePlayer { get; }
 
@@ -161,6 +165,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
                 if (session.Mission is { } failedMission)
                 {
                     host.Events?.Raise(new MissionEnded(failedMission.Id, Completed: false));
+                    host.MissionDecided(completed: false);
                 }
 
                 // Said out loud because the level decided this, not the player: a LevelFlow
@@ -184,6 +189,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         {
             session.ResultHandled = true;
             host.Events?.Raise(new MissionEnded(completedMission.Id, Completed: true));
+            host.MissionDecided(completed: true);
             bool recorded = KeepScore(completedMission);
 
             // A successor the catalogue does not offer ends the campaign the way the last mission

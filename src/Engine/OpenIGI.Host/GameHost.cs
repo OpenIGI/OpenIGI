@@ -808,8 +808,9 @@ public sealed partial class GameHost : IDisposable
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
             TickObserver?.Poll();
 
-            // A play-test's recording notes, and its replay gives, what comes before the level's next tick.
+            // A play-test's recording notes, and its replay gives, what comes before the level's next tick; and the run's recording.
             PlaytestTickStarting();
+            RunTickStarting();
 
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
@@ -852,7 +853,10 @@ public sealed partial class GameHost : IDisposable
             TickMission(state, outcome);
             if (outcome == FrameOutcome.Tick)
             {
+                int ran = TickOfLevel;
                 PlaytestTicked();
+                RunTicked(ran);
+                PlaybackTicked(ran);
                 DigestTick();
             }
 
@@ -882,6 +886,7 @@ public sealed partial class GameHost : IDisposable
             }
         }
 
+        FinishRun(Game.Replays.ReplayOutcome.Abandoned, "the game was closed");
         WriteBenchmarkSnapshot(state);
 
         LogStageTimingsAtExit();

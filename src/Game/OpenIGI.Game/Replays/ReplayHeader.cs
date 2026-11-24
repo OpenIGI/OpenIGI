@@ -17,6 +17,7 @@ namespace OpenIGI.Game.Replays;
 /// <param name="Player">Who played it, as the player is known on the boards: an install key's id; empty for nobody known.</param>
 /// <param name="PlayerName">The name the player plays under.</param>
 /// <param name="RecordedAt">When it began, in milliseconds since 1970 (UTC).</param>
+/// <param name="PlaysCutscenes">Whether the level's cutscenes played, as they do unless the game is started without them.</param>
 public sealed record ReplayHeader(
     string GameVersion,
     string Title,
@@ -27,7 +28,8 @@ public sealed record ReplayHeader(
     string ContentFingerprint,
     string Player,
     string PlayerName,
-    long RecordedAt)
+    long RecordedAt,
+    bool PlaysCutscenes = true)
 {
     /// <summary>The longest name or value a header keeps, in characters.</summary>
     public const int MaxText = 128;
@@ -56,6 +58,7 @@ public sealed record ReplayHeader(
         ReplayBinary.WriteText(writer, Player, MaxText);
         ReplayBinary.WriteText(writer, PlayerName, MaxText);
         writer.Write(RecordedAt);
+        writer.Write(PlaysCutscenes);
     }
 
     /// <summary>Reads a header.</summary>
@@ -86,12 +89,13 @@ public sealed record ReplayHeader(
         string player = ReplayBinary.ReadText(reader, MaxText);
         string name = ReplayBinary.ReadText(reader, MaxText);
         long at = reader.ReadInt64();
+        bool cutscenes = reader.ReadBoolean();
         if (difficulty is < 0 or > 2 || mission < 0)
         {
             throw new InvalidDataException("A header's mission or difficulty is not a game's.");
         }
 
-        return new ReplayHeader(version, title, mission, difficulty, ruleset, settings, content, player, name, at);
+        return new ReplayHeader(version, title, mission, difficulty, ruleset, settings, content, player, name, at, cutscenes);
     }
 
     /// <summary>A setting's value as the header has it.</summary>

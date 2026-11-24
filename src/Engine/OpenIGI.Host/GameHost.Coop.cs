@@ -137,9 +137,7 @@ public sealed partial class GameHost
             observer => TickObserver = observer,
             PreviewLook,
             TurnLook,
-            typeof(GameHost).Assembly
-                .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev",
+            BuildVersion,
             _logger)
         {
             OpenUdp = OpenUdp,

@@ -191,7 +191,7 @@ public sealed partial class GameHost
 
         public OpenIGI.Core.Threading.IWorkScheduler Work => host._work;
 
-        public bool PlayCutscenes => host._options.PlayCutscenes;
+        public bool PlayCutscenes => host.PlaysCutscenes;
 
         public int ActiveProfileIndex => host._configuration.ActiveIndex;
 

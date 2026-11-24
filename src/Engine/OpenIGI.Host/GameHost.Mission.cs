@@ -235,6 +235,9 @@ public sealed partial class GameHost
 
         // The profile's record of the mission, kept from its first play as retail's load keeps it.
         _outcome.MissionBegun();
+
+        // And its run, recorded from the level's first tick.
+        ArmMissionReplay(id);
     }
 
     /// <summary>Makes the mission systems, in the order a mission is brought up: the host's, and the game's set among them.</summary>
@@ -275,7 +278,8 @@ public sealed partial class GameHost
     /// Faithfully the ACTIVE PLAYER PROFILE's (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the
     /// player picked in the menu reaches the AI; -difficulty still overrides, for testing one without editing a profile.
     /// </remarks>
-    private AiDifficulty EffectiveDifficulty() => _options.Difficulty
+    private AiDifficulty EffectiveDifficulty() => PlaybackDifficulty
+        ?? _options.Difficulty
         ?? (AiDifficulty)Math.Clamp(
             _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
             (int)AiDifficulty.Easy,

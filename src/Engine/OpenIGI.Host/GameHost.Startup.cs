@@ -814,7 +814,13 @@ public sealed partial class GameHost
                 _logger.Warning("Menu", $"-shelltab '{openOn}' is not a section; opening on the main menu.");
             }
 
-            if (_options.StartMission > 0)
+            if (_options.PlayReplayPath is { } replayPath)
+            {
+                // Straight into a replay, its mission brought up as it was recorded.
+                ResumeConditions();
+                StartReplayFromFile(replayPath);
+            }
+            else if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.
                 // Once its files can be read: on the desktop that is now, in a browser it is when the page

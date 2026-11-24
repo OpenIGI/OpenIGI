@@ -59,7 +59,8 @@ public sealed partial class GameHost
     private bool PlaytestOwns(KeyCode key) => _editor is { IsPlaying: true } && Array.IndexOf(PlaytestKeys, key) >= 0;
 
     /// <summary>Gets whether the play-test holds the level still: paused with no step asked for, or a replay at its end.</summary>
-    private bool PlaytestHoldsLevel => _editor is { IsPlaying: true } && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd);
+    private bool PlaytestHoldsLevel =>
+        (_editor is { IsPlaying: true } && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd)) || PlaybackHoldsLevel;
 
     /// <summary>Gets how fast the play-test runs the level's clock: 1 outside one, or under lockstep (whose clock is the frames').</summary>
     /// <remarks>A replay's seek runs as fast as the frames let ticks through.</remarks>

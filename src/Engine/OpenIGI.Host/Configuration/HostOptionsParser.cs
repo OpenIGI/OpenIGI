@@ -92,6 +92,7 @@ internal static class HostOptionsParser
         int presetCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
+        string? playReplayPath = null;
         bool bakeAll = false;
 
         List<string> startupCommands = [];
@@ -311,6 +312,10 @@ internal static class HostOptionsParser
             {
                 noSave = true;
             }
+            else if (arg.Equals("playreplay", StringComparison.OrdinalIgnoreCase))
+            {
+                playReplayPath = Next(args, ref i, "playreplay");
+            }
             else if (arg.Equals("benchmark", StringComparison.OrdinalIgnoreCase))
             {
                 benchmarkPath = Next(args, ref i, "benchmark");
@@ -524,6 +529,7 @@ internal static class HostOptionsParser
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
+            PlayReplayPath = playReplayPath,
             NoSave = noSave,
             BakeAll = bakeAll,
         };

@@ -224,7 +224,10 @@ public sealed partial class GameHost
         {
             _playtestPaused = true;
             _playtestSteps = 0;
-            Said("The end of the recording: F6 plays it again.");
+            if (_editor is { IsPlaying: true })
+            {
+                Said("The end of the recording: F6 plays it again.");
+            }
         }
     }
 
@@ -254,6 +257,11 @@ public sealed partial class GameHost
     private void ApplyRecordedCommand(string command)
     {
         string[] words = command.Split(' ');
+        if (ApplyPlaybackCommand(words))
+        {
+            return;
+        }
+
         switch (words)
         {
             case ["god", string on]:
