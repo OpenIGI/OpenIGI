@@ -382,7 +382,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         if (IsBodyShown && Human.Model is { } body)
         {
-            EjectFrom(casings, ejection, Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, held, _ticks), held, Human.TotalSpeed);
+            EjectFrom(casings, ejection, Igi2BodyFrame.Build(Human, Human.PresentedPose(), body.Name, held, _ticks), held, Human.TotalSpeed);
             return;
         }
 
@@ -580,7 +580,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         // interaction mode draws the working body rather than the first-person weapon, as the remaster's view over the
         // shoulder does.
         IReadOnlyList<TitleWorldModel> working = IsBodyShown && Human.Model is { } body
-            ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
+            ? Igi2BodyFrame.Build(Human, Human.PresentedPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
         IEnumerable<TitleWorldModel> casings = Casings?.Models(tick) ?? [];
 
         // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
@@ -800,6 +800,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         RunComputerSaves();
         Computer?.Run();
         RunComputerDisplay();
+
+        // The original's render of the tick takes the player's pose: here, once, whoever draws it or not.
+        Human.TakeTickPose();
     }
 
     /// <summary>Nine floats row by row as a matrix.</summary>

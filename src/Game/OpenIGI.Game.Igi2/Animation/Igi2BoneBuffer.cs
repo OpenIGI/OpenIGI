@@ -48,6 +48,23 @@ public sealed class Igi2BoneBuffer
     /// <summary>Gets or sets the root translation the animation writes.</summary>
     public Vector3f Root { get; set; }
 
+    /// <summary>Takes another buffer's bones as they stand, every orientation, count, matrix and translation, and its root.</summary>
+    /// <param name="other">The buffer, of the same rig.</param>
+    public void CopyFrom(Igi2BoneBuffer other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (other.BoneCount != BoneCount)
+        {
+            throw new ArgumentException("A buffer of another rig's bones.", nameof(other));
+        }
+
+        other.Orientations.CopyTo(Orientations, 0);
+        other.Ops.CopyTo(Ops, 0);
+        other.Matrices.CopyTo(Matrices, 0);
+        other.Translations.CopyTo(Translations, 0);
+        Root = other.Root;
+    }
+
     /// <summary>The bones as a pose.</summary>
     /// <param name="parents">Each bone's parent.</param>
     /// <returns>The pose.</returns>

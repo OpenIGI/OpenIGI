@@ -93,7 +93,7 @@ internal static class Igi2NetworkHumanFactory
                 if (level.Casings is { } casings && human.Model is { } dress && arms.Inventory.Current?.WeaponType.FixedModel is { } gun)
                 {
                     Igi2TitlePlayer.EjectFrom(
-                        casings, casing, ViewModel.Igi2BodyFrame.Build(human, human.BodyPose(), dress.Name, gun, 0), gun, human.TotalSpeed);
+                        casings, casing, ViewModel.Igi2BodyFrame.Build(human, human.PresentedPose(), dress.Name, gun, 0), gun, human.TotalSpeed);
                 }
             });
             if (level.Weapons is { } own)

@@ -689,6 +689,8 @@ public sealed partial class GameHost : IDisposable
 
         while (state.Running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
+            // Everything a pass does before the level's tick and after it draws or reads; only the tick steps.
+            Game.World.SimulationPhase.Present();
             // The top of a frame is where a step returns to its host: everything since the last step is
             // one frame, and nothing of the next has started. A host that asked to stop while it was away
             // is answered here, before the frame it would otherwise draw.
@@ -813,6 +815,7 @@ public sealed partial class GameHost : IDisposable
             RunTickStarting();
 
             BeginStage();
+            Game.World.SimulationPhase.Step();
             FrameOutcome outcome = _loop.RunFrame();
             state.LastOutcome = outcome;
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
@@ -860,6 +863,7 @@ public sealed partial class GameHost : IDisposable
                 DigestTick();
             }
 
+            Game.World.SimulationPhase.Present();
             if (outcome != FrameOutcome.Render || _options.SimulationOnly)
             {
                 continue;

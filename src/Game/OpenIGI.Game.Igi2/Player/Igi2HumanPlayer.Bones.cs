@@ -61,8 +61,13 @@ public sealed partial class Igi2HumanPlayer : IIgi2BoneCallbacks
         // The state last used to set the upper body's clip (iStateLastUsedToSetUpperBodyAnimation), not the state the body
         // moves in: a player turning on the spot or running keeps its spine on its aim. Read as the moving state, the spine
         // went level whenever the player left standing still -- any turn of the mouse does -- and eased back once it stood.
-        float target = Animation.LastUpperBodyState is UpperBodyFiring or UpperBodyHeld ? View.Pitch : 0f;
-        View.ShouldersPitch = ((((Fpu)target - View.ShouldersPitch) * ShoulderPitchEase) + View.ShouldersPitch).F;
+        // The ease is a step of the simulation's: taken on its take of the pose, once a tick, never on a frame's.
+        if (EvaluatingForSimulation)
+        {
+            float target = Animation.LastUpperBodyState is UpperBodyFiring or UpperBodyHeld ? View.Pitch : 0f;
+            View.ShouldersPitch = ((((Fpu)target - View.ShouldersPitch) * ShoulderPitchEase) + View.ShouldersPitch).F;
+        }
+
         Tilt(bones, bone, 0.32352942f, 0.5f);
     }
 
