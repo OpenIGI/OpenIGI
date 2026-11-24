@@ -35,6 +35,12 @@ using OpenIGI.Server;
 
 const string LogCategory = "Server";
 
+// A replay checker, not a server: one run played again and its verdict written (VerifyMode).
+if (VerifyMode.Asked(args))
+{
+    return VerifyMode.Run(args);
+}
+
 using LogRouter logger = new();
 logger.AddSink(new ConsoleSink(minimumLevel: LogLevel.Information));
 
