@@ -271,7 +271,7 @@ public sealed partial class GameHost
         // What the screen-space GI keeps from one frame to the next.
         state.ScreenGi = new();
 
-        _mission.ShotRandom = new(20000101);
+        _mission.ShotRandom = new(Game.World.MissionState.ShotRandomSeed);
         _scene = null;
         _world = null;
         _terrain = null;

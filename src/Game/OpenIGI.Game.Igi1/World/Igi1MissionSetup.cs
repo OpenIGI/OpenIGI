@@ -595,6 +595,9 @@ public sealed class Igi1MissionSetup(
         // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
         mission.SoundRandom.SeedForLevel();
 
+        // The remaster's own stream for the guards' spread, seeded with the level as well: never what an earlier mission left.
+        mission.ShotRandom = new Random(MissionState.ShotRandomSeed);
+
         // The Hind's rocket pods and door, which its flights run; each pod draws its first gap as it is made. The pods and
         // the vehicles' guns draw from the level's stream.
         cutscenes.Vehicles.ConfigureVehicleParts(

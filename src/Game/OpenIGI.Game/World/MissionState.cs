@@ -205,8 +205,15 @@ public class MissionState
     /// <summary>Gets or sets the title's weapon table.</summary>
     public WeaponTypeRegistry? WeaponTypes { get; set; }
 
+    /// <summary>What <see cref="ShotRandom"/> is seeded with as each level starts.</summary>
+    public const int ShotRandomSeed = 20000101;
+
     /// <summary>Gets or sets the generator the guards' rounds draw their spread from.</summary>
-    public Random ShotRandom { get; set; } = null!;
+    /// <remarks>
+    /// Seeded afresh as each level starts (<see cref="ShotRandomSeed"/>), so the same inputs play a level the same however many
+    /// missions were played before it: a replay begins from nothing else.
+    /// </remarks>
+    public Random ShotRandom { get; set; } = new(ShotRandomSeed);
 
     /// <summary>Gets the engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes and the other draws that share its stream.</summary>
     public IgiRandom SoundRandom { get; } = new();

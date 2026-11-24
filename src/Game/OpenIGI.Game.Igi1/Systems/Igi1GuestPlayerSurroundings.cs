@@ -41,7 +41,7 @@ public sealed class Igi1GuestPlayerSurroundings(Igi1GuestSoundStage stage, IOpen
     public IgiRandom SoundRandom => stage.SoundRandom;
 
     /// <inheritdoc/>
-    public Random ShotRandom { get; init; } = new();
+    public Random ShotRandom { get; init; } = new(OpenIGI.Game.World.MissionState.ShotRandomSeed);
 
     /// <inheritdoc/>
     public IOpenIgiLogger Logger => logger;
