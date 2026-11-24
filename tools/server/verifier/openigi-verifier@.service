@@ -10,6 +10,8 @@ User=openigi
 Group=openigi
 WorkingDirectory=/var/lib/openigi-verifier
 Environment=HOME=/var/lib/openigi-verifier
+# A bare VM may have no ICU; the checker reads and writes nothing culture-bound.
+Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 # IGI_GAME_PATH and IGI2_GAME_PATH: the games' own data the runs are played again in.
 EnvironmentFile=/etc/openigi/verifier.env
 ExecStart=/opt/openigi-verifier/%i/OpenIGI.Server -verify-worker -key /var/lib/openigi-verifier/verifier.key
