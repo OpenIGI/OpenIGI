@@ -65,7 +65,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
     /// <inheritdoc/>
     /// <remarks>
     /// Each held slot: seen this tick at full strength, fading over the slot's keeping once lost; hostile, or one of the
-    /// player's side, or out of the fight once dead. Built once a tick.
+    /// player's side, or out of the fight once dead. Built once a tick. A slot whose line to the head was blocked when last
+    /// registered is left out, as <c>BinocularOverlay_TrackMovement</c> draws no box for an occluded slot: the binoculars pick
+    /// out the people they can see, not the ones behind a wall or inside a building.
     /// </remarks>
     public IReadOnlyList<TitleBinocularContact> BinocularContacts
     {
@@ -86,7 +88,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
             long now = BinocularClock;
             for (int slot = 0; slot < _marks.Length; slot++)
             {
-                if (_marks[slot] is not { } mark)
+                if (_marks[slot] is not { IsOccluded: false } mark)
                 {
                     continue;
                 }

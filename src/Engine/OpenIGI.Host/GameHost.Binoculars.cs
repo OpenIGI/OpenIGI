@@ -70,7 +70,8 @@ public sealed partial class GameHost
 
         if (_titleMarked.Count > 0)
         {
-            // Over every body, the ones the sector cull left out among them: the marks are what shows a soldier behind a wall.
+            // Over every body the binoculars can see, the ones the sector cull left out among them; one behind a wall is not a
+            // contact at all (ITitlePlayerOptics.BinocularContacts).
             models.DrawWorldOutlines(owned.OutlineModels, _titleMarked, eye, radiusPixels: 8f, _titlePresentationBlend);
         }
     }
