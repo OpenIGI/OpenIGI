@@ -44,7 +44,7 @@ public sealed partial class GameHost
             return null;
         }
 
-        (Ruleset rules, _) = Ruleset.Of(Ruleset.Snapshot(CVarRegistry.Default), CVarRegistry.Default, ExperiencePresetRegistry.Default);
+        (Ruleset rules, _) = Ruleset.Of(Ruleset.Snapshot(CVarRegistry.Default), CVarRegistry.Default, ExperiencePresetRegistry.Default, _titleRuntime.Title.Id);
         if (rules == Ruleset.Unranked)
         {
             return null;

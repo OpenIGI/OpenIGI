@@ -271,7 +271,7 @@ public sealed partial class GameHost
         // A run left has no score of its own: by now the level under it may be the next one.
         MissionScoreSheet? sheet = outcome == ReplayOutcome.Abandoned ? null : TitlePlayer?.ScoreSheet(_runMission);
         MissionScore? score = sheet?.Score;
-        (Ruleset rules, string ruleReason) = Ruleset.Of(_runSettings, CVarRegistry.Default, ExperiencePresetRegistry.Default);
+        (Ruleset rules, string ruleReason) = Ruleset.Of(_runSettings, CVarRegistry.Default, ExperiencePresetRegistry.Default, _titleRuntime.Title.Id);
         string unranked = FirstReason(
             _runUnranked,
             PlaysCutscenes ? string.Empty : "the game was started without its cutscenes",

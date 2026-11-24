@@ -41,6 +41,37 @@ public sealed class RulesetTests
     }
 
     [Fact]
+    public void A_game_is_held_only_to_the_settings_its_single_player_reads()
+    {
+        // I.G.I. 2's movement changed, and a server's time limit: neither is read in Project I.G.I.'s single player.
+        List<(string Name, string Value)> settings = [.. SettingsOf(ExperiencePreset.Vanilla)];
+        Set(settings, GameplayCVars.Igi2Movement.Name, "igi1");
+        Set(settings, NetCVars.TimeLimit.Name, "25");
+
+        (Ruleset igi1, string why) = Ruleset.Of(settings, CVarRegistry.Default, ExperiencePresetRegistry.Default, "igi1");
+        Assert.True(igi1 == Ruleset.Classic, why);
+
+        // I.G.I. 2 reads its movement: changed, its run is no longer the original's.
+        (Ruleset igi2, string reason) = Ruleset.Of(settings, CVarRegistry.Default, ExperiencePresetRegistry.Default, "igi2");
+        Assert.Equal(Ruleset.Unranked, igi2);
+        Assert.Contains(GameplayCVars.Igi2Movement.Name, reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(NetCVars.TimeLimit.Name, reason, StringComparison.Ordinal);
+
+        static void Set(List<(string Name, string Value)> list, string name, string value)
+        {
+            int at = list.FindIndex(s => s.Name == name);
+            if (at >= 0)
+            {
+                list[at] = (name, value);
+            }
+            else
+            {
+                list.Add((name, value));
+            }
+        }
+    }
+
+    [Fact]
     public void A_cheat_leaves_both_rules()
     {
         List<(string Name, string Value)> settings = [.. SettingsOf(ExperiencePreset.Vanilla)];

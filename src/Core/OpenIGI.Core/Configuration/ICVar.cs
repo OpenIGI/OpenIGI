@@ -57,6 +57,12 @@ public interface ICVar
     /// </remarks>
     IReadOnlyList<string> ValueChoices => [];
 
+    /// <summary>
+    /// Gets where it is read: words that must each hold there -- a game's id, <see cref="CVarScope.Multiplayer"/>,
+    /// <see cref="CVarScope.Coop"/> -- or none for everywhere (<see cref="CVarScope.ReadIn"/>).
+    /// </summary>
+    IReadOnlyList<string> Scope => [];
+
     /// <summary>Gets a value indicating whether the current value equals the default.</summary>
     bool IsDefault { get; }
 

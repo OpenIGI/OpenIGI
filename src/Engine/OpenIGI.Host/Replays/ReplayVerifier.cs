@@ -68,7 +68,7 @@ public static class ReplayVerifier
             return OtherFiles;
         }
 
-        (Ruleset rules, string why) = Ruleset.Of(header.Settings, CVarRegistry.Default, ExperiencePresetRegistry.Default);
+        (Ruleset rules, string why) = Ruleset.Of(header.Settings, CVarRegistry.Default, ExperiencePresetRegistry.Default, header.Title);
         if (rules == Ruleset.Unranked)
         {
             return $"it was not played by ranked rules: {why}";

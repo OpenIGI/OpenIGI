@@ -44,6 +44,8 @@ public static class ReplayVerification
         }
         finally
         {
+            // The run's settings, borrowed as its playback began, given back: refused or not, they never outlive its check.
+            host.StopPlayback();
             host.Stop();
         }
     }

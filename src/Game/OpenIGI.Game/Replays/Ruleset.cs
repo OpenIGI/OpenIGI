@@ -55,22 +55,26 @@ public sealed record Ruleset(string Id, string Name)
     /// <param name="settings">The settings, as <see cref="Snapshot"/> records them.</param>
     /// <param name="cvars">The registry that knows each setting, its default and how it reads a value.</param>
     /// <param name="presets">The experience presets the ranked rules are made from.</param>
+    /// <param name="title">The game the run was played in, by id: only the settings read in its single player count
+    /// (<see cref="CVarScope"/>); null holds it to every setting.</param>
     /// <returns>The rules, and for <see cref="Unranked"/> the first setting that kept the run from the nearer of the ranked ones.</returns>
     public static (Ruleset Rules, string Why) Of(
         IReadOnlyList<(string Name, string Value)> settings,
         CVarRegistry cvars,
-        ExperiencePresetRegistry presets)
+        ExperiencePresetRegistry presets,
+        string? title = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(cvars);
         ArgumentNullException.ThrowIfNull(presets);
-        List<string> classic = Mismatches(settings, cvars, presets, ExperiencePreset.Vanilla);
+        Func<ICVar, bool> read = title is null ? static _ => true : variable => variable.IsReadIn([title]);
+        List<string> classic = Mismatches(settings, cvars, presets, ExperiencePreset.Vanilla, read);
         if (classic.Count == 0)
         {
             return (Classic, string.Empty);
         }
 
-        List<string> modern = Mismatches(settings, cvars, presets, ExperiencePreset.Enhanced);
+        List<string> modern = Mismatches(settings, cvars, presets, ExperiencePreset.Enhanced, read);
         if (modern.Count == 0)
         {
             return (Modern, string.Empty);
@@ -86,7 +90,8 @@ public sealed record Ruleset(string Id, string Name)
         IReadOnlyList<(string Name, string Value)> settings,
         CVarRegistry cvars,
         ExperiencePresetRegistry presets,
-        ExperiencePreset preset)
+        ExperiencePreset preset,
+        Func<ICVar, bool> read)
     {
         Dictionary<ICVar, string> asked = presets.ValuesOf(preset).ToDictionary(static p => p.Variable, static p => p.Value);
         Dictionary<string, string> held = new(StringComparer.Ordinal);
@@ -98,6 +103,13 @@ public sealed record Ruleset(string Id, string Name)
 
         foreach (ICVar variable in cvars.All.Where(static v => (v.Flags & CVarOptions.Simulation) != 0))
         {
+            // Recorded all the same, and played again as recorded; only not held to where the run's game does not read it.
+            if (!read(variable))
+            {
+                held.Remove(variable.Name);
+                continue;
+            }
+
             string expected = asked.TryGetValue(variable, out string? value) ? value : variable.DefaultText;
             string actual = held.Remove(variable.Name, out string? recorded) ? recorded : variable.DefaultText;
             if (!SameValue(variable, expected, actual))

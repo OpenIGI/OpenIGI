@@ -139,7 +139,7 @@ public static class GameplayCVars
             "g_igi2_movement",
             Igi2PlayerMovement.Igi2,
             CVarOptions.Archive | CVarOptions.Simulation,
-            "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look."),
+            "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look.").ReadIn(Core.Titles.GameTitle.Igi2.Id),
         vanilla: "igi2",
         enhanced: null);
 
@@ -153,7 +153,7 @@ public static class GameplayCVars
         "g_igi2_igi1_weight",
         false,
         CVarOptions.Archive | CVarOptions.Simulation,
-        "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.");
+        "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.").ReadIn(Core.Titles.GameTitle.Igi2.Id);
 
     /// <summary>What I.G.I. 2's player may carry of its primary weapons: one, as the original has it, or one of each kind.</summary>
     /// <remarks>
@@ -173,7 +173,7 @@ public static class GameplayCVars
             "g_igi2_loadout",
             Game.Igi2Loadout.Tactical,
             CVarOptions.Archive | CVarOptions.Simulation,
-            "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher."),
+            "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher.").ReadIn(Core.Titles.GameTitle.Igi2.Id),
         vanilla: "original",
         enhanced: "tactical");
 
@@ -210,7 +210,7 @@ public static class GameplayCVars
         "g_igi2_movement_compare",
         Game.Igi2MovementCompare.Off,
         CVarOptions.None | CVarOptions.Simulation,
-        "Stand in for I.G.I. 2's movement this session, to compare the two: off, igi2 or igi1.");
+        "Stand in for I.G.I. 2's movement this session, to compare the two: off, igi2 or igi1.").ReadIn(Core.Titles.GameTitle.Igi2.Id);
 
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
     /// <remarks>
