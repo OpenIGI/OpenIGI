@@ -39,6 +39,10 @@ public sealed partial class GameHost
     private ReplayLibrary? _replayLibrary;
     private bool _runSettingsWatched;
 
+    // The run's runner as a race against it shows it, and the session's events it was wired to hear.
+    private GhostTrack? _runGhost;
+    private Engine.Events.GameEvents? _runEventsHeard;
+
     /// <summary>
     /// Gets or sets what hears each run's replay as it is finished, written to the library or not (a run that saves no user
     /// files, as a test's): the replay itself.
@@ -116,6 +120,11 @@ public sealed partial class GameHost
         }
 
         run.Ran(tick);
+        if (_runGhost is { IsFull: false } ghost && GhostSource()?.GhostFrame() is { } frame)
+        {
+            ghost.Set(tick, frame);
+        }
+
         if ((tick + 1) % RunDigestEvery == 0)
         {
             run.SetDigest(tick, SimulationDigest());
@@ -151,6 +160,8 @@ public sealed partial class GameHost
         }
 
         _run = new InputTape();
+        _runGhost = new GhostTrack();
+        HearRunEvents();
         _runLoad = _levelLoads;
         _runMission = missionId;
         _runDifficulty = _mission.PlayerDifficulty;
@@ -170,6 +181,38 @@ public sealed partial class GameHost
         }
 
         _logger.Debug("Replays", $"Recording mission {missionId} from its start.");
+    }
+
+    // The running mission as its player's ghost is taken from it: the hosted mission's, or the title player's.
+    private IGhostSource? GhostSource() => _hosted as IGhostSource ?? TitlePlayer as IGhostSource;
+
+    // The session's events heard for the run's ghost -- an objective done, a kill, the alarm -- once for each session.
+    private void HearRunEvents()
+    {
+        if (_title is not { } title || !title.Services.TryGet(out Engine.Events.GameEvents? events) || ReferenceEquals(events, _runEventsHeard))
+        {
+            return;
+        }
+
+        _runEventsHeard = events;
+        events.Subscribe((in Game.Events.ObjectiveChanged changed) =>
+        {
+            if (changed.State == Game.World.MissionObjectiveState.Complete)
+            {
+                RunEvent(GhostEventKind.Objective, changed.Slot);
+            }
+        });
+        events.Subscribe((in Game.Events.HumanKilled killed) => RunEvent(GhostEventKind.Kill, killed.Team));
+        events.Subscribe((in Game.Events.AlarmChanged alarm) => RunEvent(GhostEventKind.Alarm, alarm.On ? 1 : 0));
+    }
+
+    // Something the run's ghost marks, on the tick it happened.
+    private void RunEvent(GhostEventKind kind, int detail)
+    {
+        if (_run is not null && _runLoad == _levelLoads)
+        {
+            _runGhost?.Event(TickOfLevel, kind, detail);
+        }
     }
 
     // A setting that changes how the level plays, changed while a run is recorded: kept as a command on the tick it came before,
@@ -225,7 +268,14 @@ public sealed partial class GameHost
             PlayerName(),
             _runStartedAt,
             PlaysCutscenes);
-        ReplayFile replay = new(header, new ReplayResult(outcome, Math.Max(0, run.Length - 1), score, unranked), run);
+        GhostTrack? ghost = _runGhost;
+        _runGhost = null;
+        if (outcome != ReplayOutcome.Abandoned)
+        {
+            ghost?.Event(Math.Max(0, run.Length - 1), GhostEventKind.End, outcome == ReplayOutcome.Completed ? 1 : 0);
+        }
+
+        ReplayFile replay = new(header, new ReplayResult(outcome, Math.Max(0, run.Length - 1), score, unranked), run) { Ghost = ghost };
         ReplayMade?.Invoke(replay);
         if (!_options.SavesUserFiles)
         {

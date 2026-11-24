@@ -3,13 +3,14 @@ using System.IO.Compression;
 namespace OpenIGI.Game.Replays;
 
 /// <summary>
-/// A replay as a file (<c>.oigr</c>): what it is of (<see cref="ReplayHeader"/>), how it ended (<see cref="ReplayResult"/>) and the
-/// inputs it was played with (<see cref="InputTape"/>).
+/// A replay as a file (<c>.oigr</c>): what it is of (<see cref="ReplayHeader"/>), how it ended (<see cref="ReplayResult"/>), the
+/// inputs it was played with (<see cref="InputTape"/>), and, where it has one, the ghost a race against it shows
+/// (<see cref="GhostTrack"/>).
 /// </summary>
 /// <remarks>
 /// Four bytes <c>OIGR</c>, the format's version as two, the body's length as four and its SHA-256, then the body deflated. Read
 /// strictly and within limits -- a file may come from anyone -- so it can be refused, never trusted: the hash only says the
-/// file is whole, and what it claims is checked by playing it again.
+/// file is whole, and what it claims is checked by playing it again. Format 1 had no ghost and is read still.
 /// </remarks>
 /// <param name="Header">What it is of.</param>
 /// <param name="Result">How it ended.</param>
@@ -19,8 +20,14 @@ public sealed record ReplayFile(ReplayHeader Header, ReplayResult Result, InputT
     /// <summary>The file name ending a replay is saved under.</summary>
     public const string Extension = ".oigr";
 
-    /// <summary>The format this build writes and reads.</summary>
-    public const ushort FormatVersion = 1;
+    /// <summary>The format this build writes.</summary>
+    public const ushort FormatVersion = 2;
+
+    // The first format, before a replay could carry its ghost: read still.
+    private const ushort GhostlessVersion = 1;
+
+    /// <summary>Gets the runner as a race against the run shows it, or <see langword="null"/> where the file carries none.</summary>
+    public GhostTrack? Ghost { get; init; }
 
     /// <summary>The largest replay file read, in bytes.</summary>
     public const int MaxFileBytes = 4 * 1024 * 1024;
@@ -55,6 +62,11 @@ public sealed record ReplayFile(ReplayHeader Header, ReplayResult Result, InputT
             Header.Write(writer);
             Result.Write(writer);
             InputTapeCodec.Write(writer, Tape);
+            writer.Write(Ghost is null ? (byte)0 : (byte)1);
+            if (Ghost is { } ghost)
+            {
+                GhostTrackCodec.Write(writer, ghost);
+            }
         }
 
         return memory.ToArray();
@@ -86,9 +98,9 @@ public sealed record ReplayFile(ReplayHeader Header, ReplayResult Result, InputT
         }
 
         ushort version = (ushort)(bytes[4] | (bytes[5] << 8));
-        if (version != FormatVersion)
+        if (version is not (FormatVersion or GhostlessVersion))
         {
-            throw new InvalidDataException($"A replay of format {version}; this build reads {FormatVersion}.");
+            throw new InvalidDataException($"A replay of format {version}; this build reads {GhostlessVersion} and {FormatVersion}.");
         }
 
         int length = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes[6..10]);
@@ -110,12 +122,23 @@ public sealed record ReplayFile(ReplayHeader Header, ReplayResult Result, InputT
             ReplayHeader header = ReplayHeader.Read(reader);
             ReplayResult result = ReplayResult.Read(reader);
             InputTape tape = InputTapeCodec.Read(reader);
+            GhostTrack? ghost = null;
+            if (version != GhostlessVersion)
+            {
+                ghost = reader.ReadByte() switch
+                {
+                    0 => null,
+                    1 => GhostTrackCodec.Read(reader),
+                    _ => throw new InvalidDataException("A replay says it has a ghost of no kind this build knows."),
+                };
+            }
+
             if (memory.Position != memory.Length)
             {
                 throw new InvalidDataException("A replay goes on past its end.");
             }
 
-            return new ReplayFile(header, result, tape);
+            return new ReplayFile(header, result, tape) { Ghost = ghost };
         }
         catch (EndOfStreamException ex)
         {

@@ -40,6 +40,12 @@ public sealed class ReplayTests : IDisposable
     {
         ReplayFile recorded = ReplayFile.Read(Record(mission).ToBytes());
         int withInput = Enumerable.Range(0, recorded.Tape.Length).Count(tick => recorded.Tape.InputAt(tick) is not null);
+
+        // Its ghost runs the whole run, and goes where the player went.
+        GhostTrack ghost = Assert.IsType<GhostTrack>(recorded.Ghost);
+        Assert.Equal(recorded.Tape.Length, ghost.Length);
+        int moved = Enumerable.Range(1, ghost.Length - 1).Count(tick => ghost.At(tick)!.Value.Position != ghost.At(tick - 1)!.Value.Position);
+        Assert.True(moved > ghost.Length / 4, $"The ghost moved on only {moved} of {ghost.Length} ticks.");
         Assert.True(withInput > recorded.Tape.Length / 2, $"Only {withInput} of {recorded.Tape.Length} ticks took the player's input.");
 
         (int? partedAt, int matched, bool finished) = Play(Write(recorded, $"igi2-m{mission}"), mission);

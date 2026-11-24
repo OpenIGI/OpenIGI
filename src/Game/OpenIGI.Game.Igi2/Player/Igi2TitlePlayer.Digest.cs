@@ -39,4 +39,7 @@ public sealed partial class Igi2TitlePlayer : ISimulationDigest
         hash.Add(human.Damage.Damage);
         hash.Add(human.IsDead);
     }
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.Multiplayer.ReplicatedHuman? GhostFrame() => Multiplayer.Igi2ReplicatedWorld.Replicate(0, Human);
 }

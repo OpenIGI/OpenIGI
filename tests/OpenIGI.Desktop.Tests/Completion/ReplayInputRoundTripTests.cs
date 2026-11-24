@@ -22,6 +22,9 @@ public sealed class ReplayInputRoundTripTests : IDisposable
     private const int Ticks = 60 * 30;
 
     private readonly AiScenarioSupport _support = new();
+
+    // Where the player stood after each tick of the last run recorded.
+    private readonly List<Core.Numerics.Vector3d> _positions = [];
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), $"openigi-replay-input-{Guid.NewGuid():N}");
 
     public ReplayInputRoundTripTests() => Directory.CreateDirectory(_scratch);
@@ -47,6 +50,14 @@ public sealed class ReplayInputRoundTripTests : IDisposable
     {
         ReplayFile recorded = ReplayFile.Read(Record(mission).ToBytes());
         int withInput = Enumerable.Range(0, recorded.Tape.Length).Count(tick => recorded.Tape.InputAt(tick) is not null);
+
+        // Its ghost runs the whole run, and moves as the player moved, tick for tick.
+        GhostTrack ghost = Assert.IsType<GhostTrack>(recorded.Ghost);
+        Assert.Equal(recorded.Tape.Length, ghost.Length);
+        int ghostMoved = Enumerable.Range(1, ghost.Length - 1).Count(tick => ghost.At(tick)!.Value.Position != ghost.At(tick - 1)!.Value.Position);
+        int playerMoved = Enumerable.Range(1, _positions.Count - 1).Count(i => Int3Of(_positions[i]) != Int3Of(_positions[i - 1]));
+        Assert.True(playerMoved > 0, "The player never moved.");
+        Assert.InRange(ghostMoved, playerMoved * 9 / 10, (playerMoved * 11 / 10) + 5);
         Assert.True(withInput > recorded.Tape.Length * 9 / 10, $"Only {withInput} of {recorded.Tape.Length} ticks took the player's input.");
         Assert.True(
             Enumerable.Range(0, recorded.Tape.Length).Any(tick => recorded.Tape.InputAt(tick) is { MouseX: not 0f }),
@@ -128,6 +139,8 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         Assert.Equal(recorded.Tape.Digests.Count, matched);
     }
 
+    private static Game.Multiplayer.Int3 Int3Of(Core.Numerics.Vector3d at) => Game.Multiplayer.Int3.From(at);
+
     // A minute of a scripted player in a mission, drawn, as its replay.
     private ReplayFile Record(int mission)
     {
@@ -142,7 +155,15 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         host.ReplayMade = replay => made ??= replay;
         host.Start();
         int recordedTicks = 0;
-        host.TickDigested = (tick, _) => recordedTicks = tick;
+        _positions.Clear();
+        host.TickDigested = (tick, _) =>
+        {
+            recordedTicks = tick;
+            if (host.TitlePlayerForTesting is { } player)
+            {
+                _positions.Add(player.Position);
+            }
+        };
         for (int step = 0; step < 40 * Ticks && recordedTicks < Ticks && host.Step(); step++)
         {
             Steer(input, recordedTicks);

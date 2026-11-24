@@ -66,6 +66,12 @@ public sealed class ReplayRoundTripTests : IDisposable
             Assert.Equal(ReplayOutcome.Completed, recorded.Result.Outcome);
             Assert.NotEmpty(recorded.Tape.Digests);
 
+            // Its ghost runs the whole run, its objectives done along it and its end marked.
+            GhostTrack ghost = Assert.IsType<GhostTrack>(recorded.Ghost);
+            Assert.Equal(recorded.Tape.Length, ghost.Length);
+            Assert.NotEmpty(ghost.Splits());
+            Assert.Contains(ghost.Events, static e => e is { Kind: GhostEventKind.End, Detail: 1 });
+
             // Through the bytes, as the file goes to the server.
             string file = Path.Combine(_scratch, $"m{mission}{ReplayFile.Extension}");
             File.WriteAllBytes(file, recorded.ToBytes());
