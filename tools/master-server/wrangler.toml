@@ -56,6 +56,11 @@ class_name = "Accounts"
 name = "STATS"
 class_name = "Stats"
 
+# Single-player runs, their replays and the mission boards (runs.js).
+[[durable_objects.bindings]]
+name = "RUNS"
+class_name = "Runs"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
@@ -79,3 +84,7 @@ new_sqlite_classes = ["Accounts"]
 [[migrations]]
 tag = "v6"
 new_sqlite_classes = ["Stats"]
+
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = ["Runs"]

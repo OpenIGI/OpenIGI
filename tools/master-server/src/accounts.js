@@ -421,6 +421,14 @@ export class Accounts {
         body: JSON.stringify({ keys: account.keys }),
       });
     }
+
+    // And its runs and their replays (runs.js).
+    if (this.env.RUNS && account.keys.length > 0) {
+      await this.env.RUNS.get(this.env.RUNS.idFromName("all")).fetch("https://runs/internal/forget", {
+        method: "POST",
+        body: JSON.stringify({ keys: account.keys }),
+      });
+    }
   }
 
   async upsertAccount(user) {

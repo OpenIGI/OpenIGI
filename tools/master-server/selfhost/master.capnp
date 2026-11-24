@@ -31,6 +31,8 @@ const master :Workerd.Worker = (
     (name = "signed.js", esModule = embed "../src/signed.js"),
     (name = "accounts.js", esModule = embed "../src/accounts.js"),
     (name = "stats.js", esModule = embed "../src/stats.js"),
+    (name = "runs.js", esModule = embed "../src/runs.js"),
+    (name = "blobs.js", esModule = embed "../src/blobs.js"),
     (name = "medals.js", esModule = embed "../src/medals.js"),
     (name = "names.js", esModule = embed "../src/names.js"),
   ],
@@ -45,6 +47,7 @@ const master :Workerd.Worker = (
     (className = "Maps", uniqueKey = "openigi-master-Maps", enableSql = true),
     (className = "Accounts", uniqueKey = "openigi-master-Accounts", enableSql = true),
     (className = "Stats", uniqueKey = "openigi-master-Stats", enableSql = true),
+    (className = "Runs", uniqueKey = "openigi-master-Runs", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "storage"),
 
@@ -59,6 +62,8 @@ const master :Workerd.Worker = (
     (name = "ACCOUNTS", durableObjectNamespace = "Accounts"),
     # Match results from the listed servers, and the records and boards they add up to (stats.js).
     (name = "STATS", durableObjectNamespace = "Stats"),
+    # Single-player runs, their replays and the mission boards (runs.js).
+    (name = "RUNS", durableObjectNamespace = "Runs"),
 
     (name = "TURN_HOST", text = "turn.openigi.com"),
     (name = "TURN_REGION", text = "Europe"),

@@ -14,6 +14,7 @@ import { handleParties } from "./parties.js";
 import { handleMaps } from "./maps.js";
 import { handleAccounts, isAccountsPath } from "./accounts.js";
 import { handleStats, isStatsPath, officialName } from "./stats.js";
+import { handleRuns, isRunsAdminPath, isRunsPath } from "./runs.js";
 import { isAdmin } from "./signed.js";
 import { cleanName } from "./names.js";
 
@@ -23,6 +24,7 @@ export { Relays } from "./relays.js";
 export { Maps } from "./maps.js";
 export { Accounts } from "./accounts.js";
 export { Stats } from "./stats.js";
+export { Runs } from "./runs.js";
 
 const ENTRY_TTL_MS = 90_000;
 
@@ -110,6 +112,11 @@ async function route(request, env, ctx) {
     // Match results from the servers whose matches count, and what they add up to: records and leaderboards (stats.js).
     if (isStatsPath(url.pathname)) {
       return cors(await handleStats(request, env));
+    }
+
+    // Single-player runs: submitted, checked by the game itself, and the mission boards they make (runs.js).
+    if (isRunsPath(url.pathname)) {
+      return cors(await handleRuns(request, env));
     }
 
     // Accounts: a player's keys linked to their Discord account, and the profiles that come of it (accounts.js).
@@ -304,7 +311,8 @@ function geoOf(request, env) {
 async function admin(request, env, url) {
   const relayRoute = url.pathname.startsWith("/v1/admin/relays");
   const statsRoute = url.pathname.startsWith("/v1/admin/stats-servers");
-  if (!env.ADMIN_TOKEN || (!relayRoute && !statsRoute)) {
+  const runsRoute = isRunsAdminPath(url.pathname);
+  if (!env.ADMIN_TOKEN || (!relayRoute && !statsRoute && !runsRoute)) {
     return json({ error: "not found" }, 404);
   }
 
@@ -314,6 +322,10 @@ async function admin(request, env, url) {
 
   if (statsRoute) {
     return handleStats(request, env);
+  }
+
+  if (runsRoute) {
+    return handleRuns(request, env);
   }
 
   const path = url.pathname.slice("/v1".length);
