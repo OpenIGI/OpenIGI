@@ -31,11 +31,15 @@ internal interface IWorldEffectsHost
 /// </summary>
 /// <param name="device">The device the effects are uploaded to and drawn with.</param>
 /// <param name="logger">Where load problems and the test commands report.</param>
-/// <param name="random">The stream the puffs' drift and life draw from, shared with the rest of the frame's effects: the played mission's, asked for at each draw, since the mission changes with the game.</param>
 /// <param name="host">The title's own mission, whose impact effects are drawn among the rest.</param>
 /// <param name="work">Where the bomb's breaks are worked out, beside the frame.</param>
-internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger, Func<IgiRandom> random, IWorldEffectsHost host, IWorkScheduler work) : IHostService
+internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger, IWorldEffectsHost host, IWorkScheduler work) : IHostService
 {
+    // The stream the rockets' smoke puffs draw their drift and life from: the remaster's own, never the level's. How many puffs
+    // there are follows the effects' quality and whether the smoke's sprite loaded, so a draw from the level's stream here would
+    // throw every later guard's dice by the player's graphics settings (and differently again on a server, which draws none).
+    private readonly IgiRandom _smokeRandom = new(0x534D4F4Bu);
+
     /// <summary>Gets the bursts where rounds land, and the procedural explosions a mission without the fireball falls back to.</summary>
     public ImpactParticleRenderer? Particles { get; private set; }
 
@@ -303,15 +307,15 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
                     // A little of the exhaust's reverse plus a small jitter, so the column trails behind the nozzle
                     // rather than sitting dead still.
                     Vector3f drift = new(
-                        (-missile.Velocity.X * 0.02f) + (((float)random().NextDouble() - 0.5f) * 60f),
-                        (-missile.Velocity.Y * 0.02f) + (((float)random().NextDouble() - 0.5f) * 60f),
-                        (-missile.Velocity.Z * 0.02f) + (((float)random().NextDouble() - 0.5f) * 60f) + 12f);
+                        (-missile.Velocity.X * 0.02f) + (((float)_smokeRandom.NextDouble() - 0.5f) * 60f),
+                        (-missile.Velocity.Y * 0.02f) + (((float)_smokeRandom.NextDouble() - 0.5f) * 60f),
+                        (-missile.Velocity.Z * 0.02f) + (((float)_smokeRandom.NextDouble() - 0.5f) * 60f) + 12f);
                     _smoke!.SpawnPuff(
                         at,
                         drift,
-                        sizeMetres: 0.4f + ((float)random().NextDouble() * 0.2f),
+                        sizeMetres: 0.4f + ((float)_smokeRandom.NextDouble() * 0.2f),
                         growthMetresPerTick: 0.02f,
-                        lifeTicks: 20 + (int)random().NextBounded(10),
+                        lifeTicks: 20 + (int)_smokeRandom.NextBounded(10),
                         darkness: 0.35f);
                 }
                 else
