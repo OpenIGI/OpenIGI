@@ -576,8 +576,9 @@ public sealed partial class GameHost
         // A developer's look at the session's overlays, with made-up players.
         DrawOverlayPreview(state, eye, horizontalTangent, aspectRatio);
 
-        // A replay watched: its transport bar, over all of it.
+        // A replay watched: its transport bar, over all of it; a race: its timer and splits.
         DrawReplayBar(state);
+        DrawRaceHud(state);
 
         // In play the mission's messages are the remastered display's, each title's in its own look (Igi1HudOverlay and the
         // title's own display); the cards below stand in only for a cutscene's subtitles where the original's face is missing.

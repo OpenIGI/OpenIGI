@@ -22,8 +22,21 @@ public sealed partial class GameHost
     private Presentation.Rendering.GhostGlitch _ghostGlitch = new();
     private long? _ghostShownAt;
 
+    // How the race on this level stands, the player's own run's track it reads the splits from, how many splits were last shown
+    // and when the newest was reached, by the host's clock.
+    private RaceClock? _raceClock;
+    private GhostTrack? _raceRun;
+    private int _raceSplitsSeen;
+    private long _raceSplitAt;
+
+    // How long a split reached is held up in the middle of the screen, in milliseconds.
+    private const int RaceSplitHoldMilliseconds = 3000;
+
     /// <summary>Gets the run being raced, or <see langword="null"/> while none is.</summary>
     public ReplayFile? RacingAgainst => _race;
+
+    /// <summary>Gets how much later than the ghost the player is where they stand, in seconds, or null off its route or out of a race.</summary>
+    internal double? RaceDeltaSecondsForTesting => _raceClock?.DeltaSeconds;
 
     /// <summary>Gets a value indicating whether a race is under way on the level now up.</summary>
     private bool Racing => _race is not null && _raceLoad == _levelLoads;
@@ -105,6 +118,9 @@ public sealed partial class GameHost
         if (_race is { } run && _session.Mission?.Id == run.Header.Mission)
         {
             _raceLoad = _levelLoads;
+            _raceClock = run.Ghost is { } ghost ? new RaceClock(ghost) : null;
+            _raceRun = null;
+            _raceSplitsSeen = 0;
         }
     }
 
@@ -135,6 +151,39 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>The race's HUD: how far ahead of the ghost or behind it the player is, and the splits so far.</summary>
+    /// <param name="state">The frame loop's state.</param>
+    private void DrawRaceHud(FrameLoopState state)
+    {
+        if (!Racing || _race!.Ghost is not { } ghost || _remasteredHud is not { IsReady: true } hud || _menuFlow.MenuMode)
+        {
+            return;
+        }
+
+        List<Presentation.Hud.RaceSplit> splits = [];
+        if (_raceRun is { } mine)
+        {
+            foreach ((int slot, int tick, int ghostTick) in RaceClock.Splits(mine, ghost))
+            {
+                string label = slot < 0 ? "Finish" : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Objective {slot + 1}");
+                splits.Add(new Presentation.Hud.RaceSplit(label, tick / 30.0, (tick - ghostTick) / 30.0));
+            }
+        }
+
+        long now = _loop.TimeSource.Milliseconds;
+        if (splits.Count > _raceSplitsSeen)
+        {
+            _raceSplitsSeen = splits.Count;
+            _raceSplitAt = now;
+        }
+
+        float shown = splits.Count == 0 ? 0f : 1f - Math.Clamp((now - _raceSplitAt) / (float)RaceSplitHoldMilliseconds, 0f, 1f);
+        _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+        state.Batch.Begin();
+        hud.DrawRace(state.Batch, new Presentation.Hud.RaceHud(_raceClock?.DeltaSeconds, splits, shown), SafeWindowWidth, SafeWindowHeight);
+        state.Batch.End();
+    }
+
     // After a tick of the race's level: the ghost where its runner was after the same tick, or where it ended.
     private void RaceTicked(int tick)
     {
@@ -146,5 +195,13 @@ public sealed partial class GameHost
         Game.Multiplayer.ReplicatedHuman? frame = ghost.At(Math.Min(tick, ghost.Length - 1));
         _soldiers?.FollowGhost(frame);
         _titleFeatures?.Ghost?.FollowGhost(frame);
+
+        // Where the player stands against the ghost's route, and the run whose objectives are the player's splits.
+        if (GhostSource()?.GhostFrame() is { } player)
+        {
+            _raceClock?.Ran(tick, player);
+        }
+
+        _raceRun ??= _run is not null && _runLoad == _levelLoads ? _runGhost : null;
     }
 }

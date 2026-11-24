@@ -161,6 +161,9 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         }
 
         Assert.NotNull(host.RacingAgainst);
+
+        // The same inputs, the same way: level with the ghost all along.
+        Assert.Equal(0.0, host.RaceDeltaSecondsForTesting);
         host.Stop();
 
         ReplayFile second = Assert.IsType<ReplayFile>(raced);
