@@ -2,17 +2,18 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.Player;
+namespace OpenIGI.Game.Player;
 
 /// <summary>
 /// The over-the-shoulder view, and the move between it and the player's own eyes.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A remaster addition, and it says so.</b> IGI1 has five camera modes (<see cref="OpenIGI.Game.Igi1.Player.HumanCameraMode"/>)
-/// and none of them is a free third-person gameplay view; the two the port already draws from outside the
-/// body — the death camera and the ladder's mode 3 — are transcriptions, and this is not. Nothing here
-/// claims a retail address.
+/// <b>A remaster addition, and it says so.</b> Neither game's human camera has a free third-person gameplay
+/// view among its modes; the ones the port already draws from outside the body — the death camera and the
+/// ladder's and interactions' mode 3 — are transcriptions, and this is not. Nothing here claims a retail
+/// address. Both games use it: the first through its viewpoint, the second through the host
+/// (<see cref="ITitleOverShoulder"/>).
 /// </para>
 /// <para>
 /// <b>It changes only where the frame is rasterised from.</b> The eye a round leaves, the ear the world is

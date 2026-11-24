@@ -1,13 +1,13 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi1.Weapons;
+namespace OpenIGI.Game.Player;
 
 /// <summary>
 /// Turns a shot's aiming frame to point at a place, without disturbing anything else about it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A human fires along the middle column of its view's 3×3 (<c>0x462E50</c>), with the spread cone
+/// A human fires along its view's forward axis (the first game's <c>0x462E50</c>, the second's <c>GetFireFrame</c>), with the spread cone
 /// opening across the other two. That is exactly right when the eye and the camera are the same point,
 /// which in the original they always are. A third-person camera sits behind and to the side of the eye
 /// and so has a different sight line, and no fixed crosshair can be true of both — so the shot is turned

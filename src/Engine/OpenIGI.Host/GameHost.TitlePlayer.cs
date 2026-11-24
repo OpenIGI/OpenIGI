@@ -143,6 +143,7 @@ public sealed partial class GameHost
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
         _titlePresentation.Reset(_titleFeatures);
+        ResetTitleOverShoulder();
         if (!missionsOwn)
         {
             _mission.ForgetPlayer();
@@ -496,12 +497,14 @@ public sealed partial class GameHost
     /// <param name="eye">The camera the frame is drawn from.</param>
     /// <remarks>
     /// Only while walking with nothing else holding the view: not in the free camera, a cutscene, the computer or a
-    /// camera entry. Depth is cleared first so a wall the eyes stand against cannot cut through the hands, and the
-    /// geometry is flagged first-person so the lighting neither meters nor bounces off it.
+    /// camera entry, nor while the camera is over the shoulder (<see cref="TitleShowsViewModel"/>). Depth is cleared first so a
+    /// wall the eyes stand against cannot cut through the hands, and the geometry is flagged first-person so the lighting neither
+    /// meters nor bounces off it.
     /// </remarks>
     private void DrawTitleFirstPerson(in Camera3D eye)
     {
         if (_titleFeatures?.FirstPerson is null || _titleArms is not { } arms
+            || !TitleShowsViewModel
             || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true
             || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {

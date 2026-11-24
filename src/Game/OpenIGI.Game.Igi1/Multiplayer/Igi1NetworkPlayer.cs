@@ -25,7 +25,7 @@ public static class Igi1Command
     // Where the look and the crosshair's ray sit after the frame's slots.
     private const int Look = PlayerInputFrame.SlotCount;
     private const int Aim = Look + 2;
-    private const int Chosen = Aim + 6;
+    private const int Chosen = Aim + AimRayChannels.Count;
     private const int Preferences = Chosen + 1;
 
     // The preferences channel: modern aim's two flags, its zoom and look speed in hundredths, then a manual grenade cook.
@@ -90,12 +90,8 @@ public static class Igi1Command
         return float.IsFinite(value) && value >= 0f && value < PreferencesLimit ? (int)value : null;
     }
 
-    /// <summary>The farthest a crosshair's ray may start from the eye, in world units: the over-the-shoulder camera's reach and some.</summary>
-    /// <remarks>
-    /// The camera sits at most 2.6 m back, 0.55 m aside and 0.25 m up (<see cref="ThirdPersonCamera"/>). A ray from further off
-    /// is a client aiming from somewhere its player is not, and is drawn back to this.
-    /// </remarks>
-    public const double MaxAimReach = 3.5 * WorldUnits.PerMetre;
+    /// <inheritdoc cref="AimRayChannels.MaxReach"/>
+    public const double MaxAimReach = AimRayChannels.MaxReach;
 
     /// <summary>Writes a tick's input, look and crosshair into a command's channels.</summary>
     /// <param name="frame">The input frame.</param>
@@ -110,13 +106,7 @@ public static class Igi1Command
         copy.AsSpan().CopyTo(channels);
         channels[Look] = yaw;
         channels[Look + 1] = pitch;
-        (Vector3d offset, Vector3f direction) = aim ?? default;
-        channels[Aim] = (float)offset.X;
-        channels[Aim + 1] = (float)offset.Y;
-        channels[Aim + 2] = (float)offset.Z;
-        channels[Aim + 3] = direction.X;
-        channels[Aim + 4] = direction.Y;
-        channels[Aim + 5] = direction.Z;
+        AimRayChannels.Pack(channels.Slice(Aim, AimRayChannels.Count), aim);
         channels[Chosen] = chosen + 1;
     }
 
@@ -145,36 +135,11 @@ public static class Igi1Command
         return frame;
     }
 
-    /// <summary>Reads the crosshair's ray a command carries.</summary>
+    /// <summary>Reads the crosshair's ray a command carries (<see cref="AimRayChannels.Unpack"/>).</summary>
     /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
     /// <returns>Its origin as an offset from the eye and its direction, or <see langword="null"/> when the player was in first person.</returns>
-    /// <remarks>
-    /// What a client sends is not taken on trust: a direction that is no direction leaves the player in first person, it is
-    /// made unit length, and an origin past <see cref="MaxAimReach"/> is drawn back to it.
-    /// </remarks>
-    public static (Vector3d EyeOffset, Vector3f Direction)? UnpackAim(ReadOnlySpan<float> channels)
-    {
-        Vector3f direction = new(channels[Aim + 3], channels[Aim + 4], channels[Aim + 5]);
-        float length = MathF.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (!float.IsFinite(length) || length < 0.5f || length > 2f)
-        {
-            return null;
-        }
-
-        Vector3d offset = new(channels[Aim], channels[Aim + 1], channels[Aim + 2]);
-        double reach = offset.Length;
-        if (!double.IsFinite(reach))
-        {
-            return null;
-        }
-
-        if (reach > MaxAimReach)
-        {
-            offset *= MaxAimReach / reach;
-        }
-
-        return (offset, new Vector3f(direction.X / length, direction.Y / length, direction.Z / length));
-    }
+    public static (Vector3d EyeOffset, Vector3f Direction)? UnpackAim(ReadOnlySpan<float> channels) =>
+        AimRayChannels.Unpack(channels.Slice(Aim, AimRayChannels.Count));
 }
 
 /// <summary>Another player in an I.G.I. co-op session: a rig of the mission's own kind, driven by its client's commands.</summary>

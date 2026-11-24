@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Core.Numerics;
 using Xunit;
 

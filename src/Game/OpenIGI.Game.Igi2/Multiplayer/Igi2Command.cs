@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Multiplayer;
 
 namespace OpenIGI.Game.Igi2.Multiplayer;
 
@@ -14,6 +15,10 @@ namespace OpenIGI.Game.Igi2.Multiplayer;
 /// <param name="Seed">The seed the player's stream is set to before the command runs, at most <see cref="Igi2Command.SeedLimit"/>.</param>
 /// <param name="Loadout">What the player may carry of its primary weapons (<c>g_igi2_loadout</c>).</param>
 /// <param name="GrenadeCook">When its grenades cook (<c>g_grenade_cook</c>).</param>
+/// <param name="Aim">
+/// The crosshair's ray over the shoulder, as an offset from the view's eye and a direction (<see cref="AimRayChannels"/>), or
+/// <see langword="null"/> in first person. <b>Not retail.</b>
+/// </param>
 public readonly record struct Igi2CommandStart(
     float IdealGamma,
     float IdealPitch,
@@ -24,7 +29,8 @@ public readonly record struct Igi2CommandStart(
     bool Igi1Weight,
     uint Seed,
     Igi2Loadout Loadout = Igi2Loadout.Original,
-    GrenadeCook GrenadeCook = GrenadeCook.Original);
+    GrenadeCook GrenadeCook = GrenadeCook.Original,
+    (Vector3d EyeOffset, Vector3f Direction)? Aim = null);
 
 /// <summary>What a command left the player with that a lost key press would leave otherwise on the two machines.</summary>
 /// <param name="Chosen">The weapon chosen, by number, or -1 for none.</param>
@@ -66,9 +72,10 @@ public static class Igi2Command
     private const int SeedAt = Chosen + 1;
     private const int FieldOfViewAt = SeedAt + 1;
     private const int ObjectFieldOfViewAt = FieldOfViewAt + 1;
+    private const int AimAt = ObjectFieldOfViewAt + 1;
 
     /// <summary>The command's length.</summary>
-    public const int ChannelCount = ObjectFieldOfViewAt + 1;
+    public const int ChannelCount = AimAt + AimRayChannels.Count;
 
     // The flags. A blank command, all noughts, carries none of the state and changes nobody's.
     private const int HasState = 1;
@@ -130,6 +137,7 @@ public static class Igi2Command
         command[SeedAt] = start.Seed & SeedLimit;
         command[FieldOfViewAt] = end.FieldOfView;
         command[ObjectFieldOfViewAt] = end.ObjectFieldOfView;
+        AimRayChannels.Pack(command.Slice(AimAt, AimRayChannels.Count), start.Aim);
     }
 
     /// <summary>
@@ -186,7 +194,8 @@ public static class Igi2Command
             (flags & Igi1WeightFlag) != 0,
             float.IsFinite(seed) && seed >= 0f ? (uint)Math.Min(seed, SeedLimit) : 0u,
             (flags & TacticalLoadoutFlag) != 0 ? Igi2Loadout.Tactical : Igi2Loadout.Original,
-            (flags & ManualCookFlag) != 0 ? GrenadeCook.Manual : GrenadeCook.Original);
+            (flags & ManualCookFlag) != 0 ? GrenadeCook.Manual : GrenadeCook.Original,
+            AimRayChannels.Unpack(command.Slice(AimAt, AimRayChannels.Count)));
     }
 
     /// <summary>Sets a player's stream from a command's seed, as both machines do before the command runs.</summary>

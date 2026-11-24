@@ -28,6 +28,7 @@ public sealed class Igi2NetworkHuman
         Human = human;
         Weapons = weapons;
         World = world;
+        human.AimWorld = world;
         human.Felt = (part, direction) => _felt.Add((part, direction, Commands.LastTakenTick));
     }
 
@@ -141,6 +142,9 @@ public sealed class Igi2NetworkHuman
     private void RunCommand(long tick)
     {
         Igi2CommandStart? start = Igi2Command.Unpack(_command, _frame, out Igi2CommandEnd? end);
+
+        // Over the shoulder its client's rounds go where its crosshair was, which only the command says (AimRayChannels).
+        Human.AimConvergence = start?.Aim;
         if (start is { } began)
         {
             if (!Human.IsDead)

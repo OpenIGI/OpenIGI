@@ -19,7 +19,11 @@ public sealed class TitlePlayerFeatures
         WorldModels = player as ITitleWorldModels;
         Placement = player as ITitlePlayerPlacement;
         Diagnostics = player as ITitlePlayerDiagnostics;
+        OverShoulder = player as ITitleOverShoulder;
     }
+
+    /// <summary>Gets how it is watched over the shoulder, when the host's third-person view may do so.</summary>
+    public ITitleOverShoulder? OverShoulder { get; }
 
     /// <summary>Gets the player.</summary>
     public ITitlePlayer Player { get; }

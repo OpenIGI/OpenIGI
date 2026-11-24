@@ -445,6 +445,14 @@ public sealed partial class GameHost
         Camera3D eye;
         Camera3D flashlightBody;
         Vector3d earLead;
+
+        // Whether nothing the host shows has taken the view, which the move over the shoulder runs only under.
+        bool thirdPersonAllowed = !_session.FailedMenu
+            && !_computerOpen
+            && !_entry.IsCameraActive
+            && _mission.Scenes?.IsPlaying != true
+            && mapScene is null
+            && !_menuFlow.OverShowcase;
         if (Viewpoint is { } viewpoint)
         {
             eye = viewpoint.ComposeEye(
@@ -454,12 +462,7 @@ public sealed partial class GameHost
                     tickBlend,
                     titlePlayerEye,
                     _camera.Camera,
-                    ThirdPersonAllowed: !_session.FailedMenu
-                        && !_computerOpen
-                        && !_entry.IsCameraActive
-                        && _mission.Scenes?.IsPlaying != true
-                        && mapScene is null
-                        && !_menuFlow.OverShowcase,
+                    thirdPersonAllowed,
                     Paused: _menuFlow.MenuMode,
                     _loop.TimeSource.Milliseconds,
                     ThirdPersonWalls(),
@@ -471,6 +474,9 @@ public sealed partial class GameHost
         {
             eye = titlePlayerEye ?? _camera.Camera;
             flashlightBody = eye;
+
+            // A title's own player is watched over its shoulder by the same camera the first game's viewpoint drives.
+            eye = ComposeTitleOverShoulder(eye, thirdPersonAllowed && titlePlayerEye is not null);
             earLead = titlePlayerEye is not null ? titleEyeLead : default;
         }
 

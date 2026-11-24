@@ -26,6 +26,29 @@ public sealed class Igi2CommandTests
         Assert.Equal(frame, read);
     }
 
+    /// <summary>Over the shoulder the crosshair's ray comes with the command, for the server's copy to fire where the client aimed.</summary>
+    [Fact]
+    public void The_crosshairs_ray_comes_with_the_command()
+    {
+        (Vector3d, Vector3f) aim = (new Vector3d(1024.0, -8192.0, 512.0), new Vector3f(0f, 1f, 0f));
+        float[] command = new float[Igi2Command.ChannelCount];
+        Igi2Command.Pack(new float[Igi2HumanChannels.Count], new Igi2CommandStart(0f, 0f, false, false, false, Igi2PlayerMovement.Igi2, false, 1, Aim: aim), new Igi2CommandEnd(-1, false, 1f, 1f), command);
+
+        Igi2CommandStart? began = Igi2Command.Unpack(command, new float[Igi2HumanChannels.Count], out _);
+
+        Assert.Equal(aim, began?.Aim);
+    }
+
+    /// <summary>In first person the command carries no ray, and the server's copy fires along its own view.</summary>
+    [Fact]
+    public void A_first_person_command_carries_no_ray()
+    {
+        float[] command = new float[Igi2Command.ChannelCount];
+        Igi2Command.Pack(new float[Igi2HumanChannels.Count], new Igi2CommandStart(0f, 0f, false, false, false, Igi2PlayerMovement.Igi2, false, 1), new Igi2CommandEnd(-1, false, 1f, 1f), command);
+
+        Assert.Null(Igi2Command.Unpack(command, new float[Igi2HumanChannels.Count], out _)?.Aim);
+    }
+
     /// <summary>A command that says nothing of the loadout or the cook holds its player to the original's one primary weapon and its cook.</summary>
     [Fact]
     public void A_command_without_the_loadout_carries_the_originals()

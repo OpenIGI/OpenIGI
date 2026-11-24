@@ -380,7 +380,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             return;
         }
 
-        if (Human.CameraMode is 3 or 5 && Human.Model is { } body)
+        if (IsBodyShown && Human.Model is { } body)
         {
             EjectFrom(casings, ejection, Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, held, _ticks), held, Human.TotalSpeed);
             return;
@@ -577,8 +577,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             ? mineWorld.Laid.Select(m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame]), Instance: m, Tick: tick))
             : [];
         // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
-        // interaction mode draws the working body rather than the first-person weapon.
-        IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
+        // interaction mode draws the working body rather than the first-person weapon, as the remaster's view over the
+        // shoulder does.
+        IReadOnlyList<TitleWorldModel> working = IsBodyShown && Human.Model is { } body
             ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
         IEnumerable<TitleWorldModel> casings = Casings?.Models(tick) ?? [];
 
@@ -750,6 +751,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.Pickups?.Run();
         if (Human.UnfilteredMouse) { WriteSmoothLook(); }
         Human.Ticks = (int)_ticks;
+        TakeOverShoulderAim();
 
         // A co-op client's player draws from a stream of its own, set from the command's seed before each tick, as the server's
         // copy of it is set before it runs the command: the same rounds scatter the same way on both.
@@ -770,7 +772,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             Human.Igi1Weight,
             seed,
             Human.Loadout,
-            Human.GrenadeCook);
+            Human.GrenadeCook,
+            Human.AimConvergence);
         Human.Update(_frame);
 
         // HumanView_RunHandler: the view is a child of the player run after HumanPlayerInput, whose run handler reads the
