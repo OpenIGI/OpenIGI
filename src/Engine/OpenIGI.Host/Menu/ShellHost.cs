@@ -43,6 +43,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="editTouchLayout">Leaves the pause menu for the touch layout editor, over the mission.</param>
 /// <param name="openEditor">Opens the editor, or <see langword="null"/> in a build without one.</param>
 /// <param name="bestScore">The card of the best the active profile has done in a mission of the running game, or <see langword="null"/>.</param>
+/// <param name="leaderboard">The official servers' leaderboards, where the build can reach the servers.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -71,8 +72,12 @@ public sealed class ShellHost(
     IAccountPanel? account = null,
     IShellMaps? maps = null,
     Func<int, UiPicture?>? missionPicture = null,
-    Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? bestScore = null) : IShellHost
+    Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? bestScore = null,
+    OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? leaderboard = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard => leaderboard;
+
     /// <inheritdoc/>
     public OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => bestScore?.Invoke(missionId);
 

@@ -23,6 +23,9 @@ public enum ShellTab
     /// <summary>Multiplayer: the server browser, joining by code, parties and hosting every mode.</summary>
     Coop,
 
+    /// <summary>The official servers' leaderboards and players' records.</summary>
+    Leaderboard,
+
     /// <summary>The settings.</summary>
     Settings,
 
@@ -76,7 +79,7 @@ public abstract class ShellScreen : Screen
     protected float SideMargin => ShellSizes.SideMargin(Size);
 
     // Maps is left out for now; its screen is kept for when it returns.
-    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
+    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Leaderboard, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
 
     private Canvas? _chrome;
     private GameSwitcher? _title;
@@ -295,10 +298,11 @@ public abstract class ShellScreen : Screen
 
     /// <summary>The canvas width, in design units, under which the header draws its parts closer together.</summary>
     /// <remarks>
-    /// The title, the five sections between their keys, the operative and Quit are some 1,520 units across at their full
-    /// spacing. A 4:3 screen is 1,440 and a 5:4 one 1,350: there the two key caps go and the gaps close up.
+    /// The title, the six sections between their keys, the operative and Quit are some 1,700 units across at their full
+    /// spacing. A 16:10 screen is 1,728, a 4:3 one 1,440 and a 5:4 one 1,350: under the line the two key caps go and the gaps
+    /// close up.
     /// </remarks>
-    private const float RoomyHeaderWidth = 1600f;
+    private const float RoomyHeaderWidth = 1720f;
 
     private static string TabName(ShellTab tab) => tab == ShellTab.Coop ? "Multiplayer" : tab.ToString();
 
@@ -333,7 +337,7 @@ public abstract class ShellScreen : Screen
             var button = new HeaderTab(theme, TabName(tab));
             if (!roomy)
             {
-                button.Padding = new Thickness(14f, 0f);
+                button.Padding = new Thickness(11f, 0f);
             }
 
             ShellTab target = tab;
@@ -427,13 +431,14 @@ public abstract class ShellScreen : Screen
         return bar;
     }
 
-    // The compact page's sections: Home and the five, an icon over a word each, down the left edge.
+    // The compact page's sections: Home and the six, an icon over a word each, down the left edge.
     private SectionRail BuildRail()
     {
         var rail = new SectionRail(Context.Theme);
         rail.Add(KitIcon.None, "Home", Tab == ShellTab.Home, () => GoTo(ShellTab.Home));
         rail.Add(KitIcon.Target, "Campaign", Tab == ShellTab.Campaign, () => GoTo(ShellTab.Campaign));
         rail.Add(KitIcon.Globe, "Online", Tab == ShellTab.Coop, () => GoTo(ShellTab.Coop));
+        rail.Add(KitIcon.Leaderboard, "Ranks", Tab == ShellTab.Leaderboard, () => GoTo(ShellTab.Leaderboard));
         rail.Add(KitIcon.Sliders, "Settings", Tab == ShellTab.Settings, () => GoTo(ShellTab.Settings));
         rail.Add(KitIcon.Person, "Profile", Tab == ShellTab.Profile, () => GoTo(ShellTab.Profile));
         rail.Add(KitIcon.Archive, "Extras", Tab == ShellTab.Extras, () => GoTo(ShellTab.Extras));
@@ -460,7 +465,7 @@ public abstract class ShellScreen : Screen
 
         for (int i = 0; i < count; i++)
         {
-            games[i] = ShortName(Context.Games[i].DisplayName);
+            games[i] = OpenIGI.Core.Titles.GameTitle.ShortNameOf(Context.Games[i].DisplayName);
             if (Context.Games[i].Id == Context.ActiveTitleId)
             {
                 current = i;
@@ -517,13 +522,6 @@ public abstract class ShellScreen : Screen
         return title;
     }
 
-    /// <summary>A game's name without its subtitle: <c>I.G.I. 2: Covert Strike</c> is <c>I.G.I. 2</c>.</summary>
-    private static string ShortName(string displayName)
-    {
-        int colon = displayName.IndexOf(':', StringComparison.Ordinal);
-        return colon < 0 ? displayName : displayName[..colon].Trim();
-    }
-
     /// <summary>A game's tagline, set under its name in the switcher.</summary>
     private static string Tagline(string id, string displayName)
     {
@@ -548,6 +546,7 @@ public abstract class ShellScreen : Screen
         ShellTab.Campaign => new CampaignScreen(context),
         ShellTab.Maps => new MapsScreen(context),
         ShellTab.Coop => new MultiplayerScreen(context),
+        ShellTab.Leaderboard => new LeaderboardScreen(context),
         ShellTab.Settings => new SettingsScreen(context),
         ShellTab.Profile => new ProfilesScreen(context),
         ShellTab.Extras => new ExtrasScreen(context),

@@ -125,6 +125,9 @@ internal sealed class FakeHost : IShellHost
     /// <summary>The account the profile page shows, or null for a build without one.</summary>
     public IAccountPanel? Account { get; set; }
 
+    /// <summary>The leaderboards the Leaderboard page shows, or null for a build without them.</summary>
+    public OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard { get; set; }
+
     /// <summary>The missions' pictures, by mission, or null for none.</summary>
     public Func<int, UiPicture?>? Pictures { get; set; }
 

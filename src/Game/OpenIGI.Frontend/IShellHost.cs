@@ -124,6 +124,9 @@ public interface IShellHost
     /// <summary>Gets the player's online account, where this build can reach the OpenIGI servers; <see langword="null"/> where it can't.</summary>
     IAccountPanel? Account => null;
 
+    /// <summary>Gets the official servers' leaderboards, where this build can reach the OpenIGI servers; <see langword="null"/> where it can't.</summary>
+    OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard => null;
+
     /// <summary>Gets community maps, where this build can fetch and play them; <see langword="null"/> where it can't.</summary>
     IShellMaps? Maps => null;
 

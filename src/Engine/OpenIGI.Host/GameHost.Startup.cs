@@ -786,6 +786,7 @@ public sealed partial class GameHost
                 maps: OperatingSystem.IsBrowser() ? null : new ShellMaps(this),
                 missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(MenuPictures)).Get(_titleRuntime.Title.Id, mission),
                 bestScore: BestScore,
+                leaderboard: LeaderboardSourceFor(),
                 touchScreen: () => _window.Input.Touch.InUse,
                 editTouchLayout: () =>
                 {

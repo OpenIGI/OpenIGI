@@ -184,7 +184,7 @@ public sealed class MainMenuScreen : ShellScreen
         string? last = Context.Host.Coop?.LastPlayed;
         string profiles = Context.Config.Profiles.Count == 1 ? "1 operative" : string.Create(CultureInfo.InvariantCulture, $"{Context.Config.Profiles.Count} operatives");
         (int done, int total) = CampaignProgress();
-        (KitIcon Icon, string Title, string Detail, ShellTab Tab)[] ways =
+        List<(KitIcon Icon, string Title, string Detail, ShellTab Tab)> ways =
         [
             (KitIcon.Globe, "Multiplayer", last is null ? "Browse servers or host a game" : compact ? "Reconnect" : $"Reconnect to {last}", ShellTab.Coop),
             (KitIcon.Sliders, "Settings", compact ? "Graphics, audio" : "Graphics, controls, audio", ShellTab.Settings),
@@ -192,6 +192,12 @@ public sealed class MainMenuScreen : ShellScreen
                 ? (KitIcon.Person, PlayerName, $"{DifficultyName()} · {done}/{total}", ShellTab.Profile)
                 : (KitIcon.Person, "Profile", $"{PlayerName} · {DifficultyName()} · {profiles}", ShellTab.Profile),
         ];
+
+        // Where there is room, and the servers can be reached: the boards, one press away.
+        if (!compact && Context.Host.Leaderboard is not null)
+        {
+            ways.Insert(1, (KitIcon.Leaderboard, "Leaderboard", "The best on the official servers", ShellTab.Leaderboard));
+        }
 
         foreach ((KitIcon icon, string title, string detail, ShellTab tab) in ways)
         {

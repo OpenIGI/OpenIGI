@@ -357,7 +357,7 @@ public sealed class ServerRow : Control
         var star = new UiVec2(at.Star + (context.Px(ServerColumns.StarWidth) / 2f), mid);
         if (Saved)
         {
-            FillStar(painter, star, context.Px(18f), UiPalette.Fade(Theme.Accent, appear));
+            KitDraw.FillStar(painter, star, context.Px(18f), UiPalette.Fade(Theme.Accent, appear));
         }
         else
         {
@@ -372,24 +372,6 @@ public sealed class ServerRow : Control
 
         DrawPlayers(painter, at.Players, mid, Ink);
         DrawPing(painter, at.PingRight, mid, Ink);
-    }
-
-    // A star filled: a fan of triangles about its middle, since its outline is not convex.
-    private static void FillStar(UiPainter painter, UiVec2 centre, float size, Bgra32 colour)
-    {
-        float outer = size * 0.5f;
-        Span<UiVec2> points = stackalloc UiVec2[10];
-        for (int i = 0; i < 10; i++)
-        {
-            float radius = i % 2 == 0 ? outer : outer * 0.4f;
-            (float sin, float cos) = MathF.SinCos((i * MathF.PI / 5f) - (MathF.PI * 0.5f));
-            points[i] = new UiVec2(centre.X + (cos * radius), centre.Y + (sin * radius));
-        }
-
-        for (int i = 0; i < 10; i++)
-        {
-            painter.FillTriangle(centre, points[i], points[(i + 1) % 10], colour);
-        }
     }
 
     // The line two deep: the name with its marks; under it the mode in its colour, the map and the players, or why it
@@ -444,7 +426,7 @@ public sealed class ServerRow : Control
 
         if (Saved)
         {
-            FillStar(painter, new UiVec2(markX + context.Px(7f), markY), context.Px(15f), UiPalette.Fade(Theme.Accent, appear));
+            KitDraw.FillStar(painter, new UiVec2(markX + context.Px(7f), markY), context.Px(15f), UiPalette.Fade(Theme.Accent, appear));
         }
 
         float underY = top + Theme.BodyStrong.LineHeight(nameSize) + gap;

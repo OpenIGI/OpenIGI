@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenIGI.Releases.Accounts;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
@@ -115,7 +116,7 @@ public sealed partial class ProfilesScreen
         GlassPanel panel = DetailPanel(theme);
         var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 8f : 12f };
         AccountRecord? record = Accounts?.Record;
-        column.AddChild(new Eyebrow(theme, record is null ? "Online record" : $"Online record · {SeasonName(record.Season)}") { TextSize = compact ? 12f : 14f });
+        column.AddChild(new Eyebrow(theme, record is null ? "Online record" : $"Online record · {LeaderboardSeasons.Name(record.Season)}") { TextSize = compact ? 12f : 14f });
 
         var stats = new FlexPanel { Orientation = Orientation.Horizontal, Gap = compact ? 18f : 30f };
         float size = compact ? 18f : 24f;
@@ -146,17 +147,28 @@ public sealed partial class ProfilesScreen
             column.AddChild(new Label(theme.Body, string.Join("  ·  ", record.Medals), compact ? 14f : 16f, theme.Accent) { Wrap = true });
         }
 
+        // The whole record -- every figure, the medals, the latest matches -- and the board, on the Leaderboard page.
+        if (Context.Host.Leaderboard is { } boards)
+        {
+            AccountSummary? signedIn = Accounts?.Status == AccountStatus.SignedIn ? Accounts.Account : null;
+            column.AddChild(Actions(
+                signedIn is null ? null : Ghost(theme, "FULL RECORD", "Your figures this season and all time, your medals and your latest matches.", () =>
+                {
+                    boards.Feed.OpenRecord(signedIn.Id);
+                    GoTo(ShellTab.Leaderboard);
+                }),
+                Ghost(theme, "LEADERBOARD", "The best players on the official servers.", () =>
+                {
+                    boards.Feed.CloseRecord();
+                    GoTo(ShellTab.Leaderboard);
+                })));
+        }
+
         panel.AddChild(column);
         return panel;
     }
 
     private static string Figure(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "—";
-
-    // "2026-11" as "November 2026".
-    private static string SeasonName(string season) =>
-        DateTime.TryParseExact(season, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime month)
-            ? month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)
-            : season;
 
     // Under the name: who the player is to everyone else.
     private string IdentityNote() => Accounts switch

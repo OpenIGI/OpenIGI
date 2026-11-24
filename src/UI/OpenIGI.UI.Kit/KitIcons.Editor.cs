@@ -207,6 +207,11 @@ public static partial class KitIcons
                 Line(19f, 20f, 19f, 9f);
                 Line(9.5f, 13f, 14.5f, 13f);
                 break;
+            case KitIcon.Leaderboard:
+                Box(9f, 4f, 15f, 20f);
+                Box(3f, 10f, 9f, 20f);
+                Box(15f, 13f, 21f, 20f);
+                break;
             case KitIcon.Power:
                 Arc(12f, 13f, 8f, MathF.PI * 0.2f, MathF.PI * 1.8f);
                 Line(12f, 3f, 12f, 11f);

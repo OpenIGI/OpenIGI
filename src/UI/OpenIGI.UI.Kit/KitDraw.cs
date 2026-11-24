@@ -272,6 +272,29 @@ public static class KitDraw
         painter.StrokeRect(box, edge, UiPalette.Fade(signedIn ? theme.Accent : theme.Border, appear));
     }
 
+    /// <summary>Draws a five-pointed star, filled: a fan of triangles about its middle, since its outline is not convex.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="centre">Its middle, in pixels.</param>
+    /// <param name="size">Its height, in pixels.</param>
+    /// <param name="colour">Its colour.</param>
+    public static void FillStar(UiPainter painter, UiVec2 centre, float size, Bgra32 colour)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        float outer = size * 0.5f;
+        Span<UiVec2> points = stackalloc UiVec2[10];
+        for (int i = 0; i < 10; i++)
+        {
+            float radius = i % 2 == 0 ? outer : outer * 0.4f;
+            (float sin, float cos) = MathF.SinCos((i * MathF.PI / 5f) - (MathF.PI * 0.5f));
+            points[i] = new UiVec2(centre.X + (cos * radius), centre.Y + (sin * radius));
+        }
+
+        for (int i = 0; i < 10; i++)
+        {
+            painter.FillTriangle(centre, points[i], points[(i + 1) % 10], colour);
+        }
+    }
+
     /// <summary>Draws a glass panel: the blurred scene behind it, a dark tint and a hairline.</summary>
     /// <param name="painter">The painter.</param>
     /// <param name="theme">The theme.</param>

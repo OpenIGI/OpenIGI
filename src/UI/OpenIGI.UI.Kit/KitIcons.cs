@@ -186,6 +186,9 @@ public enum KitIcon
 
     /// <summary>One of one's own, struck through: a kill of a teammate.</summary>
     TeamKill,
+
+    /// <summary>A podium of three, the middle tallest: the leaderboard.</summary>
+    Leaderboard,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
