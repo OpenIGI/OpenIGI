@@ -316,12 +316,15 @@ public sealed partial class GameHost
     }
 
     // The files the mission played from, as one value: the same files a session's server holds its players to.
-    private string RunContentFingerprint(int missionId)
-    {
-        string map = missionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        Game.Multiplayer.SessionFileList files = GameplayRules.Build(map, new Multiplayer.HostSessionFiles(_fileSystem, () => GameplayRules, withoutPins: true));
-        return ContentFingerprint.Of(files);
-    }
+    private string RunContentFingerprint(int missionId) => ContentFingerprint.Of(ContentFilesOf(missionId));
+
+    /// <summary>The files a mission's fingerprint is made of: each by path, length and hash, as this installation holds them.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <returns>The files.</returns>
+    public Game.Multiplayer.SessionFileList ContentFilesOf(int missionId) =>
+        GameplayRules.Build(
+            missionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            new Multiplayer.HostSessionFiles(_fileSystem, () => GameplayRules, withoutPins: true));
 
     // The install key's id the player plays under, or nothing while the key is not ready.
     private static string PlayerIdentityId() =>

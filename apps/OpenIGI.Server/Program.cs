@@ -38,7 +38,7 @@ const string LogCategory = "Server";
 // The checker's official game files: every mission's fingerprint in every edition installed here (FingerprintMode).
 if (FingerprintMode.Asked(args))
 {
-    return FingerprintMode.Run();
+    return FingerprintMode.Run(args);
 }
 
 // A replay checker, not a server: one run played again and its verdict written (VerifyMode).
