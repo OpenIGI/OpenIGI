@@ -556,13 +556,7 @@ public sealed partial class GameHost
                     // bar either way — so the shell is told it is no longer over a mission it was paused on.
                     // Deferred where a sequence covers the load: the menu keeps drawing under the departure
                     // and is put away on the frame the load actually runs.
-                    void LeaveTheMenu()
-                    {
-                        state.Shell?.ClosePauseMenu();
-                        _menuFlow.MenuMode = false;
-                        _menuFlow.PauseMenu = false;
-                        ApplyGameplayMotionBlur();
-                    }
+                    void LeaveTheMenu() => LeaveMenuForMission(state);
 
                     // The menu has been drawing this very level for as long as the player has been
                     // reading the briefing, built on a worker and complete. When it is the mission they
@@ -787,6 +781,7 @@ public sealed partial class GameHost
                 missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(MenuPictures)).Get(_titleRuntime.Title.Id, mission),
                 bestScore: BestScore,
                 leaderboard: LeaderboardSourceFor(),
+                replays: new ShellReplays(this, state),
                 touchScreen: () => _window.Input.Touch.InUse,
                 editTouchLayout: () =>
                 {

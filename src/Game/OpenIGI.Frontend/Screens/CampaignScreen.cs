@@ -53,6 +53,7 @@ public sealed class CampaignScreen : ShellScreen
     private CampaignHeader? _header;
     private MissionHero? _hero;
     private MissionBestPanel? _best;
+    private ActionRow? _replaysRow;
     private PrimaryAction? _play;
     private OptionCycler? _difficulty;
     private int _selected = -1;
@@ -241,6 +242,19 @@ public sealed class CampaignScreen : ShellScreen
         _best = new MissionBestPanel(theme, Size) { MaxWidth = wide ? 760f : 640f, HorizontalAlignment = HorizontalAlignment.Left };
         column.AddChild(_best);
 
+        // The runs of it kept, to watch: under its best, once there is one.
+        if (Context.Host.Replays is { } replays)
+        {
+            _replaysRow = new ActionRow(theme, "Your replays of this mission", "Watch")
+            {
+                MaxWidth = wide ? 760f : 640f,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                FieldWidth = compact ? 90f : 160f,
+            };
+            _replaysRow.Activated += _ => Context.Stack.Push(new ReplaysScreen(Context, replays, _missions[Math.Clamp(_shown, 0, _missions.Count - 1)]));
+            column.AddChild(_replaysRow);
+        }
+
         // How the mission is played, chosen right where it is started. Seeded from the context rather than a fresh
         // default, so a player three missions into a night run is shown the run they are on.
         _difficulty = new OptionCycler(theme, "Difficulty", Difficulties, DefaultDifficultyIndex());
@@ -395,6 +409,12 @@ public sealed class CampaignScreen : ShellScreen
             mission.Name,
             mission.Description);
         _best?.Show(Context.Host.BestScore(mission.Id));
+        if (_replaysRow is not null && Context.Host.Replays is { } kept)
+        {
+            int count = kept.KeptOf(mission.Id).Count;
+            _replaysRow.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _replaysRow.Value = string.Create(CultureInfo.InvariantCulture, $"{count} kept");
+        }
 
         if (_play is not null)
         {

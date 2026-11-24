@@ -46,14 +46,9 @@ public sealed partial class GameHost
     public string? PlayReplay(ReplayFile replay)
     {
         ArgumentNullException.ThrowIfNull(replay);
-        if (!string.Equals(replay.Header.Title, _titleRuntime.Title.Id, StringComparison.Ordinal))
+        if (ReplayProblem(replay) is { } problem)
         {
-            return $"it is a replay of {replay.Header.Title}, and {_titleRuntime.Title.Id} is the game running";
-        }
-
-        if (!_missions.TryGet(replay.Header.Mission, out _))
-        {
-            return $"this game has no mission {replay.Header.Mission}";
+            return problem;
         }
 
         StopPlayback();
@@ -73,6 +68,19 @@ public sealed partial class GameHost
         _logger.Information("Replays", $"Playing back mission {replay.Header.Mission}, {replay.Tape.Length / 30.0:0.#} s.");
         StartMissionWhenReadable(replay.Header.Mission);
         return null;
+    }
+
+    /// <summary>Why a replay cannot be played in the game running, or <see langword="null"/> where it can.</summary>
+    /// <param name="replay">The replay.</param>
+    /// <returns>Why not, or <see langword="null"/>.</returns>
+    private string? ReplayProblem(ReplayFile replay)
+    {
+        if (!string.Equals(replay.Header.Title, _titleRuntime.Title.Id, StringComparison.Ordinal))
+        {
+            return $"it is a replay of {replay.Header.Title}, and {_titleRuntime.Title.Id} is the game running";
+        }
+
+        return _missions.TryGet(replay.Header.Mission, out _) ? null : $"this game has no mission {replay.Header.Mission}";
     }
 
     /// <summary>Plays back the replay a file holds (<c>-playreplay</c>), or says why it cannot.</summary>

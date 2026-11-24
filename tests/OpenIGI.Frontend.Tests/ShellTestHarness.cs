@@ -122,6 +122,9 @@ internal sealed class FakeHost : IShellHost
     /// <summary>The community maps the Maps page shows, or null for a build without them.</summary>
     public IShellMaps? Maps { get; set; }
 
+    /// <summary>The player's replays the campaign and replays pages show, or null for a build without them.</summary>
+    public IShellReplays? Replays { get; set; }
+
     /// <summary>The account the profile page shows, or null for a build without one.</summary>
     public IAccountPanel? Account { get; set; }
 
