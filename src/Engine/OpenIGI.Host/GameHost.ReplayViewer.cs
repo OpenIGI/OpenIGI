@@ -167,6 +167,8 @@ public sealed partial class GameHost
         _replayCamera = ReplayCamera.Eyes;
         _replayBarHidden = false;
         _replayDecided = null;
+        _playbackDecidedAt = null;
+        _playbackScore = null;
         RestoreReplayThirdPerson();
     }
 

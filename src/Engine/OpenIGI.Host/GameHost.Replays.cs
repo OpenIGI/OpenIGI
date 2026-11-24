@@ -53,7 +53,7 @@ public sealed partial class GameHost
     internal ReplayLibrary Replays => _replayLibrary ??= new ReplayLibrary(_logger);
 
     /// <summary>Gets the build's version, as the replays and the rooms are told it.</summary>
-    internal static string BuildVersion { get; } = typeof(GameHost).Assembly
+    public static string BuildVersion { get; } = typeof(GameHost).Assembly
         .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev";
 
@@ -207,12 +207,18 @@ public sealed partial class GameHost
         events.Subscribe((in Game.Events.AlarmChanged alarm) => RunEvent(GhostEventKind.Alarm, alarm.On ? 1 : 0));
     }
 
-    // Something the run's ghost marks, on the tick it happened.
+    // Something the run's ghost marks, on the tick it happened: the run being recorded's, or the replay being played's, the first
+    // time its level runs the tick.
     private void RunEvent(GhostEventKind kind, int detail)
     {
         if (_run is not null && _runLoad == _levelLoads)
         {
             _runGhost?.Event(TickOfLevel, kind, detail);
+        }
+
+        if (_playback is not null && _playbackLoad == _levelLoads && _playbackGhost is { } ghost && TickOfLevel >= ghost.Length - 1)
+        {
+            ghost.Event(TickOfLevel, kind, detail);
         }
     }
 
@@ -244,6 +250,17 @@ public sealed partial class GameHost
         if (outcome == ReplayOutcome.Abandoned && run.Length < ShortestAbandonedRun)
         {
             return;
+        }
+
+        // A mission is decided as the tick that decides it closes, before the tick is counted: the run holds that tick too, its
+        // input already given, or a replay would stop one short of it and never see the mission decided.
+        if (outcome != ReplayOutcome.Abandoned && _runLoad == _levelLoads)
+        {
+            run.Ran(TickOfLevel);
+            if (_runGhost is { } deciding && GhostSource()?.GhostFrame() is { } frame)
+            {
+                deciding.Set(TickOfLevel, frame);
+            }
         }
 
         // A run left has no score of its own: by now the level under it may be the next one.

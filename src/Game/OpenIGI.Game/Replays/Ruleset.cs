@@ -47,7 +47,7 @@ public sealed record Ruleset(string Id, string Name)
             .. cvars.All
                 .Where(static v => (v.Flags & CVarOptions.Simulation) != 0)
                 .OrderBy(static v => v.Name, StringComparer.Ordinal)
-                .Select(static v => (v.Name, v.ValueText)),
+                .Select(static v => (v.Name, v.EffectiveText)),
         ];
     }
 

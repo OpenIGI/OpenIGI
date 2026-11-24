@@ -29,6 +29,12 @@ public interface ICVar
     /// <summary>Gets the current value rendered as text, in the form the settings file stores.</summary>
     string ValueText { get; }
 
+    /// <summary>
+    /// Gets the value the running code reads, rendered as <see cref="ValueText"/> is: the stored value, or an override in force
+    /// over it. What a run's settings are recorded as, since it is what the game played by.
+    /// </summary>
+    string EffectiveText => ValueText;
+
     /// <summary>Gets the default value rendered as text.</summary>
     string DefaultText { get; }
 

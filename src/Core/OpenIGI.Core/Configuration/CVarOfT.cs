@@ -106,6 +106,9 @@ public abstract class CVar<T> : ICVar
     public string ValueText => Format(_value);
 
     /// <inheritdoc/>
+    public string EffectiveText => Format(Value);
+
+    /// <inheritdoc/>
     public string DefaultText => Format(DefaultValue);
 
     /// <inheritdoc/>

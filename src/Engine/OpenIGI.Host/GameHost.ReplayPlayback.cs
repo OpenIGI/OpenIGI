@@ -25,6 +25,39 @@ public sealed partial class GameHost
     private int _playbackMatched;
     private int _playbackComparedThrough = -1;
 
+    // The tick a replay's level decided its mission on, and the mission's score as it stood then; and the runner as it moved
+    // here, the ghost a race against the run shows as the checker saw it.
+    private int? _playbackDecidedAt;
+    private Game.Scoring.MissionScore? _playbackScore;
+    private GhostTrack? _playbackGhost;
+
+    /// <summary>Gets the tick the level of the replay being played completed its mission on here, or null while it has not.</summary>
+    public int? ReplayCompletedAt => _replayDecided == true ? _playbackDecidedAt : null;
+
+    /// <summary>Gets the mission's score as it stood when the level of the replay being played completed it here, or null.</summary>
+    public Game.Scoring.MissionScore? ReplayScore => _replayDecided == true ? _playbackScore : null;
+
+    /// <summary>Gets the runner of the replay being played as it moved here, tick by tick, with what happened along the way.</summary>
+    public GhostTrack? ReplayGhost => _playbackGhost;
+
+    /// <summary>Gets the fingerprint of the files a mission plays from in this game: what a replay of it must have played from.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <returns>The fingerprint, in hex.</returns>
+    public string ContentFingerprintOf(int missionId) => RunContentFingerprint(missionId);
+
+    // The level of the replay being played has decided its mission: noted for the viewer, and, where it is completed, the tick and
+    // the score as they stand now, which a checker compares with what the file claims.
+    private void PlaybackDecided(bool completed)
+    {
+        _replayDecided = completed;
+        _playbackDecidedAt = TickOfLevel;
+        _playbackScore = _playback is { } replay ? TitlePlayer?.ScoreSheet(replay.Header.Mission)?.Score : null;
+        if (completed)
+        {
+            _playbackGhost?.Event(TickOfLevel, GhostEventKind.End, 1);
+        }
+    }
+
     /// <summary>Gets or sets what hears a replay part from its recording: the tick, the fingerprint recorded and the one played.</summary>
     public Action<int, ulong, ulong>? ReplayDiverged { get; set; }
 
@@ -193,6 +226,8 @@ public sealed partial class GameHost
         }
 
         ResetReplayViewer();
+        _playbackGhost = new GhostTrack();
+        HearRunEvents();
         _playbackLoad = _levelLoads;
         _replay = _playback.Tape;
         _replayTapeOfPlayback = _playback.Tape;
@@ -235,8 +270,18 @@ public sealed partial class GameHost
     /// <param name="tick">The tick that ran.</param>
     private void PlaybackTicked(int tick)
     {
-        if (_playback is not { } replay || _playbackLoad != _levelLoads || tick <= _playbackComparedThrough
-            || replay.Tape.DigestAt(tick) is not { } recorded)
+        if (_playback is not { } replay || _playbackLoad != _levelLoads)
+        {
+            return;
+        }
+
+        // The runner as it moved here, the first time each tick is run.
+        if (_playbackGhost is { IsFull: false } ghost && tick >= ghost.Length && GhostSource()?.GhostFrame() is { } frame)
+        {
+            ghost.Set(tick, frame);
+        }
+
+        if (tick <= _playbackComparedThrough || replay.Tape.DigestAt(tick) is not { } recorded)
         {
             return;
         }
