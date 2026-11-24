@@ -901,12 +901,12 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// Advances only the presentation while the map computer is open. The player remains grounded and
     /// motionless, but the first-person rig keeps advancing exactly as the retail state-45 handler does.
     /// </summary>
-    /// <param name="input">
-    /// The input, whose map key closes the computer as state 45's run does (<c>0x40E3C0</c>); or <see langword="null"/> for an
-    /// empty frame, where the host closes it.
+    /// <param name="frame">
+    /// The tick's input frame, whose map key closes the computer as state 45's run does (<c>0x40E3C0</c>); or
+    /// <see langword="null"/> for an empty frame, where the host closes it.
     /// </param>
     /// <returns><see langword="true"/> when the map key went down this tick.</returns>
-    public bool TickMapComputer(InputState? input = null)
+    public bool TickMapComputer(PlayerInputFrame? frame = null)
     {
         if (!_mapComputerOpen)
         {
@@ -918,9 +918,9 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
 
         // Map controls are consumed by ComputerMap, not HumanPlayer, and the weapon machine waits out state 11 whatever is
         // held. Without the host's input the frame is empty, which keeps the machine's clock.
-        _input.Accept(input is null ? default : PlayerInputSampler.SampleFrame(input, InputProfile));
+        _input.Accept(frame ?? default);
         _lastRawFrame = _input.Current;
-        bool close =input is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
+        bool close = frame is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
         _locomotion.Animator?.Enter(45);
         TickWeapons();
         _firstPerson.Rig?.Tick();

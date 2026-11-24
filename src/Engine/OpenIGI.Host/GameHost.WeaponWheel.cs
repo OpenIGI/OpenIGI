@@ -74,7 +74,10 @@ public sealed partial class GameHost
             (IReadOnlyList<string> choices, _) = player.WheelChoices();
             if (pick >= 0 && pick < choices.Count)
             {
-                player.ChooseFromWheel(choices[pick]);
+                // Handed to the player with the next tick's input, not now: a replay gives the pick back on that tick.
+                _wheelPick = int.TryParse(choices[pick], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int number)
+                    ? number
+                    : null;
                 PlayWheelSound(WeaponWheelSounds.ChooseSoundName, 0.8f);
             }
 

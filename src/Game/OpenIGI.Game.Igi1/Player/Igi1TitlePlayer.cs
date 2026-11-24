@@ -125,6 +125,12 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     {
         TitlePlayerInput given = input;
 
+        // The weapon wheel's pick since the last tick, taken as the tick begins as a number key's would be.
+        if (input.WheelPick is { } pick)
+        {
+            ChooseFromWheel(pick.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         // The crosshair's ray over the shoulder, from the eye it was measured from as the tick began.
         Human.Rig.AimConvergenceRay = input.Aim is { } aim ? (EyePosition + aim.EyeOffset, aim.Direction) : null;
 

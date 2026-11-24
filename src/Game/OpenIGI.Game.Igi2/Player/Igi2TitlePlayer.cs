@@ -650,6 +650,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
     {
+        // The weapon wheel's pick since the last tick, taken as the tick begins as a number key's would be.
+        if (input.WheelPick is { } pick)
+        {
+            ChooseFromWheel(pick.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         TakeTickAim(input);
         ViewError.Tick();
         TakeCheats();

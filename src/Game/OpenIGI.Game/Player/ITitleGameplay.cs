@@ -64,6 +64,8 @@ public readonly record struct TitlePlayerRequest(
 /// How far between the last two ticks the last picture before this tick was drawn, 0 to 1, with smooth motion; <see langword="null"/>
 /// when the picture was the tick itself. What the player's rounds meet a moving body at, so they land where the body was seen.
 /// </param>
+/// <param name="WheelPick">The weapon the weapon wheel picked since the last tick, by the title's own number for it; <see langword="null"/> for none.</param>
+/// <param name="Computer">The computer as it stood for this tick: whether it holds the player, and the mouse and keys it took.</param>
 /// <param name="Aim">
 /// The ray the crosshair sat on when the camera was over the shoulder, from the player's eye (<see cref="ITitlePlayer.EyePosition"/>
 /// as the tick began); <see langword="null"/> with the camera at the eye, which leaves the shots on the eye's own forward.
@@ -81,7 +83,25 @@ public readonly record struct TitlePlayerInput(
     ulong TitlePressed = 0,
     TitleRawKeys Raw = TitleRawKeys.None,
     float? ViewBlend = null,
-    TitleAim? Aim = null);
+    TitleAim? Aim = null,
+    int? WheelPick = null,
+    TitleComputerInput Computer = default);
+
+/// <summary>
+/// The computer's part of a tick's input: everything the player's computer reads while it is up, gathered by the host once a
+/// tick, so a replay or a server playing the tick again gives it the same -- the window is not theirs to read.
+/// </summary>
+/// <param name="Open">Whether the computer holds the player this tick.</param>
+/// <param name="Pointer">The mouse as it moved and was pressed since the last tick, and the map and page keys pressed, while it is up.</param>
+/// <param name="Held">The actions held this tick, which the open computer keeps from the player and reads itself.</param>
+/// <param name="DisplayWidth">The width its screens are laid out across, in its own pixels, which a click lands by.</param>
+/// <param name="DisplayHeight">The height they are laid out across.</param>
+public readonly record struct TitleComputerInput(
+    bool Open,
+    Computer.ComputerPointerInput Pointer,
+    PlayerAction Held,
+    int DisplayWidth,
+    int DisplayHeight);
 
 /// <summary>
 /// Where the crosshair points when the camera is not at the eye: a ray the shots converge on, as the camera over the shoulder

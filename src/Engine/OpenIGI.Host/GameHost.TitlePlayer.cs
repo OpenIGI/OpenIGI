@@ -249,6 +249,12 @@ public sealed partial class GameHost
         }
     }
 
+    // The input the player's last tick was given, gathered or replayed: what the mission's computer reads in that tick.
+    private TitlePlayerInput _tickInput;
+
+    // The weapon the wheel picked since the last tick, for the next tick's input.
+    private int? _wheelPick;
+
     /// <summary>Runs the title's player for one tick, with the input gathered since the last.</summary>
     /// <returns><see langword="true"/> when the title has its own player, whether or not it ran this tick.</returns>
     private bool TickTitlePlayer()
@@ -281,6 +287,7 @@ public sealed partial class GameHost
 
         // The weapon wheel holds the player still while it is open: nothing it was given goes through. So does the mission's
         // computer, while it serves this player.
+        PlayerAction heldForComputer = held;
         bool still = WheelHoldsInput || (_computerOpen && TitleUsesMissionComputer);
         if (still)
         {
@@ -326,7 +333,17 @@ public sealed partial class GameHost
             TitlePressed: _titleExtraPressed | (still ? 0UL : titleScriptPressed),
             Raw: SampleRawKeys(),
             ViewBlend: _drawnTickBlend,
-            Aim: TickAim(player)));
+            Aim: TickAim(player),
+            WheelPick: _wheelPick,
+            Computer: ComputerTickInput(heldForComputer)));
+        _wheelPick = null;
+        _tickInput = given;
+
+        // The remaster's computer holds the player from the tick it is up for, as the input says -- not from the frame it opened on.
+        if (TacticalComputer is not null)
+        {
+            _mission.SetPlayerComputerOpen(given.Computer.Open);
+        }
 
         // The blend the player saw the soldiers at, from the input as given (a replay's as recorded): what its rounds meet.
         _soldiers?.ShotViewBlend = given.ViewBlend;

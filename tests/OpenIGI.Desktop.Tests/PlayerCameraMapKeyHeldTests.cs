@@ -104,7 +104,7 @@ public sealed class PlayerCameraMapKeyHeldTests
         input.Keyboard.SetKey(key, down);
         if (computerOpen)
         {
-            camera.TickMapComputer(input);
+            camera.TickMapComputer(PlayerInputSampler.SampleFrame(input, camera.InputProfile));
         }
         else
         {
@@ -138,7 +138,7 @@ public sealed class PlayerCameraMapKeyHeldTests
         input.Captured = computerOpen;
         if (computerOpen)
         {
-            camera.TickMapComputer(input);
+            camera.TickMapComputer(PlayerInputSampler.SampleFrame(input, camera.InputProfile));
         }
         else
         {
