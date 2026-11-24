@@ -62,6 +62,17 @@ public sealed class RulesetTests
     }
 
     [Fact]
+    public void How_the_dead_are_drawn_is_no_part_of_either_rules()
+    {
+        // The Vanilla experience turns the ragdolls off, but they only draw a death: a classic run may have them on.
+        Assert.Equal(CVarOptions.None, GameplayCVars.Ragdoll.Flags & CVarOptions.Simulation);
+        List<(string Name, string Value)> settings = SettingsOf(ExperiencePreset.Vanilla);
+        Assert.DoesNotContain(settings, static s => s.Name.StartsWith("g_ragdoll", StringComparison.Ordinal));
+        (Ruleset rules, string why) = Ruleset.Of(settings, CVarRegistry.Default, ExperiencePresetRegistry.Default);
+        Assert.True(rules == Ruleset.Classic, why);
+    }
+
+    [Fact]
     public void A_ruleset_is_found_by_its_id()
     {
         Assert.Equal(Ruleset.Classic, Ruleset.FromId("classic"));

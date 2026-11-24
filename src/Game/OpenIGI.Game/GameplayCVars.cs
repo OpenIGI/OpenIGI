@@ -64,12 +64,17 @@ public static class GameplayCVars
     /// Off by default, and no profile turns it on: the canned deaths are the game as shipped, and the
     /// simulation is something a player asks for.
     /// </para>
+    /// <para>
+    /// Not a setting of the level's (<see cref="CVarOptions.Simulation"/>): rounds pass the dead by, a corpse goes when the level's
+    /// own view of it says so, and dropped guns and blasts meet the same world either way -- so this and its tuning below only
+    /// change how a death is drawn, and a ranked run may have them however the player likes.
+    /// </para>
     /// </remarks>
     public static readonly BoolCVar Ragdoll = Experience.Define(
         CVar.Bool(
             "g_ragdoll",
             false,
-            CVarOptions.Archive | CVarOptions.Simulation,
+            CVarOptions.Archive,
             "Simulate the dead instead of playing the original's canned death animations."),
         vanilla: "0",
         enhanced: null);
@@ -250,7 +255,7 @@ public static class GameplayCVars
         1f,
         0f,
         8f,
-        CVarOptions.Archive | CVarOptions.Simulation,
+        CVarOptions.Archive,
         "How hard a round throws the body it kills. 0 makes them simply fall.");
 
     /// <summary>What fraction of real gravity a corpse falls at.</summary>
@@ -271,7 +276,7 @@ public static class GameplayCVars
         1f,
         0.1f,
         2f,
-        CVarOptions.Archive | CVarOptions.Simulation,
+        CVarOptions.Archive,
         "How fast a corpse falls, as a fraction of real gravity. 1 is physically honest.");
 
     /// <summary>For how long a corpse keeps any muscle tone, in seconds.</summary>
@@ -293,7 +298,7 @@ public static class GameplayCVars
         0.5f,
         0f,
         3f,
-        CVarOptions.Archive | CVarOptions.Simulation,
+        CVarOptions.Archive,
         "Seconds a corpse keeps any muscle tone before it goes limp. 0 is limp at once.");
 
     /// <summary>Whether a corpse's muscles follow the death animation rather than hold the pose it died in.</summary>
@@ -313,7 +318,7 @@ public static class GameplayCVars
     public static readonly BoolCVar RagdollMuscleClip = CVar.Bool(
         "g_ragdoll_muscle_clip",
         false,
-        CVarOptions.Archive | CVarOptions.Simulation,
+        CVarOptions.Archive,
         "Corpses play the original death animation first, then go limp: authored falls instead of physical ones.");
 
     /// <summary>Draws every soldier's bones and corpse shapes over the frame.</summary>
@@ -348,7 +353,7 @@ public static class GameplayCVars
         8,
         1,
         64,
-        CVarOptions.Archive | CVarOptions.Simulation,
+        CVarOptions.Archive,
         "Ragdoll solver substeps per tick. Higher is stiffer and more expensive.");
 
     /// <summary>Whether bullet impacts are heard as well as seen.</summary>
