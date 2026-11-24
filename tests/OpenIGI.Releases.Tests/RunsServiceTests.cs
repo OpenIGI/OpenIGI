@@ -14,6 +14,14 @@ public sealed class RunsServiceTests
 {
     private static readonly Uri Master = new("https://master.example");
 
+    [Theory]
+    [InlineData("0123456789abcdef0123456789abcdef", true)]
+    [InlineData("0123456789ABCDEF0123456789abcdef", false)]
+    [InlineData("0123456789abcdef0123456789abcde", false)]
+    [InlineData("C:/replays/m1.oigr", false)]
+    [InlineData(null, false)]
+    public void A_run_id_is_told_from_a_file_path(string? text, bool expected) => Assert.Equal(expected, RunsService.IsRunId(text));
+
     [Fact]
     public async Task A_run_is_submitted_signed_with_its_claims_and_replay()
     {

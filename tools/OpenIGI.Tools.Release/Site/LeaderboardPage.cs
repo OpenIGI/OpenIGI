@@ -1,8 +1,14 @@
+using System.Text.Json;
+using OpenIGI.Core.Titles;
+
 namespace OpenIGI.Tools.Release;
 
 /// <summary>
 /// <c>/leaderboard/</c>: the best players on the official servers in one game (<c>?game=igi1</c> or <c>igi2</c>; each game's
 /// stats are its own) this season or all time, by score, kills, assists, K/D, wins or matches -- the top three on a podium, the rest ranked under them -- read from the master as the page opens;
+/// <c>/leaderboard/?board=missions</c> is the single-player mission boards instead: a mission (or all of them), a difficulty and
+/// the rules, by the fastest or the best rank, every run played again by the server before it counted, with Watch and Race on
+/// each row whose replay is kept -- the browser build opened on the run (<c>?replay=</c> or <c>?race=</c>).
 /// <c>/leaderboard/?player=ID</c> (and <c>/u/ID</c>, which the 404 page sends here) is one player's record by their Discord
 /// user id or a key's: their figures this season and all time, their medals and their latest matches. Static like the rest
 /// of the site, in its look (<c>/landing/site.css</c>) and drawn with the home page's own pieces (<c>/landing/board.js</c>);
@@ -10,6 +16,9 @@ namespace OpenIGI.Tools.Release;
 /// </summary>
 internal static class LeaderboardPage
 {
+    // Each game's missions by name, in campaign order, for the mission boards' pick.
+    private static readonly string MissionNames = JsonSerializer.Serialize(GameTitle.All.ToDictionary(static t => t.Id, static t => t.MissionNames));
+
     /// <summary>The page.</summary>
     public static string Html { get; } = $$"""
         <!doctype html>
@@ -101,6 +110,30 @@ internal static class LeaderboardPage
             @media (max-width: 560px) { .match { grid-template-columns: 4px minmax(0, 1fr) auto; } .match .kda { grid-column: 2; } }
 
             .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
+
+            /* The mission boards: the picks, the metric's tabs, and a row a run with its time, its rank and its replay. */
+            .picks { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+            .runs { display: flex; flex-direction: column; gap: 6px; }
+            .run { display: grid; grid-template-columns: 44px minmax(0, 1fr) 110px 120px auto; align-items: center; gap: 14px; padding: 10px 16px; border: 1px solid transparent; border-radius: 12px; background: rgba(14, 16, 14, 0.62); }
+            .run .n { color: var(--faint); font: 600 14px/1 var(--mono); }
+            .run .n.top { color: var(--accent); }
+            .run .player { display: flex; align-items: center; gap: 12px; min-width: 0; }
+            .run .player .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+            .run .figure { text-align: right; color: var(--accent); font: 700 17px/1 var(--sans); font-variant-numeric: tabular-nums; }
+            .run .under { text-align: right; white-space: nowrap; color: var(--muted); font: 12px/1 var(--mono); letter-spacing: 0.06em; }
+            .run .go { display: flex; gap: 8px; justify-content: flex-end; min-width: 168px; }
+            .run .go a { padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text); font: 600 12px/1 var(--sans); letter-spacing: 0.06em; text-decoration: none; text-transform: uppercase; }
+            .run .go a:hover { border-color: var(--accent); color: var(--accent); }
+            .run .go .kept { color: var(--faint); font: 11px/1 var(--mono); }
+            .run.head { background: none; padding-top: 0; padding-bottom: 0; color: var(--faint); font: 500 10.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+            .run.head span { color: inherit; font: inherit; }
+            .runs .more { margin-top: 10px; text-align: center; color: var(--faint); font: 11px/1 var(--mono); letter-spacing: 0.12em; }
+            @media (max-width: 760px) {
+              .run { grid-template-columns: 34px minmax(0, 1fr) auto; row-gap: 8px; }
+              .run .under { display: none; }
+              .run .go { grid-column: 2 / -1; justify-content: flex-start; min-width: 0; }
+              .run.head { display: none; }
+            }
           </style>
         </head>
         <body>
@@ -116,6 +149,10 @@ internal static class LeaderboardPage
                   <span class="clock" id="clock" hidden></span>
                 </div>
                 <div class="switches">
+                  <div class="segmented" role="group" aria-label="Boards" id="modes">
+                    <button type="button" data-mode="matches" aria-pressed="true">Multiplayer</button>
+                    <button type="button" data-mode="missions" aria-pressed="false">Single player</button>
+                  </div>
                   <span id="board-game"></span>
                   <div class="segmented" role="group" aria-label="Period" id="periods">
                     <button type="button" data-period="season" aria-pressed="true">This season</button>
@@ -124,9 +161,24 @@ internal static class LeaderboardPage
                   <select class="past" id="past" aria-label="A season gone by" hidden></select>
                 </div>
               </div>
-              <div class="tabs" role="tablist" aria-label="Ranked by" id="metrics"></div>
-              <div class="podium" id="podium"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
-              <div class="ranks" id="ranks"></div>
+              <div id="matches-board">
+                <div class="tabs" role="tablist" aria-label="Ranked by" id="metrics"></div>
+                <div class="podium" id="podium"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="ranks" id="ranks"></div>
+              </div>
+              <div id="missions-board" hidden>
+                <div class="picks">
+                  <select class="past picked" id="mission" aria-label="Mission"></select>
+                  <select class="past picked" id="difficulty" aria-label="Difficulty">
+                    <option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option>
+                  </select>
+                  <select class="past picked" id="ruleset" aria-label="Rules">
+                    <option value="classic">Classic rules</option><option value="modern">Modern rules</option>
+                  </select>
+                </div>
+                <div class="tabs" role="tablist" aria-label="Ranked by" id="run-metrics"></div>
+                <div class="runs" id="runs"></div>
+              </div>
             </section>
 
             <section id="record" hidden>
@@ -327,10 +379,118 @@ internal static class LeaderboardPage
               }
             }
 
+            // The single-player mission boards: every run on them was played again by the server before it counted.
+            const MISSIONS = {{MissionNames}};
+            const BOARD_TEXT = $("board").querySelector(".banner p").textContent;
+            const RUNS_TEXT = "Every run is played again by the server from its inputs before it counts, so a time on the board is one the game really allows. Sign in with Discord on the game's Profile page to be on the board under your name.";
+            const RUN_METRICS = [["time", "Fastest"], ["rank", "Best rank"]];
+            let missions = params.get("board") === "missions", runMetric = "time";
+            const time = (ticks) => {
+              const seconds = Math.max(0, ticks ?? 0) / 30;
+              const minutes = Math.floor(seconds / 60);
+              return `${minutes}:${(seconds - minutes * 60).toFixed(1).padStart(4, "0")}`;
+            };
+
+            // The run tabs: the fastest or the best rank.
+            $("run-metrics").replaceChildren(...RUN_METRICS.map(([id, text]) => {
+              const tab = el("button", null, text);
+              tab.type = "button";
+              tab.role = "tab";
+              tab.setAttribute("aria-selected", String(id === runMetric));
+              tab.addEventListener("click", () => {
+                runMetric = id;
+                for (const other of $("run-metrics").children) other.setAttribute("aria-selected", String(other === tab));
+                showRuns();
+              });
+              return tab;
+            }));
+            for (const pick of ["mission", "difficulty", "ruleset"]) $(pick).addEventListener("change", showRuns);
+
+            // The game's missions in the pick, every one of them together first.
+            function fillMissions() {
+              const all = el("option", null, "All missions");
+              all.value = "all";
+              $("mission").replaceChildren(all, ...(MISSIONS[game] ?? []).map((name, i) => Object.assign(el("option", null, `${i + 1}. ${name}`), { value: String(i + 1) })));
+            }
+
+            // A board's row: its place, the player, their figure and, where the replay is kept, Watch and Race in the browser.
+            function runRow(row, overall) {
+              const line = el("div", "run");
+              const place = el("span", `n${row.place <= 3 ? " top" : ""}`, `#${row.place}`);
+              const who = el("span", "player");
+              who.append(avatar(row.name, null), el("span", "name", row.name));
+              const rank = row.rank >= 0 ? `Rank ${row.rank + 1}` : "No rank";
+              const [figure, under] = overall
+                ? (runMetric === "rank" ? [`${number(row.points)} pts`, time(row.ticks)] : [time(row.ticks), `${row.missions} missions`])
+                : (runMetric === "rank" ? [rank, time(row.ticks)] : [time(row.ticks), rank]);
+              const go = el("span", "go");
+              if (!overall && row.replay && /^[0-9a-f]{32}$/.test(row.run ?? "")) {
+                const open = (key, text) => Object.assign(el("a", null, text), { href: `/?game=${game}&play&${key}=${row.run}`, title: `${text} this run in the browser` });
+                go.append(open("replay", "Watch"), open("race", "Race"));
+              } else if (!overall) {
+                go.append(el("span", "kept", "Replay not kept"));
+              }
+
+              line.append(place, who, el("span", "figure", figure), el("span", "under", under), go);
+              return line;
+            }
+
+            async function showRuns() {
+              const list = $("runs");
+              const mission = $("mission").value || "all";
+              const overall = mission === "all";
+              const address = new URL(location.href);
+              address.searchParams.set("mission", mission);
+              address.searchParams.set("difficulty", $("difficulty").value);
+              address.searchParams.set("rules", $("ruleset").value);
+              history.replaceState(null, "", address);
+              $("eyebrow").textContent = `${gameName()} · mission boards`;
+              $("clock").hidden = true;
+              try {
+                const board = await ask(`/v1/runs/board?title=${game}&mission=${mission}&difficulty=${$("difficulty").value}&ruleset=${$("ruleset").value}&metric=${runMetric}`);
+                if (board.rows.length === 0) {
+                  list.replaceChildren(el("div", "empty", overall
+                    ? `Nobody has run every mission of ${gameName()} on these rules yet.`
+                    : "Nobody on this board yet: complete the mission signed in with Discord to be the first."));
+                  return;
+                }
+
+                const head = el("div", "run head");
+                head.append(el("span", null, "#"), el("span", null, "Player"), el("span", "figure", runMetric === "rank" ? (overall ? "Points" : "Rank") : "Time"), el("span", "under", ""), el("span", "go", ""));
+                const more = board.players > board.rows.length ? [el("div", "more", `THE TOP ${board.rows.length} OF ${number(board.players)} RANKED`)] : [];
+                list.replaceChildren(head, ...board.rows.map((row) => runRow(row, overall)), ...more);
+              } catch {
+                list.replaceChildren(el("div", "empty", "The mission boards can't be reached right now. Try again in a moment."));
+              }
+            }
+
+            // The matches' boards or the missions', kept in the address.
+            function pickMode(toMissions) {
+              missions = toMissions;
+              for (const other of document.querySelectorAll("#modes button")) other.setAttribute("aria-pressed", String((other.dataset.mode === "missions") === missions));
+              $("matches-board").hidden = missions;
+              $("missions-board").hidden = !missions;
+              $("periods").hidden = missions;
+              $("past").hidden = missions || $("past").options.length <= 1;
+              $("board").querySelector(".banner p").textContent = missions ? RUNS_TEXT : BOARD_TEXT;
+              const address = new URL(location.href);
+              if (missions) address.searchParams.set("board", "missions");
+              else for (const key of ["board", "mission", "difficulty", "rules"]) address.searchParams.delete(key);
+              history.replaceState(null, "", address);
+              if (missions) showRuns(); else showBoard();
+            }
+
+            for (const button of document.querySelectorAll("#modes button")) button.addEventListener("click", () => pickMode(button.dataset.mode === "missions"));
+
             const player = params.get("player");
-            $("board-game").replaceWith(gameSwitch(game, (id) => pickGame(id, showBoard)));
+            fillMissions();
+            // A shared board's picks, where the address names ones the page offers.
+            for (const [pick, key] of [["mission", "mission"], ["difficulty", "difficulty"], ["ruleset", "rules"]]) {
+              if ([...$(pick).options].some((option) => option.value === params.get(key))) $(pick).value = params.get(key);
+            }
+            $("board-game").replaceWith(gameSwitch(game, (id) => pickGame(id, () => { fillMissions(); if (missions) showRuns(); else showBoard(); })));
             $("record-game").replaceChildren(gameSwitch(game, (id) => pickGame(id, () => showRecord(player))));
-            if (player) showRecord(player); else showBoard();
+            if (player) showRecord(player); else pickMode(missions);
           </script>
         </body>
         </html>

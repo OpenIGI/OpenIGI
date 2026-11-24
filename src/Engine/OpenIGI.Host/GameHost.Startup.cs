@@ -813,13 +813,13 @@ public sealed partial class GameHost
             {
                 // Straight into a replay, its mission brought up as it was recorded.
                 ResumeConditions();
-                StartReplayFromFile(replayPath);
+                StartReplayFrom(replayPath, race: false);
             }
             else if (_options.RacePath is { } racePath)
             {
                 // Straight into a race against a replay's ghost, its mission brought up as the run was played.
                 ResumeConditions();
-                StartRaceFromFile(racePath);
+                StartReplayFrom(racePath, race: true);
             }
             else if (_options.StartMission > 0)
             {

@@ -37,6 +37,10 @@ const party = (query.get('party') ?? '').replace(/[^A-Za-z0-9]/g, '');
 if (party) args.push('+party_join', party);
 if (query.has('host')) args.push('-host');
 if (query.get('name')) args.push('-name', query.get('name'));
+// A mission board's run, from the site's leaderboard: ?replay=ID watches it, ?race=ID races its ghost.
+const run = (key) => (/^[0-9a-f]{32}$/.test(query.get(key) ?? '') ? query.get(key) : null);
+if (run('replay')) args.push('-playreplay', run('replay'));
+else if (run('race')) args.push('-race', run('race'));
 
 // --- Which game ----------------------------------------------------------------------------------------
 //

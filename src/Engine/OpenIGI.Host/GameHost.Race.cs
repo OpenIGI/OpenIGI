@@ -69,26 +69,6 @@ public sealed partial class GameHost
         return null;
     }
 
-    /// <summary>Races the ghost of the replay a file holds (<c>-race</c>), or says why it cannot.</summary>
-    /// <param name="path">The file.</param>
-    private void StartRaceFromFile(string path)
-    {
-        string? problem;
-        try
-        {
-            problem = Race(ReplayFile.Read(File.ReadAllBytes(path)));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-        {
-            problem = ex.Message;
-        }
-
-        if (problem is not null)
-        {
-            _logger.Warning("Replays", $"The ghost in {path} was not raced: {problem}.");
-        }
-    }
-
     /// <summary>Ends the race, if one is on: the ghost taken away and the player's own settings put back.</summary>
     public void StopRace()
     {

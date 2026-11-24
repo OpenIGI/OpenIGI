@@ -136,6 +136,11 @@ public sealed class RunsService(HttpClient http, Uri master)
         return await ReadAsync(response, RunsJsonContext.Default.RunBoard, cancel).ConfigureAwait(false);
     }
 
+    /// <summary>Whether some text is a run's id as the master gives them: 32 lowercase hexadecimal digits.</summary>
+    /// <param name="text">The text.</param>
+    /// <returns>Whether it is.</returns>
+    public static bool IsRunId(string? text) => text is { Length: 32 } && text.All(static c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f');
+
     /// <summary>A board's run's replay, with the ghost the checker saw, to watch or race; null where it is not kept.</summary>
     /// <param name="id">The run.</param>
     /// <param name="cancel">Stops it.</param>

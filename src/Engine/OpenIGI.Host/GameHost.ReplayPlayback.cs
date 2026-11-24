@@ -123,14 +123,25 @@ public sealed partial class GameHost
         return _missions.TryGet(replay.Header.Mission, out _) ? null : $"this game has no mission {replay.Header.Mission}";
     }
 
-    /// <summary>Plays back the replay a file holds (<c>-playreplay</c>), or says why it cannot.</summary>
-    /// <param name="path">The file.</param>
-    private void StartReplayFromFile(string path)
+    /// <summary>
+    /// Watches (<c>-playreplay</c>) or races (<c>-race</c>) the replay a file holds or, where no such file is and it names one,
+    /// a board's run, its replay brought down from the master first (the site's Watch and Race open the browser build so).
+    /// </summary>
+    /// <param name="path">The file, or the run's id.</param>
+    /// <param name="race">Whether to race its ghost rather than watch it.</param>
+    private void StartReplayFrom(string path, bool race)
     {
+        if (!File.Exists(path) && Releases.Accounts.RunsService.IsRunId(path))
+        {
+            AskBoardReplay(path, race);
+            return;
+        }
+
         string? problem;
         try
         {
-            problem = PlayReplay(ReplayFile.Read(File.ReadAllBytes(path)));
+            ReplayFile replay = ReplayFile.Read(File.ReadAllBytes(path));
+            problem = race ? Race(replay) : PlayReplay(replay);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -139,7 +150,7 @@ public sealed partial class GameHost
 
         if (problem is not null)
         {
-            _logger.Warning("Replays", $"The replay {path} was not played: {problem}.");
+            _logger.Warning("Replays", $"{path} was not {(race ? "raced" : "played")}: {problem}.");
         }
     }
 
