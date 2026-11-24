@@ -29,6 +29,9 @@ internal sealed class PresetBand
     /// <summary>Gets whether a preset can be chosen, by index: the reading cannot.</summary>
     public required Func<int, bool> Choosable { get; init; }
 
+    /// <summary>Gets a badge to show beside a preset's caption, by index -- why it cannot be chosen yet -- or <see langword="null"/> for none.</summary>
+    public Func<int, string?>? Badge { get; init; }
+
     /// <summary>Gets which preset the settings add up to now, by index.</summary>
     public required Func<int> Reading { get; init; }
 
@@ -52,7 +55,8 @@ internal sealed class PresetBand
         Action<Action<int>> onPicked;
         if (compact)
         {
-            var row = new Dropdown(theme, Title, Captions, Reading()) { Tooltip = Help, OptionEnabled = Choosable };
+            IReadOnlyList<string> captions = [.. Captions.Select((caption, index) => Badge?.Invoke(index) is { } badge ? $"{caption} ({badge})" : caption)];
+            var row = new Dropdown(theme, Title, captions, Reading()) { Tooltip = Help, OptionEnabled = Choosable };
             control = row;
             show = index => row.SelectedIndex = index;
             onPicked = handler => row.SelectionChanged += handler;
@@ -67,6 +71,7 @@ internal sealed class PresetBand
                 VerticalAlignment = VerticalAlignment.Center,
                 Tooltip = Help,
                 TabEnabled = Choosable,
+                Notes = Badge is { } badge ? [.. Captions.Select((_, index) => badge(index) ?? string.Empty)] : null,
             };
             strip.SelectedIndex = Reading();
             control = strip;

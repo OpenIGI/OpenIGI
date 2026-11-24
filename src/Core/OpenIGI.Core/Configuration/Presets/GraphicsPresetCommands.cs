@@ -30,9 +30,11 @@ public static class GraphicsPresetCommands
         if (context.Count == 0)
         {
             context.Print($"{CommandName} = {Name(registry.Current)}");
-            context.Print(registry.LockedPreset is { } held
-                ? $"  managing {registry.Managed.Count} setting(s); this build is locked to {Name(held)}"
-                : $"  managing {registry.Managed.Count} setting(s); choices: vanilla | enhanced | high | ultra");
+            context.Print(registry.LockedPreset is { } buildPreset
+                ? $"  managing {registry.Managed.Count} setting(s); this build is locked to {Name(buildPreset)}"
+                : registry.HeldPreset is { } gamePreset
+                    ? $"  managing {registry.Managed.Count} setting(s); the game being played offers only {Name(gamePreset)} for now"
+                    : $"  managing {registry.Managed.Count} setting(s); choices: vanilla | enhanced | high | ultra");
             return;
         }
 
@@ -46,6 +48,12 @@ public static class GraphicsPresetCommands
         if (registry.LockedPreset is { } locked && locked != preset)
         {
             context.Error($"This build is locked to the {Name(locked)} preset.");
+            return;
+        }
+
+        if (registry.HeldPreset is { } held && held != preset)
+        {
+            context.Error($"The game being played offers only the {Name(held)} preset for now; the others are coming soon.");
             return;
         }
 

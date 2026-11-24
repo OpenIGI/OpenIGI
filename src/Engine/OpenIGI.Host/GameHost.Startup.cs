@@ -91,6 +91,7 @@ public sealed partial class GameHost
             useSavedSettings: !_options.Lockstep,
             _options.FirstRunPreset,
             _options.LockedPreset);
+        HoldTitleGraphicsPreset();
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.
         _contentLayers.Report(_overrideScan);

@@ -12,6 +12,9 @@ namespace OpenIGI.Frontend.Screens;
 /// </remarks>
 internal static class GraphicsSettingsTab
 {
+    /// <summary>The badge on a preset the game being played does not offer yet.</summary>
+    internal const string ComingSoon = "COMING SOON";
+
     /// <summary>Builds the category's groups.</summary>
     /// <param name="rowBuilder">What the rows are built with; its lookup goes through the draft.</param>
     /// <param name="theme">The theme.</param>
@@ -31,14 +34,20 @@ internal static class GraphicsSettingsTab
     {
         GraphicsPresetRegistry registry = rowBuilder.Context.Presets;
         GraphicsPreset[] presets = Enum.GetValues<GraphicsPreset>();
+
+        // A game that offers one preset for now (GameTitle.GraphicsPresetHeld) shows the rest as coming, not as broken.
+        bool Offered(int index) => presets[index] == GraphicsPreset.Custom || registry.IsAllowed(presets[index]);
         return new PresetBand
         {
             Title = "Quality preset",
-            Line = "Start here. Changing any setting below switches the preset to Custom.",
+            Line = registry.HeldPreset is { } held
+                ? $"This game plays the {held} preset for now: the remastered presets are being tuned for its missions and are coming soon."
+                : "Start here. Changing any setting below switches the preset to Custom.",
             Help = "Sets every graphics quality setting at once, when you apply. Custom is what the settings become as soon as "
                 + "you change any of them yourself — it is a reading, not a choice.",
             Captions = [.. presets.Select(static preset => preset.ToString())],
-            Choosable = index => presets[index] != GraphicsPreset.Custom,
+            Choosable = index => presets[index] != GraphicsPreset.Custom && Offered(index),
+            Badge = index => Offered(index) ? null : ComingSoon,
             Reading = () => Math.Max(0, Array.IndexOf(presets, registry.Recognise(draft.Holds))),
             Choose = index =>
             {

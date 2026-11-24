@@ -89,7 +89,18 @@ public sealed record GameTitle(
         "IGI2_GAME_PATH")
     {
         MissionCount = 19,
+
+        // Its missions' lighting under the remastered presets is still being tuned; the menu shows them as coming soon.
+        GraphicsPresetHeld = Configuration.Presets.GraphicsPreset.Vanilla,
     };
+
+    /// <summary>Gets the one graphics preset the title offers for now, or <see langword="null"/> when it offers every one.</summary>
+    /// <remarks>
+    /// Held while the title is played (<see cref="Configuration.Presets.GraphicsPresetRegistry.Hold"/>): a title whose look
+    /// under the remastered presets is not ready is drawn as the original, and the player's own preset comes back with a title
+    /// that offers it.
+    /// </remarks>
+    public Configuration.Presets.GraphicsPreset? GraphicsPresetHeld { get; init; }
 
     /// <summary>Gets how many missions the title's campaign has, each a map a server can play.</summary>
     public int MissionCount { get; init; }

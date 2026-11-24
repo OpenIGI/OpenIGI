@@ -168,6 +168,7 @@ public sealed partial class GameHost
         ReleaseTitleScopedPresentation();
 
         _titleRuntime = binding.Runtime;
+        HoldTitleGraphicsPreset();
         _gameplayFiles = binding.GameplayFiles ?? Game.Multiplayer.GameplayFileLayout.None;
         _presentation = binding.Presentation;
         _hudOverlay = null;
@@ -211,6 +212,20 @@ public sealed partial class GameHost
             $"{target.DisplayName} is up in {clock.Elapsed.TotalMilliseconds:F0} ms: "
                 + $"{_missions.Count} mission(s).");
         return true;
+    }
+
+    // The picture the running title offers: a title that holds one preset (GameTitle.GraphicsPresetHeld) is drawn with it, the
+    // player's own picture kept aside for a title that offers every preset -- and for the settings file meanwhile.
+    private void HoldTitleGraphicsPreset()
+    {
+        GraphicsPreset? held = ActiveTitle.GraphicsPresetHeld;
+        if (GraphicsPresetRegistry.Default.HeldPreset != held)
+        {
+            GraphicsPresetRegistry.Default.Hold(held);
+            _logger.Information(TitleLogCategory, held is { } preset
+                ? $"{ActiveTitle.DisplayName} offers the {preset} graphics preset for now; the player's own is kept for later."
+                : $"{ActiveTitle.DisplayName} offers every graphics preset; the player's own is back.");
+        }
     }
 
     /// <summary>Builds the running title's resource registry and the archives the menus resolve through.</summary>
