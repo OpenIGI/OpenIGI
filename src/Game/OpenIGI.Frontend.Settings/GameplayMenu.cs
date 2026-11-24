@@ -258,6 +258,21 @@ public static class GameplayMenu
             ]),
 
         new SettingsPanel(
+            "Replays",
+            [],
+            [
+                new SettingRow(
+                    "g_replay_record",
+                    "Record Replays",
+                    "Every mission you play is recorded from its start, to watch again from the campaign page or race. It costs "
+                        + "nothing you can see; a run is a few hundred kilobytes."),
+                new SettingRow(
+                    "g_replay_keep",
+                    "Replays Kept",
+                    "How many of each mission's latest runs are kept. Its best runs are kept besides, however many this is.") { ShownWhen = new("g_replay_record") },
+            ]),
+
+        new SettingsPanel(
             "Cheats",
             [],
             [
