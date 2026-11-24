@@ -57,6 +57,10 @@ public sealed class CampaignScreen : ShellScreen
 
     // The kept run the campaign's Race best races, or null for none.
     private string? _raceBest;
+
+    // The mission's record on the boards, to race or watch, and the row that offers it.
+    private ActionRow? _recordRow;
+    private ShellRecord? _record;
     private PrimaryAction? _play;
     private OptionCycler? _difficulty;
     private int _selected = -1;
@@ -154,6 +158,7 @@ public sealed class CampaignScreen : ShellScreen
     protected override void OnUpdate(float elapsedSeconds)
     {
         _reveal.Update(elapsedSeconds);
+        ShowRecord();
 
         // Selection follows focus, so one press of down changes the briefing and the level behind it. The
         // rows are focusable in their own right, which covers the pointer, the keyboard and the pad alike.
@@ -263,6 +268,20 @@ public sealed class CampaignScreen : ShellScreen
                 }
             };
             column.AddChild(_replaysRow);
+
+            // The fastest run on the mission's board, at the difficulty chosen and the rules played by now: raced or watched.
+            // Its holder and rules under the caption, its time in the field: the buttons in the replays row's order above it.
+            _recordRow = new ActionRow(theme, "Record", "Watch")
+            {
+                MaxWidth = wide ? 760f : 640f,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                FieldWidth = compact ? 80f : 110f,
+                SecondAction = "Race",
+                Visibility = Visibility.Collapsed,
+            };
+            _recordRow.Activated += _ => PlayRecord(race: false);
+            _recordRow.SecondActivated += _ => PlayRecord(race: true);
+            column.AddChild(_recordRow);
         }
 
         // How the mission is played, chosen right where it is started. Seeded from the context rather than a fresh
@@ -384,6 +403,40 @@ public sealed class CampaignScreen : ShellScreen
         return 0;
     }
 
+    // The record of the mission shown at the difficulty chosen, once the boards have answered; the row hidden while there is none.
+    private void ShowRecord()
+    {
+        if (_recordRow is null || Context.Host.Replays is not { } replays || _missions.Count == 0)
+        {
+            return;
+        }
+
+        MissionInfo mission = _missions[Math.Clamp(_shown, 0, _missions.Count - 1)];
+        ShellRecord? record = replays.RecordOf(mission.Id, _difficulty?.SelectedIndex ?? 1);
+        if (record == _record)
+        {
+            return;
+        }
+
+        _record = record;
+        _recordRow.Visibility = record is null ? Visibility.Collapsed : Visibility.Visible;
+        if (record is not null)
+        {
+            TimeSpan time = TimeSpan.FromSeconds(record.Seconds);
+            _recordRow.Hint = $"{record.Name} · {record.Rules} rules";
+            _recordRow.Value = string.Create(CultureInfo.InvariantCulture, $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds / 100}");
+        }
+    }
+
+    // Leaves the menu for the record's run, raced or watched, once its replay has come down.
+    private void PlayRecord(bool race)
+    {
+        if (_record is { } record)
+        {
+            Context.Host.Replays?.PlayRecord(record.Run, race);
+        }
+    }
+
     private void Refresh()
     {
         if (_missions.Count == 0)
@@ -432,6 +485,8 @@ public sealed class CampaignScreen : ShellScreen
             _raceBest = best?.Id;
             _replaysRow.SecondAction = best is null ? null : "Race best";
         }
+
+        ShowRecord();
 
         if (_play is not null)
         {

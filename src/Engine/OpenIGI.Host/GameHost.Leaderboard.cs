@@ -1,4 +1,8 @@
+using System.Globalization;
+using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Frontend;
 using OpenIGI.Game.Replays;
 using OpenIGI.Net.Identity;
 using OpenIGI.Releases.Accounts;
@@ -18,6 +22,9 @@ public sealed partial class GameHost
     private LeaderboardFeed? _leaderboardFeed;
     private MissionBoardFeed? _missionBoardFeed;
 
+    // Each mission's fastest run, as the campaign page shows the record to race: a minute fresh, by mission, difficulty and rules.
+    private readonly PolledCache<RunBoard> _missionRecords = new(TimeSpan.FromMinutes(1), static () => DateTimeOffset.UtcNow);
+
     // A board's run asked to be watched or raced, its replay coming down; taken up on the frame it arrives.
     private (Task<byte[]?> Replay, bool Race)? _boardReplay;
 
@@ -27,6 +34,30 @@ public sealed partial class GameHost
 
     // The single-player boards, opened on the game being played.
     private MissionBoardFeed MissionBoardFeed => _missionBoardFeed ??= new MissionBoardFeed(new MasterRunBoardReader(RunsService), _titleRuntime.Title.Id);
+
+    // The fastest run kept on a mission's board at a difficulty, under the rules the player plays by now; asked for while
+    // missing or old, so null until it has come. None for rules no board ranks, or a run that never reaches the servers.
+    private ShellRecord? MissionRecord(int missionId, int difficulty)
+    {
+        if (_options.SimulationOnly || !_options.SavesUserFiles)
+        {
+            return null;
+        }
+
+        (Ruleset rules, _) = Ruleset.Of(Ruleset.Snapshot(CVarRegistry.Default), CVarRegistry.Default, ExperiencePresetRegistry.Default);
+        if (rules == Ruleset.Unranked)
+        {
+            return null;
+        }
+
+        string title = _titleRuntime.Title.Id;
+        string key = string.Create(CultureInfo.InvariantCulture, $"{title}/{missionId}/{difficulty}/{rules.Id}");
+        _missionRecords.Collect();
+        _missionRecords.Ask(key, () => RunsService.BoardAsync(title, missionId, difficulty, rules.Id, "time", null));
+        return _missionRecords.Get(key)?.Rows is [{ Replay: true, Run: { } run } best, ..]
+            ? new ShellRecord(run, best.Name, best.Ticks / 30.0, rules.Name)
+            : null;
+    }
 
     // A board's run asked for: its replay brought down, to be watched or raced once it is here.
     private void AskBoardReplay(string run, bool race)

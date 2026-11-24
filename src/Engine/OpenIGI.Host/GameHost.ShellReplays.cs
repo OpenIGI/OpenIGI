@@ -97,5 +97,9 @@ public sealed partial class GameHost
         public string? Watch(string id) => host.WatchFromMenu(state, id);
 
         public string? Race(string id) => host.RaceFromMenu(state, id);
+
+        public ShellRecord? RecordOf(int missionId, int difficulty) => host.MissionRecord(missionId, difficulty);
+
+        public void PlayRecord(string run, bool race) => host.AskBoardReplay(run, race);
     }
 }

@@ -245,6 +245,8 @@ public sealed class ShellPageShots
         public string? Watch(string id) => null;
 
         public string? Race(string id) => null;
+
+        public ShellRecord? RecordOf(int missionId, int difficulty) => new("0123456789abcdef0123456789abcdef", "Kestrel", 304.1, "Classic");
     }
 
     /// <summary>A handful of community maps, one installed and one with a newer version out, for the Maps page's picture.</summary>
