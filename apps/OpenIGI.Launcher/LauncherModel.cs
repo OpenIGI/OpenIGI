@@ -439,6 +439,7 @@ internal sealed partial class LauncherModel : IDisposable
         TickServers();
         TickInvite(elapsedSeconds);
         TickAccount();
+        TickLeaderboard();
         while (_results.TryDequeue(out Action? result))
         {
             result();

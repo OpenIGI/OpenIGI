@@ -14,8 +14,8 @@ namespace OpenIGI.Launcher;
 
 /// <summary>
 /// The player's account, at the header's right: who is signed in (their Discord avatar and name, and whether the servers
-/// can be reached), or SIGN IN. Pressed, it drops a panel: signed in, the season's record, the way to the record and the
-/// leaderboard on the site, and SIGN OUT (pressed twice, as it signs the game out too); signed out, what signing in brings
+/// can be reached), or SIGN IN. Pressed, it drops a panel: signed in, the season's record, the way to the player's record and
+/// the leaderboard on the launcher's Leaderboard page, and SIGN OUT (pressed twice, as it signs the game out too); signed out, what signing in brings
 /// and CONTINUE WITH DISCORD; while the browser is out on Discord, OPEN AGAIN and CANCEL. A press outside, or Escape, shuts it.
 /// </summary>
 internal sealed class AccountMenu : Control
@@ -27,6 +27,7 @@ internal sealed class AccountMenu : Control
 
     private readonly LauncherModel _model;
     private readonly Func<string, UiPicture?> _pictures;
+    private readonly Action<bool> _showLeaderboard;
     private readonly Tween _open = new(0f, duration: 0.18f, Ease.OutCubic);
     private readonly List<(UiRect Box, MenuRow Row)> _rowBoxes = [];
     private UiRect _panel = UiRect.Empty;
@@ -37,11 +38,13 @@ internal sealed class AccountMenu : Control
     /// <param name="theme">The theme.</param>
     /// <param name="model">The launcher's model, whose account it shows.</param>
     /// <param name="pictures">Loads a picture file, for the avatar.</param>
-    public AccountMenu(UiTheme theme, LauncherModel model, Func<string, UiPicture?> pictures)
+    /// <param name="showLeaderboard">Shows the Leaderboard page: on the player's own record when told true.</param>
+    public AccountMenu(UiTheme theme, LauncherModel model, Func<string, UiPicture?> pictures, Action<bool> showLeaderboard)
         : base(theme)
     {
         _model = model;
         _pictures = pictures;
+        _showLeaderboard = showLeaderboard;
         VerticalAlignment = VerticalAlignment.Center;
         Tooltip = string.Empty;
     }
@@ -393,8 +396,8 @@ internal sealed class AccountMenu : Control
             bool confirming = _confirmingUntil is not null;
             return
             [
-                new(KitIcon.ArrowRight, "MY RECORD", "OPENIGI.COM", RowKind.Action, _model.OpenRecord, Closes: true),
-                new(KitIcon.ArrowRight, "LEADERBOARD", "OPENIGI.COM", RowKind.Action, _model.OpenLeaderboard, Closes: true),
+                new(KitIcon.ArrowRight, "MY RECORD", "THIS SEASON AND ALL TIME", RowKind.Action, () => _showLeaderboard(true), Closes: true),
+                new(KitIcon.ArrowRight, "LEADERBOARD", "OFFICIAL SERVERS", RowKind.Action, () => _showLeaderboard(false), Closes: true),
                 new(KitIcon.Close, confirming ? "PRESS AGAIN TO SIGN OUT" : "SIGN OUT", confirming ? "LAUNCHER AND GAME" : string.Empty, RowKind.Destructive, SignOut),
             ];
         }

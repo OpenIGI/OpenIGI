@@ -43,18 +43,6 @@ internal sealed partial class LauncherModel
     /// <summary>Gets the signed-in player's record on the official servers, once read; else <see langword="null"/>.</summary>
     public PlayerRecord? Record { get; private set; }
 
-    /// <summary>Opens the signed-in player's record on the site.</summary>
-    public void OpenRecord()
-    {
-        if (_account?.Account is { } account)
-        {
-            Open($"https://openigi.com/leaderboard/?player={Uri.EscapeDataString(account.Id)}");
-        }
-    }
-
-    /// <summary>Opens the official servers' leaderboard on the site.</summary>
-    public void OpenLeaderboard() => Open("https://openigi.com/leaderboard/");
-
     // The game's own key, read (or made, the first time anything needs it) where the game keeps it.
     private EcdsaPlayerIdentity? LoadIdentity()
     {

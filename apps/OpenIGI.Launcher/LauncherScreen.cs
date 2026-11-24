@@ -52,7 +52,7 @@ internal sealed class LauncherScreen : Screen
 {
     /// <summary>The sections shown, in their tab order. Maps is left out for now (its page is kept for when it returns).</summary>
     internal static readonly IReadOnlyList<LauncherSection> Shown =
-        [LauncherSection.Home, LauncherSection.Content, LauncherSection.Mods, LauncherSection.Servers, LauncherSection.Logs, LauncherSection.Settings];
+        [LauncherSection.Home, LauncherSection.Content, LauncherSection.Mods, LauncherSection.Servers, LauncherSection.Leaderboard, LauncherSection.Logs, LauncherSection.Settings];
 
     private const float ChromeHeight = 36f;
     private const float HeaderHeight = 76f;
@@ -73,6 +73,7 @@ internal sealed class LauncherScreen : Screen
     private ContentPage? _content;
     private ContentPage? _mods;
     private ServersPage? _servers;
+    private LeaderboardPage? _leaderboard;
     private LogsPage? _logs;
     private GameSwitcher? _switcher;
     private AccountMenu? _account;
@@ -167,6 +168,12 @@ internal sealed class LauncherScreen : Screen
         }
 
         // A press anywhere outside the open account panel shuts it, as a menu does.
+        // Back on an open record goes to the board it was opened from, before it goes home.
+        if (nav.Back && Current == LauncherSection.Leaderboard && _leaderboard?.Back() == true)
+        {
+            return false;
+        }
+
         if (_account is { IsOpen: true } panel && input.Mouse.WasPressed(MouseButton.Left)
             && !panel.PointerBounds.Contains(new UiVec2(input.Mouse.X, input.Mouse.Y)))
         {
@@ -226,6 +233,11 @@ internal sealed class LauncherScreen : Screen
         _content?.Update();
         _mods?.Update();
         _servers?.Update(Current == LauncherSection.Servers);
+        if (_leaderboard?.Update(Current == LauncherSection.Leaderboard) == true)
+        {
+            RequestLayout();
+        }
+
         _logs?.Update();
         if (_backdrop is not null)
         {
@@ -250,6 +262,7 @@ internal sealed class LauncherScreen : Screen
         LauncherSection.Mods => (_mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods)).Root,
         LauncherSection.Maps => new MapsPage(_rowTheme, _model).Root,
         LauncherSection.Servers => (_servers = new ServersPage(_theme, _model, _window.Picture)).Root,
+        LauncherSection.Leaderboard => (_leaderboard = new LeaderboardPage(_theme, _model, _window.Picture, () => Focus)).Root,
         LauncherSection.Logs => (_logs = new LogsPage(_theme, _model, _window)).Root,
         _ => SettingsPage.Build(_rowTheme, _model, _window),
     };
@@ -374,7 +387,11 @@ internal sealed class LauncherScreen : Screen
         row.Add(new Panel(), grow: 1f);
 
         // Who is signed in, where the bare ONLINE light used to stand: the account says whether the servers answer.
-        _account = new AccountMenu(_theme, _model, _window.Picture);
+        _account = new AccountMenu(_theme, _model, _window.Picture, own =>
+        {
+            ShowSection(LauncherSection.Leaderboard);
+            _leaderboard?.Show(own);
+        });
         row.Add(_account);
         bar.AddChild(row);
         return bar;
@@ -501,6 +518,9 @@ internal enum LauncherSection
 
     /// <summary>The multiplayer servers.</summary>
     Servers,
+
+    /// <summary>The official servers' leaderboards and players' records.</summary>
+    Leaderboard,
 
     /// <summary>The launcher's log.</summary>
     Logs,
