@@ -13,8 +13,58 @@ namespace OpenIGI.Releases.Accounts;
 /// <param name="Ticks">The mission's time, in ticks.</param>
 /// <param name="Rank">The rank it earned, -1 for none.</param>
 /// <param name="Version">The build that recorded it, whose checker alone can play it again; empty where unknown.</param>
+/// <param name="Fingerprint">The fingerprint of the game files its mission was played from; empty where unknown.</param>
 /// <remarks>The claims only decide whether the run is worth keeping and checking: the boards take the checker's numbers.</remarks>
-public sealed record RunClaims(string Title, int Mission, int Difficulty, string Ruleset, int Ticks, int Rank, string Version = "");
+public sealed record RunClaims(string Title, int Mission, int Difficulty, string Ruleset, int Ticks, int Rank, string Version = "", string Fingerprint = "");
+
+/// <summary>
+/// A build's official game files, as its checker holds them: every mission's fingerprint in each edition it plays runs in. A
+/// run is taken only from files one of them holds.
+/// </summary>
+/// <param name="titles">By game, then by mission, the fingerprints.</param>
+public sealed class OfficialFiles(IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlySet<string>>> titles)
+{
+    /// <summary>Whether the checker plays a game's runs at all.</summary>
+    /// <param name="title">The game.</param>
+    /// <returns>Whether it does.</returns>
+    public bool Knows(string title) => titles.ContainsKey(title);
+
+    /// <summary>Whether files of a mission are an official edition's.</summary>
+    /// <param name="title">The game.</param>
+    /// <param name="mission">The mission.</param>
+    /// <param name="fingerprint">The fingerprint of the files it was played from.</param>
+    /// <returns>Whether they are.</returns>
+    public bool Holds(string title, int mission, string fingerprint) =>
+        titles.TryGetValue(title, out IReadOnlyDictionary<int, IReadOnlySet<string>>? missions)
+        && missions.TryGetValue(mission, out IReadOnlySet<string>? fingerprints)
+        && fingerprints.Contains(fingerprint);
+
+    /// <summary>Reads the master's answer: <c>{ "titles": { "igi1": { "1": [ ... ] } } }</c>.</summary>
+    /// <param name="json">The answer.</param>
+    /// <returns>The files.</returns>
+    public static OfficialFiles Read(JsonElement json)
+    {
+        Dictionary<string, IReadOnlyDictionary<int, IReadOnlySet<string>>> titles = new(StringComparer.Ordinal);
+        if (json.TryGetProperty("titles", out JsonElement all) && all.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty title in all.EnumerateObject().Where(static t => t.Value.ValueKind == JsonValueKind.Object))
+            {
+                Dictionary<int, IReadOnlySet<string>> missions = [];
+                foreach (JsonProperty mission in title.Value.EnumerateObject().Where(static m => m.Value.ValueKind == JsonValueKind.Array))
+                {
+                    if (int.TryParse(mission.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int id))
+                    {
+                        missions[id] = mission.Value.EnumerateArray().Where(static f => f.ValueKind == JsonValueKind.String).Select(static f => f.GetString()!).ToHashSet(StringComparer.Ordinal);
+                    }
+                }
+
+                titles[title.Name] = missions;
+            }
+        }
+
+        return new OfficialFiles(titles);
+    }
+}
 
 /// <summary>A run as the master tells it.</summary>
 /// <param name="Id">Its id.</param>
@@ -95,12 +145,30 @@ public sealed class RunsService(HttpClient http, Uri master)
         string path = string.Create(
             CultureInfo.InvariantCulture,
             $"/v1/runs?title={claims.Title}&mission={claims.Mission}&difficulty={claims.Difficulty}&ruleset={claims.Ruleset}&ticks={claims.Ticks}&rank={claims.Rank}")
-            + (claims.Version.Length > 0 ? "&version=" + Uri.EscapeDataString(claims.Version) : string.Empty);
+            + (claims.Version.Length > 0 ? "&version=" + Uri.EscapeDataString(claims.Version) : string.Empty)
+            + (claims.Fingerprint.Length > 0 ? "&fingerprint=" + Uri.EscapeDataString(claims.Fingerprint) : string.Empty);
         using HttpRequestMessage request = await SignedRequest.CreateAsync(player, HttpMethod.Post, master, path, replay, "application/octet-stream").ConfigureAwait(false);
         using HttpResponseMessage response = await http.SendAsync(request, cancel).ConfigureAwait(false);
         await MasterAnswers.ThrowIfRefusedAsync(response, "runs", cancel).ConfigureAwait(false);
         RunStatus taken = await ReadAsync(response, RunsJsonContext.Default.RunStatus, cancel).ConfigureAwait(false);
         return taken.Id;
+    }
+
+    /// <summary>A build's official game files, as its checker told the master; null where no checker plays its runs.</summary>
+    /// <param name="version">The build.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>The files, or null.</returns>
+    public async Task<OfficialFiles?> OfficialFilesAsync(string version, CancellationToken cancel = default)
+    {
+        using HttpResponseMessage response = await http.GetAsync(new Uri(master, $"/v1/runs/official?version={Uri.EscapeDataString(version)}"), cancel).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await MasterAnswers.ThrowIfRefusedAsync(response, "runs", cancel).ConfigureAwait(false);
+        using JsonDocument answer = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false), cancellationToken: cancel).ConfigureAwait(false);
+        return OfficialFiles.Read(answer.RootElement);
     }
 
     /// <summary>Reports a run on the boards for a person to look at, signed by the reporting player's key.</summary>

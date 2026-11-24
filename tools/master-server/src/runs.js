@@ -13,6 +13,8 @@
 //   GET  /v1/runs/<id>/replay             a checked run's replay with the checker's ghost, while it is kept
 //   GET  /v1/players/<account>/runs?title=   a player's bests in one game, board by board
 //   POST /v1/runs/<id>/report             a checked run reported, signed by a linked account: { reason }, REPORTS_DAILY a day
+//   GET  /v1/runs/official?version=        the game files a build's checker holds: { titles: { igi1: { "1": [fingerprint] } } }
+//   POST /v1/verifier/fingerprints         a checker's: every mission's fingerprint in every edition it plays runs in
 //   GET  /v1/verifier/next                the next run to check, its replay's bytes (x-openigi-run says which), or 204: signed
 //                                         by a registered checker's key
 //   POST /v1/verifier/runs/<id>           the checker's verdict: the verdict's JSON's length (four bytes, little-endian), the JSON
@@ -37,6 +39,8 @@
 //   pending             the runs waiting, oldest first
 //   verifier:<keyId>    { name, added }
 //   bytes               the bytes of every replay kept or waiting
+//   official:<version>  { titles: { <title>: { <mission>: [fingerprint, ...] } }, at } -- a build's official game files, as its
+//                       checker found them: a run of that build is taken only from files one of them holds
 //   review              the runs a person is to look at, oldest first: [{ id, why: [...], reporters: [...], at }] -- every
 //                       new first place, every run the checks flag, every run reported; each stays on its board meanwhile
 //
@@ -156,10 +160,13 @@ export function claimsOf(url) {
   if (!RULESETS.includes(ruleset)) throw new Refusal(400, `Only the ${RULESETS.join(" and ")} rules are ranked.`);
   const version = url.searchParams.get("version") ?? "";
   if (!/^[0-9A-Za-z.+-]{0,64}$/.test(version)) throw new Refusal(400, "A version is a build's version.");
+  const fingerprint = url.searchParams.get("fingerprint") ?? "";
+  if (!/^([0-9a-f]{64})?$/.test(fingerprint)) throw new Refusal(400, "A fingerprint is 64 hexadecimal digits.");
   return {
     title,
     ruleset,
     version,
+    fingerprint,
     mission: number("mission", 1, 999),
     difficulty: number("difficulty", 0, 2),
     ticks: number("ticks", 1, 2 * 3600 * 30),
@@ -205,6 +212,8 @@ export class Runs {
 
       if (parts[1] === "admin") return await this.admin(request, parts);
       if (parts[1] === "verifier" && parts[2] === "next" && request.method === "GET") return await this.next(request, url);
+      if (parts[1] === "verifier" && parts[2] === "fingerprints" && request.method === "POST") return await this.fingerprints(request, url);
+      if (parts[1] === "runs" && parts[2] === "official" && request.method === "GET") return await this.official(url);
       if (parts[1] === "verifier" && parts[2] === "runs" && parts[3] && request.method === "POST") return await this.verdict(request, url, parts[3]);
       if (parts[1] === "players" && parts[3] === "runs") return json(await this.bestsOf(parts[2], url.searchParams.get("title") ?? TITLES[0]));
       if (parts[1] === "runs" && parts.length === 2 && request.method === "POST") return await this.submit(request, url);
@@ -232,6 +241,16 @@ export class Runs {
     const holder = (await this.storage.get(`acct:${account.id}`)) ?? {};
     const today = dayOf(this.now());
     if (holder.barred) throw new Refusal(403, "This account's runs are not taken.");
+
+    // A run is played again only in its own build, from the game's own files: a build no checker plays stays on the
+    // machine, and files no official edition holds are not ranked.
+    if (claims.version) {
+      const official = (await this.storage.get(`official:${claims.version}`))?.titles?.[claims.title];
+      if (!official) throw new Refusal(409, "No checker plays this build's runs; it stays on your machine.");
+      if (!(official[String(claims.mission)] ?? []).includes(claims.fingerprint)) {
+        throw new Refusal(422, "your game's files for this mission are not the official ones");
+      }
+    }
     if (holder.day === today && holder.count >= DAILY) throw new Refusal(429, `At most ${DAILY} runs a day.`);
     if (holder.pending && (await this.storage.get(`run:${holder.pending}`))?.status === "pending") {
       throw new Refusal(409, "A run of yours is being checked: send the next when it is done.");
@@ -294,6 +313,44 @@ export class Runs {
     }
 
     return new Response(null, { status: 204 });
+  }
+
+  // A checker's official game files for its build: every mission's fingerprint in every edition it plays runs in.
+  async fingerprints(request, url) {
+    const body = new Uint8Array(await request.arrayBuffer());
+    if (body.length > 256 * 1024) throw new Refusal(413, "Too many fingerprints.");
+    await this.checker(request, url, body);
+    let sent;
+    try {
+      sent = JSON.parse(new TextDecoder().decode(body));
+    } catch {
+      throw new Refusal(400, "Fingerprints are JSON.");
+    }
+
+    const version = String(sent?.version ?? "");
+    if (!/^[0-9A-Za-z.+-]{1,64}$/.test(version)) throw new Refusal(400, "A version is a build's version.");
+    const titles = {};
+    for (const [title, missions] of Object.entries(sent?.titles ?? {})) {
+      if (!TITLES.includes(title) || typeof missions !== "object" || missions === null) continue;
+      titles[title] = {};
+      for (const [mission, fingerprints] of Object.entries(missions)) {
+        const number = Number(mission);
+        if (!Number.isInteger(number) || number < 1 || number > 999 || !Array.isArray(fingerprints)) continue;
+        titles[title][String(number)] = fingerprints.filter((f) => /^[0-9a-f]{64}$/.test(f)).slice(0, 16);
+      }
+    }
+
+    if (Object.keys(titles).length === 0) throw new Refusal(400, "No game's fingerprints.");
+    await this.storage.put(`official:${version}`, { titles, at: this.now() });
+    return json({ version, titles: Object.keys(titles) });
+  }
+
+  // A build's official game files, for a player's game to hold its own against before a run is sent.
+  async official(url) {
+    const version = url.searchParams.get("version") ?? "";
+    const official = /^[0-9A-Za-z.+-]{1,64}$/.test(version) ? await this.storage.get(`official:${version}`) : null;
+    if (!official) throw new Refusal(404, "No checker plays this build's runs.");
+    return json({ version, titles: official.titles });
   }
 
   // A checker's verdict on a run: refused, let go of at once; verified, on its board as the checker found it.

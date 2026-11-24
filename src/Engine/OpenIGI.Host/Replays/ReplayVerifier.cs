@@ -45,6 +45,9 @@ public sealed record ReplayVerdict(
 /// </remarks>
 public static class ReplayVerifier
 {
+    /// <summary>Why a run played from other files than the ones here is refused: a checker holding another edition may take it.</summary>
+    public const string OtherFiles = "it was played from other files than the game's own";
+
     /// <summary>What a file must say before it is worth playing again.</summary>
     /// <param name="replay">The run.</param>
     /// <param name="buildVersion">This build's version: a run recorded by another may play differently, and is not ranked here.</param>
@@ -62,7 +65,7 @@ public static class ReplayVerifier
 
         if (!string.Equals(header.ContentFingerprint, contentFingerprint, StringComparison.OrdinalIgnoreCase))
         {
-            return "it was played from other files than the game's own";
+            return OtherFiles;
         }
 
         (Ruleset rules, string why) = Ruleset.Of(header.Settings, CVarRegistry.Default, ExperiencePresetRegistry.Default);

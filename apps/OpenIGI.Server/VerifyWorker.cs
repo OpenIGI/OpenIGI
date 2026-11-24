@@ -25,6 +25,9 @@ internal static class VerifyWorker
     private static readonly TimeSpan Idle = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan Limit = TimeSpan.FromMinutes(20);
 
+    // How often the official files are told the master again, which keeps them however it was restarted or cleared.
+    private static readonly TimeSpan Republish = TimeSpan.FromHours(6);
+
     /// <summary>Gets whether the arguments ask for the checker.</summary>
     /// <param name="args">The command line.</param>
     /// <returns>Whether they do.</returns>
@@ -52,10 +55,17 @@ internal static class VerifyWorker
         using HttpClient http = new() { Timeout = TimeSpan.FromMinutes(2) };
         string scratch = Path.Combine(Path.GetTempPath(), $"openigi-checker-{Environment.ProcessId}");
         Directory.CreateDirectory(scratch);
+        DateTime publishAt = DateTime.MinValue;
         while (!stop.IsCancellationRequested)
         {
             try
             {
+                // The official files told the master on starting, and again now and then: it takes runs only from them.
+                if (DateTime.UtcNow >= publishAt)
+                {
+                    publishAt = DateTime.UtcNow + (await PublishFingerprintsAsync(http, signer, master, logger, stop.Token).ConfigureAwait(false) ? Republish : Idle);
+                }
+
                 if (!await CheckNextAsync(http, signer, master, scratch, logger, stop.Token).ConfigureAwait(false))
                 {
                     await Task.Delay(Idle, stop.Token).ConfigureAwait(false);
@@ -73,6 +83,30 @@ internal static class VerifyWorker
         }
 
         return 0;
+    }
+
+    // Every mission's fingerprint in every edition installed here, worked out in a process of its own and sent to the master:
+    // whether it took them.
+    private static async Task<bool> PublishFingerprintsAsync(HttpClient http, PlayerRequestSigner signer, Uri master, IOpenIgiLogger logger, CancellationToken stop)
+    {
+        ProcessStartInfo start = new(Environment.ProcessPath ?? "OpenIGI.Server") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        start.ArgumentList.Add("-fingerprints");
+        using Process run = Process.Start(start) ?? throw new IOException("The fingerprints could not be worked out.");
+        Task<string> output = run.StandardOutput.ReadToEndAsync(stop);
+        _ = run.StandardError.ReadToEndAsync(stop);
+        await run.WaitForExitAsync(stop).ConfigureAwait(false);
+        string json = (await output.ConfigureAwait(false)).Trim();
+        if (run.ExitCode != 0 || json.Length == 0)
+        {
+            logger.Warning(LogCategory, "No game is installed here to tell the master the official files of.");
+            return false;
+        }
+
+        using HttpRequestMessage send = await SignedRequest.CreateAsync(
+            signer, HttpMethod.Post, master, "/v1/verifier/fingerprints", System.Text.Encoding.UTF8.GetBytes(json), "application/json").ConfigureAwait(false);
+        using HttpResponseMessage sent = await http.SendAsync(send, stop).ConfigureAwait(false);
+        logger.Information(LogCategory, $"Told the master the official files of {OpenIGI.Host.GameHost.BuildVersion}: it said {(int)sent.StatusCode}.");
+        return sent.IsSuccessStatusCode;
     }
 
     // One run taken and checked, if one is waiting: whether one was.

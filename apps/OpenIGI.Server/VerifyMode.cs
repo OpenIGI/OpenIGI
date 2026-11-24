@@ -26,6 +26,11 @@ namespace OpenIGI.Server;
 /// With <c>-out &lt;file&gt;</c>, a verified run is written there again carrying the ghost the runner made here: the one a race
 /// against it shows, which the runner cannot have made up. The log goes to standard error, so the verdict is all that standard
 /// output holds.
+/// <para>
+/// The game may be installed here more than once -- its editions differ in the files a run plays from -- each named in
+/// <c>-game</c> or the game's path variable, separated as <c>PATH</c> is: a run is played in each in turn until one holds
+/// the files it was played from.
+/// </para>
 /// </remarks>
 internal static class VerifyMode
 {
@@ -82,20 +87,59 @@ internal static class VerifyMode
         }
 
         GameTitle title = runtime.Title;
-        string? gamePath = Value(args, "-game") ?? Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title))
-            ?? (GameInstalls.Find(title) is [var found, ..] ? found : null);
-        if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
+        string[] installs = Installs(title, Value(args, "-game"));
+        if (installs.Length == 0)
         {
             return Write(stdout, Unchecked, $"no {title.DisplayName} installation to check it in", null);
         }
 
+        ReplayVerdict verdict = ReplayVerdict.Refused(ReplayVerifier.OtherFiles, replay.Header.Ruleset);
+        foreach (string gamePath in installs)
+        {
+            verdict = Check(replay, path, runtime, gamePath, logger);
+            if (verdict.Reason != ReplayVerifier.OtherFiles)
+            {
+                break;
+            }
+        }
+
+        if (verdict.Verified && Value(args, "-out") is { } output)
+        {
+            File.WriteAllBytes(output, (replay with { Ghost = verdict.Ghost }).ToBytes());
+        }
+
+        return Write(stdout, verdict.Verified ? Verified : Refused, verdict.Reason, verdict, replay.Header);
+    }
+
+    /// <summary>
+    /// The installations of a game here: those named (<c>-game</c>, else the game's path variable), separated as <c>PATH</c> is,
+    /// each a different edition maybe; else the ones the machine has.
+    /// </summary>
+    /// <param name="title">The game.</param>
+    /// <param name="named">The folders named on the command line, or null.</param>
+    /// <returns>The folders that are there.</returns>
+    internal static string[] Installs(GameTitle title, string? named)
+    {
+        named ??= Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title));
+        return named is { Length: > 0 }
+            ? [.. named.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(Directory.Exists)]
+            : [.. GameInstalls.Find(title)];
+    }
+
+    /// <summary>A headless, only simulated host over one installation of a game, nothing saved.</summary>
+    /// <param name="runtime">The game.</param>
+    /// <param name="gamePath">The installation.</param>
+    /// <param name="logger">The log.</param>
+    /// <param name="device">The picture it draws nothing into.</param>
+    /// <param name="hostArgs">The host's own options besides those.</param>
+    /// <returns>The host, not yet started.</returns>
+    internal static GameHost NewHost(IGameTitleRuntime runtime, string gamePath, LogRouter logger, RecordingGraphicsDevice device, params string[] hostArgs)
+    {
         VirtualFileSystem fileSystem = new(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
         FileSystemConfig.LoadOrDefault(Path.Combine(gamePath, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(fileSystem);
-        HostOptions options = HostOptions.Parse(["-playreplay", path, "-lockstep", "-frames", "2000000000", "-nosave"]) with { SimulationOnly = true };
-
-        using RecordingGraphicsDevice device = new() { IsRecording = false };
-        using GameHost host = new(
+        HostOptions options = HostOptions.Parse([.. hostArgs, "-lockstep", "-frames", "2000000000", "-nosave"]) with { SimulationOnly = true };
+        return new GameHost(
             new HeadlessPlatformHost(),
             new HeadlessGameWindow(),
             device,
@@ -103,18 +147,19 @@ internal static class VerifyMode
             InlineWorkScheduler.Instance,
             AlwaysReadyLoadGate.Instance,
             TitleCatalog.Catalog,
-            title,
+            runtime.Title,
             fileSystem,
             options,
             gamePath,
             logger);
-        ReplayVerdict verdict = ReplayVerification.Run(host, replay);
-        if (verdict.Verified && Value(args, "-out") is { } output)
-        {
-            File.WriteAllBytes(output, (replay with { Ghost = verdict.Ghost }).ToBytes());
-        }
+    }
 
-        return Write(stdout, verdict.Verified ? Verified : Refused, verdict.Reason, verdict, replay.Header);
+    // The run played again in one installation of its game.
+    private static ReplayVerdict Check(ReplayFile replay, string path, IGameTitleRuntime runtime, string gamePath, LogRouter logger)
+    {
+        using RecordingGraphicsDevice device = new() { IsRecording = false };
+        using GameHost host = NewHost(runtime, gamePath, logger, device, "-playreplay", path);
+        return ReplayVerification.Run(host, replay);
     }
 
     // The verdict as one line of JSON, and the exit code it goes with: with the run's header, what it says it is of and who

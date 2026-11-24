@@ -49,6 +49,9 @@ public sealed partial class GameHost
     /// <returns>The fingerprint, in hex.</returns>
     public string ContentFingerprintOf(int missionId) => RunContentFingerprint(missionId);
 
+    /// <summary>Gets the game's own missions, by id, in the order the campaign plays them: the ones a board ranks.</summary>
+    public IReadOnlyList<int> CampaignMissionIds => [.. _missions.InProgressionOrder().Select(static m => m.Id)];
+
     // The level of the replay being played has decided its mission: noted for the viewer, and, where it is completed, the tick and
     // the score as they stand now, which a checker compares with what the file claims.
     private void PlaybackDecided(bool completed)

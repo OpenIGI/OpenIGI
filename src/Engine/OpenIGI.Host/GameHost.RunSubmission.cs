@@ -21,6 +21,9 @@ public sealed partial class GameHost
 
     private RunsService? _runsService;
 
+    // The official game files of this build, once the master has told them: kept for the session.
+    private (string Version, OfficialFiles Files)? _officialFiles;
+
     // What became of the last run offered, for the rank screen of its mission: the words, and whether it went well (null for
     // neither, as while it is checked).
     private volatile RunOffer? _runOffer;
@@ -71,9 +74,27 @@ public sealed partial class GameHost
             replay.Header.Ruleset,
             (int)Math.Min(score.Ticks, int.MaxValue),
             sheet is null ? -1 : sheet.Requirements.GetRank(score),
-            replay.Header.GameVersion);
+            replay.Header.GameVersion,
+            replay.Header.ContentFingerprint);
         Offer(mission, "Checking your run for the boards", null);
         _ = SubmitRunAsync(signer, claims, bytes, account.Id);
+    }
+
+    // A build's official game files, read once a session; null where no checker plays its runs (asked again next time).
+    private async Task<OfficialFiles?> OfficialFilesAsync(string version)
+    {
+        if (_officialFiles is { } known && known.Version == version)
+        {
+            return known.Files;
+        }
+
+        OfficialFiles? files = await RunsService.OfficialFilesAsync(version).ConfigureAwait(false);
+        if (files is not null)
+        {
+            _officialFiles = (version, files);
+        }
+
+        return files;
     }
 
     // The run sent, and asked after until the checker has ruled on it.
@@ -81,6 +102,21 @@ public sealed partial class GameHost
     {
         try
         {
+            // The run's game files held to the official ones first: a build no checker plays, or files of no official edition,
+            // are told here rather than sent (the master holds a run to them all the same).
+            switch (await OfficialFilesAsync(claims.Version).ConfigureAwait(false))
+            {
+                case null:
+                    Offer(claims.Mission, "No checker plays this build's runs: kept here", null);
+                    return;
+                case { } official when !official.Knows(claims.Title):
+                    Offer(claims.Mission, "No checker plays this game's runs yet: kept here", null);
+                    return;
+                case { } official when !official.Holds(claims.Title, claims.Mission, claims.Fingerprint):
+                    Offer(claims.Mission, "Not ranked: your game's files for this mission are not the official ones", false);
+                    return;
+            }
+
             string id = await RunsService.SubmitAsync(signer, claims, bytes).ConfigureAwait(false);
             for (int asked = 0; asked < RunAsks; asked++)
             {

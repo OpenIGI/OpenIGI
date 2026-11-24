@@ -127,6 +127,46 @@ public sealed class RunsServiceTests
     }
 
     [Fact]
+    public async Task A_builds_official_files_hold_each_edition_of_each_mission()
+    {
+        string official = new('a', 64);
+        string gog = new('b', 64);
+        Uri? asked = null;
+        string json = "{\"version\":\"0.7.0+abc\",\"titles\":{\"igi2\":{\"11\":[\"" + official + "\",\"" + gog + "\"],\"12\":[\"" + official + "\"]}}}";
+        using HttpClient http = Answering(json, uri => asked = uri);
+
+        OfficialFiles files = Assert.IsType<OfficialFiles>(await new RunsService(http, Master).OfficialFilesAsync("0.7.0+abc"));
+
+        Assert.Equal("?version=0.7.0%2Babc", asked!.Query);
+        Assert.True(files.Knows("igi2"));
+        Assert.False(files.Knows("igi1"));
+        Assert.True(files.Holds("igi2", 11, gog));
+        Assert.False(files.Holds("igi2", 12, gog));
+        Assert.False(files.Holds("igi2", 13, official));
+    }
+
+    [Fact]
+    public async Task A_build_no_checker_plays_has_no_official_files()
+    {
+        using HttpClient http = new(new AnsweringHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound))));
+        Assert.Null(await new RunsService(http, Master).OfficialFilesAsync("0.0.0-dev+abc"));
+    }
+
+    [Fact]
+    public async Task A_runs_claims_name_its_build_and_its_files()
+    {
+        Uri? asked = null;
+        using HttpClient http = new(new AnsweringHandler(request =>
+        {
+            asked = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted) { Content = new StringContent("""{"id":"x","status":"pending"}""", Encoding.UTF8, "application/json") });
+        }));
+        using PointSigner player = new();
+        await new RunsService(http, Master).SubmitAsync(player, new RunClaims("igi1", 3, 2, "classic", 3711, 2, "0.7.0+abc", new string('c', 64)), [1]);
+        Assert.EndsWith("&version=0.7.0%2Babc&fingerprint=" + new string('c', 64), asked!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_replay_not_kept_is_none()
     {
         using HttpClient http = new(new AnsweringHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound))));

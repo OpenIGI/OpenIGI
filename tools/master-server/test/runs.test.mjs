@@ -310,11 +310,25 @@ assert.equal((await (await watchedAsk(new Request("https://master/v1/runs/board?
 await watchedAsk(new Request(`https://master/v1/admin/runs/${forged}`, { method: "DELETE" }));
 assert.equal((await review()).some((e) => e.id === forged), false);
 
-// A checker is handed only its own build's runs; one naming no build, any.
+// A checker is handed only its own build's runs; one naming no build, any. A build's runs are taken only once its checker
+// has told the official files, and only from them.
 const builds = new Runs({ storage: fakeStorage() }, env, () => now);
 await builds.fetch(new Request("https://master/v1/admin/run-verifiers", { method: "POST", body: JSON.stringify({ key: checker.wire, name: "sh-de" }) }));
-assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, "&version=0.7.0"), bytes(500)))).status, 202);
+const official = "a".repeat(64);
+const gogEdition = "b".repeat(64);
+const files = (fingerprint) => `&version=0.7.0&fingerprint=${fingerprint}`;
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, files(official)), bytes(500)))).status, 409);
+const told = new TextEncoder().encode(JSON.stringify({ version: "0.7.0", titles: { igi1: { 5: [official, gogEdition, "not hex"] }, nope: { 1: [official] } } }));
+assert.equal((await builds.fetch(new Request("https://master/v1/verifier/fingerprints", { method: "POST", body: told }))).status, 401);
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", "/v1/verifier/fingerprints", told))).status, 403);
+assert.deepEqual(await (await builds.fetch(await signed(checker, "POST", "/v1/verifier/fingerprints", told))).json(), { version: "0.7.0", titles: ["igi1"] });
+assert.deepEqual((await (await builds.fetch(new Request("https://master/v1/runs/official?version=0.7.0"))).json()).titles, { igi1: { 5: [official, gogEdition] } });
+assert.equal((await builds.fetch(new Request("https://master/v1/runs/official?version=0.6.0"))).status, 404);
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, files("c".repeat(64))), bytes(500)))).status, 422);
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(6, 900, 1, files(official)), bytes(500)))).status, 422);
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, files(gogEdition)), bytes(500)))).status, 202);
 assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, "&version=not a version"), bytes(500)))).status, 400);
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, "&version=0.7.0&fingerprint=xyz"), bytes(500)))).status, 400);
 assert.equal((await builds.fetch(await signed(checker, "GET", "/v1/verifier/next?version=0.6.9"))).status, 204);
 assert.equal((await builds.fetch(await signed(checker, "GET", "/v1/verifier/next?version=0.7.0"))).status, 200);
 

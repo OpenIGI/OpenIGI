@@ -35,6 +35,12 @@ using OpenIGI.Server;
 
 const string LogCategory = "Server";
 
+// The checker's official game files: every mission's fingerprint in every edition installed here (FingerprintMode).
+if (FingerprintMode.Asked(args))
+{
+    return FingerprintMode.Run();
+}
+
 // A replay checker, not a server: one run played again and its verdict written (VerifyMode).
 if (VerifyMode.Asked(args))
 {
