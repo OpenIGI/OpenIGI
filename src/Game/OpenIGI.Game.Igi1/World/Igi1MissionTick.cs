@@ -1321,6 +1321,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 followedBody.Simulation.HidePlayerBodyFollowing();
             }
 
+            // A race's ghost holds its gun by the player's roster, which it was recorded from.
+            followedBody.UseGhostWeapons(mission.WeaponTypes);
+
             // A co-op session's partners, followed on the same tick the player's body is -- and kept out of sight while a
             // scene plays, whose own actors stand for the players as they stand for the player alone: the outro's Jones at
             // the wheel, not a partner running at the truck.

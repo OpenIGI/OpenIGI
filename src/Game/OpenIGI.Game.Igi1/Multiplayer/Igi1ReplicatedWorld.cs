@@ -32,6 +32,15 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     public static ushort PackClipTime(float time) =>
         (ushort)Math.Clamp(Math.Round(time / Formats.Animation.BoneAnimation.FrameStep * ClipTimeScale), 0, ushort.MaxValue);
 
+    /// <summary>The weapon a replicated body holds, by its number (nought for none): the bomb, or a type off the player's roster.</summary>
+    /// <param name="weapon">The number, the weapon's id plus one.</param>
+    /// <param name="roster">The player's weapon types, or null where there are none to read it by.</param>
+    /// <returns>The weapon, or null for none or one the roster does not have.</returns>
+    public static OpenIGI.Game.Weapons.WeaponType? HeldWeapon(ushort weapon, OpenIGI.Game.Weapons.WeaponTypeRegistry? roster) =>
+        weapon - 1 == Igi1BombWeapon.Id ? Igi1BombWeapon.Type
+        : weapon > 0 && roster is not null && roster.TryGet(weapon - 1, out OpenIGI.Game.Weapons.WeaponType held) ? held
+        : null;
+
     /// <summary>Gets a clip's own time back from what a snapshot carries.</summary>
     /// <param name="carried">The time carried, in sixteenths of a tick.</param>
     /// <returns>The clip's own time.</returns>

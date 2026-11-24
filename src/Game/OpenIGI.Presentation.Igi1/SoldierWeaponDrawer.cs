@@ -453,6 +453,30 @@ internal sealed class SoldierWeaponDrawer(
         DrawRigidWeapon(weapon, hand.Position / WorldScene.UnitsPerMetre, hand.Rotation, camera);
     }
 
+    /// <summary>A held weapon handed whole to the picture's ghost pass, at the hand that holds it: a race's ghost's gun.</summary>
+    /// <param name="weapon">The weapon.</param>
+    /// <param name="hand">Where the hand holds it.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    /// <param name="ranges">A list to gather the gun's index ranges in, reused.</param>
+    internal void DrawHeldGhost(SoldierHeldWeapon weapon, BoneAttachment hand, in Camera3D camera, in GhostLook look, List<MeshDrawRange> ranges)
+    {
+        ranges.Clear();
+        foreach (MeshSubset subset in weapon.Geometry.Subsets)
+        {
+            if (subset.IndexCount > 0)
+            {
+                ranges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+            }
+        }
+
+        if (ranges.Count > 0)
+        {
+            Matrix4f modelView = camera.CreateModelView(hand.Position / WorldScene.UnitsPerMetre, hand.Rotation);
+            _device.DrawGhost(weapon.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), modelView, look);
+        }
+    }
+
     // A weapon model drawn whole as one rigid mesh, for when no multipart presenter was built for it.
     // The origin is in metres, as CreateModelView takes it.
     private void DrawRigidWeapon(SoldierHeldWeapon weapon, Vector3d originMetres, Matrix3f rotation, in Camera3D camera)

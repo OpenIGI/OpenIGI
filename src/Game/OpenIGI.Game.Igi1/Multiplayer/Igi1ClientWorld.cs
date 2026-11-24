@@ -140,11 +140,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             bool alive = (h.Flags & ReplicatedHumanCondition.Alive) != 0;
             bool fired = _shotsDrawn.TryGetValue(h.Id, out byte drawn) && drawn != h.Shots;
             _shotsDrawn[h.Id] = h.Shots;
-            OpenIGI.Game.Weapons.WeaponType? gun =
-                h.Weapon - 1 == Igi1BombWeapon.Id ? Igi1BombWeapon.Type
-                : h.Weapon > 0 && _game.PlayerSetup?.Weapons is { } roster && roster.TryGet(h.Weapon - 1, out OpenIGI.Game.Weapons.WeaponType held)
-                    ? held
-                    : null;
+            OpenIGI.Game.Weapons.WeaponType? gun = Igi1ReplicatedWorld.HeldWeapon(h.Weapon, _game.PlayerSetup?.Weapons);
             bodies.Add(Ai.PartnerBody.FromReplicated(h.Id, h, gun, fired) with
             {
                 Name = Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,

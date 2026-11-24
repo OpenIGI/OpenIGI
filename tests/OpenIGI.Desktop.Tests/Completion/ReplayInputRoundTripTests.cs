@@ -140,7 +140,7 @@ public sealed class ReplayInputRoundTripTests : IDisposable
     }
 
     [RequiresGameDataFact]
-    public void A_race_against_a_run_changes_nothing_of_the_level_and_draws_its_ghost()
+    public void A_race_against_a_run_changes_nothing_of_the_level_and_draws_its_ghost_and_its_gun()
     {
         // The same minute played again against the first's ghost: every second of the level the same as it was without one, under
         // the run's own settings and difficulty, and the ghost handed to the picture's ghost pass.
@@ -173,6 +173,7 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         Assert.True(compared >= first.Tape.Digests.Count - 1, $"Only {compared} of {first.Tape.Digests.Count} seconds were raced.");
         Assert.Equal(first.Tape.Digests.Take(compared), second.Tape.Digests.Take(compared));
         Assert.True(device.GhostDrawCount > 0, "The ghost was never drawn.");
+        Assert.True(device.GhostMeshCount >= 2, "The ghost was drawn without the gun in its hand.");
         Assert.True(device.LastGhostLook.Seconds > 0f, "The ghost's look never moved on.");
     }
 

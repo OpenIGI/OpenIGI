@@ -125,6 +125,12 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
     {
     }
 
+    /// <summary>Gives the weapon types a race's ghost names its gun by: the player's, as its track was recorded from.</summary>
+    /// <param name="weapons">The player's weapon types, or null for none.</param>
+    void UseGhostWeapons(WeaponTypeRegistry? weapons)
+    {
+    }
+
     /// <summary>Keeps the partners' bodies out of sight, or shows them again: followed all the while, drawn only when shown.</summary>
     /// <param name="hidden">Whether they are hidden, as a scene playing hides them.</param>
     void HidePartnerBodies(bool hidden)

@@ -662,6 +662,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _drawer.DrawMuzzleFlashes(camera, projection);
         DrawPartnerMuzzleFlashes(camera, projection);
+        DrawGhostMuzzleFlash(camera, projection);
     }
 
     /// <inheritdoc/>
