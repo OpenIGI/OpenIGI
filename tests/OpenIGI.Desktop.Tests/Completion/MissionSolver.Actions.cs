@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Host;
 using OpenIGI.Input;
 using OpenIGI.TestSupport;
 
@@ -22,7 +23,7 @@ internal sealed partial class MissionSolver
             case GoalKind.Take:
                 if (Find(goal.Task!) is { } at)
                 {
-                    _player.Body.Position = at;
+                    Move(at);
                 }
 
                 break;
@@ -52,7 +53,7 @@ internal sealed partial class MissionSolver
         }
 
         bool byOrigin = (_goalTicks / 30) % 2 == 1;
-        _player.Body.Position = byOrigin ? centre - new Vector3d(0, 0, OriginAboveFeet) : centre;
+        Move(byOrigin ? centre - new Vector3d(0, 0, OriginAboveFeet) : centre);
     }
 
     private Vector3d? Find(GameTask task)
@@ -103,7 +104,7 @@ internal sealed partial class MissionSolver
         int phase = _goalTicks - _spotSince;
         if (phase == 0)
         {
-            _player.Body.Position = _spots[_spot];
+            Move(_spots[_spot]);
             return;
         }
 
@@ -118,8 +119,7 @@ internal sealed partial class MissionSolver
                     float pitch = (float)(pitchStep * Math.PI / 24.0);
                     if (ReferenceEquals(interactions.Resolve(eye, yaw, pitch), interaction))
                     {
-                        _player.Body.Yaw = yaw;
-                        _player.Body.Pitch = pitch;
+                        Look(yaw, pitch);
                         _useStep = 1;
                     }
                 }
@@ -209,11 +209,58 @@ internal sealed partial class MissionSolver
         }
     }
 
-    private void Rocket(Vector3d at) => _game.Blasts.Explode(
+    private void Rocket(Vector3d at)
+    {
+        _host.RecordRunCommandForTesting(FormattableString.Invariant($"{BlastCommand} {at.X:R} {at.Y:R} {at.Z:R}"));
+        Blast(_game, at);
+    }
+
+    // The solver stands, turns and sets off its blasts outside the player's input, so its run's replay holds each as a command
+    // of its own, given again by ApplyRecorded on the tick it came before.
+    private const string BodyCommand = "solver-body";
+    private const string LookCommand = "solver-look";
+    private const string BlastCommand = "solver-blast";
+
+    private void Move(Vector3d at)
+    {
+        _host.RecordRunCommandForTesting(FormattableString.Invariant($"{BodyCommand} {at.X:R} {at.Y:R} {at.Z:R}"));
+        _player.Body.Position = at;
+    }
+
+    private void Look(float yaw, float pitch)
+    {
+        _host.RecordRunCommandForTesting(FormattableString.Invariant($"{LookCommand} {yaw:R} {pitch:R}"));
+        _player.Body.Yaw = yaw;
+        _player.Body.Pitch = pitch;
+    }
+
+    private static void Blast(Game.Igi1.World.Igi1Gameplay game, Vector3d at) => game.Blasts.Explode(
         at,
         MissileExplosion.RadiusUnits,
         MissileExplosion.FalloffUnits,
         MissileExplosion.DamageFactor,
         WeaponCategory.Grenade,
         sourceWeaponId: DestructibleObjectRegistry.CarDestroyingWeaponId);
+
+    /// <summary>Gives a replay the solver's own move it recorded, on the tick it came before.</summary>
+    /// <param name="host">The host playing the replay.</param>
+    /// <param name="words">The command's words.</param>
+    internal static void ApplyRecorded(GameHost host, string[] words)
+    {
+        static double D(string text) => double.Parse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture);
+        static float F(string text) => float.Parse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture);
+        switch (words)
+        {
+            case [BodyCommand, string x, string y, string z] when host.Player() is { } player:
+                player.Body.Position = new Vector3d(D(x), D(y), D(z));
+                break;
+            case [LookCommand, string yaw, string pitch] when host.Player() is { } player:
+                player.Body.Yaw = F(yaw);
+                player.Body.Pitch = F(pitch);
+                break;
+            case [BlastCommand, string x, string y, string z]:
+                Blast(host.Gameplay(), new Vector3d(D(x), D(y), D(z)));
+                break;
+        }
+    }
 }
