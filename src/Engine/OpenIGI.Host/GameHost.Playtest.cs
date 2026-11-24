@@ -18,7 +18,7 @@ namespace OpenIGI.Host;
 /// </remarks>
 public sealed partial class GameHost
 {
-    private static readonly float[] PlaytestSpeeds = [0.25f, 0.5f, 1f, 2f, 4f];
+    private static readonly float[] PlaytestSpeeds = [0.25f, 0.5f, 1f, 2f, 4f, 8f];
 
     // The keys a play-test takes: their binds (the developer's renderer toggles, co-op's calls) do not run while it does.
     private static readonly KeyCode[] PlaytestKeys = [KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F6, KeyCode.F7, KeyCode.F8, KeyCode.F9, KeyCode.F10];
@@ -60,11 +60,11 @@ public sealed partial class GameHost
 
     /// <summary>Gets whether the play-test holds the level still: paused with no step asked for, or a replay at its end.</summary>
     private bool PlaytestHoldsLevel =>
-        (_editor is { IsPlaying: true } && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd)) || PlaybackHoldsLevel;
+        (TransportActive && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd)) || PlaybackHoldsLevel;
 
     /// <summary>Gets how fast the play-test runs the level's clock: 1 outside one, or under lockstep (whose clock is the frames').</summary>
     /// <remarks>A replay's seek runs as fast as the frames let ticks through.</remarks>
-    private float PlaytestTimeScale => _editor is { IsPlaying: true } && !_options.Lockstep
+    private float PlaytestTimeScale => TransportActive && !_options.Lockstep
         ? _replayTarget is not null && Replaying ? ReplaySeekSpeed : PlaytestSpeeds[_playtestSpeed]
         : 1f;
 

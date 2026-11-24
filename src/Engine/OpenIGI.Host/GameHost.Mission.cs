@@ -532,6 +532,7 @@ public sealed partial class GameHost
     /// <param name="keepMap">Whether a community map being played stays laid over the game: a mission starting, not the game left.</param>
     private void ReleasePlayedMission(bool keepMap = false)
     {
+        PlaybackLevelReleased();
         ReleaseTaskPresenters();
         if (!keepMap)
         {

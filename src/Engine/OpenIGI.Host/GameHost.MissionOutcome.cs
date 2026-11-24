@@ -42,6 +42,10 @@ public sealed partial class GameHost
     {
         public void MissionDecided(bool completed) => host.MissionDecided(completed);
 
+        public bool WatchesReplay => host._playback is not null && host._editor is not { IsPlaying: true };
+
+        public void ReplayDecided(bool completed) => host._replayDecided = completed;
+
         public IMissionProgress? Objectives => host._mission.Progress;
 
         public bool CutscenePlaying => host._mission.Scenes?.IsPlaying == true;

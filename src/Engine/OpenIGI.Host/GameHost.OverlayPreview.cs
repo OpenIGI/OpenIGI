@@ -91,6 +91,20 @@ public sealed partial class GameHost
             DrawPreviewMatch(state, hud, asked, width, height);
         }
 
+        // The replay viewer's bar, over a made-up run: playing at twice its speed, and at its end where it parted.
+        if (Wants("replay") || asked == "replay_parted")
+        {
+            bool parted = asked == "replay_parted";
+            (double, string)[] marks = [(41.0, "a guard sees you"), (95.5, "objective"), (188.0, "alarm"), (301.2, "objective")];
+            hud.DrawReplayBar(
+                state.Batch,
+                new Presentation.Hud.ReplayBar(
+                    "Jones · Trainyard · Hard · Classic", parted ? 512.0 : 214.6, 512.0, parted, parted ? 1f : 2f, "Behind", marks,
+                    PartedAt: parted ? 233.4 : null, Ending: parted ? "Mission complete · Space plays it again" : null),
+                width,
+                height);
+        }
+
         state.Batch.End();
     }
 

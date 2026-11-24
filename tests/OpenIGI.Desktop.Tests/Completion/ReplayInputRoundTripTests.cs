@@ -71,6 +71,63 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         Assert.True(partedAt >= changed, $"It parted at tick {partedAt}, before the changed input at {changed}.");
     }
 
+    [RequiresGameDataTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_replay_sought_back_and_on_agrees_with_its_recording_to_the_end(bool afresh)
+    {
+        // Back from half a minute to ten seconds -- to where the level was held, or, with nothing held, loaded afresh and run up
+        // to it -- then on from forty seconds to fifty-five, and played out: every second the recording kept agrees.
+        ReplayFile recorded = ReplayFile.Read(Record(mission: 1).ToBytes());
+        using RecordingGraphicsDevice device = new() { IsRecording = false };
+        GameHost host = _support.Host(
+            device, new HeadlessGameWindow(), simulationOnly: true, "-playreplay", Write(recorded, afresh ? "afresh" : "held"), "-lockstep", "-frames", "100000000");
+        host.Start();
+        int seeks = 0;
+        int lowest = int.MaxValue;
+        for (int step = 0; step < 80 * Ticks && host.Step(); step++)
+        {
+            if (host.ReplayFinished || host.ReplayDivergedAt is not null)
+            {
+                break;
+            }
+
+            if (seeks > 0)
+            {
+                lowest = Math.Min(lowest, host.TickOfLevel);
+            }
+
+            if (seeks == 0 && host.TickOfLevel >= 30 * 30)
+            {
+                if (afresh)
+                {
+                    host.ForgetReplayCheckpointsForTesting();
+                }
+
+                host.ReplayTransportForTesting("seek 10");
+                seeks++;
+            }
+            else if (seeks == 1 && host.TickOfLevel >= 40 * 30)
+            {
+                host.ReplayTransportForTesting("seek 55");
+                seeks++;
+            }
+            else if (host.ReplayPausedForTesting)
+            {
+                host.ReplayTransportForTesting("run");
+            }
+        }
+
+        (int? partedAt, int matched, bool finished) = (host.ReplayDivergedAt, host.ReplayFingerprintsMatched, host.ReplayFinished);
+        host.Stop();
+        Assert.Equal(2, seeks);
+        // Held, the level is put straight back at ten seconds; loaded afresh, it runs up to them from its start.
+        Assert.Equal(afresh ? 1 : 10 * 30, lowest);
+        Assert.True(partedAt is null, $"The replay parted at tick {partedAt} ({partedAt / 30.0:0.0} s) after its seeks.");
+        Assert.True(finished, "The replay never reached its end.");
+        Assert.Equal(recorded.Tape.Digests.Count, matched);
+    }
+
     // A minute of a scripted player in a mission, drawn, as its replay.
     private ReplayFile Record(int mission)
     {

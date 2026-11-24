@@ -452,7 +452,7 @@ public static class HudCVars
         "r_hud_overlay_preview",
         string.Empty,
         CVarOptions.Developer | CVarOptions.Hidden,
-        "Lay a session overlay over play with made-up players, to look at: scoreboard, scoreboard_team, chat, chat_open, revive, downed, controls, teammenu, buymenu, mapvote, match, missionscore (a completed mission's rank screen), missionscore_coop (a co-op squad's) or all.");
+        "Lay a session overlay over play with made-up players, to look at: scoreboard, scoreboard_team, chat, chat_open, revive, downed, controls, teammenu, buymenu, mapvote, match, missionscore (a completed mission's rank screen), missionscore_coop (a co-op squad's), replay (the replay viewer's bar), replay_parted (one that parted from its recording) or all.");
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;

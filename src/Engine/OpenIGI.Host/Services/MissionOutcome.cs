@@ -83,6 +83,16 @@ internal interface IMissionOutcomeHost
 
     /// <summary>Lets go of the mission being played.</summary>
     void ReleasePlayedMission();
+
+    /// <summary>
+    /// Gets a value indicating whether the mission is a replay being watched: someone's run played again, which decides nothing of
+    /// the viewer's -- no campaign opened, no rank kept, no page put up, nothing told.
+    /// </summary>
+    bool WatchesReplay { get; }
+
+    /// <summary>Tells the replay viewer how the watched run's level decided its mission.</summary>
+    /// <param name="completed">Whether it was completed.</param>
+    void ReplayDecided(bool completed);
 }
 
 /// <summary>
@@ -127,6 +137,12 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         {
             host.Objectives?.Silenced = true;
             session.ClearFailure();
+            return;
+        }
+
+        if (host.WatchesReplay)
+        {
+            SettleWatched();
             return;
         }
 
@@ -222,6 +238,25 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             }
 
             GoOn(state);
+        }
+    }
+
+    // A replay watched: its level's verdict is the viewer's to show, once, and nothing else follows from it.
+    private void SettleWatched()
+    {
+        session.ClearFailure();
+        if (session.ResultHandled)
+        {
+            return;
+        }
+
+        bool failed = host.Objectives is { IsFailed: true } || host.TitlePlayer is { Outcome: TitleMissionOutcome.Failed };
+        bool completed = host.Objectives is { IsComplete: true } || host.TitlePlayer is { Outcome: TitleMissionOutcome.Completed };
+        if (failed || completed)
+        {
+            session.ResultHandled = true;
+            logger.Information("Replays", completed ? "The watched run completes its mission." : "The watched run fails its mission.");
+            host.ReplayDecided(completed);
         }
     }
 
@@ -346,6 +381,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
     public void MissionBegun()
     {
         if (host.PlaysArena
+            || host.WatchesReplay
             || host.RunsUnattended
             || session.Mission is not { } mission
             || host.ActiveProfile is not { } profile

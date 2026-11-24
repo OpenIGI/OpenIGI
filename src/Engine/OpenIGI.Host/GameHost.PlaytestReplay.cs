@@ -16,7 +16,7 @@ namespace OpenIGI.Host;
 /// for the scrubber.
 /// </content>
 /// <remarks>
-/// Not recorded, so not played back: the remaster's weapon wheel and the computer's screens, which take the mouse outside a tick.
+/// The same transport drives a replay watched in the game (<see cref="Watching"/>): there the recording is a run's from its file.
 /// </remarks>
 public sealed partial class GameHost
 {
@@ -312,13 +312,19 @@ public sealed partial class GameHost
             (_ticksLoad, _ticksOfLoad) = (_levelLoads, held.Tick);
             _replayCommandsGiven = (-1, -1);
             PlaytestCheatsAt(held.Tick);
+            PlaybackSettingsAt(held.Tick);
             _replayLoad = _levelLoads;
             _replayTarget = to > held.Tick ? to : null;
             return;
         }
 
         PlaytestCheatsAsAtStart();
+        PlaybackSettingsAt(0);
+
+        // A replay being watched keeps its level through the load: it is the same run, from its start.
+        _playbackReloading = _playback is not null && _playbackLoad >= 0;
         ReloadLevelInPlace();
+        _playbackReloading = false;
         _tapeCheckpoints.Clear();
         _replayLoad = _levelLoads;
         _replayTarget = target is > 0 ? target : null;

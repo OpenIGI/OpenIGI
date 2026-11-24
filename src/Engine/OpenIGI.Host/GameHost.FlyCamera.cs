@@ -140,6 +140,11 @@ public sealed partial class GameHost
                 HoldPlayerStill();
                 _window.CursorLocked = false;
             }
+            else if (Watching)
+            {
+                // A replay watched: the player's look is the recording's, and the free camera, if any, the viewer's.
+                SteerReplayView(state, elapsed);
+            }
             else if (_playerMode && SteerWeaponWheel(rawX, rawY))
             {
                 // The weapon wheel has the mouse: it steers the wheel, and the view holds where it was. The settling

@@ -765,6 +765,7 @@ public sealed partial class GameHost : IDisposable
                 UpdateShell(state);
                 UpdateEntryShot(state);
                 RunSessionCycles(state);
+                HandleReplayViewer(state);
                 HandleEscape(state);
                 RunDeferredCommands(state);
                 UpdatePlayerDevices(state);
@@ -948,7 +949,8 @@ public sealed partial class GameHost : IDisposable
         {
             while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode key))
             {
-                if (executeBinds && !PlaytestOwns(key))
+                // Nothing bound runs under a replay being watched: its level plays only the recording.
+                if (executeBinds && !Watching && !PlaytestOwns(key))
                 {
                     state.Console.System.ExecuteBind(Input.BindKeyNames.NameOf(key));
                 }

@@ -19,9 +19,11 @@ public sealed partial class GameHost
     // The player's own values of the settings the replay set, put back when it is done.
     private readonly List<(ICVar Variable, string Value)> _playbackRestore = [];
 
-    // The first tick whose fingerprint did not match the recording's, and how many matched.
+    // The first tick whose fingerprint did not match the recording's, how many matched, and the last tick compared: a seek back
+    // runs ticks again that were compared already, and they are not counted twice.
     private int? _playbackDivergedAt;
     private int _playbackMatched;
+    private int _playbackComparedThrough = -1;
 
     /// <summary>Gets or sets what hears a replay part from its recording: the tick, the fingerprint recorded and the one played.</summary>
     public Action<int, ulong, ulong>? ReplayDiverged { get; set; }
@@ -60,6 +62,7 @@ public sealed partial class GameHost
         _playbackLoad = -1;
         _playbackDivergedAt = null;
         _playbackMatched = 0;
+        _playbackComparedThrough = -1;
         if (!string.Equals(replay.Header.GameVersion, BuildVersion, StringComparison.Ordinal))
         {
             _logger.Warning(
@@ -118,6 +121,8 @@ public sealed partial class GameHost
 
         _playback = null;
         _playbackLoad = -1;
+        _playbackReloading = false;
+        ResetReplayViewer();
         if (ReferenceEquals(_replay, _replayTapeOfPlayback))
         {
             _replay = null;
@@ -140,7 +145,7 @@ public sealed partial class GameHost
 
     // The difficulty a replay's mission is brought up at: its own.
     private Game.Ai.AiDifficulty? PlaybackDifficulty =>
-        _playback is { } replay && _playbackLoad < 0 ? (Game.Ai.AiDifficulty)Math.Clamp(replay.Header.Difficulty, 0, 2) : null;
+        _playback is { } replay && (_playbackLoad < 0 || _playbackReloading) ? (Game.Ai.AiDifficulty)Math.Clamp(replay.Header.Difficulty, 0, 2) : null;
 
     /// <summary>
     /// A mission has come up: the replay asked for is bound to it and given to the play-test's replay from its first tick; or,
@@ -154,6 +159,14 @@ public sealed partial class GameHost
             return false;
         }
 
+        if (_playbackReloading)
+        {
+            // The replay's own level loaded again for a seek back: still the replay's, which the seek runs on from its start.
+            _playbackReloading = false;
+            _playbackLoad = _levelLoads;
+            return true;
+        }
+
         if (_playbackLoad >= 0)
         {
             // Another mission came up after the replay's: it is over.
@@ -161,6 +174,7 @@ public sealed partial class GameHost
             return false;
         }
 
+        ResetReplayViewer();
         _playbackLoad = _levelLoads;
         _replay = _playback.Tape;
         _replayTapeOfPlayback = _playback.Tape;
@@ -203,11 +217,13 @@ public sealed partial class GameHost
     /// <param name="tick">The tick that ran.</param>
     private void PlaybackTicked(int tick)
     {
-        if (_playback is not { } replay || _playbackLoad != _levelLoads || replay.Tape.DigestAt(tick) is not { } recorded)
+        if (_playback is not { } replay || _playbackLoad != _levelLoads || tick <= _playbackComparedThrough
+            || replay.Tape.DigestAt(tick) is not { } recorded)
         {
             return;
         }
 
+        _playbackComparedThrough = tick;
         ulong played = SimulationDigest();
         if (played == recorded)
         {
@@ -224,6 +240,36 @@ public sealed partial class GameHost
                     System.Globalization.CultureInfo.InvariantCulture,
                     $"The replay parted from its recording at {tick / 30.0:0.0} s (tick {tick}): this level is not the one it recorded."));
             ReplayDiverged?.Invoke(tick, recorded, played);
+        }
+    }
+
+    /// <summary>
+    /// The replay's settings as they stood at a tick it is put back to: as its header set them, then each it changed before the tick.
+    /// </summary>
+    /// <param name="tick">The tick.</param>
+    private void PlaybackSettingsAt(int tick)
+    {
+        if (_playback is not { } replay)
+        {
+            return;
+        }
+
+        ApplyPlaybackSettings(replay.Header.Settings);
+        foreach (string command in replay.Tape.CommandsBefore(tick))
+        {
+            if (command.Split(' ') is ["set", string name, string value])
+            {
+                SetPlaybackSetting(name, value);
+            }
+        }
+    }
+
+    /// <summary>The level of a replay being watched has gone -- the player left it, or another came up -- and the replay with it.</summary>
+    private void PlaybackLevelReleased()
+    {
+        if (_playback is not null && _playbackLoad >= 0 && !_playbackReloading)
+        {
+            StopPlayback();
         }
     }
 

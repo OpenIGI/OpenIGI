@@ -480,6 +480,13 @@ public sealed partial class GameHost
             earLead = titlePlayerEye is not null ? titleEyeLead : default;
         }
 
+        // A replay watched from the free camera: the picture is taken from where the viewer flies it, the player drawn as from behind.
+        if (ReplayFlies && thirdPersonAllowed)
+        {
+            eye = _camera.Camera;
+            earLead = default;
+        }
+
         // The ear goes where the picture is taken from: the original's microphone is the camera controller's own
         // (0x4EBBF0, set from the camera each frame), so a cut-scene, the camera over a dead body or the orbit round a
         // climber is heard from there, not from the head the player no longer looks out of.
