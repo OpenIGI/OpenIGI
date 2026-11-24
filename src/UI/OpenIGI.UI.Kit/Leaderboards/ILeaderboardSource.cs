@@ -88,4 +88,13 @@ public interface ILeaderboardSource
     void Race(string run)
     {
     }
+
+    /// <summary>Gets whether the player can report a run: signed in under an account the boards know.</summary>
+    bool CanReport => false;
+
+    /// <summary>Reports a board's run for a person to look at: one that looks played by a tool, or through a flaw.</summary>
+    /// <param name="run">The run.</param>
+    void Report(string run)
+    {
+    }
 }

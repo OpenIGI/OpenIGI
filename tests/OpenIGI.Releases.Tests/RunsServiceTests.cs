@@ -106,6 +106,27 @@ public sealed class RunsServiceTests
     }
 
     [Fact]
+    public async Task A_report_is_signed_and_carries_its_reason()
+    {
+        HttpRequestMessage? sent = null;
+        string? body = null;
+        using HttpClient http = new(new AnsweringHandler(async request =>
+        {
+            sent = request;
+            body = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"id":"r1","reported":true}""", Encoding.UTF8, "application/json") };
+        }));
+        using PointSigner player = new();
+
+        await new RunsService(http, Master).ReportAsync(player, "0123456789abcdef0123456789abcdef", "walks through the fence");
+
+        Assert.Equal(HttpMethod.Post, sent!.Method);
+        Assert.Equal("/v1/runs/0123456789abcdef0123456789abcdef/report", sent.RequestUri!.AbsolutePath);
+        Assert.Equal("""{"reason":"walks through the fence"}""", body);
+        Assert.True(sent.Headers.Contains(SignedRequest.SignatureHeader));
+    }
+
+    [Fact]
     public async Task A_replay_not_kept_is_none()
     {
         using HttpClient http = new(new AnsweringHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound))));

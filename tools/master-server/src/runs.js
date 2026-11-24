@@ -12,6 +12,7 @@
 //   GET  /v1/runs/<id>                    a run: whose, of what, its status and, checked, its score and whether its replay is kept
 //   GET  /v1/runs/<id>/replay             a checked run's replay with the checker's ghost, while it is kept
 //   GET  /v1/players/<account>/runs?title=   a player's bests in one game, board by board
+//   POST /v1/runs/<id>/report             a checked run reported, signed by a linked account: { reason }, REPORTS_DAILY a day
 //   GET  /v1/verifier/next                the next run to check, its replay's bytes (x-openigi-run says which), or 204: signed
 //                                         by a registered checker's key
 //   POST /v1/verifier/runs/<id>           the checker's verdict: the verdict's JSON's length (four bytes, little-endian), the JSON
@@ -36,6 +37,12 @@
 //   pending             the runs waiting, oldest first
 //   verifier:<keyId>    { name, added }
 //   bytes               the bytes of every replay kept or waiting
+//   review              the runs a person is to look at, oldest first: [{ id, why: [...], reporters: [...], at }] -- every
+//                       new first place, every run the checks flag, every run reported; each stays on its board meanwhile
+//
+// Re-simulation proves a run is one the game allows; it cannot prove a person played it as it ran. What it cannot catch is
+// flagged for a person instead: a run that reached the boards sooner after it began than it takes to play was not played in
+// real time, and a new first place is always looked at.
 
 import { dropBlob, getBlob, putBlob } from "./blobs.js";
 import { cleanName } from "./names.js";
@@ -53,7 +60,24 @@ export const DAILY = 30;
 export const PENDING_MS = 24 * 3600 * 1000;
 export const LEASE_MS = 15 * 60 * 1000;
 export const DEFAULT_BUDGET = 2 * 1024 * 1024 * 1024;
+export const REPORTS_DAILY = 10;
+
+// How far the player's clock may be from ours before a run's start and its arrival disagree with its length.
+export const CLOCK_SLACK_MS = 2 * 60 * 1000;
+const MAX_REASON = 140;
 const BOARD_SIZE = 50;
+
+// What the checks flag of a checked run for a person to look at: a run that reached the boards sooner after it began than it
+// takes to play was not played as it ran (its start is the player's clock, so allowing for that clock being off).
+export function flagsOf(run, verdict) {
+  const flags = [];
+  const lasts = (verdict.score.ticks / 30) * 1000;
+  if (Number.isFinite(verdict.recordedAt) && run.submitted + CLOCK_SLACK_MS < verdict.recordedAt + lasts) {
+    flags.push("it reached the boards sooner after it began than it takes to play");
+  }
+
+  return flags;
+}
 
 const boardKey = (title, mission, difficulty, ruleset) => `board:${title}:${mission}:${difficulty}:${ruleset}`;
 const dayOf = (time) => new Date(time).toISOString().slice(0, 10);
@@ -181,6 +205,7 @@ export class Runs {
       if (parts[1] === "verifier" && parts[2] === "runs" && parts[3] && request.method === "POST") return await this.verdict(request, url, parts[3]);
       if (parts[1] === "players" && parts[3] === "runs") return json(await this.bestsOf(parts[2], url.searchParams.get("title") ?? TITLES[0]));
       if (parts[1] === "runs" && parts.length === 2 && request.method === "POST") return await this.submit(request, url);
+      if (parts[1] === "runs" && parts[2] && parts[3] === "report" && request.method === "POST") return await this.report(request, url, parts[2]);
       if (parts[1] === "runs" && parts[2] === "board") return json(await this.board(url));
       if (parts[1] === "runs" && parts[2] && parts[3] === "replay") return await this.replay(parts[2]);
       if (parts[1] === "runs" && parts[2] && parts.length === 3) return await this.one(parts[2]);
@@ -303,7 +328,66 @@ export class Runs {
     await this.storage.put(`run:${id}`, run);
     await this.release(run.account);
     await this.place(run);
+
+    // What a person is to look at: what the checks flag, and a run that now leads its board.
+    const why = flagsOf(run, verdict);
+    if (await this.leads(run)) why.push("a new first place");
+    if (why.length > 0 && (await this.storage.get(`run:${id}`))) await this.queue(id, why);
     return json({ id, status: "verified" });
+  }
+
+  // Whether a run leads its board on either metric.
+  async leads(run) {
+    const entries = (await this.storage.get(boardKey(run.title, run.mission, run.difficulty, run.ruleset))) ?? [];
+    return METRICS.some((metric) => {
+      const top = ranked(entries, metric)[0];
+      return (metric === "time" ? top?.time?.run : top?.best?.run) === run.id;
+    });
+  }
+
+  // A run put before a person, or more reasons added to it where it already is; who reported it, once each.
+  async queue(id, why, reporter = null) {
+    const review = (await this.storage.get("review")) ?? [];
+    let entry = review.find((e) => e.id === id);
+    if (!entry) {
+      entry = { id, why: [], reporters: [], at: this.now() };
+      review.push(entry);
+    }
+
+    if (reporter && entry.reporters.includes(reporter)) return false;
+    if (reporter) entry.reporters.push(reporter);
+    entry.why.push(...why);
+    await this.storage.put("review", review);
+    return true;
+  }
+
+  // A checked run reported by a linked account, not its own: put before a person with the reason given.
+  async report(request, url, id) {
+    const body = new Uint8Array(await request.arrayBuffer());
+    if (body.length > 1024) throw new Refusal(413, "A report is a sentence at most.");
+    const key = await signedBy(request, url, body, this.now());
+    const account = (await this.accountsOf([key.id]))[key.id];
+    if (!account) throw new Refusal(403, "Sign in with Discord to report a run.");
+    const run = await this.storage.get(`run:${id}`);
+    if (run?.status !== "verified") throw new Refusal(404, "No such run on the boards.");
+    if (run.account === account.id) throw new Refusal(409, "That run is your own.");
+
+    const holder = (await this.storage.get(`acct:${account.id}`)) ?? {};
+    const today = dayOf(this.now());
+    const reports = holder.reports?.day === today ? holder.reports.count : 0;
+    if (reports >= REPORTS_DAILY) throw new Refusal(429, `At most ${REPORTS_DAILY} reports a day.`);
+
+    let reason = "";
+    try {
+      reason = String(JSON.parse(new TextDecoder().decode(body))?.reason ?? "");
+    } catch {
+      // No reason given, or none that reads: reported all the same.
+    }
+
+    reason = reason.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, MAX_REASON);
+    const taken = await this.queue(id, [`reported by ${cleanName(account.name)}${reason ? `: ${reason}` : ""}`], account.id);
+    if (taken) await this.storage.put(`acct:${account.id}`, { ...holder, reports: { day: today, count: reports + 1 } });
+    return json({ id, reported: true });
   }
 
   // A verified run put on its board: the player's row bettered where it betters it, the runs no longer anyone's best let go,
@@ -402,6 +486,8 @@ export class Runs {
   async forgetRun(id) {
     await this.dropReplay(id);
     await this.storage.delete(`run:${id}`);
+    const review = (await this.storage.get("review")) ?? [];
+    if (review.some((e) => e.id === id)) await this.storage.put("review", review.filter((e) => e.id !== id));
   }
 
   // A run refused: its replay let go of at once, the reason kept for its player to read.
@@ -623,6 +709,23 @@ export class Runs {
       await this.storage.put(key, entries.filter((row) => row.time || row.best));
       await this.forgetRun(run.id);
       return json({ removed: run.id });
+    }
+
+    // The runs a person is to look at, with each run as it stands; and one looked at, taken off them.
+    if (parts[2] === "runs" && parts[3] === "review" && request.method === "GET") {
+      const out = [];
+      for (const entry of (await this.storage.get("review")) ?? []) {
+        const run = await this.storage.get(`run:${entry.id}`);
+        if (run) out.push({ ...entry, run: { ...run, chunks: undefined } });
+      }
+
+      return json(out);
+    }
+
+    if (parts[2] === "runs" && parts[3] && parts[4] === "cleared" && request.method === "POST") {
+      const review = (await this.storage.get("review")) ?? [];
+      await this.storage.put("review", review.filter((e) => e.id !== parts[3]));
+      return json({ cleared: parts[3] });
     }
 
     if (parts[2] === "runs" && request.method === "GET") {

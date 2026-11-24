@@ -43,6 +43,12 @@ public sealed class MissionRow : Control
     /// <summary>Gets or sets whether it is the player's own.</summary>
     public bool IsYou { get; set; }
 
+    /// <summary>Gets or sets whether the player has reported its run.</summary>
+    public bool Reported { get; set; }
+
+    /// <summary>Gets whether its run can be reported: a mission's row, of another player's run.</summary>
+    public bool CanReport => !_overall && !IsYou && _row.Run is not null;
+
     /// <summary>Gets or sets whether it is laid out for a narrow page.</summary>
     public bool Compact { get; set; }
 
@@ -177,7 +183,8 @@ public sealed class MissionRow : Control
         float side = context.Px(Compact ? 28f : 34f);
         KitDraw.PlayerMark(painter, Theme, new UiRect(x, mid - (side / 2f), side, side), _row.Name, null, signedIn: true, appear);
         x += side + context.Px(12f);
-        string name = Theme.BodyStrong.Fit(IsYou ? _row.Name + "  ·  YOU" : _row.Name, nameSize, MathF.Max(0f, right - x));
+        string tag = IsYou ? "  ·  YOU" : Reported ? "  ·  REPORTED" : string.Empty;
+        string name = Theme.BodyStrong.Fit(_row.Name + tag, nameSize, MathF.Max(0f, right - x));
         painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, UiRowStyle.CenterY(Theme.BodyStrong, nameSize, bounds)), nameSize, UiPalette.Fade(Theme.Text, appear));
     }
 

@@ -59,6 +59,28 @@ public sealed partial class GameHost
             : null;
     }
 
+    // A board's run reported from the menu, signed by the player's key; whether the master took it is only logged.
+    private void ReportBoardRun(string run)
+    {
+        if (PlayerSigner() is not { } signer)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RunsService.ReportAsync(signer, run, "Reported from the game's boards").ConfigureAwait(false);
+                _logger.Information("Replays", $"Reported run {run}.");
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or AccountRefusedException or IOException)
+            {
+                _logger.Warning("Replays", $"Run {run} was not reported: {ex.Message.TrimEnd('.')}.");
+            }
+        });
+    }
+
     // A board's run asked for: its replay brought down, to be watched or raced once it is here.
     private void AskBoardReplay(string run, bool race)
     {
@@ -135,6 +157,10 @@ public sealed partial class GameHost
         }
 
         public IReadOnlyList<LeaderboardGame> Games => LeaderboardGame.Official;
+
+        public bool CanReport => host._account is { State: AccountLinkState.Linked } && PlayerSigner() is not null;
+
+        public void Report(string run) => host.ReportBoardRun(run);
 
         public string? SignInHint => host._account is { State: AccountLinkState.Linked }
             ? null

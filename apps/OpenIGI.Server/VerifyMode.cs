@@ -128,6 +128,10 @@ internal static class VerifyMode
                 json.WriteNumber("difficulty", header.Difficulty);
                 json.WriteString("player", header.Player);
                 json.WriteString("version", header.GameVersion);
+
+                // When the run began by the player's clock: a run that reaches the boards sooner after it than it lasts was not
+                // played as it ran, which the boards flag for a person to look at.
+                json.WriteNumber("recordedAt", header.RecordedAt);
             }
 
             if (verdict is not null)

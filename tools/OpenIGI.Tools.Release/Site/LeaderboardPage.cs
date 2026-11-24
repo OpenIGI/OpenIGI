@@ -382,7 +382,7 @@ internal static class LeaderboardPage
             // The single-player mission boards: every run on them was played again by the server before it counted.
             const MISSIONS = {{MissionNames}};
             const BOARD_TEXT = $("board").querySelector(".banner p").textContent;
-            const RUNS_TEXT = "Every run is played again by the server from its inputs before it counts, so a time on the board is one the game really allows. Sign in with Discord on the game's Profile page to be on the board under your name.";
+            const RUNS_TEXT = "Every run is played again by the server from its inputs before it counts, so a time on the board is one the game really allows. A replay can't prove a person played it live, so every new first place and every reported run is looked at by a person too. Sign in with Discord on the game's Profile page to be on the board under your name.";
             const RUN_METRICS = [["time", "Fastest"], ["rank", "Best rank"]];
             let missions = params.get("board") === "missions", runMetric = "time";
             const time = (ticks) => {

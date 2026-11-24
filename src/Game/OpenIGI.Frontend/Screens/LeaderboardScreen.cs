@@ -43,7 +43,9 @@ public sealed class LeaderboardScreen : ShellScreen
 
     /// <inheritdoc/>
     protected override IReadOnlyList<KeyHint> Hints => ShowingMissions
-        ? [new("M", "Matches"), new("↑ ↓", "Select"), new("Enter", "Watch"), new("R", "Race"), new("Esc", "Back")]
+        ? Context.Host.Leaderboard?.CanReport == true
+            ? [new("M", "Matches"), new("↑ ↓", "Select"), new("Enter", "Watch"), new("R", "Race"), new("F", "Report"), new("Esc", "Back")]
+            : [new("M", "Matches"), new("↑ ↓", "Select"), new("Enter", "Watch"), new("R", "Race"), new("Esc", "Back")]
         : _view?.ShowingRecord == true
             ? [new("↑ ↓", "Scroll"), new("Esc", "Leaderboard")]
             : [.. Source?.Missions is null ? [] : new KeyHint[] { new("M", "Missions") }, new("Tab", "Metric"), new("↑ ↓", "Select"), new("Enter", "Record"), new("Esc", "Back")];
@@ -127,6 +129,11 @@ public sealed class LeaderboardScreen : ShellScreen
             _showMissions = !_showMissions;
             Invalidate();
             RefreshHints();
+            return false;
+        }
+
+        if (ShowingMissions && input.Keyboard.WasPressed(KeyCode.F) && _missions!.ReportFocused())
+        {
             return false;
         }
 

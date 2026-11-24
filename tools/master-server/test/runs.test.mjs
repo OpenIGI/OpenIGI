@@ -3,10 +3,11 @@
 // checker's verdict puts it on a board, as the checker found it and only if it is the run sent; the boards rank by time and by
 // rank, a mission's and all of them together; and the room is bounded: a player's old best let go when bettered, a run below
 // the kept top keeping its numbers alone, forty replays an account, the budget kept by letting the lowest-placed go (a board's
-// top three never), a run never checked let go after a day, and an account deleted taking its runs with it.
+// top three never), a run never checked let go after a day, and an account deleted taking its runs with it. What a person is
+// to look at is queued: a new first place, a run that reached the boards sooner than it takes to play, a run reported.
 import assert from "node:assert/strict";
 import { webcrypto as crypto } from "node:crypto";
-import { ACCOUNT_CAP, DAILY, KEPT, PENDING_MS, Runs } from "../src/runs.js";
+import { ACCOUNT_CAP, CLOCK_SLACK_MS, DAILY, KEPT, PENDING_MS, REPORTS_DAILY, Runs } from "../src/runs.js";
 
 function fakeStorage() {
   const store = new Map();
@@ -255,6 +256,59 @@ const full = new Runs({ storage: fakeStorage() }, { ACCOUNTS: accounts, REPLAY_B
 await full.fetch(new Request("https://master/v1/admin/run-verifiers", { method: "POST", body: JSON.stringify({ key: checker.wire, name: "sh-de" }) }));
 for (let i = 0; i < 2; i++) assert.equal((await full.fetch(await signed(players[i].key, "POST", claims(9, 1000 + i, 0), bytes(2000)))).status, 202);
 assert.equal((await full.fetch(await signed(players[2].key, "POST", claims(9, 900, 0), bytes(2000)))).status, 507);
+
+// The review: a fresh store, its runs checked with the player's clock given (recordedAt).
+const watchedStore = fakeStorage();
+const watched = new Runs({ storage: watchedStore }, env, () => now);
+const watchedAsk = (request) => watched.fetch(request);
+await watchedAsk(new Request("https://master/v1/admin/run-verifiers", { method: "POST", body: JSON.stringify({ key: checker.wire, name: "sh-de" }) }));
+async function watchedRun(player, ticks, recordedAt) {
+  assert.equal((await watchedAsk(await signed(player.key, "POST", claims(4, ticks, 1), bytes(800)))).status, 202);
+  const next = await watchedAsk(await signed(checker, "GET", "/v1/verifier/next"));
+  const id = next.headers.get("x-openigi-run");
+  const verdict = { verified: true, title: "igi1", mission: 4, difficulty: 2, ruleset: "modern", player: player.key.id, score: { ticks }, rank: 1, recordedAt };
+  const json = new TextEncoder().encode(JSON.stringify(verdict));
+  const body = new Uint8Array(4 + json.length + 900);
+  new DataView(body.buffer).setUint32(0, json.length, true);
+  body.set(json, 4);
+  assert.equal((await (await watchedAsk(await signed(checker, "POST", `/v1/verifier/runs/${id}`, body))).json()).status, "verified");
+  return id;
+}
+
+const review = async () => (await watchedAsk(new Request("https://master/v1/admin/runs/review"))).json();
+
+// Ten minutes of play begun ten minutes and more before it arrived: honest, but the board's first place, so looked at.
+const honest = await watchedRun(players[10], 30 * 600, now - 11 * 60 * 1000);
+assert.deepEqual((await review()).map((e) => [e.id, e.why]), [[honest, ["a new first place"]]]);
+
+// A slower run in second place, its ten minutes begun a minute before it arrived (past the clock's slack): flagged.
+const forged = await watchedRun(players[11], 30 * 610, now - 60 * 1000);
+assert.ok(CLOCK_SLACK_MS < 9 * 60 * 1000);
+assert.deepEqual((await review()).find((e) => e.id === forged)?.why, ["it reached the boards sooner after it began than it takes to play"]);
+
+// Its clock a little off and nothing more: not flagged, and not first either.
+const skewed = await watchedRun(players[12], 30 * 620, now - (30 * 620 / 30) * 1000 + CLOCK_SLACK_MS / 2);
+assert.equal((await review()).some((e) => e.id === skewed), false);
+
+// A report: signed by a linked account, not of its own run, once a run each, REPORTS_DAILY a day.
+const report = async (player, id, reason) => watchedAsk(await signed(player.key, "POST", `/v1/runs/${id}/report`, new TextEncoder().encode(JSON.stringify({ reason }))));
+assert.equal((await report({ key: stranger }, skewed, "fast")).status, 403);
+assert.equal((await report(players[12], skewed, "mine")).status, 409);
+assert.equal((await report(players[13], "0".repeat(32), "nothing")).status, 404);
+assert.equal((await report(players[13], skewed, "walks\nthrough the fence")).status, 200);
+assert.equal((await report(players[13], skewed, "again")).status, 200);
+const reported = (await review()).find((e) => e.id === skewed);
+assert.deepEqual([reported.why, reported.reporters], [["reported by Player 13: walks through the fence"], [players[13].account.id]]);
+const holder = await watchedStore.get(`acct:${players[13].account.id}`);
+await watchedStore.put(`acct:${players[13].account.id}`, { ...holder, reports: { ...holder.reports, count: REPORTS_DAILY } });
+assert.equal((await report(players[13], honest, "one too many")).status, 429);
+
+// Looked at: taken off the review, the run still on its board; a run removed takes its place in the review with it.
+assert.equal((await (await watchedAsk(new Request(`https://master/v1/admin/runs/${honest}/cleared`, { method: "POST" }))).json()).cleared, honest);
+assert.equal((await review()).some((e) => e.id === honest), false);
+assert.equal((await (await watchedAsk(new Request("https://master/v1/runs/board?title=igi1&mission=4&difficulty=2&ruleset=modern&metric=time"))).json()).rows[0].run, honest);
+await watchedAsk(new Request(`https://master/v1/admin/runs/${forged}`, { method: "DELETE" }));
+assert.equal((await review()).some((e) => e.id === forged), false);
 
 // An account deleted: every run of its keys gone.
 assert.equal((await (await ask(new Request("https://master/internal/forget", { method: "POST", body: JSON.stringify({ keys: [players[0].key.id] }) }))).json()).forgotten, 1);

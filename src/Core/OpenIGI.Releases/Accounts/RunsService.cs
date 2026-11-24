@@ -101,6 +101,30 @@ public sealed class RunsService(HttpClient http, Uri master)
         return taken.Id;
     }
 
+    /// <summary>Reports a run on the boards for a person to look at, signed by the reporting player's key.</summary>
+    /// <param name="player">The reporting player's key, which must belong to a linked account.</param>
+    /// <param name="id">The run.</param>
+    /// <param name="reason">What is wrong with it, in a sentence; may be empty.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>A task that completes once the master has taken the report.</returns>
+    /// <exception cref="AccountRefusedException">The master did not take it, saying why.</exception>
+    public async Task ReportAsync(IRequestSigner player, string id, string reason, CancellationToken cancel = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        using MemoryStream body = new();
+        using (Utf8JsonWriter json = new(body))
+        {
+            json.WriteStartObject();
+            json.WriteString("reason", reason ?? string.Empty);
+            json.WriteEndObject();
+        }
+
+        using HttpRequestMessage request = await SignedRequest.CreateAsync(
+            player, HttpMethod.Post, master, $"/v1/runs/{Uri.EscapeDataString(id)}/report", body.ToArray(), "application/json").ConfigureAwait(false);
+        using HttpResponseMessage response = await http.SendAsync(request, cancel).ConfigureAwait(false);
+        await MasterAnswers.ThrowIfRefusedAsync(response, "runs", cancel).ConfigureAwait(false);
+    }
+
     /// <summary>A run as the master tells it now.</summary>
     /// <param name="id">The run.</param>
     /// <param name="cancel">Stops it.</param>

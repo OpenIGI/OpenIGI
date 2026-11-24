@@ -30,6 +30,7 @@ public sealed class MissionBoardView
     private readonly StackPanel _pinned = new() { Orientation = Orientation.Vertical, Spacing = 4f };
     private readonly StackPanel _missionHost = new() { Orientation = Orientation.Horizontal };
     private readonly Label _note;
+    private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
     private string _builtTitle = string.Empty;
     private int _seen = -1;
 
@@ -139,6 +140,20 @@ public sealed class MissionBoardView
         return false;
     }
 
+    /// <summary>Reports the run of the row with the focus, where the player may: another's run on a mission's board, once.</summary>
+    /// <returns>Whether one was.</returns>
+    public bool ReportFocused()
+    {
+        if (!_source.CanReport || _focus()?.Focused is not MissionRow { CanReport: true, Reported: false } row || !_reported.Add(row.Row.Run!))
+        {
+            return false;
+        }
+
+        _source.Report(row.Row.Run!);
+        row.Reported = true;
+        return true;
+    }
+
     private void Sync()
     {
         SyncList();
@@ -218,7 +233,7 @@ public sealed class MissionBoardView
 
     private MissionRow Row(RunBoardRow row, bool overall, bool isYou)
     {
-        var line = new MissionRow(_theme, row, _feed.Metric, overall) { IsYou = isYou, Compact = _compact };
+        var line = new MissionRow(_theme, row, _feed.Metric, overall) { IsYou = isYou, Compact = _compact, Reported = row.Run is { } id && _reported.Contains(id) };
         if (line.HasReplay)
         {
             string run = row.Run!;
