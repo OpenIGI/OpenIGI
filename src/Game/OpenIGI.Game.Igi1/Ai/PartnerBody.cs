@@ -68,4 +68,38 @@ public readonly record struct PartnerBody(
             player.FiredThisTick,
             clip is null ? null : clipTime);
     }
+
+    /// <summary>
+    /// Gets a body as another window's copy of it is drawn from its replicated state: where the state puts it, its legs and torso on
+    /// the clips it names (a torso clip played once where it says so), the gun given, fired where its shots moved on.
+    /// </summary>
+    /// <param name="key">What the body follows.</param>
+    /// <param name="human">The state.</param>
+    /// <param name="weapon">The weapon its state's number names, or <see langword="null"/>.</param>
+    /// <param name="fired">Whether it fired since it was last drawn.</param>
+    /// <returns>The body; a session's names, looks and revival are its own to add.</returns>
+    public static PartnerBody FromReplicated(object key, in OpenIGI.Game.Multiplayer.ReplicatedHuman human, WeaponType? weapon, bool fired)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        OpenIGI.Game.Multiplayer.ReplicatedHumanCondition flags = human.Flags;
+        return new PartnerBody(
+            key,
+            human.Position.ToVector(),
+            -OpenIGI.Net.Quantize.AngleFromBits(human.Yaw),
+            human.State - 1,
+            true,
+            new PlayerBodyPose(
+                human.Action - 1,
+                (flags & OpenIGI.Game.Multiplayer.ReplicatedHumanCondition.UpperBodyOnce) == 0,
+                0f,
+                human.ActionSequence,
+                OpenIGI.Net.Quantize.AngleFromBits(human.Pitch),
+                Game.Player.Aim.CombatLean.Eye(human.Lean / 100f).Roll,
+                human.Aim / 100f),
+            weapon,
+            human.Shots,
+            fired,
+            (flags & OpenIGI.Game.Multiplayer.ReplicatedHumanCondition.Climbing) != 0 ? Multiplayer.Igi1ReplicatedWorld.UnpackClipTime(human.ClipTime) : null,
+            Dead: (flags & OpenIGI.Game.Multiplayer.ReplicatedHumanCondition.Alive) == 0);
+    }
 }

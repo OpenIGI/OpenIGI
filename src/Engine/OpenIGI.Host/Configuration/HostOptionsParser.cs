@@ -93,6 +93,7 @@ internal static class HostOptionsParser
         string? showcasePointDump = null;
         string? benchmarkPath = null;
         string? playReplayPath = null;
+        string? racePath = null;
         bool bakeAll = false;
 
         List<string> startupCommands = [];
@@ -316,6 +317,10 @@ internal static class HostOptionsParser
             {
                 playReplayPath = Next(args, ref i, "playreplay");
             }
+            else if (arg.Equals("race", StringComparison.OrdinalIgnoreCase))
+            {
+                racePath = Next(args, ref i, "race");
+            }
             else if (arg.Equals("benchmark", StringComparison.OrdinalIgnoreCase))
             {
                 benchmarkPath = Next(args, ref i, "benchmark");
@@ -530,6 +535,7 @@ internal static class HostOptionsParser
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
             PlayReplayPath = playReplayPath,
+            RacePath = racePath,
             NoSave = noSave,
             BakeAll = bakeAll,
         };

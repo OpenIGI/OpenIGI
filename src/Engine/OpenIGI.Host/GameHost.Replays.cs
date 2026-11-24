@@ -63,6 +63,7 @@ public sealed partial class GameHost
     {
         FinishRun(ReplayOutcome.Abandoned, "the level was loaded again");
         _runArmed = null;
+        BindRace();
         if (BindPlayback())
         {
             // A replay plays on this level: it is not a run of the player's to record.

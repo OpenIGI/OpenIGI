@@ -59,8 +59,11 @@ public sealed partial class GameHost
         BeginMissionWarmUp(chosen);
         PresentLoadingFrame();
 
-        // A community map being played stays laid over the game for its own mission started again.
+        // A community map being played stays laid over the game for its own mission started again; and a race goes on over its
+        // own mission started again.
+        _missionStarting = id;
         ReleasePlayedMission(keepMap: true);
+        _missionStarting = null;
 
         _logger.Information("Mission", $"Starting {chosen}.");
         _levelLoads++;
@@ -279,6 +282,7 @@ public sealed partial class GameHost
     /// player picked in the menu reaches the AI; -difficulty still overrides, for testing one without editing a profile.
     /// </remarks>
     private AiDifficulty EffectiveDifficulty() => PlaybackDifficulty
+        ?? RaceDifficulty
         ?? _options.Difficulty
         ?? (AiDifficulty)Math.Clamp(
             _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
@@ -533,6 +537,7 @@ public sealed partial class GameHost
     private void ReleasePlayedMission(bool keepMap = false)
     {
         PlaybackLevelReleased();
+        RaceLevelReleased();
         ReleaseTaskPresenters();
         if (!keepMap)
         {

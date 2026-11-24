@@ -815,6 +815,12 @@ public sealed partial class GameHost
                 ResumeConditions();
                 StartReplayFromFile(replayPath);
             }
+            else if (_options.RacePath is { } racePath)
+            {
+                // Straight into a race against a replay's ghost, its mission brought up as the run was played.
+                ResumeConditions();
+                StartRaceFromFile(racePath);
+            }
             else if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.

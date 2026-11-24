@@ -16,8 +16,8 @@ public sealed partial class GameHost
     private ReplayFile? _playback;
     private int _playbackLoad = -1;
 
-    // The player's own values of the settings the replay set, put back when it is done.
-    private readonly List<(ICVar Variable, string Value)> _playbackRestore = [];
+    // The player's own values of the settings a replay or a race set, put back when it is done.
+    private readonly List<(ICVar Variable, string Value)> _borrowedSettings = [];
 
     // The first tick whose fingerprint did not match the recording's, how many matched, and the last tick compared: a seek back
     // runs ticks again that were compared already, and they are not counted twice.
@@ -52,7 +52,8 @@ public sealed partial class GameHost
         }
 
         StopPlayback();
-        ApplyPlaybackSettings(replay.Header.Settings);
+        StopRace();
+        BorrowSettings(replay.Header.Settings);
         _playback = replay;
         _playbackLoad = -1;
         _playbackDivergedAt = null;
@@ -137,16 +138,25 @@ public sealed partial class GameHost
         }
 
         _replayTapeOfPlayback = null;
-        foreach ((ICVar variable, string value) in _playbackRestore)
+        ReturnSettings();
+    }
+
+    // The player's own settings back, where a replay or a race set them.
+    private void ReturnSettings()
+    {
+        foreach ((ICVar variable, string value) in _borrowedSettings)
         {
             variable.TrySetText(value, out _);
         }
 
-        _playbackRestore.Clear();
+        _borrowedSettings.Clear();
     }
 
-    /// <summary>Gets a value indicating whether the level's cutscenes play: as a replay being played recorded it, else as the game was started.</summary>
-    private bool PlaysCutscenes => _playback?.Header.PlaysCutscenes ?? _options.PlayCutscenes;
+    /// <summary>
+    /// Gets a value indicating whether the level's cutscenes play: as a replay being played, or the run a race is against, recorded
+    /// it; else as the game was started.
+    /// </summary>
+    private bool PlaysCutscenes => (_playback ?? _race)?.Header.PlaysCutscenes ?? _options.PlayCutscenes;
 
     // The tape the play-test's replay was handed by a playback, to tell it from an editor's own.
     private InputTape? _replayTapeOfPlayback;
@@ -208,7 +218,7 @@ public sealed partial class GameHost
 
         if (words is ["set", string name, string value])
         {
-            SetPlaybackSetting(name, value);
+            BorrowSetting(name, value);
             return true;
         }
 
@@ -262,12 +272,12 @@ public sealed partial class GameHost
             return;
         }
 
-        ApplyPlaybackSettings(replay.Header.Settings);
+        BorrowSettings(replay.Header.Settings);
         foreach (string command in replay.Tape.CommandsBefore(tick))
         {
             if (command.Split(' ') is ["set", string name, string value])
             {
-                SetPlaybackSetting(name, value);
+                BorrowSetting(name, value);
             }
         }
     }
@@ -281,18 +291,19 @@ public sealed partial class GameHost
         }
     }
 
-    // A replay's recorded settings set for it -- only those that change how the level plays, which is all a header may name --
-    // the player's own kept to put back.
-    private void ApplyPlaybackSettings(IReadOnlyList<(string Name, string Value)> settings)
+    // A run's recorded settings set for a replay or a race of it -- only those that change how the level plays, which is all a
+    // header may name -- the player's own kept to put back.
+    private void BorrowSettings(IReadOnlyList<(string Name, string Value)> settings)
     {
         foreach ((string name, string value) in settings)
         {
-            SetPlaybackSetting(name, value);
+            BorrowSetting(name, value);
         }
     }
 
-    // One setting set for the replay, the player's own value kept the first time; a name that is no simulation setting is not set.
-    private void SetPlaybackSetting(string name, string value)
+    // One setting set for a replay or a race, the player's own value kept the first time; a name that is no simulation setting is
+    // not set.
+    private void BorrowSetting(string name, string value)
     {
         if (!CVarRegistry.Default.TryGet(name, out ICVar? variable) || (variable.Flags & CVarOptions.Simulation) == 0)
         {
@@ -300,9 +311,9 @@ public sealed partial class GameHost
             return;
         }
 
-        if (!_playbackRestore.Exists(kept => ReferenceEquals(kept.Variable, variable)))
+        if (!_borrowedSettings.Exists(kept => ReferenceEquals(kept.Variable, variable)))
         {
-            _playbackRestore.Add((variable, variable.ValueText));
+            _borrowedSettings.Add((variable, variable.ValueText));
         }
 
         if (!variable.TrySetText(value, out string? reason))

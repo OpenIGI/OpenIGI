@@ -711,6 +711,9 @@ public sealed partial class GameHost
         // Every other player spawn protection shields, in the shielded look over the finished scene, seen through walls.
         _soldiers?.DrawShieldedPartners(eye);
 
+        // A race's ghost, in the same look, seen through walls: nothing of the level, only drawn.
+        _soldiers?.DrawGhost(eye);
+
         // The title's thermal goggles: its people in heat colours, through walls, in the forward pass with the tracers.
         DrawTitleInfrared(eye, projection);
 

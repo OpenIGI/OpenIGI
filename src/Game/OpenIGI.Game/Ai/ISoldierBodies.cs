@@ -60,6 +60,21 @@ public interface ISoldierBodies : IDisposable
     {
     }
 
+    /// <summary>
+    /// Poses the ghost a race shows, once a tick: the runner's body as its track has it (<see cref="Multiplayer.ReplicatedHuman"/>),
+    /// drawn as a partner's copy is but part of nothing in the level -- nothing sees it, meets it or is hit by it.
+    /// </summary>
+    /// <param name="frame">The runner's body this tick, or <see langword="null"/> to take the ghost away.</param>
+    void FollowGhost(Multiplayer.ReplicatedHuman? frame)
+    {
+    }
+
+    /// <summary>Draws the ghost a race shows, in the out-of-the-fight look over the finished scene, seen through walls.</summary>
+    /// <param name="camera">The eye the scene is being drawn through.</param>
+    void DrawGhost(in Camera3D camera)
+    {
+    }
+
     /// <summary>Collects every nearby soldier's bones, and the capsules a ragdoll of it collides with, for the debug view.</summary>
     /// <param name="eye">Where the eye is, in metres.</param>
     /// <param name="range">How far out to look, in metres.</param>
