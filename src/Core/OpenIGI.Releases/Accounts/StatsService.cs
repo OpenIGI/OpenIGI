@@ -110,29 +110,8 @@ public sealed class StatsService(HttpClient http, Uri master)
             ?? throw new AccountRefusedException("The leaderboard came back empty.", response.StatusCode);
     }
 
-    private static async Task Refused(HttpResponseMessage response, CancellationToken cancel)
-    {
-        if (response.IsSuccessStatusCode)
-        {
-            return;
-        }
-
-        string message = $"The stats server said {(int)response.StatusCode}.";
-        try
-        {
-            using JsonDocument said = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel).ConfigureAwait(false));
-            if (said.RootElement.TryGetProperty("error", out JsonElement error) && error.GetString() is { Length: > 0 } reason)
-            {
-                message = reason;
-            }
-        }
-        catch (JsonException)
-        {
-            // Its status says enough.
-        }
-
-        throw new AccountRefusedException(message, response.StatusCode);
-    }
+    private static Task Refused(HttpResponseMessage response, CancellationToken cancel) =>
+        MasterAnswers.ThrowIfRefusedAsync(response, "stats", cancel);
 }
 
 /// <summary>The JSON the stats read and write, generated ahead of time.</summary>

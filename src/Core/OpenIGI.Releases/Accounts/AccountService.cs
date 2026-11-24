@@ -187,30 +187,8 @@ public sealed class AccountService(HttpClient http, Uri master)
         return (await JsonSerializer.DeserializeAsync(stream, type, cancel).ConfigureAwait(false))!;
     }
 
-    private static async Task ThrowIfRefused(HttpResponseMessage response, CancellationToken cancel)
-    {
-        if (response.IsSuccessStatusCode)
-        {
-            return;
-        }
-
-        string message = $"The account server said {(int)response.StatusCode}.";
-        try
-        {
-            string text = await response.Content.ReadAsStringAsync(cancel).ConfigureAwait(false);
-            using JsonDocument said = JsonDocument.Parse(text);
-            if (said.RootElement.TryGetProperty("error", out JsonElement error) && error.GetString() is { Length: > 0 } reason)
-            {
-                message = reason;
-            }
-        }
-        catch (JsonException)
-        {
-            // Not the server's JSON: its status says enough.
-        }
-
-        throw new AccountRefusedException(message, response.StatusCode);
-    }
+    private static Task ThrowIfRefused(HttpResponseMessage response, CancellationToken cancel) =>
+        MasterAnswers.ThrowIfRefusedAsync(response, "account", cancel);
 }
 
 /// <summary>The JSON the accounts read and write, generated ahead of time.</summary>
