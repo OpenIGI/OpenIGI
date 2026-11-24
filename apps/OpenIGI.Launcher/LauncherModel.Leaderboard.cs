@@ -12,7 +12,46 @@ namespace OpenIGI.Launcher;
 internal sealed partial class LauncherModel
 {
     private LeaderboardFeed? _leaderboard;
+    private MissionBoardFeed? _missions;
+    private RunsService? _runs;
     private AvatarFiles? _boardAvatars;
+
+    /// <summary>Gets the single-player mission boards, made the first time they are wanted.</summary>
+    public MissionBoardFeed Missions => _missions ??= new MissionBoardFeed(new MasterRunBoardReader(Runs), RecordTitle);
+
+    private RunsService Runs => _runs ??= new RunsService(AccountHttp, MapService.Master);
+
+    /// <summary>
+    /// Watches or races a board's run in the game: its replay, with the ghost the server saw, brought down to the settings folder
+    /// the game shares, and the game started on it (<c>-playreplay</c> or <c>-race</c>).
+    /// </summary>
+    /// <param name="run">The run.</param>
+    /// <param name="race">Whether to race it rather than watch it.</param>
+    public void PlayBoardRun(string run, bool race)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(run);
+        string file = Path.Combine(SettingsPaths.GetUserDirectory(), "replays", "boards", string.Concat(run.Split(Path.GetInvalidFileNameChars())) + ".oigr");
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                byte[]? bytes = await Runs.ReplayAsync(run).ConfigureAwait(false);
+                if (bytes is null)
+                {
+                    _results.Enqueue(() => Report("That run's replay is no longer kept."));
+                    return;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                await File.WriteAllBytesAsync(file, bytes).ConfigureAwait(false);
+                _results.Enqueue(() => Play(Current, [race ? "-race" : "-playreplay", file]));
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or TaskCanceledException or AccountRefusedException)
+            {
+                _results.Enqueue(() => Report($"The run could not be brought down: {ex.Message}", ex));
+            }
+        });
+    }
 
     /// <summary>Gets the boards and records, made the first time they are wanted.</summary>
     public LeaderboardFeed Leaderboard => _leaderboard ??= new LeaderboardFeed(new MasterLeaderboardReader(AccountHttp, MapService.Master), RecordTitle);
@@ -39,5 +78,6 @@ internal sealed partial class LauncherModel
         }
 
         _leaderboard.You = SignedInForBoard ? _account!.Account!.Id : (_identity ??= LoadIdentity())?.Id;
+        _missions?.You = SignedInForBoard ? _account!.Account!.Id : null;
     }
 }
