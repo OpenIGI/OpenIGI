@@ -169,6 +169,7 @@ public sealed partial class GameHost
         _replayDecided = null;
         _playbackDecidedAt = null;
         _playbackScore = null;
+        _playbackRank = -1;
         RestoreReplayThirdPerson();
     }
 

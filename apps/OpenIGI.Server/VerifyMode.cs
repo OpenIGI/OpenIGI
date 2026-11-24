@@ -72,7 +72,7 @@ internal static class VerifyMode
 
         if (!TitleCatalog.TryResolve(replay.Header.Title, out IGameTitleRuntime? runtime))
         {
-            return Write(stdout, Refused, $"it is of a game this build does not run ({replay.Header.Title})", null);
+            return Write(stdout, Refused, $"it is of a game this build does not run ({replay.Header.Title})", null, replay.Header);
         }
 
         GameTitle title = runtime.Title;
@@ -108,11 +108,12 @@ internal static class VerifyMode
             File.WriteAllBytes(output, (replay with { Ghost = verdict.Ghost }).ToBytes());
         }
 
-        return Write(stdout, verdict.Verified ? Verified : Refused, verdict.Reason, verdict);
+        return Write(stdout, verdict.Verified ? Verified : Refused, verdict.Reason, verdict, replay.Header);
     }
 
-    // The verdict as one line of JSON, and the exit code it goes with.
-    private static int Write(Stream stdout, int code, string reason, ReplayVerdict? verdict)
+    // The verdict as one line of JSON, and the exit code it goes with: with the run's header, what it says it is of and who
+    // recorded it, which the boards hold against who submitted it.
+    private static int Write(Stream stdout, int code, string reason, ReplayVerdict? verdict, ReplayHeader? header = null)
     {
         using (Utf8JsonWriter json = new(stdout))
         {
@@ -120,10 +121,20 @@ internal static class VerifyMode
             json.WriteBoolean("verified", code == Verified);
             json.WriteString("reason", reason);
             json.WriteBoolean("checked", code != Unchecked);
+            if (header is not null)
+            {
+                json.WriteString("title", header.Title);
+                json.WriteNumber("mission", header.Mission);
+                json.WriteNumber("difficulty", header.Difficulty);
+                json.WriteString("player", header.Player);
+                json.WriteString("version", header.GameVersion);
+            }
+
             if (verdict is not null)
             {
                 json.WriteString("ruleset", verdict.Ruleset);
                 json.WriteNumber("endTick", verdict.EndTick);
+                json.WriteNumber("rank", verdict.Rank);
                 if (verdict.PartedAt is { } parted)
                 {
                     json.WriteNumber("partedAt", parted);

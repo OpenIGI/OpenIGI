@@ -52,6 +52,9 @@ public sealed class ReplayVerificationTests : IDisposable
         Assert.True(verdict.Verified, verdict.Reason);
         Assert.Equal(run.Result.Score, verdict.Score);
         Assert.Equal(Ruleset.Modern.Id, verdict.Ruleset);
+
+        // Unseen, unhurt and quick: it earns a rank, as the level's own requirements weigh it.
+        Assert.True(verdict.Rank >= 0, $"The run earned no rank: {verdict.Score}.");
         GhostTrack ghost = Assert.IsType<GhostTrack>(verdict.Ghost);
         Assert.InRange(ghost.Length, run.Tape.Length - 2, run.Tape.Length + 2);
         Assert.Equal(run.Ghost!.Splits(), ghost.Splits());

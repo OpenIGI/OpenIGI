@@ -39,7 +39,8 @@ public static class ReplayVerification
                 }
             }
 
-            return ReplayVerifier.After(replay, host.ReplayDivergedAt, host.ReplayFinished, host.ReplayCompletedAt, host.ReplayScore, host.ReplayGhost);
+            return ReplayVerifier.After(
+                replay, host.ReplayDivergedAt, host.ReplayFinished, host.ReplayCompletedAt, host.ReplayScore, host.ReplayGhost, host.ReplayRank);
         }
         finally
         {

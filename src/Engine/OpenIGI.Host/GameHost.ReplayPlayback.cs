@@ -29,6 +29,7 @@ public sealed partial class GameHost
     // here, the ghost a race against the run shows as the checker saw it.
     private int? _playbackDecidedAt;
     private Game.Scoring.MissionScore? _playbackScore;
+    private int _playbackRank = -1;
     private GhostTrack? _playbackGhost;
 
     /// <summary>Gets the tick the level of the replay being played completed its mission on here, or null while it has not.</summary>
@@ -36,6 +37,9 @@ public sealed partial class GameHost
 
     /// <summary>Gets the mission's score as it stood when the level of the replay being played completed it here, or null.</summary>
     public Game.Scoring.MissionScore? ReplayScore => _replayDecided == true ? _playbackScore : null;
+
+    /// <summary>Gets the rank the score of the replay being played earns, as its level weighs it; -1 for none.</summary>
+    public int ReplayRank => _replayDecided == true ? _playbackRank : -1;
 
     /// <summary>Gets the runner of the replay being played as it moved here, tick by tick, with what happened along the way.</summary>
     public GhostTrack? ReplayGhost => _playbackGhost;
@@ -51,7 +55,9 @@ public sealed partial class GameHost
     {
         _replayDecided = completed;
         _playbackDecidedAt = TickOfLevel;
-        _playbackScore = _playback is { } replay ? TitlePlayer?.ScoreSheet(replay.Header.Mission)?.Score : null;
+        Game.Scoring.MissionScoreSheet? sheet = _playback is { } replay ? TitlePlayer?.ScoreSheet(replay.Header.Mission) : null;
+        _playbackScore = sheet?.Score;
+        _playbackRank = sheet is { Score: { } scored } ? sheet.Requirements.GetRank(scored) : -1;
         if (completed)
         {
             _playbackGhost?.Event(TickOfLevel, GhostEventKind.End, 1);

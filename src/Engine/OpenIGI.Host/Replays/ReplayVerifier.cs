@@ -22,6 +22,9 @@ public sealed record ReplayVerdict(
     int? PartedAt,
     GhostTrack? Ghost)
 {
+    /// <summary>Gets the rank the score earns in the mission, from nought up, as the level's own requirements weigh it; -1 for none.</summary>
+    public int Rank { get; init; } = -1;
+
     /// <summary>A run refused before it is played, or after: why.</summary>
     /// <param name="reason">Why it is no ranked run.</param>
     /// <param name="ruleset">The rules it says it was played by.</param>
@@ -113,7 +116,8 @@ public static class ReplayVerifier
     /// <param name="score">The mission's score as it stood here when the level completed it.</param>
     /// <param name="ghost">The runner as it moved here.</param>
     /// <returns>The verdict.</returns>
-    public static ReplayVerdict After(ReplayFile replay, int? partedAt, bool finished, int? completedAt, MissionScore? score, GhostTrack? ghost)
+    /// <param name="rank">The rank the score earns, as the level's requirements weigh it.</param>
+    public static ReplayVerdict After(ReplayFile replay, int? partedAt, bool finished, int? completedAt, MissionScore? score, GhostTrack? ghost, int rank = -1)
     {
         ArgumentNullException.ThrowIfNull(replay);
         string rules = replay.Header.Ruleset;
@@ -132,6 +136,6 @@ public static class ReplayVerifier
             return new ReplayVerdict(false, "the score it claims is not the one its run comes to", rules, end, computed, null, null);
         }
 
-        return new ReplayVerdict(true, string.Empty, rules, end, computed, null, ghost);
+        return new ReplayVerdict(true, string.Empty, rules, end, computed, null, ghost) { Rank = rank };
     }
 }
