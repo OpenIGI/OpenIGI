@@ -141,8 +141,9 @@ public sealed class SimMathTests
         Random random = new(7);
         for (int i = 0; i < 10000; i++)
         {
-            double x = (random.NextDouble() - 0.5) * Math.Pow(10, random.Next(-4, 5));
-            double y = (random.NextDouble() - 0.5) * Math.Pow(10, random.Next(-4, 5));
+            // The scales are literals, not powers of ten taken here: the platform's own pow must not choose the inputs.
+            double x = (random.NextDouble() - 0.5) * Scales[random.Next(Scales.Length)];
+            double y = (random.NextDouble() - 0.5) * Scales[random.Next(Scales.Length)];
             Fold(SimMath.Sin(x));
             Fold(SimMath.Cos(x));
             Fold(SimMath.Tan(x));
@@ -153,6 +154,7 @@ public sealed class SimMathTests
             Fold(SimMath.Exp(Math.Clamp(x, -700, 700)));
             Fold(SimMath.Log(Math.Abs(x)));
             Fold(SimMath.Pow(Math.Abs(x), Math.Clamp(y, -30, 30)));
+            Fold(SimMath.Tanh(x));
         }
 
         Assert.Equal(ExpectedFingerprint, hash);
@@ -164,8 +166,10 @@ public sealed class SimMathTests
         }
     }
 
+    private static readonly double[] Scales = [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4];
+
     // The fingerprint of Results_are_the_same_bits_everywhere, first computed on win-x64 (2026-11-24).
-    private const ulong ExpectedFingerprint = 7971497311450282632UL;
+    private const ulong ExpectedFingerprint = 10322098589236398023UL;
 
     private static IEnumerable<double> Values(double scale, int seed)
     {

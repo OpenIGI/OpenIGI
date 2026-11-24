@@ -76,6 +76,29 @@ jobs:
           path: test-results/*.trx
           retention-days: 7
 
+  # A replay is checked by playing it again on the server, so the simulation's results must be the same bits on every machine
+  # a player records on. The math it takes its angles and curves from is the game's own (SimMath), never the platform's; this
+  # proves its pinned fingerprint on each other platform a release ships for (linux-x64 is proved by build-and-test).
+  determinism:
+    name: determinism (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Check the simulation's math
+        run: >
+          dotnet test tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj --configuration Release
+          --filter "FullyQualifiedName~OpenIGI.Core.Tests.SimMathTests"
+
   # The compiled shaders and the WebGPU bindings are generated and committed, so a contributor without
   # slangc can still build; this is what stops either going stale against its source.
   generated:
