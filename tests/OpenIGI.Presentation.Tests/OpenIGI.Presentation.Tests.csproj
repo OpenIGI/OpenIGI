@@ -5,6 +5,7 @@
          free camera. None of it touches a graphics device, which is the whole reason it can be tested. -->
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi1\OpenIGI.Presentation.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi2\OpenIGI.Presentation.Igi2.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
 
