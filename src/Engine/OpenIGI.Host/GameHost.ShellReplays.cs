@@ -39,11 +39,18 @@ public sealed partial class GameHost
             r.Result.Outcome switch { ReplayOutcome.Completed => "Completed", ReplayOutcome.Failed => "Failed", _ => "Left" },
             (r.Result.EndTick + 1) / 30.0,
             best.Contains(r.Path),
-            string.Equals(r.Header.GameVersion, BuildVersion, StringComparison.Ordinal) ? string.Empty : "Another build"))];
+            string.Equals(r.Header.GameVersion, BuildVersion, StringComparison.Ordinal) ? string.Empty : "Another build",
+            r.HasGhost))];
     }
 
     // A replay watched from the menu: read, checked, the menu put away and its mission brought up to play it.
-    private string? WatchFromMenu(FrameLoopState state, string path)
+    private string? WatchFromMenu(FrameLoopState state, string path) => FromMenu(state, path, race: false);
+
+    // A replay's ghost raced from the menu: read, checked, the menu put away and its mission brought up to race it.
+    private string? RaceFromMenu(FrameLoopState state, string path) => FromMenu(state, path, race: true);
+
+    // A replay read from the library, then watched or raced from the menu.
+    private string? FromMenu(FrameLoopState state, string path, bool race)
     {
         if (_loadSequence.IsActive)
         {
@@ -65,9 +72,14 @@ public sealed partial class GameHost
             return problem;
         }
 
+        if (race && replay.Ghost is not { Length: > 0 })
+        {
+            return "the replay carries no ghost to race";
+        }
+
         LeaveMenuForMission(state);
-        BeginWatchingFramePasses($"Watching a replay of mission {replay.Header.Mission}");
-        string? started = PlayReplay(replay);
+        BeginWatchingFramePasses($"{(race ? "Racing" : "Watching")} a replay of mission {replay.Header.Mission}");
+        string? started = race ? Race(replay) : PlayReplay(replay);
         ReportWatchedFramePassesIn(5);
         return started;
     }
@@ -80,5 +92,7 @@ public sealed partial class GameHost
         public IReadOnlyList<ShellReplay> KeptOf(int missionId) => host.ShellReplaysOf(missionId);
 
         public string? Watch(string id) => host.WatchFromMenu(state, id);
+
+        public string? Race(string id) => host.RaceFromMenu(state, id);
     }
 }

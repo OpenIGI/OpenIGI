@@ -54,6 +54,9 @@ public sealed class CampaignScreen : ShellScreen
     private MissionHero? _hero;
     private MissionBestPanel? _best;
     private ActionRow? _replaysRow;
+
+    // The kept run the campaign's Race best races, or null for none.
+    private string? _raceBest;
     private PrimaryAction? _play;
     private OptionCycler? _difficulty;
     private int _selected = -1;
@@ -245,13 +248,20 @@ public sealed class CampaignScreen : ShellScreen
         // The runs of it kept, to watch: under its best, once there is one.
         if (Context.Host.Replays is { } replays)
         {
-            _replaysRow = new ActionRow(theme, "Your replays of this mission", "Watch")
+            _replaysRow = new ActionRow(theme, "Your replays", "Watch")
             {
                 MaxWidth = wide ? 760f : 640f,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                FieldWidth = compact ? 90f : 160f,
+                FieldWidth = compact ? 80f : 110f,
             };
             _replaysRow.Activated += _ => Context.Stack.Push(new ReplaysScreen(Context, replays, _missions[Math.Clamp(_shown, 0, _missions.Count - 1)]));
+            _replaysRow.SecondActivated += _ =>
+            {
+                if (_raceBest is { } best)
+                {
+                    replays.Race(best);
+                }
+            };
             column.AddChild(_replaysRow);
         }
 
@@ -411,9 +421,16 @@ public sealed class CampaignScreen : ShellScreen
         _best?.Show(Context.Host.BestScore(mission.Id));
         if (_replaysRow is not null && Context.Host.Replays is { } kept)
         {
-            int count = kept.KeptOf(mission.Id).Count;
-            _replaysRow.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            _replaysRow.Value = string.Create(CultureInfo.InvariantCulture, $"{count} kept");
+            IReadOnlyList<ShellReplay> keptRuns = kept.KeptOf(mission.Id);
+            _replaysRow.Visibility = keptRuns.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _replaysRow.Value = string.Create(CultureInfo.InvariantCulture, $"{keptRuns.Count} kept");
+
+            // The fastest completed run to race, the one at the difficulty chosen where there is one.
+            string chosen = _difficulty is { } picked ? Difficulties[picked.SelectedIndex] : string.Empty;
+            ShellReplay? best = keptRuns.FirstOrDefault(r => r is { Best: true, CanRace: true } && string.Equals(r.Difficulty, chosen, StringComparison.OrdinalIgnoreCase))
+                ?? keptRuns.FirstOrDefault(static r => r is { Best: true, CanRace: true });
+            _raceBest = best?.Id;
+            _replaysRow.SecondAction = best is null ? null : "Race best";
         }
 
         if (_play is not null)

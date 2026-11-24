@@ -235,14 +235,16 @@ public sealed class ShellPageShots
 
         public IReadOnlyList<ShellReplay> KeptOf(int missionId) =>
         [
-            new("a", Night, "Hard", "Classic", "Completed", 512.4, Best: true, string.Empty),
-            new("b", Night.AddMinutes(-26), "Hard", "Classic", "Failed", 188.0, Best: false, string.Empty),
-            new("c", Night.AddDays(-1), "Hard", "Classic", "Completed", 574.9, Best: false, string.Empty),
-            new("d", Night.AddDays(-2), "Normal", "Modern", "Completed", 431.2, Best: true, string.Empty),
+            new("a", Night, "Hard", "Classic", "Completed", 512.4, Best: true, string.Empty, CanRace: true),
+            new("b", Night.AddMinutes(-26), "Hard", "Classic", "Failed", 188.0, Best: false, string.Empty, CanRace: true),
+            new("c", Night.AddDays(-1), "Hard", "Classic", "Completed", 574.9, Best: false, string.Empty, CanRace: true),
+            new("d", Night.AddDays(-2), "Normal", "Modern", "Completed", 431.2, Best: true, string.Empty, CanRace: true),
             new("e", Night.AddDays(-9), "Easy", "Unranked", "Left", 62.5, Best: false, "Another build"),
         ];
 
         public string? Watch(string id) => null;
+
+        public string? Race(string id) => null;
     }
 
     /// <summary>A handful of community maps, one installed and one with a newer version out, for the Maps page's picture.</summary>

@@ -10,7 +10,8 @@ namespace OpenIGI.Host.Replays;
 /// <param name="Path">The file.</param>
 /// <param name="Header">What it is of.</param>
 /// <param name="Result">How it ended.</param>
-public sealed record LibraryReplay(string Path, ReplayHeader Header, ReplayResult Result);
+/// <param name="HasGhost">Whether it carries the ghost a race against it shows.</param>
+public sealed record LibraryReplay(string Path, ReplayHeader Header, ReplayResult Result, bool HasGhost = false);
 
 /// <summary>
 /// The player's own replays, a folder for each mission of each game under the settings (<c>replays/igi1/m03</c>), and what is
@@ -131,7 +132,7 @@ public sealed class ReplayLibrary(string root, IOpenIgiLogger logger)
             try
             {
                 ReplayFile file = ReplayFile.Read(File.ReadAllBytes(path));
-                replays.Add(new LibraryReplay(path, file.Header, file.Result));
+                replays.Add(new LibraryReplay(path, file.Header, file.Result, file.Ghost is { Length: > 0 }));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {

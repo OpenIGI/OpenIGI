@@ -9,6 +9,7 @@ namespace OpenIGI.Frontend;
 /// <param name="Seconds">How long the run is.</param>
 /// <param name="Best">Whether it is the fastest completed run kept at its difficulty under its rules.</param>
 /// <param name="Note">Why it may not play as it was played here -- another build recorded it -- or empty.</param>
+/// <param name="CanRace">Whether it carries the ghost a race against it shows.</param>
 public sealed record ShellReplay(
     string Id,
     DateTimeOffset RecordedAt,
@@ -17,7 +18,8 @@ public sealed record ShellReplay(
     string Outcome,
     double Seconds,
     bool Best,
-    string Note);
+    string Note,
+    bool CanRace = false);
 
 /// <summary>The player's own replays, for the menu: what it keeps of a mission, and watching one.</summary>
 public interface IShellReplays
@@ -31,4 +33,9 @@ public interface IShellReplays
     /// <param name="id">The replay, by its id.</param>
     /// <returns>Why it cannot be watched, or <see langword="null"/> once it is under way.</returns>
     string? Watch(string id);
+
+    /// <summary>Leaves the menu and races a replay's ghost: its mission played from the start, the run beside the player.</summary>
+    /// <param name="id">The replay, by its id.</param>
+    /// <returns>Why it cannot be raced, or <see langword="null"/> once the race is under way.</returns>
+    string? Race(string id);
 }

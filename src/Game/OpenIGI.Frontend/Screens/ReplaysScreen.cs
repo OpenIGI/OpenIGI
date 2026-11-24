@@ -33,7 +33,10 @@ public sealed class ReplaysScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Campaign;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("Enter", "Watch"), new("Esc", "Back")];
+    protected override IReadOnlyList<KeyHint> Hints => [new("Enter", "Watch"), new("R", "Race"), new("Esc", "Back")];
+
+    // Each row's replay, for the key that races the one with the focus.
+    private readonly Dictionary<ActionRow, ShellReplay> _rows = [];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)
@@ -50,6 +53,7 @@ public sealed class ReplaysScreen : ShellScreen
         column.AddChild(new Label(theme.Body, _mission.Name, compact ? 15f : 20f, theme.TextSecondary));
 
         IReadOnlyList<ShellReplay> replays = _replays.KeptOf(_mission.Id);
+        _rows.Clear();
         foreach (ShellReplay replay in replays)
         {
             string id = replay.Id;
@@ -59,6 +63,13 @@ public sealed class ReplaysScreen : ShellScreen
                 FieldWidth = compact ? 84f : 220f,
             };
             row.Activated += _ => Watch(id);
+            if (replay.CanRace)
+            {
+                row.SecondAction = "Race";
+                row.SecondActivated += _ => Race(id);
+            }
+
+            _rows[row] = replay;
             column.AddChild(row);
         }
 
@@ -93,6 +104,13 @@ public sealed class ReplaysScreen : ShellScreen
             return false;
         }
 
+        // R races the run with the focus.
+        if (input.Keyboard.WasPressed(KeyCode.R) && Focus?.Focused is ActionRow row && _rows.ContainsKey(row))
+        {
+            row.ActivateSecond();
+            return false;
+        }
+
         return base.HandleInput(nav, input);
     }
 
@@ -113,6 +131,14 @@ public sealed class ReplaysScreen : ShellScreen
         if (_replays.Watch(id) is { } problem && _message is not null)
         {
             _message.Text = $"It cannot be watched: {problem}.";
+        }
+    }
+
+    private void Race(string id)
+    {
+        if (_replays.Race(id) is { } problem && _message is not null)
+        {
+            _message.Text = $"It cannot be raced: {problem}.";
         }
     }
 }
