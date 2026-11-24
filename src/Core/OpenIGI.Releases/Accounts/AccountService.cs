@@ -160,6 +160,24 @@ public sealed class AccountService(HttpClient http, Uri master)
         return await JsonSerializer.DeserializeAsync(stream, AccountJsonContext.Default.DictionaryStringPlayerAccount, cancel).ConfigureAwait(false) ?? [];
     }
 
+    /// <summary>Looks one player up by their account's id or a key's, as their record on the leaderboard names them.</summary>
+    /// <param name="player">The id.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>The account, or <see langword="null"/> for a player with none.</returns>
+    public async Task<PlayerAccount?> PlayerAsync(string player, CancellationToken cancel = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(player);
+        using HttpResponseMessage response = await http.GetAsync(new Uri(master, $"/v1/players/{Uri.EscapeDataString(player)}"), cancel).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await ThrowIfRefused(response, cancel).ConfigureAwait(false);
+        Stream stream = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync(stream, AccountJsonContext.Default.PlayerAccount, cancel).ConfigureAwait(false);
+    }
+
     private async Task<T> SendAsync<T>(IRequestSigner key, HttpMethod method, string path, byte[] body, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type, CancellationToken cancel)
     {
         using HttpRequestMessage request = await SignedRequest.CreateAsync(key, method, master, path, body).ConfigureAwait(false);

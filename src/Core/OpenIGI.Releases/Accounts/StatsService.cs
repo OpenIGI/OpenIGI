@@ -48,7 +48,8 @@ public sealed record Medal(string Id, string Name, string About);
 /// <param name="AllTime">All time's.</param>
 /// <param name="Medals">The medals earned, or <see langword="null"/> from a master too old to say.</param>
 /// <param name="Title">The game the record is of, by title id; <see langword="null"/> from a master that kept both games as one.</param>
-public sealed record PlayerRecord(string Player, string Season, StatTotals SeasonTotals, StatTotals AllTime, IReadOnlyList<Medal>? Medals = null, string? Title = null);
+/// <param name="Latest">The latest matches the player was in, newest first; <see langword="null"/> from an older master.</param>
+public sealed record PlayerRecord(string Player, string Season, StatTotals SeasonTotals, StatTotals AllTime, IReadOnlyList<Medal>? Medals = null, string? Title = null, IReadOnlyList<RecordMatch>? Latest = null);
 
 /// <summary>
 /// The master server's stats (tools/master-server/src/stats.js): a listed server reports its decided matches, signed by its
@@ -87,6 +88,28 @@ public sealed class StatsService(HttpClient http, Uri master)
             ?? throw new AccountRefusedException("The stats came back empty.", response.StatusCode);
     }
 
+    /// <summary>Reads a game's leaderboard.</summary>
+    /// <param name="title">The game, by title id: <c>igi1</c> or <c>igi2</c>.</param>
+    /// <param name="period"><see cref="LeaderboardSeasons.Current"/>, <see cref="LeaderboardSeasons.AllTime"/> or a season gone by (<c>yyyy-MM</c>).</param>
+    /// <param name="metric">The metric ranked by, as <see cref="LeaderboardMetric.Id"/> names it.</param>
+    /// <param name="you">A player (an account's id or a key's) whose own place is wanted wherever they stand, or <see langword="null"/>.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>The board.</returns>
+    public async Task<Leaderboard> BoardAsync(string title, string period, string metric, string? you = null, CancellationToken cancel = default)
+    {
+        string query = $"/v1/leaderboard?title={Uri.EscapeDataString(title)}&period={Uri.EscapeDataString(period)}&metric={Uri.EscapeDataString(metric)}";
+        if (you is { Length: > 0 })
+        {
+            query += $"&you={Uri.EscapeDataString(you)}";
+        }
+
+        using HttpResponseMessage response = await http.GetAsync(new Uri(master, query), cancel).ConfigureAwait(false);
+        await Refused(response, cancel).ConfigureAwait(false);
+        Stream stream = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync(stream, StatsJsonContext.Default.Leaderboard, cancel).ConfigureAwait(false)
+            ?? throw new AccountRefusedException("The leaderboard came back empty.", response.StatusCode);
+    }
+
     private static async Task Refused(HttpResponseMessage response, CancellationToken cancel)
     {
         if (response.IsSuccessStatusCode)
@@ -116,4 +139,5 @@ public sealed class StatsService(HttpClient http, Uri master)
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(MatchReport))]
 [JsonSerializable(typeof(PlayerRecord))]
+[JsonSerializable(typeof(Leaderboard))]
 internal sealed partial class StatsJsonContext : JsonSerializerContext;

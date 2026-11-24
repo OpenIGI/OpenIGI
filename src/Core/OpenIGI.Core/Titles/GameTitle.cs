@@ -41,6 +41,19 @@ public sealed record GameTitle(
     IReadOnlyList<string> AssetRoots,
     string GamePathVariable)
 {
+    /// <summary>Gets the name without its subtitle: <c>I.G.I. 2: Covert Strike</c> is <c>I.G.I. 2</c>.</summary>
+    public string ShortName => ShortNameOf(DisplayName);
+
+    /// <summary>A title's name without its subtitle: <c>I.G.I. 2: Covert Strike</c> is <c>I.G.I. 2</c>.</summary>
+    /// <param name="displayName">The name, as shown.</param>
+    /// <returns>The name before its colon, or all of it.</returns>
+    public static string ShortNameOf(string displayName)
+    {
+        ArgumentNullException.ThrowIfNull(displayName);
+        int colon = displayName.IndexOf(':', StringComparison.Ordinal);
+        return colon < 0 ? displayName : displayName[..colon].Trim();
+    }
+
     /// <summary>Gets Project I.G.I. (2000) — the active, supported title.</summary>
     public static GameTitle Igi1 { get; } = new(
         "igi1",
