@@ -82,6 +82,21 @@ public sealed partial class GameHost
         return lod;
     }
 
+    /// <summary>The level the eye's pass draws a placement at, as the world renderer picks it, or none when every model is whole.</summary>
+    /// <param name="eye">The frame's eye.</param>
+    /// <param name="projection">The eye's projection, without jitter.</param>
+    /// <returns>The pick, <c>-1</c> beyond a model's cutoff; <see langword="null"/> with levels of detail off.</returns>
+    private Func<WorldPlacement, int>? LevelPicker(Camera3D eye, Matrix4f projection)
+    {
+        if (ActiveModelLod() is not { } lod)
+        {
+            return null;
+        }
+
+        float fieldOfView = WidescreenLens.AuthoredTangent(projection);
+        return placement => lod.Select(placement, placement.Position, eye, fieldOfView);
+    }
+
     private void DrawSceneGeometry(
         MapSceneView? mapScene, bool captured, Camera3D eye, Matrix4f projection, float verticalFieldOfView, float aspectRatio, bool cascadesRead,
         int cascadeCount, bool smoothPresentation, float tickBlend)

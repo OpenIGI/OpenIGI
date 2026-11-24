@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -29,6 +30,18 @@ public sealed record Igi2Sector(
 
     /// <summary>Gets a value indicating whether this is a building's shell rather than one of its rooms.</summary>
     public bool IsShell => Room == Shell;
+
+    /// <summary>Gets its model's portals at each of its levels of detail, the finest first: <see cref="Portals"/> alone for a model with one.</summary>
+    /// <remarks>
+    /// <c>SectorObject_TraverseSector</c> walks the portals of the mesh the sector is drawn at, <c>aptVirModel[iLOD]</c>. A building's
+    /// coarser levels are commonly closed boxes with none, which stand for the rooms as well: drawn at one, a building leads nowhere.
+    /// </remarks>
+    public IReadOnlyList<MefPortalSet> LevelPortals { get; init; } = [Portals];
+
+    /// <summary>Gets its portals at a level of detail, or none at a level its model does not have.</summary>
+    /// <param name="level">The level, nought for the finest.</param>
+    /// <returns>The portals.</returns>
+    public MefPortalSet PortalsAt(int level) => (uint)level < (uint)LevelPortals.Count ? LevelPortals[level] : MefPortalSet.Empty;
 }
 
 /// <summary>
@@ -136,7 +149,10 @@ public sealed class Igi2SectorGraph
                 : Igi2Pose.FromAngles(placement.Position, placement.Orientation);
             Igi2Sector shell = new(
                 sectors.Count, objectIndex, Igi2Sector.Shell, placement.TypeName, placement.LevelId, placement.Model,
-                pose.Position, pose.ToMatrix(), shellModel.Portals);
+                pose.Position, pose.ToMatrix(), shellModel.Portals)
+            {
+                LevelPortals = LevelPortalsOf(placement.Model, models),
+            };
             sectors.Add(shell);
 
             List<Igi2Sector> rooms = [];
@@ -150,7 +166,10 @@ public sealed class Igi2SectorGraph
                 Igi2Pose at = pose.Attach(attachment);
                 Igi2Sector room = new(
                     sectors.Count, objectIndex, rooms.Count, placement.TypeName, placement.LevelId, roomName,
-                    at.Position, at.ToMatrix(), roomModel.Portals);
+                    at.Position, at.ToMatrix(), roomModel.Portals)
+                {
+                    LevelPortals = LevelPortalsOf(roomName, models),
+                };
                 sectors.Add(room);
                 rooms.Add(room);
             }
@@ -159,6 +178,29 @@ public sealed class Igi2SectorGraph
         }
 
         return new Igi2SectorGraph(objects, sectors);
+    }
+
+    // The portals of each level of a model's detail chain (0x4CED50's name stepping), the finest first.
+    private static MefPortalSet[] LevelPortalsOf(string model, Func<string, MefModel?> models)
+    {
+        bool Resolve(string name, out MefModel? resolved)
+        {
+            resolved = models(name);
+            return resolved is not null;
+        }
+
+        if (!LodModelChain.TryResolve(model, Resolve, out LodModelChain? chain) || chain is null)
+        {
+            return [];
+        }
+
+        MefPortalSet[] levels = new MefPortalSet[chain.Count];
+        for (int level = 0; level < levels.Length; level++)
+        {
+            levels[level] = chain[level].Portals;
+        }
+
+        return levels;
     }
 
     /// <summary>

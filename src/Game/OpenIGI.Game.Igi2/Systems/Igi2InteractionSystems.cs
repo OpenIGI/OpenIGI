@@ -220,7 +220,8 @@ internal static class Igi2InteractionSystems
             sectors,
             locator,
             Igi2SectorVisibility.KeysOf(b.Request.Built.Scene),
-            portals is null ? null : portals.IsOpen);
+            portals is null ? null : portals.IsOpen,
+            b.Request.Built.Scene.Placements);
     }
 
     /// <summary>

@@ -81,12 +81,17 @@ public sealed class Igi2VisibleSector
 /// between sectors is four floats.
 /// </para>
 /// <para>
-/// <b>What is deliberately not modelled.</b> The original picks a level of detail per candidate
-/// (<c>ModelObj_GetLOD</c>) and skips one that returns <c>-1</c>; it also skips a portal whose
-/// per-object status byte is zero, which is what a door drives
-/// (<c>Sector_SetPortalOpen</c>, <c>igi2ed.exe 0x42AFD0</c>, writes <c>ptSector + iPortal + 352</c>).
-/// LOD is ignored, and the open/closed state arrives through the <c>isPortalOpen</c> delegate, which
-/// <see cref="Igi2SectorPortals.IsOpen"/> answers from the doors.
+/// <b>Levels of detail.</b> Every sector is walked at the level it is drawn at: the walk starts at the
+/// building's own level (<c>ModelObj_GetLOD</c> of the shell, in <c>SectorObject_EnterHandler</c>), which the
+/// starting sector must have; each candidate is offered at its own level and passed over at <c>-1</c>; and a
+/// sector's portals are those of that level's mesh (<c>aptVirModel[iLOD]</c>). A building's coarse levels are
+/// mostly closed boxes without portals, so from far off its rooms are not reached and the box alone is drawn.
+/// The levels arrive through the <c>levelOf</c> delegate; without one every sector is at its finest.
+/// </para>
+/// <para>
+/// A portal whose per-object status byte is zero, which is what a door drives (<c>Sector_SetPortalOpen</c>,
+/// <c>igi2ed.exe 0x42AFD0</c>, writes <c>ptSector + iPortal + 352</c>), is refused; that state arrives through
+/// the <c>isPortalOpen</c> delegate, which <see cref="Igi2SectorPortals.IsOpen"/> answers from the doors.
 /// </para>
 /// </remarks>
 public sealed class Igi2PortalCulling
@@ -145,6 +150,10 @@ public sealed class Igi2PortalCulling
     /// <param name="traversalBudget">
     /// How many sector traversals to run before stopping; see <see cref="DefaultTraversalBudget"/>.
     /// </param>
+    /// <param name="levelOf">
+    /// The level of detail each sector is drawn at, given its index, or <c>-1</c> for one not drawn at all;
+    /// <see langword="null"/> draws every sector at its finest.
+    /// </param>
     /// <returns>
     /// Every sector reached, in the order the original's request pool would hold them — which is the
     /// order <c>SectorObject_EnterHandler</c> then draws them in.
@@ -159,8 +168,9 @@ public sealed class Igi2PortalCulling
         SectorScreenProjection projection,
         int startSector,
         Func<int, int, bool>? isPortalOpen = null,
-        int traversalBudget = DefaultTraversalBudget) =>
-        Visit(camera, projection, startSector, [projection.DisplayArea], isPortalOpen, traversalBudget);
+        int traversalBudget = DefaultTraversalBudget,
+        Func<int, int>? levelOf = null) =>
+        Visit(camera, projection, startSector, [projection.DisplayArea], isPortalOpen, traversalBudget, levelOf);
 
     /// <summary>Walks the sectors a camera can see from one sector, starting through each of several rectangles.</summary>
     /// <param name="camera">Where the viewer is and which way it faces.</param>
@@ -172,6 +182,7 @@ public sealed class Igi2PortalCulling
     /// </param>
     /// <param name="isPortalOpen">Answers whether a sector's portal slot is open; see the other overload.</param>
     /// <param name="traversalBudget">How many sector traversals to run before stopping.</param>
+    /// <param name="levelOf">The level of detail each sector is drawn at; see the other overload.</param>
     /// <returns>Every sector reached, in request order, each with the rectangles it was reached through.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="startSector"/> is not a sector of this level.</exception>
     /// <remarks>
@@ -194,20 +205,30 @@ public sealed class Igi2PortalCulling
         int startSector,
         IReadOnlyList<SectorScreenRect> startWindows,
         Func<int, int, bool>? isPortalOpen = null,
-        int traversalBudget = DefaultTraversalBudget)
+        int traversalBudget = DefaultTraversalBudget,
+        Func<int, int>? levelOf = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(startSector);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(startSector, _graph.Sectors.Count);
         ArgumentNullException.ThrowIfNull(startWindows);
 
-        Walk walk = new(_graph, camera, projection, isPortalOpen, traversalBudget)
+        Igi2SectorObject building = _graph.Objects[_graph.Sectors[startSector].ObjectIndex];
+        Walk walk = new(_graph, camera, projection, isPortalOpen, traversalBudget, levelOf)
         {
-            Building = _graph.Objects[_graph.Sectors[startSector].ObjectIndex],
+            Building = building,
         };
+
+        // SectorObject_EnterHandler: the walk starts at the building's own level, even from a room, and only if the starting
+        // sector's model has that level.
+        int level = levelOf?.Invoke(building.Shell.Index) ?? 0;
+        if (level < 0 || level >= _graph.Sectors[startSector].LevelPortals.Count)
+        {
+            return [];
+        }
 
         foreach (SectorScreenRect window in startWindows)
         {
-            walk.Request(startSector, window);
+            walk.Request(startSector, window, level);
         }
 
         foreach (Igi2VisibleSector visible in walk.Requests)
@@ -235,9 +256,19 @@ public sealed class Igi2PortalCulling
         out SectorScreenRect bounds)
     {
         ArgumentNullException.ThrowIfNull(sector);
-        return SectorPortalProjection.TryGetPortalBounds(
-            camera, projection, sector.Position, sector.Orientation, sector.Portals, portal, through, out bounds);
+        return TryGetPortalBounds(camera, projection, sector, sector.Portals, portal, through, out bounds);
     }
+
+    private static bool TryGetPortalBounds(
+        Camera3D camera,
+        SectorScreenProjection projection,
+        Igi2Sector sector,
+        MefPortalSet portals,
+        MefPortal portal,
+        SectorScreenRect through,
+        out SectorScreenRect bounds) =>
+        SectorPortalProjection.TryGetPortalBounds(
+            camera, projection, sector.Position, sector.Orientation, portals, portal, through, out bounds);
 
     /// <summary>One run of the traversal, holding the state the original keeps in globals.</summary>
     private sealed class Walk(
@@ -245,7 +276,8 @@ public sealed class Igi2PortalCulling
         Camera3D camera,
         SectorScreenProjection projection,
         Func<int, int, bool>? isPortalOpen,
-        int budget)
+        int budget,
+        Func<int, int>? levelOf)
     {
         private readonly Dictionary<int, Igi2VisibleSector> _byIndex = [];
         private readonly List<Igi2VisibleSector> _requests = [];
@@ -259,8 +291,8 @@ public sealed class Igi2PortalCulling
         public IReadOnlyList<Igi2VisibleSector> Requests => _requests;
 
         /// <summary>Records a rectangle a sector was reached through, then walks out of it.</summary>
-        /// <remarks><c>SectorObject_RequestSector</c>, <c>igi2.exe 0x588470</c>.</remarks>
-        public void Request(int index, SectorScreenRect window)
+        /// <remarks><c>SectorObject_RequestSector</c>, <c>igi2.exe 0x588470</c>, at the level the sector is drawn at.</remarks>
+        public void Request(int index, SectorScreenRect window, int level)
         {
             if (_byIndex.TryGetValue(index, out Igi2VisibleSector? existing))
             {
@@ -276,10 +308,10 @@ public sealed class Igi2PortalCulling
             // Unconditional, even for a sector already in the pool: the original recurses whether or not
             // it found a request. A second route into a room is a second, differently shaped window, and
             // what is visible through it is not what was visible through the first.
-            Traverse(index, window);
+            Traverse(index, window, level);
         }
 
-        private void Traverse(int index, SectorScreenRect window)
+        private void Traverse(int index, SectorScreenRect window, int level)
         {
             if (++_traversals > budget)
             {
@@ -288,15 +320,16 @@ public sealed class Igi2PortalCulling
 
             _discarded.Add(index);
             Igi2Sector sector = graph.Sectors[index];
+            MefPortalSet portals = sector.PortalsAt(level);
 
-            foreach (MefPortal portal in sector.Portals.PortalSpan)
+            foreach (MefPortal portal in portals.PortalSpan)
             {
                 if (isPortalOpen is not null && !isPortalOpen(index, portal.Slot))
                 {
                     continue;
                 }
 
-                if (!TryGetPortalBounds(camera, projection, sector, portal, window, out SectorScreenRect box))
+                if (!TryGetPortalBounds(camera, projection, sector, portals, portal, window, out SectorScreenRect box))
                 {
                     continue;
                 }
@@ -318,14 +351,21 @@ public sealed class Igi2PortalCulling
                     continue;
                 }
 
-                foreach (MefPortal other in candidate.Portals.PortalSpan)
+                // Each candidate at its own level, and none beyond its cutoff (ModelObj_GetLOD == -1).
+                int level = levelOf?.Invoke(candidate.Index) ?? 0;
+                if (level < 0)
+                {
+                    continue;
+                }
+
+                foreach (MefPortal other in candidate.PortalsAt(level).PortalSpan)
                 {
                     if (other.Slot == slot)
                     {
                         // Once per matching portal, not once per sector: the original calls
                         // SectorObject_RequestSector inside the portal loop (0x5889D2) and does not break
                         // out of it, so a sector with two portals of one slot is requested twice.
-                        Request(candidate.Index, beyond);
+                        Request(candidate.Index, beyond, level);
                     }
                 }
             }

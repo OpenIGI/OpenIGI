@@ -39,8 +39,10 @@ public sealed partial class GameHost
 
         // The title's own culling, decided once from the eye before the first pass draws: every pass of the frame -- the
         // cascades and the lamps' maps among them -- then leaves out what the eye's place in the level leaves out.
+        // It is told the level the eye's pass draws each model at, the renderer's own pick, so a building drawn as its coarse
+        // closed box is not also given the rooms inside it.
         float tangentHalfFovY = MathF.Tan(view.VerticalFieldOfView * 0.5f);
-        _world.Visibility?.BeginView(view.Eye, tangentHalfFovY * view.AspectRatio, tangentHalfFovY);
+        _world.Visibility?.BeginView(view.Eye, tangentHalfFovY * view.AspectRatio, tangentHalfFovY, LevelPicker(view.Eye, view.UnjitteredProjection));
 
         // The soldiers are drawn by the same answer, outside the world renderer.
         _soldiers?.Visibility = _world.Visibility;

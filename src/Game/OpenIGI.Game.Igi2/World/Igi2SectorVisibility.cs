@@ -31,8 +31,11 @@ namespace OpenIGI.Game.Igi2.World;
 /// (<see cref="IsHumanVisible"/>).</item>
 /// </list>
 /// <para>
-/// <b>What is not reproduced.</b> A building whose level of detail is <c>-1</c> is not skipped; the renderer's own distance
-/// handling stands in for it.
+/// <b>Levels of detail.</b> Given the level the renderer draws each building's shell and rooms at
+/// (<see cref="BeginView(in Camera3D, float, float, Func{WorldPlacement, int}?)"/>), each is walked at that level, as
+/// <c>SectorObject_EnterHandler</c> and <c>SectorObject_TraverseSector</c> walk it: a building beyond its cutoff is not walked,
+/// and one drawn at a coarse level without portals -- the closed box most buildings carry for distance -- reaches none of its
+/// rooms, which were otherwise drawn whole inside the box and showed through its walls.
 /// </para>
 /// </remarks>
 public sealed class Igi2SectorVisibility : IPlacementVisibility
@@ -42,6 +45,11 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
     private readonly Igi2SectorLocator _locator;
     private readonly Func<int, int, bool>? _isPortalOpen;
     private readonly Dictionary<Igi2VisibilityKey, Resolved> _keys = [];
+
+    // The placement that draws each sector's own model, which its level of detail is asked of, and the levels this frame.
+    private readonly WorldPlacement?[] _sectorPlacements;
+    private readonly int[] _levels;
+    private readonly Func<int, int> _levelOfSector;
 
     // Per frame: each sector's rectangles when reached, else null; the outside's rectangles, null for none, and whether the
     // outside is unbounded (the camera stands in no room).
@@ -57,11 +65,16 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
     /// <param name="locator">Finds the room a point stands in.</param>
     /// <param name="keys">Every key the level's placements carry, which this resolves once to the sectors they name.</param>
     /// <param name="isPortalOpen">Answers whether a sector's portal slot is open, or <see langword="null"/> for every portal open.</param>
+    /// <param name="placements">
+    /// The level's placements, which tell which one draws each sector's own model -- the first carrying its key -- for its level of
+    /// detail; <see langword="null"/> walks every sector at its finest.
+    /// </param>
     public Igi2SectorVisibility(
         Igi2SectorGraph graph,
         Igi2SectorLocator locator,
         IEnumerable<Igi2VisibilityKey> keys,
-        Func<int, int, bool>? isPortalOpen = null)
+        Func<int, int, bool>? isPortalOpen = null,
+        IEnumerable<WorldPlacement>? placements = null)
     {
         _graph = graph ?? throw new ArgumentNullException(nameof(graph));
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
@@ -75,6 +88,20 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
             if (!_keys.ContainsKey(key))
             {
                 _keys.Add(key, Resolve(key));
+            }
+        }
+
+        _sectorPlacements = new WorldPlacement?[graph.Sectors.Count];
+        _levels = new int[graph.Sectors.Count];
+        _levelOfSector = index => _levels[index];
+        foreach (WorldPlacement placement in placements ?? [])
+        {
+            // A shell's key is carried first by the shell itself and a room's by the room, each before the parts it carries.
+            if (placement.VisibilityKey is Igi2VisibilityKey { Kind: Igi2VisibilityKind.Shell or Igi2VisibilityKind.Room } key
+                && _keys.TryGetValue(key, out Resolved resolved)
+                && resolved.Sector >= 0)
+            {
+                _sectorPlacements[resolved.Sector] ??= placement;
             }
         }
     }
@@ -136,22 +163,41 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
     }
 
     /// <inheritdoc/>
-    public void BeginView(in Camera3D eye, float tangentHalfFovX, float tangentHalfFovY)
+    public void BeginView(in Camera3D eye, float tangentHalfFovX, float tangentHalfFovY) =>
+        BeginView(eye, tangentHalfFovX, tangentHalfFovY, null);
+
+    /// <inheritdoc/>
+    public void BeginView(in Camera3D eye, float tangentHalfFovX, float tangentHalfFovY, Func<WorldPlacement, int>? levelOf)
     {
         if (!(tangentHalfFovX > 0f) || !(tangentHalfFovY > 0f))
         {
             return;
         }
 
+        Func<int, int>? sectorLevel = null;
+        if (levelOf is not null)
+        {
+            for (int i = 0; i < _levels.Length; i++)
+            {
+                _levels[i] = _sectorPlacements[i] is { } placement ? levelOf(placement) : 0;
+            }
+
+            sectorLevel = _levelOfSector;
+        }
+
         // The eye in world units, which is what every position here is kept in; its axes are the camera's already.
         Camera3D units = new(WorldScene.ToUnits(eye.Position), eye.Orientation);
-        Decide(units, SectorScreenProjection.ForView(tangentHalfFovX, tangentHalfFovY));
+        Decide(units, SectorScreenProjection.ForView(tangentHalfFovX, tangentHalfFovY), sectorLevel);
     }
 
     /// <summary>Decides the frame from an eye in world units.</summary>
     /// <param name="eye">The eye, in world units.</param>
     /// <param name="projection">How view space becomes the rectangles' pixels.</param>
-    public void Decide(Camera3D eye, SectorScreenProjection projection)
+    /// <param name="levelOf">
+    /// The level of detail each sector is drawn at, by its index, <c>-1</c> for not at all; <see langword="null"/> for every one at
+    /// its finest.
+    /// </param>
+    public void Decide(Camera3D eye, SectorScreenProjection projection, Func<int, int>? levelOf = null)
     {
         _eye = eye;
         _projection = projection;
@@ -169,7 +215,7 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
         {
             // The building the camera stands in first: World_Draw forces it into the first group drawn, so the outside's
             // rectangles exist before anything outside asks for them.
-            Store(_culling.Visit(eye, projection, room.Index, _isPortalOpen));
+            Store(_culling.Visit(eye, projection, room.Index, _isPortalOpen, levelOf: levelOf));
             Igi2Sector shell = _graph.Objects[room.ObjectIndex].Shell;
             _outsideWindows = _reached[shell.Index];
             _eyeShell = shell.Index;
@@ -194,7 +240,7 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
                 continue;
             }
 
-            Store(_culling.Visit(eye, projection, building.Shell.Index, starts, _isPortalOpen));
+            Store(_culling.Visit(eye, projection, building.Shell.Index, starts, _isPortalOpen, levelOf: levelOf));
         }
     }
 

@@ -32,6 +32,21 @@ public interface IPlacementVisibility
     /// <param name="tangentHalfFovY">The tangent of half the view's vertical angle.</param>
     void BeginView(in Camera3D eye, float tangentHalfFovX, float tangentHalfFovY);
 
+    /// <summary>Decides the frame's visibility from the eye, knowing the level of detail each placement is drawn at.</summary>
+    /// <param name="eye">The frame's eye, in metres; see the other overload.</param>
+    /// <param name="tangentHalfFovX">The tangent of half the view's horizontal angle.</param>
+    /// <param name="tangentHalfFovY">The tangent of half the view's vertical angle.</param>
+    /// <param name="levelOf">
+    /// The level the renderer draws a placement at from this eye, <c>-1</c> for not at all; <see langword="null"/> when every
+    /// placement is drawn at its finest.
+    /// </param>
+    /// <remarks>
+    /// I.G.I. 2 walks a building's portals at the level its shell is drawn at, and a coarse level without portals leads into no
+    /// room; asked of the renderer's own pick, the cull and the drawing cannot disagree about which level that is.
+    /// </remarks>
+    void BeginView(in Camera3D eye, float tangentHalfFovX, float tangentHalfFovY, Func<WorldPlacement, int>? levelOf) =>
+        BeginView(eye, tangentHalfFovX, tangentHalfFovY);
+
     /// <summary>Gets a value indicating whether a placement is drawn this frame.</summary>
     /// <param name="placement">The placement as the walk produced it.</param>
     /// <returns><see langword="false"/> when the title's culling leaves it out.</returns>
