@@ -28,7 +28,7 @@
 // board's top PROTECTED never. A run waiting to be checked is let go after a day; a refused one at once.
 //
 // One Durable Object ("all"), in key-value storage:
-//   run:<id>            { id, title, mission, difficulty, ruleset, key, account, name, submitted, status, reason, ticks, rank,
+//   run:<id>            { id, title, mission, difficulty, ruleset, version, key, account, name, submitted, status, reason, ticks, rank,
 //                         score, size, chunks, kept, taken }
 //   blob:<id>:<n>       a run's replay, in chunks (blobs.js)
 //   board:<title>:<mission>:<difficulty>:<ruleset>   [{ account, name, time: { run, ticks, at }, best: { run, rank, ticks, at } }]
@@ -154,9 +154,12 @@ export function claimsOf(url) {
 
   if (!TITLES.includes(title)) throw new Refusal(400, `A title is one of ${TITLES.join(", ")}.`);
   if (!RULESETS.includes(ruleset)) throw new Refusal(400, `Only the ${RULESETS.join(" and ")} rules are ranked.`);
+  const version = url.searchParams.get("version") ?? "";
+  if (!/^[0-9A-Za-z.+-]{0,64}$/.test(version)) throw new Refusal(400, "A version is a build's version.");
   return {
     title,
     ruleset,
+    version,
     mission: number("mission", 1, 999),
     difficulty: number("difficulty", 0, 2),
     ticks: number("ticks", 1, 2 * 3600 * 30),
@@ -273,13 +276,16 @@ export class Runs {
     return json({ id, status: "pending" }, 202);
   }
 
-  // The next run to check, to a registered checker: the oldest waiting that no checker has taken lately.
+  // The next run to check, to a registered checker: the oldest waiting that no checker has taken lately, of the checker's own
+  // build where it names one (?version=) -- a run plays again only in the build that recorded it.
   async next(request, url) {
     await this.checker(request, url, new Uint8Array());
     await this.sweep();
+    const version = url.searchParams.get("version");
     for (const id of (await this.storage.get("pending")) ?? []) {
       const run = await this.storage.get(`run:${id}`);
       if (run?.status !== "pending" || this.now() - (run.taken ?? 0) < LEASE_MS) continue;
+      if (version && run.version && run.version !== version) continue;
       run.taken = this.now();
       await this.storage.put(`run:${id}`, run);
       return new Response(await getBlob(this.storage, `blob:${id}`, run.chunks, run.size), {

@@ -1,0 +1,33 @@
+[Unit]
+# One checker per supported build (the instance name is its version): a run plays again only in the build that recorded
+# it, so the current release's and the one before's run side by side. Installed by tools/server/verifier/deploy.sh.
+Description=OpenIGI mission boards' checker, build %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=openigi
+Group=openigi
+WorkingDirectory=/var/lib/openigi-verifier
+Environment=HOME=/var/lib/openigi-verifier
+# IGI_GAME_PATH and IGI2_GAME_PATH: the games' own data the runs are played again in.
+EnvironmentFile=/etc/openigi/verifier.env
+ExecStart=/opt/openigi-verifier/%i/OpenIGI.Server -verify-worker -key /var/lib/openigi-verifier/verifier.key
+Restart=always
+RestartSec=10
+
+# A run is played again in a process of its own, one at a time, within the worker's own time limit; held to a share of the
+# machine here so the game servers beside it never wait on it.
+Nice=10
+CPUQuota=150%
+MemoryMax=3G
+TasksMax=256
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/openigi-verifier
+
+[Install]
+WantedBy=multi-user.target

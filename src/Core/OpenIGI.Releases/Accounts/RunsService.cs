@@ -12,8 +12,9 @@ namespace OpenIGI.Releases.Accounts;
 /// <param name="Ruleset">The rules, by id: classic or modern.</param>
 /// <param name="Ticks">The mission's time, in ticks.</param>
 /// <param name="Rank">The rank it earned, -1 for none.</param>
+/// <param name="Version">The build that recorded it, whose checker alone can play it again; empty where unknown.</param>
 /// <remarks>The claims only decide whether the run is worth keeping and checking: the boards take the checker's numbers.</remarks>
-public sealed record RunClaims(string Title, int Mission, int Difficulty, string Ruleset, int Ticks, int Rank);
+public sealed record RunClaims(string Title, int Mission, int Difficulty, string Ruleset, int Ticks, int Rank, string Version = "");
 
 /// <summary>A run as the master tells it.</summary>
 /// <param name="Id">Its id.</param>
@@ -93,7 +94,8 @@ public sealed class RunsService(HttpClient http, Uri master)
         ArgumentNullException.ThrowIfNull(replay);
         string path = string.Create(
             CultureInfo.InvariantCulture,
-            $"/v1/runs?title={claims.Title}&mission={claims.Mission}&difficulty={claims.Difficulty}&ruleset={claims.Ruleset}&ticks={claims.Ticks}&rank={claims.Rank}");
+            $"/v1/runs?title={claims.Title}&mission={claims.Mission}&difficulty={claims.Difficulty}&ruleset={claims.Ruleset}&ticks={claims.Ticks}&rank={claims.Rank}")
+            + (claims.Version.Length > 0 ? "&version=" + Uri.EscapeDataString(claims.Version) : string.Empty);
         using HttpRequestMessage request = await SignedRequest.CreateAsync(player, HttpMethod.Post, master, path, replay, "application/octet-stream").ConfigureAwait(false);
         using HttpResponseMessage response = await http.SendAsync(request, cancel).ConfigureAwait(false);
         await MasterAnswers.ThrowIfRefusedAsync(response, "runs", cancel).ConfigureAwait(false);

@@ -75,6 +75,12 @@ internal static class VerifyMode
             return Write(stdout, Refused, $"it is of a game this build does not run ({replay.Header.Title})", null, replay.Header);
         }
 
+        // Another build's run is left for a checker of that build, which plays it as it was played: never refused here.
+        if (!string.Equals(replay.Header.GameVersion, GameHost.BuildVersion, StringComparison.Ordinal))
+        {
+            return Write(stdout, Unchecked, $"it was recorded by {replay.Header.GameVersion}, and this checker is {GameHost.BuildVersion}", null, replay.Header);
+        }
+
         GameTitle title = runtime.Title;
         string? gamePath = Value(args, "-game") ?? Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title))
             ?? (GameInstalls.Find(title) is [var found, ..] ? found : null);

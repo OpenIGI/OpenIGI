@@ -78,7 +78,7 @@ internal static class VerifyWorker
     // One run taken and checked, if one is waiting: whether one was.
     private static async Task<bool> CheckNextAsync(HttpClient http, PlayerRequestSigner signer, Uri master, string scratch, IOpenIgiLogger logger, CancellationToken stop)
     {
-        using HttpRequestMessage ask = await SignedRequest.CreateAsync(signer, HttpMethod.Get, master, "/v1/verifier/next", []).ConfigureAwait(false);
+        using HttpRequestMessage ask = await SignedRequest.CreateAsync(signer, HttpMethod.Get, master, "/v1/verifier/next?version=" + Uri.EscapeDataString(OpenIGI.Host.GameHost.BuildVersion), []).ConfigureAwait(false);
         using HttpResponseMessage next = await http.SendAsync(ask, stop).ConfigureAwait(false);
         if (next.StatusCode == HttpStatusCode.NoContent)
         {

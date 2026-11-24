@@ -310,6 +310,14 @@ assert.equal((await (await watchedAsk(new Request("https://master/v1/runs/board?
 await watchedAsk(new Request(`https://master/v1/admin/runs/${forged}`, { method: "DELETE" }));
 assert.equal((await review()).some((e) => e.id === forged), false);
 
+// A checker is handed only its own build's runs; one naming no build, any.
+const builds = new Runs({ storage: fakeStorage() }, env, () => now);
+await builds.fetch(new Request("https://master/v1/admin/run-verifiers", { method: "POST", body: JSON.stringify({ key: checker.wire, name: "sh-de" }) }));
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, "&version=0.7.0"), bytes(500)))).status, 202);
+assert.equal((await builds.fetch(await signed(players[20].key, "POST", claims(5, 900, 1, "&version=not a version"), bytes(500)))).status, 400);
+assert.equal((await builds.fetch(await signed(checker, "GET", "/v1/verifier/next?version=0.6.9"))).status, 204);
+assert.equal((await builds.fetch(await signed(checker, "GET", "/v1/verifier/next?version=0.7.0"))).status, 200);
+
 // An account deleted: every run of its keys gone.
 assert.equal((await (await ask(new Request("https://master/internal/forget", { method: "POST", body: JSON.stringify({ keys: [players[0].key.id] }) }))).json()).forgotten, 1);
 board = await get("/v1/runs/board?title=igi1&mission=1&difficulty=2&ruleset=modern&metric=time");

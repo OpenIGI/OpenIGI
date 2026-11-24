@@ -70,7 +70,8 @@ public sealed partial class GameHost
             replay.Header.Difficulty,
             replay.Header.Ruleset,
             (int)Math.Min(score.Ticks, int.MaxValue),
-            sheet is null ? -1 : sheet.Requirements.GetRank(score));
+            sheet is null ? -1 : sheet.Requirements.GetRank(score),
+            replay.Header.GameVersion);
         Offer(mission, "Checking your run for the boards", null);
         _ = SubmitRunAsync(signer, claims, bytes, account.Id);
     }
