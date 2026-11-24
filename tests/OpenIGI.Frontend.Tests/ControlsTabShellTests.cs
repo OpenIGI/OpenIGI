@@ -67,7 +67,8 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             string[] actions = [.. multiplayer.Descendants().OfType<KeyBindingRow>().Select(row => row.Action)];
 
             Assert.Contains("Scoreboard", actions);
-            Assert.Contains("Drop weapon", actions);
+            Assert.Contains("Buy menu", actions);
+            Assert.DoesNotContain("Drop weapon", actions); // I.G.I. 2 drops in single player too, so it sits with the weapon keys
             Assert.DoesNotContain("Fire", actions);
         }
         finally

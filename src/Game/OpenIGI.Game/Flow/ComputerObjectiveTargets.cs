@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Level;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Flow;
@@ -125,8 +126,7 @@ public sealed partial class ComputerObjectiveTargets
     }
 
     // A human walks off from where the level put it; its place is no target's.
-    private static bool IsHuman(GameTask task) =>
-        task.HasType && task.Type.Name.StartsWith("Human", StringComparison.Ordinal);
+    private static bool IsHuman(GameTask task) => task is IHostedHuman;
 
     // Type_id.field, the way a slot names a task's variable; a '!' before it reads it negated.
     [GeneratedRegex(@"(?<not>!\s*)?\b(?<name>[A-Za-z][A-Za-z0-9]*_(?<id>\d+))\.(?<field>[A-Za-z]\w*)", RegexOptions.CultureInvariant)]
