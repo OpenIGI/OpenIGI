@@ -61,10 +61,11 @@ public sealed class RetailIgi2DrawableSceneTests
 
         Assert.Equal(24, levels);
         // Each of the nine cars mounts its gun's barrel; built without the magic table, as here, on itself.
-        Assert.Equal(17_205, placements);
-        Assert.Equal(12_240, lightmapped);
+        Assert.Equal(17_210, placements);
+        // Mission 24's fuel pump switch, hidden until destroyed, has its destroyed model's bake (0352e).
+        Assert.Equal(12_241, lightmapped);
         // Less the editor's "none" marker, which 204 objects wore: it has no levels of detail in the game (Game_CreateHandler).
-        Assert.Equal(2_795_163L, triangles);
+        Assert.Equal(2_802_031L, triangles);
 
         // The residue RetailIgi2ModelTableTests names one by one: two `soldier_1`, which is in no
         // archive anywhere in the installation, and the 17 spline waypoints naming the editor's `ai-arrow`
@@ -123,7 +124,7 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(12_240, checkedEntries);
+        Assert.Equal(12_241, checkedEntries);
     }
 
     /// <summary>The world scene carries no characters.</summary>
@@ -155,7 +156,7 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(12_273, placed);
+        Assert.Equal(12_278, placed);
         // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
         // placements at all, having become the player the mission stands up.
         // And 1,202 rather than 1,210: the eight AlarmControls all wear "none", which places nothing.
@@ -283,6 +284,28 @@ public sealed class RetailIgi2DrawableSceneTests
 
         Assert.True(renderer.LastDrawCount > 0, "the camera saw nothing at all, so the count says nothing.");
         return renderer.LastLightmappedCount;
+    }
+
+    /// <summary>
+    /// Mission 14's four bridge charges have no model of their own, only the placed brick they wear destroyed: each is placed on
+    /// that brick, hidden until it is destroyed, and the brick is what it swaps to.
+    /// </summary>
+    /// <remarks>Left out of the scene, a charge the player set never drew, though it went off.</remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_charge_with_only_a_destroyed_model_is_placed_hidden_until_destroyed()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level4");
+        Igi2DrawableSceneResult built = Build(level);
+        foreach (int charge in (int[])[1200, 1201, 1202, 1203])
+        {
+            Igi2Placement placed = Assert.Single(level.Scene.Placements, p => p.LevelId == charge);
+            Assert.Equal(("113_04_1", "113_04_1", true), (placed.Model, placed.DestroyedModel, placed.IsHiddenUntilDestroyed));
+
+            WorldPlacement drawn = Assert.Single(built.Scene.Placements, p => p.LevelId == charge);
+            Assert.Equal(("113_04_1", "113_04_1", true), (drawn.Instance.Name, drawn.DestroyedReplacement?.Instance.Name, drawn.IsHiddenUntilDestroyed));
+        }
+
+        Assert.DoesNotContain(level.Scene.Placements, static p => p.IsHiddenUntilDestroyed && p.DestroyedModel.Length == 0);
     }
 
     private static Igi2DrawableSceneResult Build(Igi2Level level) => Igi2LevelScene.Build(level).Built;

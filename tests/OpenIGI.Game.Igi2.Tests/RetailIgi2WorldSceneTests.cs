@@ -55,8 +55,9 @@ public sealed class RetailIgi2WorldSceneTests
         // Nine short of the 12,477 the drawable scene reaches, and deliberately: this walk is given no
         // models, and a Train cannot be placed without one -- its carriages are spaced by the distance
         // between their model's two couplings, which nothing authors. See Igi2Train. (567 waypoints on
-        // splines that do not display them are out of the world: Igi2WorldScene.IsHiddenWaypoint.)
-        Assert.Equal(12_264, placements);
+        // splines that do not display them are out of the world: Igi2WorldScene.IsHiddenWaypoint.) Five wear "none" and a
+        // destroyed model, placed on that, hidden until destroyed: mission 14's four bridge charges and a fuel pump switch of 24's.
+        Assert.Equal(12_269, placements);
         // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
         // registered, and a character is not a static placement. Wire is the twenty-first, and is the
         // one type here that is not placed at a position it authors -- it is strung between two.
@@ -112,7 +113,7 @@ public sealed class RetailIgi2WorldSceneTests
             }
         }
 
-        Assert.Equal(11_045, total);
+        Assert.Equal(11_050, total);
         Assert.True(
             resolved >= total * 96 / 100,
             $"Only {resolved} of {total} static placements resolved, below the 96% the corpus reaches.");

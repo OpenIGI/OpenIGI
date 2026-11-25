@@ -234,6 +234,26 @@ public sealed class RetailIgi2GenericTbaTests
         Assert.False(player.Human.IsActivating);
     }
 
+    /// <summary>
+    /// Mission 14's first bridge charge, <c>GenericTBA_1200</c>, wears the editor's "none", no model of its own: it is no solid, and once set it wears its
+    /// destroyed model, the placed brick (<c>ExplodeObject_SetExploded</c>), which the world draws in its place.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_set_bridge_charge_wears_its_brick()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true, location: "location1", levelName: "level4");
+        Igi2GenericTbaTask charge = Arm(m, 1200, null);
+        Assert.Empty(m.Collision!.SolidsOf(Igi2GenericTbaTask.TypeName, 1200));
+        Assert.Equal(("none", "113_04_1"), (charge.Model, charge.DestroyedModel));
+        m.Run.Tick();
+        Assert.False(charge.IsDestroyed);
+
+        charge.Finish();
+        m.Run.Tick();
+        Assert.Equal((true, true, "113_04_1"), (charge.IsFinished, charge.IsDestroyed, charge.Explosive.Model));
+        Assert.True(new Igi2PlacementDestruction([charge]).IsDestroyed(1200));
+    }
+
     private static Igi2GenericTbaTask Arm(RetailIgi2Mission1 m, int id, Igi2ExplosionWorld? blasts)
     {
         Igi2GenericTbaTask action = m.Tree.OfType<Igi2GenericTbaTask>().Single(a => a.Id == id);

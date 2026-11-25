@@ -275,7 +275,8 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
                 continue;
             }
 
-            if (placement.Geometry is not null)
+            // A bare object placed on its destroyed model has no solid: retail changes a solid on exploding only where one was.
+            if (placement.Geometry is not null || placement.IsHiddenUntilDestroyed)
             {
                 continue;
             }
@@ -445,7 +446,7 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
         List<Igi2MagicPlacement> found = [];
         foreach (Igi2Placement placement in scene.StaticPlacements)
         {
-            if (placement.Geometry is not null)
+            if (placement.Geometry is not null || placement.IsHiddenUntilDestroyed)
             {
                 continue;
             }

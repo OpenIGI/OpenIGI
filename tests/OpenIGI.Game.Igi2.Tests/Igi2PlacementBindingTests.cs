@@ -156,10 +156,20 @@ public sealed class Igi2PlacementBindingTests
                 Assert.True(task.TryGetValue(initial ? "On model" : "Off model", out object? rawModel));
                 string expected = Assert.IsType<string>(rawModel);
 
-                // One wearing "none" has no levels of detail (Game_CreateHandler) and places nothing.
+                // One wearing "none" has no levels of detail (Game_CreateHandler) and places nothing -- but for its destroyed model,
+                // where it has one, which it is placed on and hidden until it wears it (mission 24's fuel pump switch).
                 if (Igi2WorldScene.IsNoModel(expected))
                 {
-                    Assert.DoesNotContain(level.Scene.Placements, p => p.LevelId == task.Id && p.TypeName == "Switch");
+                    if (task.DestroyedModel.Length > 0 && !Igi2WorldScene.IsNoModel(task.DestroyedModel))
+                    {
+                        Igi2Placement hidden = level.Scene.Placements.Single(p => p.LevelId == task.Id);
+                        Assert.Equal((task.DestroyedModel, true), (hidden.Model, hidden.IsHiddenUntilDestroyed));
+                    }
+                    else
+                    {
+                        Assert.DoesNotContain(level.Scene.Placements, p => p.LevelId == task.Id && p.TypeName == "Switch");
+                    }
+
                     noModel++;
                     continue;
                 }

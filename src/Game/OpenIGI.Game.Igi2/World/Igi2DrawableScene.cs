@@ -83,6 +83,7 @@ public static class Igi2DrawableScene
         string placementType = string.Empty;
         int placementGroup = WorldPlacement.DefaultRenderGroup;
         string placementDestroyed = string.Empty;
+        bool placementHidden = false;
         string placementMountedOn = string.Empty;
         IReadOnlyList<string>? placementWears = null;
 
@@ -200,6 +201,9 @@ public static class Igi2DrawableScene
                 // What the object is drawn as once it is destroyed. Only the object's own model is swapped; its parts
                 // hang on as they were.
                 DestroyedReplacement = depth == 0 ? Replacement(placementDestroyed) : null,
+
+                // An object with no model of its own, placed on the one it wears destroyed, and drawn only from then on.
+                IsHiddenUntilDestroyed = placementHidden,
 
                 // The models a switch wears by its state; only the object's own model changes.
                 Variants = depth == 0 && placementWears is { } wears && wears.Select(Replacement).ToArray() is var bound
@@ -331,6 +335,7 @@ public static class Igi2DrawableScene
                 : $"{placement.TypeName}:{placement.LevelId}";
             placementGroup = placement.RenderGroup;
             placementDestroyed = placement.DestroyedModel;
+            placementHidden = placement.IsHiddenUntilDestroyed;
             placementMountedOn = placement.MountedOn;
             placementWears = placement.Wears;
 

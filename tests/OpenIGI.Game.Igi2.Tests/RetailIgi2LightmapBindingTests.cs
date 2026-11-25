@@ -292,7 +292,8 @@ public sealed class RetailIgi2LightmapBindingTests
             }
         }
 
-        Assert.Equal(12_240, bound);
+        // With mission 24's fuel pump switch, placed on its destroyed model and bound that model's bake (0352e).
+        Assert.Equal(12_241, bound);
         Assert.Equal(5, refused);
         Assert.Equal(32, resized);
     }

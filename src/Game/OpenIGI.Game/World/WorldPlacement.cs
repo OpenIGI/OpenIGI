@@ -85,6 +85,12 @@ public sealed record WorldPlacement(
     /// <summary>Gets whether the live task has no authored replacement and should no longer draw.</summary>
     public bool IsSuppressed { get; init; }
 
+    /// <summary>
+    /// Gets whether nothing is drawn here until the object is destroyed: it has no model of its own and is placed on the one it
+    /// wears destroyed (<see cref="DestroyedReplacement"/>), as I.G.I. 2's bridge charges are.
+    /// </summary>
+    public bool IsHiddenUntilDestroyed { get; init; }
+
     /// <summary>Gets pre-deformed geometry that replaces the model's own, or <see langword="null"/>.</summary>
     /// <remarks>
     /// A spline segment's vertices are bent along its waypoints' curve, so the mesh is unique to the

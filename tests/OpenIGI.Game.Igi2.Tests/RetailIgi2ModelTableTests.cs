@@ -120,10 +120,11 @@ public sealed class RetailIgi2ModelTableTests
         // placements 9,536 resolve by file name alone and 10,545 through the packs -- the ones the packs
         // add are the characters and everything else the global pack carries. 567 fewer than were once placed: the `ai-arrow`
         // waypoints on splines that do not display them are out of the world (Igi2WorldScene.IsHiddenWaypoint).
-        // And 204 fewer again: what wears "none" has no levels of detail (Game_CreateHandler) and is not placed.
-        Assert.Equal(12_273, total);
-        Assert.Equal(11_242, byFileName);
-        Assert.Equal(12_251, byTable);
+        // And 204 fewer again: what wears "none" has no levels of detail (Game_CreateHandler) and is not placed -- less the five
+        // that also name a destroyed model, placed on it and hidden until destroyed (mission 14's bridge charges, a switch of 24's).
+        Assert.Equal(12_278, total);
+        Assert.Equal(11_247, byFileName);
+        Assert.Equal(12_256, byTable);
     }
 
     /// <summary>The five placements the shipped data cannot resolve, and why they are the data's fault.</summary>

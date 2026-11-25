@@ -81,6 +81,13 @@ public readonly record struct Igi2Placement(
     /// (<c>EditRigidObj_UpdateInternalDataHandler</c> registers it with no sector object), so no room hides it.
     /// </summary>
     public bool IsExcludedFromPortalClipping { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the object has no model of its own and is placed on its <c>Destroyed model</c>,
+    /// drawn only once it is destroyed, and no solid meanwhile: <c>ExplodeObject_SetExploded</c> (<c>igi2 0x49D010</c>) dresses the
+    /// bare object in its destroyed model, and changes a solid only where the object had one.
+    /// </summary>
+    public bool IsHiddenUntilDestroyed { get; init; }
 }
 
 /// <summary>
@@ -492,12 +499,30 @@ public sealed class Igi2WorldScene
                 ? binding.AlternateModel
                 : binding.Model;
 
+        string destroyed = TryGetParameter(task, DestroyedModelParameter, out object? rawDestroyed)
+            && rawDestroyed is string destroyedName
+            && !string.IsNullOrWhiteSpace(destroyedName)
+            && !IsNoModel(destroyedName)
+                ? destroyedName
+                : string.Empty;
+
+        // An object with no model of its own and a destroyed one -- mission 14's bridge charges, a GenericTBA whose destroyed
+        // model is the placed brick -- draws nothing until it goes off, and then that model: ExplodeObject_SetExploded
+        // (igi2 0x49D010) sets it on the object the level made bare (ModelObj_SetLODVirModel). Placed on that model, hidden until
+        // then. Left out, the charge never drew at all.
+        bool hiddenUntilDestroyed = false;
         if (!TryGetParameter(task, modelParameter, out object? rawModel)
             || rawModel is not string model
             || string.IsNullOrWhiteSpace(model)
             || IsNoModel(model))
         {
-            return false;
+            if (destroyed.Length == 0)
+            {
+                return false;
+            }
+
+            model = destroyed;
+            hiddenUntilDestroyed = true;
         }
 
         // A wire is strung, not placed. Wire_UpdateInternalDataHandler (igi2 0x49B720) reads the two
@@ -566,12 +591,6 @@ public sealed class Igi2WorldScene
             mountedOrientation = new Vector3f(alpha, 0f, orientation.Z + gamma);
         }
 
-        string destroyed = TryGetParameter(task, DestroyedModelParameter, out object? rawDestroyed)
-            && rawDestroyed is string destroyedName
-            && !string.IsNullOrWhiteSpace(destroyedName)
-                ? destroyedName
-                : string.Empty;
-
         placement = new Igi2Placement(
             task.Id,
             task.Type.Name,
@@ -593,6 +612,7 @@ public sealed class Igi2WorldScene
         {
             IsExcludedFromPortalClipping = TryGetParameter(task, ExcludedFromPortalClippingParameter, out object? excluded)
                 && excluded is true or (byte)1 or 1,
+            IsHiddenUntilDestroyed = hiddenUntilDestroyed,
         };
         return true;
     }
