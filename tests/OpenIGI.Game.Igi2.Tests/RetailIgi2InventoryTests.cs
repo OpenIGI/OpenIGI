@@ -181,6 +181,26 @@ public sealed class RetailIgi2InventoryTests
         Assert.Equal(expected, inventory.SummedMovementSlowDown, 5);
     }
 
+    /// <summary>
+    /// What the all-weapons cheat hands out weighs nothing slung, so the player moves as its own kit says rather than at the half
+    /// speed the whole roster came to; one taken in hand weighs in full, and one carried for real (a pickup, a script) weighs again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_cheats_weapons_weigh_nothing_slung()
+    {
+        Igi2Inventory inventory = PlayerLoadout();
+        float own = inventory.SummedMovementSlowDown;
+
+        inventory.EnableEveryWeapon();
+        Igi2WeaponItem granted = inventory.Weapons.First(static w => w.IsCheatGranted && w.WeaponType.MovementSpeedModifier > 0f);
+        Assert.Equal(own, inventory.SummedMovementSlowDown, 5);
+
+        // Already carried, so nothing is added; it is the player's own from now on.
+        Assert.False(inventory.EnableWeaponType(granted.WeaponType.WeaponId, addAmmo: false));
+        Assert.False(granted.IsCheatGranted);
+        Assert.Equal(own + (granted.WeaponType.MovementSpeedModifier * 0.5), inventory.SummedMovementSlowDown, 5);
+    }
+
     /// <summary>The control answers from the weapon in hand: its category, precision, zoom, launcher and body clips.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_control_answers_from_the_weapon_in_hand()

@@ -18,8 +18,28 @@ public sealed class Igi2WeaponItem
     /// <summary>Gets the weapon type's number, the value of its <c>WEAPON_ID_*</c> constant.</summary>
     public int Number { get; }
 
+    private bool _isActive;
+
     /// <summary>Gets a value indicating whether the human carries this weapon.</summary>
-    public bool IsActive { get; internal set; }
+    /// <remarks>Carried or let go any other way than the all-weapons cheat, it is the player's own again (<see cref="IsCheatGranted"/>).</remarks>
+    public bool IsActive
+    {
+        get => _isActive;
+        internal set
+        {
+            _isActive = value;
+            IsCheatGranted = false;
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether only the all-weapons cheat carries it (<see cref="Igi2Inventory.EnableEveryWeapon"/>).
+    /// <b>Not retail.</b> Slung, such a weapon weighs nothing (<see cref="Igi2Inventory.SummedMovementSlowDown"/>).
+    /// </summary>
+    public bool IsCheatGranted { get; private set; }
+
+    /// <summary>Marks it carried by the all-weapons cheat alone.</summary>
+    internal void GrantByCheat() => IsCheatGranted = true;
 
     /// <summary>Gets the fire mode in use, <c>iActiveFireMode</c> (<c>WeaponTypeItem+0x18</c>); the first until a fire mode key changes it.</summary>
     public int ActiveFireMode { get; internal set; }
@@ -257,6 +277,7 @@ public sealed class Igi2Inventory : ISavedState
             if (!item.IsActive && item.WeaponType.WeaponCategory is not (0 or Igi2WeaponCategory.C4))
             {
                 Enable(item, addAmmo: true);
+                item.GrantByCheat();
             }
         }
     }
@@ -407,7 +428,12 @@ public sealed class Igi2Inventory : ISavedState
     public void AddAmmo(string ammoId, int rounds) => FindAmmo(ammoId)?.Add(rounds);
 
     /// <summary>Gets how much the carried weapons slow their carrier (<c>Weapon_GetSummedMovementSlowDown</c>, <c>igi2 0x51F550</c>).</summary>
-    /// <remarks>Each carried weapon's <c>Movement Speed Modifier</c>, the one in hand in full and the rest by half.</remarks>
+    /// <remarks>
+    /// Each carried weapon's <c>Movement Speed Modifier</c>, the one in hand in full and the rest by half. <b>Not retail:</b> one
+    /// only the all-weapons cheat carries (<see cref="Igi2WeaponItem.IsCheatGranted"/>) weighs nothing slung -- the whole roster
+    /// put the player at the half speed the slow-down stops at -- and its full weight in hand, so the player moves as its own
+    /// kit and the gun it holds say.
+    /// </remarks>
     public float SummedMovementSlowDown
     {
         get
@@ -415,7 +441,7 @@ public sealed class Igi2Inventory : ISavedState
             Fpu sum = 0.0;
             foreach (Igi2WeaponItem item in _weapons)
             {
-                if (item.IsActive)
+                if (item.IsActive && (!item.IsCheatGranted || ReferenceEquals(item, Current)))
                 {
                     sum = ReferenceEquals(item, Current)
                         ? sum + item.WeaponType.MovementSpeedModifier
