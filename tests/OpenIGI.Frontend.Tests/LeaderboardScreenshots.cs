@@ -49,6 +49,8 @@ public sealed class LeaderboardScreenshots
         Directory.CreateDirectory(folder);
         using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
         using SkiaImageStore images = new();
+        using OpenIGI.UI.Drawing.IconAtlas? icons = KitIconAtlas.Load(images);
+        KitIcons.Baked = icons;
         using SkiaFontCache fonts = new();
 
         foreach ((int width, int height, float density) in Sizes)
@@ -89,7 +91,7 @@ public sealed class LeaderboardScreenshots
                 GameConfig config = GameConfig.CreateDefault();
                 host.Profile = config.Active;
                 var context = new ShellContext(
-                    typography.CreateTheme(),
+                    typography.CreateTheme(icons),
                     host,
                     new ScreenStack { PointerSuppressed = true },
                     GameProfileResolver.BuildCatalogue(GameTitle.Igi1, "C:\\Games\\IGI", null, null),

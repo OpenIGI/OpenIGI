@@ -213,40 +213,12 @@ public sealed class VerifiedStrip(UiTheme theme, string headline, string detail)
         painter.StrokeRect(Bounds, context.Px(1f), green.WithAlpha(102));
         float icon = context.Px(24f);
         var centre = new UiVec2(Bounds.X + context.Px(14f) + (icon / 2f), Bounds.Center.Y);
-        Shield(painter, centre, icon, green);
+        BoardLook.Shield(painter, theme, centre, icon, green);
         float x = Bounds.X + context.Px(14f) + icon + context.Px(12f);
         float head = context.Px(16f);
         float px = context.Px(12f);
         float top = Bounds.Center.Y - ((head * 1.05f) + context.Px(2f) + theme.Mono.LineHeight(px)) / 2f;
         painter.DrawLabel(theme.Display, headline.ToUpperInvariant(), new UiVec2(x, top), head, green, 0.06f);
         painter.DrawText(theme.Mono, theme.Mono.Fit(detail, px, Bounds.Right - x - context.Px(8f)), new UiVec2(x, top + (head * 1.05f) + context.Px(2f)), px, theme.TextSecondary);
-    }
-
-    /// <summary>Draws a shield's outline with a tick in it.</summary>
-    /// <param name="painter">The painter.</param>
-    /// <param name="centre">Its middle.</param>
-    /// <param name="size">Its height, in pixels.</param>
-    /// <param name="ink">Its colour.</param>
-    public static void Shield(UiPainter painter, UiVec2 centre, float size, Bgra32 ink)
-    {
-        ArgumentNullException.ThrowIfNull(painter);
-        float w = size * 0.42f;
-        float h = size * 0.5f;
-        ReadOnlySpan<UiVec2> outline =
-        [
-            new(centre.X, centre.Y - h),
-            new(centre.X + w, centre.Y - (h * 0.7f)),
-            new(centre.X + w, centre.Y + (h * 0.05f)),
-            new(centre.X, centre.Y + h),
-            new(centre.X - w, centre.Y + (h * 0.05f)),
-            new(centre.X - w, centre.Y - (h * 0.7f)),
-        ];
-        if (!BoardLook.InClip(painter, new UiRect(centre.X - w, centre.Y - h, 2f * w, 2f * h)))
-        {
-            return;
-        }
-
-        painter.StrokePolygon(outline, painter.Context.Px(1.6f), ink);
-        BoardLook.Icon(painter, KitIcon.Check, new UiVec2(centre.X, centre.Y - (h * 0.05f)), size * 0.45f, ink);
     }
 }

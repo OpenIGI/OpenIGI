@@ -104,6 +104,20 @@ public static class UiFontLibrary
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IGraphicsDevice, IgiTypography> SharedTypography = [];
 
+    /// <summary>Gets the interface kit's baked icons on a device, uploaded on first use and shared after that, as the faces are.</summary>
+    /// <param name="device">The device the icons are uploaded to.</param>
+    /// <returns>The icons, or null where the kit's atlas is missing. Callers share them and must not dispose them.</returns>
+    public static OpenIGI.UI.Drawing.IconAtlas? Icons(IGraphicsDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        return SharedIcons.GetValue(device, static d => new SharedIconSet(KitIconAtlas.Load(new OpenIGI.UI.Rhi.RhiImageFactory(d)))).Atlas;
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IGraphicsDevice, SharedIconSet> SharedIcons = [];
+
+    // A device's icons, or none: the table holds a class.
+    private sealed record SharedIconSet(OpenIGI.UI.Drawing.IconAtlas? Atlas);
+
     /// <summary>Loads and uploads a font, rasterising and caching its atlas as needed.</summary>
     /// <param name="device">The device to upload the atlas to.</param>
     /// <param name="fileName">The font file name in <see cref="FontsDirectory"/>.</param>

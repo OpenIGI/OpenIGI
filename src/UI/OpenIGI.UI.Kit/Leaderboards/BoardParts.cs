@@ -80,7 +80,7 @@ public sealed class SeasonCard(UiTheme theme) : UiElement
         if (State == SeasonCardState.Unavailable)
         {
             float icon = context.Px(18f);
-            BoardLook.Icon(painter, KitIcon.Warning, new UiVec2(box.X + pad + (icon / 2f), box.Center.Y), icon, theme.TextMuted);
+            BoardLook.Icon(painter, theme, KitIcon.Warning, new UiVec2(box.X + pad + (icon / 2f), box.Center.Y), icon, theme.TextMuted);
             float textLeft = box.X + pad + icon + context.Px(12f);
             BoardLook.Caption(painter, theme, "Season", new UiVec2(textLeft, box.Center.Y - context.Px(16f)), 10f, theme.TextMuted);
             float px = context.Px(18f * scale);
@@ -167,7 +167,7 @@ public sealed class BoardChip(UiTheme theme) : UiElement
         float x = Bounds.X + context.Px(14f);
         if (Icon != KitIcon.None)
         {
-            BoardLook.Icon(painter, Icon, new UiVec2(x + context.Px(8f), Bounds.Center.Y), context.Px(15f), theme.Accent);
+            BoardLook.Icon(painter, theme, Icon, new UiVec2(x + context.Px(8f), Bounds.Center.Y), context.Px(15f), theme.Accent);
             x += context.Px(22f);
         }
 
@@ -229,7 +229,7 @@ public sealed class StatTile(UiTheme theme, string label, string value, string s
         BoardLook.Caption(painter, theme, label, new UiVec2(x, y), 10f, theme.TextSecondary);
         y += context.Px(10f) + context.Px(8f);
         float px = context.Px(FigureSize);
-        float end = painter.DrawText(theme.Mono, value, new UiVec2(x, y - (px * 0.08f)), px, Ink ?? theme.TextBright).X;
+        float end = painter.DrawText(theme.MonoFigures, value, new UiVec2(x, y - (px * 0.08f)), px, Ink ?? theme.TextBright).X;
         if (Change is { } change && Math.Abs(change) >= 0.005 && BoardLook.InClip(painter, Bounds))
         {
             float changePx = context.Px(12f);
@@ -458,12 +458,12 @@ public sealed class BoardMessage(UiTheme theme, KitIcon icon, string headline, s
             float side = context.Px(46f);
             var box = new UiRect(centre - (side / 2f), y, side, side);
             painter.StrokeRect(box, context.Px(1f), UiPalette.AccentAt(0.5f));
-            BoardLook.Icon(painter, icon, box.Center, iconSize, theme.Accent);
+            BoardLook.Icon(painter, theme, icon, box.Center, iconSize, theme.Accent);
             y = box.Bottom + context.Px(18f);
         }
         else
         {
-            BoardLook.Icon(painter, icon, new UiVec2(centre, y + (iconSize / 2f)), iconSize, theme.Accent);
+            BoardLook.Icon(painter, theme, icon, new UiVec2(centre, y + (iconSize / 2f)), iconSize, theme.Accent);
             y += iconSize + context.Px(14f);
         }
 

@@ -136,11 +136,11 @@ public sealed class PodiumCard : Control
 
         float figureSize = context.Px(first ? 44f : 36f);
         string figure = _metric.Figure(_row);
-        float figureWidth = Theme.Mono.MeasureWidth(figure, figureSize);
+        float figureWidth = Theme.MonoFigures.MeasureWidth(figure, figureSize);
         float labelSize = context.Px(10f);
         float blockHeight = (figureSize * 0.9f) + context.Px(4f) + labelSize;
         float figureTop = middle - (blockHeight / 2f) - (figureSize * 0.12f);
-        painter.DrawText(Theme.Mono, figure, new UiVec2(right - figureWidth, figureTop), figureSize, UiPalette.Fade(first ? BoardLook.Gold : Theme.TextBright, appear));
+        painter.DrawText(Theme.MonoFigures, figure, new UiVec2(right - figureWidth, figureTop), figureSize, UiPalette.Fade(first ? BoardLook.Gold : Theme.TextBright, appear));
         string label = _metric.Label.ToUpperInvariant();
         painter.DrawLabel(Theme.Mono, label, new UiVec2(right - BoardLook.CaptionWidth(context, Theme, label, 10f), middle + (blockHeight / 2f) - labelSize), labelSize, UiPalette.Fade(Theme.TextSecondary, appear), BoardLook.CaptionTracking);
 

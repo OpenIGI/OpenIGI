@@ -20,8 +20,9 @@ public sealed partial class MissionBoardView
         string difficulty = DifficultyNames[Math.Clamp(_feed.Difficulty, 0, 2)];
         string rules = RulesetNames[Math.Max(0, IndexOf(MissionBoardFeed.Rulesets, _feed.Ruleset))];
         int number = _feed.Mission is { } id ? missions.ToList().FindIndex(m => m.Id == id) + 1 : 0;
+        int covered = board?.Rows.Count > 0 ? board.Rows.Max(static row => row.Missions) : 0;
         string eyebrow = Overall
-            ? $"Every mission · {difficulty} · {rules} rules"
+            ? $"{(covered > 0 ? MissionRow.MissionsLine(covered, missions.Count) : "Every mission")} · {difficulty} · {rules} rules"
             : string.Create(CultureInfo.InvariantCulture, $"Mission {number} / {missions.Count} · {difficulty} · {rules} rules");
         string title = _feed.Title;
         int? mission = _feed.Mission;
@@ -41,15 +42,14 @@ public sealed partial class MissionBoardView
 
         if (board is { Rows.Count: 0 } && !Overall && _source.CanPlay)
         {
-            hero.ChildRoom = 262f;
+            hero.ChildRoom = 332f;
             var play = new BoardButton(_theme, "Play mission", BoardButtonLook.Solid)
             {
                 Icon = KitIcon.Play,
                 Detail = $"{MissionName()} · {difficulty} · {rules}",
-                Key = "Enter",
                 Arrow = true,
-                ButtonHeight = 56f,
-                ButtonWidth = 230f,
+                ButtonHeight = 58f,
+                ButtonWidth = 300f,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0f, 0f, 32f, 0f),
@@ -110,8 +110,14 @@ public sealed partial class MissionBoardView
             NameSize = 34f,
         };
         int lit = BoardLook.StripesLit(row.Rank, GameTitle.RanksPerDifficulty);
-        string rank = Overall ? $"{row.Points:N0} points" : GameTitle.RankName(row.Rank, _feed.Difficulty) ?? "No rank";
-        var time = new RunTimeBlock(_theme, MissionRow.Time(row.Ticks), first ? BoardLook.Gold : _theme.TextBright, Overall ? 0 : lit, rank);
+        string rank = Overall
+            ? (_feed.Metric == "rank" ? $"{row.Points:N0} pts · " : string.Empty) + MissionRow.MissionsLine(row.Missions, _source.MissionsOf(_feed.Title).Count)
+            : GameTitle.RankName(row.Rank, _feed.Difficulty) ?? "No rank";
+        var time = new RunTimeBlock(_theme, MissionRow.Time(row.Ticks), first ? BoardLook.Gold : _theme.TextBright, Overall ? -1 : lit, rank)
+        {
+            Caption = Overall ? "Total time" : "Mission time",
+            SideCaption = Overall ? "Of" : "Rank earned",
+        };
         var check = new VerifiedStrip(_theme, "Verified by the server", "Re-played from inputs before it counted.");
 
         // The splits: the run's, and the player's best's against them.

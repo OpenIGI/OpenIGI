@@ -106,7 +106,8 @@ public sealed partial class LeaderboardView
         }
 
         _podium = new Panel();
-        _columns = new Panel();
+        // The headings, kept clear of the list's scrollbar as its rows are, so each stands over its column.
+        _columns = new Panel { Margin = new Thickness(0f, 0f, 10f, 0f) };
         _list = new StackPanel { Orientation = Orientation.Vertical, Spacing = 0f, Margin = new Thickness(0f, 0f, 10f, 0f) };
         _listScroll = new ScrollView(_theme);
         _listScroll.SetContent(_list);

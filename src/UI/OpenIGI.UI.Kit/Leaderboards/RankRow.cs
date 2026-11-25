@@ -368,7 +368,7 @@ public sealed class YourPlaceRow : Control
         if (State == YourPlaceState.SignedOut)
         {
             painter.StrokeRect(mark, context.Px(1.5f), UiPalette.AccentAt(0.6f * appear));
-            BoardLook.Icon(painter, KitIcon.Person, mark.Center, side * 0.5f, UiPalette.Fade(Theme.Accent, appear));
+            BoardLook.Icon(painter, Theme, KitIcon.Person, mark.Center, side * 0.5f, UiPalette.Fade(Theme.Accent, appear));
         }
         else
         {
@@ -502,7 +502,7 @@ public sealed class YourPlaceRow : Control
                 x = BoardLook.Key(painter, Theme, ActionKey, x, mid, onAccent: true, appear) + context.Px(10f);
             }
 
-            BoardLook.Icon(painter, KitIcon.ArrowRight, new UiVec2(x + (arrow / 2f), mid), arrow, UiPalette.Fade(BoardLook.OnAccent, appear));
+            BoardLook.Icon(painter, Theme, KitIcon.ArrowRight, new UiVec2(x + (arrow / 2f), mid), arrow, UiPalette.Fade(BoardLook.OnAccent, appear));
             right = button.X - context.Px(18f);
         }
 

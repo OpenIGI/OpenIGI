@@ -84,15 +84,21 @@ public static class BoardLook
         return box.X >= clip.X - 0.5f && box.Y >= clip.Y - 0.5f && box.Right <= clip.Right + 0.5f && box.Bottom <= clip.Bottom + 0.5f;
     }
 
-    /// <summary>Draws an icon where it stands wholly inside the clip.</summary>
+    /// <summary>
+    /// Draws an icon where it stands wholly inside the clip: from the theme's baked icons where it has them (sharp at any size),
+    /// else drawn in lines.
+    /// </summary>
     /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme, whose icons are drawn from.</param>
     /// <param name="icon">The icon.</param>
     /// <param name="centre">Its middle.</param>
     /// <param name="size">Its size, in pixels.</param>
     /// <param name="ink">Its colour.</param>
-    public static void Icon(UiPainter painter, KitIcon icon, UiVec2 centre, float size, Bgra32 ink)
+    public static void Icon(UiPainter painter, UiTheme theme, KitIcon icon, UiVec2 centre, float size, Bgra32 ink)
     {
-        if (!InClip(painter, new UiRect(centre.X - (size / 2f), centre.Y - (size / 2f), size, size)))
+        ArgumentNullException.ThrowIfNull(theme);
+        if (!InClip(painter, new UiRect(centre.X - (size / 2f), centre.Y - (size / 2f), size, size))
+            || theme.Icons?.TryDraw(painter, icon.ToString(), centre, size, ink) == true)
         {
             return;
         }
@@ -103,7 +109,106 @@ public static class BoardLook
             return;
         }
 
+        if (icon == KitIcon.Refresh)
+        {
+            Refresh(painter, centre, size, ink);
+            return;
+        }
+
+        if (icon == KitIcon.Check)
+        {
+            Tick(painter, centre, size, ink);
+            return;
+        }
+
         KitIcons.Draw(painter, icon, centre, size, ink);
+    }
+
+    // Refresh: a circle open at its top right, an arrowhead at the open end pointing on round the way it turns.
+    private static void Refresh(UiPainter painter, UiVec2 centre, float size, Bgra32 ink)
+    {
+        const int Steps = 24;
+        float radius = size * 0.36f;
+        float from = -MathF.PI * 0.25f;
+        float sweep = MathF.PI * 1.55f;
+        Span<UiVec2> arc = stackalloc UiVec2[Steps + 1];
+        for (int i = 0; i <= Steps; i++)
+        {
+            float angle = from + (sweep * i / Steps);
+            arc[i] = new UiVec2(centre.X + (MathF.Cos(angle) * radius), centre.Y + (MathF.Sin(angle) * radius));
+        }
+
+        float stroke = MathF.Max(1f, size * 0.1f);
+        painter.StrokeSoftPolyline(arc, stroke, ink);
+
+        // The head at the arc's start, pointing back against the sweep: the way a refresh turns.
+        UiVec2 tip = arc[0];
+        var along = new UiVec2(MathF.Sin(from), -MathF.Cos(from));
+        var outward = new UiVec2(MathF.Cos(from), MathF.Sin(from));
+        float head = size * 0.24f;
+        UiVec2 point = new(tip.X + (along.X * head * 0.9f), tip.Y + (along.Y * head * 0.9f));
+        UiVec2 a = new(tip.X + (outward.X * head * 0.6f), tip.Y + (outward.Y * head * 0.6f));
+        UiVec2 b = new(tip.X - (outward.X * head * 0.6f), tip.Y - (outward.Y * head * 0.6f));
+        painter.FillTriangle(a, point, b, ink);
+    }
+
+    /// <summary>Draws a tick, its strokes smoothed.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="centre">Its middle.</param>
+    /// <param name="size">Its size, in pixels.</param>
+    /// <param name="ink">Its colour.</param>
+    public static void Tick(UiPainter painter, UiVec2 centre, float size, Bgra32 ink)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ReadOnlySpan<UiVec2> stroke =
+        [
+            new(centre.X - (size * 0.38f), centre.Y + (size * 0.02f)),
+            new(centre.X - (size * 0.12f), centre.Y + (size * 0.28f)),
+            new(centre.X + (size * 0.4f), centre.Y - (size * 0.3f)),
+        ];
+        painter.StrokeSoftPolyline(stroke, MathF.Max(1.2f, size * 0.12f), ink);
+    }
+
+    /// <summary>Draws a shield's outline with a tick in it: the theme's baked icon where it has one, else smoothed strokes.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme, whose icons are drawn from.</param>
+    /// <param name="centre">Its middle.</param>
+    /// <param name="size">Its height, in pixels.</param>
+    /// <param name="ink">Its colour.</param>
+    public static void Shield(UiPainter painter, UiTheme theme, UiVec2 centre, float size, Bgra32 ink)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        float w = size * 0.4f;
+        float h = size * 0.5f;
+        if (!InClip(painter, new UiRect(centre.X - w, centre.Y - h, 2f * w, 2f * h))
+            || theme.Icons?.TryDraw(painter, "ShieldCheck", centre, size, ink) == true)
+        {
+            return;
+        }
+
+        // The top edge, its shoulders, then the sides curving in to the point.
+        const int Curve = 8;
+        Span<UiVec2> outline = stackalloc UiVec2[5 + (2 * Curve)];
+        int n = 0;
+        outline[n++] = new UiVec2(centre.X, centre.Y - h);
+        outline[n++] = new UiVec2(centre.X + w, centre.Y - (h * 0.68f));
+        for (int i = 0; i <= Curve; i++)
+        {
+            float t = i / (float)Curve;
+            outline[n++] = new UiVec2(centre.X + (w * (1f - (t * t))), centre.Y - (h * 0.68f) + (t * h * 1.68f) - (MathF.Sin(t * MathF.PI) * h * 0.25f));
+        }
+
+        for (int i = Curve - 1; i >= 0; i--)
+        {
+            float t = i / (float)Curve;
+            outline[n++] = new UiVec2(centre.X - (w * (1f - (t * t))), centre.Y - (h * 0.68f) + (t * h * 1.68f) - (MathF.Sin(t * MathF.PI) * h * 0.25f));
+        }
+
+        outline[n++] = new UiVec2(centre.X - w, centre.Y - (h * 0.68f));
+        outline[n++] = outline[0];
+        painter.StrokeSoftPolyline(outline[..n], MathF.Max(1.2f, size * 0.07f), ink);
+        Tick(painter, new UiVec2(centre.X, centre.Y - (h * 0.02f)), size * 0.46f, ink);
     }
 
     // An eye: an almond's outline, its two lids as curves meeting at the corners, and the pupil in its middle.
@@ -283,7 +388,7 @@ public static class BoardLook
         Bgra32 green = theme.Success;
         painter.FillRect(box, green.WithAlpha((byte)(20f * appear)));
         painter.StrokeRect(box, context.Px(1f), green.WithAlpha((byte)(115f * appear)));
-        Icon(painter, KitIcon.Check, new UiVec2(box.X + context.Px(6f) + (tick / 2f), middle), tick, UiPalette.Fade(green, appear));
+        Icon(painter, theme, KitIcon.Check, new UiVec2(box.X + context.Px(6f) + (tick / 2f), middle), tick, UiPalette.Fade(green, appear));
         painter.DrawLabel(theme.Mono, caps, new UiVec2(box.X + context.Px(11f) + tick, UiRowStyle.CapsCenterY(theme.Mono, px, box)), px, UiPalette.Fade(green, appear), 0.1f);
         return box.Right;
     }

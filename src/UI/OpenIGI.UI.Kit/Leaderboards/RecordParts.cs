@@ -96,7 +96,7 @@ public sealed class RecordHero(UiTheme theme, BoardSize size) : UiElement
             string score = LeaderboardMetric.Count(Score);
             float top = box.Center.Y - context.Px(40f);
             BoardLook.Right(painter, theme.Mono, "SCORE", right, top, context.Px(10f), theme.TextSecondary);
-            float scoreLeft = BoardLook.Right(painter, theme.Mono, score, right, top + context.Px(14f), scoreSize, theme.TextBright);
+            float scoreLeft = BoardLook.Right(painter, theme.MonoFigures, score, right, top + context.Px(14f), scoreSize, theme.TextBright);
             BoardLook.Right(painter, theme.Mono, ScoreNote, right, top + context.Px(14f) + (scoreSize * 1.2f), context.Px(12f), theme.TextSecondary);
             float rule = MathF.Min(scoreLeft, right - context.Px(150f)) - context.Px(28f);
             painter.FillRect(new UiRect(rule, box.Center.Y - context.Px(44f), context.Px(1f), context.Px(88f)), UiPalette.White(0.22f));
@@ -294,7 +294,7 @@ public sealed class StandingTable(UiTheme theme, MissionStanding standing, IRead
             }
 
             float tick = context.Px(12f);
-            BoardLook.Icon(painter, KitIcon.Check, new UiVec2(right - (tick / 2f), row.Center.Y), tick, theme.Success);
+            BoardLook.Icon(painter, theme, KitIcon.Check, new UiVec2(right - (tick / 2f), row.Center.Y), tick, theme.Success);
             float at = right - tick - context.Px(14f);
             if (best.TimePlace is { } timePlace)
             {

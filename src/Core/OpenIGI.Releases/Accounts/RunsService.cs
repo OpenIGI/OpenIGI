@@ -108,7 +108,8 @@ public sealed record RunStatus(
 /// <param name="Run">The run, on a mission's board.</param>
 /// <param name="Replay">Whether its replay is kept to watch and race.</param>
 /// <param name="Splits">The played ticks each objective was first done at, as the checker found them; null where it sent none.</param>
-public sealed record RunBoardRow(int Place, string Account, string Name, int Ticks, int Rank = -1, int Points = 0, string? Run = null, bool Replay = false, IReadOnlyList<int>? Splits = null);
+/// <param name="Missions">On the overall board, how many missions the total is of: every one the board has a board for so far.</param>
+public sealed record RunBoardRow(int Place, string Account, string Name, int Ticks, int Rank = -1, int Points = 0, string? Run = null, bool Replay = false, IReadOnlyList<int>? Splits = null, int Missions = 0);
 
 /// <summary>A player's best on one board, by one metric: the run, its time, its rank and its place there.</summary>
 /// <param name="Run">The run.</param>

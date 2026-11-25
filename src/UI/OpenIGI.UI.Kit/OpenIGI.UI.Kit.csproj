@@ -11,4 +11,9 @@
     <ProjectReference Include="..\OpenIGI.UI\OpenIGI.UI.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The kit's icons, baked from assets/ui-icons by tools/OpenIGI.Tools.IconAtlas (KitIconAtlas reads it). -->
+    <EmbeddedResource Include="ui-icons.bin" LogicalName="OpenIGI.UI.Kit.ui-icons.bin" />
+  </ItemGroup>
+
 </Project>

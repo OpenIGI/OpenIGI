@@ -131,17 +131,17 @@ public sealed class MissionHero(UiTheme theme, BoardSize size) : Panel
         {
             float captionPx = context.Px(10f);
             float underPx = context.Px(12f);
-            float width = MathF.Max(theme.Mono.MeasureWidth(figure, figureSize), MathF.Max(BoardLook.CaptionWidth(context, theme, caption, 10f) + (trophy ? context.Px(18f) : 0f), theme.Mono.MeasureWidth(under, underPx)));
+            float width = MathF.Max(theme.MonoFigures.MeasureWidth(figure, figureSize), MathF.Max(BoardLook.CaptionWidth(context, theme, caption, 10f) + (trophy ? context.Px(18f) : 0f), theme.Mono.MeasureWidth(under, underPx)));
             float left = x - width;
             float cx = left;
             if (trophy)
             {
-                BoardLook.Icon(painter, KitIcon.Leaderboard, new UiVec2(cx + context.Px(6f), columnsTop + (captionPx / 2f)), context.Px(12f), captionInk);
+                BoardLook.Icon(painter, theme, KitIcon.Leaderboard, new UiVec2(cx + context.Px(6f), columnsTop + (captionPx / 2f)), context.Px(12f), captionInk);
                 cx += context.Px(18f);
             }
 
             BoardLook.Caption(painter, theme, caption, new UiVec2(cx, columnsTop), 10f, captionInk);
-            painter.DrawText(theme.Mono, figure, new UiVec2(left, columnsTop + context.Px(12f)), figureSize, figureInk);
+            painter.DrawText(theme.MonoFigures, figure, new UiVec2(left, columnsTop + context.Px(12f)), figureSize, figureInk);
             painter.DrawText(theme.Mono, under, new UiVec2(left, columnsTop + context.Px(16f) + (figureSize * 1.15f)), underPx, underInk);
             return left;
         }
@@ -220,14 +220,23 @@ public sealed class MissionHero(UiTheme theme, BoardSize size) : Panel
     }
 }
 
-/// <summary>A run's time large under MISSION TIME, and beside it the rank it earned as stripes and a name.</summary>
+/// <summary>
+/// A run's time large under its caption (MISSION TIME), and beside it the rank it earned as stripes and a name -- or, for an
+/// overall total, what it is of, without stripes.
+/// </summary>
 /// <param name="theme">The theme.</param>
 /// <param name="time">The time.</param>
 /// <param name="ink">The time's colour.</param>
-/// <param name="lit">How many of the rank's stripes are lit.</param>
-/// <param name="rank">The rank's name.</param>
+/// <param name="lit">How many of the rank's stripes are lit; below nought for none drawn.</param>
+/// <param name="rank">The rank's name, or what the total is of.</param>
 public sealed class RunTimeBlock(UiTheme theme, string time, Bgra32 ink, int lit, string rank) : UiElement
 {
+    /// <summary>Gets or sets the caption over the time.</summary>
+    public string Caption { get; set; } = "Mission time";
+
+    /// <summary>Gets or sets the caption beside it.</summary>
+    public string SideCaption { get; set; } = "Rank earned";
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(82f));
 
@@ -235,12 +244,19 @@ public sealed class RunTimeBlock(UiTheme theme, string time, Bgra32 ink, int lit
     protected override void OnDraw(UiPainter painter)
     {
         LayoutContext context = painter.Context;
-        BoardLook.Caption(painter, theme, "Mission time", new UiVec2(Bounds.X, Bounds.Y), 10f, theme.TextSecondary);
+        BoardLook.Caption(painter, theme, Caption, new UiVec2(Bounds.X, Bounds.Y), 10f, theme.TextSecondary);
         float size = context.Px(54f);
-        float end = painter.DrawText(theme.Mono, time, new UiVec2(Bounds.X, Bounds.Y + context.Px(10f)), size, ink).X;
+        float end = painter.DrawText(theme.MonoFigures, time, new UiVec2(Bounds.X, Bounds.Y + context.Px(10f)), size, ink).X;
         float x = end + context.Px(18f);
         float baseline = Bounds.Bottom - context.Px(14f);
-        BoardLook.Caption(painter, theme, "Rank earned", new UiVec2(x, baseline - context.Px(30f)), 10f, theme.TextSecondary);
+        BoardLook.Caption(painter, theme, SideCaption, new UiVec2(x, baseline - context.Px(30f)), 10f, theme.TextSecondary);
+        if (lit < 0)
+        {
+            float px = context.Px(15f);
+            painter.DrawLabel(theme.Heading, rank.ToUpperInvariant(), new UiVec2(x, baseline - context.Px(4f) - (px * 0.55f)), px, theme.TextBright, 0.1f);
+            return;
+        }
+
         BoardLook.Stripes(painter, theme, x, baseline - context.Px(4f), lit, rank, 15f, theme.TextBright);
     }
 }

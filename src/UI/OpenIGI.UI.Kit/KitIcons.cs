@@ -194,6 +194,13 @@ public enum KitIcon
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
 public static partial class KitIcons
 {
+    /// <summary>
+    /// Gets or sets the baked icons the interface draws from (<see cref="KitIconAtlas"/>, made on the renderer's images), so an
+    /// icon looks the same on every page; an icon they do not hold, or none set, is drawn in lines as before.
+    /// </summary>
+    /// <remarks>Set once by the host when it makes its renderer's images: one interface renderer to a process.</remarks>
+    public static IUiIcons? Baked { get; set; }
+
     /// <summary>An icon as a button's or a field's glyph: what <c>LeadingGlyph</c> and <c>TrailingGlyph</c> take.</summary>
     /// <param name="icon">The icon.</param>
     /// <returns>The glyph, drawing the icon in the ink it is given.</returns>
@@ -209,6 +216,10 @@ public static partial class KitIcons
     public static void Draw(UiPainter painter, KitIcon icon, UiVec2 center, float size, Bgra32 color)
     {
         ArgumentNullException.ThrowIfNull(painter);
+        if (Baked?.TryDraw(painter, icon.ToString(), center, size, color) == true)
+        {
+            return;
+        }
         float h = size * 0.5f;
         float stroke = MathF.Max(1f, size * 0.09f);
         float cx = center.X;

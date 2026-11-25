@@ -58,6 +58,22 @@ public sealed class UiTheme
     /// </remarks>
     public UiFont Mono { get; }
 
+    /// <summary>
+    /// Gets or sets the icons baked for the interface (an <see cref="Drawing.IconAtlas"/> made on the renderer's images), drawn
+    /// by name; null where the host made none, and a page draws its own glyphs instead.
+    /// </summary>
+    public Drawing.IUiIcons? Icons { get; set; }
+
+    /// <summary>
+    /// Gets or sets the mono face for figures set large -- a board's scores and times -- where a coverage atlas would be
+    /// stretched past the size it was baked at; the plain mono face where none is given.
+    /// </summary>
+    public UiFont MonoFigures
+    {
+        get => field ?? Mono;
+        set;
+    }
+
     /// <summary>Gets or sets the default body text size, in design units: a settings row's caption.</summary>
     public float BodyTextSize { get; set; } = 17f;
 

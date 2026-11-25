@@ -78,7 +78,7 @@ internal sealed class LeaderboardTeaser : Grid
         {
             LayoutContext context = painter.Context;
             float x = Bounds.X + context.Px(22f);
-            KitIcons.Draw(painter, KitIcon.Leaderboard, new UiVec2(x + context.Px(8f), Bounds.Center.Y), context.Px(15f), theme.Accent);
+            BoardLook.Icon(painter, theme, KitIcon.Leaderboard, new UiVec2(x + context.Px(8f), Bounds.Center.Y), context.Px(15f), theme.Accent);
             float px = context.Px(18f);
             painter.DrawLabel(theme.Display, "LEADERBOARD", new UiVec2(x + context.Px(26f), UiRowStyle.CapsCenterY(theme.Display, px, Bounds)), px, theme.TextBright, 0.08f);
             string season = "Ranked  ·  " + DateTimeOffset.UtcNow.ToString("MMM yyyy", CultureInfo.InvariantCulture);
@@ -152,7 +152,7 @@ internal sealed class LeaderboardTeaser : Grid
             float big = context.Px(40f);
             if (record?.YourSeconds is { } seconds)
             {
-                float end = painter.DrawText(theme.Mono, MissionRow.Time((int)Math.Round(seconds * 30)), new UiVec2(x, y - (big * 0.1f)), big, theme.Accent).X;
+                float end = painter.DrawText(theme.MonoFigures, MissionRow.Time((int)Math.Round(seconds * 30)), new UiVec2(x, y - (big * 0.1f)), big, theme.Accent).X;
                 string place = string.Create(CultureInfo.InvariantCulture, $"#{record.YourPlace:N0}  ·  {difficulty}  ·  {record.Rules}");
                 painter.DrawText(theme.Mono, place, new UiVec2(end + context.Px(12f), y + (big * 0.42f)), context.Px(13f), theme.TextSecondary);
             }

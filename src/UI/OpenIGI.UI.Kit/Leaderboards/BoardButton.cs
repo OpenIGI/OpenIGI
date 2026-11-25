@@ -131,33 +131,39 @@ public sealed class BoardButton : Control
         }
         else
         {
-            float inner = (Icon != KitIcon.None ? iconSize + gap : 0f) + captionWidth + (Key.Length > 0 ? gap + keyWidth : 0f);
+            // An icon alone stands in the middle, with no gap kept for a caption.
+            float iconRoom = Icon != KitIcon.None ? iconSize + (caption.Length > 0 ? gap : 0f) : 0f;
+            float inner = iconRoom + captionWidth + (Key.Length > 0 ? gap + keyWidth : 0f);
             x = box.Center.X - (inner / 2f);
         }
 
         if (Icon != KitIcon.None)
         {
-            BoardLook.Icon(painter, Icon, new UiVec2(x + (iconSize / 2f), mid), iconSize, ink);
+            BoardLook.Icon(painter, Theme, Icon, new UiVec2(x + (iconSize / 2f), mid), iconSize, ink);
             x += iconSize + gap + (Arrow ? context.Px(4f) : 0f);
         }
 
+        // The words keep clear of what stands at the right: the arrow and the key's cap.
+        float arrowRoom = Arrow ? context.Px(20f + 18f + 14f) + (Key.Length > 0 ? keyWidth + context.Px(14f) : 0f) : 0f;
+        float room = Arrow ? MathF.Max(0f, box.Right - arrowRoom - x) : box.Right - x;
         float detailSize = context.Px(11f);
         bool detail = Detail.Length > 0;
         float captionTop = detail
-            ? mid - ((captionSize * 1.05f) + context.Px(2f) + Theme.Mono.LineHeight(detailSize)) / 2f
+            ? mid - ((captionSize * 1.05f) + context.Px(3f) + Theme.Mono.LineHeight(detailSize)) / 2f
             : UiRowStyle.CapsCenterY(Theme.Heading, captionSize, box);
-        float end = painter.DrawLabel(Theme.Heading, caption, new UiVec2(x, captionTop), captionSize, ink, 0.12f).X;
+        string shown = Arrow ? Theme.Heading.Fit(caption, captionSize, room) : caption;
+        float end = painter.DrawLabel(Theme.Heading, shown, new UiVec2(x, captionTop), captionSize, ink, 0.12f).X;
         if (detail)
         {
             Bgra32 detailInk = solid ? Bgra32.FromRgba(74, 57, 22, (byte)(255f * appear)) : UiPalette.Fade(Theme.TextSecondary, appear);
-            painter.DrawText(Theme.Mono, Theme.Mono.Fit(Detail, detailSize, box.Right - x - context.Px(80f)), new UiVec2(x, captionTop + (captionSize * 1.05f) + context.Px(2f)), detailSize, detailInk);
+            painter.DrawText(Theme.Mono, Theme.Mono.Fit(Detail, detailSize, room), new UiVec2(x, captionTop + (captionSize * 1.05f) + context.Px(3f)), detailSize, detailInk);
         }
 
         if (Arrow)
         {
             float arrow = context.Px(18f);
             float right = box.Right - context.Px(20f);
-            BoardLook.Icon(painter, KitIcon.ArrowRight, new UiVec2(right - (arrow / 2f), mid), arrow, ink);
+            BoardLook.Icon(painter, Theme, KitIcon.ArrowRight, new UiVec2(right - (arrow / 2f), mid), arrow, ink);
             if (Key.Length > 0)
             {
                 BoardLook.Key(painter, Theme, Key, right - arrow - context.Px(14f) - keyWidth, mid, onAccent: solid, appear);

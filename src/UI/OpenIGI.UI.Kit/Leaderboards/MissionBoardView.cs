@@ -32,7 +32,8 @@ public sealed partial class MissionBoardView
     private readonly Action<bool>? _showMissions;
     private readonly Grid _root;
     private readonly Panel _hero = new();
-    private readonly Panel _columns = new();
+    // The headings, kept clear of the list's scrollbar as its rows are, so each stands over its column.
+    private readonly Panel _columns = new() { Margin = new Thickness(0f, 0f, 10f, 0f) };
     private readonly StackPanel _list = new() { Orientation = Orientation.Vertical, Spacing = 0f, Margin = new Thickness(0f, 0f, 10f, 0f) };
     private readonly ScrollView _scroll;
     private readonly StackPanel _pinned = new() { Orientation = Orientation.Vertical };
@@ -394,6 +395,7 @@ public sealed partial class MissionBoardView
             IsYou = isYou,
             Size = _size,
             Leader = leader,
+            MissionCount = _source.MissionsOf(_feed.Title).Count,
             Reported = row.Run is { } id && _reported.Contains(id),
         };
         if (line.HasReplay)

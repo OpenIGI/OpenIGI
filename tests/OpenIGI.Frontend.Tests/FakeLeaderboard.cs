@@ -177,7 +177,8 @@ internal sealed class FakeRunBoards(int count) : IRunBoardReader
                 Points: mission is null ? 42 - i : 0,
                 Run: mission is null ? null : $"run{i}",
                 Replay: mission is not null && i < 20 && i % 7 != 6,
-                Splits: mission is null ? null : [1446 + (i * 10), 4194 + (i * 30), 7581 + (i * 70)])),
+                Splits: mission is null ? null : [1446 + (i * 10), 4194 + (i * 30), 7581 + (i * 70)],
+                Missions: mission is null ? 6 : 0)),
         ];
         RunBoardRow? own = you is null ? null : rows.FirstOrDefault(r => r.Account == you);
         return Task.FromResult(new RunBoard(title, mission?.ToString(CultureInfo.InvariantCulture) ?? "all", difficulty, ruleset, metric, count * 7, rows, own));
