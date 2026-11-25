@@ -1,22 +1,21 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.Player;
+namespace OpenIGI.Game.Player;
 
 /// <summary>
-/// Project I.G.I.'s <c>HumanCamera</c> orbit (<c>camera/humancamera.c</c>): mode 3, around a body on a ladder, a wire or
-/// another interaction, and mode 5, over the player's body once dead.
+/// The human camera's orbit (<c>camera/humancamera.c</c>): mode 3, around a body on a ladder, a wire or another interaction,
+/// and mode 5, over the player's body once dead. Both games watch their player from it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Both modes enter the same way (<c>0x483360</c>, <c>0x483D40</c>): at no angle off the body's own frame, with the
-/// distance at 1024 and the target at 10240. The camera stands at the <b>target</b> distance behind the look point, along
-/// the orbit, and looks at it (<c>0x4834D0</c>'s <c>follow</c>); the distance only eases toward the target, 341.33 a
-/// tick (<c>0x483390</c>). It is pulled in only where every one of eight points around the body is hidden from it
-/// (<c>0x483A00</c>): then 204.8 short of whatever the line from the look point met. A body seen from anywhere keeps the
-/// camera where it is.
+/// This is Project I.G.I.'s orbit. Both modes enter the same way (<c>0x483360</c>, <c>0x483D40</c>): at no angle off the
+/// body's own frame, with the distance at 1024 and the target at 10240. The camera stands at the <b>target</b> distance
+/// behind the look point, along the orbit, and looks at it (<c>0x4834D0</c>'s <c>follow</c>); the distance only eases
+/// toward the target, 341.33 a tick (<c>0x483390</c>). It is pulled in only where every one of eight points around the
+/// body is hidden from it (<c>0x483A00</c>): then 204.8 short of whatever the line from the look point met. A body seen
+/// from anywhere keeps the camera where it is.
 /// </para>
 /// <para>
 /// Mode 5 also casts, each tick, four lines from the look point to the sides, top and bottom of a frame at the current
@@ -27,10 +26,16 @@ namespace OpenIGI.Game.Igi1.Player;
 /// </para>
 /// <para>
 /// The mouse turns the orbit with the player's own look settings, as every view of the remaster does; the look point
-/// and the distances move on the tick and are presented between their tick pair.
+/// and the distances move on the tick and are presented between their tick pair. A camera turned on the tick is drawn
+/// between ticks by <see cref="Preview"/>, with the mouse the next tick will be given, so the frame turns as the
+/// mouse does and the tick lands where the frame already was.
+/// </para>
+/// <para>
+/// <b>Not retail for I.G.I. 2</b>, whose own orbit (<c>0x4DE380</c>, <c>0x4DE830</c>) searches for room on entering,
+/// pushes off walls each frame and turns at most six degrees a poll; the remaster gives it this one.
 /// </para>
 /// </remarks>
-public sealed class Igi1HumanCamera
+public sealed class HumanOrbitCamera
 {
     /// <summary>World units in a metre.</summary>
     public const double UnitsPerMetre = WorldUnits.PerMetre;
@@ -162,20 +167,33 @@ public sealed class Igi1HumanCamera
         }
 
         _presentedAlpha = Math.Clamp(alpha, 0f, 1f);
-        if (!_hasTickPair)
+        _camera = Place(PresentedLook(_presentedAlpha), PresentedTarget(_presentedAlpha), _yaw, _pitch, out _);
+    }
+
+    /// <summary>
+    /// The camera a frame between two ticks would draw, the mouse still waiting for the next tick turning it as that tick
+    /// will, without moving the camera itself: what is drawn while the tick alone moves it.
+    /// </summary>
+    /// <param name="alpha">How far through the tick the frame is.</param>
+    /// <param name="mouseDeltaX">The horizontal counts the next tick will be given.</param>
+    /// <param name="mouseDeltaY">The vertical counts the next tick will be given.</param>
+    /// <param name="look">The look settings the next tick will turn it with.</param>
+    /// <returns>The eye to draw from, in metres; <see cref="Camera"/> while the camera does not have the view.</returns>
+    public Camera3D Preview(float alpha, float mouseDeltaX, float mouseDeltaY, MouseLookSettings look)
+    {
+        if (!IsActive)
         {
-            _ = BuildCamera(_look, _target);
-            return;
+            return _camera;
         }
 
-        _ = BuildCamera(
-            Vector3d.Lerp(_lookPrevTick, _look, _presentedAlpha),
-            _targetPrevTick + ((_target - _targetPrevTick) * _presentedAlpha));
+        float a = Math.Clamp(alpha, 0f, 1f);
+        (double yaw, double pitch) = Turned(look, mouseDeltaX, mouseDeltaY);
+        return Place(PresentedLook(a), PresentedTarget(a), yaw, pitch, out _);
     }
 
     /// <summary>Turns the orbit by a frame's mouse motion, its pitch held within 75 degrees.</summary>
-    /// <param name="mouseDeltaX">The horizontal motion, in pixels.</param>
-    /// <param name="mouseDeltaY">The vertical motion, in pixels.</param>
+    /// <param name="mouseDeltaX">The horizontal motion, in mouse counts.</param>
+    /// <param name="mouseDeltaY">The vertical motion, in mouse counts.</param>
     public void Control(float mouseDeltaX, float mouseDeltaY)
     {
         if (!IsActive)
@@ -183,20 +201,7 @@ public sealed class Igi1HumanCamera
             return;
         }
 
-        // The two modes turn their orbit opposite ways. Mode 3 (0x483390) takes yaw -= dx: the camera swings round the
-        // body so the view turns with the mouse, mouse right looking right. Mode 5 (0x483D80, through 0x483EC0) takes
-        // yaw += dx and its pitch from the raw dy, the profile's invert never read. Our pitch is the original's negated
-        // (Back's z is +sin), so an uninverted PitchDelta is that same raw dy.
-        if (_death)
-        {
-            _yaw += LookSettings.YawDelta(mouseDeltaX);
-            _pitch = Math.Clamp(_pitch + (LookSettings with { InvertPitch = false }).PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
-        }
-        else
-        {
-            _yaw -= LookSettings.YawDelta(mouseDeltaX);
-            _pitch = Math.Clamp(_pitch + LookSettings.PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
-        }
+        (_yaw, _pitch) = Turned(LookSettings, mouseDeltaX, mouseDeltaY);
         Present(_presentedAlpha);
     }
 
@@ -210,12 +215,27 @@ public sealed class Igi1HumanCamera
         _presentedAlpha = 1f;
     }
 
+    // The orbit's angles once a motion has turned it. The two modes turn their orbit opposite ways. Mode 3 (0x483390)
+    // takes yaw -= dx: the camera swings round the body so the view turns with the mouse, mouse right looking right.
+    // Mode 5 (0x483D80, through 0x483EC0) takes yaw += dx and its pitch from the raw dy, the profile's invert never read.
+    // Our pitch is the original's negated (Back's z is +sin), so an uninverted PitchDelta is that same raw dy.
+    private (double Yaw, double Pitch) Turned(MouseLookSettings look, float mouseDeltaX, float mouseDeltaY) => _death
+        ? (_yaw + look.YawDelta(mouseDeltaX),
+            Math.Clamp(_pitch + (look with { InvertPitch = false }).PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit))
+        : (_yaw - look.YawDelta(mouseDeltaX), Math.Clamp(_pitch + look.PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit));
+
+    // The look point and the target a frame between the tick pair is drawn at.
+    private Vector3d PresentedLook(float alpha) => _hasTickPair ? Vector3d.Lerp(_lookPrevTick, _look, alpha) : _look;
+
+    private double PresentedTarget(float alpha) =>
+        _hasTickPair ? _targetPrevTick + ((_target - _targetPrevTick) * alpha) : _target;
+
     // The orbit's backward direction: from the look point toward the camera.
-    private Vector3d Back()
+    private Vector3d Back(double yaw, double pitch)
     {
-        double heading = _facing + _yaw;
-        double level = SimMath.Cos(_pitch);
-        return new Vector3d(SimMath.Sin(heading) * level, -SimMath.Cos(heading) * level, SimMath.Sin(_pitch));
+        double heading = _facing + yaw;
+        double level = SimMath.Cos(pitch);
+        return new Vector3d(SimMath.Sin(heading) * level, -SimMath.Cos(heading) * level, SimMath.Sin(pitch));
     }
 
     // 0x483EC0: four lines from the look point to a frame `distance` behind it, half `distance * 0.4096` across.
@@ -226,7 +246,7 @@ public sealed class Igi1HumanCamera
             return;
         }
 
-        Vector3d back = Back();
+        Vector3d back = Back(_yaw, _pitch);
         Vector3d right = new(SimMath.Cos(_facing + _yaw), SimMath.Sin(_facing + _yaw), 0.0);
         Vector3d up = Vector3d.Cross(back, right).Normalized();
         double half = _distance * DeathFrameScale;
@@ -261,13 +281,20 @@ public sealed class Igi1HumanCamera
         }
     }
 
-    // 0x4834D0's follow: the camera at the target distance, pulled in only for a body hidden from it. Returns the length to
-    // the wall it was pulled in front of, or null when it stands at the target.
+    // Places the camera at the tick's own angles; returns the length to the wall it was pulled in front of, or null.
     private double? BuildCamera(Vector3d look, double target)
     {
-        Vector3d back = Back();
+        _camera = Place(look, target, _yaw, _pitch, out double? pulled);
+        return pulled;
+    }
+
+    // 0x4834D0's follow: the camera at the target distance, pulled in only for a body hidden from it. Gives the length to
+    // the wall it was pulled in front of, or null when it stands at the target.
+    private Camera3D Place(Vector3d look, double target, double yaw, double pitch, out double? pulled)
+    {
+        Vector3d back = Back(yaw, pitch);
         Vector3d eye = look + (back * target);
-        double? pulled = null;
+        pulled = null;
         if (_walls is { } walls && walls(look, eye, out WorldRayHit hit) && IsBodyHidden(walls, eye))
         {
             double reach = Vector3d.Distance(look, hit.Position);
@@ -277,10 +304,9 @@ public sealed class Igi1HumanCamera
 
         Vector3d toLook = look - eye;
         double length = toLook.Length;
-        float yaw = (float)SimMath.Atan2(toLook.X, toLook.Y);
-        float pitch = length > 0.0 ? (float)SimMath.Asin(toLook.Z / length) : 0f;
-        _camera = new Camera3D(eye / UnitsPerMetre, Camera3D.LookRotation(yaw, pitch));
-        return pulled;
+        float lookYaw = (float)SimMath.Atan2(toLook.X, toLook.Y);
+        float lookPitch = length > 0.0 ? (float)SimMath.Asin(toLook.Z / length) : 0f;
+        return new Camera3D(eye / UnitsPerMetre, Camera3D.LookRotation(lookYaw, lookPitch));
     }
 
     // 0x483A00: whether every line from the eight points around the body to the camera is blocked.

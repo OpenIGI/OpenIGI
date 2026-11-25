@@ -214,9 +214,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// The world as the player's eye looks across it: the player's own body is no wall. A line from the eye starts inside the
     /// head's bones, so the world itself would answer with the player, as the crosshair's trace also passes him (<see cref="EnemyUnderAim"/>).
     /// </remarks>
-    ICollisionWorld? ITitlePlayer.Collision => _eyeWorld ??= new Igi2EyeCollision(this);
+    ICollisionWorld? ITitlePlayer.Collision => EyeWorld;
 
     private Igi2EyeCollision? _eyeWorld;
+
+    // The level's collision as the player's own eye looks across it.
+    private Igi2EyeCollision EyeWorld => _eyeWorld ??= new Igi2EyeCollision(this);
 
     /// <summary>Gets the level's conveyor belts the player may stand on, by level id.</summary>
     public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors => _surroundings.Conveyors;
@@ -285,7 +288,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         ? cut.Position
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.Position
         : ActingStandIn is { } standIn ? standIn.EyePosition
-        : (Human.CameraMode is 3 or 5 ? _movementCamera.Position
+        : (IsOrbitView ? _orbit.Camera.Position * HumanOrbitCamera.UnitsPerMetre
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position) + ViewError.Offset(0f);
 
     /// <inheritdoc/>
@@ -317,8 +320,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 return standIn.ViewOrientation;
             }
 
-            Matrix3f m = Human.CameraMode is 3 or 5 ? _movementCamera.Orientation
-                : Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
+            if (IsOrbitView)
+            {
+                return _orbit.Camera.Orientation;
+            }
+
+            Matrix3f m = Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
                 new Vector3f(m.M13, m.M23, m.M33),
@@ -331,7 +338,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.FieldOfView
         : ActingStandIn is { } standIn ? standIn.FieldOfViewScale
-        : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
+        : IsOrbitView ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -698,7 +705,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             StatusMessages.Run();
         }
 
-        _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);
+        RunOrbit(input);
         ResetLook();
         Casings?.Run();
         ReadBinoculars();

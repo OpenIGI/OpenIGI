@@ -414,6 +414,13 @@ public sealed partial class GameHost
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
                 profile?.InvertMouse ?? false)
             : null);
+
+        // The orbit round the body, likewise: turned by the mouse waiting for the next tick, round the body as it is drawn. A
+        // recording's orbit turns a tick at a time, and is drawn between its ticks' eyes as the walking eye is.
+        _titlePresentation.SetOrbitPreview(available && _titleFeatures?.Orbit is { IsOrbiting: true } orbit
+            ? orbit.PreviewOrbit(_titlePresentationBlend, _titleMouseX, _titleMouseY,
+                profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity, profile?.InvertMouse ?? false)
+            : null);
     }
 
     /// <summary>Whether the title's cutscene break key is down this tick.</summary>

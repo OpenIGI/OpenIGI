@@ -1,12 +1,13 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using Xunit;
 
 namespace OpenIGI.Presentation.Tests;
 
-/// <summary>Project I.G.I.'s HumanCamera orbit: modes 3 and 5 (<c>camera/humancamera.c</c>).</summary>
-public sealed class Igi1HumanCameraTests
+/// <summary>The human camera's orbit both games watch their player from: modes 3 and 5 (<c>camera/humancamera.c</c>).</summary>
+public sealed class HumanOrbitCameraTests
 {
     private static readonly Vector3d Feet = new(0.0, 0.0, 0.0);
     private static readonly Vector3d Eye = new(0.0, 0.0, 6703.44);
@@ -15,13 +16,13 @@ public sealed class Igi1HumanCameraTests
     [Fact]
     public void ItStartsAtTheTargetDistanceBehindTheBody()
     {
-        Igi1HumanCamera camera = new();
+        HumanOrbitCamera camera = new();
         camera.Begin(Eye, Feet, facing: 0f, walls: null, death: false);
 
         // Facing zero looks along +Y; the camera is 2.5 m back, down -Y, level with the eye.
-        Vector3d eye = camera.Camera.Position * Igi1HumanCamera.UnitsPerMetre;
+        Vector3d eye = camera.Camera.Position * HumanOrbitCamera.UnitsPerMetre;
         Assert.Equal(0.0, eye.X, 3);
-        Assert.Equal(-Igi1HumanCamera.TargetDistanceInUnits, eye.Y, 3);
+        Assert.Equal(-HumanOrbitCamera.TargetDistanceInUnits, eye.Y, 3);
         Assert.Equal(Eye.Z, eye.Z, 3);
     }
 
@@ -34,7 +35,7 @@ public sealed class Igi1HumanCameraTests
     [InlineData(true, 1.0)]
     public void MouseRightSwingsTheLadderCameraLeftAndTheDeathCameraRight(bool death, double side)
     {
-        Igi1HumanCamera camera = new();
+        HumanOrbitCamera camera = new();
         camera.Begin(Eye, Feet, facing: 0f, walls: null, death);
         camera.Control(mouseDeltaX: 100f, mouseDeltaY: 0f);
 
@@ -49,16 +50,16 @@ public sealed class Igi1HumanCameraTests
         // A wall at y = -6000 across everything at the eye's height and above.
         WorldRayCast highWall = (Vector3d from, Vector3d end, out WorldRayHit hit) =>
             Cross(from, end, -6000.0, minZ: 4000.0, out hit);
-        Igi1HumanCamera seen = new();
+        HumanOrbitCamera seen = new();
         seen.Begin(Eye, Feet, facing: 0f, highWall, death: false);
-        Assert.Equal(-Igi1HumanCamera.TargetDistanceInUnits, seen.Camera.Position.Y * Igi1HumanCamera.UnitsPerMetre, 3);
+        Assert.Equal(-HumanOrbitCamera.TargetDistanceInUnits, seen.Camera.Position.Y * HumanOrbitCamera.UnitsPerMetre, 3);
 
         // The same wall reaching the ground hides every point around the body: 204.8 short of it.
         WorldRayCast fullWall = (Vector3d from, Vector3d end, out WorldRayHit hit) =>
             Cross(from, end, -6000.0, minZ: double.MinValue, out hit);
-        Igi1HumanCamera hidden = new();
+        HumanOrbitCamera hidden = new();
         hidden.Begin(Eye, Feet, facing: 0f, fullWall, death: false);
-        Assert.Equal(-(6000.0 - Igi1HumanCamera.KeepOffInUnits), hidden.Camera.Position.Y * Igi1HumanCamera.UnitsPerMetre, 3);
+        Assert.Equal(-(6000.0 - HumanOrbitCamera.KeepOffInUnits), hidden.Camera.Position.Y * HumanOrbitCamera.UnitsPerMetre, 3);
     }
 
     /// <summary>
@@ -68,28 +69,67 @@ public sealed class Igi1HumanCameraTests
     [Fact]
     public void TheDeathCameraCollidesItsFrameAndEasesBackOut()
     {
-        Igi1HumanCamera camera = new();
+        HumanOrbitCamera camera = new();
         camera.Begin(Eye, Feet, facing: 0f, walls: null, death: true);
         for (int tick = 0; tick < 40; tick++)
         {
             camera.Tick(Eye, Feet);
         }
 
-        Assert.Equal(Igi1HumanCamera.TargetDistanceInUnits, camera.TargetDistance, 3);
-        Assert.Equal(Igi1HumanCamera.TargetDistanceInUnits, camera.Distance, 3);
+        Assert.Equal(HumanOrbitCamera.TargetDistanceInUnits, camera.TargetDistance, 3);
+        Assert.Equal(HumanOrbitCamera.TargetDistanceInUnits, camera.Distance, 3);
 
         // A wall 8000 behind, facing the camera's lines.
         WorldRayCast wall = (Vector3d from, Vector3d end, out WorldRayHit hit) =>
             Cross(from, end, -8000.0, minZ: double.MinValue, out hit);
-        Igi1HumanCamera blocked = new();
+        HumanOrbitCamera blocked = new();
         blocked.Begin(Eye, Feet, facing: 0f, wall, death: true);
         for (int tick = 0; tick < 40; tick++)
         {
             blocked.Tick(Eye, Feet);
         }
 
-        Assert.True(blocked.TargetDistance < Igi1HumanCamera.TargetDistanceInUnits);
-        Assert.True(blocked.TargetDistance >= Igi1HumanCamera.DeathNearestInUnits);
+        Assert.True(blocked.TargetDistance < HumanOrbitCamera.TargetDistanceInUnits);
+        Assert.True(blocked.TargetDistance >= HumanOrbitCamera.DeathNearestInUnits);
+    }
+
+    /// <summary>
+    /// A frame between ticks draws the orbit turned by the mouse the next tick will be given, without turning the orbit
+    /// itself; the tick given that mouse then stands exactly where the frame drew it, so nothing snaps back.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void APreviewTurnsTheFrameAsTheNextTickWillAndLeavesTheOrbitAlone(bool death)
+    {
+        MouseLookSettings look = MouseLookSettings.FromSensitivity(0.6f, invertPitch: false);
+        Vector3d raised = new(Eye.X, Eye.Y, Eye.Z + 512.0);
+        HumanOrbitCamera camera = new() { LookSettings = look };
+        camera.Begin(Eye, Feet, facing: 0.3f, walls: null, death);
+        camera.Tick(raised, Feet);
+        Camera3D before = camera.Camera;
+
+        Camera3D drawn = camera.Preview(1f, mouseDeltaX: 140f, mouseDeltaY: -60f, look);
+        Assert.Equal(before.Position, camera.Camera.Position);
+        Assert.NotEqual(before.Position, drawn.Position);
+
+        camera.Control(140f, -60f);
+        Assert.Equal(drawn.Position, camera.Camera.Position);
+        Assert.Equal(drawn.Orientation, camera.Camera.Orientation);
+    }
+
+    /// <summary>Between two ticks the preview orbits the look point as it is drawn there, a share of the way along.</summary>
+    [Fact]
+    public void APreviewFollowsTheLookPointBetweenTicks()
+    {
+        Vector3d raised = new(Eye.X, Eye.Y, Eye.Z + 1000.0);
+        HumanOrbitCamera camera = new();
+        camera.Begin(Eye, Feet, facing: 0f, walls: null, death: false);
+        camera.Tick(Eye, Feet);
+        camera.Tick(raised, Feet);
+
+        double z = camera.Preview(0.25f, 0f, 0f, MouseLookSettings.Default).Position.Z * HumanOrbitCamera.UnitsPerMetre;
+        Assert.Equal(Eye.Z + 250.0, z, 3);
     }
 
     // A plane y = wallY, facing +Y, blocking a segment that crosses it at a height of at least minZ.

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -16,7 +17,8 @@ namespace OpenIGI.Game.Igi1.Player;
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
 public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground)
-    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement, IWeaponWheelPlayer, ITitleMatchPlayer, ITitleBinoculars
+    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement, IWeaponWheelPlayer, ITitleMatchPlayer, ITitleBinoculars,
+        ITitleOrbitView
 {
     private TitleLookPreview? _look;
 
@@ -24,7 +26,7 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <summary>Gets the player.</summary>
     public Igi1HumanPlayer Human { get; } = human ?? throw new ArgumentNullException(nameof(human));
 
-    private readonly Igi1HumanCamera _death = new();
+    private readonly HumanOrbitCamera _death = new();
     private Vector3d _deathFeet;
 
     /// <summary>
@@ -100,6 +102,14 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
 
     /// <summary>Gets a value indicating whether the death camera has the view: the player is dead and its camera pulled back.</summary>
     public bool IsDeathViewActive => Human.Life.IsDead && _death.IsActive;
+
+    /// <inheritdoc/>
+    /// <remarks>The death camera, which the tick turns by the tick's mouse and the frame draws between ticks.</remarks>
+    public bool IsOrbiting => IsDeathViewActive;
+
+    /// <inheritdoc/>
+    public Camera3D PreviewOrbit(float tickBlend, float mouseX, float mouseY, float sensitivity, bool invertMouse) =>
+        _death.Preview(tickBlend, mouseX, mouseY, MouseLookSettings.FromSensitivity(sensitivity, invertMouse));
 
     /// <summary>Pulls the camera back from the player's body as it falls (the human camera's mode 5).</summary>
     /// <param name="feet">Where the body lies, in world units.</param>

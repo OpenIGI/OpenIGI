@@ -19,8 +19,8 @@ namespace OpenIGI.Presentation.Igi1;
 internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger) : IMissionViewpoint
 {
     private readonly OverShoulderView _thirdPerson = new();
-    private Igi1HumanCamera _death = new();
-    private Igi1HumanCamera _interaction = new();
+    private HumanOrbitCamera _death = new();
+    private HumanOrbitCamera _interaction = new();
     private readonly TeammateView _teammate = new();
     private WorldRayCast? _deathWalls;
     private Vector3d _interactionOrigin;
