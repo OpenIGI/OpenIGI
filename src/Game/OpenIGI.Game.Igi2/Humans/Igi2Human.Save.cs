@@ -76,7 +76,7 @@ public abstract partial class Igi2Human
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(extras);
-        Igi2ModelObjState.Write(writer, Position, Rows(Orientation));
+        Igi2ModelObjState.Write(writer, Position, Rows(Orientation), IsActive);
         writer.Array(Channels.Last);
         writer.Array(Channels.Current);
         writer.Real(Damage.Damage);
@@ -181,9 +181,13 @@ public abstract partial class Igi2Human
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = new();
-        (Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
+        (Vector3d position, float[] orientation, bool inWorld) = Igi2ModelObjState.Read(reader);
         Position = position;
         Orientation = Matrix(orientation);
+
+        // ModelObjParameters_DeSerializeHandler: taken out of the world, read, and registered again only when the save had it in, so
+        // a soldier whose container was shut when the game was saved is out of it once more, neither drawn nor bumped into.
+        SetInWorld(inWorld);
         float[] last = reader.FloatArray();
         float[] current = reader.FloatArray();
         Channels.Restore(current, last);

@@ -163,6 +163,27 @@ public sealed class Igi2HumanMoveTests
     }
 
     /// <summary>
+    /// A human out of the world blocks nobody: <c>Human_HumanCollision</c> reads each one's in-world byte, which its remove handler
+    /// clears -- location1/level3's helicopter squad waits on the landing ground under a shut container until it is called in.
+    /// </summary>
+    [Fact]
+    public void A_human_out_of_the_world_is_walked_through()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeSurroundings surroundings) = OnFloor();
+        (Igi2HumanPlayer other, _, _) = Igi2PlayerFakes.Player();
+        other.Position = new Vector3d(1000.0, 0.0, 0.0);
+        other.SetInWorld(false);
+        surroundings.Humans.AddRange([player, other]);
+        player.IsHumanCollision = true;
+        player.Speed = new Vector3f(500f, 0f, 0f);
+
+        player.Move();
+
+        Assert.Equal(500.0, player.Position.X);
+        Assert.Empty(surroundings.AiEvents);
+    }
+
+    /// <summary>
     /// A dead body in the air falls by 44.600887 a tick and keeps that as its speed: <c>Human_HandleDeathCollision</c> takes the
     /// move as made, no faster than falling, less the gravity.
     /// </summary>

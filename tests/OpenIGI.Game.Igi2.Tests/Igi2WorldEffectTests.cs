@@ -205,6 +205,35 @@ public sealed class Igi2WorldEffectTests
     }
 
     /// <summary>
+    /// The container a level keeps its player under takes the player out of the world while a cutscene plays -- the player's remove
+    /// handler deletes the computer and clears the in-world byte -- and puts it back after (<c>Human_RegisterDynCubeObjHandler</c>).
+    /// Before, the player stayed in, and one caught working the balloon winch as location1/level3's outro began stood frozen beside
+    /// the scene's own David Jones.
+    /// </summary>
+    [Fact]
+    public void A_shut_container_takes_the_player_out_of_the_world()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        Engine.Tasks.TaskType conditional = types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
+        Engine.Tasks.TaskType players = types.Register<Player.Igi2HumanPlayerTask>("HumanPlayer");
+        Flow.Igi2ConditionalContainerTask container = (Flow.Igi2ConditionalContainerTask)tree.New(root, conditional);
+        Player.Igi2HumanPlayerTask task = (Player.Igi2HumanPlayerTask)tree.New(container, players);
+        (Player.Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.Player();
+        player.Computer = new Computer.Igi2Computer();
+        player.Computer.Open();
+        task.Human = player;
+
+        Flow.Igi2LevelRun.RemoveFromWorld(container);
+        Assert.False(player.IsActive);
+        Assert.False(player.Computer.IsOpen);
+
+        Flow.Igi2LevelRun.PutInWorld(container);
+        Assert.True(player.IsActive);
+    }
+
+    /// <summary>
     /// A countdown is shown from the run its start expression holds until it runs out; taken out of the world its display goes, and the
     /// next run while it counts puts it back (<c>MissionTimer_RunHandler</c>, <c>MissionTimer_RemoveHandler</c>).
     /// </summary>

@@ -46,8 +46,10 @@ public sealed partial class Igi2TitlePlayer : ITitleOverShoulder
         _outlineTick = -1;
     }
 
-    // Whether the working body is drawn: the original's own cameras that watch it, or the remaster's over the shoulder.
-    private bool IsBodyShown => Human.CameraMode is 3 or 5 || _overShoulderBody;
+    // Whether the working body is drawn: the original's own cameras that watch it, or the remaster's over the shoulder -- and only
+    // while the body is in the world. A cutscene's container takes the player out (its remove handler), and a player caught at a
+    // winch or a ladder as the scene began stood frozen beside the actor that plays it.
+    private bool IsBodyShown => Human.IsActive && (Human.CameraMode is 3 or 5 || _overShoulderBody);
 
     // Hands the tick's crosshair ray to the player before it runs, and the world it is traced through.
     private void TakeOverShoulderAim()

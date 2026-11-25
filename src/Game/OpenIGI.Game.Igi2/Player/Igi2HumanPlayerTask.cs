@@ -16,8 +16,15 @@ namespace OpenIGI.Game.Igi2.Player;
 /// The <c>Weapon</c> script is evaluated once the level is loaded (<see cref="Weapons.Igi2HumanWeapons"/>).
 /// </para>
 /// </remarks>
-public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask
+public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask, World.IIgi2WorldMember
 {
+    /// <inheritdoc/>
+    /// <remarks>The player's remove handler: its container shut, the player leaves the world (<see cref="Igi2HumanPlayer.RemoveFromWorld"/>).</remarks>
+    public void RemoveFromWorld() => Human?.RemoveFromWorld();
+
+    /// <inheritdoc/>
+    /// <remarks><c>Human_RegisterDynCubeObjHandler</c>: its container open again, the player is back.</remarks>
+    public void PutInWorld() => Human?.PutInWorld();
     /// <summary>Gets or sets the position the level places the player at.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
     public Vector3d LevelPosition { get => SpawnPosition; set => SpawnPosition = value; }
