@@ -17,6 +17,12 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Gets or sets a value indicating whether an emptied magazine fills from what is carried at once: the no-reload cheat.</summary>
     public bool IsReloadless { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether nothing the player carries or holds slows it: the all-weapons cheat, which would
+    /// otherwise have the whole roster weigh on every step (<see cref="CarriedSpeedScale"/>).
+    /// </summary>
+    public bool IsWeightless { get; set; }
+
     /// <summary>Gets or sets a value indicating whether guards and cameras do not see the player: the unseen cheat.</summary>
     public bool IsUnseen { get; set; }
 
@@ -33,9 +39,13 @@ public sealed partial class Igi2HumanPlayer
         Damage.Toughness = cheats.HealthMultiplier > 0f ? cheats.HealthMultiplier : 1f;
         MoveScale = cheats.SpeedMultiplier > 0f ? cheats.SpeedMultiplier : 1f;
         JumpScale = cheats.JumpMultiplier > 0f ? cheats.JumpMultiplier : 1f;
+
+        // Project I.G.I.'s body walks and jumps by its own copy of the cheats; its health is not the player's, so none of that reaches it.
+        Igi1Feet?.Body.ApplyCheats(Game.Player.PlayerCheatOptions.Retail with { SpeedMultiplier = MoveScale, JumpMultiplier = JumpScale });
         IsRecoilless = cheats.NoRecoil;
         IsReloadless = cheats.NoReload;
         IsUnseen = cheats.Unseen;
+        IsWeightless = cheats.AllWeapons;
         if (firing is not null)
         {
             firing.KeepsLoaded = cheats.InfiniteAmmo;

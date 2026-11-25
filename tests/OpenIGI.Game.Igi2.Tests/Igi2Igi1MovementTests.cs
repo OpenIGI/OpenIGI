@@ -134,6 +134,22 @@ public sealed class Igi2Igi1MovementTests
         Assert.InRange(laden / free, expected - 0.001, expected + 0.001);
     }
 
+    /// <summary>
+    /// The all-weapons cheat takes the weight off, whatever is carried or held, under either movement; the weight is back once it is
+    /// off.
+    /// </summary>
+    [Fact]
+    public void The_all_weapons_cheat_takes_the_weight_off()
+    {
+        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor(new Igi2PlayerFakes.RecordingWeapon { SummedMovementSlowDown = 0.8f });
+
+        player.TakeCheats(PlayerCheatOptions.Retail with { AllWeapons = true }, firing: null);
+        Assert.Equal(1f, player.CarriedSpeedScale);
+
+        player.TakeCheats(PlayerCheatOptions.Retail, firing: null);
+        Assert.Equal(0.5f, player.CarriedSpeedScale);
+    }
+
     /// <summary>The session's comparison stands in for the chosen movement; off leaves the settings' own.</summary>
     [Fact]
     public void The_comparison_stands_in_for_the_settings()
@@ -158,6 +174,95 @@ public sealed class Igi2Igi1MovementTests
         }
 
         return Across(player.Position - start);
+    }
+
+    /// <summary>
+    /// The AI hears the player's steps on Project I.G.I.'s body as it hears them on I.G.I. 2's own: running and walking both send
+    /// the walk event, tick by tick, under either movement.
+    /// </summary>
+    /// <param name="movement">The movement the player has.</param>
+    /// <param name="pace">Nothing for the run, the walk toggle for the walk.</param>
+    [Theory]
+    [InlineData(Igi2PlayerMovement.Igi2, Igi2PlayerAction.None)]
+    [InlineData(Igi2PlayerMovement.Igi1, Igi2PlayerAction.None)]
+    [InlineData(Igi2PlayerMovement.Igi2, Igi2PlayerAction.ModifyWalkRun)]
+    [InlineData(Igi2PlayerMovement.Igi1, Igi2PlayerAction.ModifyWalkRun)]
+    public void The_AI_hears_the_steps_under_either_movement(Igi2PlayerMovement movement, Igi2PlayerAction pace)
+    {
+        (Igi2HumanPlayer player, _, Igi2PlayerFakes.FakeSurroundings surroundings) = Igi2PlayerFakes.OnFloor();
+        player.Movement = movement;
+        player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, null), player);
+        Tick(player, Igi2PlayerAction.None);
+        for (int i = 0; i < 40; i++)
+        {
+            Tick(player, Igi2PlayerAction.MoveForwards | pace);
+        }
+
+        int steps = surroundings.AiEvents.Count(e => e.Event == Ai.Igi2AiEvent.Walk);
+        Assert.True(steps > 20, $"Only {steps} walk events in 40 ticks under {movement}, state {player.Locomotion.CurrentState}.");
+    }
+
+    /// <summary>
+    /// Running into a guard on Project I.G.I.'s body is heard as on I.G.I. 2's own: the bump, event 9 within three metres of the
+    /// view (<c>Human_HumanCollision</c>), which the first game's body, keeping out of humans by its own rule, does not make.
+    /// </summary>
+    [Fact]
+    public void Running_into_a_guard_is_heard_on_Project_IGIs_body()
+    {
+        (Igi2HumanPlayer player, _, Igi2PlayerFakes.FakeSurroundings surroundings) = Igi2PlayerFakes.OnFloor();
+        player.Movement = Igi2PlayerMovement.Igi1;
+        player.IsHumanCollision = true;
+        Tick(player, Igi2PlayerAction.None);
+        (Igi2HumanPlayer guard, _, _) = Igi2PlayerFakes.Player();
+        Matrix3f o = player.Orientation;
+        guard.Position = player.Position + (new Vector3d(o.M12, o.M22, 0d) * 8192d);
+        surroundings.Humans.AddRange([player, guard]);
+        player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, () => surroundings.Humans), player);
+
+        for (int i = 0; i < 60; i++)
+        {
+            Tick(player, Igi2PlayerAction.MoveForwards);
+        }
+
+        Assert.Contains(surroundings.AiEvents, static e => e.Event == Ai.Igi2AiEvent.Walk && e.Radius == 12288f);
+        Assert.True(Across(guard.Position - player.Position) < 3072d, $"The player stopped {Across(guard.Position - player.Position)} short.");
+    }
+
+    /// <summary>The speed and jump cheats reach Project I.G.I.'s body: it runs further and jumps higher for them.</summary>
+    [Fact]
+    public void The_speed_and_jump_cheats_reach_Project_IGIs_body()
+    {
+        (double run, double jump) = RunAndJump(PlayerCheatOptions.Retail);
+        (double fastRun, double highJump) = RunAndJump(PlayerCheatOptions.Retail with { SpeedMultiplier = 2f, JumpMultiplier = 2f });
+
+        Assert.True(fastRun > run * 1.5, $"Run {run} with no cheat, {fastRun} at twice the speed.");
+        Assert.True(highJump > jump * 2.5, $"Jump {jump} with no cheat, {highJump} at twice the launch.");
+    }
+
+    // How far the player runs in thirty ticks, then how high it jumps from there, on the first game's body under the cheats.
+    private static (double Run, double Jump) RunAndJump(PlayerCheatOptions cheats)
+    {
+        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor();
+        player.Movement = Igi2PlayerMovement.Igi1;
+        player.Igi1Feet = new Igi1FootMotion(new Igi1FootWorld(Floor, null, null, null), player);
+        player.TakeCheats(cheats, firing: null);
+        Tick(player, Igi2PlayerAction.None);
+        Vector3d start = player.Position;
+        for (int i = 0; i < 30; i++)
+        {
+            Tick(player, Igi2PlayerAction.MoveForwards);
+        }
+
+        double run = Across(player.Position - start);
+        Tick(player, Igi2PlayerAction.Jump);
+        double highest = 0d;
+        for (int i = 0; i < 120; i++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+            highest = Math.Max(highest, player.Position.Z);
+        }
+
+        return (run, highest);
     }
 
     /// <summary>Under I.G.I. 2's own movement the body is never stepped: the player moves as the sequel moves it.</summary>

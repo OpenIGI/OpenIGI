@@ -74,6 +74,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Vector3d to = feet.Body.Position;
+        HeardBumpingOnIgi1Feet(start, to);
         Vector3d footing = to;
         GroundCollision(to, ref footing, GroundTolerance);
         Locomotion.Flags = feet.Body.IsGrounded
@@ -84,6 +85,19 @@ public sealed partial class Igi2HumanPlayer
         DeltaTranslation = default;
         Speed = feet.Body.Velocity;
         ArriveFrom(start, to);
+    }
+
+    /// <summary>
+    /// The noise of the step pressing into a guard, as I.G.I. 2's own move makes it (<see cref="Igi2Human.HumanCollision"/>): the
+    /// first game's body keeps out of other humans by its own, narrower rule and makes none, so the sequel's test is run on the
+    /// step the body took, for its noise alone; where the body stands is left as it put it.
+    /// </summary>
+    private void HeardBumpingOnIgi1Feet(Vector3d start, Vector3d to)
+    {
+        if (!IsDisableCollision && IsHumanCollision)
+        {
+            HumanCollision(start, ref to, out _);
+        }
     }
 
     /// <summary>The tick's controls as Project I.G.I.'s body reads them.</summary>

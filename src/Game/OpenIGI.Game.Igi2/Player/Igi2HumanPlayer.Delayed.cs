@@ -12,11 +12,19 @@ public sealed partial class Igi2HumanPlayer
     private const float PrecisionSettling = 0.7f;
 
     /// <summary>Gets what the weapons carried leave of the player's speed: one less their summed slow-down, at most a half off.</summary>
-    /// <remarks>Rounded once, as the original stores it; the jump wait's half of it is exact.</remarks>
+    /// <remarks>
+    /// Rounded once, as the original stores it; the jump wait's half of it is exact. <b>Not retail:</b> one, whatever is carried or
+    /// held, while the all-weapons cheat is on (<see cref="IsWeightless"/>).
+    /// </remarks>
     public float CarriedSpeedScale
     {
         get
         {
+            if (IsWeightless)
+            {
+                return 1f;
+            }
+
             float slowDown = Weapon.SummedMovementSlowDown;
             return ((Fpu)1.0 - (slowDown < MaxMovementSlowDown ? slowDown : MaxMovementSlowDown)).F;
         }
