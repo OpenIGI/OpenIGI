@@ -604,6 +604,7 @@ public sealed partial class GameHost : IDisposable
         // exists -- the player's own only where the run plays as the player (HostOptions.ReadsUserProfiles). Nothing here
         // ever writes into the original installation.
         _configuration = HostConfiguration.Load(_fileSystem, _logger, _options.ReadsUserProfiles);
+        MountSavedLanguage();
         RestoreTitleInputBindings();
         _menuDisplay = new RetailMenuDisplay(
             () => _device.Capabilities.Renderer,
