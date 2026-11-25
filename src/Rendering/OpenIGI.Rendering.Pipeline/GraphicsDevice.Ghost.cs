@@ -12,6 +12,10 @@ public sealed partial class GraphicsDevice
     private readonly List<GhostBodyDraw> _ghostDraws = [];
     private GhostPass? _ghost;
     private GhostLook _ghostLook;
+    private TextureHandle _ghostRamp;
+
+    // The texels of the ramp a ghost drawn straight into the frame is coloured by.
+    private const int GhostRampTexels = 64;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -21,7 +25,21 @@ public sealed partial class GraphicsDevice
     public void DrawGhost(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, in GhostLook look)
     {
         ThrowIfDisposed();
-        if (DrawingShadow || TakeBody(mesh, ranges, modelView) is not { } body)
+        if (DrawingShadow)
+        {
+            return;
+        }
+
+        // A frame drawn straight to the screen -- the forward renderer's, with no lit scene for the ghost pass to lay it
+        // over -- has it drawn into the frame as it goes, as I.G.I. 2's infrared view draws a body: unlit, its edges bright and
+        // its middle faint, over what is behind it.
+        if (!Capturing)
+        {
+            DrawInfrared(mesh, ranges, modelView, GhostRamp(), InfraredDraw.SeenThrough);
+            return;
+        }
+
+        if (TakeBody(mesh, ranges, modelView) is not { } body)
         {
             return;
         }
@@ -57,6 +75,39 @@ public sealed partial class GraphicsDevice
             new GhostFrame(width, height, scene.Width, scene.Height, _unprojection, exposure),
             _ghostLook,
             FrameSlot);
+    }
+
+    /// <summary>
+    /// The ramp a ghost drawn straight into the frame is coloured by, made the first time one is: across it, from a face turned to
+    /// the eye to one edge-on (the infrared shader's ramp coordinate), the ghost pass's tint, faint, brightening to near white and
+    /// near opaque at the rim, which is the ghost's outline.
+    /// </summary>
+    private TextureHandle GhostRamp()
+    {
+        if (_ghostRamp.IsValid)
+        {
+            return _ghostRamp;
+        }
+
+        Span<Bgra32> texels = stackalloc Bgra32[GhostRampTexels];
+        for (int i = 0; i < GhostRampTexels; i++)
+        {
+            float rim = MathF.Pow(i / (float)(GhostRampTexels - 1), 1.5f);
+            float white = rim * rim * rim;
+            texels[i] = new Bgra32(
+                Byte(float.Lerp(GhostPass.Tint.B, 1f, white)),
+                Byte(float.Lerp(GhostPass.Tint.G, 0.97f, white)),
+                Byte(float.Lerp(GhostPass.Tint.R, 0.85f, white)),
+                Byte(0.35f + (0.65f * rim)));
+        }
+
+        _ghostRamp = _textures.Create(
+            new TextureDescription(GhostRampTexels, 1, 1, TextureFilter.Linear, TextureAddressMode.Clamp),
+            texels,
+            "ghost.ramp");
+        return _ghostRamp;
+
+        static byte Byte(float value) => (byte)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f);
     }
 
     private void DisposeGhost()
