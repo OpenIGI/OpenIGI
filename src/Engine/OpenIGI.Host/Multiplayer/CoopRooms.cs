@@ -558,7 +558,8 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     private CoopRoomInfo[] Lines()
     {
         double now = _clock.Elapsed.TotalSeconds;
-        return [.. new BrowserFilter().Apply(_browser?.Servers ?? []).Select(s => new CoopRoomInfo(
+        // Only this game's servers: the saved and recent are both games', and one of the other never answers this one.
+        return [.. new BrowserFilter { Title = _titleId() }.Apply(_browser?.Servers ?? []).Select(s => new CoopRoomInfo(
             s.Key,
             s.Info.Name,
             int.TryParse(s.Info.Map, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) ? mission : 0,

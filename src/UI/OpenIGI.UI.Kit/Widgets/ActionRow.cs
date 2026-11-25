@@ -18,8 +18,10 @@ public class ActionRow : Control
     private string _action;
     private string? _secondAction;
 
-    // Where the second button was last drawn, for a click to be tested against.
+    // Where the buttons were last drawn, for a click to be tested against and their feedback lit.
+    private UiRect? _button;
     private UiRect? _secondButton;
+    private readonly RowButtonFeedback _feedback = new();
 
     /// <summary>Initializes a new instance of the <see cref="ActionRow"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -60,6 +62,12 @@ public class ActionRow : Control
     {
         if (_secondAction is not null && IsEnabled)
         {
+            if (_secondButton is { } second)
+            {
+                _feedback.Pressed(second);
+            }
+
+            PlaySound(UiSounds.Choose);
             SecondActivated?.Invoke(this);
         }
     }
@@ -83,6 +91,34 @@ public class ActionRow : Control
     public float FieldWidth { get; set; } = 260f;
 
     /// <inheritdoc/>
+    public override void PointerMoved(UiVec2 point) => _feedback.PointerAt(point);
+
+    /// <inheritdoc/>
+    protected override void OnPointerOverChanged(bool over)
+    {
+        if (!over)
+        {
+            _feedback.PointerAt(null);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnActivate()
+    {
+        if (_button is { } button)
+        {
+            _feedback.Pressed(button);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnUpdate(float elapsedSeconds)
+    {
+        base.OnUpdate(elapsedSeconds);
+        _feedback.Update(elapsedSeconds);
+    }
+
+    /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
         UiRowStyle.Measure(this, context, available);
 
@@ -99,6 +135,7 @@ public class ActionRow : Control
         float labelSize = context.Px(16f);
         float buttonWidth = UiPainter.MeasureLabel(Theme.Heading, _action, labelSize, 0.16f) + context.Px(28f);
         var button = new UiRect(right - buttonWidth, top, buttonWidth, height);
+        _button = button;
         _secondButton = null;
         UiRect leftmost = button;
         if (_secondAction is { } second)
@@ -131,12 +168,13 @@ public class ActionRow : Control
         painter.PopClip();
     }
 
-    // A button: its outline and its caption.
+    // A button: lit where the pointer is over it or it was just pressed, its outline and its caption.
     private void DrawButton(UiPainter painter, UiRect button, string caption, float labelSize, Bgra32 border, Bgra32 ink, float appear)
     {
         LayoutContext context = painter.Context;
-        painter.StrokeRect(button, context.Px(1f), UiPalette.Fade(border, appear));
-        painter.DrawLabel(Theme.Heading, caption, new UiVec2(button.X + context.Px(14f), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, button)), labelSize, UiPalette.Fade(ink, appear), 0.16f);
+        _feedback.DrawFill(painter, Theme, button, appear);
+        painter.StrokeRect(button, context.Px(1f), UiPalette.Fade(_feedback.Tint(border, Theme, button), appear));
+        painter.DrawLabel(Theme.Heading, caption, new UiVec2(button.X + context.Px(14f), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, button)), labelSize, UiPalette.Fade(_feedback.Tint(ink, Theme, button), appear), 0.16f);
     }
 
     // The value's field, left of the button: its design width, or less on a narrow row, which keeps at

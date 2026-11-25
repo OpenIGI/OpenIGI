@@ -177,7 +177,7 @@ public sealed partial class GameHost
         }
 
         // Both runs timed in the ticks they played: the ghost waits out the player's cutscenes where its runner's own began.
-        if (!CutscenePlaying)
+        if (!CutsceneHeld)
         {
             _racePlayed++;
         }

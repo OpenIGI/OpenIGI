@@ -480,10 +480,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         mission.PlayerTicks++;
-        if (mission.Cutscenes?.IsPlaying == true)
-        {
-            mission.CutsceneTicks++;
-        }
+        mission.SceneClock.Tick(mission.Cutscenes?.IsPlaying == true, mission.Cutscenes?.CanBreak == true);
     }
 
     // What one of a partner's commands set off, resolved as the mission's own player's is: the soldiers hear its throws and

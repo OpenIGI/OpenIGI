@@ -236,8 +236,8 @@ public sealed class MissionWorld : MissionState, IInspectableMission
     /// <remarks>It runs whatever the mission's own player is doing: dead, in a cut-scene or at the computer.</remarks>
     public long PlayerTicks { get; set; }
 
-    /// <summary>Gets or sets how many of <see cref="PlayerTicks"/> a cutscene held: the mission's time is the rest.</summary>
-    public long CutsceneTicks { get; set; }
+    /// <summary>Gets how many of <see cref="PlayerTicks"/> the mission's cutscenes held: the mission's time is the rest.</summary>
+    public Scoring.CutsceneClock SceneClock { get; } = new();
 
     /// <summary>Gets or sets a value indicating whether this mission is a co-op client's, whose player's death the server decides.</summary>
     /// <remarks>Its level never sees the player dead: the session respawns it, and the server's level decides the mission.</remarks>

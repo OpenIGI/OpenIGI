@@ -125,7 +125,7 @@ public static class Igi1MissionSystems
                 // run's replay begins it. The missiles' stream with it: drawn by the attempt before, it would not be the stream
                 // a replay of this level starts from.
                 game.World.PlayerTicks = 0;
-                game.World.CutsceneTicks = 0;
+                game.World.SceneClock.Reset();
                 game.World.SavesUsed = 0;
                 game.World.GameLoads = 0;
                 game.World.MissileStream.Restart();

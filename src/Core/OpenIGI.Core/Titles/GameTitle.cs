@@ -126,6 +126,28 @@ public sealed record GameTitle(
     /// <returns>Its name, or <see langword="null"/> where not known.</returns>
     public string? MissionName(int mission) => mission >= 1 && mission <= MissionNames.Count ? MissionNames[mission - 1] : null;
 
+    /// <summary>Gets how many ranks a mission's score may earn at each difficulty.</summary>
+    public const int RanksPerDifficulty = 3;
+
+    /// <summary>
+    /// Gets the ranks a mission's score earns, as the menus name them in English (I.G.I. 2's <c>language/english/menusystem.res</c>,
+    /// <c>Rank1</c> to <c>Rank9</c>): <see cref="RanksPerDifficulty"/> a difficulty from Easy, lowest first. Both games' rank screens
+    /// are I.G.I. 2's, and name them so.
+    /// </summary>
+    public static IReadOnlyList<string> RankNames { get; } =
+    [
+        "Desk Officer", "Operative", "Agent",
+        "Field Officer", "Covert Operative", "Secret Agent",
+        "IGI Recruit", "IGI Operative", "David Jones",
+    ];
+
+    /// <summary>Gets a rank's English name.</summary>
+    /// <param name="rank">The rank at its difficulty, from nought, lowest first.</param>
+    /// <param name="difficulty">The difficulty, nought (Easy) to two (Hard).</param>
+    /// <returns>The name, or <see langword="null"/> for no rank.</returns>
+    public static string? RankName(int rank, int difficulty) =>
+        rank is >= 0 and < RanksPerDifficulty && difficulty is >= 0 and <= 2 ? RankNames[(difficulty * RanksPerDifficulty) + rank] : null;
+
     /// <summary>Gets every title the shell knows about, active first.</summary>
     public static IReadOnlyList<GameTitle> All { get; } = [Igi1, Igi2];
 }

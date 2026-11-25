@@ -233,7 +233,7 @@ public sealed class MissionBoardView
 
     private MissionRow Row(RunBoardRow row, bool overall, bool isYou)
     {
-        var line = new MissionRow(_theme, row, _feed.Metric, overall) { IsYou = isYou, Compact = _compact, Reported = row.Run is { } id && _reported.Contains(id) };
+        var line = new MissionRow(_theme, row, _feed.Metric, overall, _feed.Difficulty) { IsYou = isYou, Compact = _compact, Reported = row.Run is { } id && _reported.Contains(id) };
         if (line.HasReplay)
         {
             string run = row.Run!;

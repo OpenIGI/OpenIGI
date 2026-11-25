@@ -2,6 +2,7 @@ using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.UI.Animation;
+using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
@@ -17,20 +18,24 @@ public sealed class MissionRow : Control
     private readonly RunBoardRow _row;
     private readonly string _metric;
     private readonly bool _overall;
+    private readonly int _difficulty;
     private UiRect? _watch;
     private UiRect? _race;
+    private readonly RowButtonFeedback _feedback = new();
 
     /// <summary>Initializes a new instance of the <see cref="MissionRow"/> class.</summary>
     /// <param name="theme">The theme.</param>
     /// <param name="row">The row.</param>
     /// <param name="metric">What the board ranks by: time or rank.</param>
     /// <param name="overall">Whether the board is every mission's together.</param>
-    public MissionRow(UiTheme theme, RunBoardRow row, string metric, bool overall)
+    /// <param name="difficulty">The difficulty the board's runs were played at, which names their ranks.</param>
+    public MissionRow(UiTheme theme, RunBoardRow row, string metric, bool overall, int difficulty)
         : base(theme)
     {
         _row = row ?? throw new ArgumentNullException(nameof(row));
         _metric = metric ?? throw new ArgumentNullException(nameof(metric));
         _overall = overall;
+        _difficulty = difficulty;
         Id = "mission-row-" + row.Account;
     }
 
@@ -60,6 +65,11 @@ public sealed class MissionRow : Control
     {
         if (HasReplay && IsEnabled)
         {
+            if (_race is { } race)
+            {
+                _feedback.Pressed(race);
+            }
+
             Raced?.Invoke(this);
         }
     }
@@ -87,6 +97,34 @@ public sealed class MissionRow : Control
         double seconds = Math.Max(0, ticks) / 30.0;
         int minutes = (int)(seconds / 60.0);
         return string.Create(CultureInfo.InvariantCulture, $"{minutes}:{seconds - (minutes * 60):00.0}");
+    }
+
+    /// <inheritdoc/>
+    public override void PointerMoved(UiVec2 point) => _feedback.PointerAt(point);
+
+    /// <inheritdoc/>
+    protected override void OnPointerOverChanged(bool over)
+    {
+        if (!over)
+        {
+            _feedback.PointerAt(null);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnActivate()
+    {
+        if (_watch is { } watch)
+        {
+            _feedback.Pressed(watch);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnUpdate(float elapsedSeconds)
+    {
+        base.OnUpdate(elapsedSeconds);
+        _feedback.Update(elapsedSeconds);
     }
 
     /// <inheritdoc/>
@@ -150,8 +188,9 @@ public sealed class MissionRow : Control
                     return box;
                 }
 
-                Bgra32 border = lead ? Interpolate.Lerp(UiPalette.White(0.18f), Theme.Accent, hot) : UiPalette.White(0.18f);
-                Bgra32 ink = lead ? Interpolate.Lerp(Theme.Text, Theme.Accent, hot) : Theme.Text;
+                Bgra32 border = _feedback.Tint(lead ? Interpolate.Lerp(UiPalette.White(0.18f), Theme.Accent, hot) : UiPalette.White(0.18f), Theme, box);
+                Bgra32 ink = _feedback.Tint(lead ? Interpolate.Lerp(Theme.Text, Theme.Accent, hot) : Theme.Text, Theme, box);
+                _feedback.DrawFill(painter, Theme, box, appear);
                 painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(border, appear));
                 painter.DrawLabel(Theme.Heading, caption, new UiVec2(box.X + context.Px(11f), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, box)), labelSize, UiPalette.Fade(ink, appear), 0.16f);
                 return box;
@@ -198,7 +237,8 @@ public sealed class MissionRow : Control
                 : (Time(_row.Ticks), null);
         }
 
-        string rank = _row.Rank >= 0 ? string.Create(CultureInfo.InvariantCulture, $"RANK {_row.Rank + 1}") : "NO RANK";
+        // The rank by its name, as the mission's own screen gives it: IGI Operative, not the second of Hard's three.
+        string rank = (OpenIGI.Core.Titles.GameTitle.RankName(_row.Rank, _difficulty) ?? "No rank").ToUpperInvariant();
         return _metric == "rank" ? (rank, Time(_row.Ticks)) : (Time(_row.Ticks), rank);
     }
 }

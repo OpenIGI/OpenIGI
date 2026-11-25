@@ -49,7 +49,7 @@ public sealed class Igi1MissionScorer(MissionWorld world, MissionRankRequirement
         ArgumentNullException.ThrowIfNull(shots);
         ArgumentNullException.ThrowIfNull(health);
         return new MissionScore(
-            (uint)Math.Max(0L, Math.Min(world.PlayerTicks - world.CutsceneTicks, uint.MaxValue)),
+            (uint)Math.Max(0L, Math.Min(world.PlayerTicks - world.SceneClock.Held, uint.MaxValue)),
             world.PlayerTask?.TimesSpotted ?? 0,
             (int)MathF.Floor(Math.Clamp(health.RemainingFraction, 0f, 1f) * 100f),
             (uint)shots.RoundsFired,

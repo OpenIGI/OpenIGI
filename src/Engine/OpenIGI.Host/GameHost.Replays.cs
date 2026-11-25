@@ -42,8 +42,9 @@ public sealed partial class GameHost
     // The run's runner as a race against it shows it, and the session's events it was wired to hear.
     private GhostTrack? _runGhost;
 
-    // Whether a cutscene held the level's last tick, and which level that was.
+    // Whether a cutscene held the level's last tick, and which level that was; and the clock that says.
     private (int Load, bool Playing) _sceneHeld = (-1, false);
+    private readonly Game.Scoring.CutsceneClock _sceneClock = new();
     private Engine.Events.GameEvents? _runEventsHeard;
 
     /// <summary>
@@ -232,19 +233,27 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>Gets whether a cutscene holds the level: the host's own, or the title's.</summary>
+    /// <summary>Gets whether a cutscene plays on the level: the host's own, or the title's.</summary>
     private bool CutscenePlaying => _mission.Scenes?.IsPlaying == true || TitlePlayer?.IsCutscenePlaying == true;
 
-    // After one of the level's ticks: a cutscene begun or ended on it marked on the run's ghost, so a race and the boards time the
-    // run without the ticks it held.
+    /// <summary>Gets whether the level's last tick was one its cutscenes held (<see cref="Game.Scoring.CutsceneClock"/>).</summary>
+    private bool CutsceneHeld => _sceneHeld.Load == _levelLoads && _sceneHeld.Playing;
+
+    // After one of the level's ticks: whether a cutscene held it, as the mission's time reckons it, and a change in that marked on
+    // the run's ghost, so a race times both runs as the boards do. A title's own scenes say nothing of being skippable: held whole.
     private void CutsceneTicked(int tick)
     {
-        bool playing = CutscenePlaying;
-        bool was = _sceneHeld.Load == _levelLoads && _sceneHeld.Playing;
-        _sceneHeld = (_levelLoads, playing);
-        if (playing != was)
+        if (_sceneHeld.Load != _levelLoads)
         {
-            RunEventAt(tick, GhostEventKind.Cutscene, playing ? 1 : 0);
+            _sceneClock.Reset();
+        }
+
+        bool held = _sceneClock.Tick(CutscenePlaying, _mission.Scenes?.CanBreak == true);
+        bool was = CutsceneHeld;
+        _sceneHeld = (_levelLoads, held);
+        if (held != was)
+        {
+            RunEventAt(tick, GhostEventKind.Cutscene, held ? 1 : 0);
         }
     }
 

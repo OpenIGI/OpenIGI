@@ -19,6 +19,9 @@ internal static class LeaderboardPage
     // Each game's missions by name, in campaign order, for the mission boards' pick.
     private static readonly string MissionNames = JsonSerializer.Serialize(GameTitle.All.ToDictionary(static t => t.Id, static t => t.MissionNames));
 
+    // The ranks' names, three a difficulty from Easy, as the games' own screens name them.
+    private static readonly string RankNames = JsonSerializer.Serialize(GameTitle.RankNames);
+
     /// <summary>The page.</summary>
     public static string Html { get; } = $$"""
         <!doctype html>
@@ -381,6 +384,7 @@ internal static class LeaderboardPage
 
             // The single-player mission boards: every run on them was played again by the server before it counted.
             const MISSIONS = {{MissionNames}};
+            const RANKS = {{RankNames}};
             const BOARD_TEXT = $("board").querySelector(".banner p").textContent;
             const RUNS_TEXT = "Every run is played again by the server from its inputs before it counts, so a time on the board is one the game really allows. A replay can't prove a person played it live, so every new first place and every reported run is looked at by a person too. Sign in with Discord on the game's Profile page to be on the board under your name.";
             const RUN_METRICS = [["time", "Fastest"], ["rank", "Best rank"]];
@@ -419,7 +423,7 @@ internal static class LeaderboardPage
               const place = el("span", `n${row.place <= 3 ? " top" : ""}`, `#${row.place}`);
               const who = el("span", "player");
               who.append(avatar(row.name, null), el("span", "name", row.name));
-              const rank = row.rank >= 0 ? `Rank ${row.rank + 1}` : "No rank";
+              const rank = (row.rank >= 0 && row.rank < 3 ? RANKS[Number($("difficulty").value) * 3 + row.rank] : null) ?? "No rank";
               const [figure, under] = overall
                 ? (runMetric === "rank" ? [`${number(row.points)} pts`, time(row.ticks)] : [time(row.ticks), `${row.missions} missions`])
                 : (runMetric === "rank" ? [rank, time(row.ticks)] : [time(row.ticks), rank]);

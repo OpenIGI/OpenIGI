@@ -72,6 +72,9 @@ public abstract class Screen
 
     private readonly Tween _transition = new(0f, duration: 0.35f, Ease.OutQuint);
     private UiVec2 _builtViewport = new(-1f, -1f);
+
+    // Whether this entrance has played its controls in already: a rebuild during it shows them at once.
+    private bool _entrancePlayed;
     private Control? _hovered;
 
     // The control holding the pointer through a drag, or null; see Control.CapturesPointer.
@@ -158,9 +161,13 @@ public abstract class Screen
                 Focus!.FocusFirst();
             }
 
-            // Animate the controls in only on a real entrance; a rebuild from a resize while the screen
-            // is already up snaps them present so the layout does not replay its animation.
-            ApplyEntrance(Phase == ScreenPhase.Entering && !_transition.IsComplete);
+            // Animate the controls in only on a real entrance, and only its first build: a rebuild from a resize
+            // while the screen is up, or one a page makes as its data arrives while it is still coming in, snaps
+            // them present -- each rebuild played the stagger again from nothing, and a page whose list filled
+            // in over its first moments flashed its controls once a rebuild.
+            bool entrance = Phase == ScreenPhase.Entering && !_transition.IsComplete && !_entrancePlayed;
+            ApplyEntrance(entrance);
+            _entrancePlayed |= entrance;
         }
 
         Focus!.Validate();
@@ -186,6 +193,7 @@ public abstract class Screen
     public void BeginEnter()
     {
         Phase = ScreenPhase.Entering;
+        _entrancePlayed = false;
         _transition.Retarget(1f);
         OnEnter();
     }
