@@ -22,6 +22,9 @@ public sealed class MissionBoardView
 
     private readonly UiTheme _theme;
     private readonly ILeaderboardSource _source;
+
+    // The games' tabs, or null where there is one game.
+    private TabStrip? _games;
     private readonly MissionBoardFeed _feed;
     private readonly bool _compact;
     private readonly Func<FocusManager?> _focus;
@@ -76,6 +79,10 @@ public sealed class MissionBoardView
         var banner = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 6f : 10f };
         banner.AddChild(title);
         banner.AddChild(_note);
+        if (GameTabs() is { } games)
+        {
+            banner.AddChild(games);
+        }
         _root = new Grid { RowSpacing = compact ? 8f : 16f };
         _root.ColumnDefinitions.Add(GridLength.Star);
         if (compact)
@@ -117,6 +124,13 @@ public sealed class MissionBoardView
     /// <returns><see langword="true"/> when the page changed and is to be laid out again.</returns>
     public bool Update(bool shown)
     {
+        // A game whose runs are held for now (GameTitle.RunsHeld) has no boards to show: the first game offered stands in,
+        // whichever game the page that holds this was asked to show -- the one being played, the launcher's.
+        if (OpenIGI.Core.Titles.GameTitle.RunsOfferedFor(_feed.Title) is var offered && offered != _feed.Title)
+        {
+            _feed.ShowTitle(offered);
+        }
+
         _feed.Update(shown);
         if (_feed.Revision == _seen)
         {
@@ -169,6 +183,10 @@ public sealed class MissionBoardView
         {
             _builtTitle = _feed.Title;
             BuildMissionPicker();
+            if (_games is { } games)
+            {
+                games.SelectedIndex = Math.Max(0, IndexOfGame(_feed.Title));
+            }
         }
 
         _note.Text = (_compact ? string.Empty : "Every run is played again by the server before it counts. ") + (_source.SignInHint ?? string.Empty);
@@ -213,6 +231,33 @@ public sealed class MissionBoardView
             _pinned.AddChild(Row(own, overall, isYou: true));
         }
     }
+
+    // The games whose boards there are, one tab each: a game whose runs are held for now (GameTitle.RunsHeld) shown, dimmed and
+    // marked as coming, as the graphics presets it does not offer yet are. None where there is one game.
+    private TabStrip? GameTabs()
+    {
+        IReadOnlyList<LeaderboardGame> games = _source.Games;
+        if (games.Count < 2)
+        {
+            return null;
+        }
+
+        bool Held(int index) => OpenIGI.Core.Titles.GameTitle.All.FirstOrDefault(t => t.Id == games[index].Id) is { RunsHeld: true };
+        _games = new TabStrip(_theme, games.Select(static game => game.Name))
+        {
+            SegmentHeight = _compact ? 32f : 36f,
+            TabPadding = _compact ? 12f : 18f,
+            TextSize = _compact ? 14f : 15f,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            TabEnabled = index => !Held(index),
+            Notes = [.. games.Select((_, index) => Held(index) ? "SOON" : string.Empty)],
+            SelectedIndex = Math.Max(0, IndexOfGame(_feed.Title)),
+        };
+        _games.SelectionChanged += index => _feed.ShowTitle(games[index].Id);
+        return _games;
+    }
+
+    private int IndexOfGame(string title) => _source.Games.ToList().FindIndex(game => game.Id == title);
 
     // The mission picker for the game shown: every mission together, then each in campaign order.
     private void BuildMissionPicker()

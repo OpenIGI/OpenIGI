@@ -123,6 +123,11 @@ public sealed partial class GameHost
             return $"it is a replay of {replay.Header.Title}, and {_titleRuntime.Title.Id} is the game running";
         }
 
+        if (_titleRuntime.Title.RunsHeld)
+        {
+            return $"{_titleRuntime.Title.ShortName}'s replays are coming soon";
+        }
+
         return _missions.TryGet(replay.Header.Mission, out _) ? null : $"this game has no mission {replay.Header.Mission}";
     }
 

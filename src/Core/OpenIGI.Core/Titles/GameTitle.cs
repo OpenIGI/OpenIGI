@@ -105,6 +105,10 @@ public sealed record GameTitle(
 
         // Its missions' lighting under the remastered presets is still being tuned; the menu shows them as coming soon.
         GraphicsPresetHeld = Configuration.Presets.GraphicsPreset.Vanilla,
+
+        // Its runs are not yet proven as Project I.G.I.'s are, played again to the end by the boards' checker: none is recorded
+        // or ranked, and the boards show it as coming soon.
+        RunsHeld = true,
     };
 
     /// <summary>Gets the one graphics preset the title offers for now, or <see langword="null"/> when it offers every one.</summary>
@@ -114,6 +118,23 @@ public sealed record GameTitle(
     /// that offers it.
     /// </remarks>
     public Configuration.Presets.GraphicsPreset? GraphicsPresetHeld { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the title's single-player runs are held back for now: not recorded, watched, raced or
+    /// ranked, and its mission boards shown as coming soon.
+    /// </summary>
+    public bool RunsHeld { get; init; }
+
+    /// <summary>Gets whether a title's single-player runs are offered: recorded, watched, raced and ranked.</summary>
+    /// <param name="titleId">The title.</param>
+    /// <returns>Whether they are; a title not known holds none back.</returns>
+    public static bool RunsOffered(string titleId) => All.FirstOrDefault(t => t.Id == titleId) is not { RunsHeld: true };
+
+    /// <summary>Gets the first title whose runs are offered: what a board asked for a held one shows instead.</summary>
+    /// <param name="titleId">The title asked for.</param>
+    /// <returns>Its id, or the first offered title's where its runs are held.</returns>
+    public static string RunsOfferedFor(string titleId) =>
+        RunsOffered(titleId) ? titleId : All.First(static t => !t.RunsHeld).Id;
 
     /// <summary>Gets how many missions the title's campaign has, each a map a server can play.</summary>
     public int MissionCount { get; init; }

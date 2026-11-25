@@ -22,6 +22,9 @@ internal static class LeaderboardPage
     // The ranks' names, three a difficulty from Easy, as the games' own screens name them.
     private static readonly string RankNames = JsonSerializer.Serialize(GameTitle.RankNames);
 
+    // The games whose runs are held for now (GameTitle.RunsHeld): their mission boards are coming soon.
+    private static readonly string RunsHeld = JsonSerializer.Serialize(GameTitle.All.Where(static t => t.RunsHeld).Select(static t => t.Id));
+
     /// <summary>The page.</summary>
     public static string Html { get; } = $$"""
         <!doctype html>
@@ -385,6 +388,7 @@ internal static class LeaderboardPage
             // The single-player mission boards: every run on them was played again by the server before it counted.
             const MISSIONS = {{MissionNames}};
             const RANKS = {{RankNames}};
+            const RUNS_HELD = {{RunsHeld}};
             const BOARD_TEXT = $("board").querySelector(".banner p").textContent;
             const RUNS_TEXT = "Every run is played again by the server from its inputs before it counts, so a time on the board is one the game really allows. A replay can't prove a person played it live, so every new first place and every reported run is looked at by a person too. Sign in with Discord on the game's Profile page to be on the board under your name.";
             const RUN_METRICS = [["time", "Fastest"], ["rank", "Best rank"]];
@@ -450,6 +454,11 @@ internal static class LeaderboardPage
               history.replaceState(null, "", address);
               $("eyebrow").textContent = `${gameName()} · mission boards`;
               $("clock").hidden = true;
+              if (RUNS_HELD.includes(game)) {
+                list.replaceChildren(el("div", "empty", `${gameName()}'s mission boards are coming soon.`));
+                return;
+              }
+
               try {
                 const board = await ask(`/v1/runs/board?title=${game}&mission=${mission}&difficulty=${$("difficulty").value}&ruleset=${$("ruleset").value}&metric=${runMetric}`);
                 if (board.rows.length === 0) {

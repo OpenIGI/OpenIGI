@@ -243,6 +243,9 @@ public sealed class CampaignScreen : ShellScreen
         return panel;
     }
 
+    // The player's replays, where the game being played offers its runs (GameTitle.RunsHeld): none to watch or race elsewhere.
+    private IShellReplays? Replays => OpenIGI.Core.Titles.GameTitle.RunsOffered(Context.ActiveTitleId) ? Context.Host.Replays : null;
+
     private StackPanel BuildDetail(UiTheme theme)
     {
         bool compact = Size == ShellSize.Compact;
@@ -262,7 +265,7 @@ public sealed class CampaignScreen : ShellScreen
         column.AddChild(_best);
 
         // The runs of it kept, to watch: under its best, once there is one.
-        if (Context.Host.Replays is { } replays)
+        if (Replays is { } replays)
         {
             _replaysRow = new ActionRow(theme, "Your replays", "Watch")
             {
@@ -418,7 +421,7 @@ public sealed class CampaignScreen : ShellScreen
     // The record of the mission shown at the difficulty chosen, once the boards have answered; the row hidden while there is none.
     private void ShowRecord()
     {
-        if (_recordRow is null || Context.Host.Replays is not { } replays || _missions.Count == 0)
+        if (_recordRow is null || Replays is not { } replays || _missions.Count == 0)
         {
             return;
         }
@@ -445,7 +448,7 @@ public sealed class CampaignScreen : ShellScreen
     {
         if (_record is { } record)
         {
-            Context.Host.Replays?.PlayRecord(record.Run, race);
+            Replays?.PlayRecord(record.Run, race);
         }
     }
 
@@ -484,7 +487,7 @@ public sealed class CampaignScreen : ShellScreen
             mission.Name,
             mission.Description);
         _best?.Show(Context.Host.BestScore(mission.Id));
-        if (_replaysRow is not null && Context.Host.Replays is { } kept)
+        if (_replaysRow is not null && Replays is { } kept)
         {
             IReadOnlyList<ShellReplay> keptRuns = kept.KeptOf(mission.Id);
             _replaysRow.Visibility = keptRuns.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

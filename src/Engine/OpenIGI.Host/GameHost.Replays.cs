@@ -149,9 +149,11 @@ public sealed partial class GameHost
     /// <summary>A save was read onto the level: the run from its start is over where the save took over.</summary>
     private void RunSaveLoaded() => FinishRun(ReplayOutcome.Abandoned, "a save was loaded");
 
-    // The recorder's own reasons a single-player run is not one: a session, the editor's play, a replay played back.
+    // The recorder's own reasons a single-player run is not one: a game whose runs are held for now, a session, the editor's
+    // play, a replay played back.
     private bool RunRecordable =>
         ReplayCVars.Record.Value
+        && !_titleRuntime.Title.RunsHeld
         && TickObserver is null
         && _editor is not { IsPlaying: true }
         && !Replaying
