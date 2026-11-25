@@ -40,7 +40,7 @@ public sealed partial class GameHost
             return;
         }
 
-        _presence ??= new DiscordPresence(PresenceCVars.ClientId.Value, _work);
+        _presence ??= new DiscordPresence(PresenceCVars.ClientId.Value, _work, _logger);
         _presence.Show(Activity());
     }
 
@@ -64,7 +64,7 @@ public sealed partial class GameHost
                 "In a multiplayer game",
                 Players(joined), 0, null),
             _ when _session.Mission is { } mission && !_menuFlow.MenuMode => (
-                $"Campaign · {mission.Name}",
+                $"Campaign · {Shown(mission.Name)}",
                 $"{ActiveTitle.DisplayName} · {OpenIGI.Game.Ai.AiDifficultyNames.Of(_configuration.Active?.Difficulty ?? 1)}",
                 0, 0, null),
             _ => ("In the menus", ActiveTitle.DisplayName, 0, 0, null),

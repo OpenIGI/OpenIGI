@@ -46,6 +46,51 @@ public sealed class DiscordPresenceTests
         Assert.Equal(JsonValueKind.Null, clear.RootElement.GetProperty("args").GetProperty("activity").ValueKind);
     }
 
+    /// <summary>The same activity asked for again, in a list of its own, is no change, so Discord is not sent it again.</summary>
+    [Fact]
+    public void An_activity_asked_for_again_is_no_change()
+    {
+        DateTimeOffset since = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000);
+        PresenceActivity first = new("In the menus", "I.G.I.-2", since, 0, 0, [new PresenceButton("Play OpenIGI free", "https://openigi.com")]);
+        PresenceActivity again = new("In the menus", "I.G.I.-2", since, 0, 0, [new PresenceButton("Play OpenIGI free", "https://openigi.com")]);
+        PresenceActivity moved = new("In the menus", "I.G.I.-2", since, 0, 0, [new PresenceButton("Join the game", "https://openigi.com/join/A")]);
+
+        Assert.Equal(first, again);
+        Assert.Equal(first.GetHashCode(), again.GetHashCode());
+        Assert.NotEqual(first, moved);
+    }
+
+    /// <summary>Discord's answers, as it sends them: the handshake and an activity taken, a refusal, a close.</summary>
+    [Fact]
+    public void Discords_answers_are_put_as_the_log_says_them()
+    {
+        PresenceReply ready = DiscordPresence.Interpret(
+            DiscordPresence.Frame, """{"cmd":"DISPATCH","data":{"v":1,"user":{"id":"1"}},"evt":"READY","nonce":null}""");
+        Assert.True(ready.Accepted);
+        Assert.False(ready.Closed);
+
+        PresenceReply shown = DiscordPresence.Interpret(
+            DiscordPresence.Frame, """{"cmd":"SET_ACTIVITY","data":{"details":"In the menus","state":"I.G.I.-2"},"evt":null,"nonce":"1"}""");
+        Assert.True(shown.Accepted);
+        Assert.Contains("\"In the menus\" / \"I.G.I.-2\"", shown.Text, StringComparison.Ordinal);
+
+        PresenceReply cleared = DiscordPresence.Interpret(DiscordPresence.Frame, """{"cmd":"SET_ACTIVITY","data":null,"evt":null,"nonce":"2"}""");
+        Assert.Contains("cleared", cleared.Text, StringComparison.Ordinal);
+
+        PresenceReply refused = DiscordPresence.Interpret(
+            DiscordPresence.Frame, """{"cmd":"SET_ACTIVITY","data":{"code":4000,"message":"child \"activity\" fails"},"evt":"ERROR","nonce":"3"}""");
+        Assert.False(refused.Accepted);
+        Assert.False(refused.Closed);
+        Assert.Contains("child \"activity\" fails (code 4000)", refused.Text, StringComparison.Ordinal);
+
+        PresenceReply closed = DiscordPresence.Interpret(DiscordPresence.Close, """{"code":4000,"message":"Invalid Client ID"}""");
+        Assert.False(closed.Accepted);
+        Assert.True(closed.Closed);
+        Assert.Contains("Invalid Client ID (code 4000)", closed.Text, StringComparison.Ordinal);
+
+        Assert.False(DiscordPresence.Interpret(DiscordPresence.Frame, "not json").Accepted);
+    }
+
     /// <summary>With no party count there is no party; a one-letter line is padded, as Discord refuses one.</summary>
     [Fact]
     public void Lines_discord_would_refuse_are_made_acceptable()

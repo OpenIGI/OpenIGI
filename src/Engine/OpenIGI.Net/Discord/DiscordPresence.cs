@@ -3,8 +3,15 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Net.Discord;
+
+/// <summary>What Discord said in one frame, put as a line of the log.</summary>
+/// <param name="Accepted">Whether it took what it was sent.</param>
+/// <param name="Closed">Whether it closed the connection with it.</param>
+/// <param name="Text">What it said.</param>
+public readonly record struct PresenceReply(bool Accepted, bool Closed, string Text);
 
 /// <summary>A link button on the player's Discord activity.</summary>
 /// <param name="Label">What it says, 32 characters at most.</param>
@@ -18,8 +25,27 @@ public sealed record PresenceButton(string Label, string Url);
 /// <param name="PartySize">How many are playing, with <paramref name="PartyMax"/>; 0 for no count.</param>
 /// <param name="PartyMax">How many may.</param>
 /// <param name="Buttons">Up to two link buttons: join the game, play in the browser.</param>
+/// <remarks>
+/// Equal when everything shown is: the buttons compared one by one, not as the list holding them, since the game builds a
+/// new list each time it asks. Compared by reference, every ask was a change, and Discord was sent the same activity
+/// every few seconds.
+/// </remarks>
 public sealed record PresenceActivity(
-    string Details, string State, DateTimeOffset? StartedAt, int PartySize, int PartyMax, IReadOnlyList<PresenceButton> Buttons);
+    string Details, string State, DateTimeOffset? StartedAt, int PartySize, int PartyMax, IReadOnlyList<PresenceButton> Buttons)
+{
+    /// <inheritdoc/>
+    public bool Equals(PresenceActivity? other) =>
+        other is not null
+        && Details == other.Details
+        && State == other.State
+        && StartedAt == other.StartedAt
+        && PartySize == other.PartySize
+        && PartyMax == other.PartyMax
+        && Buttons.SequenceEqual(other.Buttons);
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(Details, State, StartedAt, PartySize, PartyMax, Buttons.Count);
+}
 
 /// <summary>
 /// Discord's local connection, as far as showing an activity goes: a named pipe (Windows) or a Unix socket the Discord app
@@ -42,28 +68,44 @@ public sealed class DiscordPresence : IDisposable
     /// <summary>The opcode of a closing frame.</summary>
     public const int Close = 2;
 
+    /// <summary>The opcode of Discord's ping, answered with <see cref="Pong"/> and the same body.</summary>
+    public const int Ping = 3;
+
+    /// <summary>The opcode of the answer to a <see cref="Ping"/>.</summary>
+    public const int Pong = 4;
+
+    /// <summary>The category the connection logs under: connecting, what Discord took, and what it refused.</summary>
+    public const string LogCategory = "Discord";
+
     private static readonly TimeSpan RetryEvery = TimeSpan.FromSeconds(20);
 
     private readonly string _clientId;
+    private readonly IOpenIgiLogger _logger;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _running;
     private readonly object _gate = new();
     private PresenceActivity? _wanted;
     private int _nonce;
 
+    // The last refusal logged, so one Discord repeats on every reconnect is logged once; touched only by the connection.
+    private string? _lastRefusal;
+
     /// <summary>Initializes a new instance of the <see cref="DiscordPresence"/> class and starts its connection.</summary>
     /// <param name="clientId">The Discord application the activity is shown as.</param>
     /// <param name="work">Where the connection runs; it must run beside the caller.</param>
-    public DiscordPresence(string clientId, Core.Threading.IWorkScheduler work)
+    /// <param name="logger">Where Discord's answers are logged, under <see cref="LogCategory"/>.</param>
+    public DiscordPresence(string clientId, Core.Threading.IWorkScheduler work, IOpenIgiLogger logger)
     {
         ArgumentException.ThrowIfNullOrEmpty(clientId);
         ArgumentNullException.ThrowIfNull(work);
+        ArgumentNullException.ThrowIfNull(logger);
         if (!work.IsConcurrent)
         {
             throw new ArgumentException("The presence's connection waits on Discord, so it needs a scheduler that runs beside the frame.", nameof(work));
         }
 
         _clientId = clientId;
+        _logger = logger;
         _running = work.Run(Run);
     }
 
@@ -195,6 +237,65 @@ public sealed class DiscordPresence : IDisposable
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
+    /// <summary>What a frame from Discord says: the handshake taken, the activity it now shows, a refusal, or a close.</summary>
+    /// <param name="opcode">The frame's opcode.</param>
+    /// <param name="json">The frame's JSON.</param>
+    /// <returns>The reply.</returns>
+    public static PresenceReply Interpret(int opcode, string json)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement root = document.RootElement;
+            if (opcode == Close)
+            {
+                return new PresenceReply(false, true, $"Discord closed the connection: {Reason(root)}");
+            }
+
+            string? command = Text(root, "cmd");
+            string? evt = Text(root, "evt");
+            JsonElement data = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out JsonElement d) ? d : default;
+            if (evt == "ERROR")
+            {
+                return new PresenceReply(false, false, $"Discord refused {command ?? "a command"}: {Reason(data)}");
+            }
+
+            if (evt == "READY")
+            {
+                return new PresenceReply(true, false, "Connected; Discord took the handshake.");
+            }
+
+            if (command == "SET_ACTIVITY")
+            {
+                return new PresenceReply(
+                    true, false,
+                    data.ValueKind == JsonValueKind.Object
+                        ? $"Discord shows the activity \"{Text(data, "details")}\" / \"{Text(data, "state")}\"."
+                        : "Discord cleared the activity.");
+            }
+
+            return new PresenceReply(true, false, $"Discord answered {command ?? $"opcode {opcode}"}{(evt is null ? string.Empty : $" ({evt})")}.");
+        }
+        catch (JsonException)
+        {
+            return new PresenceReply(false, opcode == Close, $"Discord sent a frame (opcode {opcode}) that is not JSON.");
+        }
+    }
+
+    private static string? Text(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    // Discord's reason, as its close and error frames give one: a message and a code.
+    private static string Reason(JsonElement element)
+    {
+        string message = Text(element, "message") ?? "no reason given";
+        return element.ValueKind == JsonValueKind.Object && element.TryGetProperty("code", out JsonElement code) && code.ValueKind == JsonValueKind.Number
+            ? $"{message} (code {code.GetRawText()})"
+            : message;
+    }
+
     // Discord wants two characters at least in a line it shows, and no more than its limit.
     private static string Clip(string text, int max) =>
         text.Length < 2 ? (text + "  ")[..2] : text.Length > max ? text[..max] : text;
@@ -202,51 +303,102 @@ public sealed class DiscordPresence : IDisposable
     private void Run()
     {
         CancellationToken stop = _stop.Token;
+        bool missing = false;
         while (!stop.IsCancellationRequested)
         {
-            using Stream? connection = Connect();
+            Stream? connection = Connect(out string pipe);
             if (connection is null)
             {
+                // Said once for as long as Discord stays away, not on every look.
+                if (!missing)
+                {
+                    _logger.Information(LogCategory, $"Discord is not running; looking for it every {RetryEvery.TotalSeconds:0} s.");
+                    missing = true;
+                }
+
                 Wait(RetryEvery);
                 continue;
             }
 
-            try
+            missing = false;
+            using (connection)
             {
-                Write(connection, Handshake, HandshakeJson(_clientId));
-                Read(connection);
-
-                // Whatever is wanted is sent at once, then again on each change, until the connection goes.
-                PresenceActivity? sent = null;
-                bool first = true;
-                while (!stop.IsCancellationRequested)
-                {
-                    PresenceActivity? wanted;
-                    lock (_gate)
-                    {
-                        while (!first && Equals(_wanted, sent) && !stop.IsCancellationRequested)
-                        {
-                            Monitor.Wait(_gate, TimeSpan.FromSeconds(30));
-                        }
-
-                        wanted = _wanted;
-                    }
-
-                    first = false;
-                    Write(connection, Frame, SetActivityJson(Environment.ProcessId, wanted, Interlocked.Increment(ref _nonce)));
-                    Read(connection);
-                    sent = wanted;
-                }
-
-                Write(connection, Close, "{}");
-            }
-            catch (Exception error) when (error is IOException or ObjectDisposedException or SocketException or InvalidDataException)
-            {
-                // Discord went away: tried again later.
+                Converse(connection, pipe, stop);
             }
 
             Wait(RetryEvery);
         }
+    }
+
+    // One connection, from the handshake until Discord goes, closes it, or the game stops.
+    private void Converse(Stream connection, string pipe, CancellationToken stop)
+    {
+        try
+        {
+            Write(connection, Handshake, HandshakeJson(_clientId));
+            if (!Heard(Answer(connection), pipe))
+            {
+                return;
+            }
+
+            // Whatever is wanted is sent at once, then again on each change, until the connection goes.
+            PresenceActivity? sent = null;
+            bool first = true;
+            while (!stop.IsCancellationRequested)
+            {
+                PresenceActivity? wanted;
+                lock (_gate)
+                {
+                    while (!first && Equals(_wanted, sent) && !stop.IsCancellationRequested)
+                    {
+                        Monitor.Wait(_gate, TimeSpan.FromSeconds(30));
+                    }
+
+                    wanted = _wanted;
+                }
+
+                if (stop.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                first = false;
+                Write(connection, Frame, SetActivityJson(Environment.ProcessId, wanted, Interlocked.Increment(ref _nonce)));
+                if (!Heard(Answer(connection), pipe))
+                {
+                    return;
+                }
+
+                sent = wanted;
+            }
+
+            Write(connection, Close, "{}");
+        }
+        catch (Exception error) when (error is IOException or ObjectDisposedException or SocketException or InvalidDataException)
+        {
+            if (!stop.IsCancellationRequested)
+            {
+                _logger.Information(LogCategory, $"Lost Discord on {pipe} ({error.Message}); looking again in {RetryEvery.TotalSeconds:0} s.");
+            }
+        }
+    }
+
+    // A reply logged: what Discord took as information, a refusal as a warning (once, however often Discord repeats it).
+    // False when Discord closed the connection with it.
+    private bool Heard(PresenceReply reply, string pipe)
+    {
+        if (reply.Accepted)
+        {
+            _lastRefusal = null;
+            _logger.Information(LogCategory, $"{reply.Text} ({pipe})");
+        }
+        else if (reply.Text != _lastRefusal)
+        {
+            _lastRefusal = reply.Text;
+            _logger.Warning(LogCategory, $"{reply.Text} ({pipe})");
+        }
+
+        return !reply.Closed;
     }
 
     private void Wait(TimeSpan time)
@@ -266,11 +418,26 @@ public sealed class DiscordPresence : IDisposable
         connection.Flush();
     }
 
-    // One frame read and let go: Discord's answer to each frame the game sends.
-    private static void Read(Stream connection)
+    // Discord's answer to the frame just sent; a ping on the way is answered and read past.
+    private static PresenceReply Answer(Stream connection)
+    {
+        while (true)
+        {
+            (int opcode, string json) = ReadFrame(connection);
+            if (opcode != Ping)
+            {
+                return Interpret(opcode, json);
+            }
+
+            Write(connection, Pong, json);
+        }
+    }
+
+    private static (int Opcode, string Json) ReadFrame(Stream connection)
     {
         Span<byte> head = stackalloc byte[8];
         connection.ReadExactly(head);
+        int opcode = BinaryPrimitives.ReadInt32LittleEndian(head);
         int length = BinaryPrimitives.ReadInt32LittleEndian(head[4..]);
         if (length is < 0 or > 1 << 20)
         {
@@ -279,18 +446,20 @@ public sealed class DiscordPresence : IDisposable
 
         byte[] body = new byte[length];
         connection.ReadExactly(body);
+        return (opcode, Encoding.UTF8.GetString(body));
     }
 
-    // The first of discord-ipc-0..9 that answers.
-    private static Stream? Connect()
+    // The first of discord-ipc-0..9 that answers, and its name for the log.
+    private static Stream? Connect(out string name)
     {
         for (int i = 0; i < 10; i++)
         {
+            name = $"discord-ipc-{i}";
             try
             {
                 if (OperatingSystem.IsWindows())
                 {
-                    NamedPipeClientStream pipe = new(".", $"discord-ipc-{i}", PipeDirection.InOut, PipeOptions.None);
+                    NamedPipeClientStream pipe = new(".", name, PipeDirection.InOut, PipeOptions.None);
                     try
                     {
                         pipe.Connect(200);
@@ -315,6 +484,7 @@ public sealed class DiscordPresence : IDisposable
                     try
                     {
                         socket.Connect(new UnixDomainSocketEndPoint(path));
+                        name = path;
                         return new NetworkStream(socket, ownsSocket: true);
                     }
                     catch
@@ -330,6 +500,7 @@ public sealed class DiscordPresence : IDisposable
             }
         }
 
+        name = string.Empty;
         return null;
     }
 
