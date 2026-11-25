@@ -230,7 +230,7 @@ public sealed partial class Igi2ReplicatedWorld : IReplicatedWorld
         for (int i = 0; i < 8; i++)
         {
             double angle = host.Gamma + ((slot + i) * Math.PI / 4);
-            Vector3d spot = host.Position + new Vector3d(Math.Cos(angle) * SpawnSpacing, Math.Sin(angle) * SpawnSpacing, 0);
+            Vector3d spot = host.Position + new Vector3d(SimMath.Cos(angle) * SpawnSpacing, SimMath.Sin(angle) * SpawnSpacing, 0);
             Vector3d spotChest = spot + new Vector3d(0, 0, ChestHeight);
             if (world.Cast(chest, spotChest, out _))
             {

@@ -439,7 +439,7 @@ public sealed partial class GameHost : IDisposable
         _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
-        _effects = new WorldEffects(device, logger, () => _mission.SoundRandom, new WorldEffectsHost(this), _work);
+        _effects = new WorldEffects(device, logger, new WorldEffectsHost(this), _work);
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);
@@ -689,6 +689,8 @@ public sealed partial class GameHost : IDisposable
 
         while (state.Running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
+            // Everything a pass does before the level's tick and after it draws or reads; only the tick steps.
+            Game.World.SimulationPhase.Present();
             // The top of a frame is where a step returns to its host: everything since the last step is
             // one frame, and nothing of the next has started. A host that asked to stop while it was away
             // is answered here, before the frame it would otherwise draw.
@@ -763,6 +765,8 @@ public sealed partial class GameHost : IDisposable
                 UpdateShell(state);
                 UpdateEntryShot(state);
                 RunSessionCycles(state);
+                HandleReplayViewer(state);
+                CollectBoardReplay(state);
                 HandleEscape(state);
                 RunDeferredCommands(state);
                 UpdatePlayerDevices(state);
@@ -808,10 +812,12 @@ public sealed partial class GameHost : IDisposable
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
             TickObserver?.Poll();
 
-            // A play-test's recording notes, and its replay gives, what comes before the level's next tick.
+            // A play-test's recording notes, and its replay gives, what comes before the level's next tick; and the run's recording.
             PlaytestTickStarting();
+            RunTickStarting();
 
             BeginStage();
+            Game.World.SimulationPhase.Step();
             FrameOutcome outcome = _loop.RunFrame();
             state.LastOutcome = outcome;
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
@@ -852,9 +858,17 @@ public sealed partial class GameHost : IDisposable
             TickMission(state, outcome);
             if (outcome == FrameOutcome.Tick)
             {
+                int ran = TickOfLevel;
                 PlaytestTicked();
+                RunTicked(ran);
+                PlaybackTicked(ran);
+                PlaybackOpeningTicked(ran);
+                CutsceneTicked(ran);
+                RaceTicked(ran);
+                DigestTick();
             }
 
+            Game.World.SimulationPhase.Present();
             if (outcome != FrameOutcome.Render || _options.SimulationOnly)
             {
                 continue;
@@ -881,6 +895,7 @@ public sealed partial class GameHost : IDisposable
             }
         }
 
+        FinishRun(Game.Replays.ReplayOutcome.Abandoned, "the game was closed");
         WriteBenchmarkSnapshot(state);
 
         LogStageTimingsAtExit();
@@ -938,7 +953,8 @@ public sealed partial class GameHost : IDisposable
         {
             while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode key))
             {
-                if (executeBinds && !PlaytestOwns(key))
+                // Nothing bound runs under a replay being watched: its level plays only the recording.
+                if (executeBinds && !Watching && !PlaytestOwns(key))
                 {
                     state.Console.System.ExecuteBind(Input.BindKeyNames.NameOf(key));
                 }

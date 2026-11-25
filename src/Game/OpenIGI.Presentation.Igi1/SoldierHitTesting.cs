@@ -13,23 +13,28 @@ namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Meets rays with the soldiers: the player's rounds, the developer pick, and the caches both read.</summary>
 /// <remarks>
-/// Every cast is at the body the crosshair was drawn over: with smoothing on, the presented transform and the
-/// pair of skinned poses the device is blending, rather than the newer simulation state.
+/// A round meets the body the player saw. With smooth motion that is a blend of the last two ticks, at the fraction the last
+/// frame before the shot was drawn at -- which the tick's input carries (<see cref="ShotBlend"/>), so the same blend of the
+/// same two recorded ticks is met on a server and in a replay, which draw nothing. Without one it is the tick itself, as the
+/// original draws it.
 /// </remarks>
 /// <param name="groups">The groups the renderer draws; shared, not copied.</param>
 /// <param name="sim">The soldiers' simulation, which grounds their feet.</param>
-/// <param name="frames">What says whether this frame is drawn between ticks.</param>
 /// <param name="logger">Where an unusable collision mesh is reported.</param>
 internal sealed class SoldierHitTesting(
     List<SoldierGroup> groups,
     SoldierSimulation sim,
-    SoldierFrameInterpolator frames,
     IOpenIgiLogger logger)
 {
     private readonly List<SoldierGroup> _groups = groups;
     private readonly SoldierSimulation _sim = sim;
-    private readonly SoldierFrameInterpolator _frames = frames;
     private readonly IOpenIgiLogger _logger = logger;
+
+    /// <summary>
+    /// Gets or sets how far between its last two ticks the player's last picture drew each soldier, from the tick's input
+    /// (<see cref="TitlePlayerInput.ViewBlend"/>); <see langword="null"/> when the picture was the tick itself.
+    /// </summary>
+    public float? ShotBlend { get; set; }
 
     /// <summary>Primes immutable hit-test and corpse-rig data before the first round can arrive.</summary>
     /// <remarks>
@@ -196,29 +201,26 @@ internal sealed class SoldierHitTesting(
             ? new Vector3d(ray.X / reach, ray.Y / reach, ray.Z / reach)
             : default;
 
-        // The player fires against the body the crosshair was drawn over. With r_smooth that is
-        // the last presentation transform, not the newer simulation state the next tick has just
-        // published. AI fire stays on its own fixed-tick path below: this is only the player-shot
-        // delegate supplied by Shooter(). A soldier put back where a co-op client drew it is met there, whatever
-        // the frame drew.
-        bool presented = !_sim.Rewound && _frames.FrameSmooth && member.HasFrameState;
+        // The body as the player saw it: the blend of its last two ticks the input names, by the picture's own formula; or the
+        // tick itself -- the feet grounded onto the floor as the body is drawn on it, the bones a root height above.
+        bool presented = !_sim.Rewound && ShotBlend is not null && member.HasTickState;
+        float alpha = Math.Clamp(ShotBlend ?? 1f, 0f, 1f);
         Vector3d feet;
+        Vector3d root = default;
         Matrix3f m;
         if (presented)
         {
-            Vector3d root = member.DrawnWhere * WorldScene.UnitsPerMetre;
+            (Vector3d where, m) = SoldierFrameInterpolator.Displayed(member, alpha, smooth: true);
+            root = where * WorldScene.UnitsPerMetre;
             feet = new Vector3d(root.X, root.Y, root.Z - soldier.RootSample.Z);
-            m = member.DrawnOrientation;
         }
         else
         {
-            // r_smooth off is the vanilla simulation transform verbatim. The feet the round is
-            // cast at must be the SAME feet the body is drawn on — grounded onto the floor — and
-            // the bones sit a root height above them, exactly as the draw lifts the pelvis.
             double snappedZ = _sim.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
             feet = new Vector3d(soldier.Position.X, soldier.Position.Y, snappedZ);
             m = soldier.Orientation;
         }
+
         Vector3f facing = new(m.M12, m.M22, m.M32);
 
         // The faithful path: trace the round at the soldier's skinned collision mesh and score it by
@@ -244,46 +246,27 @@ internal sealed class SoldierHitTesting(
                 return false;
             }
 
-            if (presented
-                && member.SkinnedPose is { } currentPose
-                && member.PreviousSkinnedPose is { } previousPose)
+            if (presented && member.SkinnedPose is { } currentPose && member.PreviousSkinnedPose is { } previousPose)
             {
-                // The renderer already owns both poses used by the motion-blended draw. Reuse
-                // them directly; do not re-evaluate the animation for a candidate that has
-                // already survived the broad phase.
+                // The pair of tick poses the picture blends (recorded each tick, drawn or not: SoldierRenderer.FollowTick), at the
+                // input's blend: the previous pose weighs 1 - alpha, as the picture weighs it.
                 met = HumanHitTest.TryCastMeshBlended(
-                    origin,
-                    rayEnd,
-                    member.DrawnWhere * WorldScene.UnitsPerMetre,
-                    facing,
-                    collision,
-                    currentPose,
-                    previousPose,
-                    member.DrawnOrientation,
-                    member.PoseBlend,
-                    out candidate);
+                    origin, rayEnd, root, facing, collision, currentPose, previousPose, m, 1f - alpha, out candidate);
             }
             else
             {
-                // Pose evaluation (especially a presented-orientation re-evaluation) skins the
-                // complete rig. Keep it behind the ray/sphere rejection so off-ray soldiers do
-                // not pay that cost on every scoped shot.
-                BonePose pose = presented
-                    ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m)
-                    : soldier.Pose();
+                // Pose evaluation skins the complete rig: kept behind the ray/sphere rejection so off-ray soldiers do not pay it
+                // on every scoped shot.
+                BonePose pose = presented ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m) : soldier.Pose();
                 met = HumanHitTest.TryCastMesh(
                     origin, rayEnd, feet, facing, collision, pose, soldier.RootSample.Z, out candidate);
             }
         }
         else
         {
-            // The cylinder fallback still needs a pose for bone-zone refinement, but only after
-            // there is no collision mesh broad phase to skip.
-            BonePose pose = presented
-                ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m)
-                : soldier.Pose();
-            met = HumanHitTest.TryCast(
-                origin, rayEnd, feet, facing, pose, out candidate, soldier.RootSample.Z);
+            // The cylinder fallback still needs a pose for bone-zone refinement.
+            BonePose pose = presented ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m) : soldier.Pose();
+            met = HumanHitTest.TryCast(origin, rayEnd, feet, facing, pose, out candidate, soldier.RootSample.Z);
         }
 
         return met;

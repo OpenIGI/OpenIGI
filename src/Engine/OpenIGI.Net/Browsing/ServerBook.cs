@@ -6,7 +6,8 @@ namespace OpenIGI.Net.Browsing;
 /// <param name="Key">What it is known by (<see cref="BrowserServer.Key"/>).</param>
 /// <param name="Name">The name it had, shown until it answers again.</param>
 /// <param name="At">When it was added or last played on.</param>
-public sealed record BookedServer(string Key, string Name, DateTimeOffset At);
+/// <param name="Title">The game it runs, as <c>igi1</c>; empty for one kept before the book said, which only its answer tells.</param>
+public sealed record BookedServer(string Key, string Name, DateTimeOffset At, string Title = "");
 
 /// <summary>
 /// The player's favourite servers and the ones played on of late, kept in a small JSON file in the profile so the browser
@@ -45,12 +46,13 @@ public sealed class ServerBook
     /// <param name="key">Its key.</param>
     /// <param name="name">Its name.</param>
     /// <param name="favourite">Whether it is one.</param>
-    public void SetFavourite(string key, string name, bool favourite)
+    /// <param name="title">The game it runs: the book is both games', each listing only its own.</param>
+    public void SetFavourite(string key, string name, bool favourite, string title)
     {
         _favourites.RemoveAll(f => f.Key == key);
         if (favourite)
         {
-            _favourites.Insert(0, new BookedServer(key, name, DateTimeOffset.UtcNow));
+            _favourites.Insert(0, new BookedServer(key, name, DateTimeOffset.UtcNow, title ?? string.Empty));
         }
 
         Save();
@@ -59,10 +61,11 @@ public sealed class ServerBook
     /// <summary>Notes a server played on.</summary>
     /// <param name="key">Its key.</param>
     /// <param name="name">Its name.</param>
-    public void Played(string key, string name)
+    /// <param name="title">The game it runs.</param>
+    public void Played(string key, string name, string title)
     {
         _history.RemoveAll(h => h.Key == key);
-        _history.Insert(0, new BookedServer(key, name, DateTimeOffset.UtcNow));
+        _history.Insert(0, new BookedServer(key, name, DateTimeOffset.UtcNow, title ?? string.Empty));
         if (_history.Count > HistoryLength)
         {
             _history.RemoveRange(HistoryLength, _history.Count - HistoryLength);
@@ -103,7 +106,7 @@ public sealed class ServerBook
                 DateTimeOffset at = DateTimeOffset.TryParse((string?)item["at"], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out DateTimeOffset parsed)
                     ? parsed
                     : DateTimeOffset.MinValue;
-                into.Add(new BookedServer(key, (string?)item["name"] ?? key, at));
+                into.Add(new BookedServer(key, (string?)item["name"] ?? key, at, (string?)item["title"] ?? string.Empty));
             }
         }
     }
@@ -135,5 +138,6 @@ public sealed class ServerBook
             ["key"] = b.Key,
             ["name"] = b.Name,
             ["at"] = b.At.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            ["title"] = b.Title,
         })];
 }

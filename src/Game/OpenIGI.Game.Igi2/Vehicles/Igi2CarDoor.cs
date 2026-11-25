@@ -178,7 +178,7 @@ public sealed class Igi2CarDoor : IIgi2WeaponHitTarget
     // The swing about the axis, rows: X turns Y toward Z, Y turns Z toward X, Z by its gamma.
     private float[] Swing()
     {
-        float sin = (float)Math.Sin(Angle), cos = (float)Math.Cos(Angle);
+        float sin = (float)SimMath.Sin(Angle), cos = (float)SimMath.Cos(Angle);
         return Axis switch
         {
             0 => [1f, 0f, 0f, 0f, cos, -sin, 0f, sin, cos],

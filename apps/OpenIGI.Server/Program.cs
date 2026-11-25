@@ -35,6 +35,24 @@ using OpenIGI.Server;
 
 const string LogCategory = "Server";
 
+// The checker's official game files: every mission's fingerprint in every edition installed here (FingerprintMode).
+if (FingerprintMode.Asked(args))
+{
+    return FingerprintMode.Run(args);
+}
+
+// A replay checker, not a server: one run played again and its verdict written (VerifyMode).
+if (VerifyMode.Asked(args))
+{
+    return VerifyMode.Run(args);
+}
+
+// The boards' checker: the master's runs taken one at a time, each checked as -verify checks one (VerifyWorker).
+if (VerifyWorker.Asked(args))
+{
+    return await VerifyWorker.RunAsync(args);
+}
+
 using LogRouter logger = new();
 logger.AddSink(new ConsoleSink(minimumLevel: LogLevel.Information));
 

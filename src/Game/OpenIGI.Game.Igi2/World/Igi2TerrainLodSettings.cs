@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -111,7 +112,7 @@ public readonly record struct Igi2TerrainLodSettings(float Detail, float Adaptio
     /// have the same endpoints and a visible kink at each.
     /// </remarks>
     public static float MorphFraction(float morph) =>
-        morph >= 1f ? 1f : (float)((1.0 - Math.Cos(morph * Math.PI)) * 0.5);
+        morph >= 1f ? 1f : (float)((1.0 - SimMath.Cos(morph * Math.PI)) * 0.5);
 
     private static TerrainTask? Find(GameTask task)
     {

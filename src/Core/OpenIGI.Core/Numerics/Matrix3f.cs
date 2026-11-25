@@ -155,23 +155,23 @@ public readonly struct Matrix3f : IEquatable<Matrix3f>, IFormattable
     /// <returns>The rotation.</returns>
     public static Matrix3f RotationX(float radians) => FromRows(
         new Vector3f(1f, 0f, 0f),
-        new Vector3f(0f, MathF.Cos(radians), -MathF.Sin(radians)),
-        new Vector3f(0f, MathF.Sin(radians), MathF.Cos(radians)));
+        new Vector3f(0f, SimMathF.Cos(radians), -SimMathF.Sin(radians)),
+        new Vector3f(0f, SimMathF.Sin(radians), SimMathF.Cos(radians)));
 
     /// <summary>Builds a rotation about the Y axis.</summary>
     /// <param name="radians">The angle.</param>
     /// <returns>The rotation.</returns>
     public static Matrix3f RotationY(float radians) => FromRows(
-        new Vector3f(MathF.Cos(radians), 0f, MathF.Sin(radians)),
+        new Vector3f(SimMathF.Cos(radians), 0f, SimMathF.Sin(radians)),
         new Vector3f(0f, 1f, 0f),
-        new Vector3f(-MathF.Sin(radians), 0f, MathF.Cos(radians)));
+        new Vector3f(-SimMathF.Sin(radians), 0f, SimMathF.Cos(radians)));
 
     /// <summary>Builds a rotation about the Z axis — the game's vertical.</summary>
     /// <param name="radians">The angle.</param>
     /// <returns>The rotation.</returns>
     public static Matrix3f RotationZ(float radians) => FromRows(
-        new Vector3f(MathF.Cos(radians), -MathF.Sin(radians), 0f),
-        new Vector3f(MathF.Sin(radians), MathF.Cos(radians), 0f),
+        new Vector3f(SimMathF.Cos(radians), -SimMathF.Sin(radians), 0f),
+        new Vector3f(SimMathF.Sin(radians), SimMathF.Cos(radians), 0f),
         new Vector3f(0f, 0f, 1f));
 
     /// <summary>Builds a rotation about any axis, turning the same way as <see cref="RotationX"/>, <see cref="RotationY"/> and <see cref="RotationZ"/> do about theirs.</summary>
@@ -185,7 +185,7 @@ public readonly struct Matrix3f : IEquatable<Matrix3f>, IFormattable
         double x = axis.X / length;
         double y = axis.Y / length;
         double z = axis.Z / length;
-        (double s, double c) = Math.SinCos(radians);
+        (double s, double c) = SimMath.SinCos(radians);
         double t = 1.0 - c;
         return FromRows(
             new Vector3f((float)((t * x * x) + c), (float)((t * x * y) - (s * z)), (float)((t * x * z) + (s * y))),
@@ -229,13 +229,13 @@ public readonly struct Matrix3f : IEquatable<Matrix3f>, IFormattable
     public Vector3f ToEngineEulerAngles()
     {
         float sinBeta = Math.Clamp(-M31, -1f, 1f);
-        float beta = MathF.Asin(sinBeta);
+        float beta = SimMathF.Asin(sinBeta);
         if (MathF.Abs(sinBeta) > 0.99999f)
         {
-            return new Vector3f(0f, beta, MathF.Atan2(-M12, M22));
+            return new Vector3f(0f, beta, SimMathF.Atan2(-M12, M22));
         }
 
-        return new Vector3f(MathF.Atan2(M32, M33), beta, MathF.Atan2(M21, M11));
+        return new Vector3f(SimMathF.Atan2(M32, M33), beta, SimMathF.Atan2(M21, M11));
     }
 
     /// <summary>Multiplies two matrices.</summary>

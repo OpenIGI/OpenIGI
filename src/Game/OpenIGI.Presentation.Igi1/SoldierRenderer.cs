@@ -183,7 +183,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _sim.TickClosed += FollowTick;
         _meshes = new SoldierMeshBuilder(_device, _logger, magic, heldWeapons);
         _frames = new SoldierFrameInterpolator(_groups, _sim, _logger);
-        _hits = new SoldierHitTesting(_groups, _sim, _frames, _logger);
+        _hits = new SoldierHitTesting(_groups, _sim, _logger);
         _armoury = new SoldierArmoury(_groups, _sim, _meshes, _logger);
         _drawer = new SoldierWeaponDrawer(_groups, _device, _armoury, _frames, () => Textures, _logger);
         _playerBody = new PlayerBodyRenderer(this, _device, _sim, _logger);
@@ -557,45 +557,18 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         Vector3d? struck = null) =>
         _frames.SeedRagdoll(view, originInUnits, orientation, bone, travel, category, carriedVelocity, model, weapon, struck);
 
-    /// <summary>
-    /// The soldier model's bounding radius the draw callback's frustum test scales by 1.41, in metres.
-    /// </summary>
+    /// <inheritdoc/>
     /// <remarks>
-    /// An approximation: retail reads it from the model's LOD record (<c>+60</c>), which is not parsed yet, and
-    /// the skinned geometry's own bounds are not in posed model space. A metre about the model origin -- the
-    /// pelvis, 0.8 m under the eye bone -- covers a standing body, and only decides guards at the screen edge.
+    /// Only remembers the camera, for what the picture itself needs of it. Which soldiers the original's render drew and
+    /// re-skinned is the simulation's own look, once a tick from the original's camera (<see cref="SoldierSimulation.ObserveFrom"/>):
+    /// read from this one, the level would play by how it was watched -- smoothed, over the shoulder, or not at all on a server.
     /// </remarks>
-    private const float SkinCullRadiusMetres = 1.0f;
-
-    /// <summary>How far from the camera a drawn soldier's eye bone is still refreshed, in metres.</summary>
-    /// <remarks>
-    /// Measured on the retail game: past about 51 m the soldier is drawn at its fifth LOD (0x4CFF70 returns
-    /// 4; 50.6 m gave 3 and 51.9 m gave 4), and that LOD's skinning leaves the eye bone's palette entry as it
-    /// was -- a guard skinned at 65 m kept its rest-pose eye, one at 50 m followed its body. The LOD pick is by
-    /// view depth scaled by the field of view, so zoomed optics would reach further; that is not modelled.
-    /// </remarks>
-    private const double EyeRefreshDistanceMetres = 51.0;
+    public void ObserveView(in Camera3D camera, in Matrix4f projection) => _lastObservedCamera = camera;
 
     /// <inheritdoc/>
-    public void ObserveView(in Camera3D camera, in Matrix4f projection)
+    public float? ShotViewBlend
     {
-        _lastObservedCamera = camera;
-        FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
-        BoundingSphere test = new(Vector3f.Zero, SkinCullRadiusMetres * 1.41f);
-        foreach (SoldierGroup group in _groups)
-        {
-            foreach (SoldierMember member in group.Soldiers)
-            {
-                // Human_DrawHandler (0x45F280) is reached past the sector cull, and stamps the render only when the frustum
-                // sphere lets the body through; the eye is refreshed only within the LOD range on top of that.
-                member.Agent.DrawnLastRender = ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier)
-                    && member.HasFrameState
-                    && _drawer.IsSectorVisible(group, member)
-                    && frustum.SphereVisible(camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation), test);
-                member.Agent.InView = member.Agent.DrawnLastRender
-                    && Vector3d.Distance(member.DrawnWhere, camera.Position) <= EyeRefreshDistanceMetres;
-            }
-        }
+        set => _hits.ShotBlend = value;
     }
 
     /// <inheritdoc/>
@@ -689,6 +662,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _drawer.DrawMuzzleFlashes(camera, projection);
         DrawPartnerMuzzleFlashes(camera, projection);
+        DrawGhostMuzzleFlash(camera, projection);
     }
 
     /// <inheritdoc/>
@@ -916,19 +890,16 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
 
                 // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
                 // upload to settle both interpolation streams, then no more skinning or driver traffic.
-                // Queued rather than skinned: the mesh takes it when a pass first draws the body, so a
-                // guard nobody sees costs nothing (see SoldierSkinning.Defer).
-                bool posed = member.PoseUploads.ShouldUpload(drawn)
-                    && SoldierSkinning.Defer(member, group.Body.Model, drawn);
-                if (!posed)
+                bool streamed = member.PoseUploads.ShouldUpload(drawn) && Game.Igi1.World.MefSkinner.IsSkinned(group.Body.Model);
+                if (!streamed)
                 {
                     FollowLevel(group, member, posed: false);
                     continue;
                 }
 
-                // The upload moves the old current stream into the previous stream before it
-                // writes this pose. Keep the matching collision-pose pair so a player ray can trace the
-                // very same r_smooth blend the GPU presents, rather than a newer animation frame.
+                // The upload moves the old current stream into the previous stream before it writes this pose. The matching
+                // collision-pose pair is kept from the model and the pose alone -- drawn or not, a device's mesh or none -- so a
+                // player's round traces the very blend the picture presents, on a server and in a replay as on the screen.
                 if (member.SkinnedPose is null)
                 {
                     // A malformed model began with raw geometry. The first successful upload gives us a
@@ -943,7 +914,9 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                     member.SkinnedPose = drawn;
                 }
 
-                FollowLevel(group, member, posed: true);
+                // Queued rather than skinned: the mesh takes it when a pass first draws the body, so a guard nobody sees costs
+                // nothing (see SoldierSkinning.Defer).
+                FollowLevel(group, member, posed: SoldierSkinning.Defer(member, group.Body.Model, drawn));
             }
         }
 

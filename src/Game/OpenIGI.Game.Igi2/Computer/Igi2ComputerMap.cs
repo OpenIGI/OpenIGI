@@ -69,7 +69,7 @@ public sealed class Igi2ComputerMap
     public static IReadOnlyList<float> ZoomLevels { get; } = [0.785398f, 0.261799f, 0.109083f, 0.017453f];
 
     // Real32x9_RotateAlpha(identity alpha, -pi/2): the view's right, forward and up as columns, x87-rounded.
-    private static readonly float Cos = (float)Math.Cos(-1.5707963705062866);
+    private static readonly float Cos = (float)SimMath.Cos(-1.5707963705062866);
 
     /// <summary>Gets where the camera stands, <c>ComputerMap_tPos</c>.</summary>
     public Vector3d Position { get; private set; }
@@ -138,7 +138,7 @@ public sealed class Igi2ComputerMap
     {
         ArgumentNullException.ThrowIfNull(display);
         _isEntering = true;
-        FieldOfView = (float)Math.Tan(ZoomLevels[Math.Clamp(ZoomLevel, 0, 3)]);
+        FieldOfView = (float)SimMath.Tan(ZoomLevels[Math.Clamp(ZoomLevel, 0, 3)]);
         _noise.Reset();
         _zoomInClick = 0;
         _zoomOutClick = 0;
@@ -270,7 +270,7 @@ public sealed class Igi2ComputerMap
             if (input.Right) { Following = null; scroll = true; stepX = ((Fpu)stepX + ScrollStep).F; }
         }
 
-        float speed = (float)Math.Pow(FieldOfView, 0.699999988079071);
+        float speed = (float)SimMath.Pow(FieldOfView, 0.699999988079071);
         Position = new Vector3d(
             ((Fpu)stepX * speed).Value + Position.X,
             ((Fpu)stepY * speed).F + Position.Y,
@@ -293,7 +293,7 @@ public sealed class Igi2ComputerMap
             }
 
             float dragX = ((Fpu)(-display.MouseSpeedX) * DragScale).F, dragY = ((Fpu)display.MouseSpeedY * DragScale).F;
-            float dragSpeed = (float)Math.Pow(FieldOfView, 0.699999988079071);
+            float dragSpeed = (float)SimMath.Pow(FieldOfView, 0.699999988079071);
             Position = new Vector3d(
                 ((Fpu)dragX * dragSpeed).Value + Position.X,
                 ((Fpu)dragY * dragSpeed).F + Position.Y,
@@ -382,7 +382,7 @@ public sealed class Igi2ComputerMap
             display.CentrePointer();
         }
 
-        float ideal = (float)Math.Tan(ZoomLevels[ZoomLevel]);
+        float ideal = (float)SimMath.Tan(ZoomLevels[ZoomLevel]);
         float eased = (((Fpu)ideal - FieldOfView) * 0.3333333432674408 + FieldOfView).F;
         if (eased != FieldOfView)
         {

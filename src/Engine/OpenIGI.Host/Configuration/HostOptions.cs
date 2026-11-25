@@ -364,6 +364,12 @@ public readonly record struct HostOptions(
     /// <summary>Gets the JSON output path for a deterministic 120 Hz/30 Hz benchmark.</summary>
     public string? BenchmarkPath { get; init; }
 
+    /// <summary>Gets the replay to play back from the start, in place of a mission (<c>-playreplay</c>), or <see langword="null"/>.</summary>
+    public string? PlayReplayPath { get; init; }
+
+    /// <summary>Gets the replay whose ghost to race, its mission played from the start (<c>-race</c>), or <see langword="null"/>.</summary>
+    public string? RacePath { get; init; }
+
     /// <summary>Gets a value indicating whether deterministic performance capture is active.</summary>
     public bool IsBenchmark => BenchmarkPath is not null;
 
@@ -466,6 +472,10 @@ public readonly record struct HostOptions(
                            Repeatable, so one run photographs a moment at several points.
           -benchmark <f>   Run 120 warm-up and 600 measured frames on a deterministic 120 Hz
                            presentation clock with 30 Hz simulation, then write JSON to <f>.
+          -playreplay <f>  Play back the replay in <f> (.oigr): its mission brought up under the settings
+                           it was recorded with, given its inputs, and told where it parts from them.
+          -race <f>        Race the ghost of the replay in <f> (.oigr): its mission played from the start
+                           under its settings, the run beside you as a ghost.
           -cutscene        Play the mission's authored opening cinematic. Cinematics already play by
                            default; this legacy flag remains accepted for capture-script compatibility.
           -skipcutscene    Skip the authored opening cinematic for scene benchmarks and references.

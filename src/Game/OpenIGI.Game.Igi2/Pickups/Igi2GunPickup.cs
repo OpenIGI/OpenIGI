@@ -463,8 +463,8 @@ public sealed partial class Igi2GunPickup
         float beta = 0f, gamma = 0f;
         if (!string.Equals(WeaponType.WeaponId, FlatWeaponId, StringComparison.Ordinal) && lx != 0f)
         {
-            beta = (-(Fpu)Math.Atan(((Fpu)lz / lx).Value)).F;
-            gamma = ((Fpu)Math.Atan(((Fpu)ly / lx).Value)).F;
+            beta = (-(Fpu)SimMath.Atan(((Fpu)lz / lx).Value)).F;
+            gamma = ((Fpu)SimMath.Atan(((Fpu)ly / lx).Value)).F;
         }
 
         float[] t = EngineEuler.Rotation(0f, beta, gamma);

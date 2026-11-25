@@ -145,8 +145,8 @@ public sealed partial class PlayerCamera
             {
                 double angle = i * 2.0 * Math.PI / around;
                 Vector3d over = new(
-                    origin.X + (Math.Sin(angle) * radius * unitsPerMetre),
-                    origin.Y + (Math.Cos(angle) * radius * unitsPerMetre),
+                    origin.X + (SimMath.Sin(angle) * radius * unitsPerMetre),
+                    origin.Y + (SimMath.Cos(angle) * radius * unitsPerMetre),
                     origin.Z + (3.0 * unitsPerMetre));
                 if (!walls(over, over - new Vector3d(0.0, 0.0, 6.0 * unitsPerMetre), out Game.World.WorldRayHit ground)
                     || ground.Normal.Z < 0.8f)

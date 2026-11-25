@@ -48,7 +48,7 @@ public sealed partial class GameHost
             _loop.TimeSource.Milliseconds,
             _menuFlow.MenuMode,
             TitleOverShoulderWalls());
-        player.PresentOverShoulder(_titleOverShoulder.ShowsBody, _titleOverShoulder.AimRay);
+        player.PresentOverShoulder(_titleOverShoulder.ShowsBody);
         return drawn;
     }
 

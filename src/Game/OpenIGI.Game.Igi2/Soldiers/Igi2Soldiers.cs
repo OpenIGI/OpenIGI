@@ -96,7 +96,7 @@ public sealed class Igi2Soldiers
         (Igi2HumanSoldier body, IReadOnlyList<TitleWorldModel>? parts) = _perBody[index];
         if (parts is null)
         {
-            parts = Igi2BodyFrame.Build(body, body.BodyPose(), body.Model!.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes);
+            parts = Igi2BodyFrame.Build(body, body.PresentedPose(), body.Model!.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes);
             _perBody[index] = (body, parts);
         }
 

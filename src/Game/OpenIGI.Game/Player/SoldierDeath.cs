@@ -245,7 +245,7 @@ public static class SoldierDeath
 
         // The bearing the engine's gamma convention wants: forward is (-sin g, cos g), so a direction
         // (x, y) is at gamma = atan2(-x, y). That is 0x414950's acos signed the way it signs it.
-        float bearing = (float)Math.Atan2(-nx, ny);
+        float bearing = (float)SimMath.Atan2(-nx, ny);
 
         double alignment = (nz * forward.Z) + (ny * forward.Y) + (nx * forward.X);
         if (alignment <= 0.0)

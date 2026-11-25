@@ -80,8 +80,8 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
         }
 
         return new Vector3d(
-            eye.X + (-Math.Sin(brain.Facing) * reach),
-            eye.Y + (Math.Cos(brain.Facing) * reach),
+            eye.X + (-SimMath.Sin(brain.Facing) * reach),
+            eye.Y + (SimMath.Cos(brain.Facing) * reach),
             aimPoint.Z);
     }
 
@@ -381,12 +381,12 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
         double length = Math.Sqrt((vy * vy) + (vz * vz));
         if (length != 0.0)
         {
-            double angle = Math.Acos(vy / length);
+            double angle = SimMath.Acos(vy / length);
             pitch = (float)(vz / length >= 0.0 ? angle : -angle);
         }
 
-        float c = (float)Math.Cos(pitch);
-        float s = (float)Math.Sin(pitch);
+        float c = (float)SimMath.Cos(pitch);
+        float s = (float)SimMath.Sin(pitch);
 
         // Matrix_SetRotX (0x4B3B60): rows (1,0,0), (0,c,-s), (0,s,c); the product m x r, row by row.
         return new Matrix3f(

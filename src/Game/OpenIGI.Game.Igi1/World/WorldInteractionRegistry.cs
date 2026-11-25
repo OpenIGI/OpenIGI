@@ -440,9 +440,9 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch, out double resolvedAngle)
     {
         Vector3d look = new(
-            Math.Sin(yaw) * Math.Cos(pitch),
-            Math.Cos(yaw) * Math.Cos(pitch),
-            Math.Sin(pitch));
+            SimMath.Sin(yaw) * SimMath.Cos(pitch),
+            SimMath.Cos(yaw) * SimMath.Cos(pitch),
+            SimMath.Sin(pitch));
         WorldInteraction? best = null;
         double bestAngle = double.MaxValue;
 
@@ -484,8 +484,8 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         // quarter-pi): the angle in the forward/up plane (0x4148F0) and the one in the forward/side plane (0x414950).
         bool IsInChargeView(Vector3d delta)
         {
-            Vector3d side = new(Math.Cos(yaw), -Math.Sin(yaw), 0.0);
-            Vector3d up = new(-Math.Sin(yaw) * Math.Sin(pitch), -Math.Cos(yaw) * Math.Sin(pitch), Math.Cos(pitch));
+            Vector3d side = new(SimMath.Cos(yaw), -SimMath.Sin(yaw), 0.0);
+            Vector3d up = new(-SimMath.Sin(yaw) * SimMath.Sin(pitch), -SimMath.Cos(yaw) * SimMath.Sin(pitch), SimMath.Cos(pitch));
             double ahead = Vector3d.Dot(delta, look);
             if (!(ahead > 0.0))
             {
@@ -493,8 +493,8 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
             }
 
             const double Limit = MathF.PI / 4f;
-            return Math.Abs(Math.Atan2(Vector3d.Dot(delta, up), ahead)) < Limit
-                && Math.Abs(Math.Atan2(Vector3d.Dot(delta, side), ahead)) < Limit;
+            return Math.Abs(SimMath.Atan2(Vector3d.Dot(delta, up), ahead)) < Limit
+                && Math.Abs(SimMath.Atan2(Vector3d.Dot(delta, side), ahead)) < Limit;
         }
 
         void Consider(WorldInteraction item, Vector3d point, double radius)
@@ -512,7 +512,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
                 return;
             }
 
-            double angle = Math.Acos(Math.Clamp(cosine, -1.0, 1.0));
+            double angle = SimMath.Acos(Math.Clamp(cosine, -1.0, 1.0));
             if (angle < bestAngle)
             {
                 bestAngle = angle;

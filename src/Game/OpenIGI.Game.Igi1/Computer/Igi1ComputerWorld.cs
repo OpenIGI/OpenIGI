@@ -318,7 +318,7 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
         for (int i = 0; i < ends.Length; i++)
         {
             // Matrix_SetEuler(0, 0, az) times (0, range, 0): the second column, (-sin, cos, 0).
-            float s = (float)Math.Sin(az), c = (float)Math.Cos(az);
+            float s = (float)SimMath.Sin(az), c = (float)SimMath.Cos(az);
             Vector3d start = origin;
             Vector3d end = origin + new Vector3d(-s * camera.ViewconeLength, c * camera.ViewconeLength, 0d);
             while (_mission.Collision.Trace is { } trace && trace(new WorldTraceRequest(start, end, IgnoredOwner: camera.Task), out WorldTraceHit hit))

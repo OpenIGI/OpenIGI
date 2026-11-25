@@ -162,11 +162,11 @@ public sealed class RagdollLimits
                     float sine = near.Vector.Length;
                     if (sine > RagdollSolver.ParallelEpsilon)
                     {
-                        turnSum[bone] += near.Vector * (2f * MathF.Atan2(sine, near.W) / sine);
+                        turnSum[bone] += near.Vector * (2f * SimMathF.Atan2(sine, near.W) / sine);
                     }
 
                     float half = MathF.Abs(q.W);
-                    widest[bone] = MathF.Max(widest[bone], 2f * MathF.Acos(Math.Clamp(half, -1f, 1f)));
+                    widest[bone] = MathF.Max(widest[bone], 2f * SimMathF.Acos(Math.Clamp(half, -1f, 1f)));
                 }
             }
         }
@@ -196,7 +196,7 @@ public sealed class RagdollLimits
                 foreach (BoneRotationKey key in clip.Rotations(bone))
                 {
                     (_, Vector3f swung) = Decompose(key.Rotation, axis[bone]);
-                    float angle = MathF.Acos(Math.Clamp(Vector3f.Dot(centre[bone], swung), -1f, 1f));
+                    float angle = SimMathF.Acos(Math.Clamp(Vector3f.Dot(centre[bone], swung), -1f, 1f));
                     swing[bone] = MathF.Max(swing[bone], angle);
                 }
             }
@@ -266,7 +266,7 @@ public sealed class RagdollLimits
 
         // atan2 rather than 2*asin: the angle has to keep its sign and stay meaningful past a quarter
         // turn, and the projection alone loses both.
-        float twist = 2f * MathF.Atan2(along, q.W);
+        float twist = 2f * SimMathF.Atan2(along, q.W);
         if (twist > MathF.PI)
         {
             twist -= 2f * MathF.PI;

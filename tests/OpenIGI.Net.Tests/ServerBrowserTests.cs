@@ -68,8 +68,8 @@ public sealed class ServerBrowserTests
     public void A_recent_room_is_no_line_of_its_own_but_a_recent_server_is_asked_after()
     {
         ServerBook book = new();
-        book.Played(BrowserServer.KeyOfRoom("GONE01"), "Joe's game");
-        book.Played("udp:1.2.3.4:26001", "A server");
+        book.Played(BrowserServer.KeyOfRoom("GONE01"), "Joe's game", "igi1");
+        book.Played("udp:1.2.3.4:26001", "A server", "igi1");
         using ServerBrowser browser = new(new ServerBrowserOptions(null, "igi1", Decode), null, book);
 
         browser.Refresh(0);
@@ -116,7 +116,7 @@ public sealed class ServerBrowserTests
         double now = 0;
         using NetServer server = new(network.Open(26001), new NetServerOptions { ProtocolId = 7, Info = _ => "Desert|3|16"u8.ToArray() });
         ServerBook book = new();
-        book.SetFavourite(BrowserServer.KeyOf(server.LocalAddress), "Desert (last seen)", true);
+        book.SetFavourite(BrowserServer.KeyOf(server.LocalAddress), "Desert (last seen)", true, "igi1");
         using ServerBrowser browser = new(new ServerBrowserOptions(null, "igi1", Decode), new NetQueryClient(network.Open(), 7), book);
 
         browser.Refresh(now);
@@ -186,10 +186,10 @@ public sealed class ServerBrowserTests
         try
         {
             ServerBook book = new(path);
-            book.SetFavourite("udp:1.2.3.4:26001", "A", true);
+            book.SetFavourite("udp:1.2.3.4:26001", "A", true, "igi1");
             for (int i = 0; i < ServerBook.HistoryLength + 3; i++)
             {
-                book.Played($"room:R{i}", $"R{i}");
+                book.Played($"room:R{i}", $"R{i}", "igi1");
             }
 
             ServerBook again = new(path);
@@ -197,7 +197,7 @@ public sealed class ServerBrowserTests
             Assert.Equal(ServerBook.HistoryLength, again.History.Count);
             Assert.Equal($"room:R{ServerBook.HistoryLength + 2}", again.History[0].Key);
 
-            again.SetFavourite("udp:1.2.3.4:26001", "A", false);
+            again.SetFavourite("udp:1.2.3.4:26001", "A", false, "igi1");
             Assert.False(new ServerBook(path).IsFavourite("udp:1.2.3.4:26001"));
         }
         finally

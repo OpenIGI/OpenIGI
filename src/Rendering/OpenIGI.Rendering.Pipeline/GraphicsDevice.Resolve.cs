@@ -42,6 +42,9 @@ public sealed partial class GraphicsDevice
 
         // The remastered thermal sensor, where it is up: the scene re-imaged as heat, which the lens then blooms and tone maps.
         colour = RecordThermal(scene, colour, post, post.Exposure * adapted) ?? colour;
+
+        // A race's ghost, over the scene and under the lens, so its glow blooms.
+        colour = RecordGhost(scene, colour, post.Exposure * adapted) ?? colour;
         IRhiTextureView? bloom = RecordBloom(scene, colour, post);
 
         Span<float> push = stackalloc float[ResolvePushBlock.Floats];

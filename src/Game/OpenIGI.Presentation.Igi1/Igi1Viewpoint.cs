@@ -287,11 +287,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
             bodyEye = eye;
             _earLead = default;
             _thirdPerson.Reset(frame.NowMilliseconds);
-            if (mission.Player is not null)
-            {
-                mission.Player.AimConvergenceRay = null;
-            }
-
+            AimRay = null;
             return eye;
         }
 
@@ -321,15 +317,11 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
         bool wantsThirdPerson = GameplayCVars.ThirdPerson.Value
             && mission.Player is { IsBinocularsOpen: false, IsSniperScoped: false };
         eye = _thirdPerson.Compose(thirdPersonEligible, wantsThirdPerson, eye, frame.NowMilliseconds, frame.Paused, frame.Walls);
-        if (mission.Player is { } aimingPlayer)
-        {
-            ConvergeThirdPersonAim(aimingPlayer);
-        }
-
+        AimRay = mission.Player is null ? null : _thirdPerson.AimRay;
         return eye;
     }
 
-    /// <summary>Hands the player the ray their crosshair sits on.</summary>
+    /// <summary>Gets the ray the player's crosshair sits on, in world units, which the host hands their next tick.</summary>
     /// <remarks>
     /// <para>
     /// Only the ray. What it is over is settled on the simulation tick, by
@@ -343,8 +335,12 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
     /// Cleared the moment the camera is back at the eye, which is what leaves first person firing along
     /// the body's forward with no branch anywhere to say so.
     /// </para>
+    /// <para>
+    /// Handed over as the tick's input (<see cref="Game.Player.TitlePlayerInput.Aim"/>), never written into the player from
+    /// here: where the camera stood is the picture's, and a replay or a server playing the tick again has no camera to ask.
+    /// </para>
     /// </remarks>
-    private void ConvergeThirdPersonAim(PlayerCamera player) => player.AimConvergenceRay = _thirdPerson.AimRay;
+    public (Vector3d OriginUnits, Vector3f Direction)? AimRay { get; private set; }
 
     /// <summary>Gets the eye a mod has taken the view with (<see cref="MissionWorld.ViewTakeover"/>), or <see langword="null"/> while none has.</summary>
     /// <param name="mission">The mission.</param>

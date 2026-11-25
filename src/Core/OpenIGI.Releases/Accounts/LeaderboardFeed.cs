@@ -71,16 +71,10 @@ public sealed class LeaderboardFeed
     public static readonly TimeSpan Fresh = TimeSpan.FromSeconds(30);
 
     private readonly ILeaderboardReader _reader;
-    private readonly Func<DateTimeOffset> _now;
-    private readonly Dictionary<string, (Leaderboard Value, DateTimeOffset At)> _boards = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (RecordView Value, DateTimeOffset At)> _records = new(StringComparer.Ordinal);
 
-    // What couldn't be read, and when: shown as failed, and tried again once that is as old as a board.
-    private readonly Dictionary<string, DateTimeOffset> _failedBoards = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTimeOffset> _failedRecords = new(StringComparer.Ordinal);
-
-    private (string Key, Task<Leaderboard> Task)? _boardAsked;
-    private (string Key, Task<RecordView> Task)? _recordAsked;
+    // The boards and records read, each asked for once it is old, a failure tried again once it is as old as a board.
+    private readonly PolledCache<Leaderboard> _boards;
+    private readonly PolledCache<RecordView> _records;
 
     /// <summary>Initializes a new instance of the <see cref="LeaderboardFeed"/> class.</summary>
     /// <param name="reader">What reads from the master.</param>
@@ -91,7 +85,9 @@ public sealed class LeaderboardFeed
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
         ArgumentException.ThrowIfNullOrEmpty(title);
         Title = title;
-        _now = now ?? (static () => DateTimeOffset.UtcNow);
+        Func<DateTimeOffset> clock = now ?? (static () => DateTimeOffset.UtcNow);
+        _boards = new PolledCache<Leaderboard>(Fresh, clock);
+        _records = new PolledCache<RecordView>(Fresh, clock);
     }
 
     /// <summary>Gets the game shown, by title id.</summary>
@@ -124,18 +120,16 @@ public sealed class LeaderboardFeed
     public int Revision { get; private set; }
 
     /// <summary>Gets the board for the game, period and metric picked, once read (the last one read for them while it is read again).</summary>
-    public Leaderboard? Board => _boards.TryGetValue(BoardKey, out (Leaderboard Value, DateTimeOffset At) kept) ? kept.Value : null;
+    public Leaderboard? Board => _boards.Get(BoardKey);
 
     /// <summary>Gets where the board stands.</summary>
-    public FeedState BoardState => State(Board is not null, _boardAsked?.Key == BoardKey, _failedBoards.ContainsKey(BoardKey));
+    public FeedState BoardState => _boards.State(BoardKey);
 
     /// <summary>Gets the open record, once read.</summary>
-    public RecordView? Record => RecordKey is { } key && _records.TryGetValue(key, out (RecordView Value, DateTimeOffset At) kept) ? kept.Value : null;
+    public RecordView? Record => RecordKey is { } key ? _records.Get(key) : null;
 
     /// <summary>Gets where the open record stands.</summary>
-    public FeedState RecordState => RecordKey is not { } key
-        ? FeedState.Idle
-        : State(Record is not null, _recordAsked?.Key == key, _failedRecords.ContainsKey(key));
+    public FeedState RecordState => RecordKey is { } key ? _records.State(key) : FeedState.Idle;
 
     private string BoardKey => $"{Title}/{Period}/{Metric.Id}/{You}";
 
@@ -209,12 +203,10 @@ public sealed class LeaderboardFeed
     /// <summary>Reads again what is shown, now, whatever its age.</summary>
     public void Refresh()
     {
-        _boards.Remove(BoardKey);
-        _failedBoards.Remove(BoardKey);
+        _boards.Forget(BoardKey);
         if (RecordKey is { } key)
         {
-            _records.Remove(key);
-            _failedRecords.Remove(key);
+            _records.Forget(key);
         }
 
         Changed();
@@ -224,35 +216,27 @@ public sealed class LeaderboardFeed
     /// <param name="watching">Whether a page shows the feed: nothing is asked for while none does.</param>
     public void Update(bool watching)
     {
-        CollectBoard();
-        CollectRecord();
+        if (_boards.Collect() | _records.Collect())
+        {
+            Changed();
+        }
+
         if (!watching)
         {
             return;
         }
 
-        DateTimeOffset now = _now();
-        string boardKey = BoardKey;
-        bool boardOld = !_boards.TryGetValue(boardKey, out (Leaderboard Value, DateTimeOffset At) board) || now - board.At > Fresh;
-        if (boardOld && _boardAsked is null && !Failing(_failedBoards, boardKey, now))
+        string title = Title;
+        if (_boards.Ask(BoardKey, () => _reader.BoardAsync(title, Period, Metric.Id, You, CancellationToken.None)))
         {
-            _boardAsked = (boardKey, _reader.BoardAsync(Title, Period, Metric.Id, You, CancellationToken.None));
             Changed();
         }
 
-        if (RecordKey is { } recordKey && RecordId is { } id && _recordAsked is null && !Failing(_failedRecords, recordKey, now)
-            && (!_records.TryGetValue(recordKey, out (RecordView Value, DateTimeOffset At) record) || now - record.At > Fresh))
+        if (RecordKey is { } recordKey && RecordId is { } id && _records.Ask(recordKey, () => ReadRecord(id, title)))
         {
-            _recordAsked = (recordKey, ReadRecord(id, Title));
             Changed();
         }
     }
-
-    private static bool Failing(Dictionary<string, DateTimeOffset> failed, string key, DateTimeOffset now) =>
-        failed.TryGetValue(key, out DateTimeOffset at) && now - at <= Fresh;
-
-    private static FeedState State(bool have, bool asking, bool failed) =>
-        have ? FeedState.Ready : asking ? FeedState.Loading : failed ? FeedState.Failed : FeedState.Loading;
 
     // The record, the account it is under and its place this season, together; an account or a place that can't be read is
     // left out rather than failing the record.
@@ -276,49 +260,6 @@ public sealed class LeaderboardFeed
         {
             return null;
         }
-    }
-
-    private void CollectBoard()
-    {
-        if (Collect(_boardAsked, _boards, _failedBoards))
-        {
-            _boardAsked = null;
-        }
-    }
-
-    private void CollectRecord()
-    {
-        if (Collect(_recordAsked, _records, _failedRecords))
-        {
-            _recordAsked = null;
-        }
-    }
-
-    // A finished request taken in: kept when read; marked failed when it wasn't and nothing was read before; else what was read
-    // shown on, and tried again once it is old again. True when the request was finished.
-    private bool Collect<T>((string Key, Task<T> Task)? asked, Dictionary<string, (T Value, DateTimeOffset At)> kept, Dictionary<string, DateTimeOffset> failed)
-    {
-        if (asked is not { Task.IsCompleted: true } done)
-        {
-            return false;
-        }
-
-        if (done.Task.IsCompletedSuccessfully)
-        {
-            kept[done.Key] = (done.Task.Result, _now());
-            failed.Remove(done.Key);
-        }
-        else if (kept.TryGetValue(done.Key, out (T Value, DateTimeOffset At) before))
-        {
-            kept[done.Key] = (before.Value, _now());
-        }
-        else
-        {
-            failed[done.Key] = _now();
-        }
-
-        Changed();
-        return true;
     }
 
     private void Changed() => Revision++;

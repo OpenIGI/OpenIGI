@@ -587,7 +587,7 @@ internal sealed class VehicleBodies(
         float[] m = body.M;
         state.Position = new Vector3d(body.Position[0], body.Position[1], body.Position[2]);
         state.Orientation = new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-        state.Heading = MathF.Atan2(m[3], m[0]);
+        state.Heading = SimMathF.Atan2(m[3], m[0]);
     }
 
     /// <summary>Drives one car for a tick from its three control channels (<c>0x42EA10</c>'s physics branch).</summary>

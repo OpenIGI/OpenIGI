@@ -32,6 +32,15 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     public static ushort PackClipTime(float time) =>
         (ushort)Math.Clamp(Math.Round(time / Formats.Animation.BoneAnimation.FrameStep * ClipTimeScale), 0, ushort.MaxValue);
 
+    /// <summary>The weapon a replicated body holds, by its number (nought for none): the bomb, or a type off the player's roster.</summary>
+    /// <param name="weapon">The number, the weapon's id plus one.</param>
+    /// <param name="roster">The player's weapon types, or null where there are none to read it by.</param>
+    /// <returns>The weapon, or null for none or one the roster does not have.</returns>
+    public static OpenIGI.Game.Weapons.WeaponType? HeldWeapon(ushort weapon, OpenIGI.Game.Weapons.WeaponTypeRegistry? roster) =>
+        weapon - 1 == Igi1BombWeapon.Id ? Igi1BombWeapon.Type
+        : weapon > 0 && roster is not null && roster.TryGet(weapon - 1, out OpenIGI.Game.Weapons.WeaponType held) ? held
+        : null;
+
     /// <summary>Gets a clip's own time back from what a snapshot carries.</summary>
     /// <param name="carried">The time carried, in sixteenths of a tick.</param>
     /// <returns>The clip's own time.</returns>
@@ -268,10 +277,9 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         List<ReplicatedHuman> humans = [];
-        if (IncludesHost && _game.World.Player is { } host)
+        if (IncludesHost && _game.World.Player is { } host && ReplicateHost(HostEntity, _game) is { } replicated)
         {
-            humans.Add(Carrying(OnLift(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerLife.Health, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime), _game.World.IsPlayerDead)), host), ServerSession.HostSlot));
+            humans.Add(Carrying(OnLift(WithRevive(replicated), host), ServerSession.HostSlot));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
@@ -577,6 +585,23 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             clip is null ? (ushort)0 : PackClipTime(ladderTime ?? 0f),
             Lean: (sbyte)Math.Clamp(MathF.Round(player.CombatLean.Amount * 100f), -100f, 100f),
             Aim: (byte)Math.Clamp(MathF.Round(player.BodyAim * 100f), 0f, 100f));
+    }
+
+    /// <summary>The mission's own player as a snapshot carries it: its health, its ladder or mode clip, fallen or not.</summary>
+    /// <param name="id">Its entity id.</param>
+    /// <param name="game">The mission.</param>
+    /// <returns>Its replicated state, or <see langword="null"/> while the mission has no player.</returns>
+    public static ReplicatedHuman? ReplicateHost(int id, Igi1Gameplay game)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        return game.World.Player is { } host
+            ? Replicate(
+                id,
+                host,
+                game.World.PlayerLife.Health,
+                host.ModeClipTimeShown ?? (host.BodyClip is null ? null : game.World.Soldiers?.PlayerLadderClipTime),
+                game.World.IsPlayerDead)
+            : null;
     }
 
     /// <summary>The level's doors as a snapshot carries them: one bit each, set where the door is commanded open.</summary>

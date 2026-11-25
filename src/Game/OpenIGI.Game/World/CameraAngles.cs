@@ -55,7 +55,7 @@ public static class CameraAngles
     {
         Vector3f forward = level.Row3;
         Vector3f across = Vector3f.Cross(forward, level.Row2);
-        return MathF.Atan2(Vector3f.Dot(across, view.Row2), Vector3f.Dot(level.Row2, view.Row2));
+        return SimMathF.Atan2(Vector3f.Dot(across, view.Row2), Vector3f.Dot(level.Row2, view.Row2));
     }
 
     /// <summary>An unrolled view rolled about the way it looks: <see cref="Roll"/> put back.</summary>
@@ -65,7 +65,7 @@ public static class CameraAngles
     public static Matrix3f WithRoll(Matrix3f level, float roll)
     {
         Vector3f forward = level.Row3;
-        (float sin, float cos) = MathF.SinCos(roll);
+        (float sin, float cos) = SimMathF.SinCos(roll);
         Vector3f up = (level.Row2 * cos) + (Vector3f.Cross(forward, level.Row2) * sin);
         Vector3f right = (level.Row1 * cos) + (Vector3f.Cross(forward, level.Row1) * sin);
         return Matrix3f.FromRows(right, up, forward);

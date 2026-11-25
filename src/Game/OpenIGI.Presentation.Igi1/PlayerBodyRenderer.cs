@@ -900,10 +900,36 @@ internal sealed class PlayerBodyRenderer(
     /// <param name="ranges">A list to gather the body's index ranges in, reused.</param>
     public void DrawSilhouette(in Camera3D camera, SilhouetteGroup highlight, List<MeshDrawRange> ranges)
     {
+        if (PoseForOverlay(camera, ranges, out SoldierMember? member, out Matrix4f modelView))
+        {
+            _device.DrawSilhouette(member.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), modelView, highlight);
+            _device.ClearPoseInterpolation();
+        }
+    }
+
+    /// <summary>Hands the body, as it was posed this frame, to the picture as a race's ghost.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    /// <param name="ranges">A list to gather the body's index ranges in, reused.</param>
+    public void DrawGhost(in Camera3D camera, in GhostLook look, List<MeshDrawRange> ranges)
+    {
+        if (PoseForOverlay(camera, ranges, out SoldierMember? member, out Matrix4f modelView))
+        {
+            _device.DrawGhost(member.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), modelView, look);
+            _device.ClearPoseInterpolation();
+        }
+    }
+
+    // The body as it was posed this frame, for a pass laid over the picture: its index ranges gathered, its skin flushed, its
+    // pose blend set on the device (the caller clears it after drawing) and its transform into view space. False with no body.
+    private bool PoseForOverlay(in Camera3D camera, List<MeshDrawRange> ranges, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SoldierMember? posed, out Matrix4f modelView)
+    {
         ArgumentNullException.ThrowIfNull(ranges);
+        posed = null;
+        modelView = default;
         if (_member is not { HasFrameState: true } member || _group is not { } group)
         {
-            return;
+            return false;
         }
 
         ranges.Clear();
@@ -917,13 +943,14 @@ internal sealed class PlayerBodyRenderer(
 
         if (ranges.Count == 0)
         {
-            return;
+            return false;
         }
 
         SoldierSkinning.Flush(_device, member, group.Geometry, group.Body.Model);
         _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
-        _device.DrawSilhouette(member.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation), highlight);
-        _device.ClearPoseInterpolation();
+        posed = member;
+        modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
+        return true;
     }
 
     /// <summary>Puts the body into the traced world without drawing any of it.</summary>

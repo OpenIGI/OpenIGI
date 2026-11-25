@@ -800,8 +800,8 @@ public sealed partial class PlayerBody
     /// </remarks>
     private static Matrix3f FacingBasis(float yaw)
     {
-        float cos = MathF.Cos(yaw);
-        float sin = MathF.Sin(yaw);
+        float cos = SimMathF.Cos(yaw);
+        float sin = SimMathF.Sin(yaw);
 
         return Matrix3f.FromRows(
             new Vector3f(cos, sin, 0f),

@@ -101,7 +101,16 @@ internal sealed class AiScenarioSupport : IDisposable
     /// <param name="window">The window it draws into.</param>
     /// <param name="args">The command line.</param>
     /// <returns>The host, not yet started.</returns>
-    public GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args)
+    public GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args) =>
+        Host(device, window, simulationOnly: false, args);
+
+    /// <summary>A host over the installed game, with no sound and the scenario log; drawn, or only simulated as a server runs.</summary>
+    /// <param name="device">The graphics device it records into.</param>
+    /// <param name="window">The window it draws into.</param>
+    /// <param name="simulationOnly">Whether it only simulates, drawing nothing, as the dedicated server and the replay checker do.</param>
+    /// <param name="args">The command line.</param>
+    /// <returns>The host, not yet started.</returns>
+    public GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, bool simulationOnly, params string[] args)
     {
         string root = GameData.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.Default;
@@ -115,6 +124,11 @@ internal sealed class AiScenarioSupport : IDisposable
 
         // A scenario host writes nothing of the player's own: no profile, no settings.
         HostOptions options = HostOptions.Parse([.. args, "-nosave"]);
+        if (simulationOnly)
+        {
+            options = options with { SimulationOnly = true };
+        }
+
         return new GameHost(
             new HeadlessPlatformHost(),
             window,

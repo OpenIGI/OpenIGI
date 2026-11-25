@@ -13,10 +13,10 @@ namespace OpenIGI.Game;
 /// here appear in the menu, the console and <c>settings.cfg</c> without any of the three being told.
 /// </para>
 /// <para>
-/// <b>Nothing declared here may change what the simulation does, with one named exception.</b> These
-/// gate presentation only — what is drawn, not what is recorded — so the determinism contract and the
-/// vanilla regression gate both stand whatever they are set to. Anything that would alter observable game
-/// logic belongs with the faithfulness work instead. The exception is <see cref="RealisticDrops"/>.
+/// Most of these only change what is drawn or heard. Those that change how the level plays -- the movement, the loadout, the
+/// grenade's cook, the drops, the bodies kept -- are flagged <see cref="CVarOptions.Simulation"/>: a replay records them
+/// with its inputs and plays the level again under the same values, and a ranked run's rules are the values they take.
+/// <c>SimulationCVarTests</c> holds every one the simulation reads to that flag.
 /// </para>
 /// </remarks>
 [CVarContainer]
@@ -64,6 +64,11 @@ public static class GameplayCVars
     /// Off by default, and no profile turns it on: the canned deaths are the game as shipped, and the
     /// simulation is something a player asks for.
     /// </para>
+    /// <para>
+    /// Not a setting of the level's (<see cref="CVarOptions.Simulation"/>): rounds pass the dead by, a corpse goes when the level's
+    /// own view of it says so, and dropped guns and blasts meet the same world either way -- so this and its tuning below only
+    /// change how a death is drawn, and a ranked run may have them however the player likes.
+    /// </para>
     /// </remarks>
     public static readonly BoolCVar Ragdoll = Experience.Define(
         CVar.Bool(
@@ -95,7 +100,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_realistic_drops",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Dropped weapons fall as real rigid bodies. Off drops them the way the original does."),
         vanilla: "0",
         enhanced: "1");
@@ -111,7 +116,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_steady_turns",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "I.G.I. 2's player keeps moving the way he faces as he turns. Off drifts sideways after a turn, as the original does."),
         vanilla: "0",
         enhanced: "1");
@@ -133,8 +138,8 @@ public static class GameplayCVars
         CVar.Choice(
             "g_igi2_movement",
             Igi2PlayerMovement.Igi2,
-            CVarOptions.Archive,
-            "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look."),
+            CVarOptions.Archive | CVarOptions.Simulation,
+            "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look.").ReadIn(Core.Titles.GameTitle.Igi2.Id),
         vanilla: "igi2",
         enhanced: null);
 
@@ -147,8 +152,8 @@ public static class GameplayCVars
     public static readonly BoolCVar Igi2Igi1Weight = CVar.Bool(
         "g_igi2_igi1_weight",
         false,
-        CVarOptions.Archive,
-        "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.");
+        CVarOptions.Archive | CVarOptions.Simulation,
+        "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.").ReadIn(Core.Titles.GameTitle.Igi2.Id);
 
     /// <summary>What I.G.I. 2's player may carry of its primary weapons: one, as the original has it, or one of each kind.</summary>
     /// <remarks>
@@ -167,8 +172,8 @@ public static class GameplayCVars
         CVar.Choice(
             "g_igi2_loadout",
             Game.Igi2Loadout.Tactical,
-            CVarOptions.Archive,
-            "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher."),
+            CVarOptions.Archive | CVarOptions.Simulation,
+            "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher.").ReadIn(Core.Titles.GameTitle.Igi2.Id),
         vanilla: "original",
         enhanced: "tactical");
 
@@ -190,7 +195,7 @@ public static class GameplayCVars
         CVar.Choice(
             "g_grenade_cook",
             Game.GrenadeCook.Manual,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "When grenades cook: original, as each game shipped; or manual, fire only winds the throw up and the reload key pulls the pin."),
         vanilla: "original",
         enhanced: "manual");
@@ -204,8 +209,8 @@ public static class GameplayCVars
     public static readonly EnumCVar<Igi2MovementCompare> Igi2MovementCompare = CVar.Choice(
         "g_igi2_movement_compare",
         Game.Igi2MovementCompare.Off,
-        CVarOptions.None,
-        "Stand in for I.G.I. 2's movement this session, to compare the two: off, igi2 or igi1.");
+        CVarOptions.None | CVarOptions.Simulation,
+        "Stand in for I.G.I. 2's movement this session, to compare the two: off, igi2 or igi1.").ReadIn(Core.Titles.GameTitle.Igi2.Id);
 
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
     /// <remarks>
@@ -227,7 +232,7 @@ public static class GameplayCVars
         CVar.Bool(
             "g_bodies_stay",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Dead soldiers stay where they fell. Off takes a body away once it is out of sight, as the original does."),
         vanilla: "0",
         enhanced: "1");

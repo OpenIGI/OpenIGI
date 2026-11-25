@@ -42,6 +42,10 @@ internal sealed class PlayerViewInterpolator
     private float _prevTickLeanRoll;
     private float _tickLeanRoll;
 
+    // The body's look on the last two ticks: drawn between where no look of the frame's own is shown -- a replay's.
+    private (float Yaw, float Pitch) _prevTickLook;
+    private (float Yaw, float Pitch) _tickLook;
+
     /// <summary>Initializes the interpolator over the view's hit shake.</summary>
     /// <param name="viewShake">The shake whose angles are folded into the camera and the rig.</param>
     internal PlayerViewInterpolator(HumanViewShake viewShake)
@@ -51,6 +55,16 @@ internal sealed class PlayerViewInterpolator
 
     /// <summary>Gets or sets whether the rig has two tick states for the presentation to draw between.</summary>
     internal bool HasPair { get; set; }
+
+    /// <summary>
+    /// Gets the body's look for a frame between two ticks: drawn between the pair's, for a frame with no look of its own to
+    /// show -- a replay's, whose look is the recording's, a tick at a time, with no mouse ahead of it.
+    /// </summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <returns>The heading and pitch.</returns>
+    internal (float Yaw, float Pitch) SmoothedLook(float alpha) => HasPair
+        ? (Interpolation.LerpAngle(_prevTickLook.Yaw, _tickLook.Yaw, alpha), Interpolation.LerpAngle(_prevTickLook.Pitch, _tickLook.Pitch, alpha))
+        : _tickLook;
 
     /// <summary>Drops the pair and the three bones' pairs, so the next tick starts a fresh one.</summary>
     internal void Forget()
@@ -79,8 +93,12 @@ internal sealed class PlayerViewInterpolator
     /// <param name="recoilPitch">The view kick this tick.</param>
     /// <param name="rigDipUnits">The landing dip's extra share the rig alone takes, in world units.</param>
     /// <param name="leanRoll">Modern aim's lean roll this tick, in the engine's sense.</param>
-    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits, float leanRoll)
+    /// <param name="look">The body's heading and pitch this tick.</param>
+    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits, float leanRoll, (float Yaw, float Pitch) look)
     {
+        _prevTickLook = HasPair ? _tickLook : look;
+        _tickLook = look;
+
         _prevTickLeanRoll = HasPair ? _tickLeanRoll : leanRoll;
         _tickLeanRoll = leanRoll;
 

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
@@ -85,8 +86,8 @@ public sealed partial class Igi2HumanPlayer
         }
 
         View.IsZoomMode = false;
-        View.FieldOfView = (float)Math.Tan(0.7853981852531433);
-        View.ObjectFieldOfView = (float)Math.Tan(0.5235987901687622);
+        View.FieldOfView = (float)SimMath.Tan(0.7853981852531433);
+        View.ObjectFieldOfView = (float)SimMath.Tan(0.5235987901687622);
         GoAction(Igi2PlayerActionState.Computer);
     }
 

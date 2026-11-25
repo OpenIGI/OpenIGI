@@ -34,7 +34,8 @@ public sealed class Igi1MissionScorer(MissionWorld world, MissionRankRequirement
     }
 
     /// <summary>
-    /// Gets how one of the mission's players -- its own, or a co-op partner on the server -- has played: the mission's clock and
+    /// Gets how one of the mission's players -- its own, or a co-op partner on the server -- has played: the mission's clock (its
+    /// cutscenes left out, so a scene watched to its end costs no more than one skipped) and
     /// loads, the times its soldiers spotted the squad (Project I.G.I.'s soldiers fight every player as one target, so a sighting is
     /// the squad's), the player's health left in whole per cent, and its guns' rounds and what they did to the soldiers.
     /// </summary>
@@ -48,7 +49,7 @@ public sealed class Igi1MissionScorer(MissionWorld world, MissionRankRequirement
         ArgumentNullException.ThrowIfNull(shots);
         ArgumentNullException.ThrowIfNull(health);
         return new MissionScore(
-            (uint)Math.Max(0L, Math.Min(world.PlayerTicks, uint.MaxValue)),
+            (uint)Math.Max(0L, Math.Min(world.PlayerTicks - world.SceneClock.Held, uint.MaxValue)),
             world.PlayerTask?.TimesSpotted ?? 0,
             (int)MathF.Floor(Math.Clamp(health.RemainingFraction, 0f, 1f) * 100f),
             (uint)shots.RoundsFired,

@@ -271,7 +271,6 @@ public sealed partial class GameHost
                     _computerOpen = true;
                     tacticalComputer.Open(subject.BodyUnits);
                     tacticalComputer.ShowPage(pageKey);
-                    _mission.SetPlayerComputerOpen(true);
                     _computerFlight.BeginOpen(
                         eye,
                         gameplayFieldOfView,
@@ -322,7 +321,6 @@ public sealed partial class GameHost
                     {
                         _computerOpen = false;
                         _computerFlight.Reset();
-                        _mission.SetPlayerComputerOpen(false);
                     }
 
                     _window.Input.Captured = true;
@@ -415,6 +413,25 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>
+    /// The computer's part of this tick's input: whether it holds the player, what the mouse and keys did since the last tick
+    /// while it was up, the actions held, and the display its screens are laid out across. Gathered once a tick, here, so the
+    /// tick -- and a replay of it -- reads the computer from its input, never the window.
+    /// </summary>
+    /// <param name="held">The actions held this tick, before the open computer keeps them from the player.</param>
+    private Game.Player.TitleComputerInput ComputerTickInput(Game.Player.PlayerAction held)
+    {
+        (int width, int height) = ComputerDisplaySize;
+        if (!_computerOpen)
+        {
+            // Nothing the mouse did with the computer down is the computer's: it opens on a clean slate.
+            _ = TakeComputerInput();
+            return new Game.Player.TitleComputerInput(false, default, held, width, height);
+        }
+
+        return new Game.Player.TitleComputerInput(true, TakeComputerInput(), held, width, height);
+    }
+
     /// <summary>Hands the computer the mouse since the last tick and starts gathering the next.</summary>
     private OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput()
     {
@@ -460,6 +477,19 @@ public sealed partial class GameHost
         // away is the frame's to say, where the view's own lock is decided.
         _window.CursorVisible = false;
         _computerWheel = 0;
+    }
+
+    /// <summary>
+    /// The level put back to a moment: the view and the pointer follow the mission's computer as it was then. The computer is the
+    /// level's, put back with it; the view is the host's, which hears of the computer only as it opens or closes.
+    /// </summary>
+    private void ComputerAsRestored()
+    {
+        bool open = TitlePlayer?.IsComputerOpen == true;
+        if (UsesMissionComputer && open != _computerOpen)
+        {
+            MissionComputerChanged(open);
+        }
     }
 
     /// <summary>Gets a value indicating whether the title's own computer is in use rather than the tactical one.</summary>

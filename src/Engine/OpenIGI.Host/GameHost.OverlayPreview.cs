@@ -91,6 +91,33 @@ public sealed partial class GameHost
             DrawPreviewMatch(state, hud, asked, width, height);
         }
 
+        // A race's timer and splits, a little behind the ghost, the newest split just reached.
+        if (Wants("race"))
+        {
+            hud.DrawRace(
+                state.Batch,
+                new Presentation.Hud.RaceHud(
+                    1.4,
+                    [new("Objective 1", 41.3, -2.1), new("Objective 2", 95.0, 0.6), new("Objective 3", 188.2, 1.4)],
+                    LatestShown: 0.8f),
+                width,
+                height);
+        }
+
+        // The replay viewer's bar, over a made-up run: playing at twice its speed, and at its end where it parted.
+        if (Wants("replay") || asked == "replay_parted")
+        {
+            bool parted = asked == "replay_parted";
+            (double, string)[] marks = [(41.0, "a guard sees you"), (95.5, "objective"), (188.0, "alarm"), (301.2, "objective")];
+            hud.DrawReplayBar(
+                state.Batch,
+                new Presentation.Hud.ReplayBar(
+                    "Jones · Trainyard · Hard · Classic", parted ? 512.0 : 214.6, 512.0, parted, parted ? 1f : 2f, "Behind", marks,
+                    PartedAt: parted ? 233.4 : null, Ending: parted ? "Mission complete · Space plays it again" : null),
+                width,
+                height);
+        }
+
         state.Batch.End();
     }
 
@@ -148,7 +175,7 @@ public sealed partial class GameHost
     private static Presentation.MissionScorePrompt PreviewScorePrompt() =>
         HudCVars.OverlayPreview.Value.Trim().Equals("missionscore_coop", StringComparison.OrdinalIgnoreCase)
             ? new Presentation.MissionScorePrompt("SPACE", SecondsLeft: 7)
-            : new Presentation.MissionScorePrompt("SPACE");
+            : new Presentation.MissionScorePrompt("SPACE", Board: "On the boards: #4 fastest", BoardGood: true);
 
     // A team match under way -- or decided, with the vote open -- and its menus, as the preview asks.
     private static void DrawPreviewMatch(FrameLoopState state, IRemasteredHudPresenter hud, string asked, int width, int height)

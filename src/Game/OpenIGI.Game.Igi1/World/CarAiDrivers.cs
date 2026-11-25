@@ -369,11 +369,11 @@ internal sealed class CarAiDrivers(
     /// The CRT's <c>acos</c> (<c>0x516810</c>): it switches to round-to-nearest, takes
     /// <c>√((1 + c)(1 − c))</c> as a plain double and hands both to <c>fpatan</c>.
     /// </summary>
-    /// <remarks><c>fpatan</c> keeps a 64-bit significand; <see cref="Math.Atan2(double, double)"/> is within a double ulp of it.</remarks>
+    /// <remarks><c>fpatan</c> keeps a 64-bit significand; <see cref="SimMath.Atan2(double, double)"/> is within a double ulp of it.</remarks>
     private static double RetailAcos(double c) =>
         c >= 1d ? 0d
         : c <= -1d ? Math.PI
-        : Math.Atan2(Math.Sqrt((1d + c) * (1d - c)), c);
+        : SimMath.Atan2(Math.Sqrt((1d + c) * (1d - c)), c);
 
     /// <summary>Steering from a heading (<c>0x426140</c>, <c>0x4262F0</c>): the positive limit tests the full-width value, the rest the float.</summary>
     private static float CarAiSteering(double heading)

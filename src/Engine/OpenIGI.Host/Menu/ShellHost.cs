@@ -44,6 +44,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="openEditor">Opens the editor, or <see langword="null"/> in a build without one.</param>
 /// <param name="bestScore">The card of the best the active profile has done in a mission of the running game, or <see langword="null"/>.</param>
 /// <param name="leaderboard">The official servers' leaderboards, where the build can reach the servers.</param>
+/// <param name="replays">The player's own replays, where the build keeps them.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -73,8 +74,12 @@ public sealed class ShellHost(
     IShellMaps? maps = null,
     Func<int, UiPicture?>? missionPicture = null,
     Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? bestScore = null,
-    OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? leaderboard = null) : IShellHost
+    OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? leaderboard = null,
+    IShellReplays? replays = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public IShellReplays? Replays => replays;
+
     /// <inheritdoc/>
     public OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard => leaderboard;
 

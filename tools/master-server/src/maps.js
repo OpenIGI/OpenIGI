@@ -9,9 +9,9 @@
 // and the body's SHA-256, a line each. A map belongs to the key that first published it; a report from five keys hides it
 // until we look; the admin token takes one down or puts it back, and loads the hashes of the game's own files.
 
+import { dropBlob, getBlob, putBlob } from "./blobs.js";
 import { Refusal, isAdmin, json, sha256Hex, signedBy } from "./signed.js";
 
-const CHUNK = 120 * 1024;
 const MAX_EMBEDDED = 96 * 1024 * 1024;
 const MAX_PACKAGE = MAX_EMBEDDED + 4 * 1024 * 1024;
 const MAX_FILES = 6000;
@@ -128,19 +128,7 @@ export class Maps {
     }
 
     const version = (existing?.version ?? 0) + 1;
-    const chunks = Math.ceil(body.length / CHUNK);
-    const entries = {};
-    for (let i = 0; i < chunks; i++) {
-      entries[`chunk:${manifest.id}:${version}:${i}`] = body.slice(i * CHUNK, (i + 1) * CHUNK);
-      if (Object.keys(entries).length === 100) {
-        await this.storage.put(entries);
-        for (const k of Object.keys(entries)) delete entries[k];
-      }
-    }
-
-    if (Object.keys(entries).length > 0) {
-      await this.storage.put(entries);
-    }
+    const chunks = await putBlob(this.storage, `chunk:${manifest.id}:${version}`, body);
 
     const map = {
       id: manifest.id,
@@ -174,23 +162,7 @@ export class Maps {
       throw new Refusal(404, "No such map.");
     }
 
-    const keys = Array.from({ length: map.chunks }, (_, i) => `chunk:${map.id}:${map.version}:${i}`);
-    const found = new Map();
-    for (let i = 0; i < keys.length; i += 128) {
-      for (const [k, v] of await this.storage.get(keys.slice(i, i + 128))) found.set(k, v);
-    }
-
-    const body = new Uint8Array(map.size);
-    let at = 0;
-    for (const k of keys) {
-      const chunk = found.get(k);
-      if (!chunk) {
-        throw new Error(`Map ${map.id} is missing ${k}.`);
-      }
-
-      body.set(new Uint8Array(chunk), at);
-      at += chunk.byteLength;
-    }
+    const body = await getBlob(this.storage, `chunk:${map.id}:${map.version}`, map.chunks, map.size);
 
     map.downloads++;
     await this.storage.put(`map:${map.id}`, map);
@@ -313,8 +285,7 @@ export class Maps {
   }
 
   async dropChunks(id, version, chunks) {
-    const keys = Array.from({ length: chunks }, (_, i) => `chunk:${id}:${version}:${i}`);
-    for (let i = 0; i < keys.length; i += 128) await this.storage.delete(keys.slice(i, i + 128));
+    await dropBlob(this.storage, `chunk:${id}:${version}`, chunks);
   }
 }
 

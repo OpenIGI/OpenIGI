@@ -183,7 +183,7 @@ public static class RagdollImpulse
             int hops = body.Rig.HopsBetween(struck, other);
             if (hops <= SpreadReach)
             {
-                total += Math.Pow(SpreadPerHop, hops);
+                total += SimMath.Pow(SpreadPerHop, hops);
             }
         }
 
@@ -200,7 +200,7 @@ public static class RagdollImpulse
             if (hops <= SpreadReach)
             {
                 body.AddBodyImpulse(
-                    other, direction * (local * Math.Pow(SpreadPerHop, hops)), other == struck ? arm : Vector3d.Zero);
+                    other, direction * (local * SimMath.Pow(SpreadPerHop, hops)), other == struck ? arm : Vector3d.Zero);
             }
         }
     }

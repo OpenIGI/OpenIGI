@@ -470,7 +470,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
                 {
                     if (casings is not null && shooter.Model is { } dress && arms.Inventory?.Current?.WeaponType.FixedModel is { } held)
                     {
-                        Igi2TitlePlayer.EjectFrom(casings, casing, Igi2BodyFrame.Build(shooter, shooter.BodyPose(), dress.Name, held, 0), held, shooter.TotalSpeed);
+                        Igi2TitlePlayer.EjectFrom(casings, casing, Igi2BodyFrame.Build(shooter, shooter.PresentedPose(), dress.Name, held, 0), held, shooter.TotalSpeed);
                     }
                 });
                 arms.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(services)) { Explosions = grenades?.Explosions };

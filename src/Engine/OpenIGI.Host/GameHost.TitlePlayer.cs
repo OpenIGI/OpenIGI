@@ -249,6 +249,12 @@ public sealed partial class GameHost
         }
     }
 
+    // The input the player's last tick was given, gathered or replayed: what the mission's computer reads in that tick.
+    private TitlePlayerInput _tickInput;
+
+    // The weapon the wheel picked since the last tick, for the next tick's input.
+    private int? _wheelPick;
+
     /// <summary>Runs the title's player for one tick, with the input gathered since the last.</summary>
     /// <returns><see langword="true"/> when the title has its own player, whether or not it ran this tick.</returns>
     private bool TickTitlePlayer()
@@ -281,6 +287,7 @@ public sealed partial class GameHost
 
         // The weapon wheel holds the player still while it is open: nothing it was given goes through. So does the mission's
         // computer, while it serves this player.
+        PlayerAction heldForComputer = held;
         bool still = WheelHoldsInput || (_computerOpen && TitleUsesMissionComputer);
         if (still)
         {
@@ -313,7 +320,7 @@ public sealed partial class GameHost
         IHostTickObserver? observer = _hosted is Game.Multiplayer.IReplicatedTitle ? null : TickObserver;
         observer?.BeforeTitleTick(player);
         // Recorded for a play-test's replay, or replaced by the recording being played back.
-        player.Tick(PlaytestInput(new TitlePlayerInput(
+        TitlePlayerInput given = PlaytestInput(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
             held & ~replaced,
@@ -324,7 +331,24 @@ public sealed partial class GameHost
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
             TitleHeld: titleHeld,
             TitlePressed: _titleExtraPressed | (still ? 0UL : titleScriptPressed),
-            Raw: SampleRawKeys())));
+            Raw: SampleRawKeys(),
+            ViewBlend: _drawnTickBlend,
+            Aim: TickAim(player),
+            WheelPick: _wheelPick,
+            Computer: ComputerTickInput(heldForComputer)));
+        _wheelPick = null;
+        _tickInput = given;
+        RecordRunInput(given);
+
+        // The remaster's computer holds the player from the tick it is up for, as the input says -- not from the frame it opened on.
+        if (TacticalComputer is not null)
+        {
+            _mission.SetPlayerComputerOpen(given.Computer.Open);
+        }
+
+        // The blend the player saw the soldiers at, from the input as given (a replay's as recorded): what its rounds meet.
+        _soldiers?.ShotViewBlend = given.ViewBlend;
+        player.Tick(given);
         observer?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
@@ -334,6 +358,18 @@ public sealed partial class GameHost
         ForgetTitleInput();
         _titleWheel = 0f;
         return true;
+    }
+
+    /// <summary>
+    /// Where the crosshair pointed with the camera over the shoulder as the last frame drew it, from the player's eye as this tick
+    /// begins: the title's own over-the-shoulder camera, or Project I.G.I.'s viewpoint's. <see langword="null"/> at the eye.
+    /// </summary>
+    private Game.Player.TitleAim? TickAim(Game.Player.ITitlePlayer player)
+    {
+        (Core.Numerics.Vector3d OriginUnits, Core.Numerics.Vector3f Direction)? ray = player is Game.Player.ITitleOverShoulder
+            ? _titleOverShoulder.AimRay
+            : Viewpoint?.AimRay;
+        return ray is { } aim ? new Game.Player.TitleAim(aim.OriginUnits - player.EyePosition, aim.Direction) : null;
     }
 
     /// <summary>The fixed keys and buttons a title's own screens read, held now, and the wheel turned since the last tick.</summary>
@@ -367,8 +403,12 @@ public sealed partial class GameHost
     private void PresentTitleLook(bool smooth)
     {
         PlayerProfile? profile = _configuration.Active;
+
+        // Not while a recording plays back: its look is the tape's, given a tick at a time, with no mouse of the viewer's ahead of
+        // it -- the preview held the view on each tick's look, stepping thirty times a second. Without it the view is drawn
+        // between the last two ticks' looks, as smooth as the run was played.
         bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && !_session.FailedMenu;
+            && !_session.FailedMenu && !Replaying;
         if (!available && _titleFeatures?.Look is { } stopped) { stopped.ResetLook(); }
         _titlePresentation.SetLookPreview(available && _titleFeatures?.Look is { CanPreviewLook: true } look
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
@@ -387,7 +427,7 @@ public sealed partial class GameHost
     /// </remarks>
     private bool TitleBreakKey() =>
         TickObserver is not Multiplayer.ISessionFollower
-        && (!_options.PlayCutscenes
+        && (!PlaysCutscenes
         || _cutsceneSkip.Breaking
         || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal));
 

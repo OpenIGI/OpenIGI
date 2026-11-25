@@ -214,8 +214,8 @@ public sealed class Igi1HumanCamera
     private Vector3d Back()
     {
         double heading = _facing + _yaw;
-        double level = Math.Cos(_pitch);
-        return new Vector3d(Math.Sin(heading) * level, -Math.Cos(heading) * level, Math.Sin(_pitch));
+        double level = SimMath.Cos(_pitch);
+        return new Vector3d(SimMath.Sin(heading) * level, -SimMath.Cos(heading) * level, SimMath.Sin(_pitch));
     }
 
     // 0x483EC0: four lines from the look point to a frame `distance` behind it, half `distance * 0.4096` across.
@@ -227,7 +227,7 @@ public sealed class Igi1HumanCamera
         }
 
         Vector3d back = Back();
-        Vector3d right = new(Math.Cos(_facing + _yaw), Math.Sin(_facing + _yaw), 0.0);
+        Vector3d right = new(SimMath.Cos(_facing + _yaw), SimMath.Sin(_facing + _yaw), 0.0);
         Vector3d up = Vector3d.Cross(back, right).Normalized();
         double half = _distance * DeathFrameScale;
         Vector3d centre = _look + (back * _distance);
@@ -277,8 +277,8 @@ public sealed class Igi1HumanCamera
 
         Vector3d toLook = look - eye;
         double length = toLook.Length;
-        float yaw = (float)Math.Atan2(toLook.X, toLook.Y);
-        float pitch = length > 0.0 ? (float)Math.Asin(toLook.Z / length) : 0f;
+        float yaw = (float)SimMath.Atan2(toLook.X, toLook.Y);
+        float pitch = length > 0.0 ? (float)SimMath.Asin(toLook.Z / length) : 0f;
         _camera = new Camera3D(eye / UnitsPerMetre, Camera3D.LookRotation(yaw, pitch));
         return pulled;
     }

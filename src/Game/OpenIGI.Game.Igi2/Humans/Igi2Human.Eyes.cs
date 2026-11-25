@@ -88,7 +88,7 @@ public abstract partial class Igi2Human
 
         if (view.ImpactOffset != 0f)
         {
-            double sine = Math.Sin(view.ImpactAngle);
+            double sine = SimMath.Sin(view.ImpactAngle);
             Fpu dip = (Fpu)view.ImpactOffset * sine;
             leanZ += dip;
             objectDip = (((Fpu)view.ImpactOffset * ObjectImpactShare) * sine).F;

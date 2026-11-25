@@ -30,9 +30,8 @@ public sealed partial class Igi2TitlePlayer : ITitleOverShoulder
         Weapons is { Firing.OverlayStatus: not Igi2WeaponOverlayStatus.None } || Weapons?.IsZoomFireModeActive == true;
 
     /// <inheritdoc/>
-    public void PresentOverShoulder(bool showsBody, (Vector3d OriginUnits, Vector3f Direction)? aimRay)
+    public void PresentOverShoulder(bool showsBody)
     {
-        _overShoulderAim = aimRay is { } ray ? (ray.OriginUnits - Human.View.Position, ray.Direction) : null;
         Human.IsOverShoulder = showsBody;
         if (showsBody == _overShoulderBody)
         {
@@ -50,6 +49,10 @@ public sealed partial class Igi2TitlePlayer : ITitleOverShoulder
     // while the body is in the world. A cutscene's container takes the player out (its remove handler), and a player caught at a
     // winch or a ladder as the scene began stood frozen beside the actor that plays it.
     private bool IsBodyShown => Human.IsActive && (Human.CameraMode is 3 or 5 || _overShoulderBody);
+
+    // The tick's crosshair ray, from its input: the eye it was measured from as the tick began, held to the human's own view.
+    private void TakeTickAim(in TitlePlayerInput input) =>
+        _overShoulderAim = input.Aim is { } aim ? (EyePosition + aim.EyeOffset - Human.View.Position, aim.Direction) : null;
 
     // Hands the tick's crosshair ray to the player before it runs, and the world it is traced through.
     private void TakeOverShoulderAim()

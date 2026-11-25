@@ -318,6 +318,20 @@ public interface IGraphicsDevice :
     {
     }
 
+    /// <summary>Hands this frame's picture a body of a race's ghost (<see cref="GhostLook"/>).</summary>
+    /// <param name="mesh">The body's mesh, drawn in the pose currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">The body's transform into view space, in metres.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    /// <remarks>
+    /// Laid over the lit scene before the tone map: its rim and edges glowing, scan lines climbing it, fainter where the scene
+    /// stands before it, and glitching as the look says. Never drawn into the scene itself, nor into a shadow. A device without
+    /// the shader ignores it.
+    /// </remarks>
+    void DrawGhost(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, in GhostLook look)
+    {
+    }
+
     /// <summary>Draws a place a multiplayer mode plays for -- a bomb site -- through the mode point shader: a disc and a low wall.</summary>
     /// <param name="mesh">The point's disc (lightmap u 0, diffuse uv -1..1 across it) and wall (lightmap u 1, v up it).</param>
     /// <param name="indexOffset">The first index to draw.</param>

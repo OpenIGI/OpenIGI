@@ -267,8 +267,8 @@ public sealed partial class Igi2HumanAi
         float lz = (((Fpu)dzStored * o[8]) + (dy * o[5]) + ((Fpu)dx * o[2])).F;
 
         double alpha = Igi2Pose.CalcAlpha(ly.Value, lz);
-        double s = Math.Sin(alpha);
-        float c = (float)Math.Cos(alpha), ns = (float)-s;
+        double s = SimMath.Sin(alpha);
+        float c = (float)SimMath.Cos(alpha), ns = (float)-s;
         Fpu sw = s;
         float[] r =
         [
@@ -284,8 +284,8 @@ public sealed partial class Igi2HumanAi
         ];
 
         double gamma = Igi2Pose.CalcGamma(lx.Value, ly.Value);
-        double s2 = Math.Sin(gamma);
-        float c2 = (float)Math.Cos(gamma), ns2 = (float)-s2;
+        double s2 = SimMath.Sin(gamma);
+        float c2 = (float)SimMath.Cos(gamma), ns2 = (float)-s2;
         Fpu sw2 = s2;
         return
         [

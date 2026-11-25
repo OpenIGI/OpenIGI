@@ -126,7 +126,7 @@ public readonly record struct Igi2GrenadeThrow(
         Fpu height = (a - ThreeHalvesPi) * InversePi;
         float share = height.Value < 0.0 ? 0f : ideal < height.Value ? ideal : height.F;
         Fpu ratio = (Fpu)share / ideal;
-        Fpu power = new(X87Single.Chop(Math.Pow(ratio.Value, parameters.ThrowGammaExponent)));
+        Fpu power = new(X87Single.Chop(SimMath.Pow(ratio.Value, parameters.ThrowGammaExponent)));
         Fpu speed = ((power * launch.Speed) * 4096f) * 0.033333335f;
 
         float sx = ((Fpu)m[1] * speed).F;

@@ -105,6 +105,25 @@ public sealed partial class RecordingGraphicsDevice
         LastSilhouetteGroup = group;
     }
 
+    /// <summary>Gets how many bodies of a race's ghost have been handed to the picture.</summary>
+    public int GhostDrawCount { get; private set; }
+
+    /// <summary>Gets how many different meshes a race's ghost has been handed as: its body and what it holds.</summary>
+    public int GhostMeshCount => _ghostMeshes.Count;
+
+    private readonly HashSet<MeshHandle> _ghostMeshes = [];
+
+    /// <summary>Gets the look the last body of a ghost was handed with.</summary>
+    public GhostLook LastGhostLook { get; private set; }
+
+    /// <inheritdoc/>
+    public void DrawGhost(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, in GhostLook look)
+    {
+        GhostDrawCount++;
+        _ghostMeshes.Add(mesh);
+        LastGhostLook = look;
+    }
+
     /// <summary>Gets how many bodies have been handed to the thermal sensor.</summary>
     public int ThermalBodyDrawCount { get; private set; }
 

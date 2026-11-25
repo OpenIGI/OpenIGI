@@ -84,6 +84,6 @@ public static class SightAlignment
         float cos = Vector3f.Dot(direction, to);
         return sin <= 1e-7f
             ? Matrix3f.Identity
-            : Matrix3f.RotationAxis(new Vector3d(axis.X, axis.Y, axis.Z), MathF.Atan2(sin, cos));
+            : Matrix3f.RotationAxis(new Vector3d(axis.X, axis.Y, axis.Z), SimMathF.Atan2(sin, cos));
     }
 }

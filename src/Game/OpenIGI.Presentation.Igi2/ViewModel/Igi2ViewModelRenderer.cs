@@ -265,22 +265,11 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             Part? part;
             if (wanted is { Pose: { } pose, Instance: { } instance })
             {
-                // A body of its own: one model may stand many times over, each posed its own way, so each keeps its own mesh.
-                BodyKey key = new(instance, wanted.Model);
-                if (!_bodies.TryGetValue(key, out part))
-                {
-                    part = Build(wanted.Model, skinned: true);
-                    _bodies[key] = part;
-                }
-
-                if (part is null || (part.Tick != wanted.Tick && !(SamePose(part.SkinnedPose, pose) && SameMorph(part.SkinnedMorph, wanted.MorphWeights))
-                    && !Reskin(part, pose, wanted.Model, () => _bodies[key] = null, morph: wanted.MorphWeights)))
+                part = PoseOwnBody(wanted, pose, instance, between);
+                if (part is null)
                 {
                     continue;
                 }
-
-                part.Tick = wanted.Tick;
-                PoseBetween(part, wanted.Tick, between);
 
                 // A body is cloth and skin, which do not shine, and is left out of the ambient occlusion: the body material
                 // Project I.G.I.'s soldiers are drawn with (SurfaceMaterial.Body).
@@ -337,6 +326,64 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     }
 
     // A body drawn between its last two skins when they are a tick apart; the blend last frame drew with is the frame's motion.
+    // A body of its own posed for its tick: one model may stand many times over, each posed its own way, so each keeps its own
+    // mesh; skinned again where the tick's pose differs, and the device's pose blend set between its last two. Null with no body.
+    private Part? PoseOwnBody(TitleWorldModel wanted, BonePose pose, object instance, float between)
+    {
+        BodyKey key = new(instance, wanted.Model);
+        if (!_bodies.TryGetValue(key, out Part? part))
+        {
+            part = Build(wanted.Model, skinned: true);
+            _bodies[key] = part;
+        }
+
+        if (part is null || (part.Tick != wanted.Tick && !(SamePose(part.SkinnedPose, pose) && SameMorph(part.SkinnedMorph, wanted.MorphWeights))
+            && !Reskin(part, pose, wanted.Model, () => _bodies[key] = null, morph: wanted.MorphWeights)))
+        {
+            return null;
+        }
+
+        part.Tick = wanted.Tick;
+        PoseBetween(part, wanted.Tick, between);
+        return part;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <b>Not retail.</b> Each of the ghost's models posed as the world draw poses its own -- the body skinned for its tick, its gun
+    /// placed in its hand -- and handed whole to the ghost pass, never drawn into the scene.
+    /// </remarks>
+    public void DrawWorldGhosts(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, float blend, in GhostLook look)
+    {
+        ArgumentNullException.ThrowIfNull(models);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_models is null || models.Count == 0)
+        {
+            return;
+        }
+
+        float between = Math.Clamp(blend, 0f, 1f);
+        foreach (TitleWorldModel wanted in models)
+        {
+            Part? part = wanted is { Pose: { } pose, Instance: { } instance }
+                ? PoseOwnBody(wanted, pose, instance, between)
+                : Resolve(wanted.Model, skinned: false);
+            if (part is null || !PoseDrawnBody(part, wanted, between))
+            {
+                continue;
+            }
+
+            (Vector3d at, Matrix3f orientation, _) = Placed(wanted, between);
+            _device.DrawGhost(
+                part.Mesh,
+                System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_outlineRanges),
+                camera.CreateModelView(WorldScene.ToMetres(at), orientation),
+                look);
+        }
+
+        _device.ClearPoseInterpolation();
+    }
+
     private void PoseBetween(Part part, long tick, float blend)
     {
         bool between = blend < 1f && part.SkinTick == tick && part.PreviousSkinTick == tick - 1;

@@ -183,7 +183,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         // The heading the body has now. The authored one (the spawn's gamma) snapped every soldier that died back
         // to the way it was placed.
-        float facing = brain?.Facing ?? MathF.Atan2(orientation.M21, orientation.M11);
+        float facing = brain?.Facing ?? SimMathF.Atan2(orientation.M21, orientation.M11);
         float livingFacing = facing;
 
         int animation;

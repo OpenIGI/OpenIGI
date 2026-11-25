@@ -317,7 +317,7 @@ public readonly struct Matrix4f : IEquatable<Matrix4f>, IFormattable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(near);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(far, near);
 
-        float yScale = 1f / MathF.Tan(verticalFieldOfView * 0.5f);
+        float yScale = 1f / SimMathF.Tan(verticalFieldOfView * 0.5f);
         return new Matrix4f(
             yScale / aspectRatio, 0f, 0f, 0f,
             0f, yScale, 0f, 0f,

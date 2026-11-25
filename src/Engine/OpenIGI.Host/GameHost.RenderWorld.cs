@@ -165,7 +165,9 @@ public sealed partial class GameHost
         SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
         RenderResolution resolution)
     {
-        bool captured = (FrameCVars.OffscreenScene.Value || ThermalNeedsScene) && _device.BeginSceneCapture(sceneTarget);
+        // The thermal sensor and a race's ghost are passes over the finished scene: where the scene is otherwise drawn straight to
+        // the screen, it is drawn offscreen while either is up, or neither is ever seen.
+        bool captured = (FrameCVars.OffscreenScene.Value || ThermalNeedsScene || Racing) && _device.BeginSceneCapture(sceneTarget);
         if (captured)
         {
             // The scheduler cleared the back buffer; the target it did not know about needs it too.

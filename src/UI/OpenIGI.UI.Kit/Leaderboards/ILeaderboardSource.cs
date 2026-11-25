@@ -67,4 +67,34 @@ public interface ILeaderboardSource
     /// <summary>Opens a page in the player's browser.</summary>
     /// <param name="url">The page.</param>
     void OpenLink(string url);
+
+    /// <summary>Gets the single-player boards, where this build reads them; <see langword="null"/> where it doesn't.</summary>
+    MissionBoardFeed? Missions => null;
+
+    /// <summary>A game's missions as the mission boards offer them, in campaign order.</summary>
+    /// <param name="title">The game, by title id.</param>
+    /// <returns>Each mission's id and name.</returns>
+    IReadOnlyList<(int Id, string Name)> MissionsOf(string title) =>
+        [.. (GameTitle.All.FirstOrDefault(game => game.Id == title)?.MissionNames ?? []).Select(static (name, i) => (i + 1, name))];
+
+    /// <summary>Watches a board's run: its replay, with the ghost the server saw, played in the game.</summary>
+    /// <param name="run">The run.</param>
+    void Watch(string run)
+    {
+    }
+
+    /// <summary>Races a board's run: its mission played from the start, the run beside the player as a ghost.</summary>
+    /// <param name="run">The run.</param>
+    void Race(string run)
+    {
+    }
+
+    /// <summary>Gets whether the player can report a run: signed in under an account the boards know.</summary>
+    bool CanReport => false;
+
+    /// <summary>Reports a board's run for a person to look at: one that looks played by a tool, or through a flaw.</summary>
+    /// <param name="run">The run.</param>
+    void Report(string run)
+    {
+    }
 }

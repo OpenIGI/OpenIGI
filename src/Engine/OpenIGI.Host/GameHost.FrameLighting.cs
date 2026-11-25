@@ -48,6 +48,9 @@ public sealed partial class GameHost
 
     /// <summary>Resolves every soldier-shaped thing's frame state once, so the shadow cascades and the geometry pass agree.</summary>
     /// <returns>What the shadow passes draw as characters, or <see langword="null"/> for nothing.</returns>
+    // How far between the last two ticks the last frame drew the played mission, with smooth motion; null at the tick itself.
+    private float? _drawnTickBlend;
+
     private ICharacterPresenter? BeginCharacterFrame(float tickBlend, bool smoothPresentation)
     {
         Debug.Assert(_world is not null, "Begun only while a level is up; see RenderWorld.");
@@ -64,6 +67,9 @@ public sealed partial class GameHost
             : new SoldierBodies(shadowCasters, shadowTasks, tickBlend);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
+
+        // Where between its ticks the played mission's picture stands, for the next tick's input: what its rounds meet.
+        _drawnTickBlend = _soldiers is not null && smoothPresentation ? tickBlend : null;
         WorldView?.BeginFrame(tickBlend, smoothPresentation);
 
         return casterBodies;

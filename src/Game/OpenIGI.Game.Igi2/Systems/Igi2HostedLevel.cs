@@ -310,7 +310,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
                 {
                     models.AddRange(Igi2BodyFrame.Build(
                         body,
-                        body.BodyPose(),
+                        body.PresentedPose(),
                         model.Name,
                         body.Weapon.Inventory?.Current?.WeaponType.FixedModel,
                         Ticks,

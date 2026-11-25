@@ -164,9 +164,9 @@ public static class Igi2ClipSampler
             double magnitude = Math.Abs(d);
             double angle = Math.Sqrt(1.0 - magnitude)
                 * ((((magnitude * -0.018729299) + 0.074261002) * magnitude - 0.21211439) * magnitude + 1.5707288);
-            double inverseSine = 1.0 / Math.Sin(angle);
-            fromWeight = Math.Sin((1.0 - t) * angle) * inverseSine * (d >= 0f ? 1.0 : -1.0);
-            toWeight = Math.Sin(angle * t) * inverseSine;
+            double inverseSine = 1.0 / SimMath.Sin(angle);
+            fromWeight = SimMath.Sin((1.0 - t) * angle) * inverseSine * (d >= 0f ? 1.0 : -1.0);
+            toWeight = SimMath.Sin(angle * t) * inverseSine;
         }
 
         return new Quaternion32(

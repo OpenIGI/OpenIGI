@@ -30,7 +30,7 @@ public static class PlayerCheatCVars
 
     // Listed and completed like any variable -- the console marks them blocked until `cheats 1` -- so
     // they can be found from the console, which is where issue #57 asks for them.
-    private const CVarOptions CheatFlags = CVarOptions.Cheat;
+    private const CVarOptions CheatFlags = CVarOptions.Cheat | CVarOptions.Simulation;
 
     /// <summary>Scales root-motion movement, air control, and horizontal jump carry.</summary>
     public static readonly NumericCVar<float> Speed = CVar.Float(
@@ -64,7 +64,7 @@ public static class PlayerCheatCVars
 
     /// <summary>Makes every campaign mission selectable.</summary>
     public static readonly BoolCVar UnlockAllLevels = CVar.Bool(
-        "g_cheat_unlock_all_levels", false, CheatFlags,
+        "g_cheat_unlock_all_levels", false, CVarOptions.Cheat,
         "Unlock every campaign mission (cheat).");
 
     /// <summary>Suppresses the view kick from fired rounds.</summary>

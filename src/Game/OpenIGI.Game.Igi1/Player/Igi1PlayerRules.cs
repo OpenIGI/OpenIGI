@@ -188,7 +188,7 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         Vector3d feet = rig.Body.Position;
         Vector3d towardsPlayer = new(feet.X - attacker.X, feet.Y - attacker.Y, feet.Z - attacker.Z);
         float yaw = rig.Body.Yaw;
-        double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
+        double facing = (towardsPlayer.X * -SimMath.Sin(yaw)) + (towardsPlayer.Y * SimMath.Cos(yaw));
         int zone = facing < 0.0 ? BluntFrontZone : BluntBackZone;
 
         target.Health.Apply(zone, damage);
@@ -268,7 +268,7 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         double throwY = feet.Y - from.Y;
         double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
         float throwFacing = throwLength > 1e-6
-            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
+            ? (float)SimMath.Atan2(throwX / throwLength, -(throwY / throwLength))
             : rig.Body.Yaw;
         target.Senses.Died(new PlayerFall(
             fall,

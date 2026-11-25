@@ -20,8 +20,9 @@ public sealed partial class GameHost
         // Not under a menu -- but the quick load does answer the failed page, where it is what a dead player reaches for.
         bool save = (pressed & QuickSaveBit) != 0;
 
-        // Not in a play-test from the editor, which is recorded from the level's start and plays its recording back on F9.
-        if (pressed != 0 && _editor is not { IsPlaying: true } && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
+        // Not in a play-test from the editor, which is recorded from the level's start and plays its recording back on F9; nor in
+        // a replay being watched, whose level plays only its recording.
+        if (pressed != 0 && !TransportActive && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
         {
             QuickSaveOrLoad(save);
         }

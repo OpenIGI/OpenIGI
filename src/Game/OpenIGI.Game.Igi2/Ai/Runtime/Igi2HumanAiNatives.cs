@@ -201,13 +201,13 @@ public sealed class Igi2HumanAiNatives
 
     /// <summary>The near factor, <c>(medium / close) ^ (1 / medium range)</c>.</summary>
     private static void NearFactor(float[] t) =>
-        t[Igi2AiTweakIndex.MedRangeAccuracyFactor] = (float)Math.Pow(
+        t[Igi2AiTweakIndex.MedRangeAccuracyFactor] = (float)SimMath.Pow(
             ((Fpu)t[Igi2AiTweakIndex.MedRangeAccuracy] / t[Igi2AiTweakIndex.MinRangeAccuracy]).Value,
             ((Fpu)1.0 / t[Igi2AiTweakIndex.AccuracyMedRange]).Value);
 
     /// <summary>The far factor, <c>(long / medium) ^ (1 / (long range - medium range))</c>.</summary>
     private static void FarFactor(float[] t) =>
-        t[Igi2AiTweakIndex.MaxRangeAccuracyFactor] = (float)Math.Pow(
+        t[Igi2AiTweakIndex.MaxRangeAccuracyFactor] = (float)SimMath.Pow(
             ((Fpu)t[Igi2AiTweakIndex.MaxRangeAccuracy] / t[Igi2AiTweakIndex.MedRangeAccuracy]).Value,
             ((Fpu)1.0 / ((Fpu)t[Igi2AiTweakIndex.AccuracyMaxRange] - t[Igi2AiTweakIndex.AccuracyMedRange])).Value);
 

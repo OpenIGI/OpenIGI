@@ -364,11 +364,11 @@ public sealed class Igi2HumanAiConfig
             }
 
             // The subtraction and the product are x87 operations at the client's precision; pow is the C runtime's.
-            double far = Math.Pow(maxRangeAccuracyFactor, ((Fpu)distance - accuracyMedRange).Value);
+            double far = SimMath.Pow(maxRangeAccuracyFactor, ((Fpu)distance - accuracyMedRange).Value);
             return (new Fpu(Fpu.Chop(far)) * medRangeAccuracy).F;
         }
 
-        double near = Math.Pow(medRangeAccuracyFactor, distance);
+        double near = SimMath.Pow(medRangeAccuracyFactor, distance);
         return (new Fpu(Fpu.Chop(near)) * minRangeAccuracy).F;
     }
 
@@ -564,8 +564,8 @@ public sealed record Igi2AiTweaks(
         float maxAccuracy = Floor(((Fpu)s.MaxRangeAccuracy * b.MaxRangeAccuracy) * Percent, 0f);
         float medRange = Floor(((Fpu)s.AccuracyMedRange * b.AccuracyMedRange) * Metre, 1f);
         float maxRange = Floor(((Fpu)s.AccuracyMaxRange * b.AccuracyMaxRange) * Metre, 1f);
-        float medFactor = (float)Math.Pow(((Fpu)medAccuracy / minAccuracy).Value, ((Fpu)1f / medRange).Value);
-        float maxFactor = (float)Math.Pow(((Fpu)maxAccuracy / medAccuracy).Value, ((Fpu)1f / ((Fpu)maxRange - medRange)).Value);
+        float medFactor = (float)SimMath.Pow(((Fpu)medAccuracy / minAccuracy).Value, ((Fpu)1f / medRange).Value);
+        float maxFactor = (float)SimMath.Pow(((Fpu)maxAccuracy / medAccuracy).Value, ((Fpu)1f / ((Fpu)maxRange - medRange)).Value);
         Fpu anim = (Fpu)s.AnimSpeedFactor * b.AnimSpeedFactor;
         float animSpeed = anim.Value >= 0.80000001f ? (anim.Value > 1.2f ? 1.2f : anim.F) : 0.80000001f;
 

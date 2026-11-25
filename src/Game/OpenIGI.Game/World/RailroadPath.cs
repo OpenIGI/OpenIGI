@@ -274,7 +274,7 @@ public sealed class RailroadPath
                     float pieceLength = segment.Lengths[piece];
                     float toEnd = (float)Math.Sqrt(toB);
                     double beta = Acos((float)((toA - toB - ((double)pieceLength * pieceLength)) / ((double)toEnd * pieceLength * -2.0)));
-                    float sinBeta = (float)Math.Sin(beta);
+                    float sinBeta = (float)SimMath.Sin(beta);
                     float rest = (float)(Pi - beta);
                     double apex = rest - Asin((sinBeta / span * toEnd));
                     if (apex <= 0.001)
@@ -284,7 +284,7 @@ public sealed class RailroadPath
                     }
                     else
                     {
-                        fraction = (float)(1.0 - (Math.Sin(apex) * span / sinBeta / pieceLength));
+                        fraction = (float)(1.0 - (SimMath.Sin(apex) * span / sinBeta / pieceLength));
                     }
                 }
                 else
@@ -325,12 +325,12 @@ public sealed class RailroadPath
                         float pieceLength = segment.Lengths[piece];
                         float toStart = (float)Math.Sqrt(toA);
                         double alpha = Acos((float)((toB - (double)toA - ((double)pieceLength * pieceLength)) / ((double)toStart * pieceLength * -2.0)));
-                        float sinAlpha = (float)Math.Sin(alpha);
+                        float sinAlpha = (float)SimMath.Sin(alpha);
                         float rest = (float)(Pi - alpha);
                         double apex = rest - Asin((sinAlpha / step * toStart));
                         fraction = apex <= 0.001
                             ? (float)((step - toStart) / (Math.Sqrt(toB) - toStart))
-                            : (float)(Math.Sin(apex) * step / sinAlpha / pieceLength);
+                            : (float)(SimMath.Sin(apex) * step / sinAlpha / pieceLength);
                         break;
                     }
                 }
@@ -450,10 +450,10 @@ public sealed class RailroadPath
     }
 
     /// <summary><c>0x4B2760</c>: <c>acos</c> of its float argument clamped to [-1, 1].</summary>
-    private static double Acos(float value) => Math.Acos(Math.Clamp(value, -1f, 1f));
+    private static double Acos(float value) => SimMath.Acos(Math.Clamp(value, -1f, 1f));
 
     /// <summary><c>0x4B27D0</c>: <c>asin</c> likewise.</summary>
-    private static double Asin(float value) => Math.Asin(Math.Clamp(value, -1f, 1f));
+    private static double Asin(float value) => SimMath.Asin(Math.Clamp(value, -1f, 1f));
 
     /// <summary>One waypoint's segment as the railroad solver reads it.</summary>
     private sealed class Segment(Vector3d position, float[] points, float[] lengths, int count, float length)

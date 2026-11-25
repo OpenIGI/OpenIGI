@@ -358,7 +358,7 @@ public sealed class Igi1Computer
         X87 dy = ((X87)m.M22 * DeviceForward) - ((X87)m.M23 * DeviceDown);
         X87 dz = ((X87)m.M32 * DeviceForward) - ((X87)m.M33 * DeviceDown);
         Vector3d position = new(dx.Value + eye.X, dy.F + eye.Y, dz.F + eye.Z);
-        float c = (float)Math.Cos(1.5707964f), s = (float)Math.Sin(1.5707964f);
+        float c = (float)SimMath.Cos(1.5707964f), s = (float)SimMath.Sin(1.5707964f);
 
         // The look times RotX(π/2), whose rows are (1, 0, 0), (0, c, -s), (0, s, c).
         Matrix3f axes = new(

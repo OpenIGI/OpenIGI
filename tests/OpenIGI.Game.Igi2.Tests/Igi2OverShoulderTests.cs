@@ -15,7 +15,8 @@ public sealed class Igi2OverShoulderTests
     private static Igi2TitlePlayer Player() => Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
         Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0.3f, Game.Ai.AiDifficulty.Normal);
 
-    private static void Tick(Igi2TitlePlayer player) => player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
+    private static void Tick(Igi2TitlePlayer player, TitleAim? aim = null) =>
+        player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false, Aim: aim));
 
     private static Vector3f Column(float[] o, int c) => new(o[c], o[3 + c], o[6 + c]);
 
@@ -23,7 +24,7 @@ public sealed class Igi2OverShoulderTests
     public void In_first_person_the_fire_frame_is_the_views_own()
     {
         Igi2TitlePlayer player = Player();
-        ((ITitleOverShoulder)player).PresentOverShoulder(false, null);
+        ((ITitleOverShoulder)player).PresentOverShoulder(false);
         Tick(player);
 
         Matrix3f v = player.Human.View.Orientation;
@@ -44,8 +45,8 @@ public sealed class Igi2OverShoulderTests
         // A camera half a metre right of the eye, looking the way the eye looks: what it is over is that far right, ahead.
         Vector3d eye = player.Human.View.Position;
         Vector3d origin = new(eye.X + (right.X * 2048.0), eye.Y + (right.Y * 2048.0), eye.Z + (right.Z * 2048.0));
-        ((ITitleOverShoulder)player).PresentOverShoulder(true, (origin, forward));
-        Tick(player);
+        ((ITitleOverShoulder)player).PresentOverShoulder(true);
+        Tick(player, new TitleAim(origin - player.EyePosition, forward));
 
         float[] fired = player.Human.GetFireFrame(addInaccuracy: false).Orientation;
         Vector3f turned = Column(fired, 1);

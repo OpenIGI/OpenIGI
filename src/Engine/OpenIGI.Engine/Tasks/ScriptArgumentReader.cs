@@ -122,12 +122,12 @@ public sealed class ScriptArgumentReader
         double beta = ReadReal32() * 0.5;
         double gamma = ReadReal32() * 0.5;
 
-        double sinA = Math.Sin(alpha);
-        double cosA = Math.Cos(alpha);
-        double sinB = Math.Sin(beta);
-        double cosB = Math.Cos(beta);
-        double sinG = Math.Sin(gamma);
-        double cosG = Math.Cos(gamma);
+        double sinA = SimMath.Sin(alpha);
+        double cosA = SimMath.Cos(alpha);
+        double sinB = SimMath.Sin(beta);
+        double cosB = SimMath.Cos(beta);
+        double sinG = SimMath.Sin(gamma);
+        double cosG = SimMath.Cos(gamma);
 
         double ba = cosB * sinA;
         double ab = sinB * cosA;

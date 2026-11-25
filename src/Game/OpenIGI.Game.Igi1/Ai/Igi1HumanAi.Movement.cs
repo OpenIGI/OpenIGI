@@ -252,7 +252,7 @@ public sealed partial class Igi1HumanAi
         float yawError = 0f;
         if ((dx * dx) + (dy * dy) >= 1.0)
         {
-            yawError = Igi1AiGeometry.Wrap((float)Math.Atan2(-dx, dy) - (Facing + RecoilYaw));
+            yawError = Igi1AiGeometry.Wrap((float)SimMath.Atan2(-dx, dy) - (Facing + RecoilYaw));
         }
 
         float yawLimit = _steering.YawClamp;
@@ -266,7 +266,7 @@ public sealed partial class Igi1HumanAi
             Vector3d eye = ViewPositionProvider?.Invoke() ?? EyePosition();
             double ex = target.X - eye.X;
             double ey = target.Y - eye.Y;
-            elevation = (float)Math.Atan2(target.Z - eye.Z, Math.Sqrt((ex * ex) + (ey * ey)));
+            elevation = (float)SimMath.Atan2(target.Z - eye.Z, Math.Sqrt((ex * ex) + (ey * ey)));
         }
 
         float pitchError = elevation - (ViewPitch + RecoilPitch);

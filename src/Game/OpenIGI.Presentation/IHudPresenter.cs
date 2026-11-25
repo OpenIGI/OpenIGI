@@ -322,6 +322,28 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <summary>Gets where the last team menu drew each choice's card, by its index in <see cref="Game.Multiplayer.Modes.TeamPick.Choices"/>.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> TeamMenuCards => [];
 
+    /// <summary>Draws a race against a ghost: how far ahead of it or behind it the player is, and the splits so far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="race">What it shows.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawRace(SpriteBatch batch, Hud.RaceHud race, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the replay viewer's transport bar at the foot of the screen: what is watched, the run as a track, the keys.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="bar">What it shows.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawReplayBar(SpriteBatch batch, Hud.ReplayBar bar, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Gets where the last transport bar drew its track, in pixels, with room above and below for the pointer: what a click
+    /// seeks along. Empty before one is drawn.</summary>
+    (float X, float Y, float Width, float Height) ReplayTrack => default;
+
     /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
 

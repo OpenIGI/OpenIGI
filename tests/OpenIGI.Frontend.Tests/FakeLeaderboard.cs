@@ -14,9 +14,21 @@ internal sealed class FakeLeaderboard : ILeaderboardSource
         "Dmitri", "Lena", "Hawk", "Viper", "Oksana", "Brody", "Mako", "Yuri", "Quill", "Taras", "Wren", "Zeno",
     ];
 
-    public FakeLeaderboard(FakeBoardReader reader, string title = "igi1") => Feed = new LeaderboardFeed(reader, title) { You = "aaaaaaaaaaaaaaaa" };
+    public FakeLeaderboard(FakeBoardReader reader, string title = "igi1")
+    {
+        Feed = new LeaderboardFeed(reader, title) { You = "aaaaaaaaaaaaaaaa" };
+        Missions = new MissionBoardFeed(new FakeRunBoards(reader.RowCount), title) { You = "900000000000000004" };
+    }
 
     public LeaderboardFeed Feed { get; }
+
+    public MissionBoardFeed Missions { get; }
+
+    public List<(string Run, bool Race)> Played { get; } = [];
+
+    public void Watch(string run) => Played.Add((run, false));
+
+    public void Race(string run) => Played.Add((run, true));
 
     public IReadOnlyList<LeaderboardGame> Games => LeaderboardGame.Official;
 
@@ -106,4 +118,28 @@ internal sealed class FakeBoardReader : ILeaderboardReader
 
     public Task<PlayerAccount?> PlayerAsync(string player, CancellationToken cancel) =>
         Task.FromResult<PlayerAccount?>(new PlayerAccount(player, "Jones", string.Empty, 0));
+}
+
+/// <summary>A mission board of made-up runs: times climbing a few seconds a place, ranks falling, every fourth replay let go.</summary>
+internal sealed class FakeRunBoards(int count) : IRunBoardReader
+{
+    private static readonly string[] Names = ["Kestrel", "Anya", "Night Owl", "Jones", "Marlin", "Sasha", "Rook", "Lena", "Hawk", "Viper", "Ivo", "Wren"];
+
+    public Task<RunBoard> BoardAsync(string title, int? mission, int difficulty, string ruleset, string metric, string? you, CancellationToken cancel)
+    {
+        List<RunBoardRow> rows =
+        [
+            .. Enumerable.Range(0, count).Select(i => new RunBoardRow(
+                i + 1,
+                (900000000000000000L + i).ToString(CultureInfo.InvariantCulture),
+                Names[i % Names.Length],
+                mission is null ? 145000 + (i * 2400) : 9120 + (i * 97),
+                Rank: Math.Max(-1, 2 - (i / 6)),
+                Points: mission is null ? 42 - i : 0,
+                Run: mission is null ? null : $"run{i}",
+                Replay: mission is not null && i % 4 != 3)),
+        ];
+        RunBoardRow? own = you is null ? null : rows.FirstOrDefault(r => r.Account == you);
+        return Task.FromResult(new RunBoard(title, mission?.ToString(CultureInfo.InvariantCulture) ?? "all", difficulty, ruleset, metric, count * 7, rows, own));
+    }
 }

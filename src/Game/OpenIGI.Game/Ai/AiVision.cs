@@ -138,7 +138,7 @@ public sealed class AiVision
             return 0.0;
         }
 
-        double angle = Math.Acos(Math.Clamp(forward / length, -1.0, 1.0));
+        double angle = SimMath.Acos(Math.Clamp(forward / length, -1.0, 1.0));
         return up < 0.0 ? -angle : angle;
     }
 

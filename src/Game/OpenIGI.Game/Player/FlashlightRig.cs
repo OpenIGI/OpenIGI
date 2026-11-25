@@ -164,12 +164,12 @@ public sealed class FlashlightRig
         float pace = Math.Clamp(paceFraction, 0f, 1f);
         float swing = SwayDegrees * pace * MathF.Max(swayScale, 0f) * (MathF.PI / 180f);
         float breath = 0.08f * MathF.Max(swayScale, 0f) * (MathF.PI / 180f);
-        float yaw = (swing * MathF.Sin(_swayPhase)) + (breath * MathF.Sin(_breathPhase * 0.7f));
-        float pitch = (0.5f * swing * MathF.Sin(2f * _swayPhase)) + (breath * MathF.Sin(_breathPhase));
+        float yaw = (swing * SimMathF.Sin(_swayPhase)) + (breath * SimMathF.Sin(_breathPhase * 0.7f));
+        float pitch = (0.5f * swing * SimMathF.Sin(2f * _swayPhase)) + (breath * SimMathF.Sin(_breathPhase));
 
-        Vector3f swayed = (target + (right * MathF.Tan(yaw)) + (up * MathF.Tan(pitch))).ReciprocalNormalizedOr(target, 1e-6f);
+        Vector3f swayed = (target + (right * SimMathF.Tan(yaw)) + (up * SimMathF.Tan(pitch))).ReciprocalNormalizedOr(target, 1e-6f);
 
-        if (!_hasAim || Vector3f.Dot(Aim, swayed) < MathF.Cos(SnapDegrees * (MathF.PI / 180f)))
+        if (!_hasAim || Vector3f.Dot(Aim, swayed) < SimMathF.Cos(SnapDegrees * (MathF.PI / 180f)))
         {
             Aim = swayed;
             _hasAim = true;
@@ -183,7 +183,7 @@ public sealed class FlashlightRig
         }
 
         // Exponential, so it is the same lag at any frame rate: what is left of the gap halves every half-life.
-        float keep = MathF.Pow(0.5f, seconds / lagHalfLife);
+        float keep = SimMathF.Pow(0.5f, seconds / lagHalfLife);
         Aim = ((Aim * keep) + (swayed * (1f - keep))).ReciprocalNormalizedOr(swayed, 1e-6f);
     }
 
@@ -226,7 +226,7 @@ public sealed class FlashlightRig
 
             // Most of it at once as the current stops; the rest the capacitor bleeding the emitter dim.
             float u = t - OffLatchSeconds;
-            float left = _from * ((0.85f * MathF.Exp(-u / 0.008f)) + (0.15f * MathF.Exp(-u / 0.09f)));
+            float left = _from * ((0.85f * SimMathF.Exp(-u / 0.008f)) + (0.15f * SimMathF.Exp(-u / 0.09f)));
             return left < 0.002f ? 0f : left;
         }
 
@@ -245,7 +245,7 @@ public sealed class FlashlightRig
         // each gap the driver dropping out.
         if (s < _chatterOn1)
         {
-            return _chatterPeak * (1f - MathF.Exp(-s / ContactRise));
+            return _chatterPeak * (1f - SimMathF.Exp(-s / ContactRise));
         }
 
         s -= _chatterOn1;
@@ -259,7 +259,7 @@ public sealed class FlashlightRig
         {
             if (s < _chatterOn2)
             {
-                return 0.8f * _chatterPeak * (1f - MathF.Exp(-s / ContactRise));
+                return 0.8f * _chatterPeak * (1f - SimMathF.Exp(-s / ContactRise));
             }
 
             s -= _chatterOn2;
@@ -275,10 +275,10 @@ public sealed class FlashlightRig
     }
 
     // The driver bringing the current up: most of the way in ten milliseconds, from whatever was lit.
-    private static float SoftStart(float s, float from) => from + ((1f - from) * (1f - MathF.Exp(-s / 0.01f)));
+    private static float SoftStart(float s, float from) => from + ((1f - from) * (1f - SimMathF.Exp(-s / 0.01f)));
 
     // The emitter comes on a touch bright while it is cold and settles as it warms.
-    private static float Overshoot(float s) => 1f + (0.06f * MathF.Exp(-s / 0.18f));
+    private static float Overshoot(float s) => 1f + (0.06f * SimMathF.Exp(-s / 0.18f));
 
     // A small xorshift, so the chatter is rolled the same way every run and never from the clock.
     private float NextFloat() => (XorShift32.Next(ref _rng) & 0xFFFFFF) / 16777216f;

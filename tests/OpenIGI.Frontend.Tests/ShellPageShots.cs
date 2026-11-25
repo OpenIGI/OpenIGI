@@ -53,6 +53,7 @@ public sealed class ShellPageShots
         ("11-extras", static context => new ExtrasScreen(context), false),
         ("12-pause", static context => new PauseScreen(context), true),
         ("13-maps", static context => new MapsScreen(context), false),
+        ("14-replays", static context => new ReplaysScreen(context, new FakeReplays(), new MissionInfo(9, 9, "Missile Trainyard", string.Empty, "mission9.spr")), false),
     ];
 
     // The account each profile page is drawn with: signed out, waiting on Discord, or signed in.
@@ -102,6 +103,7 @@ public sealed class ShellPageShots
                     Party = new MultiplayerScreenshots.FakeParty { Party = MultiplayerScreenshots.Squad() },
                     Pictures = mission => MultiplayerScreenshots.Picture(images, pictures, mission),
                     Maps = new FakeMaps(),
+                    Replays = new FakeReplays(),
                     Account = AccountFor(name),
                     Scores = SampleScore,
                 };
@@ -224,6 +226,27 @@ public sealed class ShellPageShots
             "Re-Supply", "Missile Trainyard", "Defend Priboi", "Eagle's Nest I", "Eagle's Nest II", "Nuclear Infiltration", "Finding the Bomb",
         ];
         return [.. names.Select(static (name, index) => new MissionInfo(index + 1, index + 1, name, "Get in unseen, find what was taken, and get out again.", $"mission{index + 1}.spr"))];
+    }
+
+    /// <summary>A mission's kept runs, for the replays page's picture: the best of each rules, a failure, one of another build.</summary>
+    private sealed class FakeReplays : IShellReplays
+    {
+        private static readonly DateTimeOffset Night = new(2026, 11, 24, 21, 40, 0, TimeSpan.Zero);
+
+        public IReadOnlyList<ShellReplay> KeptOf(int missionId) =>
+        [
+            new("a", Night, "Hard", "Classic", "Completed", 512.4, Best: true, string.Empty, CanRace: true),
+            new("b", Night.AddMinutes(-26), "Hard", "Classic", "Failed", 188.0, Best: false, string.Empty, CanRace: true),
+            new("c", Night.AddDays(-1), "Hard", "Classic", "Completed", 574.9, Best: false, string.Empty, CanRace: true),
+            new("d", Night.AddDays(-2), "Normal", "Modern", "Completed", 431.2, Best: true, string.Empty, CanRace: true),
+            new("e", Night.AddDays(-9), "Easy", "Unranked", "Left", 62.5, Best: false, "Another build"),
+        ];
+
+        public string? Watch(string id) => null;
+
+        public string? Race(string id) => null;
+
+        public ShellRecord? RecordOf(int missionId, int difficulty) => new("0123456789abcdef0123456789abcdef", "Kestrel", 304.1, "Classic");
     }
 
     /// <summary>A handful of community maps, one installed and one with a newer version out, for the Maps page's picture.</summary>

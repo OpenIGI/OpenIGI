@@ -86,13 +86,16 @@ public sealed partial class GameHost
     /// Released as the reveal BEGINS rather than as it ends: the level's intro has to be on its first
     /// frame by the time the picture clears, and it cannot be until the level has ticked. Under the
     /// dissolve its first moments are seen arriving, which is what a dissolve is for; after it they would
-    /// be a second of the player's own view before the cut.
+    /// be a second of the player's own view before the cut. Not while a replay's opening cutscene is run through: the
+    /// level ticks under the loading screen then, which stays up until the run is where it is shown from -- held here as
+    /// well, the screen waited on ticks the hold kept from running.
     /// </remarks>
     private bool PresentationHoldsLevel =>
-        IsWarmingUp
+        (!PlaybackHidesOpening
+            && (IsWarmingUp
+                || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
+                || _entry.IsCameraActive))
         || CoopHoldsLevel
-        || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
-        || _entry.IsCameraActive
         || _session.Score is not null;
 
     /// <summary>Whether a co-op level is held for the other players to have it loaded too, so all of them begin it at once.</summary>
@@ -386,7 +389,9 @@ public sealed partial class GameHost
             bool fieldPending = _gi.FieldBake is not null;
             bool lightingReady = !_gi.Pending;
 
-            _warmUp.Update(lightingReady, fieldPending, _gi.ConvergeProgress, elapsed);
+            // A replay's opening cutscene is run through under the loading screen, the level ticking behind it (see
+            // PresentationHoldsLevel): the screen stays up until the run is where it is shown from.
+            _warmUp.Update(lightingReady && !PlaybackHidesOpening, fieldPending, _gi.ConvergeProgress, elapsed);
 
             if (!_warmUp.IsActive)
             {

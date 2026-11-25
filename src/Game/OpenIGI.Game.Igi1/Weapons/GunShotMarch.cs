@@ -585,7 +585,7 @@ public sealed class GunShotTask
         }
 
         Vector3f normal = Normalized(contact.Normal);
-        float along = (float)(Math.Cos(incidence) * remaining);
+        float along = (float)(SimMath.Cos(incidence) * remaining);
         float px = along * normal.X;
         float py = along * normal.Y;
         float pz = along * normal.Z;
@@ -619,7 +619,7 @@ public sealed class GunShotTask
         }
 
         double dot = ((a.X * (double)b.X) + (a.Y * (double)b.Y) + (a.Z * (double)b.Z)) / (la * lb);
-        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
+        return (float)SimMath.Acos(Math.Clamp(dot, -1.0, 1.0));
     }
 
     private static Vector3f Normalized(Vector3f v)

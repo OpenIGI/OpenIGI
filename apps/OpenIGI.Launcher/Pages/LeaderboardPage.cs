@@ -11,13 +11,20 @@ namespace OpenIGI.Launcher.Pages;
 /// <summary>
 /// The launcher's Leaderboard section: the official servers' boards and players' records, drawn by the same view the game's
 /// menu draws them with (<see cref="LeaderboardView"/>). It opens on the game picked in the header, and follows the header when
-/// another is picked; a player's record opens from their row, or from MY RECORD in the account panel.
+/// another is picked; a player's record opens from their row, or from MY RECORD in the account panel. Its switch shows the
+/// single-player mission boards instead (<see cref="MissionBoardView"/>), whose runs are watched and raced in the game.
 /// </summary>
 internal sealed class LeaderboardPage
 {
     private readonly LauncherModel _model;
     private readonly LeaderboardView _view;
+    private readonly MissionBoardView _missions;
+    private readonly Panel _shown = new();
     private string _followed;
+    private bool _showMissions;
+
+    // Whether the page was switched since it was last laid out.
+    private bool _switched;
 
     /// <summary>Initializes a new instance of the <see cref="LeaderboardPage"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -29,11 +36,21 @@ internal sealed class LeaderboardPage
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _followed = model.PickedTitle;
         model.Leaderboard.ShowTitle(_followed);
-        _view = new LeaderboardView(theme, new Source(model, pictures), compact: false, focus);
-        var page = new Grid { Padding = new Thickness(48f, 32f, 48f, 20f) };
+        model.Missions.ShowTitle(_followed);
+        Source source = new(model, pictures);
+        _view = new LeaderboardView(theme, source, compact: false, focus);
+        _missions = new MissionBoardView(theme, source, compact: false, focus);
+
+        // Matches or missions, switched at the top of the page.
+        var which = new TabStrip(theme, ["Multiplayer", "Single player"]) { SegmentHeight = 34f, TabPadding = 18f, TextSize = 14f, HorizontalAlignment = HorizontalAlignment.Left };
+        which.SelectionChanged += index => Switch(index == 1);
+        _shown.AddChild(_view.Root);
+        var page = new Grid { Padding = new Thickness(48f, 20f, 48f, 20f), RowSpacing = 12f };
         page.ColumnDefinitions.Add(GridLength.Star);
+        page.RowDefinitions.Add(GridLength.Auto);
         page.RowDefinitions.Add(GridLength.Star);
-        page.Add(_view.Root, 0, 0);
+        page.Add(which, 0, 0);
+        page.Add(_shown, 1, 0);
         Root = page;
     }
 
@@ -52,9 +69,28 @@ internal sealed class LeaderboardPage
         {
             _followed = _model.PickedTitle;
             _model.Leaderboard.ShowTitle(_followed);
+            _model.Missions.ShowTitle(_followed);
         }
 
-        return _view.Update(shown);
+        bool changed = _showMissions ? _missions.Update(shown) : _view.Update(shown);
+        changed |= _switched;
+        _switched = false;
+        return changed;
+    }
+
+    // The matches' boards or the missions', in the page's place.
+    private void Switch(bool missions)
+    {
+        if (_showMissions == missions)
+        {
+            return;
+        }
+
+        _showMissions = missions;
+        _shown.ClearChildren();
+        _shown.AddChild(missions ? _missions.Root : _view.Root);
+        OpenIGI.UI.Screens.Screen.PlayEntrance(_shown);
+        _switched = true;
     }
 
     /// <summary>Closes the open record.</summary>
@@ -105,5 +141,11 @@ internal sealed class LeaderboardPage
         public string MapName(string title, string map) => LeaderboardGame.MapName(title, map);
 
         public void OpenLink(string url) => model.OpenLink(url);
+
+        public MissionBoardFeed Missions => model.Missions;
+
+        public void Watch(string run) => model.PlayBoardRun(run, race: false);
+
+        public void Race(string run) => model.PlayBoardRun(run, race: true);
     }
 }

@@ -20,7 +20,11 @@ public sealed class TitlePlayerFeatures
         Placement = player as ITitlePlayerPlacement;
         Diagnostics = player as ITitlePlayerDiagnostics;
         OverShoulder = player as ITitleOverShoulder;
+        Ghost = player as ITitleGhost;
     }
+
+    /// <summary>Gets how it shows a race's ghost, when it can.</summary>
+    public ITitleGhost? Ghost { get; }
 
     /// <summary>Gets how it is watched over the shoulder, when the host's third-person view may do so.</summary>
     public ITitleOverShoulder? OverShoulder { get; }

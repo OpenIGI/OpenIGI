@@ -131,7 +131,7 @@ public static class BoneRotationSampler
             dot = -dot;
         }
 
-        float angle = MathF.Acos(Math.Clamp(dot, -1f, 1f));
+        float angle = SimMathF.Acos(Math.Clamp(dot, -1f, 1f));
         if (angle == 0f)
         {
             return from;
@@ -141,9 +141,9 @@ public static class BoneRotationSampler
         float toWeight;
         if (angle >= MinimumSlerpAngle)
         {
-            float inverseSine = 1f / MathF.Sin(angle);
-            fromWeight = MathF.Sin(angle - (angle * s)) * inverseSine;
-            toWeight = MathF.Sin(angle * s) * inverseSine;
+            float inverseSine = 1f / SimMathF.Sin(angle);
+            fromWeight = SimMathF.Sin(angle - (angle * s)) * inverseSine;
+            toWeight = SimMathF.Sin(angle * s) * inverseSine;
         }
         else
         {

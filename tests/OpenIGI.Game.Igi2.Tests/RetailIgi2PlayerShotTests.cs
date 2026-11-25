@@ -84,14 +84,19 @@ public sealed class RetailIgi2PlayerShotTests
         Igi2HumanPlayer human = player.Human;
         human.View.IdealPitch = 0.4f;
         player.Tick(RetailIgi2Mission1.Idle);
-        float settled = human.View.ShouldersPitch;
+        float before = human.View.ShouldersPitch;
+
+        // A tick takes the pose once at its end, as the original's render of it does: the shoulders a fifth of the way on.
+        player.Tick(RetailIgi2Mission1.Idle);
         float pitch = human.View.Pitch;
         Assert.NotEqual(0f, pitch);
-        human.BodyPose();
-        Assert.Equal(((((Fpu)pitch - settled) * 0.2f) + settled).F, human.View.ShouldersPitch);
+        Assert.Equal(((((Fpu)pitch - before) * 0.2f) + before).F, human.View.ShouldersPitch);
 
+        // Taken again in the same tick -- by the simulation, or by a frame drawn any number of times -- nothing moves.
         float kept = human.View.ShouldersPitch;
         human.BodyPose();
+        human.PresentedPose();
+        human.PresentedPose();
         Assert.Equal(kept, human.View.ShouldersPitch);
     }
 

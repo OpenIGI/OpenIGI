@@ -12,7 +12,25 @@ namespace OpenIGI.Launcher;
 internal sealed partial class LauncherModel
 {
     private LeaderboardFeed? _leaderboard;
+    private MissionBoardFeed? _missions;
     private AvatarFiles? _boardAvatars;
+
+    /// <summary>Gets the single-player mission boards, made the first time they are wanted.</summary>
+    public MissionBoardFeed Missions => _missions ??= new MissionBoardFeed(new MasterRunBoardReader(new RunsService(AccountHttp, MapService.Master)), RecordTitle);
+
+    /// <summary>
+    /// Watches or races a board's run in the game: the game is started on the run's id (<c>-playreplay</c> or <c>-race</c>) and
+    /// brings its replay, with the ghost the server saw, down from the master itself.
+    /// </summary>
+    /// <param name="run">The run.</param>
+    /// <param name="race">Whether to race it rather than watch it.</param>
+    public void PlayBoardRun(string run, bool race)
+    {
+        if (RunsService.IsRunId(run))
+        {
+            Play(Current, [race ? "-race" : "-playreplay", run]);
+        }
+    }
 
     /// <summary>Gets the boards and records, made the first time they are wanted.</summary>
     public LeaderboardFeed Leaderboard => _leaderboard ??= new LeaderboardFeed(new MasterLeaderboardReader(AccountHttp, MapService.Master), RecordTitle);
@@ -39,5 +57,6 @@ internal sealed partial class LauncherModel
         }
 
         _leaderboard.You = SignedInForBoard ? _account!.Account!.Id : (_identity ??= LoadIdentity())?.Id;
+        _missions?.You = SignedInForBoard ? _account!.Account!.Id : null;
     }
 }

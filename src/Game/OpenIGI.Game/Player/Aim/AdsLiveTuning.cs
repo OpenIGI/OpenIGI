@@ -195,7 +195,7 @@ public static class AdsLiveTuning
 
         Vector3f shift = new(-tune.Right, 0f, -tune.Up);
         float length = MathF.Max(0.05f, profile.FrontSight.Y - profile.RearSight.Y);
-        Vector3f tilt = new(0f, 0f, -MathF.Tan(tune.Tilt * MathF.PI / 180f) * length);
+        Vector3f tilt = new(0f, 0f, -SimMathF.Tan(tune.Tilt * MathF.PI / 180f) * length);
         return profile with
         {
             RearSight = profile.RearSight + shift,

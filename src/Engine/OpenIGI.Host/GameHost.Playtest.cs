@@ -18,7 +18,7 @@ namespace OpenIGI.Host;
 /// </remarks>
 public sealed partial class GameHost
 {
-    private static readonly float[] PlaytestSpeeds = [0.25f, 0.5f, 1f, 2f, 4f];
+    private static readonly float[] PlaytestSpeeds = [0.25f, 0.5f, 1f, 2f, 4f, 8f];
 
     // The keys a play-test takes: their binds (the developer's renderer toggles, co-op's calls) do not run while it does.
     private static readonly KeyCode[] PlaytestKeys = [KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F6, KeyCode.F7, KeyCode.F8, KeyCode.F9, KeyCode.F10];
@@ -59,13 +59,17 @@ public sealed partial class GameHost
     private bool PlaytestOwns(KeyCode key) => _editor is { IsPlaying: true } && Array.IndexOf(PlaytestKeys, key) >= 0;
 
     /// <summary>Gets whether the play-test holds the level still: paused with no step asked for, or a replay at its end.</summary>
-    private bool PlaytestHoldsLevel => _editor is { IsPlaying: true } && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd);
+    private bool PlaytestHoldsLevel =>
+        (TransportActive && ((_playtestPaused && _playtestSteps == 0) || ReplayAtEnd)) || PlaybackHoldsLevel;
 
     /// <summary>Gets how fast the play-test runs the level's clock: 1 outside one, or under lockstep (whose clock is the frames').</summary>
     /// <remarks>A replay's seek runs as fast as the frames let ticks through.</remarks>
-    private float PlaytestTimeScale => _editor is { IsPlaying: true } && !_options.Lockstep
-        ? _replayTarget is not null && Replaying ? ReplaySeekSpeed : PlaytestSpeeds[_playtestSpeed]
+    private float PlaytestTimeScale => TransportActive && !_options.Lockstep
+        ? PlaybackHidesOpening ? OpeningRunSpeed : _replayTarget is not null && Replaying ? ReplaySeekSpeed : PlaytestSpeeds[_playtestSpeed]
         : 1f;
+
+    // How fast a replay's opening cutscene is run through, unseen: as many ticks a frame as the clock catches up.
+    private const float OpeningRunSpeed = 1000f;
 
     /// <summary>Notes the start and end of a play-test: where the editor's camera was, and, at its end, everything put back.</summary>
     private void TrackPlaytest()

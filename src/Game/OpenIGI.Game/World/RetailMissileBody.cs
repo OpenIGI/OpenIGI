@@ -336,8 +336,8 @@ public sealed class RetailMissileBody : RetailPhysicsObjectBody
     // 0x4B3B60: about X.
     private static void RotX(Span<float> r, float angle)
     {
-        double s = Math.Sin(angle);
-        float c = X87.ToFloat(Math.Cos(angle));
+        double s = SimMath.Sin(angle);
+        float c = X87.ToFloat(SimMath.Cos(angle));
         r.Clear();
         r[0] = 1.0f;
         r[4] = c;
@@ -349,8 +349,8 @@ public sealed class RetailMissileBody : RetailPhysicsObjectBody
     // 0x4B3BA0: about Y.
     private static void RotY(Span<float> r, float angle)
     {
-        float c = X87.ToFloat(Math.Cos(angle));
-        double s = Math.Sin(angle);
+        float c = X87.ToFloat(SimMath.Cos(angle));
+        double s = SimMath.Sin(angle);
         r.Clear();
         r[0] = c;
         r[2] = X87.ToFloat(s);
@@ -423,7 +423,7 @@ public sealed class RetailMissileBody : RetailPhysicsObjectBody
 
         X87 inverse = (X87)1.0 / Real64x3Length(new Vector3d(x, y, z));
         double nx = (inverse * x).Value, ny = (inverse * y).Value, nz = (inverse * z).Value;
-        double angle = ny < -1.0 ? Math.Acos(-1.0) : Math.Acos(ny > 1.0 ? 1.0 : ny);
+        double angle = ny < -1.0 ? SimMath.Acos(-1.0) : SimMath.Acos(ny > 1.0 ? 1.0 : ny);
         return signByZ ? (nz < 0.0 ? -angle : angle) : (nx > 0.0 ? -angle : angle);
     }
 

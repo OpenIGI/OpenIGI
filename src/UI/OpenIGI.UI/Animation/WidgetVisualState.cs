@@ -91,11 +91,16 @@ public sealed class WidgetVisualStateMachine
         _appear.Retarget(1f, delay: delaySeconds);
     }
 
-    /// <summary>Snaps the widget to fully present without playing the entrance.</summary>
+    /// <summary>Snaps the widget to fully present without playing the entrance: shown, and focused or not, as it stands.</summary>
+    /// <remarks>
+    /// A page rebuilt while it is up -- its list filled in as servers answered -- gives the focus back to the new controls before
+    /// they are snapped: the focus's ring snaps with them, or the focused row's highlight faded in again, once a rebuild.
+    /// </remarks>
     public void AppearInstantly()
     {
         _exiting = false;
         _appear.SnapTo(1f);
+        _focus.SnapTo(_focused ? 1f : 0f);
     }
 
     /// <summary>Begins the exit animation.</summary>

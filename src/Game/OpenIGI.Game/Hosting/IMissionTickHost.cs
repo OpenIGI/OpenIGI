@@ -38,8 +38,14 @@ public interface IMissionTickHost
     /// <summary>Gets a value indicating whether the failure menu holds the game.</summary>
     bool FailedMenu { get; }
 
-    /// <summary>Gets a value indicating whether the map computer is open.</summary>
+    /// <summary>Gets a value indicating whether the map computer holds the player this tick, as the tick's input says.</summary>
     bool ComputerOpen { get; }
+
+    /// <summary>
+    /// Gets the input the player's tick was given -- gathered from the window, or a replay's as recorded -- whose computer part
+    /// the computer reads (<see cref="OpenIGI.Game.Player.TitlePlayerInput.Computer"/>), never the window itself.
+    /// </summary>
+    OpenIGI.Game.Player.TitlePlayerInput TickInput { get; }
 
     /// <summary>Gets a value indicating whether the title's own computer is the one in use, run by the mission's tick.</summary>
     bool MissionComputer { get; }
@@ -47,10 +53,10 @@ public interface IMissionTickHost
     /// <summary>Gets a value indicating whether the level lets the player read the computer's map now (<c>0x45DCF0</c>).</summary>
     bool MapComputerEnabled { get; }
 
-    /// <summary>Gets the display the computer's screens are laid out across, in its own pixels.</summary>
+    /// <summary>Gets the display the computer's screens are laid out across, in its own pixels, from the tick's input.</summary>
     (int Width, int Height) ComputerDisplay { get; }
 
-    /// <summary>Takes the mouse as it moved and was pressed since the last tick.</summary>
+    /// <summary>Gets the mouse as it moved and was pressed since the last tick, from the tick's input.</summary>
     /// <returns>The mouse.</returns>
     OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput();
 

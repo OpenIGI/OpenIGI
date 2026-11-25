@@ -52,7 +52,7 @@ public sealed class LadderPlacement
         ClimbLine = new LadderClimbLine(bottom, top);
 
         // Real32x9_GetAngles(..., &gamma), followed by gamma += PI in sub_4113E0.
-        Facing = (float)Math.Atan2(orientation.M21, orientation.M11) + MathF.PI;
+        Facing = (float)SimMath.Atan2(orientation.M21, orientation.M11) + MathF.PI;
         PlayerYaw = -Facing;
 
         // The retail Real32x9 reads are zero-based columns: +116/+128/+140 is raw column one and
@@ -133,8 +133,8 @@ public sealed class LadderPlacement
         double across = Vector3d.Dot(fromOrigin, Widen(columnOne));
         double normalDistance = Vector3d.Dot(fromOrigin, Widen(columnTwo));
 
-        double forwardX = Math.Sin(playerYaw);
-        double forwardY = Math.Cos(playerYaw);
+        double forwardX = SimMath.Sin(playerYaw);
+        double forwardY = SimMath.Cos(playerYaw);
         double targetX = normalDistance > 0.0 ? -columnTwo.X : columnTwo.X;
         double targetY = normalDistance > 0.0 ? -columnTwo.Y : columnTwo.Y;
         double targetLength = Math.Sqrt((targetX * targetX) + (targetY * targetY));
@@ -151,7 +151,7 @@ public sealed class LadderPlacement
 
         if (bottomCandidate)
         {
-            angle = Math.Acos(Math.Clamp(facingDot, -1.0, 1.0));
+            angle = SimMath.Acos(Math.Clamp(facingDot, -1.0, 1.0));
         }
 
         // The top branch then calls the generic resolver on magic vertex 1. That resolver requires the
@@ -167,7 +167,7 @@ public sealed class LadderPlacement
         if (topCandidate)
         {
             atTop = true;
-            angle = Math.Acos(Math.Clamp(topForward / topDistance, -1.0, 1.0));
+            angle = SimMath.Acos(Math.Clamp(topForward / topDistance, -1.0, 1.0));
             return true;
         }
 

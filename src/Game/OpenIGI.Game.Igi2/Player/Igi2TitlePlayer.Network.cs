@@ -343,7 +343,7 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle, ICoopMarks
             }
 
             foreach (TitleWorldModel part in Igi2BodyFrame.Build(
-                other.Human, other.Human.BodyPose(), model.Name, other.Weapons?.Inventory.Current?.WeaponType.FixedModel, _ticks, other.Weapons?.Firing.Flashes))
+                other.Human, other.Human.PresentedPose(), model.Name, other.Weapons?.Inventory.Current?.WeaponType.FixedModel, _ticks, other.Weapons?.Firing.Flashes))
             {
                 yield return part;
             }

@@ -66,7 +66,7 @@ public static class HumanSlopeSlide
         }
 
         float z = Math.Clamp(normal.Z / length, -1f, 1f);
-        return 90f - (MathF.Asin(z) * 57.295776f);
+        return 90f - (SimMathF.Asin(z) * 57.295776f);
     }
 
     /// <summary>Advances a slide accumulator by one tick.</summary>

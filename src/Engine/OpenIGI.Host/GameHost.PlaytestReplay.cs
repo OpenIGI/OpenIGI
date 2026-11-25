@@ -2,6 +2,7 @@ using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Replays;
 
 namespace OpenIGI.Host;
 
@@ -15,7 +16,7 @@ namespace OpenIGI.Host;
 /// for the scrubber.
 /// </content>
 /// <remarks>
-/// Not recorded, so not played back: the remaster's weapon wheel and the computer's screens, which take the mouse outside a tick.
+/// The same transport drives a replay watched in the game (<see cref="Watching"/>): there the recording is a run's from its file.
 /// </remarks>
 public sealed partial class GameHost
 {
@@ -42,13 +43,13 @@ public sealed partial class GameHost
     private int _ticksLoad = -1;
 
     // The recording being made, and the level load it records (null until one comes up after it began).
-    private PlaytestTape? _tape;
+    private InputTape? _tape;
     private int? _tapeLoad;
     private int _tapeAfterLoad;
     private bool _recording;
 
     // The recording being played, the load it plays on, and the tick a seek runs to.
-    private PlaytestTape? _replay;
+    private InputTape? _replay;
     private int _replayLoad = -1;
     private int? _replayTarget;
 
@@ -108,7 +109,7 @@ public sealed partial class GameHost
     /// <param name="ofLevelJustLoaded">Whether the level just loaded is the one recorded (the editor's play loads it first).</param>
     private void BeginRecording(bool ofLevelJustLoaded = false)
     {
-        _tape = new PlaytestTape();
+        _tape = new InputTape();
         _tapeLoad = null;
         _tapeAfterLoad = ofLevelJustLoaded ? _levelLoads - 1 : _levelLoads;
         _recording = true;
@@ -143,7 +144,7 @@ public sealed partial class GameHost
         HoldTape(tick);
         if (Replaying)
         {
-            PlaytestTape tape = _replay!;
+            InputTape tape = _replay!;
             if (_replayCommandsGiven != (_levelLoads, tick))
             {
                 _replayCommandsGiven = (_levelLoads, tick);
@@ -172,7 +173,7 @@ public sealed partial class GameHost
             return;
         }
 
-        PlaytestTape recording = _tape!;
+        InputTape recording = _tape!;
         recording.SetBreak(tick, _cutsceneSkip.Breaking);
         if (tick % SightCheckTicks == 0 && _sightCheckedTick != tick && _soldiers is { } soldiers)
         {
@@ -223,7 +224,10 @@ public sealed partial class GameHost
         {
             _playtestPaused = true;
             _playtestSteps = 0;
-            Said("The end of the recording: F6 plays it again.");
+            if (_editor is { IsPlaying: true })
+            {
+                Said("The end of the recording: F6 plays it again.");
+            }
         }
     }
 
@@ -253,6 +257,11 @@ public sealed partial class GameHost
     private void ApplyRecordedCommand(string command)
     {
         string[] words = command.Split(' ');
+        if (ApplyPlaybackCommand(words))
+        {
+            return;
+        }
+
         switch (words)
         {
             case ["god", string on]:
@@ -280,7 +289,7 @@ public sealed partial class GameHost
     /// <returns>What happened, to say.</returns>
     private string StartReplay()
     {
-        PlaytestTape? tape = Replaying ? _replay : _tape;
+        InputTape? tape = Replaying ? _replay : _tape;
         if (tape is null || tape.Length == 0)
         {
             return "Nothing recorded yet: play a little first.";
@@ -297,22 +306,30 @@ public sealed partial class GameHost
     // loaded afresh where the recording holds nothing of it.
     private void ReplayFromStart(int? target)
     {
-        int to = target is > 0 ? target.Value : 0;
+        // A watched replay starts where it is shown from: after its mission's opening cutscene.
+        int to = Math.Max(target is > 0 ? target.Value : 0, PlaybackShownFrom);
         if (_tapeCheckpoints.AtOrBefore(to) is { } held && RestoreLevel(held))
         {
             (_ticksLoad, _ticksOfLoad) = (_levelLoads, held.Tick);
+            ComputerAsRestored();
             _replayCommandsGiven = (-1, -1);
             PlaytestCheatsAt(held.Tick);
+            PlaybackSettingsAt(held.Tick);
             _replayLoad = _levelLoads;
             _replayTarget = to > held.Tick ? to : null;
             return;
         }
 
         PlaytestCheatsAsAtStart();
+        PlaybackSettingsAt(0);
+
+        // A replay being watched keeps its level through the load: it is the same run, from its start.
+        _playbackReloading = _playback is not null && _playbackLoad >= 0;
         ReloadLevelInPlace();
+        _playbackReloading = false;
         _tapeCheckpoints.Clear();
         _replayLoad = _levelLoads;
-        _replayTarget = target is > 0 ? target : null;
+        _replayTarget = to > 0 ? to : null;
     }
 
     // A checkpoint of the level at a tick of the recording being made or played, every two seconds, before the tick runs.
@@ -366,7 +383,7 @@ public sealed partial class GameHost
             return "Not playing a recording back.";
         }
 
-        tick = Math.Clamp(tick, 0, _replay!.Length);
+        tick = Math.Clamp(tick, Math.Min(PlaybackShownFrom, _replay!.Length), _replay.Length);
         if (tick < TickOfLevel)
         {
             ReplayFromStart(tick);
@@ -418,60 +435,10 @@ public sealed partial class GameHost
     /// <summary>The recording's state, for the editor's scrubber.</summary>
     private Editor.EditorPlaytestTape TapeState()
     {
-        PlaytestTape? tape = Replaying ? _replay : _tape;
+        InputTape? tape = Replaying ? _replay : _tape;
         double length = (tape?.Length ?? 0) / 30.0;
         double seconds = Replaying ? TickOfLevel / 30.0 : length;
         IReadOnlyList<(double, string)> marks = tape is null ? [] : [.. tape.Marks.Select(static m => (m.Tick / 30.0, m.Text))];
         return new Editor.EditorPlaytestTape(_recording && TapeTakes, Replaying, seconds, length, marks);
-    }
-
-    /// <summary>A play-test as it was played: the input of every tick, the cutscene's breaks, the commands and the marks.</summary>
-    private sealed class PlaytestTape
-    {
-        private readonly List<TitlePlayerInput?> _inputs = [];
-        private readonly List<bool> _breaks = [];
-        private readonly List<(int Tick, string Command)> _commands = [];
-
-        public List<(int Tick, string Text)> Marks { get; } = [];
-
-        /// <summary>Gets how many ticks it covers: the ticks the level ran while it recorded, not frames that only looked at one.</summary>
-        public int Length { get; private set; }
-
-        /// <summary>Notes a tick the level ran.</summary>
-        /// <param name="tick">The tick.</param>
-        public void Ran(int tick) => Length = Math.Max(Length, tick + 1);
-
-        public void SetInput(int tick, TitlePlayerInput input)
-        {
-            Grow(tick);
-            _inputs[tick] = input;
-        }
-
-        public void SetBreak(int tick, bool breaking)
-        {
-            Grow(tick);
-            _breaks[tick] = breaking;
-        }
-
-        public void Command(int tick, string command) => _commands.Add((tick, command));
-
-        public void Mark(int tick, string text) => Marks.Add((tick, text));
-
-        public TitlePlayerInput? InputAt(int tick) => tick >= 0 && tick < _inputs.Count ? _inputs[tick] : null;
-
-        public bool BreaksAt(int tick) => tick >= 0 && tick < _breaks.Count && _breaks[tick];
-
-        public IEnumerable<string> CommandsAt(int tick) => _commands.Where(c => c.Tick == tick).Select(static c => c.Command);
-
-        public IEnumerable<string> CommandsBefore(int tick) => _commands.Where(c => c.Tick < tick).Select(static c => c.Command);
-
-        private void Grow(int tick)
-        {
-            while (_inputs.Count <= tick)
-            {
-                _inputs.Add(null);
-                _breaks.Add(false);
-            }
-        }
     }
 }

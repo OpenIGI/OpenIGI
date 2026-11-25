@@ -140,6 +140,18 @@ public interface ITitleWorldModelPresenter : IDisposable
     }
 
     /// <summary>
+    /// Hands a race's ghost's models (<see cref="ITitleWorldModels.GhostModels"/>) to the picture's ghost pass, each posed for its
+    /// tick; a presenter that draws no people draws nothing.
+    /// </summary>
+    /// <param name="models">The ghost's models.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="blend">Where between the last two ticks the frame stands.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    void DrawWorldGhosts(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, float blend, in GhostLook look)
+    {
+    }
+
+    /// <summary>
     /// Draws the bodies of the models drawn last as the title's infrared view sees them, over the finished scene and through what
     /// stands before them (<see cref="ITitlePlayerOptics.IsInfraredView"/>); a presenter whose title has no such view draws nothing.
     /// </summary>

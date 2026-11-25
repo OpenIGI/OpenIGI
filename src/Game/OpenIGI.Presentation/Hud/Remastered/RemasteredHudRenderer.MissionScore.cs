@@ -255,11 +255,20 @@ public sealed partial class RemasteredHudRenderer
             }
         }
 
+        float right = sheet.Right - pad;
         if (prompt.ContinueKey is { } key)
         {
             float capX = sheet.Right - pad - o.KeyCapWidth(key);
             o.KeyCap(key, capX, capY);
-            o.Text.DrawRightAt("CONTINUE", capX - o.Px(10f), textY, small, HudOverlay.Fade(o.Quiet, fade));
+            right = capX - o.Px(10f) - o.Text.DrawRightAt("CONTINUE", capX - o.Px(10f), textY, small, HudOverlay.Fade(o.Quiet, fade)) - o.Px(18f);
+        }
+
+        // A single player's run sent to the boards, at the left: in the ally's ink placed, the danger's not ranked.
+        if (prompt.SecondsLeft is null && prompt.Board is { Length: > 0 } board)
+        {
+            Bgra32 ink = prompt.BoardGood switch { true => o.Ink.Ally, false => o.Ink.Danger, _ => o.Quiet };
+            float left = sheet.X + pad;
+            o.Text.DrawAt(o.Text.ClipAt(OverlayText.Capitals(board), small, MathF.Max(0f, right - left)), left, textY, small, HudOverlay.Fade(ink, fade));
         }
     }
 

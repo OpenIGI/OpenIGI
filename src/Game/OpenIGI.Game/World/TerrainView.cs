@@ -114,7 +114,7 @@ public readonly record struct TerrainView(
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(verticalFieldOfView);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(aspectRatio);
 
-        float tangentY = MathF.Tan(verticalFieldOfView * 0.5f);
+        float tangentY = SimMathF.Tan(verticalFieldOfView * 0.5f);
         float tangentX = tangentY * aspectRatio;
 
         // The detail distance follows the lens as authored across 4:3, not as a wide screen widens it: the extra
@@ -157,5 +157,5 @@ public readonly record struct TerrainView(
     public double SlackY => Slack(TangentY);
 
     private static double Slack(float tangent) =>
-        CircumradiusFactor / Math.Cos(Math.Atan2(tangent, 1.0)) * SlackRootExtent;
+        CircumradiusFactor / SimMath.Cos(SimMath.Atan2(tangent, 1.0)) * SlackRootExtent;
 }

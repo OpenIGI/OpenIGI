@@ -141,8 +141,8 @@ public sealed class Igi2WaterWaveField
             float radians = wave.Angle * MathF.PI / 180f;
 
             trains[i] = new Igi2WaterWaveTrain(
-                MathF.Sin(radians),
-                MathF.Cos(radians),
+                SimMathF.Sin(radians),
+                SimMathF.Cos(radians),
                 MathF.Tau / (wave.Frequency * (float)WorldScene.UnitsPerMetre),
                 wave.Amplitude * (float)WorldScene.UnitsPerMetre,
                 wave.Speed);
@@ -178,7 +178,7 @@ public sealed class Igi2WaterWaveField
             Igi2WaterWaveTrain train = _trains[i];
             float along = (x * train.DirectionX) + (y * train.DirectionY) + Phase;
             float angle = (along * train.SpatialFrequency) + ((float)seconds * train.Speed);
-            height += MathF.Sin(angle) * train.AmplitudeUnits * attenuation;
+            height += SimMathF.Sin(angle) * train.AmplitudeUnits * attenuation;
         }
 
         return height;

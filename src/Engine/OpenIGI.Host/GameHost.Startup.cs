@@ -271,7 +271,7 @@ public sealed partial class GameHost
         // What the screen-space GI keeps from one frame to the next.
         state.ScreenGi = new();
 
-        _mission.ShotRandom = new(20000101);
+        _mission.ShotRandom = new(Game.World.MissionState.ShotRandomSeed);
         _scene = null;
         _world = null;
         _terrain = null;
@@ -556,13 +556,7 @@ public sealed partial class GameHost
                     // bar either way — so the shell is told it is no longer over a mission it was paused on.
                     // Deferred where a sequence covers the load: the menu keeps drawing under the departure
                     // and is put away on the frame the load actually runs.
-                    void LeaveTheMenu()
-                    {
-                        state.Shell?.ClosePauseMenu();
-                        _menuFlow.MenuMode = false;
-                        _menuFlow.PauseMenu = false;
-                        ApplyGameplayMotionBlur();
-                    }
+                    void LeaveTheMenu() => LeaveMenuForMission(state);
 
                     // The menu has been drawing this very level for as long as the player has been
                     // reading the briefing, built on a worker and complete. When it is the mission they
@@ -577,7 +571,7 @@ public sealed partial class GameHost
                     // have them.
                     bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var sessionMode }
                         && Game.Multiplayer.Modes.ArenaLevel.IsVersus(sessionMode);
-                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep && !arena)
+                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && (!_options.Lockstep || PromotesBackdropUnderLockstep) && !arena)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
 
@@ -787,6 +781,7 @@ public sealed partial class GameHost
                 missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(MenuPictures)).Get(_titleRuntime.Title.Id, mission),
                 bestScore: BestScore,
                 leaderboard: LeaderboardSourceFor(),
+                replays: new ShellReplays(this, state),
                 touchScreen: () => _window.Input.Touch.InUse,
                 editTouchLayout: () =>
                 {
@@ -814,7 +809,19 @@ public sealed partial class GameHost
                 _logger.Warning("Menu", $"-shelltab '{openOn}' is not a section; opening on the main menu.");
             }
 
-            if (_options.StartMission > 0)
+            if (_options.PlayReplayPath is { } replayPath)
+            {
+                // Straight into a replay, its mission brought up as it was recorded.
+                ResumeConditions();
+                StartReplayFrom(replayPath, race: false);
+            }
+            else if (_options.RacePath is { } racePath)
+            {
+                // Straight into a race against a replay's ghost, its mission brought up as the run was played.
+                ResumeConditions();
+                StartReplayFrom(racePath, race: true);
+            }
+            else if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.
                 // Once its files can be read: on the desktop that is now, in a browser it is when the page

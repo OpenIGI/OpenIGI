@@ -59,7 +59,7 @@ public static class Igi2SineTable
         float[] sines = new float[Steps];
         for (int i = 0; i < Steps; i++)
         {
-            sines[i] = (float)Math.Sin(i * Step);
+            sines[i] = (float)SimMath.Sin(i * Step);
         }
 
         return sines;

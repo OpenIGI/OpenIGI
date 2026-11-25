@@ -95,6 +95,9 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <remarks>The body's yaw: its forward is (sin yaw, cos yaw).</remarks>
     public float? Heading => Human.Rig.Yaw;
 
+    /// <inheritdoc/>
+    public bool IsComputerOpen => Human.Rig.IsMapComputerOpen;
+
     /// <summary>Gets a value indicating whether the death camera has the view: the player is dead and its camera pulled back.</summary>
     public bool IsDeathViewActive => Human.Life.IsDead && _death.IsActive;
 
@@ -124,6 +127,15 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     public void Tick(in TitlePlayerInput input)
     {
         TitlePlayerInput given = input;
+
+        // The weapon wheel's pick since the last tick, taken as the tick begins as a number key's would be.
+        if (input.WheelPick is { } pick)
+        {
+            ChooseFromWheel(pick.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // The crosshair's ray over the shoulder, from the eye it was measured from as the tick began.
+        Human.Rig.AimConvergenceRay = input.Aim is { } aim ? (EyePosition + aim.EyeOffset, aim.Direction) : null;
 
         // Whatever look the frames were shown is the rig's own from here: this tick takes it.
         Human.Rig.ShowLook(null);

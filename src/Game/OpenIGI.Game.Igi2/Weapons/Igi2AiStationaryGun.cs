@@ -265,7 +265,7 @@ public sealed partial class Igi2AiStationaryGun : IIgi2WeaponOwner
             double lz = (b[8] * dz) + (b[5] * dy) + (b[2] * dx);
             aimTurn = Igi2Pose.CalcGamma(lx, ly);
             double length = Math.Sqrt((ly * ly) + (lz * lz) + (lx * lx));
-            aimTilt = length <= 0.10000000149011612 ? 0f : (float)Math.Asin(Math.Clamp((float)(lz / length), -1.0, 1.0));
+            aimTilt = length <= 0.10000000149011612 ? 0f : (float)SimMath.Asin(Math.Clamp((float)(lz / length), -1.0, 1.0));
             found = true;
             break;
         }

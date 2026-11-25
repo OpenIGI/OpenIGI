@@ -19,6 +19,9 @@ public enum BrowserSort
 /// <summary>What the player has asked the browser to show.</summary>
 public sealed record BrowserFilter
 {
+    /// <summary>Gets the game a line must be of, as <c>igi1</c>; empty for either. A line of no game known is not of it.</summary>
+    public string Title { get; init; } = string.Empty;
+
     /// <summary>Gets text a line's name, map or mode must hold; empty for any.</summary>
     public string Text { get; init; } = string.Empty;
 
@@ -74,6 +77,7 @@ public sealed record BrowserFilter
         ArgumentNullException.ThrowIfNull(server);
         BrowserInfo info = server.Info;
         return (Sources == BrowserSource.None || (server.Sources & Sources) != 0)
+            && (Title.Length == 0 || string.Equals(info.Title, Title, StringComparison.OrdinalIgnoreCase))
             && (Mode.Length == 0 || string.Equals(info.Mode, Mode, StringComparison.OrdinalIgnoreCase))
             && (Region.Length == 0 || string.Equals(server.Region, Region, StringComparison.OrdinalIgnoreCase))
             && (!HideFull || !server.IsFull)

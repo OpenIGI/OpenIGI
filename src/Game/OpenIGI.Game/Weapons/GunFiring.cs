@@ -135,9 +135,9 @@ public static class GunFiring
     /// </remarks>
     public static Vector3f OffsetInCone(Vector3f forward, Vector3f right, Vector3f up, float radius, float bearing)
     {
-        float sin = MathF.Sin(radius);
-        Vector3f lateral = (right * (MathF.Cos(bearing) * sin)) + (up * (MathF.Sin(bearing) * sin));
-        return ((forward * MathF.Cos(radius)) + lateral).Normalized();
+        float sin = SimMathF.Sin(radius);
+        Vector3f lateral = (right * (SimMathF.Cos(bearing) * sin)) + (up * (SimMathF.Sin(bearing) * sin));
+        return ((forward * SimMathF.Cos(radius)) + lateral).Normalized();
     }
 
     /// <summary>Turns a direction by a sampled cone offset exactly as <c>0x478BA0</c> does.</summary>

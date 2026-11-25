@@ -11,9 +11,10 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle
+public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle, OpenIGI.Game.Replays.ISimulationDigest, OpenIGI.Game.Replays.IGhostSource
 {
     private readonly IMissionHostServices _host;
+    private readonly Igi1SimulationDigest _digest = new();
 
     /// <summary>Initializes a new instance of the <see cref="Igi1Gameplay"/> class.</summary>
     /// <param name="host">What shows and plays it.</param>
@@ -284,4 +285,10 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     // The animation sets, by the installation they were read from.
     private (string Root, Task<Igi1PlayerAnimations> Sets)? _animations;
+
+    /// <inheritdoc/>
+    public void Fold(ref OpenIGI.Game.Replays.SimulationHash hash) => _digest.Fold(World, ref hash);
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.Multiplayer.ReplicatedHuman? GhostFrame() => Multiplayer.Igi1ReplicatedWorld.ReplicateHost(0, this);
 }

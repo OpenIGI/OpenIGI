@@ -130,6 +130,9 @@ public interface IShellHost
     /// <summary>Gets community maps, where this build can fetch and play them; <see langword="null"/> where it can't.</summary>
     IShellMaps? Maps => null;
 
+    /// <summary>Gets the player's own replays, where this build keeps them; <see langword="null"/> where it doesn't.</summary>
+    IShellReplays? Replays => null;
+
     /// <summary>A mission's picture, taken beforehand: what a page shows of a map whose level is not behind the menu.</summary>
     /// <param name="missionId">The mission.</param>
     /// <returns>The picture, or <see langword="null"/> where the host has none of it.</returns>

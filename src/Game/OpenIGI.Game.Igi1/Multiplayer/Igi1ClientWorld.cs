@@ -140,32 +140,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             bool alive = (h.Flags & ReplicatedHumanCondition.Alive) != 0;
             bool fired = _shotsDrawn.TryGetValue(h.Id, out byte drawn) && drawn != h.Shots;
             _shotsDrawn[h.Id] = h.Shots;
-            OpenIGI.Game.Weapons.WeaponType? gun =
-                h.Weapon - 1 == Igi1BombWeapon.Id ? Igi1BombWeapon.Type
-                : h.Weapon > 0 && _game.PlayerSetup?.Weapons is { } roster && roster.TryGet(h.Weapon - 1, out OpenIGI.Game.Weapons.WeaponType held)
-                    ? held
-                    : null;
-            bodies.Add(new Ai.PartnerBody(
-                h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(
-                    h.Action - 1,
-                    (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0,
-                    0f,
-                    h.ActionSequence,
-                    Quantize.AngleFromBits(h.Pitch),
-                    Game.Player.Aim.CombatLean.Eye(h.Lean / 100f).Roll,
-                    h.Aim / 100f),
-                gun,
-                h.Shots,
-                fired,
-                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? Igi1ReplicatedWorld.UnpackClipTime(h.ClipTime) : null,
-                Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
-                !alive,
-                alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
-                PlayerSkins.Igi1.Of(_skins.GetValueOrDefault(h.Id)).Model,
-                (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0,
-                alive ? h.Health / 255f : null,
-                alive && _shielded(h.Id)));
+            OpenIGI.Game.Weapons.WeaponType? gun = Igi1ReplicatedWorld.HeldWeapon(h.Weapon, _game.PlayerSetup?.Weapons);
+            bodies.Add(Ai.PartnerBody.FromReplicated(h.Id, h, gun, fired) with
+            {
+                Name = Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
+                Revive = alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
+                Model = PlayerSkins.Igi1.Of(_skins.GetValueOrDefault(h.Id)).Model,
+                CarriesBomb = (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0,
+                Health = alive ? h.Health / 255f : null,
+                Shielded = alive && _shielded(h.Id),
+            });
         }
 
         return bodies;

@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>
@@ -25,8 +27,8 @@ public static class BombDamage
     public static float Share(double effectiveMetres, double lethalMetres)
     {
         double lethal = Math.Max(lethalMetres, 1.0);
-        double twoSigmaSquared = lethal * lethal / Math.Log(PeakShare);
-        double share = PeakShare * Math.Exp(-(effectiveMetres * effectiveMetres) / twoSigmaSquared);
+        double twoSigmaSquared = lethal * lethal / SimMath.Log(PeakShare);
+        double share = PeakShare * SimMath.Exp(-(effectiveMetres * effectiveMetres) / twoSigmaSquared);
         return share < LeastShare ? 0f : (float)share;
     }
 
@@ -36,6 +38,6 @@ public static class BombDamage
     public static double ReachMetres(double lethalMetres)
     {
         double lethal = Math.Max(lethalMetres, 1.0);
-        return lethal * Math.Sqrt(Math.Log(PeakShare / LeastShare) / Math.Log(PeakShare));
+        return lethal * Math.Sqrt(SimMath.Log(PeakShare / LeastShare) / SimMath.Log(PeakShare));
     }
 }

@@ -81,6 +81,9 @@ internal static class SoldierRendererProbe
         }
         member.HasTickState = true;
         renderer.BeginFrame(tickFraction: 0.5f, smooth);
+
+        // What the host hands the next tick's rounds from that frame: the blend the player saw it at.
+        renderer.ShotViewBlend = smooth ? 0.5f : null;
     }
 
     internal static IEnumerable<(SoldierView View, MefCollisionMesh Mesh)> MeshBackedSoldiers(SoldierRenderer renderer)

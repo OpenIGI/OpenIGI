@@ -96,8 +96,8 @@ public readonly struct Quaternion32 : IEquatable<Quaternion32>, IFormattable
     {
         Vector3f unit = axis.Normalized();
         float half = radians * 0.5f;
-        float sin = MathF.Sin(half);
-        return new Quaternion32(unit.X * sin, unit.Y * sin, unit.Z * sin, MathF.Cos(half));
+        float sin = SimMathF.Sin(half);
+        return new Quaternion32(unit.X * sin, unit.Y * sin, unit.Z * sin, SimMathF.Cos(half));
     }
 
     /// <summary>Computes the dot product of two quaternions.</summary>

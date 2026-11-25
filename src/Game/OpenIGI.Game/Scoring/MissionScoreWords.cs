@@ -44,19 +44,7 @@ public sealed class MissionScoreWords(Func<string, string?>? lookup = null)
     public const string Unranked = "Unranked";
 
     // The English I.G.I. 2 ships for the keys whose text is not the key itself (language/english/menusystem.res).
-    private static readonly Dictionary<string, string> English = new(StringComparer.Ordinal)
-    {
-        [NotAvailable] = "N/A",
-        ["Rank1"] = "Desk Officer",
-        ["Rank2"] = "Operative",
-        ["Rank3"] = "Agent",
-        ["Rank4"] = "Field Officer",
-        ["Rank5"] = "Covert Operative",
-        ["Rank6"] = "Secret Agent",
-        ["Rank7"] = "IGI Recruit",
-        ["Rank8"] = "IGI Operative",
-        ["Rank9"] = "David Jones",
-    };
+    private static readonly Dictionary<string, string> English = EnglishWords();
 
     /// <summary>Gets the words in English.</summary>
     public static MissionScoreWords InEnglish { get; } = new();
@@ -78,6 +66,18 @@ public sealed class MissionScoreWords(Func<string, string?>? lookup = null)
         rank < 0
             ? Unranked
             : string.Create(CultureInfo.InvariantCulture, $"Rank{(MissionRankRequirements.RankCount * Math.Clamp(difficulty, 0, 2)) + 1 + rank}");
+
+    // The English words: not available's, and the ranks' (Rank1 to Rank9) as every menu names them.
+    private static Dictionary<string, string> EnglishWords()
+    {
+        Dictionary<string, string> words = new(StringComparer.Ordinal) { [NotAvailable] = "N/A" };
+        for (int i = 0; i < OpenIGI.Core.Titles.GameTitle.RankNames.Count; i++)
+        {
+            words[string.Create(CultureInfo.InvariantCulture, $"Rank{i + 1}")] = OpenIGI.Core.Titles.GameTitle.RankNames[i];
+        }
+
+        return words;
+    }
 
     /// <summary>Gets a rank's name.</summary>
     /// <param name="rank">The rank, -1 for none.</param>

@@ -48,7 +48,7 @@ public sealed partial class Igi2HumanAi
 
         foreach (float angle in GrenadeThrowAngles)
         {
-            float rise = (float)Math.Tan(angle);
+            float rise = (float)SimMath.Tan(angle);
             float acrossX = (float)((target.X - hand.X) * 0.000244140625);
             float acrossY = (float)((target.Y - hand.Y) * 0.000244140625);
             float across = (float)Math.Sqrt((acrossX * (double)acrossX) + (acrossY * (double)acrossY));

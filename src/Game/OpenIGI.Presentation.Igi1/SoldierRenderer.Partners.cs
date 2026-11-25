@@ -331,6 +331,12 @@ public sealed partial class SoldierRenderer
         {
             body.ResolveFrameState();
         }
+
+        // A race's ghost is posed for the frame as a partner is, though only its silhouette is drawn of it: no shadow, no trace.
+        if (_ghostShown)
+        {
+            _ghost?.ResolveFrameState();
+        }
     }
 
     private void DrawPartners(in Camera3D camera, in Matrix4f projection)
@@ -415,5 +421,6 @@ public sealed partial class SoldierRenderer
         _partnerHealth.Clear();
         _partnerShielded.Clear();
         _partnerLoad = null;
+        ReleaseGhost();
     }
 }

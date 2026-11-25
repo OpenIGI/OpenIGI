@@ -31,6 +31,9 @@ public sealed partial class GameHost
     public const float WheelAudioPitch = 0.6f;
 
     private float _wheelTimeCarry;
+
+    // Whether the clock ran faster than real time last frame: a replay run through or sought, its backlog let go of after.
+    private bool _clockWasFast;
     private bool _wheelSteered;
 
     /// <summary>Gets the player whose weapons the wheel offers, the title's own or the game's.</summary>
@@ -74,7 +77,10 @@ public sealed partial class GameHost
             (IReadOnlyList<string> choices, _) = player.WheelChoices();
             if (pick >= 0 && pick < choices.Count)
             {
-                player.ChooseFromWheel(choices[pick]);
+                // Handed to the player with the next tick's input, not now: a replay gives the pick back on that tick.
+                _wheelPick = int.TryParse(choices[pick], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int number)
+                    ? number
+                    : null;
                 PlayWheelSound(WeaponWheelSounds.ChooseSoundName, 0.8f);
             }
 
@@ -105,6 +111,24 @@ public sealed partial class GameHost
         float openness = _options.Lockstep ? 0f : wheel?.Openness ?? 0f;
         // A play-test run slower or faster from the editor scales the clock the same way.
         float scale = (1f + ((WheelTimeScale - 1f) * openness)) * PlaytestTimeScale;
+
+        // Faster than real time, never more ticks a frame than the clock may catch up on: past that the clock fell behind its
+        // own schedule, and a replay run through at speed -- its opening cutscene, a seek -- went on at the catch-up's pace
+        // until the debt was paid, ten times as fast at one times speed.
+        if (scale > 1f && elapsed > 0f)
+        {
+            float most = (Engine.Time.GameClock.MaxCatchUpTicks - 2) / (elapsed * Math.Max(1, _loop.Clock.TickRate));
+            scale = MathF.Min(scale, MathF.Max(1f, most));
+        }
+
+        // And back at speed, whatever such a stretch left the schedule owing is let go of, not run off at the catch-up's pace.
+        if (_clockWasFast && scale <= 1f)
+        {
+            _loop.Clock.DropBacklog(_loop.TimeSource.Milliseconds);
+        }
+
+        _clockWasFast = scale > 1f;
+
         float stretch = (elapsed * 1000f * (1f - scale)) + _wheelTimeCarry;
         int whole = (int)stretch;
         _wheelTimeCarry = scale != 1f ? stretch - whole : 0f;
