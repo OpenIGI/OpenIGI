@@ -310,6 +310,7 @@ public sealed partial class GameHost
         if (_tapeCheckpoints.AtOrBefore(to) is { } held && RestoreLevel(held))
         {
             (_ticksLoad, _ticksOfLoad) = (_levelLoads, held.Tick);
+            ComputerAsRestored();
             _replayCommandsGiven = (-1, -1);
             PlaytestCheatsAt(held.Tick);
             PlaybackSettingsAt(held.Tick);

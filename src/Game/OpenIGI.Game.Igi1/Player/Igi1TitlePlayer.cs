@@ -95,6 +95,9 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <remarks>The body's yaw: its forward is (sin yaw, cos yaw).</remarks>
     public float? Heading => Human.Rig.Yaw;
 
+    /// <inheritdoc/>
+    public bool IsComputerOpen => Human.Rig.IsMapComputerOpen;
+
     /// <summary>Gets a value indicating whether the death camera has the view: the player is dead and its camera pulled back.</summary>
     public bool IsDeathViewActive => Human.Life.IsDead && _death.IsActive;
 

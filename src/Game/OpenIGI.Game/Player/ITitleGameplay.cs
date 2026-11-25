@@ -189,6 +189,12 @@ public interface ITitlePlayer
     /// <summary>Gets a value indicating whether the title's level lets the in-game menu open.</summary>
     bool IsMenuEnabled => true;
 
+    /// <summary>
+    /// Gets a value indicating whether the computer the level keeps is up: the title's own, which the level opens and closes;
+    /// never where the computer is the host's.
+    /// </summary>
+    bool IsComputerOpen => false;
+
     /// <summary>Gets a value indicating whether the title hides the weather, as a screen of its own over the view does.</summary>
     bool IsWeatherHidden => false;
 

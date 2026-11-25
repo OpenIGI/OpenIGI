@@ -213,7 +213,7 @@ public sealed partial class GameHost
     {
         ReplayHeader header = replay.Header;
         string mission = _missions.TryGet(header.Mission, out Game.World.MissionDescriptor? descriptor) && descriptor.Name.Length > 0
-            ? descriptor.Name
+            ? Shown(descriptor.Name)
             : string.Create(CultureInfo.InvariantCulture, $"Mission {header.Mission}");
         string difficulty = ((Game.Ai.AiDifficulty)Math.Clamp(header.Difficulty, 0, 2)).ToString();
         string who = header.PlayerName.Length > 0 ? $"{header.PlayerName} · " : string.Empty;

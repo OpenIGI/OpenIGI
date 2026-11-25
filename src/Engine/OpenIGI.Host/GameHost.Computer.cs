@@ -479,6 +479,19 @@ public sealed partial class GameHost
         _computerWheel = 0;
     }
 
+    /// <summary>
+    /// The level put back to a moment: the view and the pointer follow the mission's computer as it was then. The computer is the
+    /// level's, put back with it; the view is the host's, which hears of the computer only as it opens or closes.
+    /// </summary>
+    private void ComputerAsRestored()
+    {
+        bool open = TitlePlayer?.IsComputerOpen == true;
+        if (UsesMissionComputer && open != _computerOpen)
+        {
+            MissionComputerChanged(open);
+        }
+    }
+
     /// <summary>Gets a value indicating whether the title's own computer is in use rather than the tactical one.</summary>
     private bool UsesMissionComputer => TacticalComputer is null && _mapComputer is { IsReady: true } && _mission.HasOwnPlayer;
 
