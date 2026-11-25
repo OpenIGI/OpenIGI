@@ -571,7 +571,7 @@ public sealed partial class GameHost
                     // have them.
                     bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var sessionMode }
                         && Game.Multiplayer.Modes.ArenaLevel.IsVersus(sessionMode);
-                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep && !arena)
+                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && (!_options.Lockstep || PromotesBackdropUnderLockstep) && !arena)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
 

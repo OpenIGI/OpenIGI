@@ -502,6 +502,10 @@ public sealed partial class GameHost
         MountLanguage(_resources);
         // The backdrop showed every section the level streams in by area; the mission starts as a cold load does.
         preview.BeforePlay?.Invoke();
+
+        // A level loaded, as a cold load counts one: its ticks are counted from nought, not on from the menu's that ran over the
+        // backdrop, so a run recorded from the menu begins on its first tick, and a replay or race begun from it on its own.
+        _levelLoads++;
         _session.Begin(chosen, preview.LevelRoot);
 
         // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the

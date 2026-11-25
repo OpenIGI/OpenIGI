@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Replays;
 using OpenIGI.Game.Scoring;
@@ -23,6 +23,9 @@ public sealed class ReplayVerificationTests : IDisposable
 {
     // Half an hour of play, past every mission the solver completes.
     private const int MaxTicks = 30 * 60 * 30;
+
+    // The frames the menu is up before Play is pressed over it, as a player reads it: twenty seconds of its ticks run first.
+    private const int MenuReadFrames = 20 * 30;
 
     private readonly AiScenarioSupport _support = new();
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), $"openigi-verify-{Guid.NewGuid():N}");
@@ -139,7 +142,8 @@ public sealed class ReplayVerificationTests : IDisposable
     [RequiresGameDataFact]
     public void A_run_begun_from_the_menu_is_verified_as_one_begun_straight()
     {
-        // Played as a player plays: Play pressed over the menu's backdrop, the level it already holds brought up for the run.
+        // Played as a player plays: the menu read for a while over its backdrop, its ticks running, then Play pressed, the level the
+        // backdrop holds brought up for the run.
         ReplayFile run = Record(mission: 1, fromMenu: true);
         ReplayVerdict verdict = Verify(run, "menu");
         Assert.True(verdict.Verified, $"{verdict.Reason}: claimed {run.Result.Score}, came to {verdict.Score}, ended {run.Result.EndTick} / {verdict.EndTick}");
@@ -184,6 +188,8 @@ public sealed class ReplayVerificationTests : IDisposable
         string id = mission.ToString(CultureInfo.InvariantCulture);
         GameHost host = _support.Host(
             device, new HeadlessGameWindow(), fromMenu ? "-entrycam" : "-mission", id, "-lockstep", "-frames", "100000000");
+        host.EntryCamNotBeforeFrame = fromMenu ? MenuReadFrames : 0;
+        host.PromotesBackdropUnderLockstep = fromMenu;
         ReplayFile? made = null;
         host.ReplayMade = replay => made ??= replay;
         host.Start();
