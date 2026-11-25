@@ -210,19 +210,37 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         ById is { } byId && byId.TryGetValue(id, out Interaction.IIgi2Activatable? thing) ? thing : null;
 
     /// <inheritdoc/>
-    /// <remarks>Each thing's sphere against the player's: the two meet when their centres are no further apart than their radii added.</remarks>
+    /// <remarks>
+    /// <para>Each thing's sphere against the player's: the two meet when their centres are no further apart than their radii added.</para>
+    /// <para>
+    /// Only what is in the world. <c>Human_UpdateActivate</c> sends the evaluate event through the world's stationary tree
+    /// (<c>World_TriggerQTaskEventSphereSpecificTree</c>), which holds only objects registered in it, and a conditional container's
+    /// remove handler takes its children out. The level keeps every thing it can activate here from the start, so a thing under a
+    /// shut container is passed over -- and a human out of the world, as its remove handler takes it off the trees. The last
+    /// mission keeps two rocket ignition buttons at one spot, the game's (under "Launch Button - Game") and the outro's (under
+    /// "Launch Button - CutScene", always active); the shut one answered the player's press, and the launch never went.
+    /// </para>
+    /// </remarks>
     public IEnumerable<Interaction.IIgi2Activatable> FindActivatables(Vector3d centre, float radius)
     {
         foreach (Interaction.IIgi2Activatable candidate in Activatables)
         {
             Vector3d d = candidate.Centre - centre;
             double reach = radius + candidate.Radius;
-            if ((d.X * d.X) + (d.Y * d.Y) + (d.Z * d.Z) <= reach * reach)
+            if ((d.X * d.X) + (d.Y * d.Y) + (d.Z * d.Z) <= reach * reach && IsInWorld(candidate))
             {
                 yield return candidate;
             }
         }
     }
+
+    // A thing of the level under a running container, or a human its container has not taken out.
+    private static bool IsInWorld(Interaction.IIgi2Activatable candidate) => candidate switch
+    {
+        Igi2Human human => human.IsActive,
+        Engine.Tasks.GameTask task => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(task),
+        _ => true,
+    };
 
     private sealed class SilentSound : IIgi2SoundInstance
     {

@@ -179,6 +179,36 @@ public sealed class RetailIgi2SwitchTests
         Assert.Null(away.Human.EvaluateTarget);
     }
 
+    /// <summary>
+    /// A switch its container has taken out of the world is not found: <c>Human_UpdateActivate</c> searches the world's stationary
+    /// tree, which a container's remove handler takes its children off. The last mission keeps two rocket ignition buttons at one
+    /// spot -- <c>Switch_3593</c> under "Launch Button - Game" and <c>Switch_1405</c>, always active, under "Launch Button - CutScene"
+    /// -- and the outro's answered the player's press, so the launch never went.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_switch_out_of_the_world_is_not_found()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true, location: "location3", levelName: "LEVEL6");
+        m.Tree.OfType<Game.Flow.EditVariableTask>().Single(static t => t.Id == 2112).Value = 1;
+        for (int tick = 0; tick < 30; tick++)
+        {
+            m.Step();
+        }
+
+        Igi2SwitchTask game = m.Switch(3593), outro = m.Switch(1405);
+        Assert.Equal(game.Position, outro.Position);
+        Assert.False(OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(outro));
+
+        float[] f = EngineEuler.Rotation(game.Orientation.X, game.Orientation.Y, game.Orientation.Z);
+        Vector3d ahead = new(f[1], f[4], f[7]);
+        Igi2TitlePlayer player = RetailIgi2Mission1.Stand(m.Collision!, m.Level, game, game.Position + (ahead * 1200.0), MathF.Atan2((float)ahead.X, (float)-ahead.Y));
+        player.Activatables.Add(outro);
+
+        IIgi2Activatable[] found = [.. player.Human.Surroundings.FindActivatables(game.Position, 2048f)];
+        Assert.Contains(game, found);
+        Assert.DoesNotContain(outro, found);
+    }
+
     private static TitlePlayerInput Idle => RetailIgi2Mission1.Idle;
 
     private static Igi2TitlePlayer Stand(Igi2Level level, Igi2SwitchTask button, Vector3d at, float gamma) =>
