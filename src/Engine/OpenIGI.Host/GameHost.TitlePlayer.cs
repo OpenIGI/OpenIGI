@@ -403,8 +403,12 @@ public sealed partial class GameHost
     private void PresentTitleLook(bool smooth)
     {
         PlayerProfile? profile = _configuration.Active;
+
+        // Not while a recording plays back: its look is the tape's, given a tick at a time, with no mouse of the viewer's ahead of
+        // it -- the preview held the view on each tick's look, stepping thirty times a second. Without it the view is drawn
+        // between the last two ticks' looks, as smooth as the run was played.
         bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && !_session.FailedMenu;
+            && !_session.FailedMenu && !Replaying;
         if (!available && _titleFeatures?.Look is { } stopped) { stopped.ResetLook(); }
         _titlePresentation.SetLookPreview(available && _titleFeatures?.Look is { CanPreviewLook: true } look
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,

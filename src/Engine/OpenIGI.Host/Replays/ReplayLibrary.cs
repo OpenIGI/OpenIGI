@@ -63,6 +63,34 @@ public sealed class ReplayLibrary(string root, IOpenIgiLogger logger)
         return path;
     }
 
+    /// <summary>Deletes a kept replay, as the player asks: only a replay's file, and only one in the library.</summary>
+    /// <param name="path">The replay's file, as <see cref="LibraryReplay.Path"/> gives it.</param>
+    /// <returns>Whether it was deleted.</returns>
+    public bool Delete(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        string full = Path.GetFullPath(path);
+        string library = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!full.StartsWith(library, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Path.GetExtension(full), ReplayFile.Extension, StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(full))
+        {
+            return false;
+        }
+
+        try
+        {
+            File.Delete(full);
+            logger.Information("Replays", $"Deleted the replay {Path.GetFileName(full)}.");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.Warning("Replays", $"Could not delete the replay {Path.GetFileName(full)}: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>The replays kept of a mission, newest first.</summary>
     /// <param name="title">The game, by title id.</param>
     /// <param name="mission">The mission.</param>

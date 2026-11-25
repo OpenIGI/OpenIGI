@@ -109,7 +109,8 @@ public sealed partial class GameHost
             if (width > 0f && px >= x && px <= x + width && py >= y && py <= y + height && _replay is { } tape)
             {
                 _window.Input.Mouse.TakePress(MouseButton.Left);
-                Said(SeekReplay((int)Math.Round(tape.Length * Math.Clamp((px - x) / width, 0f, 1f))));
+                int from = PlaybackShownFrom;
+                Said(SeekReplay(from + (int)Math.Round((tape.Length - from) * Math.Clamp((px - x) / width, 0f, 1f))));
             }
         }
 
@@ -196,7 +197,7 @@ public sealed partial class GameHost
     /// <param name="state">The frame loop's state.</param>
     private void DrawReplayBar(FrameLoopState state)
     {
-        if (!Watching || _replayBarHidden || _playback is not { } replay || _replay is not { } tape
+        if (!Watching || (_replayBarHidden && !PlaybackHidesOpening) || _playback is not { } replay || _replay is not { } tape
             || _remasteredHud is not { IsReady: true } hud || _menuFlow.MenuMode)
         {
             return;
@@ -220,20 +221,25 @@ public sealed partial class GameHost
         string heading = $"{who}{mission} · {difficulty} · {Ruleset.FromId(header.Ruleset).Name}";
         string? ending = !ReplayAtEnd ? null : (_replayDecided ?? (replay.Result.Outcome == ReplayOutcome.Completed ? true : replay.Result.Outcome == ReplayOutcome.Failed ? false : null)) switch
         {
-            true => "Mission complete · Space plays it again",
-            false => "Mission failed · Space plays it again",
-            null => "The run ends here · Space plays it again",
+            true => "Mission complete · Space plays it again · Esc for the menu",
+            false => "Mission failed · Space plays it again · Esc for the menu",
+            null => "The run ends here · Space plays it again · Esc for the menu",
         };
+        // The run's clock from where it is shown, its opening cutscene left out.
+        int from = PlaybackShownFrom;
         return new ReplayBar(
             heading,
-            TickOfLevel / 30.0,
-            tape.Length / 30.0,
+            Math.Max(0, TickOfLevel - from) / 30.0,
+            Math.Max(0, tape.Length - from) / 30.0,
             _playtestPaused || ReplayAtEnd,
             PlaytestSpeeds[_playtestSpeed],
             _replayCamera switch { ReplayCamera.Behind => "Behind", ReplayCamera.Free => "Free camera", _ => "Eyes" },
-            [.. tape.Marks.Select(static m => (m.Tick / 30.0, m.Text))],
+            [.. tape.Marks.Where(m => m.Tick >= from).Select(m => ((m.Tick - from) / 30.0, m.Text))],
             Seeking: _replayTarget is not null,
-            PartedAt: _playbackDivergedAt / 30.0,
-            Ending: ending);
+            PartedAt: _playbackDivergedAt is { } parted ? Math.Max(0, parted - from) / 30.0 : null,
+            Ending: ending)
+        {
+            Opening = PlaybackHidesOpening,
+        };
     }
 }

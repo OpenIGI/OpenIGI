@@ -37,6 +37,15 @@ public sealed partial class RemasteredHudRenderer
 
         float body = o.Px(HudOverlay.Body);
         float small = o.Px(HudOverlay.Small);
+
+        // The mission's opening cutscene, run through in a few frames before the run is shown -- under the loading screen where
+        // there is one: the screen held dark, nothing of the scene seen.
+        if (bar.Opening)
+        {
+            o.Painter.FillRect(new UiRect(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgb(0, 0, 0));
+            return;
+        }
+
         float pad = o.Px(BoardPad);
         float line = o.Text.LineHeightAt(body);
         float width = MathF.Min(o.Px(ReplayBarWidth), o.Safe.Width * 0.94f);

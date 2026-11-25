@@ -306,7 +306,8 @@ public sealed partial class GameHost
     // loaded afresh where the recording holds nothing of it.
     private void ReplayFromStart(int? target)
     {
-        int to = target is > 0 ? target.Value : 0;
+        // A watched replay starts where it is shown from: after its mission's opening cutscene.
+        int to = Math.Max(target is > 0 ? target.Value : 0, PlaybackShownFrom);
         if (_tapeCheckpoints.AtOrBefore(to) is { } held && RestoreLevel(held))
         {
             (_ticksLoad, _ticksOfLoad) = (_levelLoads, held.Tick);
@@ -328,7 +329,7 @@ public sealed partial class GameHost
         _playbackReloading = false;
         _tapeCheckpoints.Clear();
         _replayLoad = _levelLoads;
-        _replayTarget = target is > 0 ? target : null;
+        _replayTarget = to > 0 ? to : null;
     }
 
     // A checkpoint of the level at a tick of the recording being made or played, every two seconds, before the tick runs.
@@ -382,7 +383,7 @@ public sealed partial class GameHost
             return "Not playing a recording back.";
         }
 
-        tick = Math.Clamp(tick, 0, _replay!.Length);
+        tick = Math.Clamp(tick, Math.Min(PlaybackShownFrom, _replay!.Length), _replay.Length);
         if (tick < TickOfLevel)
         {
             ReplayFromStart(tick);

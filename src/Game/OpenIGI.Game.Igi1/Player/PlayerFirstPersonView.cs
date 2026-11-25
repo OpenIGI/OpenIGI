@@ -388,7 +388,8 @@ internal sealed class PlayerFirstPersonView
             weapons?.Sway.Yaw ?? 0f,
             weapons?.RecoilPitch ?? 0f,
             _landingKick.ViewModelOffsetUnits,
-            ModernLean.Roll);
+            ModernLean.Roll,
+            (_body.Yaw, _body.Pitch));
     }
 
     /// <summary>The camera's orientation for a frame between two ticks — the kick glides, the look is now.</summary>
@@ -401,7 +402,7 @@ internal sealed class PlayerFirstPersonView
     internal Matrix3f SmoothedLookRotation(float aimPitch, float alpha)
     {
         (float pitch, float roll, float yaw) = _pair.SmoothedShake(alpha);
-        (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
+        (float heading, float bodyPitch) = FrameLook(alpha);
         return Shaken(
             heading,
             _pair.SmoothedAimPitch(bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha),
@@ -419,6 +420,10 @@ internal sealed class PlayerFirstPersonView
     /// the arms are both drawn from this, so the gun stays welded to the view. It never reaches the body.
     /// </remarks>
     internal (float Yaw, float Pitch)? ShownLook { get; set; }
+
+    // The look a frame is drawn with: the one shown where the title path gathers the mouse ahead of the tick (live play);
+    // else the body's, drawn between its tick pair -- a replay's, which stepped thirty times a second held on each tick.
+    private (float Yaw, float Pitch) FrameLook(float alpha) => ShownLook ?? (_pair.HasPair ? _pair.SmoothedLook(alpha) : (_body.Yaw, _body.Pitch));
 
     /// <summary>Where the ear is for a frame between two ticks, in metres.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
@@ -441,7 +446,7 @@ internal sealed class PlayerFirstPersonView
         BoneAttachment? Magazine,
         BoneAttachment? MovingPart) SmoothedRig(float aimPitch, float alpha, in RigAim aim)
     {
-        (float heading, float bodyPitch) = ShownLook ?? (_body.Yaw, _body.Pitch);
+        (float heading, float bodyPitch) = FrameLook(alpha);
         return _pair.SmoothedRig(Rig, heading, bodyPitch, aimPitch + (bodyPitch - _body.Pitch), alpha, aim);
     }
 }

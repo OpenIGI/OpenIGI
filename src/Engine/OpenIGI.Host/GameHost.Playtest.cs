@@ -65,8 +65,11 @@ public sealed partial class GameHost
     /// <summary>Gets how fast the play-test runs the level's clock: 1 outside one, or under lockstep (whose clock is the frames').</summary>
     /// <remarks>A replay's seek runs as fast as the frames let ticks through.</remarks>
     private float PlaytestTimeScale => TransportActive && !_options.Lockstep
-        ? _replayTarget is not null && Replaying ? ReplaySeekSpeed : PlaytestSpeeds[_playtestSpeed]
+        ? PlaybackHidesOpening ? OpeningRunSpeed : _replayTarget is not null && Replaying ? ReplaySeekSpeed : PlaytestSpeeds[_playtestSpeed]
         : 1f;
+
+    // How fast a replay's opening cutscene is run through, unseen: as many ticks a frame as the clock catches up.
+    private const float OpeningRunSpeed = 1000f;
 
     /// <summary>Notes the start and end of a play-test: where the editor's camera was, and, at its end, everything put back.</summary>
     private void TrackPlaytest()

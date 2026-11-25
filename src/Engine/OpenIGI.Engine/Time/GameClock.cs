@@ -449,6 +449,20 @@ public sealed class GameClock
         }
     }
 
+    /// <summary>
+    /// Lets go of the ticks the schedule is behind by, as an excluded span would have: what a stretch run faster than the clock
+    /// could keep up with left owing, which it would otherwise pay back at its catch-up's pace.
+    /// </summary>
+    /// <param name="nowMilliseconds">The wall-clock reading for this frame.</param>
+    public void DropBacklog(int nowMilliseconds)
+    {
+        long behind = nowMilliseconds - DueMilliseconds;
+        if (behind > 0)
+        {
+            ExcludeElapsed((int)Math.Min(behind, int.MaxValue));
+        }
+    }
+
     /// <summary>Opens an excluded-time span that closes when the returned value is disposed.</summary>
     /// <returns>A scope that ends the span.</returns>
     public ExcludedTimeScope ExcludeTime()

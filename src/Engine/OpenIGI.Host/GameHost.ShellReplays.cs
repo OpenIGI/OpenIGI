@@ -98,6 +98,8 @@ public sealed partial class GameHost
 
         public string? Race(string id) => host.RaceFromMenu(state, id);
 
+        public string? Delete(string id) => host.Replays.Delete(id) ? null : "it could not be deleted";
+
         public ShellRecord? RecordOf(int missionId, int difficulty) => host.MissionRecord(missionId, difficulty);
 
         public void PlayRecord(string run, bool race) => host.AskBoardReplay(run, race);

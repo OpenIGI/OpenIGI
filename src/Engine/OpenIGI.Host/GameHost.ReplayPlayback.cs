@@ -25,6 +25,10 @@ public sealed partial class GameHost
     private int _playbackMatched;
     private int _playbackComparedThrough = -1;
 
+    // Whether the replay is running through its mission's opening cutscene, unseen, and the tick it is shown from once it has.
+    private bool _playbackOpening;
+    private int _playbackStart;
+
     // The tick a replay's level decided its mission on, and the mission's score as it stood then; and the runner as it moved
     // here, the ghost a race against the run shows as the checker saw it.
     private int? _playbackDecidedAt;
@@ -184,6 +188,7 @@ public sealed partial class GameHost
     /// <summary>Stops the replay being played, if one is, and puts the player's own settings back.</summary>
     public void StopPlayback()
     {
+        _playbackOpening = false;
         if (_playback is null)
         {
             return;
@@ -260,9 +265,14 @@ public sealed partial class GameHost
         _replay = _playback.Tape;
         _replayTapeOfPlayback = _playback.Tape;
         _replayLoad = _levelLoads;
-        _replayTarget = null;
         _replayCommandsGiven = (-1, -1);
         _tapeCheckpoints.Clear();
+
+        // Shown from where the mission's opening cutscene ends: the scene is played through first, unseen and unheard, as fast as
+        // a seek runs, for the run to go on from where it did (see PlaybackOpeningTicked). Not by a checker, which shows nothing.
+        _playbackStart = 0;
+        _playbackOpening = !_options.SimulationOnly;
+        _replayTarget = _playbackOpening ? _playback.Tape.Length : null;
         return true;
     }
 
@@ -292,6 +302,32 @@ public sealed partial class GameHost
         }
 
         return false;
+    }
+
+    /// <summary>Gets the tick a replay being watched is shown from: the first after its mission's opening cutscene.</summary>
+    private int PlaybackShownFrom => _playback is not null && _playbackLoad == _levelLoads ? _playbackStart : 0;
+
+    /// <summary>
+    /// Gets a value indicating whether a replay being watched is before where it is shown from: running through its opening
+    /// cutscene, the first time or again after a seek back that loaded its level afresh -- the picture covered, the sound off.
+    /// </summary>
+    private bool PlaybackHidesOpening =>
+        _playback is not null && _playbackLoad == _levelLoads && (_playbackOpening || TickOfLevel < _playbackStart);
+
+    // After a tick of a replay's level while its opening cutscene is run through: once the scene is over, the run is shown from
+    // the tick after, the seek that ran it stopped and what the scene left playing let go of.
+    private void PlaybackOpeningTicked(int tick)
+    {
+        if (!_playbackOpening || CutscenePlaying)
+        {
+            return;
+        }
+
+        _playbackOpening = false;
+        _playbackStart = tick + 1;
+        _replayTarget = null;
+        _cutsceneSounds.StopAll();
+        _mission.Progress?.ClearCutsceneMessages();
     }
 
     /// <summary>After a tick of a replay's level: its fingerprint compared with the recording's, where one was kept.</summary>

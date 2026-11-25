@@ -65,7 +65,8 @@ public sealed partial class GameHost
     private void AdvanceAudio()
     {
         // A level open in the editor is being built, not played: its score, beds and voices wait for Play.
-        _audioOut.GameSilenced = _editor is not null && !_playerMode;
+        // Nor is a replay's opening cutscene, run through at a seek's speed before the run is shown.
+        _audioOut.GameSilenced = (_editor is not null && !_playerMode) || PlaybackHidesOpening;
         UpdateListener();
         float delta = _audioOut.Advance();
         UpdateRainAmbience(delta);

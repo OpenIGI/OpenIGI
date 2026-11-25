@@ -55,9 +55,6 @@ public sealed class CampaignScreen : ShellScreen
     private MissionBestPanel? _best;
     private ActionRow? _replaysRow;
 
-    // The kept run the campaign's Race best races, or null for none.
-    private string? _raceBest;
-
     // The mission's record on the boards, to race or watch, and the row that offers it.
     private ActionRow? _recordRow;
     private ShellRecord? _record;
@@ -275,13 +272,6 @@ public sealed class CampaignScreen : ShellScreen
             };
             // A page of its own, in this one's place as every page goes: pushed over it, this page was drawn on under it.
             _replaysRow.Activated += _ => Context.Stack.Reset(new ReplaysScreen(Context, replays, _missions[Math.Clamp(_shown, 0, _missions.Count - 1)]));
-            _replaysRow.SecondActivated += _ =>
-            {
-                if (_raceBest is { } best)
-                {
-                    replays.Race(best);
-                }
-            };
             column.AddChild(_replaysRow);
 
             // The fastest run on the mission's board, at the difficulty chosen and the rules played by now: raced or watched.
@@ -291,11 +281,10 @@ public sealed class CampaignScreen : ShellScreen
                 MaxWidth = wide ? 760f : 640f,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 FieldWidth = compact ? 80f : 110f,
-                SecondAction = "Race",
+                MoreActions = [new RowAction("Race", _ => PlayRecord(race: true))],
                 Visibility = Visibility.Collapsed,
             };
             _recordRow.Activated += _ => PlayRecord(race: false);
-            _recordRow.SecondActivated += _ => PlayRecord(race: true);
             column.AddChild(_recordRow);
         }
 
@@ -497,8 +486,7 @@ public sealed class CampaignScreen : ShellScreen
             string chosen = _difficulty is { } picked ? Difficulties[picked.SelectedIndex] : string.Empty;
             ShellReplay? best = keptRuns.FirstOrDefault(r => r is { Best: true, CanRace: true } && string.Equals(r.Difficulty, chosen, StringComparison.OrdinalIgnoreCase))
                 ?? keptRuns.FirstOrDefault(static r => r is { Best: true, CanRace: true });
-            _raceBest = best?.Id;
-            _replaysRow.SecondAction = best is null ? null : "Race best";
+            _replaysRow.MoreActions = best is null ? [] : [new RowAction("Race best", _ => kept.Race(best.Id))];
         }
 
         ShowRecord();

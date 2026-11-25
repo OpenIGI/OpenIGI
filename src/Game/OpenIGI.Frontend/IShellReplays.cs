@@ -46,6 +46,11 @@ public interface IShellReplays
     /// <returns>Why it cannot be raced, or <see langword="null"/> once the race is under way.</returns>
     string? Race(string id);
 
+    /// <summary>Deletes a kept replay for good.</summary>
+    /// <param name="id">The replay, by its id.</param>
+    /// <returns>Why it could not be deleted, or <see langword="null"/> once it is gone.</returns>
+    string? Delete(string id) => "replays cannot be deleted here";
+
     /// <summary>
     /// The fastest run on a mission's board at a difficulty, under the rules the player plays by now, where its replay is kept:
     /// asked of the master the first time and taken in on a later frame, so it is null until then, and when there is none.

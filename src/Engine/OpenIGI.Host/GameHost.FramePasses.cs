@@ -429,15 +429,18 @@ public sealed partial class GameHost
         // It also goes BEFORE the handheld computer below, which owns Escape while it is open: closing
         // the computer clears the flag, so a check placed after it would see a closed computer and a
         // still-pressed Escape and pause the game in the same breath.
+        //
+        // A replay being watched is not the player's game: its scenes and its level's own say over the menu are the run's, and a
+        // replay held at its end -- in the closing scene, the menus the level shut -- left no way out of it. Escape always works.
         if (!_menuFlow.MenuMode
             && !state.Console.IsOpen
             && !_computerOpen
             && !_touchEditor.IsOpen
             && !_session.FailedMenu
             && _session.Score is null
-            && _mission.Scenes?.IsPlaying != true
-            && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
-            && _mission.MenusEnabled
+            && (Watching || (_mission.Scenes?.IsPlaying != true
+                && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
+                && _mission.MenusEnabled))
             && state.Shell is not null
             && _session.Mission is not null
             && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))

@@ -16,11 +16,12 @@ namespace OpenIGI.UI.Kit.Widgets;
 public class ActionRow : Control
 {
     private string _action;
-    private string? _secondAction;
+    private IReadOnlyList<RowAction> _more = [];
 
-    // Where the buttons were last drawn, for a click to be tested against and their feedback lit.
+    // Where the buttons were last drawn, for a click to be tested against and their feedback lit: the row's own, and the rest
+    // as MoreActions lists them.
     private UiRect? _button;
-    private UiRect? _secondButton;
+    private readonly List<UiRect> _moreButtons = [];
     private readonly RowButtonFeedback _feedback = new();
 
     /// <summary>Initializes a new instance of the <see cref="ActionRow"/> class.</summary>
@@ -45,39 +46,40 @@ public class ActionRow : Control
     }
 
     /// <summary>
-    /// Gets or sets the caption of a second button, left of the first, or <see langword="null"/> for none: a run's Race beside its
-    /// Watch. Pressed with the pointer, it raises <see cref="SecondActivated"/>; the row's own activation stays the first's.
+    /// Gets or sets the row's other buttons, left of its own, the first nearest it: a run's Race beside its Watch, and its Delete.
+    /// Each is pressed with the pointer or <see cref="ActivateMore"/>; the row's own activation stays its own button's.
     /// </summary>
-    public string? SecondAction
+    public IReadOnlyList<RowAction> MoreActions
     {
-        get => _secondAction;
-        set => _secondAction = value?.ToUpperInvariant();
+        get => _more;
+        set => _more = value ?? [];
     }
 
-    /// <summary>Raised when the second button is pressed, or <see cref="ActivateSecond"/> is called.</summary>
-    public event Action<ActionRow>? SecondActivated;
-
-    /// <summary>Presses the second button, as a key bound to it does.</summary>
-    public void ActivateSecond()
+    /// <summary>Presses one of the row's other buttons, as a key bound to it does.</summary>
+    /// <param name="index">The button, as <see cref="MoreActions"/> lists it.</param>
+    public void ActivateMore(int index)
     {
-        if (_secondAction is not null && IsEnabled)
+        if (index < 0 || index >= _more.Count || !IsEnabled)
         {
-            if (_secondButton is { } second)
-            {
-                _feedback.Pressed(second);
-            }
-
-            PlaySound(UiSounds.Choose);
-            SecondActivated?.Invoke(this);
+            return;
         }
+
+        if (index < _moreButtons.Count)
+        {
+            _feedback.Pressed(_moreButtons[index]);
+        }
+
+        PlaySound(UiSounds.Choose);
+        _more[index].Pressed(this);
     }
 
     /// <inheritdoc/>
     public override void ActivateAt(UiVec2 point)
     {
-        if (_secondButton is { } second && second.Contains(point.X, point.Y))
+        int pressed = _moreButtons.FindIndex(button => button.Contains(point.X, point.Y));
+        if (pressed >= 0)
         {
-            ActivateSecond();
+            ActivateMore(pressed);
             return;
         }
 
@@ -136,13 +138,14 @@ public class ActionRow : Control
         float buttonWidth = UiPainter.MeasureLabel(Theme.Heading, _action, labelSize, 0.16f) + context.Px(28f);
         var button = new UiRect(right - buttonWidth, top, buttonWidth, height);
         _button = button;
-        _secondButton = null;
+        _moreButtons.Clear();
         UiRect leftmost = button;
-        if (_secondAction is { } second)
+        foreach (RowAction more in _more)
         {
-            float secondWidth = UiPainter.MeasureLabel(Theme.Heading, second, labelSize, 0.16f) + context.Px(28f);
-            leftmost = new UiRect(button.X - context.Px(8f) - secondWidth, top, secondWidth, height);
-            _secondButton = leftmost;
+            string caption = more.Caption.ToUpperInvariant();
+            float width = UiPainter.MeasureLabel(Theme.Heading, caption, labelSize, 0.16f) + context.Px(28f);
+            leftmost = new UiRect(leftmost.X - context.Px(8f) - width, top, width, height);
+            _moreButtons.Add(leftmost);
         }
 
         UiRect? field = Value.Length == 0 ? null : FieldRect(context, leftmost, top, height);
@@ -150,9 +153,10 @@ public class ActionRow : Control
         Bgra32 border = Interpolate.Lerp(UiPalette.White(0.18f), Theme.Accent, highlight);
         Bgra32 ink = Interpolate.Lerp(Theme.Text, Theme.Accent, highlight);
         DrawButton(painter, button, _action, labelSize, border, ink, appear);
-        if (_secondButton is { } secondRect)
+        for (int i = 0; i < _moreButtons.Count; i++)
         {
-            DrawButton(painter, secondRect, _secondAction!, labelSize, UiPalette.White(0.18f), Theme.Text, appear);
+            Bgra32 moreInk = _more[i].Danger ? Theme.Danger : Theme.Text;
+            DrawButton(painter, _moreButtons[i], _more[i].Caption.ToUpperInvariant(), labelSize, UiPalette.White(0.18f), moreInk, appear);
         }
 
         if (field is not { } box)

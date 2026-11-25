@@ -862,6 +862,7 @@ public sealed partial class GameHost : IDisposable
                 PlaytestTicked();
                 RunTicked(ran);
                 PlaybackTicked(ran);
+                PlaybackOpeningTicked(ran);
                 CutsceneTicked(ran);
                 RaceTicked(ran);
                 DigestTick();

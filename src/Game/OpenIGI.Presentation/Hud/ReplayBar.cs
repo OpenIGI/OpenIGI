@@ -21,4 +21,8 @@ public sealed record ReplayBar(
     IReadOnlyList<(double Seconds, string Text)> Marks,
     bool Seeking = false,
     double? PartedAt = null,
-    string? Ending = null);
+    string? Ending = null)
+{
+    /// <summary>Gets a value indicating whether the mission's opening cutscene is being run through, before the run is shown.</summary>
+    public bool Opening { get; init; }
+}

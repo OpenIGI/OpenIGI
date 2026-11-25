@@ -33,7 +33,10 @@ public sealed class ReplaysScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Campaign;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("Enter", "Watch"), new("R", "Race"), new("Esc", "Back")];
+    protected override IReadOnlyList<KeyHint> Hints => [new("Enter", "Watch"), new("R", "Race"), new("Del", "Delete"), new("Esc", "Back")];
+
+    // The run whose Delete was pressed once, waiting for the second press that deletes it; null for none.
+    private string? _confirming;
 
     // Each row's replay, for the key that races the one with the focus.
     private readonly Dictionary<ActionRow, ShellReplay> _rows = [];
@@ -63,12 +66,7 @@ public sealed class ReplaysScreen : ShellScreen
                 FieldWidth = compact ? 84f : 220f,
             };
             row.Activated += _ => Watch(id);
-            if (replay.CanRace)
-            {
-                row.SecondAction = "Race";
-                row.SecondActivated += _ => Race(id);
-            }
-
+            row.MoreActions = Actions(replay);
             _rows[row] = replay;
             column.AddChild(row);
         }
@@ -104,11 +102,20 @@ public sealed class ReplaysScreen : ShellScreen
             return false;
         }
 
-        // R races the run with the focus.
-        if (input.Keyboard.WasPressed(KeyCode.R) && Focus?.Focused is ActionRow row && _rows.ContainsKey(row))
+        // R races the run with the focus, and Delete deletes it: the first press asks, the second deletes.
+        if (Focus?.Focused is ActionRow row && _rows.TryGetValue(row, out ShellReplay? focused))
         {
-            row.ActivateSecond();
-            return false;
+            if (input.Keyboard.WasPressed(KeyCode.R) && focused.CanRace)
+            {
+                row.ActivateMore(0);
+                return false;
+            }
+
+            if (input.Keyboard.WasPressed(KeyCode.Delete))
+            {
+                row.ActivateMore(row.MoreActions.Count - 1);
+                return false;
+            }
         }
 
         return base.HandleInput(nav, input);
@@ -124,6 +131,50 @@ public sealed class ReplaysScreen : ShellScreen
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{best}{replay.Outcome} in {seconds / 60}:{seconds % 60:00} ({replay.Difficulty}, {replay.Rules}{note})");
+    }
+
+    // A run's buttons left of its Watch: Race where it can be raced, and Delete -- Confirm delete once pressed.
+    private RowAction[] Actions(ShellReplay replay)
+    {
+        string id = replay.Id;
+        RowAction delete = _confirming == id
+            ? new RowAction("Confirm delete", _ => Delete(id), Danger: true)
+            : new RowAction("Delete", row => AskDelete(row, replay), Danger: true);
+        return replay.CanRace ? [new RowAction("Race", _ => Race(id)), delete] : [delete];
+    }
+
+    // The first press of a run's Delete: its button asks again, and any other run's that was asking stops.
+    private void AskDelete(ActionRow row, ShellReplay replay)
+    {
+        _confirming = replay.Id;
+        foreach ((ActionRow other, ShellReplay kept) in _rows)
+        {
+            other.MoreActions = Actions(kept);
+        }
+
+        if (_message is not null)
+        {
+            _message.Text = "Press Delete again to delete this run for good.";
+        }
+
+        row.MoreActions = Actions(replay);
+    }
+
+    // The second: the run's file deleted, and the list made again without it.
+    private void Delete(string id)
+    {
+        _confirming = null;
+        if (_replays.Delete(id) is { } problem)
+        {
+            if (_message is not null)
+            {
+                _message.Text = $"It could not be deleted: {problem}.";
+            }
+
+            return;
+        }
+
+        Invalidate();
     }
 
     private void Watch(string id)
