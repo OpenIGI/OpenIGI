@@ -1,8 +1,11 @@
 using System.Globalization;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Input;
+using OpenIGI.Releases.Accounts;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -22,6 +25,7 @@ namespace OpenIGI.Frontend.Screens;
 public sealed class MainMenuScreen : ShellScreen
 {
     private PrimaryAction? _continue;
+    private string _teaserMade = string.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="MainMenuScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -38,7 +42,9 @@ public sealed class MainMenuScreen : ShellScreen
     public override float BackdropBlur => 0f;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("Q E", "Sections"), new("Enter", "Select")];
+    protected override IReadOnlyList<KeyHint> Hints => Context.Host.Leaderboard is null
+        ? [new("Q E", "Sections"), new("Enter", "Select")]
+        : [new("Q E", "Sections"), new("L", "Leaderboard"), new("Enter", "Select")];
 
     /// <inheritdoc/>
     protected override string FooterNote => BuildStamp.Version.Length > 0 ? $"OpenIGI {BuildStamp.Version}" : "OpenIGI";
@@ -134,10 +140,65 @@ public sealed class MainMenuScreen : ShellScreen
         else
         {
             page.Add(column, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(SideMargin, 0f, SideMargin, 64f)));
+            if (Size == ShellSize.Wide && mission is not null && Context.Host.Leaderboard is { } boards)
+            {
+                // The boards at a glance, at the page's bottom right: the player's place, and their best on this mission.
+                int difficulty = Context.Config.Active?.Difficulty ?? 1;
+                ShellRecord? record = Context.Host.Replays?.RecordOf(mission.Id, difficulty);
+                Leaderboard? board = boards.Feed.Period == LeaderboardSeasons.Current ? boards.Feed.Board : null;
+                _teaserMade = TeaserMakeup(board, record);
+                var teaser = new LeaderboardTeaser(
+                    theme,
+                    board,
+                    mission.Name,
+                    DifficultyName(),
+                    record,
+                    () => GoTo(ShellTab.Leaderboard),
+                    record is null ? null : () => Context.Host.Replays?.PlayRecord(record.Run, race: true));
+                page.Add(teaser, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(SideMargin, 0f, SideMargin, 64f)));
+            }
         }
 
         return page;
     }
+
+    /// <inheritdoc/>
+    /// <remarks>The boards are read while the landing page is up, and the page laid out again as they come.</remarks>
+    protected override void OnUpdate(float elapsedSeconds)
+    {
+        if (Size != ShellSize.Wide || Context.InGame || Context.Host.Leaderboard is not { } boards)
+        {
+            return;
+        }
+
+        boards.Feed.ShowTitle(Context.ActiveTitleId);
+        boards.Feed.Update(watching: true);
+        int difficulty = Context.Config.Active?.Difficulty ?? 1;
+        MissionInfo? mission = Context.Missions.Where(static m => m.Campaign is null).Skip(CampaignProgress().Done).FirstOrDefault();
+        ShellRecord? record = mission is null ? null : Context.Host.Replays?.RecordOf(mission.Id, difficulty);
+        Leaderboard? board = boards.Feed.Period == LeaderboardSeasons.Current ? boards.Feed.Board : null;
+        if (TeaserMakeup(board, record) != _teaserMade)
+        {
+            Invalidate();
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override bool HandleInput(UiNavigation nav, InputState input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        if (Context.Host.Leaderboard is not null && input.Keyboard.WasPressed(KeyCode.L))
+        {
+            GoTo(ShellTab.Leaderboard);
+            return false;
+        }
+
+        return base.HandleInput(nav, input);
+    }
+
+    // What the teaser was made from: it is made again when this changes.
+    private static string TeaserMakeup(Leaderboard? board, ShellRecord? record) =>
+        $"{board?.You?.Rank}|{board?.You?.Was}|{board?.Players}|{record?.Run}|{record?.YourSeconds}|{record?.YourPlace}";
 
     /// <inheritdoc/>
     /// <remarks>
@@ -196,7 +257,11 @@ public sealed class MainMenuScreen : ShellScreen
         // Where there is room, and the servers can be reached: the boards, one press away.
         if (!compact && Context.Host.Leaderboard is not null)
         {
-            ways.Insert(1, (KitIcon.Leaderboard, "Leaderboard", "The best on the official servers", ShellTab.Leaderboard));
+            int days = LeaderboardSeasons.DaysLeft(DateTimeOffset.UtcNow);
+            string boardLine = Context.Host.Leaderboard.Feed is { Period: LeaderboardSeasons.Current, Board.You: { } own }
+                ? string.Create(CultureInfo.InvariantCulture, $"#{own.Rank:N0} · season ends in {days} {(days == 1 ? "day" : "days")}")
+                : "The best on the official servers";
+            ways.Insert(1, (KitIcon.Leaderboard, "Leaderboard", boardLine, ShellTab.Leaderboard));
         }
 
         foreach ((KitIcon icon, string title, string detail, ShellTab tab) in ways)

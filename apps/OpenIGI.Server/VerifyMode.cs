@@ -197,6 +197,13 @@ internal static class VerifyMode
                 json.WriteString("ruleset", verdict.Ruleset);
                 json.WriteNumber("endTick", verdict.EndTick);
                 json.WriteNumber("rank", verdict.Rank);
+                json.WriteStartArray("splits");
+                foreach (int split in verdict.Splits)
+                {
+                    json.WriteNumberValue(split);
+                }
+
+                json.WriteEndArray();
                 if (verdict.PartedAt is { } parted)
                 {
                     json.WriteNumber("partedAt", parted);

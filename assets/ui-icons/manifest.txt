@@ -1,0 +1,15 @@
+# The interface kit's icons, in the atlas's order: <KitIcon or name>=<svg file, without its extension>.
+# Baked into src/UI/OpenIGI.UI.Kit/ui-icons.bin by tools/OpenIGI.Tools.IconAtlas. Drawn for OpenIGI, under the project's own licence.
+Refresh=refresh
+Eye=eye
+Check=check
+Play=play
+Globe=globe
+ArrowLeft=arrow-left
+ArrowRight=arrow-right
+Leaderboard=podium
+Warning=warning
+Person=person
+History=clock
+ShieldCheck=shield-check
+Flag=flag

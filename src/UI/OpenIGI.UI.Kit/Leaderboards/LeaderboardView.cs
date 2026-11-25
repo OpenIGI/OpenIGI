@@ -9,33 +9,43 @@ namespace OpenIGI.UI.Kit.Leaderboards;
 
 /// <summary>
 /// The official servers' leaderboard as a page, the launcher's and the game menu's alike: which game, which season (this one,
-/// all time or one gone by) and which metric; the top three on a podium and the rest ranked under them, the player's own row
-/// pinned under the list wherever they stand; and a player's record, opened from their row -- their figures this season and
-/// all time, their medals and their latest matches. Everything is read through an <see cref="ILeaderboardSource"/>; the page
-/// that holds it calls <see cref="Update"/> each frame and lays out again when it says so.
+/// all time or one gone by) and which metric, beside the season's card; the top three on a podium and the rest ranked under
+/// them, the player's own row pinned under the list wherever they stand; on a wide page, a panel beside the board on the row
+/// with the keys; and a player's record, opened from their row -- their figures this season against all time, their latest
+/// matches, their standing on the mission boards and their medals. Everything is read through an
+/// <see cref="ILeaderboardSource"/>; the page that holds it calls <see cref="Update"/> each frame and lays out again when it
+/// says so.
 /// </summary>
 public sealed partial class LeaderboardView
 {
+    // How long the keys rest on a row before its record is read for the panel beside the board.
+    private const float PeekDelaySeconds = 0.25f;
+
     private readonly UiTheme _theme;
     private readonly ILeaderboardSource _source;
-    private readonly bool _compact;
+    private readonly BoardSize _size;
     private readonly Func<FocusManager?> _focus;
+    private readonly Action<bool>? _showMissions;
     private readonly Panel _root = new();
 
     private int _seen = -1;
     private bool _wasRecord;
+    private string? _focusedRow;
+    private float _focusedFor;
 
     /// <summary>Initializes a new instance of the <see cref="LeaderboardView"/> class.</summary>
     /// <param name="theme">The theme.</param>
     /// <param name="source">What it is shown from.</param>
-    /// <param name="compact">Whether it is laid out for a narrow page: a phone on its side, a small window.</param>
+    /// <param name="size">How much room the page has.</param>
     /// <param name="focus">The focus of the screen it is on, for it to keep the keys on the row they were on as the board is drawn anew.</param>
-    public LeaderboardView(UiTheme theme, ILeaderboardSource source, bool compact, Func<FocusManager?> focus)
+    /// <param name="showMissions">Switches the page to the mission boards (true) or back; null where the page has none.</param>
+    public LeaderboardView(UiTheme theme, ILeaderboardSource source, BoardSize size, Func<FocusManager?> focus, Action<bool>? showMissions = null)
     {
         _theme = theme ?? throw new ArgumentNullException(nameof(theme));
         _source = source ?? throw new ArgumentNullException(nameof(source));
-        _compact = compact;
+        _size = size;
         _focus = focus ?? throw new ArgumentNullException(nameof(focus));
+        _showMissions = showMissions;
         _root.AddChild(BuildBoard());
         _root.AddChild(BuildRecord());
         Sync(entrance: false);
@@ -47,15 +57,24 @@ public sealed partial class LeaderboardView
     /// <summary>Gets whether a record is open (over the board), which Back closes.</summary>
     public bool ShowingRecord => Feed.RecordId is not null;
 
+    /// <summary>Gets whether the board can't be read right now: the page offers to read it again.</summary>
+    public bool Failed => !ShowingRecord && Feed.Board is null && Feed.BoardState == FeedState.Failed;
+
     private LeaderboardFeed Feed => _source.Feed;
 
     private string GameName => _source.Games.FirstOrDefault(game => game.Id == Feed.Title)?.Name ?? Feed.Title;
 
+    private bool Compact => _size == BoardSize.Compact;
+
+    private bool Wide => _size == BoardSize.Wide;
+
     /// <summary>Takes in what the master has sent, and asks for what is shown when it is missing or old.</summary>
     /// <param name="shown">Whether the page is the one up: nothing is asked for while it isn't.</param>
+    /// <param name="elapsedSeconds">The time since the last update.</param>
     /// <returns><see langword="true"/> when the page changed and is to be laid out again before it is drawn.</returns>
-    public bool Update(bool shown)
+    public bool Update(bool shown, float elapsedSeconds = 0f)
     {
+        FollowFocus(elapsedSeconds);
         Feed.Update(shown);
         if (Feed.Revision == _seen)
         {
@@ -72,7 +91,47 @@ public sealed partial class LeaderboardView
     {
         IReadOnlyList<LeaderboardMetric> all = LeaderboardMetric.All;
         int at = Math.Max(0, IndexOf(all, Feed.Metric));
-        Feed.ShowMetric(all[((at + Math.Sign(direction)) % all.Count + all.Count) % all.Count]);
+        Feed.ShowMetric(all[Wrap(at + Math.Sign(direction), all.Count)]);
+    }
+
+    /// <summary>Shows the next period, or the one before: this season, all time, the seasons gone by.</summary>
+    /// <param name="direction">+1 for the next, -1 for the one before.</param>
+    public void StepPeriod(int direction)
+    {
+        if (_periods.Count == 0)
+        {
+            return;
+        }
+
+        int at = Math.Max(0, _periods.IndexOf(Feed.Period));
+        Feed.ShowPeriod(_periods[Wrap(at + Math.Sign(direction), _periods.Count)]);
+    }
+
+    /// <summary>Shows the next game's board.</summary>
+    public void StepGame()
+    {
+        IReadOnlyList<LeaderboardGame> games = _source.Games;
+        if (games.Count < 2)
+        {
+            return;
+        }
+
+        int at = Math.Max(0, games.ToList().FindIndex(game => game.Id == Feed.Title));
+        Feed.ShowTitle(games[Wrap(at + 1, games.Count)].Id);
+    }
+
+    /// <summary>Reads the board (and the record open) again now.</summary>
+    public void Refresh() => Feed.Refresh();
+
+    /// <summary>Opens the board, or the record open, on the site.</summary>
+    public void OpenOnSite()
+    {
+        if (!_source.CanOpenLinks)
+        {
+            return;
+        }
+
+        _source.OpenLink(Feed.RecordId is { } player ? LeaderboardLinks.Record(player, Feed.Title) : LeaderboardLinks.Board(Feed.Title));
     }
 
     /// <summary>Closes the open record, back to the board.</summary>
@@ -91,6 +150,35 @@ public sealed partial class LeaderboardView
     /// <summary>Opens a player's record.</summary>
     /// <param name="player">Their account's id or key's.</param>
     public void OpenRecord(string player) => Feed.OpenRecord(player);
+
+    // The row the keys rest on, read for the panel beside the board once they have rested there a moment.
+    private void FollowFocus(float elapsedSeconds)
+    {
+        if (!Wide || ShowingRecord)
+        {
+            return;
+        }
+
+        string? row = (_focus()?.Focused as RankRow)?.Row.RecordId ?? (_focus()?.Focused as PodiumCard)?.Row.RecordId;
+        if (row is null)
+        {
+            return;
+        }
+
+        if (row != _focusedRow)
+        {
+            _focusedRow = row;
+            _focusedFor = 0f;
+            SyncSelected();
+            return;
+        }
+
+        _focusedFor += elapsedSeconds;
+        if (_focusedFor >= PeekDelaySeconds && Feed.PeekId != row)
+        {
+            Feed.Peek(row);
+        }
+    }
 
     // Everything shown made to match the feed: the controls set, the board's or the record's body made again when what it
     // shows has changed, and the keys kept where they were.
@@ -163,41 +251,25 @@ public sealed partial class LeaderboardView
             return null;
         }
 
-        var strip = new TabStrip(_theme, _source.Games.Select(static game => game.Name))
-        {
-            SegmentHeight = 36f,
-            TabPadding = _compact ? 12f : 18f,
-            TextSize = _compact ? 14f : 16f,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        TabStrip strip = Segmented(_source.Games.Select(static game => game.Name));
         strip.SelectionChanged += index => Feed.ShowTitle(_source.Games[index].Id);
         return strip;
     }
 
-    // A ghost button of the page's.
-    private Button Ghost(string text, string tooltip, Action act, KitIcon icon = KitIcon.None)
-    {
-        var button = new Button(_theme, text)
-        {
-            Accent = ButtonAccent.Ghost,
-            TextSize = _compact ? 14f : 15f,
-            Tracking = 0.12f,
-            Padding = new Thickness(_compact ? 12f : 16f, 0f),
-            Height = _compact ? 36f : 40f,
-            Tooltip = tooltip,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        if (icon != KitIcon.None)
-        {
-            button.LeadingGlyph = KitIcons.Glyph(icon);
-            button.GlyphSize = 16f;
-        }
+    // The switch between the matches' boards and the missions', where the page has both.
+    private TabStrip? ModeSwitch(bool missions) => LeaderboardModes.Switch(_theme, _size, missions, _showMissions);
 
+    // A segmented switch in the boards' look.
+    private TabStrip Segmented(IEnumerable<string> tabs) => LeaderboardModes.Segmented(_theme, tabs, Compact);
+
+    private IconButton Icon(KitIcon icon, string tooltip, Action act)
+    {
+        var button = new IconButton(_theme, icon) { Tooltip = tooltip, VerticalAlignment = VerticalAlignment.Center };
         button.Activated += _ => act();
         return button;
     }
 
-    private Label Note(string text, float size = 15f) => new(_theme.Body, text, _compact ? size - 1f : size, _theme.TextSecondary) { Wrap = true };
+    private BoardButton SiteButton() => LeaderboardModes.SiteButton(_theme, Compact, OpenOnSite);
 
     // A part of the page made again: its controls fade in as a page's do, or are simply there when it is the same part read
     // again (a control made after the page came in is otherwise never shown).
@@ -225,6 +297,8 @@ public sealed partial class LeaderboardView
             control.Visual.AppearInstantly();
         }
     }
+
+    private static int Wrap(int index, int count) => ((index % count) + count) % count;
 
     private static int IndexOf<T>(IReadOnlyList<T> list, T item)
     {

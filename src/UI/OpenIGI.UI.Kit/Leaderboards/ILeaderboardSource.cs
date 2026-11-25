@@ -97,4 +97,44 @@ public interface ILeaderboardSource
     void Report(string run)
     {
     }
+
+    /// <summary>Gets the name the player plays under, for their own row where the board has none of theirs.</summary>
+    string YourName => "Operative";
+
+    /// <summary>Gets a value indicating whether the player is signed in with Discord: on the board under their name.</summary>
+    bool SignedIn => SignInHint is null;
+
+    /// <summary>Gets a value indicating whether the page can take the player to a match: the multiplayer page.</summary>
+    bool CanFindMatch => false;
+
+    /// <summary>Takes the player to the multiplayer page, to find a match.</summary>
+    void FindMatch()
+    {
+    }
+
+    /// <summary>Gets a value indicating whether the page can take the player to their profile, to sign in.</summary>
+    bool CanOpenProfile => false;
+
+    /// <summary>Takes the player to their profile, to sign in with Discord.</summary>
+    void OpenProfile()
+    {
+    }
+
+    /// <summary>Gets a value indicating whether the page can start a mission.</summary>
+    bool CanPlay => false;
+
+    /// <summary>Starts a mission, at a difficulty and by rules, for the player to set a time on its board.</summary>
+    /// <param name="title">The game, by title id.</param>
+    /// <param name="mission">The mission.</param>
+    /// <param name="difficulty">The difficulty.</param>
+    /// <param name="ruleset">The rules, by id.</param>
+    void PlayMission(string title, int mission, int difficulty, string ruleset)
+    {
+    }
+
+    /// <summary>A mission's picture, as its briefing shows it, once it is to hand; null where there is none.</summary>
+    /// <param name="title">The game, by title id.</param>
+    /// <param name="mission">The mission.</param>
+    /// <returns>The picture, or null.</returns>
+    UiPicture? MissionPicture(string title, int mission) => null;
 }

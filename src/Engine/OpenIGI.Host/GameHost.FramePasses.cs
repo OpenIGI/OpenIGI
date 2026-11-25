@@ -36,7 +36,7 @@ public sealed partial class GameHost
 
         if (state.ShellHost is not null && state.ShellTypography is not null && state.Saves is not null)
         {
-            state.Shell = new Shell(BuildShellContext(state.ShellHost, state.ShellTypography.CreateTheme(), state.Saves));
+            state.Shell = new Shell(BuildShellContext(state.ShellHost, state.ShellTypography.CreateTheme(OpenIGI.Presentation.Text.UiFontLibrary.Icons(_device)), state.Saves));
             state.Shell.OpenOn("campaign");
         }
 

@@ -38,19 +38,16 @@ internal sealed class LeaderboardPage
         model.Leaderboard.ShowTitle(_followed);
         model.Missions.ShowTitle(_followed);
         Source source = new(model, pictures);
-        _view = new LeaderboardView(theme, source, compact: false, focus);
-        _missions = new MissionBoardView(theme, source, compact: false, focus);
 
-        // Matches or missions, switched at the top of the page.
-        var which = new TabStrip(theme, ["Multiplayer", "Single player"]) { SegmentHeight = 34f, TabPadding = 18f, TextSize = 14f, HorizontalAlignment = HorizontalAlignment.Left };
-        which.SelectionChanged += index => Switch(index == 1);
+        // The launcher's page has a laptop's room: the boards without the panel beside them. Matches or missions are switched
+        // at the top of each.
+        _view = new LeaderboardView(theme, source, BoardSize.Medium, focus, Switch);
+        _missions = new MissionBoardView(theme, source, BoardSize.Medium, focus, Switch);
         _shown.AddChild(_view.Root);
-        var page = new Grid { Padding = new Thickness(48f, 20f, 48f, 20f), RowSpacing = 12f };
+        var page = new Grid { Padding = new Thickness(48f, 20f, 48f, 20f) };
         page.ColumnDefinitions.Add(GridLength.Star);
-        page.RowDefinitions.Add(GridLength.Auto);
         page.RowDefinitions.Add(GridLength.Star);
-        page.Add(which, 0, 0);
-        page.Add(_shown, 1, 0);
+        page.Add(_shown, 0, 0);
         Root = page;
     }
 

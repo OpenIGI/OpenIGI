@@ -11,7 +11,8 @@
 //                                         with you (an account's id), that player's own row wherever it stands
 //   GET  /v1/runs/<id>                    a run: whose, of what, its status and, checked, its score and whether its replay is kept
 //   GET  /v1/runs/<id>/replay             a checked run's replay with the checker's ghost, while it is kept
-//   GET  /v1/players/<account>/runs?title=   a player's bests in one game, board by board
+//   GET  /v1/players/<account>/runs?title=   a player's bests in one game, board by board, each with its place on its board
+//                                         (timePlace, bestPlace) and how many that board ranks (players)
 //   POST /v1/runs/<id>/report             a checked run reported, signed by a linked account: { reason }, REPORTS_DAILY a day
 //   GET  /v1/runs/official?version=        the game files a build's checker holds: { titles: { igi1: { "1": [fingerprint] } } }
 //   POST /v1/verifier/fingerprints         a checker's: every mission's fingerprint in every edition it plays runs in
@@ -31,7 +32,8 @@
 //
 // One Durable Object ("all"), in key-value storage:
 //   run:<id>            { id, title, mission, difficulty, ruleset, version, key, account, name, submitted, status, reason, ticks, rank,
-//                         score, size, chunks, kept, taken }
+//                         score, splits, size, chunks, kept, taken } -- splits: the played ticks each objective was done at, as
+//                         the checker's run of it found them
 //   blob:<id>:<n>       a run's replay, in chunks (blobs.js)
 //   board:<title>:<mission>:<difficulty>:<ruleset>   [{ account, name, time: { run, ticks, at }, best: { run, rank, ticks, at } }]
 //   boards              every board's key
@@ -70,6 +72,21 @@ export const REPORTS_DAILY = 10;
 export const CLOCK_SLACK_MS = 2 * 60 * 1000;
 const MAX_REASON = 140;
 const BOARD_SIZE = 50;
+const MAX_SPLITS = 64;
+
+// A verdict's splits as kept: the played ticks each objective was done at, rising, every one within the run; null where the
+// checker sent none (an older one) or what it sent is not that.
+export function splitsOf(verdict) {
+  const splits = verdict.splits;
+  const end = verdict.score?.ticks;
+  if (!Array.isArray(splits) || splits.length > MAX_SPLITS) return null;
+  for (let i = 0; i < splits.length; i++) {
+    const tick = splits[i];
+    if (!Number.isInteger(tick) || tick < 0 || tick > end || (i > 0 && tick < splits[i - 1])) return null;
+  }
+
+  return splits;
+}
 
 // What the checks flag of a checked run for a person to look at: a run that reached the boards sooner after it began than it
 // takes to play was not played as it ran (its start is the player's clock, so allowing for that clock being off).
@@ -385,6 +402,7 @@ export class Runs {
       ticks: verdict.score.ticks,
       rank: Number.isInteger(verdict.rank) ? verdict.rank : -1,
       score: verdict.score,
+      splits: splitsOf(verdict),
       size: replay.length,
       chunks,
     });
@@ -612,7 +630,7 @@ export class Runs {
     };
   }
 
-  // A mission's rows by a metric: who, their ticks and rank, the run and whether its replay is kept to watch and race.
+  // A mission's rows by a metric: who, their ticks and rank, the run, its splits and whether its replay is kept to watch and race.
   async missionRows(title, mission, difficulty, ruleset, metric) {
     if (!Number.isInteger(mission) || mission < 1) throw new Refusal(400, "A mission is a number, or all.");
     const entries = (await this.storage.get(boardKey(title, mission, difficulty, ruleset))) ?? [];
@@ -620,7 +638,15 @@ export class Runs {
     for (const row of ranked(entries, metric)) {
       const best = metric === "time" ? row.time : row.best;
       const run = await this.storage.get(`run:${best.run}`);
-      rows.push({ account: row.account, name: row.name, ticks: best.ticks, rank: metric === "time" ? (run?.rank ?? -1) : best.rank, run: best.run, replay: run?.kept === true });
+      rows.push({
+        account: row.account,
+        name: row.name,
+        ticks: best.ticks,
+        rank: metric === "time" ? (run?.rank ?? -1) : best.rank,
+        run: best.run,
+        replay: run?.kept === true,
+        splits: run?.splits ?? null,
+      });
     }
 
     return rows;
@@ -684,14 +710,26 @@ export class Runs {
     });
   }
 
-  // A player's bests in one game, board by board.
+  // A player's bests in one game, board by board, with their places there.
   async bestsOf(account, title) {
     const out = [];
     for (const key of (await this.storage.get("boards")) ?? []) {
       const [, boardTitle, mission, difficulty, ruleset] = key.split(":");
       if (boardTitle !== title) continue;
-      const row = ((await this.storage.get(key)) ?? []).find((e) => e.account === account);
-      if (row) out.push({ mission: Number(mission), difficulty: Number(difficulty), ruleset, time: row.time, best: row.best });
+      const entries = (await this.storage.get(key)) ?? [];
+      const row = entries.find((e) => e.account === account);
+      if (!row) continue;
+      const at = (metric) => ranked(entries, metric).findIndex((e) => e.account === account) + 1 || null;
+      out.push({
+        mission: Number(mission),
+        difficulty: Number(difficulty),
+        ruleset,
+        time: row.time,
+        best: row.best,
+        timePlace: at("time"),
+        bestPlace: at("rank"),
+        players: entries.length,
+      });
     }
 
     return out;

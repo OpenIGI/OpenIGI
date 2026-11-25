@@ -4,9 +4,10 @@ using System.Xml.Linq;
 using OpenIGI.Tools;
 using SkiaSharp;
 
-// Bakes the touch controls' icons into the atlas the game draws them from.
+// Bakes the icon sets into the atlases the game and the interface kit draw them from: the touch controls' (assets/touch-icons)
+// and the kit's own (assets/ui-icons, the boards' and pages' glyphs).
 //
-//   dotnet run --project tools/OpenIGI.Tools.IconAtlas                     rewrite the committed atlas
+//   dotnet run --project tools/OpenIGI.Tools.IconAtlas                     rewrite both committed atlases
 //   dotnet run --project tools/OpenIGI.Tools.IconAtlas -- --sheet <dir> <png>
 //                                                                          every SVG in a folder on one named sheet, to choose from
 //
@@ -18,7 +19,6 @@ return ToolHost.Run("IconAtlas", args, Run);
 
 static int Run(ToolContext ctx)
 {
-    const int Tile = 128;
     string[] arguments = [.. ctx.Arguments];
     if (arguments.Length == 3 && arguments[0] == "--sheet")
     {
@@ -26,9 +26,26 @@ static int Run(ToolContext ctx)
     }
 
     string root = Locate();
-    string sources = Path.Combine(root, "assets", "touch-icons");
-    string output = Path.Combine(root, "src", "Game", "OpenIGI.Presentation", "Hud", "Remastered", "Touch", "touch-icons.bin");
+    (string Sources, string Output)[] sets =
+    [
+        (Path.Combine(root, "assets", "touch-icons"), Path.Combine(root, "src", "Game", "OpenIGI.Presentation", "Hud", "Remastered", "Touch", "touch-icons.bin")),
+        (Path.Combine(root, "assets", "ui-icons"), Path.Combine(root, "src", "UI", "OpenIGI.UI.Kit", "ui-icons.bin")),
+    ];
+    foreach ((string sources, string output) in sets)
+    {
+        if (Bake(ctx, sources, output) != ToolExitCode.Ok)
+        {
+            return ToolExitCode.Failure;
+        }
+    }
 
+    return ToolExitCode.Ok;
+}
+
+// One set: its manifest's SVGs, each a tile, into one atlas.
+static int Bake(ToolContext ctx, string sources, string output)
+{
+    const int Tile = 128;
     List<(string Name, string File)> entries = [];
     foreach (string line in File.ReadAllLines(Path.Combine(sources, "manifest.txt")))
     {

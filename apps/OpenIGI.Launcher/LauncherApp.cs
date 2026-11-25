@@ -5,6 +5,7 @@ using OpenIGI.Launcher.Pages;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.UI;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Screens;
@@ -67,6 +68,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     // Where launchers started after this one hand over what they were opened with (an openigi:// link), or null.
     private readonly Services.SingleInstance? _instance;
     private readonly SkiaImageStore _images = new();
+    private IconAtlas? _icons;
     private readonly Dictionary<string, UiPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
     private readonly DesktopNotifier _notifier;
@@ -394,6 +396,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _model.Dispose();
         _typography?.Dispose();
         _fonts.Dispose();
+        _icons?.Dispose();
         _images.Dispose();
         _inputContext?.Dispose();
         _window.Dispose();
@@ -417,7 +420,9 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             ?? throw StartupFailure("Skia could not create a GPU context on the window.");
 
         _typography = LauncherFonts.Load();
-        (UiTheme theme, UiTheme rows) = CreateThemes(_typography);
+        _icons ??= KitIconAtlas.Load(_images);
+        KitIcons.Baked = _icons;
+        (UiTheme theme, UiTheme rows) = CreateThemes(_typography, _icons);
         _theme = theme;
 
         UiPicture? picture = LauncherBackdrop.LoadPicture(_images);
@@ -581,11 +586,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     /// <summary>The launcher's two themes: the page's, and the settings rows' taller, ruled kind with a larger caption.</summary>
     /// <param name="typography">The loaded faces.</param>
+    /// <param name="icons">The kit's icons, made on the launcher's images; null for none.</param>
     /// <returns>The page theme and the row theme.</returns>
-    internal static (UiTheme Page, UiTheme Rows) CreateThemes(IgiTypography typography)
+    internal static (UiTheme Page, UiTheme Rows) CreateThemes(IgiTypography typography, IUiIcons? icons = null)
     {
-        UiTheme page = typography.CreateTheme();
-        UiTheme rows = typography.CreateTheme();
+        UiTheme page = typography.CreateTheme(icons);
+        UiTheme rows = typography.CreateTheme(icons);
         rows.RowHeight = 54f;
         rows.RowDividers = true;
         rows.BodyTextSize = 18f;

@@ -29,9 +29,13 @@ namespace OpenIGI.Frontend.Tests;
 [Collection(ShellTestHarness.CollectionName)]
 public sealed class LeaderboardScreenshots
 {
-    // A desktop, a 16:10 and a 4:3 monitor (the header's six sections), a laptop, and a phone held sideways.
-    private static readonly (int Width, int Height, float Density)[] Sizes =
-        [(1920, 1080, 1f), (1680, 1050, 1f), (1440, 1080, 1f), (1366, 768, 1f), (2532, 1170, 3f)];
+    // A desktop, a laptop, and a phone held sideways: the menu's three arrangements.
+    private static readonly (int Width, int Height, float Density)[] Sizes = [(1920, 1080, 1f), (1366, 768, 1f), (2532, 1170, 3f)];
+
+    private static readonly string[] States =
+    [
+        "board", "record", "loading", "empty", "failed", "alltime", "signedout", "notranked", "home", "missions", "missions-all", "missions-empty",
+    ];
 
     [Fact]
     public void Draw_the_leaderboard_page()
@@ -45,19 +49,35 @@ public sealed class LeaderboardScreenshots
         Directory.CreateDirectory(folder);
         using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
         using SkiaImageStore images = new();
+        using OpenIGI.UI.Drawing.IconAtlas? icons = KitIconAtlas.Load(images);
+        KitIcons.Baked = icons;
         using SkiaFontCache fonts = new();
 
         foreach ((int width, int height, float density) in Sizes)
         {
-            foreach (string state in new[] { "board", "record", "loading", "empty", "failed", "alltime", "home", "missions", "missions-all" })
+            string only = Environment.GetEnvironmentVariable("OPENIGI_SHELL_PAGES") ?? string.Empty;
+            foreach (string state in States.Where(state => only.Length == 0 || only.Split(',').Contains(state)))
             {
-                var reader = new FakeBoardReader { Hold = state == "loading", Fail = state == "failed", RowCount = state == "empty" ? 0 : 24 };
-                var boards = new FakeLeaderboard(reader);
+                var reader = new FakeBoardReader
+                {
+                    Hold = state == "loading",
+                    Fail = state == "failed",
+                    RowCount = state is "empty" or "missions-empty" ? 0 : 24,
+                    Unranked = state is "notranked" or "signedout",
+                    LatestCount = 10,
+                };
+                var boards = new FakeLeaderboard(reader) { SignInHint = state == "signedout" ? "Sign in with Discord on the Profile page to be on the board under your name." : null };
+                if (state is "board" or "notranked" or "signedout")
+                {
+                    // The panel beside the board reads the selected row's record once the keys rest on it: read the first's now.
+                    boards.Feed.Peek("900000000000000000");
+                }
+
                 if (state == "record")
                 {
                     boards.Feed.OpenRecord("900000000000000000");
                 }
-                else if (state == "missions")
+                else if (state is "missions" or "missions-empty")
                 {
                     boards.Missions.ShowMission(1);
                 }
@@ -67,11 +87,11 @@ public sealed class LeaderboardScreenshots
                     boards.Feed.ShowMetric(LeaderboardMetric.Of("kd"));
                 }
 
-                var host = new FakeHost { Leaderboard = boards };
+                var host = new FakeHost { Leaderboard = boards, Replays = new ShellPageShots.FakeReplays() };
                 GameConfig config = GameConfig.CreateDefault();
                 host.Profile = config.Active;
                 var context = new ShellContext(
-                    typography.CreateTheme(),
+                    typography.CreateTheme(icons),
                     host,
                     new ScreenStack { PointerSuppressed = true },
                     GameProfileResolver.BuildCatalogue(GameTitle.Igi1, "C:\\Games\\IGI", null, null),

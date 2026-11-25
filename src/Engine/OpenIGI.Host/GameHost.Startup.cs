@@ -503,7 +503,9 @@ public sealed partial class GameHost
             // The design's four faces — Barlow, Barlow Condensed in two weights, JetBrains Mono — the same
             // set the launcher draws with, uploaded once and shared by every page of the shell.
             state.ShellTypography = UiFontLibrary.Typography(_device);
-            UiTheme shellTheme = state.ShellTypography.CreateTheme();
+            OpenIGI.UI.Drawing.IconAtlas? icons = UiFontLibrary.Icons(_device);
+            OpenIGI.UI.Kit.KitIcons.Baked = icons;
+            UiTheme shellTheme = state.ShellTypography.CreateTheme(icons);
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
             _shellType = state.ShellTypography;

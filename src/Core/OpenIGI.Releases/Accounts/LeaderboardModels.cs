@@ -22,6 +22,8 @@ public sealed record BoardAccount(string Id, string Name, string? Avatar = null)
 /// <param name="Seconds">The time played.</param>
 /// <param name="Score">The points.</param>
 /// <param name="Kd">Kills a death, to two places.</param>
+/// <param name="Was">The place they held as the week began, where the board keeps the week's movement (this season's and all
+/// time's); <see langword="null"/> where they were not on it then, or the board keeps none.</param>
 public sealed record BoardRow(
     int Rank,
     string Player,
@@ -35,10 +37,14 @@ public sealed record BoardRow(
     int Objectives = 0,
     int Seconds = 0,
     int Score = 0,
-    double Kd = 0)
+    double Kd = 0,
+    int? Was = null)
 {
     /// <summary>Gets the share of matches won, nought to one.</summary>
     public double WinRate => Matches > 0 ? (double)Wins / Matches : 0;
+
+    /// <summary>Gets the places they have climbed since the week began (fallen, below nought); null where they held none then.</summary>
+    public int? Climbed => Was is { } was ? was - Rank : null;
 
     /// <summary>Gets the id the row's record is read by: the account's where it is linked, else the key's.</summary>
     public string RecordId => Account?.Id ?? Player;
@@ -53,6 +59,9 @@ public sealed record BoardRow(
 /// <param name="You">The player asked about, wherever they stand; <see langword="null"/> unranked or not asked.</param>
 /// <param name="Players">How many are ranked; nought from a master too old to say.</param>
 /// <param name="Seasons">The seasons the game has had, newest (this one) first; <see langword="null"/> from an older master.</param>
+/// <param name="Ahead">The row just above the player asked about, the one they are to pass; null where they lead or are unranked.</param>
+/// <param name="Week">The week the rows' <see cref="BoardRow.Was"/> are of (its Monday, UTC, in Unix milliseconds); null where the
+/// board keeps no movement -- a season gone by, or a master too old to keep it.</param>
 public sealed record Leaderboard(
     string Title,
     string Period,
@@ -61,7 +70,15 @@ public sealed record Leaderboard(
     IReadOnlyList<BoardRow> Rows,
     BoardRow? You = null,
     int Players = 0,
-    IReadOnlyList<string>? Seasons = null);
+    IReadOnlyList<string>? Seasons = null,
+    BoardRow? Ahead = null,
+    long? Week = null)
+{
+    /// <summary>Gets whether a row is new on the board this week: the board keeps the week's movement, and the row held no place.</summary>
+    /// <param name="row">The row.</param>
+    /// <returns>Whether it is.</returns>
+    public bool IsNewThisWeek(BoardRow row) => Week is not null && row is { Was: null };
+}
 
 /// <summary>One player's line in a kept match, as their record shows it.</summary>
 /// <param name="Player">The key they played under, or <see langword="null"/>.</param>
@@ -159,6 +176,14 @@ public static class LeaderboardSeasons
         DateTime.TryParseExact(season, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime month)
             ? month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)
             : season;
+
+    /// <summary>A season's first day and its last, UTC; null for all time or anything not a month.</summary>
+    /// <param name="season">The season (<c>yyyy-MM</c>).</param>
+    /// <returns>The days.</returns>
+    public static (DateOnly First, DateOnly Last)? Span(string season) =>
+        DateTime.TryParseExact(season, "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime month)
+            ? (DateOnly.FromDateTime(month), DateOnly.FromDateTime(month.AddMonths(1).AddDays(-1)))
+            : null;
 
     /// <summary>The days left in this season, the day it is counted on included.</summary>
     /// <param name="now">The time now.</param>

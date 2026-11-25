@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenIGI.Core.Titles;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit.Widgets;
@@ -9,12 +10,15 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.UI.Kit.Leaderboards;
 
 /// <summary>
-/// The single-player boards as a page, the launcher's and the game menu's alike: which mission (or all of them), which difficulty,
-/// which rules, ranked by the fastest or the best rank; the rows, each run watched or raced from its row where its replay is kept;
-/// and the player's own row pinned under the list wherever they stand. Read through an <see cref="ILeaderboardSource"/>'s
-/// <see cref="ILeaderboardSource.Missions"/>; the page that holds it calls <see cref="Update"/> each frame.
+/// The single-player boards as a page, the launcher's and the game menu's alike: the mission's head (its picture, the world
+/// record, the player's best and the gap); which mission (or all of them), which difficulty and which rules, ranked by the
+/// fastest or the best rank; the rows, each run raced and watched from its row where its replay is kept; the player's own best
+/// pinned under them wherever it stands; and, on a wide page, the selected run beside them -- its time and rank, the server's
+/// check, its splits against the player's best, and the ways to race, watch and report it. Read through an
+/// <see cref="ILeaderboardSource"/>'s <see cref="ILeaderboardSource.Missions"/>; the page that holds it calls
+/// <see cref="Update"/> each frame.
 /// </summary>
-public sealed class MissionBoardView
+public sealed partial class MissionBoardView
 {
     private static readonly string[] DifficultyNames = ["Easy", "Normal", "Hard"];
     private static readonly string[] RulesetNames = ["Classic", "Modern"];
@@ -22,102 +26,147 @@ public sealed class MissionBoardView
 
     private readonly UiTheme _theme;
     private readonly ILeaderboardSource _source;
-
-    // The games' tabs, or null where there is one game.
-    private TabStrip? _games;
     private readonly MissionBoardFeed _feed;
-    private readonly bool _compact;
+    private readonly BoardSize _size;
     private readonly Func<FocusManager?> _focus;
+    private readonly Action<bool>? _showMissions;
     private readonly Grid _root;
-    private readonly StackPanel _list = new() { Orientation = Orientation.Vertical, Spacing = 0f, Margin = new Thickness(0f, 0f, 12f, 0f) };
-    private readonly StackPanel _pinned = new() { Orientation = Orientation.Vertical, Spacing = 4f };
-    private readonly StackPanel _missionHost = new() { Orientation = Orientation.Horizontal };
-    private readonly Label _note;
+    private readonly Panel _hero = new();
+    // The headings, kept clear of the list's scrollbar as its rows are, so each stands over its column.
+    private readonly Panel _columns = new() { Margin = new Thickness(0f, 0f, 10f, 0f) };
+    private readonly StackPanel _list = new() { Orientation = Orientation.Vertical, Spacing = 0f, Margin = new Thickness(0f, 0f, 10f, 0f) };
+    private readonly ScrollView _scroll;
+    private readonly StackPanel _pinned = new() { Orientation = Orientation.Vertical };
+    private readonly Panel _side = new();
+    private readonly StackPanel _missionHost = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TabStrip _difficulty;
+    private readonly TabStrip _rules;
+
+    // A phone's pickers for the difficulty and the rules, in the segmented switches' place.
+    private readonly BoardCycler _difficultyCycler;
+    private readonly BoardCycler _rulesCycler;
+    private readonly TabStrip _metrics;
+    private readonly Label _rulesNote;
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
+    private TabStrip? _games;
     private string _builtTitle = string.Empty;
+    private string _builtList = string.Empty;
+    private string _builtSide = string.Empty;
+    private string? _focusedRun;
     private int _seen = -1;
 
     /// <summary>Initializes a new instance of the <see cref="MissionBoardView"/> class.</summary>
     /// <param name="theme">The theme.</param>
     /// <param name="source">What it is shown from, which must read the mission boards.</param>
-    /// <param name="compact">Whether it is laid out for a narrow page.</param>
+    /// <param name="size">How much room the page has.</param>
     /// <param name="focus">The focus of the screen it is on.</param>
-    public MissionBoardView(UiTheme theme, ILeaderboardSource source, bool compact, Func<FocusManager?> focus)
+    /// <param name="showMissions">Switches the page to the mission boards (true) or back; null where the page has none.</param>
+    public MissionBoardView(UiTheme theme, ILeaderboardSource source, BoardSize size, Func<FocusManager?> focus, Action<bool>? showMissions = null)
     {
         _theme = theme ?? throw new ArgumentNullException(nameof(theme));
         _source = source ?? throw new ArgumentNullException(nameof(source));
         _feed = source.Missions ?? throw new ArgumentException("The source reads no mission boards.", nameof(source));
-        _compact = compact;
+        _size = size;
         _focus = focus ?? throw new ArgumentNullException(nameof(focus));
+        _showMissions = showMissions;
+        bool compact = size == BoardSize.Compact;
 
-        var title = new SectionTitle(theme, "Single player", "Mission boards") { TitleSize = compact ? 30f : 44f, HorizontalAlignment = HorizontalAlignment.Left };
-        _note = new Label(theme.Body, string.Empty, compact ? 13f : 15f, theme.TextSecondary) { Wrap = true };
+        _difficulty = LeaderboardModes.Segmented(theme, compact ? DifficultyNames.Select(static d => d.ToUpperInvariant()) : DifficultyNames, compact);
+        _difficulty.SelectionChanged += _feed.ShowDifficulty;
+        _rules = LeaderboardModes.Segmented(theme, RulesetNames, compact);
+        _rules.SelectionChanged += i => _feed.ShowRuleset(MissionBoardFeed.Rulesets[i]);
+        _difficultyCycler = new BoardCycler(theme, string.Empty, DifficultyNames, _feed.Difficulty) { ValueWidth = 70f };
+        _difficultyCycler.SelectionChanged += _feed.ShowDifficulty;
+        _rulesCycler = new BoardCycler(theme, string.Empty, RulesetNames, Math.Max(0, IndexOf(MissionBoardFeed.Rulesets, _feed.Ruleset))) { ValueWidth = 84f };
+        _rulesCycler.SelectionChanged += i => _feed.ShowRuleset(MissionBoardFeed.Rulesets[i]);
+        _rulesNote = new Label(theme.Mono, string.Empty, 11f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center };
+        _metrics = LeaderboardModes.Segmented(theme, compact ? ["Fastest", "Best"] : MetricNames, compact);
+        _metrics.SelectionChanged += i => _feed.ShowMetric(MissionBoardFeed.Metrics[i]);
+        _scroll = new ScrollView(theme);
+        _scroll.SetContent(_list);
 
-        OptionCycler Cycler(string label, IEnumerable<string> names, int at, Action<int> changed)
+        // Along the top: the boards' switch; the game, refresh and the site.
+        var top = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f };
+        if (LeaderboardModes.Switch(theme, size, missions: true, showMissions) is { } mode)
         {
-            var cycler = new OptionCycler(theme, label, names, at) { Inline = true, ContentWidth = compact ? 150f : 140f, Width = compact ? 420f : 300f };
-            cycler.SelectionChanged += changed;
-            return cycler;
+            top.Add(mode);
         }
 
-        // Side by side; one under the other on a narrow page, where three side by side run off its edge.
-        var switches = new StackPanel { Orientation = compact ? Orientation.Vertical : Orientation.Horizontal, Spacing = compact ? 6f : 16f };
-        switches.AddChild(_missionHost);
-        switches.AddChild(Cycler("Difficulty", DifficultyNames, _feed.Difficulty, _feed.ShowDifficulty));
-        switches.AddChild(Cycler("Rules", RulesetNames, Math.Max(0, IndexOf(MissionBoardFeed.Rulesets, _feed.Ruleset)), i => _feed.ShowRuleset(MissionBoardFeed.Rulesets[i])));
-
-        var metrics = new TabStrip(theme, MetricNames)
-        {
-            SegmentHeight = compact ? 34f : 40f,
-            TabPadding = compact ? 10f : 20f,
-            TextSize = compact ? 14f : 16f,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        metrics.SelectionChanged += i => _feed.ShowMetric(MissionBoardFeed.Metrics[i]);
-
-        var scroll = new ScrollView(theme);
-        var banner = new StackPanel { Orientation = Orientation.Vertical, Spacing = compact ? 6f : 10f };
-        banner.AddChild(title);
-        banner.AddChild(_note);
+        top.Add(new Panel(), grow: 1f);
         if (GameTabs() is { } games)
         {
-            banner.AddChild(games);
+            top.Add(games);
         }
-        _root = new Grid { RowSpacing = compact ? 8f : 16f };
+
+        top.Add(LeaderboardModes.Square(theme, KitIcon.Refresh, "Read the board again now.", Refresh, compact));
+        if (source.CanOpenLinks && !compact)
+        {
+            top.Add(LeaderboardModes.SiteButton(theme, compact, () => source.OpenLink(LeaderboardLinks.Site + "?board=missions")));
+        }
+
+        // Which board: the mission, the difficulty, the rules; the metric at the right.
+        var filters = new FlexPanel { Orientation = Orientation.Horizontal, Gap = compact ? 10f : 26f };
+        filters.Add(_missionHost);
+        filters.Add(compact ? _difficultyCycler : Labelled("Difficulty", _difficulty, compact));
+        var rules = Labelled("Rules", compact ? _rulesCycler : _rules, compact);
+        if (!compact)
+        {
+            rules.Add(_rulesNote);
+        }
+
+        filters.Add(rules);
+        filters.Add(new Panel(), grow: 1f);
+        var metric = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f };
+        if (!compact)
+        {
+            metric.Add(LeaderboardModes.Cap(theme, "Tab"));
+        }
+
+        metric.Add(_metrics);
+        filters.Add(metric);
+
+        // The rows under their headings, the player's best at the foot; the selected run beside them on a monitor.
+        var board = new Grid { RowSpacing = 10f };
+        board.ColumnDefinitions.Add(GridLength.Star);
+        board.RowDefinitions.Add(GridLength.Auto);
+        board.RowDefinitions.Add(GridLength.Star);
+        board.RowDefinitions.Add(GridLength.Auto);
+        var rows = new Grid();
+        rows.ColumnDefinitions.Add(GridLength.Star);
+        rows.RowDefinitions.Add(GridLength.Auto);
+        rows.RowDefinitions.Add(GridLength.Star);
+        rows.Add(_columns, 0, 0);
+        rows.Add(_scroll, 1, 0);
+        board.Add(rows, 1, 0);
+        board.Add(_pinned, 2, 0);
+        var body = new Grid { ColumnSpacing = 28f };
+        body.ColumnDefinitions.Add(GridLength.Star);
+        body.RowDefinitions.Add(GridLength.Star);
+        body.Add(board, 0, 0);
+        if (size == BoardSize.Wide)
+        {
+            body.ColumnDefinitions.Add(GridLength.Absolute(520f));
+            body.Add(_side, 0, 1);
+        }
+
+        _root = new Grid { RowSpacing = compact ? 8f : 18f };
         _root.ColumnDefinitions.Add(GridLength.Star);
-        if (compact)
+        UiElement[] parts = compact ? [top, filters, body] : [top, _hero, filters, body];
+        for (int i = 0; i < parts.Length; i++)
         {
-            var content = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
-            content.AddChild(banner);
-            content.AddChild(switches);
-            content.AddChild(metrics);
-            content.AddChild(_list);
-            scroll.SetContent(content);
-            _root.RowDefinitions.Add(GridLength.Star);
-            _root.RowDefinitions.Add(GridLength.Auto);
-            _root.Add(scroll, 0, 0);
-            _root.Add(_pinned, 1, 0);
-        }
-        else
-        {
-            scroll.SetContent(_list);
-            foreach (GridLength height in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, GridLength.Star, GridLength.Auto })
-            {
-                _root.RowDefinitions.Add(height);
-            }
-
-            _root.Add(banner, 0, 0);
-            _root.Add(switches, 1, 0);
-            _root.Add(metrics, 2, 0);
-            _root.Add(scroll, 3, 0);
-            _root.Add(_pinned, 4, 0);
+            _root.RowDefinitions.Add(i == parts.Length - 1 ? GridLength.Star : GridLength.Auto);
+            _root.Add(parts[i], i, 0);
         }
 
-        Sync();
+        Sync(entrance: false);
     }
 
     /// <summary>Gets the page.</summary>
     public UiElement Root => _root;
+
+    private bool Compact => _size == BoardSize.Compact;
+
+    private bool Overall => _feed.Mission is null;
 
     /// <summary>Takes in what the master has sent, and asks for what is shown when it is missing or old.</summary>
     /// <param name="shown">Whether the page is the one up.</param>
@@ -126,9 +175,16 @@ public sealed class MissionBoardView
     {
         // A game whose runs are held for now (GameTitle.RunsHeld) has no boards to show: the first game offered stands in,
         // whichever game the page that holds this was asked to show -- the one being played, the launcher's.
-        if (OpenIGI.Core.Titles.GameTitle.RunsOfferedFor(_feed.Title) is var offered && offered != _feed.Title)
+        if (GameTitle.RunsOfferedFor(_feed.Title) is var offered && offered != _feed.Title)
         {
             _feed.ShowTitle(offered);
+        }
+
+        string? focused = (_focus()?.Focused as MissionRow)?.Row.Account;
+        if (focused is not null && focused != _focusedRun)
+        {
+            _focusedRun = focused;
+            SyncSide();
         }
 
         _feed.Update(shown);
@@ -137,7 +193,7 @@ public sealed class MissionBoardView
             return false;
         }
 
-        Sync();
+        Sync(entrance: true);
         return true;
     }
 
@@ -158,25 +214,54 @@ public sealed class MissionBoardView
     /// <returns>Whether one was.</returns>
     public bool ReportFocused()
     {
-        if (!_source.CanReport || _focus()?.Focused is not MissionRow { CanReport: true, Reported: false } row || !_reported.Add(row.Row.Run!))
+        if (_focus()?.Focused is not MissionRow row)
         {
             return false;
         }
 
-        _source.Report(row.Row.Run!);
-        row.Reported = true;
-        return true;
+        return Report(row.Row, row);
     }
 
-    private void Sync()
+    /// <summary>Shows the next mission's board, or the one before; every mission together comes before the first.</summary>
+    /// <param name="direction">+1 for the next, -1 for the one before.</param>
+    public void StepMission(int direction)
     {
-        SyncList();
-        Screen.PlayEntrance(_list);
-        Screen.PlayEntrance(_pinned);
+        IReadOnlyList<(int Id, string Name)> missions = _source.MissionsOf(_feed.Title);
+        int at = _feed.Mission is { } shown ? missions.ToList().FindIndex(m => m.Id == shown) + 1 : 0;
+        int next = Wrap(at + Math.Sign(direction), missions.Count + 1);
+        _feed.ShowMission(next == 0 ? null : missions[next - 1].Id);
     }
 
-    // What the list holds: its state while it is read or why it is empty, else the rows; and the player's own row under it.
-    private void SyncList()
+    /// <summary>Shows the next difficulty's board.</summary>
+    public void StepDifficulty() => _feed.ShowDifficulty((_feed.Difficulty + 1) % DifficultyNames.Length);
+
+    /// <summary>Shows the other rules' board.</summary>
+    public void StepRules() => _feed.ShowRuleset(MissionBoardFeed.Rulesets[Wrap(IndexOf(MissionBoardFeed.Rulesets, _feed.Ruleset) + 1, MissionBoardFeed.Rulesets.Count)]);
+
+    /// <summary>Ranks by the other metric.</summary>
+    public void StepMetric() => _feed.ShowMetric(MissionBoardFeed.Metrics[Wrap(IndexOf(MissionBoardFeed.Metrics, _feed.Metric) + 1, MissionBoardFeed.Metrics.Count)]);
+
+    /// <summary>Shows the next game's boards, past any whose runs are held.</summary>
+    public void StepGame()
+    {
+        IReadOnlyList<LeaderboardGame> games = _source.Games;
+        int at = Math.Max(0, IndexOfGame(_feed.Title));
+        for (int step = 1; step < games.Count; step++)
+        {
+            string next = games[Wrap(at + step, games.Count)].Id;
+            if (GameTitle.All.FirstOrDefault(t => t.Id == next) is not { RunsHeld: true })
+            {
+                _feed.ShowTitle(next);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Reads the board again now.</summary>
+    public void Refresh() => _feed.Refresh();
+
+    // Everything shown made to match the feed.
+    private void Sync(bool entrance)
     {
         _seen = _feed.Revision;
         if (_builtTitle != _feed.Title)
@@ -189,51 +274,172 @@ public sealed class MissionBoardView
             }
         }
 
-        _note.Text = (_compact ? string.Empty : "Every run is played again by the server before it counts. ") + (_source.SignInHint ?? string.Empty);
-        _list.ClearChildren();
-        _pinned.ClearChildren();
+        _difficulty.SelectedIndex = Math.Clamp(_feed.Difficulty, 0, 2);
+        _rules.SelectedIndex = Math.Max(0, IndexOf(MissionBoardFeed.Rulesets, _feed.Ruleset));
+        _difficultyCycler.SelectedIndex = _difficulty.SelectedIndex;
+        _rulesCycler.SelectedIndex = _rules.SelectedIndex;
+        _metrics.SelectedIndex = Math.Max(0, IndexOf(MissionBoardFeed.Metrics, _feed.Metric));
+        _rulesNote.Text = _feed.Ruleset == "classic" ? "original values" : "remastered values";
+        if (_missionHost.Children.Count > 0 && _missionHost.Children[0] is BoardCycler picker)
+        {
+            int at = _feed.Mission is { } shown ? Math.Max(0, _source.MissionsOf(_feed.Title).ToList().FindIndex(m => m.Id == shown) + 1) : 0;
+            if (picker.SelectedIndex != at)
+            {
+                picker.SelectedIndex = at;
+            }
+        }
+
         RunBoard? board = _feed.Board;
+        string makeup = $"{_feed.Title}|{_feed.Mission}|{_feed.Difficulty}|{_feed.Ruleset}|{_feed.Metric}|{_feed.BoardState}|{board?.You?.Account}|{board?.You?.Ticks}|{board?.Players}|"
+            + string.Join(';', (board?.Rows ?? []).Select(static row => $"{row.Place}:{row.Account}:{row.Ticks}:{row.Rank}:{row.Points}:{row.Replay}"));
+        if (makeup != _builtList)
+        {
+            _builtList = makeup;
+            string? kept = (_focus()?.Focused as UiElement)?.Id;
+            Fill(_hero, Compact ? [] : [Hero(board)], entrance);
+            Fill(_columns, board is { Rows.Count: > 0 } || board is null ? [MissionColumns.Header(_theme, _size, Overall)] : [], entrance);
+            Fill(_list, ListParts(board), entrance);
+            Fill(_pinned, PinnedParts(board), entrance);
+            if (kept is not null && _root.FindById(kept) is Control again && _focus() is { } focus)
+            {
+                focus.Focus(again);
+            }
+        }
+
+        SyncSide();
+    }
+
+    // What the list holds: the rows' shapes while it is read, why it is empty or can't be read, or the rows.
+    private List<UiElement> ListParts(RunBoard? board)
+    {
         if (board is null)
         {
-            _list.AddChild(Message(
-                _feed.BoardState == FeedState.Failed ? "The boards can't be reached right now." : "Reading the board…",
-                _feed.BoardState == FeedState.Failed ? "They are asked for again shortly." : string.Empty));
-            return;
+            if (_feed.BoardState == FeedState.Failed)
+            {
+                return [new BoardMessage(_theme, KitIcon.Warning, "The boards can't be reached", "Check your connection; they are asked for again shortly.", warn: true) { Margin = new Thickness(0f, 40f, 0f, 0f) }];
+            }
+
+            return [.. Enumerable.Range(0, 8).Select(i => (UiElement)new RankRowSkeleton(i, _size))];
         }
 
         if (board.Rows.Count == 0)
         {
-            _list.AddChild(Message(
-                _feed.Mission is null ? "Nobody has run every mission yet." : "Nobody on this board yet.",
-                "Complete the mission signed in with Discord to be the first."));
-            return;
+            return EmptyParts();
         }
 
-        bool overall = _feed.Mission is null;
         string? you = board.You?.Account ?? _feed.You;
+        int leader = board.Rows[0].Ticks;
+        List<UiElement> parts = [];
+        int previous = 0;
         foreach (RunBoardRow row in board.Rows)
         {
-            _list.AddChild(Row(row, overall, row.Account == you));
+            if (row.Place > previous + 1 && previous > 0)
+            {
+                parts.Add(new BoardNote(_theme, string.Create(CultureInfo.InvariantCulture, $"· · ·  places {previous + 1}–{row.Place - 1}  · · ·")));
+            }
+
+            parts.Add(Row(row, row.Account == you, leader));
+            previous = row.Place;
         }
 
         if (board.Players > board.Rows.Count)
         {
-            _list.AddChild(new Label(_theme.Mono, string.Create(CultureInfo.InvariantCulture, $"THE TOP {board.Rows.Count} OF {board.Players:N0} RANKED"), 12f, _theme.TextMuted)
-            {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0f, 14f, 0f, 4f),
-            });
+            parts.Add(new BoardNote(_theme, string.Create(CultureInfo.InvariantCulture, $"The top {board.Rows.Count} of {board.Players:N0} ranked")));
         }
 
-        if (board.You is { } own && !board.Rows.Any(row => row.Account == own.Account))
+        return parts;
+    }
+
+    // Nobody on the board: play it, or try the other rules.
+    private List<UiElement> EmptyParts()
+    {
+        string mission = MissionName();
+        string detail = Overall
+            ? "Nobody has a verified time on every mission at this difficulty and these rules yet."
+            : $"Nobody has a verified time on {mission} · {DifficultyNames[_feed.Difficulty]} · {RulesetNames[Math.Max(0, IndexOf(MissionBoardFeed.Rulesets, _feed.Ruleset))]}. Finish it and you set the world record.";
+        var parts = new StackPanel { Orientation = Orientation.Vertical, Spacing = 20f, Margin = new Thickness(0f, Compact ? 10f : 40f, 0f, 0f) };
+        parts.AddChild(new BoardMessage(_theme, KitIcon.History, Overall ? "No overall times yet" : "No runs on this mission yet", detail));
+        var buttons = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f, HorizontalAlignment = HorizontalAlignment.Center };
+        if (!Overall && _source.CanPlay)
         {
-            _pinned.AddChild(new Eyebrow(_theme, "Your place") { TextSize = 12f });
-            _pinned.AddChild(Row(own, overall, isYou: true));
+            var play = new BoardButton(_theme, "Play mission", BoardButtonLook.Solid) { Icon = KitIcon.Play, Key = "Enter", ButtonHeight = 40f };
+            play.Activated += _ => PlayShown();
+            buttons.Add(play);
+        }
+
+        string other = _feed.Ruleset == "classic" ? "modern" : "classic";
+        var rules = new BoardButton(_theme, $"Try {other} rules", BoardButtonLook.Outline) { Key = "C", ButtonHeight = 40f };
+        rules.Activated += _ => _feed.ShowRuleset(other);
+        buttons.Add(rules);
+        parts.AddChild(buttons);
+        return [parts];
+    }
+
+    // The player's own best under the list, where it is not in it.
+    private List<UiElement> PinnedParts(RunBoard? board)
+    {
+        if (board?.You is not { } own || board.Rows.Any(row => row.Account == own.Account))
+        {
+            return [];
+        }
+
+        MissionRow line = Row(own, isYou: true, board.Rows.Count > 0 ? board.Rows[0].Ticks : null);
+        line.Pinned = true;
+        return [line];
+    }
+
+    private MissionRow Row(RunBoardRow row, bool isYou, int? leader)
+    {
+        var line = new MissionRow(_theme, row, _feed.Metric, Overall, _feed.Difficulty)
+        {
+            IsYou = isYou,
+            Size = _size,
+            Leader = leader,
+            MissionCount = _source.MissionsOf(_feed.Title).Count,
+            Reported = row.Run is { } id && _reported.Contains(id),
+        };
+        if (line.HasReplay)
+        {
+            string run = row.Run!;
+            line.Activated += _ => _source.Watch(run);
+            line.Raced += _ => _source.Race(run);
+        }
+
+        return line;
+    }
+
+    // Reports a run, where the player may: another's run on a mission's board, once.
+    private bool Report(RunBoardRow row, MissionRow? line)
+    {
+        if (!_source.CanReport || Overall || row.Run is not { } run || row.Account == (_feed.Board?.You?.Account ?? _feed.You) || !_reported.Add(run))
+        {
+            return false;
+        }
+
+        _source.Report(run);
+        if (line is not null)
+        {
+            line.Reported = true;
+        }
+
+        _builtSide = string.Empty;
+        SyncSide();
+        return true;
+    }
+
+    private void PlayShown()
+    {
+        if (_feed.Mission is { } mission)
+        {
+            _source.PlayMission(_feed.Title, mission, _feed.Difficulty, _feed.Ruleset);
         }
     }
 
+    private string MissionName() =>
+        _feed.Mission is { } id ? _source.MissionsOf(_feed.Title).FirstOrDefault(m => m.Id == id).Name ?? $"Mission {id}" : "All missions";
+
     // The games whose boards there are, one tab each: a game whose runs are held for now (GameTitle.RunsHeld) shown, dimmed and
-    // marked as coming, as the graphics presets it does not offer yet are. None where there is one game.
+    // marked as coming. None where there is one game.
     private TabStrip? GameTabs()
     {
         IReadOnlyList<LeaderboardGame> games = _source.Games;
@@ -242,17 +448,11 @@ public sealed class MissionBoardView
             return null;
         }
 
-        bool Held(int index) => OpenIGI.Core.Titles.GameTitle.All.FirstOrDefault(t => t.Id == games[index].Id) is { RunsHeld: true };
-        _games = new TabStrip(_theme, games.Select(static game => game.Name))
-        {
-            SegmentHeight = _compact ? 32f : 36f,
-            TabPadding = _compact ? 12f : 18f,
-            TextSize = _compact ? 14f : 15f,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            TabEnabled = index => !Held(index),
-            Notes = [.. games.Select((_, index) => Held(index) ? "SOON" : string.Empty)],
-            SelectedIndex = Math.Max(0, IndexOfGame(_feed.Title)),
-        };
+        bool Held(int index) => GameTitle.All.FirstOrDefault(t => t.Id == games[index].Id) is { RunsHeld: true };
+        _games = LeaderboardModes.Segmented(_theme, games.Select(game => Compact ? game.Name.Replace("PROJECT ", string.Empty, StringComparison.OrdinalIgnoreCase) : game.Name), Compact);
+        _games.TabEnabled = index => !Held(index);
+        _games.Notes = [.. games.Select((_, index) => Held(index) ? "SOON" : string.Empty)];
+        _games.SelectedIndex = Math.Max(0, IndexOfGame(_feed.Title));
         _games.SelectionChanged += index => _feed.ShowTitle(games[index].Id);
         return _games;
     }
@@ -264,11 +464,9 @@ public sealed class MissionBoardView
     {
         IReadOnlyList<(int Id, string Name)> missions = _source.MissionsOf(_feed.Title);
         int at = _feed.Mission is { } shown ? Math.Max(0, missions.ToList().FindIndex(m => m.Id == shown) + 1) : 0;
-        var picker = new OptionCycler(_theme, "Mission", ["All missions", .. missions.Select(static m => m.Name)], at)
+        var picker = new BoardCycler(_theme, Compact ? string.Empty : "Mission", ["All missions", .. missions.Select(static m => m.Name)], at)
         {
-            Inline = true,
-            ContentWidth = _compact ? 150f : 200f,
-            Width = _compact ? 420f : 380f,
+            ValueWidth = Compact ? 110f : 170f,
         };
         picker.SelectionChanged += i => _feed.ShowMission(i == 0 ? null : missions[i - 1].Id);
         _missionHost.ClearChildren();
@@ -276,30 +474,40 @@ public sealed class MissionBoardView
         picker.Visual.AppearInstantly();
     }
 
-    private MissionRow Row(RunBoardRow row, bool overall, bool isYou)
+    // A switch with its name before it.
+    private FlexPanel Labelled(string name, UiElement control, bool compact)
     {
-        var line = new MissionRow(_theme, row, _feed.Metric, overall, _feed.Difficulty) { IsYou = isYou, Compact = _compact, Reported = row.Run is { } id && _reported.Contains(id) };
-        if (line.HasReplay)
+        var row = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f, VerticalAlignment = VerticalAlignment.Center };
+        if (!compact)
         {
-            string run = row.Run!;
-            line.Activated += _ => _source.Watch(run);
-            line.Raced += _ => _source.Race(run);
+            row.Add(new Label(_theme.Body, name, 14f, _theme.TextSecondary) { VerticalAlignment = VerticalAlignment.Center });
         }
 
-        return line;
+        row.Add(control);
+        return row;
     }
 
-    private StackPanel Message(string headline, string detail)
+    private static void Fill(UiElement host, IEnumerable<UiElement> parts, bool entrance)
     {
-        var message = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, Margin = new Thickness(0f, _compact ? 24f : 56f), HorizontalAlignment = HorizontalAlignment.Center };
-        message.AddChild(new Label(_theme.Heading, headline.ToUpperInvariant(), _compact ? 18f : 24f, _theme.Text) { HorizontalAlignment = HorizontalAlignment.Center });
-        if (detail.Length > 0)
+        host.ClearChildren();
+        foreach (UiElement part in parts)
         {
-            message.AddChild(new Label(_theme.Body, detail, _compact ? 14f : 16f, _theme.TextSecondary) { HorizontalAlignment = HorizontalAlignment.Center });
+            host.AddChild(part);
         }
 
-        return message;
+        if (entrance)
+        {
+            Screen.PlayEntrance(host);
+            return;
+        }
+
+        foreach (Control control in host.Descendants().OfType<Control>())
+        {
+            control.Visual.AppearInstantly();
+        }
     }
+
+    private static int Wrap(int index, int count) => ((index % count) + count) % count;
 
     private static int IndexOf(IReadOnlyList<string> list, string value)
     {

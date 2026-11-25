@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn for OpenIGI. -->
+<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 3.5L21.5 20h-19z"/>
+  <path d="M12 10v4.5"/>
+  <path d="M12 17.5v.01"/>
+</svg>
