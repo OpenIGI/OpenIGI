@@ -189,6 +189,31 @@ public sealed class RetailIgi2GenericTbaTests
         Assert.Equal((true, true), (pad.IsFinished, pad.IsInUse));
     }
 
+    /// <summary>
+    /// A player popped out of its work by a script stands free again: <c>HumanPlayer_GoToDefaultState</c> lets go of everything the
+    /// timed action locked -- the action, both orientation locks, the interaction camera, the progress bar and the work's sound.
+    /// location2/level6 and location3/level4 pop the player this way around the cutscenes that begin as it hacks a computer.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_script_pop_frees_the_player_from_its_work()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        Igi2GenericTbaTask pad = Arm(m, Pad, null);
+        m.Run.Tick();
+        Igi2TitlePlayer player = Before(m, pad);
+        Hold(player, pressed: true);
+        Igi2HumanPlayer human = player.Human;
+        Assert.Equal((3, true, true), (human.CameraMode, human.IsLockAction, human.View.IsLockOrientation));
+
+        human.GoToDefaultState();
+
+        Assert.Equal(Igi2PlayerState.Stand, human.Locomotion.CurrentState);
+        Assert.Equal(
+            (1, false, false, false, false, false),
+            (human.CameraMode, human.IsLockAction, human.View.IsLockOrientation, human.IsLockOrientation, human.IsProgressBar, human.IsActivating));
+        Assert.DoesNotContain(m.Sounds.Playing, static s => s.Name == "tba_codepad" && s.IsAlive);
+    }
+
     /// <summary>The key held over from the tick before does not start the work; the activation simply ends.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_held_key_does_not_start_the_work()
