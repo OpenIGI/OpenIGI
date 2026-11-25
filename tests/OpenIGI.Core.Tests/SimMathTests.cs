@@ -24,7 +24,10 @@ public sealed class SimMathTests
         {
             AssertClose(Math.Sin(x), SimMath.Sin(x), 1, $"sin({x:R})");
             AssertClose(Math.Cos(x), SimMath.Cos(x), 1, $"cos({x:R})");
-            AssertClose(Math.Tan(x), SimMath.Tan(x), 2, $"tan({x:R})");
+            // The platform's tangent is the yardstick here, not the truth: Linux's is two ulps off it at times
+            // (tan(322.8451140796975) is -0.9111279630379717, which glibc gives as ...719 and SimMath as ...716), so the two
+            // may stand three apart while SimMath is within one of the true value.
+            AssertClose(Math.Tan(x), SimMath.Tan(x), 3, $"tan({x:R})");
         }
     }
 

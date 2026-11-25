@@ -5,6 +5,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Replays;
 using OpenIGI.Net.Identity;
+using OpenIGI.Releases;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.Releases.Maps;
 using OpenIGI.UI.Kit;
@@ -69,18 +70,22 @@ public sealed partial class GameHost
             return;
         }
 
-        _ = Task.Run(async () =>
+        // Started here and left to finish on its own, as a run's submission is: a request in flight, not work of its own on
+        // another thread, which a browser's one thread could not give it.
+        _ = ReportBoardRunAsync(signer, run);
+    }
+
+    private async Task ReportBoardRunAsync(IRequestSigner signer, string run)
+    {
+        try
         {
-            try
-            {
-                await RunsService.ReportAsync(signer, run, "Reported from the game's boards").ConfigureAwait(false);
-                _logger.Information("Replays", $"Reported run {run}.");
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or AccountRefusedException or IOException)
-            {
-                _logger.Warning("Replays", $"Run {run} was not reported: {ex.Message.TrimEnd('.')}.");
-            }
-        });
+            await RunsService.ReportAsync(signer, run, "Reported from the game's boards").ConfigureAwait(false);
+            _logger.Information("Replays", $"Reported run {run}.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or AccountRefusedException or IOException)
+        {
+            _logger.Warning("Replays", $"Run {run} was not reported: {ex.Message.TrimEnd('.')}.");
+        }
     }
 
     // A board's run asked for: its replay brought down, to be watched or raced once it is here.
