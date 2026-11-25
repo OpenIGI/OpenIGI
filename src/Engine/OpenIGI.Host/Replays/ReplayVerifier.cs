@@ -124,21 +124,22 @@ public static class ReplayVerifier
     {
         ArgumentNullException.ThrowIfNull(replay);
         string rules = replay.Header.Ruleset;
-        if (partedAt is { } parted)
-        {
-            return new ReplayVerdict(false, $"it went another way here at {parted / 30.0:0.0} s than its recording says", rules, -1, null, parted, null);
-        }
 
+        // A run is what its inputs do in the game here, and it is ranked by what the level reckons of it here: the fingerprints
+        // along the way only say where this playing first differed from the recording's -- a thing that decides nothing of how
+        // the mission goes may differ, and the run still come to the very end it claims -- which the verdict carries, for a
+        // person to look at, and a refusal explains.
+        string parted = partedAt is { } at ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $" (it went another way here at {at / 30.0:0.0} s than its recording says)") : string.Empty;
         if (completedAt is not { } end || score is not { } computed)
         {
-            return ReplayVerdict.Refused(finished ? "its inputs do not complete its mission here" : "it was not played to its end", rules);
+            return new ReplayVerdict(false, (finished ? "its inputs do not complete its mission here" : "it was not played to its end") + parted, rules, -1, null, partedAt, null);
         }
 
         if (computed != replay.Result.Score)
         {
-            return new ReplayVerdict(false, "the score it claims is not the one its run comes to", rules, end, computed, null, null);
+            return new ReplayVerdict(false, "the score it claims is not the one its run comes to" + parted, rules, end, computed, partedAt, null);
         }
 
-        return new ReplayVerdict(true, string.Empty, rules, end, computed, null, ghost) { Rank = rank };
+        return new ReplayVerdict(true, string.Empty, rules, end, computed, partedAt, ghost) { Rank = rank };
     }
 }

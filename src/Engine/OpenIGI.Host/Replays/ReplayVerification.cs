@@ -33,7 +33,8 @@ public static class ReplayVerification
             long limit = ((long)replay.Tape.Length + 300) * StepsPerTick;
             for (long step = 0; step < limit && host.Step(); step++)
             {
-                if (host.ReplayDivergedAt is not null || (host.ReplayFinished && host.ReplayCompletedAt is not null))
+                // Played on past a fingerprint that differs: what the run comes to is what decides it.
+                if (host.ReplayFinished && host.ReplayCompletedAt is not null)
                 {
                     break;
                 }
