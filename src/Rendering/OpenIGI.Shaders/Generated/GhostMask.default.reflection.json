@@ -16,7 +16,7 @@
   "bindings": [],
   "pushBlock": {
     "name": "push",
-    "size": 96,
+    "size": 128,
     "group": 3,
     "binding": 0,
     "hlsl": {

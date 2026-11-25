@@ -30,9 +30,15 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        // A frame drawn straight to the screen -- the forward renderer's, with no lit scene for the ghost pass to lay it
-        // over -- has it drawn into the frame as it goes, as I.G.I. 2's infrared view draws a body: unlit, its edges bright and
-        // its middle faint, over what is behind it.
+        // Nothing of it there yet, or any more.
+        if (look.Presence <= 0f)
+        {
+            return;
+        }
+
+        // A race always draws its scene offscreen, on every preset, so the ghost looks the same on all of them. Only a frame
+        // that could not be -- one drawn while the surface cache's cards are -- has it drawn straight into the frame as it
+        // goes, as I.G.I. 2's infrared view draws a body: unlit, its edges bright and its middle faint, over what is behind it.
         if (!Capturing)
         {
             DrawInfrared(mesh, ranges, modelView, GhostRamp(), InfraredDraw.SeenThrough);
@@ -45,7 +51,11 @@ public sealed partial class GraphicsDevice
         }
 
         _ghostLook = look;
-        _ghostDraws.Add(new GhostBodyDraw(body, new System.Numerics.Vector4(modelView.M31, modelView.M32, modelView.M33, modelView.M34)));
+        _ghostDraws.Add(new GhostBodyDraw(
+            body,
+            new System.Numerics.Vector4(modelView.M11, modelView.M12, modelView.M13, modelView.M14),
+            new System.Numerics.Vector4(modelView.M21, modelView.M22, modelView.M23, modelView.M24),
+            new System.Numerics.Vector4(modelView.M31, modelView.M32, modelView.M33, modelView.M34)));
     }
 
     /// <summary>Lays the frame's ghost over the lit scene, where any of it was drawn.</summary>
@@ -62,7 +72,7 @@ public sealed partial class GraphicsDevice
 
         _ghost ??= new GhostPass(_device, FramesInFlight, _retired);
         (int width, int height) = PostSize(scene);
-        _ghost.RecordMask(Encoder(), width, height, _ghostDraws, _ghostLook.Seconds);
+        _ghost.RecordMask(Encoder(), width, height, _ghostDraws, _ghostLook);
         _ghostDraws.Clear();
 
         using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
@@ -79,8 +89,8 @@ public sealed partial class GraphicsDevice
 
     /// <summary>
     /// The ramp a ghost drawn straight into the frame is coloured by, made the first time one is: across it, from a face turned to
-    /// the eye to one edge-on (the infrared shader's ramp coordinate), the ghost pass's tint, faint, brightening to near white and
-    /// near opaque at the rim, which is the ghost's outline.
+    /// the eye to one edge-on (the infrared shader's ramp coordinate), the ghost's green (<see cref="GhostPalette"/>), near clear,
+    /// brightening to its near-white and near opaque at the rim, which is the ghost's outline.
     /// </summary>
     private TextureHandle GhostRamp()
     {
@@ -95,10 +105,10 @@ public sealed partial class GraphicsDevice
             float rim = MathF.Pow(i / (float)(GhostRampTexels - 1), 1.5f);
             float white = rim * rim * rim;
             texels[i] = new Bgra32(
-                Byte(float.Lerp(GhostPass.Tint.B, 1f, white)),
-                Byte(float.Lerp(GhostPass.Tint.G, 0.97f, white)),
-                Byte(float.Lerp(GhostPass.Tint.R, 0.85f, white)),
-                Byte(0.35f + (0.65f * rim)));
+                Byte(float.Lerp(GhostPalette.Tint.B, GhostPalette.Hot.B, white)),
+                Byte(float.Lerp(GhostPalette.Tint.G, GhostPalette.Hot.G, white)),
+                Byte(float.Lerp(GhostPalette.Tint.R, GhostPalette.Hot.R, white)),
+                Byte(0.12f + (0.88f * rim * rim)));
         }
 
         _ghostRamp = _textures.Create(

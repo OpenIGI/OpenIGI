@@ -11,3 +11,8 @@ public sealed record RaceSplit(string Label, double Seconds, double DeltaSeconds
 /// <param name="Splits">The splits reached so far, in order.</param>
 /// <param name="LatestShown">How strongly the newest split is held up in the middle of the screen, one when just reached, fading to nought.</param>
 public sealed record RaceHud(double? DeltaSeconds, IReadOnlyList<RaceSplit> Splits, float LatestShown);
+
+/// <summary>Where a race's ghost is, for the mark over it once it is far off.</summary>
+/// <param name="AnchorMetres">Where the mark stands, in metres: just over the ghost's head.</param>
+/// <param name="Presence">How much of the ghost is there, nought to one: the mark comes and goes with it.</param>
+public sealed record RaceGhostMarker(OpenIGI.Core.Numerics.Vector3d AnchorMetres, float Presence);

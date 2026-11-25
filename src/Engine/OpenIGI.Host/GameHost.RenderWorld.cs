@@ -159,15 +159,26 @@ public sealed partial class GameHost
         EndStageIfSlow("the shadow cascades");
     }
 
+    /// <summary>
+    /// Gets a value indicating whether a pass over the finished scene is up this frame -- the thermal sensor, or a race's
+    /// ghost -- so the scene is drawn offscreen and deferred for it whatever the preset asks.
+    /// </summary>
+    /// <remarks>
+    /// Both run in the resolve of the offscreen scene, which a preset that draws straight to the back buffer never has: there
+    /// neither would be seen as it is on the others. Only the detour comes on with them -- nothing else the preset turned off --
+    /// and under Vanilla's tone map and unit exposure it is a copy of the original's picture. The capture asked for and the
+    /// target described both read this, so the two cannot disagree: a capture asked for of a target that is not deferred is
+    /// declined.
+    /// </remarks>
+    private bool SceneOverlayNeedsCapture => ThermalNeedsScene || Racing;
+
     /// <summary>Opens the offscreen scene and sets its lighting, or draws straight to the back buffer where there is none.</summary>
     /// <returns><see langword="true"/> when the scene is being drawn offscreen.</returns>
     private bool OpenSceneCapture(
         SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
         RenderResolution resolution)
     {
-        // The thermal sensor and a race's ghost are passes over the finished scene: where the scene is otherwise drawn straight to
-        // the screen, it is drawn offscreen while either is up, or neither is ever seen.
-        bool captured = (FrameCVars.OffscreenScene.Value || ThermalNeedsScene || Racing) && _device.BeginSceneCapture(sceneTarget);
+        bool captured = (FrameCVars.OffscreenScene.Value || SceneOverlayNeedsCapture) && _device.BeginSceneCapture(sceneTarget);
         if (captured)
         {
             // The scheduler cleared the back buffer; the target it did not know about needs it too.

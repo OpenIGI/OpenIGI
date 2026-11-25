@@ -71,7 +71,7 @@ public interface ISoldierBodies : IDisposable
 
     /// <summary>Hands the ghost a race shows to the picture's ghost pass, which lays it over the lit scene, seen through walls.</summary>
     /// <param name="camera">The eye the scene is being drawn through.</param>
-    /// <param name="look">How the ghost looks this frame: its time and its glitch.</param>
+    /// <param name="look">How the ghost looks this frame: its time, its presence and its cloak.</param>
     void DrawGhost(in Camera3D camera, in GhostLook look)
     {
     }

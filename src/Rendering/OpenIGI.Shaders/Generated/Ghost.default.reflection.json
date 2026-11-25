@@ -45,7 +45,7 @@
       }
     },
     {
-      "name": "uGhost",
+      "name": "uGhostShape",
       "group": 0,
       "binding": 2,
       "kind": "Texture",
@@ -60,9 +60,24 @@
       }
     },
     {
-      "name": "uTarget",
+      "name": "uGhostSkin",
       "group": 0,
       "binding": 3,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0
+      }
+    },
+    {
+      "name": "uTarget",
+      "group": 0,
+      "binding": 4,
       "kind": "StorageTexture",
       "dimensions": 2,
       "storageFormat": "Rgba16Float",
@@ -78,7 +93,7 @@
     {
       "name": "p",
       "group": 0,
-      "binding": 4,
+      "binding": 5,
       "kind": "UniformBuffer",
       "dimensions": 0,
       "storageFormat": "None",
@@ -105,8 +120,12 @@
       "unit": 1
     },
     {
-      "texture": "uGhost",
+      "texture": "uGhostShape",
       "unit": 2
+    },
+    {
+      "texture": "uGhostSkin",
+      "unit": 3
     }
   ]
 }

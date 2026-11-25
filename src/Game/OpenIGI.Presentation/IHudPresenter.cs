@@ -331,6 +331,25 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the mark over a race's ghost once it is far off: where it is, through walls, and how far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="marker">Where the ghost stands, and how much of it is there.</param>
+    /// <param name="eye">Where the world is seen from, for projecting the anchor.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawRaceGhostMarker(
+        SpriteBatch batch,
+        Hud.RaceGhostMarker marker,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
     /// <summary>Draws the replay viewer's transport bar at the foot of the screen: what is watched, the run as a track, the keys.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="bar">What it shows.</param>

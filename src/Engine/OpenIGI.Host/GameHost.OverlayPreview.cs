@@ -91,9 +91,13 @@ public sealed partial class GameHost
             DrawPreviewMatch(state, hud, asked, width, height);
         }
 
-        // A race's timer and splits, a little behind the ghost, the newest split just reached.
+        // A race's timer and splits, a little behind the ghost, the newest split just reached; the ghost's mark 40 m ahead, and
+        // another behind, pinned to the edge.
         if (Wants("race"))
         {
+            Vector3d forward = new(eye.Orientation.M31, eye.Orientation.M32, eye.Orientation.M33);
+            hud.DrawRaceGhostMarker(state.Batch, new Presentation.Hud.RaceGhostMarker(eye.Position + (forward * 40.0), 1f), eye, horizontalTangent, aspectRatio, width, height);
+            hud.DrawRaceGhostMarker(state.Batch, new Presentation.Hud.RaceGhostMarker(eye.Position - (forward * 25.0), 1f), eye, horizontalTangent, aspectRatio, width, height);
             hud.DrawRace(
                 state.Batch,
                 new Presentation.Hud.RaceHud(

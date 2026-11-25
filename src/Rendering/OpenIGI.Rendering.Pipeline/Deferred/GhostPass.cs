@@ -9,8 +9,11 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 
 /// <summary>One of a race's ghost's bodies, as it was drawn.</summary>
 /// <param name="Body">The body.</param>
-/// <param name="DepthRow">Its model-view transform's third row: a point's distance ahead of the eye, a normal's turn towards it.</param>
-internal readonly record struct GhostBodyDraw(PosedBody Body, System.Numerics.Vector4 DepthRow);
+/// <param name="RightRow">Its model-view transform's first row: a point's place right of the eye, a normal's turn along it.</param>
+/// <param name="UpRow">Its second row: a point's place above the eye, a normal's turn along it.</param>
+/// <param name="DepthRow">Its third row: a point's distance ahead of the eye, a normal's turn towards it.</param>
+internal readonly record struct GhostBodyDraw(
+    PosedBody Body, System.Numerics.Vector4 RightRow, System.Numerics.Vector4 UpRow, System.Numerics.Vector4 DepthRow);
 
 /// <summary>What the ghost is laid over the scene against beyond its look.</summary>
 /// <param name="Width">The picture's width.</param>
@@ -21,35 +24,35 @@ internal readonly record struct GhostBodyDraw(PosedBody Body, System.Numerics.Ve
 /// <param name="Exposure">The exposure the resolve will apply to the picture, which the ghost's own light is divided by.</param>
 internal readonly record struct GhostFrame(int Width, int Height, int DepthWidth, int DepthHeight, DepthUnprojection Unprojection, float Exposure);
 
-/// <summary>A race's ghost: its bodies drawn into a mask of their own, then laid over the lit scene with their glow and glitches.</summary>
+/// <summary>A race's ghost: its bodies drawn into a mask of their own, then laid over the lit scene as a runner under an optical cloak.</summary>
 /// <remarks>
 /// Two passes, as the thermal sensor's: the bodies drawn, each in the pose it was drawn in, into the ghost mask
-/// (<c>World/GhostMask.slang</c>) with no depth test; then one compute pass (<c>Post/Ghost.slang</c>) over the lit scene, its
-/// depth and the mask, whose picture goes on to the bloom and the tone map, so the ghost's glow blooms. After the temporal
-/// resolve, so the history never holds it and nothing of it smears.
+/// (<c>World/GhostMask.slang</c>) -- its shape and its skin, under a depth test of the mask's own so the nearest surface of the
+/// ghost is the one kept; then one compute pass (<c>Post/Ghost.slang</c>) over the lit scene, its depth and the mask, whose
+/// picture goes on to the bloom and the tone map. After the temporal resolve, so the history never holds it and nothing of it
+/// smears.
 /// </remarks>
 internal sealed class GhostPass : IDisposable
 {
     /// <summary>How many floats the composite's parameter block holds.</summary>
-    public const int ParameterFloats = 20;
+    public const int ParameterFloats = 28;
 
-    /// <summary>How many floats of push data the mask's draw reads: its transform, its depth row and its control vector.</summary>
-    public const int MaskPushFloats = 16 + 4 + 4;
+    /// <summary>How many floats of push data the mask's draw reads: its transform, its three view rows and its control vector.</summary>
+    public const int MaskPushFloats = 16 + 4 + 4 + 4 + 4;
 
-    /// <summary>The ghost's colour, linear: a cold cyan the white of its brightest edges sits in.</summary>
-    public static readonly (float R, float G, float B) Tint = (0.22f, 0.72f, 1f);
-
-    /// <summary>How strong the ghost's light is, at the display's white before the exposure.</summary>
-    public const float Strength = 1.4f;
-
-    private const RhiTextureFormat MaskFormat = RhiTextureFormat.Rgba16Float;
+    private const RhiTextureFormat ShapeFormat = RhiTextureFormat.Rgba16Float;
+    private const RhiTextureFormat SkinFormat = RhiTextureFormat.Rgba8Unorm;
+    private const RhiTextureFormat MaskDepthFormat = RhiTextureFormat.Depth32Float;
+    private const RhiTextureFormat PictureFormat = RhiTextureFormat.Rgba16Float;
 
     private readonly IRhiShaderModule _maskModule;
     private readonly IRhiPipelineLayout _maskLayout;
     private readonly IRhiRenderPipeline _maskPipeline;
     private readonly ComputePass _composite;
     private readonly ComputeParameters _parameters;
-    private readonly ScreenImage _mask;
+    private readonly ScreenImage _shape;
+    private readonly ScreenImage _skin;
+    private readonly ScreenImage _maskDepth;
     private readonly ScreenImage _output;
     private bool _disposed;
 
@@ -62,8 +65,10 @@ internal sealed class GhostPass : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(retired);
 
-        _mask = new ScreenImage(device, retired, MaskFormat, RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled, "ghost.mask");
-        _output = new ScreenImage(device, retired, MaskFormat, RhiTextureUsage.Storage | RhiTextureUsage.Sampled, "ghost.picture");
+        _shape = new ScreenImage(device, retired, ShapeFormat, RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled, "ghost.shape");
+        _skin = new ScreenImage(device, retired, SkinFormat, RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled, "ghost.skin");
+        _maskDepth = new ScreenImage(device, retired, MaskDepthFormat, RhiTextureUsage.RenderTarget, "ghost.depth");
+        _output = new ScreenImage(device, retired, PictureFormat, RhiTextureUsage.Storage | RhiTextureUsage.Sampled, "ghost.picture");
 
         ShaderReflection mask = ShaderCatalog.GetReflection(ShaderModuleId.GhostMask);
         _maskModule = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.GhostMask, Label: "ghost.mask"));
@@ -72,7 +77,6 @@ internal sealed class GhostPass : IDisposable
             MaskPushFloats * sizeof(float),
             RhiShaderStages.Vertex | RhiShaderStages.Fragment,
             "ghost.mask"));
-        RhiBlendComponent greater = new(RhiBlendFactor.One, RhiBlendFactor.One, RhiBlendOperation.Max);
         _maskPipeline = device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             _maskLayout,
             new RhiShaderStage(
@@ -81,8 +85,10 @@ internal sealed class GhostPass : IDisposable
                 ShaderConstants.Declared(mask, Mesh3DConstants.TargetConstants)),
             new RhiShaderStage(_maskModule, mask.EntryPointFor(ShaderStage.Fragment).Name),
             OutlinePipelineCache.VertexLayouts(),
-            [new RhiColorTargetState(MaskFormat, new RhiBlendState(greater, greater), RhiColorWrite.All)],
-            null,
+            [new RhiColorTargetState(ShapeFormat), new RhiColorTargetState(SkinFormat)],
+
+            // Reverse-Z: the nearer surface has the greater depth.
+            new RhiDepthStencilState(MaskDepthFormat, DepthWrite: true, RhiCompare.Greater),
             new RhiPrimitiveState(RhiPrimitiveTopology.TriangleList, RhiCullMode.None),
             SampleCount: 1,
             "ghost.mask"));
@@ -96,24 +102,30 @@ internal sealed class GhostPass : IDisposable
     /// <param name="width">The picture's width.</param>
     /// <param name="height">Its height.</param>
     /// <param name="draws">The ghost's bodies this frame.</param>
-    /// <param name="seconds">How long the ghost has been shown, which moves its scan.</param>
-    public void RecordMask(IRhiCommandEncoder encoder, int width, int height, IReadOnlyList<GhostBodyDraw> draws, float seconds)
+    /// <param name="look">How the ghost looks this frame: how long it has been shown and how much of it is there.</param>
+    public void RecordMask(IRhiCommandEncoder encoder, int width, int height, IReadOnlyList<GhostBodyDraw> draws, in GhostLook look)
     {
         ArgumentNullException.ThrowIfNull(encoder);
         ArgumentNullException.ThrowIfNull(draws);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        IRhiTexture mask = _mask.Ensure(width, height);
+        IRhiTexture shape = _shape.Ensure(width, height);
+        IRhiTexture skin = _skin.Ensure(width, height);
+        IRhiTexture depth = _maskDepth.Ensure(width, height);
         Span<float> push = stackalloc float[MaskPushFloats];
         using IRhiRenderPassEncoder pass = encoder.BeginRenderPass(new RhiRenderPassDescriptor(
-            [new RhiColorAttachment(mask.View, RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
+            [
+                new RhiColorAttachment(shape.View, RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent),
+                new RhiColorAttachment(skin.View, RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent),
+            ],
+            new RhiDepthAttachment(depth.View, RhiLoadOp.Clear, RhiStoreOp.Discard, DepthClearValue: 0f),
             Label: "ghost.mask"));
         pass.SetPipeline(_maskPipeline);
         pass.SetViewport(0, 0, width, height, 0f, 1f);
         pass.SetScissor(0, 0, width, height);
         foreach (GhostBodyDraw draw in draws)
         {
-            WriteMask(push, draw, seconds);
+            WriteMask(push, draw, look);
             pass.SetPushData(MemoryMarshal.AsBytes(push));
             draw.Body.Draw(pass);
         }
@@ -137,14 +149,16 @@ internal sealed class GhostPass : IDisposable
         ArgumentNullException.ThrowIfNull(depth);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        IRhiTexture mask = _mask.Ensure(frame.Width, frame.Height);
+        IRhiTexture shape = _shape.Ensure(frame.Width, frame.Height);
+        IRhiTexture skin = _skin.Ensure(frame.Width, frame.Height);
         IRhiTexture output = _output.Ensure(frame.Width, frame.Height);
         Span<float> block = stackalloc float[ParameterFloats];
         WriteParameters(block, frame, look);
 
         _composite.Bind("uSource", source);
         _composite.Bind("uDepth", depth);
-        _composite.Bind("uGhost", mask.View);
+        _composite.Bind("uGhostShape", shape.View);
+        _composite.Bind("uGhostSkin", skin.View);
         _composite.Bind("uTarget", output.View);
         _composite.Bind("p", _parameters.Write<float>(frameInFlight, block));
         _composite.Dispatch(pass, frame.Width, frame.Height);
@@ -154,8 +168,8 @@ internal sealed class GhostPass : IDisposable
     /// <summary>Writes one body's push data for the mask.</summary>
     /// <param name="push">Room for <see cref="MaskPushFloats"/> floats.</param>
     /// <param name="draw">The body.</param>
-    /// <param name="seconds">How long the ghost has been shown.</param>
-    public static void WriteMask(Span<float> push, in GhostBodyDraw draw, float seconds)
+    /// <param name="look">How the ghost looks this frame.</param>
+    public static void WriteMask(Span<float> push, in GhostBodyDraw draw, in GhostLook look)
     {
         if (push.Length != MaskPushFloats)
         {
@@ -164,12 +178,22 @@ internal sealed class GhostPass : IDisposable
 
         push.Clear();
         draw.Body.Transform.CopyColumnMajorTo(push[..16]);
-        push[16] = draw.DepthRow.X;
-        push[17] = draw.DepthRow.Y;
-        push[18] = draw.DepthRow.Z;
-        push[19] = draw.DepthRow.W;
-        push[20] = draw.Body.PoseBlend;
-        push[21] = seconds;
+        WriteRow(push[16..20], draw.RightRow);
+        WriteRow(push[20..24], draw.UpRow);
+        WriteRow(push[24..28], draw.DepthRow);
+        push[28] = draw.Body.PoseBlend;
+
+        // The seconds wrap an hour round, as the composite's do.
+        push[29] = look.Seconds % 3600f;
+        push[30] = Math.Clamp(look.Presence, 0f, 1f);
+
+        static void WriteRow(Span<float> into, System.Numerics.Vector4 row)
+        {
+            into[0] = row.X;
+            into[1] = row.Y;
+            into[2] = row.Z;
+            into[3] = row.W;
+        }
     }
 
     /// <summary>Writes the composite's parameter block, in the order <c>Post/Ghost.slang</c> reads it.</summary>
@@ -206,10 +230,20 @@ internal sealed class GhostPass : IDisposable
         block[14] = Math.Clamp(look.Glitch, 0f, 1f);
         block[15] = look.GlitchSeed % 4096f;
 
-        block[16] = Tint.R;
-        block[17] = Tint.G;
-        block[18] = Tint.B;
-        block[19] = Strength;
+        block[16] = GhostPalette.Tint.R;
+        block[17] = GhostPalette.Tint.G;
+        block[18] = GhostPalette.Tint.B;
+        block[19] = GhostPalette.Strength;
+
+        block[20] = GhostPalette.Hot.R;
+        block[21] = GhostPalette.Hot.G;
+        block[22] = GhostPalette.Hot.B;
+        block[23] = 0f;
+
+        block[24] = Math.Clamp(look.Presence, 0f, 1f);
+        block[25] = Math.Clamp(look.Recloak, 0f, 1f);
+        block[26] = 0f;
+        block[27] = 0f;
     }
 
     /// <inheritdoc/>
@@ -226,7 +260,9 @@ internal sealed class GhostPass : IDisposable
         _maskPipeline.Dispose();
         _maskLayout.Dispose();
         _maskModule.Dispose();
-        _mask.Dispose();
+        _shape.Dispose();
+        _skin.Dispose();
+        _maskDepth.Dispose();
         _output.Dispose();
     }
 }

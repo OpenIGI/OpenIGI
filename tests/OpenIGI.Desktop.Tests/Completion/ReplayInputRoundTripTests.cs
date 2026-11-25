@@ -177,6 +177,49 @@ public sealed class ReplayInputRoundTripTests : IDisposable
         Assert.True(device.LastGhostLook.Seconds > 0f, "The ghost's look never moved on.");
     }
 
+    [RequiresGameDataFact]
+    public void A_race_on_the_vanilla_preset_draws_its_scene_offscreen_and_deferred_for_the_ghost()
+    {
+        // The original's own path, straight to the back buffer: the race takes its scene offscreen anyway, so the ghost is the
+        // same ghost it is on every other preset.
+        ReplayFile first = ReplayFile.Read(Record(mission: 1).ToBytes());
+        using RecordingGraphicsDevice device = new() { IsRecording = false };
+        GameHost host = _support.Host(
+            device, new HeadlessGameWindow(), "-race", Write(first, "vanilla"), "-skipcutscene", "-lockstep", "-frames", "100000000", "+r_hdr", "0");
+        InputState input = new();
+        host.ScriptedViewInput = input;
+        int ticks = 0;
+        host.TickDigested = (tick, _) => ticks = tick;
+        try
+        {
+            host.Start();
+            for (int step = 0; step < 40 * Ticks && ticks < 10 * 30 && host.Step(); step++)
+            {
+                Steer(input, ticks);
+            }
+
+            // Ten seconds in, the last few frames kept: what each asked the device for.
+            device.IsRecording = true;
+            for (int frame = 0; frame < 8 && host.Step(); frame++)
+            {
+                Steer(input, ticks);
+            }
+
+            Assert.NotNull(host.RacingAgainst);
+            Assert.False(global::OpenIGI.Rendering.FrameCVars.OffscreenScene.Value, "The race ran with the scene offscreen by preset, which proves nothing.");
+            host.Stop();
+        }
+        finally
+        {
+            Core.Configuration.CVarRegistry.Default.ResetAll();
+        }
+
+        Assert.True(device.GhostDrawCount > 0, "The ghost was never drawn.");
+        Assert.NotEmpty(device.SceneCaptures);
+        Assert.All(device.SceneCaptures, static capture => Assert.True(capture.Deferred, "A race's scene was asked for without its deferred targets."));
+        Assert.Equal(1f, device.LastGhostLook.Presence);
+    }
+
     private static Game.Multiplayer.Int3 Int3Of(Core.Numerics.Vector3d at) => Game.Multiplayer.Int3.From(at);
 
     // A minute of a scripted player in a mission, drawn, as its replay.

@@ -10,7 +10,7 @@ namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The ghost a race shows: a body built as a co-op partner's is, from the level's own player's look, posed each tick from the
-/// runner's track and handed to the picture's ghost pass, which lays it over the lit scene glowing and glitching. It is never
+/// runner's track and handed to the picture's ghost pass, which lays it over the lit scene as a runner under a cloak. It is never
 /// handed to the simulation, as a partner's body is: no round meets it, no guard sees it, it casts no shadow. Its gun is in its
 /// hand, through the same pass, and its flame is drawn as a partner's is on the tick its runner fired.
 /// </summary>

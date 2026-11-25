@@ -86,7 +86,7 @@ public sealed partial class GameHost
             resolution.RenderWidth,
             resolution.RenderHeight,
             FrameCVars.OffscreenScene.Value ? Math.Max(1, FrameCVars.MultiSampling.Value) : 1,
-            Deferred: (FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value) || ThermalNeedsScene,
+            Deferred: (FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value) || SceneOverlayNeedsCapture,
 
             // An 8-bit target under the vanilla preset: with no tone map and unit exposure the whole
             // offscreen detour is then a copy, which is what keeps that preset identical to the
