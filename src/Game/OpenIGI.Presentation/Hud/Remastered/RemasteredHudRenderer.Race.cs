@@ -17,6 +17,9 @@ public sealed partial class RemasteredHudRenderer
     // How many splits are listed under the timer, the newest last.
     private const int RaceSplitsShown = 4;
 
+    // Within this of the ghost, in seconds, the player is level with it: the gap shows as 0.0.
+    private const double Level = 0.05;
+
     /// <inheritdoc/>
     public void DrawRace(SpriteBatch batch, RaceHud race, int screenWidth, int screenHeight)
     {
@@ -34,8 +37,9 @@ public sealed partial class RemasteredHudRenderer
         float top = o.Safe.Y + o.Px(20f);
 
         // The timer: the ghost's mark, and the gap.
+        // Level with the ghost -- the gap rounding to nought, as at the start -- is neither ahead nor behind.
         string gap = race.DeltaSeconds is { } delta ? Signed(delta) : "--.-";
-        Bgra32 ink = race.DeltaSeconds is not { } now ? o.Quiet : now <= 0.0 ? o.Ink.Ally : o.Ink.Danger;
+        Bgra32 ink = race.DeltaSeconds is not { } now || Math.Abs(now) < Level ? o.Quiet : now < 0.0 ? o.Ink.Ally : o.Ink.Danger;
         float tagWidth = o.Text.MeasureAt("GHOST", small) + o.Px(10f);
         float width = tagWidth + o.Px(14f) + MathF.Max(o.Text.MeasureAt("+00:00.0", large), o.Px(150f)) + o.Px(28f);
         float height = o.Text.LineHeightAt(large) + o.Px(16f);
@@ -76,7 +80,7 @@ public sealed partial class RemasteredHudRenderer
         static string Signed(double seconds)
         {
             double size = Math.Abs(seconds);
-            string sign = seconds < 0.0 ? "-" : "+";
+            string sign = size < Level ? string.Empty : seconds < 0.0 ? "-" : "+";
             return size >= 60.0
                 ? string.Create(CultureInfo.InvariantCulture, $"{sign}{(int)(size / 60.0)}:{size % 60.0:00.0}")
                 : string.Create(CultureInfo.InvariantCulture, $"{sign}{size:0.0}");

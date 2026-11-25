@@ -16,6 +16,9 @@ public enum GhostEventKind : byte
 
     /// <summary>The mission ended; its detail is 1 completed, 0 failed.</summary>
     End = 4,
+
+    /// <summary>A cutscene began (detail 1) or ended (detail 0): the ticks between are not played, and no race counts them.</summary>
+    Cutscene = 5,
 }
 
 /// <summary>Something that happened along a run, on the tick it happened.</summary>
@@ -93,6 +96,78 @@ public sealed class GhostTrack
         {
             _events.Add(new GhostEvent(tick, kind, detail));
         }
+    }
+
+    /// <summary>
+    /// Gets how many of the ticks before one were played rather than watched: the tick less those a cutscene held. A race and the
+    /// boards count a run's time so, a scene watched to its end costing no more than one skipped.
+    /// </summary>
+    /// <param name="tick">The tick.</param>
+    /// <returns>The ticks played before it.</returns>
+    public int PlayTicksAt(int tick)
+    {
+        int watched = 0;
+        foreach ((int start, int end) in Cutscenes())
+        {
+            watched += Math.Max(0, Math.Min(end, tick) - start);
+        }
+
+        return tick - watched;
+    }
+
+    /// <summary>Gets the tick on which as many ticks had been played as given: the inverse of <see cref="PlayTicksAt"/>.</summary>
+    /// <param name="played">The ticks played.</param>
+    /// <returns>The tick; one a cutscene never let go of is where it began.</returns>
+    public int TickAtPlay(int played)
+    {
+        int tick = Math.Max(0, played);
+        foreach ((int start, int end) in Cutscenes())
+        {
+            if (start > tick)
+            {
+                break;
+            }
+
+            if (end == int.MaxValue)
+            {
+                return start;
+            }
+
+            tick += end - start;
+        }
+
+        return tick;
+    }
+
+    // The spans of ticks cutscenes held, each from the tick it began to the tick it ended; one not ended runs on.
+    private List<(int Start, int End)> Cutscenes()
+    {
+        List<(int Start, int End)> spans = [];
+        int? began = null;
+        foreach (GhostEvent scene in _events)
+        {
+            if (scene.Kind != GhostEventKind.Cutscene)
+            {
+                continue;
+            }
+
+            if (scene.Detail != 0)
+            {
+                began ??= scene.Tick;
+            }
+            else if (began is { } start)
+            {
+                spans.Add((start, Math.Max(start, scene.Tick)));
+                began = null;
+            }
+        }
+
+        if (began is { } open)
+        {
+            spans.Add((open, int.MaxValue));
+        }
+
+        return spans;
     }
 
     /// <summary>The ticks the run's objectives were done on, in the order they were done: a race's splits.</summary>

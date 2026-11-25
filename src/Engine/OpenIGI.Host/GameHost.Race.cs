@@ -25,6 +25,9 @@ public sealed partial class GameHost
     // How the race on this level stands, the player's own run's track it reads the splits from, how many splits were last shown
     // and when the newest was reached, by the host's clock.
     private RaceClock? _raceClock;
+
+    // The ticks of the race's level the player has played, those a cutscene held left out.
+    private int _racePlayed;
     private GhostTrack? _raceRun;
     private int _raceSplitsSeen;
     private long _raceSplitAt;
@@ -99,6 +102,7 @@ public sealed partial class GameHost
         {
             _raceLoad = _levelLoads;
             _raceClock = run.Ghost is { } ghost ? new RaceClock(ghost) : null;
+            _racePlayed = 0;
             _raceRun = null;
             _raceSplitsSeen = 0;
         }
@@ -172,14 +176,20 @@ public sealed partial class GameHost
             return;
         }
 
-        Game.Multiplayer.ReplicatedHuman? frame = ghost.At(Math.Min(tick, ghost.Length - 1));
+        // Both runs timed in the ticks they played: the ghost waits out the player's cutscenes where its runner's own began.
+        if (!CutscenePlaying)
+        {
+            _racePlayed++;
+        }
+
+        Game.Multiplayer.ReplicatedHuman? frame = ghost.At(Math.Min(ghost.TickAtPlay(_racePlayed), ghost.Length - 1));
         _soldiers?.FollowGhost(frame);
         _titleFeatures?.Ghost?.FollowGhost(frame);
 
         // Where the player stands against the ghost's route, and the run whose objectives are the player's splits.
         if (GhostSource()?.GhostFrame() is { } player)
         {
-            _raceClock?.Ran(tick, player);
+            _raceClock?.Ran(_racePlayed, player);
         }
 
         _raceRun ??= _run is not null && _runLoad == _levelLoads ? _runGhost : null;

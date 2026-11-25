@@ -37,10 +37,12 @@ public sealed class RaceClock(GhostTrack ghost)
     public double? DeltaSeconds { get; private set; }
 
     /// <summary>Takes where the player stands after a tick.</summary>
-    /// <param name="tick">The tick.</param>
+    /// <param name="played">The ticks the player has played, those a cutscene held left out (<see cref="GhostTrack.PlayTicksAt"/>).</param>
     /// <param name="runner">The player's body, as a ghost of them would be recorded.</param>
-    public void Ran(int tick, in ReplicatedHuman runner)
+    /// <remarks>Both runs are timed in the ticks they played: a scene one watched longer than the other puts neither behind.</remarks>
+    public void Ran(int played, in ReplicatedHuman runner)
     {
+        int tick = _ghost.TickAtPlay(played);
         if (_ghost.Length == 0)
         {
             DeltaSeconds = null;
@@ -62,13 +64,13 @@ public sealed class RaceClock(GhostTrack ghost)
 
         _offSince = -1;
         _matched = found;
-        DeltaSeconds = (tick - found) / (double)Scoring.MissionScore.TicksPerSecond;
+        DeltaSeconds = (played - _ghost.PlayTicksAt(found)) / (double)Scoring.MissionScore.TicksPerSecond;
     }
 
     /// <summary>The splits of a race: each objective both runs did, in the order the player did them, and the finish where both completed.</summary>
     /// <param name="player">The player's own run as its ghost is recorded, with what happened along it.</param>
     /// <param name="ghost">The ghost's track.</param>
-    /// <returns>Each split's objective slot (or -1 for the finish), the player's tick and the ghost's.</returns>
+    /// <returns>Each split's objective slot (or -1 for the finish), and the ticks the player and the ghost had played by it.</returns>
     public static IReadOnlyList<(int Slot, int Tick, int GhostTick)> Splits(GhostTrack player, GhostTrack ghost)
     {
         ArgumentNullException.ThrowIfNull(player);
@@ -80,13 +82,13 @@ public sealed class RaceClock(GhostTrack ghost)
             int at = theirs.ToList().FindIndex(s => s.Slot == slot);
             if (at >= 0)
             {
-                splits.Add((slot, tick, theirs[at].Tick));
+                splits.Add((slot, player.PlayTicksAt(tick), ghost.PlayTicksAt(theirs[at].Tick)));
             }
         }
 
         if (Finish(player) is { } ours && Finish(ghost) is { } ghosts)
         {
-            splits.Add((-1, ours, ghosts));
+            splits.Add((-1, player.PlayTicksAt(ours), ghost.PlayTicksAt(ghosts)));
         }
 
         return splits;

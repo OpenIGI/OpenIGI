@@ -41,6 +41,9 @@ public sealed partial class GameHost
 
     // The run's runner as a race against it shows it, and the session's events it was wired to hear.
     private GhostTrack? _runGhost;
+
+    // Whether a cutscene held the level's last tick, and which level that was.
+    private (int Load, bool Playing) _sceneHeld = (-1, false);
     private Engine.Events.GameEvents? _runEventsHeard;
 
     /// <summary>
@@ -214,16 +217,34 @@ public sealed partial class GameHost
 
     // Something the run's ghost marks, on the tick it happened: the run being recorded's, or the replay being played's, the first
     // time its level runs the tick.
-    private void RunEvent(GhostEventKind kind, int detail)
+    private void RunEvent(GhostEventKind kind, int detail) => RunEventAt(TickOfLevel, kind, detail);
+
+    private void RunEventAt(int tick, GhostEventKind kind, int detail)
     {
         if (_run is not null && _runLoad == _levelLoads)
         {
-            _runGhost?.Event(TickOfLevel, kind, detail);
+            _runGhost?.Event(tick, kind, detail);
         }
 
-        if (_playback is not null && _playbackLoad == _levelLoads && _playbackGhost is { } ghost && TickOfLevel >= ghost.Length - 1)
+        if (_playback is not null && _playbackLoad == _levelLoads && _playbackGhost is { } ghost && tick >= ghost.Length - 1)
         {
-            ghost.Event(TickOfLevel, kind, detail);
+            ghost.Event(tick, kind, detail);
+        }
+    }
+
+    /// <summary>Gets whether a cutscene holds the level: the host's own, or the title's.</summary>
+    private bool CutscenePlaying => _mission.Scenes?.IsPlaying == true || TitlePlayer?.IsCutscenePlaying == true;
+
+    // After one of the level's ticks: a cutscene begun or ended on it marked on the run's ghost, so a race and the boards time the
+    // run without the ticks it held.
+    private void CutsceneTicked(int tick)
+    {
+        bool playing = CutscenePlaying;
+        bool was = _sceneHeld.Load == _levelLoads && _sceneHeld.Playing;
+        _sceneHeld = (_levelLoads, playing);
+        if (playing != was)
+        {
+            RunEventAt(tick, GhostEventKind.Cutscene, playing ? 1 : 0);
         }
     }
 

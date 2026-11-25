@@ -57,7 +57,11 @@ public sealed partial class GameHost
 
         _followedScene = followed;
 
-        bool completed = _cutsceneSkip.Update(hostCutscene || titleCutscene, held, seconds);
+        // A race skips every scene it may as it begins: both runs are timed without them, and the ghost's runner is away already.
+        bool playing = hostCutscene || titleCutscene;
+        bool completed = Racing && playing && !_cutsceneSkip.Breaking
+            ? _cutsceneSkip.BreakNow()
+            : _cutsceneSkip.Update(playing, held, seconds);
         if (!hostCutscene)
         {
             return;

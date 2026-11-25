@@ -37,6 +37,18 @@ internal sealed class CutsceneSkipHold
     /// <summary>Gets whether the hold has completed and the cutscene playing is to break.</summary>
     public bool Breaking { get; private set; }
 
+    /// <summary>Breaks the cutscene playing at once, with no hold: one a race skips for the player.</summary>
+    /// <returns><see langword="true"/>, as on the frame a hold completes.</returns>
+    public bool BreakNow()
+    {
+        _wasPlaying = true;
+        _sinceActive = 0f;
+        Progress = 1f;
+        Breaking = true;
+        _mustRelease = true;
+        return true;
+    }
+
     /// <summary>Advances the hold by a frame.</summary>
     /// <param name="playing">Whether a cutscene the player could skip is playing.</param>
     /// <param name="held">Whether the break key is down.</param>
