@@ -97,10 +97,10 @@ public sealed class ReplaysScreen : ShellScreen
     {
         ArgumentNullException.ThrowIfNull(nav);
 
-        // Back is to the campaign page this was opened from, not the home page.
+        // Back is to the campaign page this was opened from, on its mission, not the home page.
         if (nav.Back)
         {
-            Context.Stack.Pop();
+            Context.Stack.Reset(new CampaignScreen(Context, _mission.Id));
             return false;
         }
 

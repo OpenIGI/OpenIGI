@@ -66,12 +66,21 @@ public sealed class CampaignScreen : ShellScreen
     private int _selected = -1;
     private int _shown;
 
+    // The mission the page opens on, by its id: the one a page opened from it was of; else the one the profile is up to.
+    private readonly int? _opensOn;
+
     /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
     public CampaignScreen(ShellContext context)
         : base(context)
     {
     }
+
+    /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class, open on one mission.</summary>
+    /// <param name="context">The shared shell context.</param>
+    /// <param name="missionId">The mission it opens on.</param>
+    public CampaignScreen(ShellContext context, int missionId)
+        : base(context) => _opensOn = missionId;
 
     /// <summary>Gets the index of the mission the list currently has selected.</summary>
     public int SelectedMission => Math.Max(0, _selected);
@@ -107,10 +116,12 @@ public sealed class CampaignScreen : ShellScreen
             };
         }
 
-        // The first time the page opens it lands on the mission the profile is up to, not on the first.
+        // The first time the page opens it lands on the mission it was opened on, else on the one the profile is up to, not on
+        // the first.
         if (_selected < 0)
         {
-            _selected = Math.Clamp(Frontier(), 0, _missions.Count - 1);
+            int opensOn = _opensOn is { } id ? _missions.FindIndex(m => m.Id == id) : -1;
+            _selected = Math.Clamp(opensOn >= 0 ? opensOn : Frontier(), 0, _missions.Count - 1);
             _shown = _selected;
         }
 
@@ -259,7 +270,8 @@ public sealed class CampaignScreen : ShellScreen
                 HorizontalAlignment = HorizontalAlignment.Left,
                 FieldWidth = compact ? 80f : 110f,
             };
-            _replaysRow.Activated += _ => Context.Stack.Push(new ReplaysScreen(Context, replays, _missions[Math.Clamp(_shown, 0, _missions.Count - 1)]));
+            // A page of its own, in this one's place as every page goes: pushed over it, this page was drawn on under it.
+            _replaysRow.Activated += _ => Context.Stack.Reset(new ReplaysScreen(Context, replays, _missions[Math.Clamp(_shown, 0, _missions.Count - 1)]));
             _replaysRow.SecondActivated += _ =>
             {
                 if (_raceBest is { } best)
