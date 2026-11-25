@@ -6,96 +6,102 @@ using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.UI.Kit.Leaderboards;
 
-/// <summary>Where a ranked row's columns stand, in pixels.</summary>
-/// <param name="Rank">The place's left edge.</param>
-/// <param name="Avatar">The picture's left edge.</param>
-/// <param name="Name">The name's left edge.</param>
-/// <param name="NameWidth">The name's room.</param>
-/// <param name="MetricRight">The metric's right edge, which its figure is set against.</param>
-/// <param name="Kda">The kills, deaths and assists' left edge.</param>
-/// <param name="WinRate">The win rate's left edge.</param>
+/// <summary>Where a board row's columns stand across it, in pixels: each column's left edge and its width.</summary>
+/// <param name="Rank">The place's left.</param>
+/// <param name="Week">The week's movement's left.</param>
+/// <param name="Player">The player's mark's left.</param>
+/// <param name="PlayerWidth">The player's column's width.</param>
+/// <param name="Metric">The metric's column's left.</param>
+/// <param name="MetricWidth">The metric's column's width; its figure stands at its right.</param>
+/// <param name="Kda">The kills / deaths / assists column's left.</param>
+/// <param name="KdaWidth">Its width; the figures stand at its right.</param>
+/// <param name="WinRate">The win rate's left.</param>
 /// <param name="MatchesRight">The matches' right edge.</param>
-public readonly record struct BoardColumnPlaces(float Rank, float Avatar, float Name, float NameWidth, float MetricRight, float Kda, float WinRate, float MatchesRight);
+public readonly record struct BoardColumnPlaces(float Rank, float Week, float Player, float PlayerWidth, float Metric, float MetricWidth, float Kda, float KdaWidth, float WinRate, float MatchesRight);
 
 /// <summary>
-/// The leaderboard's columns, shared by its heading and its rows so the two line up: the place, the player's picture and name
-/// taking what room is left, then the metric ranked by, the kills / deaths / assists, the win rate and the matches.
+/// The columns of a board's rows, shared by the rows and their headings so each figure stands under its heading: the place, the
+/// week's movement, the player, the metric ranked by (with a bar of its share of the leader's), their kills / deaths / assists, a
+/// bar of the matches they won and how many they played. On a phone: the place, the movement, the player, the share won and
+/// the metric.
 /// </summary>
 public static class BoardColumns
 {
-    /// <summary>The room left of the place, in design units.</summary>
-    public const float PadLeft = 18f;
+    /// <summary>The padding either side of a row, in design units.</summary>
+    public const float Pad = 16f;
 
-    /// <summary>The room right of the matches, in design units.</summary>
-    public const float PadRight = 20f;
-
-    /// <summary>The room between two columns, in design units.</summary>
-    public const float Gap = 18f;
+    /// <summary>The gap between columns, in design units.</summary>
+    public const float Gap = 16f;
 
     /// <summary>The place's column, in design units.</summary>
-    public const float RankWidth = 44f;
+    public const float RankWidth = 56f;
 
-    /// <summary>The picture's side, in design units.</summary>
-    public const float AvatarSize = 36f;
+    /// <summary>The week's movement's column, in design units.</summary>
+    public const float WeekWidth = 64f;
 
     /// <summary>The metric's column, in design units.</summary>
-    public const float MetricWidth = 110f;
+    public const float MetricWidth = 190f;
 
-    /// <summary>The kills / deaths / assists' column, in design units.</summary>
-    public const float KdaWidth = 150f;
+    /// <summary>The kills / deaths / assists column, in design units.</summary>
+    public const float KdaWidth = 170f;
 
     /// <summary>The win rate's column, in design units.</summary>
     public const float WinRateWidth = 150f;
 
     /// <summary>The matches' column, in design units.</summary>
-    public const float MatchesWidth = 84f;
+    public const float MatchesWidth = 80f;
 
-    /// <summary>The win rate's bar, in design units.</summary>
-    public const float BarWidth = 84f;
+    /// <summary>The width of a share bar under a row's metric, in design units.</summary>
+    public const float MetricBarWidth = 120f;
 
-    /// <summary>Where each column stands across a row.</summary>
-    /// <param name="context">The layout context.</param>
+    /// <summary>The width of a row's win-rate bar, in design units.</summary>
+    public const float WinBarWidth = 64f;
+
+    /// <summary>Lays a row's columns across it.</summary>
+    /// <param name="context">The layout.</param>
     /// <param name="bounds">The row.</param>
-    /// <returns>The columns' places, in pixels.</returns>
+    /// <returns>Where each column stands.</returns>
     public static BoardColumnPlaces Lay(LayoutContext context, UiRect bounds)
     {
         ArgumentNullException.ThrowIfNull(context);
         float gap = context.Px(Gap);
-        float matchesRight = bounds.Right - context.Px(PadRight);
+        float right = bounds.Right - context.Px(Pad);
+        float matchesRight = right;
         float winRate = matchesRight - context.Px(MatchesWidth) - gap - context.Px(WinRateWidth);
         float kda = winRate - gap - context.Px(KdaWidth);
-        float metricRight = kda - gap;
-        float rank = bounds.X + context.Px(PadLeft);
-        float avatar = rank + context.Px(RankWidth);
-        float name = avatar + context.Px(AvatarSize) + context.Px(14f);
-        float nameWidth = MathF.Max(0f, metricRight - context.Px(MetricWidth) - gap - name);
-        return new BoardColumnPlaces(rank, avatar, name, nameWidth, metricRight, kda, winRate, matchesRight);
+        float metric = kda - gap - context.Px(MetricWidth);
+        float rank = bounds.X + context.Px(Pad);
+        float week = rank + context.Px(RankWidth) + gap;
+        float player = week + context.Px(WeekWidth) + gap;
+        return new BoardColumnPlaces(rank, week, player, MathF.Max(0f, metric - gap - player), metric, context.Px(MetricWidth), kda, context.Px(KdaWidth), winRate, matchesRight);
     }
 
-    /// <summary>The headings over the ranked rows, lined up with them.</summary>
+    /// <summary>A board's headings, in the columns its rows lay.</summary>
     /// <param name="theme">The theme.</param>
-    /// <param name="metric">The metric's name, for its column.</param>
-    /// <param name="compact">Whether the rows are the narrow ones, which head only the place, the player and the metric.</param>
-    /// <returns>The heading.</returns>
-    public static UiElement Header(UiTheme theme, string metric, bool compact) => new Heading(theme, metric, compact);
+    /// <param name="metric">The metric ranked by, which names its column.</param>
+    /// <param name="size">How much room the page has.</param>
+    /// <param name="weekly">Whether the board keeps the week's movement, which heads its column.</param>
+    /// <returns>The headings.</returns>
+    public static UiElement Header(UiTheme theme, string metric, BoardSize size, bool weekly) => new Heading(theme, metric, size, weekly);
 
-    /// <summary>Draws a row's kills / deaths / assists, the slashes quiet.</summary>
+    /// <summary>Draws kills / deaths / assists, the slashes between them quieter.</summary>
     /// <param name="painter">The painter.</param>
     /// <param name="theme">The theme.</param>
-    /// <param name="topLeft">Where the text starts, in pixels.</param>
-    /// <param name="size">The text's size, in pixels.</param>
+    /// <param name="topLeft">Where, in pixels.</param>
+    /// <param name="size">The size, in pixels.</param>
     /// <param name="kills">The kills.</param>
     /// <param name="deaths">The deaths.</param>
     /// <param name="assists">The assists.</param>
     /// <param name="appear">How far it has faded in.</param>
-    /// <returns>Where the text ended.</returns>
-    public static float DrawKda(UiPainter painter, UiTheme theme, UiVec2 topLeft, float size, int kills, int deaths, int assists, float appear = 1f)
+    /// <param name="figureInk">The figures' colour; the theme's text when null.</param>
+    /// <returns>Where it ends, across.</returns>
+    public static float DrawKda(UiPainter painter, UiTheme theme, UiVec2 topLeft, float size, int kills, int deaths, int assists, float appear = 1f, Bgra32? figureInk = null)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(theme);
         float x = topLeft.X;
-        Bgra32 figure = UiPalette.Fade(theme.Text, appear);
-        Bgra32 slash = UiPalette.Fade(theme.TextDim, appear);
+        Bgra32 figure = UiPalette.Fade(figureInk ?? theme.Text, appear);
+        Bgra32 slash = UiPalette.Fade(theme.TextMuted, appear);
         string[] parts = [LeaderboardMetric.Count(kills), " / ", LeaderboardMetric.Count(deaths), " / ", LeaderboardMetric.Count(assists)];
         for (int i = 0; i < parts.Length; i++)
         {
@@ -105,20 +111,20 @@ public static class BoardColumns
         return x;
     }
 
-    /// <summary>Measures a row's kills / deaths / assists as <see cref="DrawKda"/> draws them.</summary>
+    /// <summary>Measures <see cref="DrawKda"/>.</summary>
     /// <param name="theme">The theme.</param>
-    /// <param name="size">The text's size, in pixels.</param>
+    /// <param name="size">The size, in pixels.</param>
     /// <param name="kills">The kills.</param>
     /// <param name="deaths">The deaths.</param>
     /// <param name="assists">The assists.</param>
-    /// <returns>The width, in pixels.</returns>
+    /// <returns>Its width, in pixels.</returns>
     public static float MeasureKda(UiTheme theme, float size, int kills, int deaths, int assists)
     {
         ArgumentNullException.ThrowIfNull(theme);
         return theme.Mono.MeasureWidth(KdaText(kills, deaths, assists), size);
     }
 
-    /// <summary>A row's kills / deaths / assists as plain text.</summary>
+    /// <summary>Kills / deaths / assists as text.</summary>
     /// <param name="kills">The kills.</param>
     /// <param name="deaths">The deaths.</param>
     /// <param name="assists">The assists.</param>
@@ -126,86 +132,99 @@ public static class BoardColumns
     public static string KdaText(int kills, int deaths, int assists) =>
         $"{LeaderboardMetric.Count(kills)} / {LeaderboardMetric.Count(deaths)} / {LeaderboardMetric.Count(assists)}";
 
-    /// <summary>A share as said: <c>63%</c>.</summary>
+    /// <summary>A share as a whole percentage.</summary>
     /// <param name="share">The share, nought to one.</param>
     /// <returns>The text.</returns>
     public static string Percent(double share) => string.Create(CultureInfo.InvariantCulture, $"{Math.Round(share * 100):0}%");
 
-    /// <summary>Draws a bar filled to a share: a quiet track and the accent over it.</summary>
-    /// <param name="painter">The painter.</param>
-    /// <param name="theme">The theme.</param>
-    /// <param name="box">The track, in pixels.</param>
-    /// <param name="share">The share, nought to one.</param>
-    /// <param name="appear">How far it has faded in.</param>
-    public static void DrawBar(UiPainter painter, UiTheme theme, UiRect box, double share, float appear = 1f)
+    /// <summary>A row's figure in a metric, as a share of the leader's: how far its bar runs.</summary>
+    /// <param name="metric">The metric.</param>
+    /// <param name="row">The row.</param>
+    /// <param name="leader">The leader's row.</param>
+    /// <returns>The share, nought to one.</returns>
+    public static double ShareOf(LeaderboardMetric metric, BoardRow row, BoardRow? leader)
     {
-        ArgumentNullException.ThrowIfNull(painter);
-        ArgumentNullException.ThrowIfNull(theme);
-        painter.FillRect(box, UiPalette.Fade(theme.Track, appear));
-        float fill = box.Width * (float)Math.Clamp(share, 0d, 1d);
-        if (fill > 0f)
+        ArgumentNullException.ThrowIfNull(metric);
+        ArgumentNullException.ThrowIfNull(row);
+        if (leader is null)
         {
-            painter.FillRect(new UiRect(box.X, box.Y, fill, box.Height), UiPalette.Fade(theme.Accent, appear));
+            return 0d;
         }
-    }
 
-    /// <summary>Draws a small outlined tag, such as a row's DISCORD or YOU.</summary>
-    /// <param name="painter">The painter.</param>
-    /// <param name="theme">The theme.</param>
-    /// <param name="left">Its left edge, in pixels.</param>
-    /// <param name="middle">The line it sits on the middle of, in pixels.</param>
-    /// <param name="text">What it says, in capitals.</param>
-    /// <param name="colour">Its colour.</param>
-    /// <returns>Its right edge.</returns>
-    public static float DrawTag(UiPainter painter, UiTheme theme, float left, float middle, string text, Bgra32 colour)
-    {
-        ArgumentNullException.ThrowIfNull(painter);
-        ArgumentNullException.ThrowIfNull(theme);
-        LayoutContext context = painter.Context;
-        float size = context.Px(11f);
-        float width = UiPainter.MeasureLabel(theme.Heading, text, size, 0.12f) + context.Px(12f);
-        var box = new UiRect(left, middle - context.Px(10f), width, context.Px(20f));
-        painter.StrokeRect(box, context.Px(1f), colour);
-        painter.DrawLabel(theme.Heading, text, new UiVec2(box.X + context.Px(6f), UiRowStyle.CapsCenterY(theme.Heading, size, box)), size, colour, 0.12f);
-        return box.Right;
+        double Value(BoardRow r) => metric.Id switch
+        {
+            "kd" => r.Kd,
+            "kills" => r.Kills,
+            "assists" => r.Assists,
+            "wins" => r.Wins,
+            "matches" => r.Matches,
+            _ => r.Score,
+        };
+
+        double top = Value(leader);
+        return top > 0d ? Math.Clamp(Value(row) / top, 0d, 1d) : 0d;
     }
 
     // The headings, in the columns the rows lay.
-    private sealed class Heading(UiTheme theme, string metric, bool compact) : UiElement
+    private sealed class Heading(UiTheme theme, string metric, BoardSize size, bool weekly) : UiElement
     {
-        private const float TextSize = 13f;
-        private const float Tracking = 0.14f;
-
-        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(36f));
+        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(28f));
 
         protected override void OnDraw(UiPainter painter)
         {
             LayoutContext context = painter.Context;
-            float size = context.Px(TextSize);
-            float y = UiRowStyle.CapsCenterY(theme.Heading, size, Bounds);
+            float px = context.Px(11f);
+            float y = UiRowStyle.CapsCenterY(theme.Mono, px, Bounds);
             Bgra32 ink = theme.TextMuted;
-            void Left(string text, float x) => painter.DrawLabel(theme.Heading, text, new UiVec2(x, y), size, ink, Tracking);
-            void Right(string text, float right) => Left(text, right - UiPainter.MeasureLabel(theme.Heading, text, size, Tracking));
+            void Left(string text, float x) => BoardLook.Caption(painter, theme, text, new UiVec2(x, y), 11f, ink);
+            void Right(string text, float right) => Left(text, right - BoardLook.CaptionWidth(context, theme, text, 11f));
 
-            string label = metric.ToUpperInvariant();
-            if (compact)
+            if (size == BoardSize.Compact)
             {
-                Left("#", Bounds.X + context.Px(14f));
-                Left("PLAYER", Bounds.X + context.Px(14f + 34f + 34f + 12f));
-                Right(label, Bounds.Right - context.Px(16f));
+                CompactColumns at = CompactColumns.Lay(context, Bounds);
+                Left("#", at.Rank);
+                Left("Player", at.Player);
+                Right("Win", at.WinRight);
+                Right(metric, Bounds.Right - context.Px(Pad));
             }
             else
             {
                 BoardColumnPlaces at = Lay(context, Bounds);
                 Left("#", at.Rank);
-                Left("PLAYER", at.Avatar);
-                Right(label, at.MetricRight);
-                Left("K / D / A", at.Kda);
-                Left("WIN RATE", at.WinRate);
-                Right("MATCHES", at.MatchesRight);
+                if (weekly)
+                {
+                    Left("Week", at.Week);
+                }
+
+                Left("Player", at.Player);
+                Right(metric, at.Metric + at.MetricWidth);
+                Right("K / D / A", at.Kda + at.KdaWidth);
+                Left("Win rate", at.WinRate);
+                Right("Matches", at.MatchesRight);
             }
 
-            painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.1f));
+            painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.22f));
         }
+    }
+}
+
+/// <summary>Where a phone's board row's columns stand: the place, the movement, the player, the share won, the metric.</summary>
+/// <param name="Rank">The place's left.</param>
+/// <param name="Week">The movement's left.</param>
+/// <param name="Player">The player's mark's left.</param>
+/// <param name="WinRight">The share won's right edge.</param>
+public readonly record struct CompactColumns(float Rank, float Week, float Player, float WinRight)
+{
+    /// <summary>Lays a phone's row.</summary>
+    /// <param name="context">The layout.</param>
+    /// <param name="bounds">The row.</param>
+    /// <returns>Where each column stands.</returns>
+    public static CompactColumns Lay(LayoutContext context, UiRect bounds)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        float rank = bounds.X + context.Px(14f);
+        float week = rank + context.Px(30f);
+        float player = week + context.Px(40f);
+        return new CompactColumns(rank, week, player, bounds.Right - context.Px(BoardColumns.Pad + 72f));
     }
 }

@@ -68,6 +68,9 @@ public class TabStrip : Control
     /// <remarks>Off for a strip that sits on a panel of its own, where the block and the captions are enough.</remarks>
     public bool ShowTray { get; set; } = true;
 
+    /// <summary>Gets or sets a value indicating whether the tray is edged in the accent: the switch a page's sections hang from.</summary>
+    public bool Accented { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the segments share the whole width given, each the same.</summary>
     /// <remarks>On a narrow page the strip is the page's width, and five segments a thumb wide beat five as wide as their words.</remarks>
     public bool Stretch { get; set; }
@@ -277,7 +280,7 @@ public class TabStrip : Control
         if (ShowTray)
         {
             painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(Theme.Large ? (byte)140 : (byte)153), appear));
-            Bgra32 edge = Theme.Large ? UiPalette.White(0.28f) : Theme.Border;
+            Bgra32 edge = Accented ? Theme.Accent : Theme.Large ? UiPalette.White(0.28f) : Theme.Border;
             painter.StrokeRect(Bounds, context.Px(Theme.Large && focus > 0.5f ? 2f : 1f), UiPalette.Fade(Interpolate.Lerp(edge, Theme.Large ? Theme.AccentHover : UiPalette.AccentAt(0.45f), focus), appear));
         }
 

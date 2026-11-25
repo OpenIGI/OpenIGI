@@ -24,7 +24,7 @@ public sealed class LeaderboardScreenTests : ShellTestHarness
         Assert.Equal(9, screen.Root.Descendants().OfType<RankRow>().Count(row => row.Visibility == Visibility.Visible && !row.IsYou));
 
         // The player's own row, outside the top, pinned under the list.
-        Assert.Contains(screen.Root.Descendants().OfType<RankRow>(), row => row.IsYou && row.Row.Rank == 212);
+        Assert.Contains(screen.Root.Descendants().OfType<YourPlaceRow>(), row => row.State == YourPlaceState.Placed && row.Players == 1480);
     }
 
     [Fact]
@@ -76,6 +76,6 @@ public sealed class LeaderboardScreenTests : ShellTestHarness
         Pump(shell);
 
         Assert.Empty(screen.Root!.Descendants().OfType<PodiumCard>());
-        Assert.Contains(screen.Root.Descendants().OfType<OpenIGI.UI.Widgets.Label>(), label => label.Text.Contains("CAN'T BE REACHED", StringComparison.Ordinal));
+        Assert.Contains(screen.Root.Descendants().OfType<BoardMessage>(), message => message.Headline.Contains("can't be reached", StringComparison.Ordinal));
     }
 }

@@ -1,7 +1,6 @@
 using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Releases.Accounts;
-using OpenIGI.UI.Animation;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -9,9 +8,11 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.UI.Kit.Leaderboards;
 
 /// <summary>
-/// One row of a mission board, in the matches board's look: the place, the player's mark and name, their figure -- a time, or a
-/// rank and its time, or an overall total -- and, where the run's replay is kept, WATCH and RACE beside it. Enter watches; a
-/// pointer watches or races by the button it presses; the page binds a key to <see cref="Race"/>.
+/// One row of a mission board: the place in its medal's colour, the player's mark and name (WORLD RECORD after the first's, YOU
+/// after the player's own), the time, the gap to the first, the rank the run earned as stripes and a name, the server's check,
+/// and -- where its replay is kept -- RACE and WATCH; NO REPLAY where it isn't. The overall board's rows give each player's total
+/// and how many missions it is of. Enter watches, a pointer watches or races by the button it presses, and the page binds a key
+/// to <see cref="Race"/>.
 /// </summary>
 public sealed class MissionRow : Control
 {
@@ -19,9 +20,9 @@ public sealed class MissionRow : Control
     private readonly string _metric;
     private readonly bool _overall;
     private readonly int _difficulty;
+    private readonly RowButtonFeedback _feedback = new();
     private UiRect? _watch;
     private UiRect? _race;
-    private readonly RowButtonFeedback _feedback = new();
 
     /// <summary>Initializes a new instance of the <see cref="MissionRow"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -54,11 +55,29 @@ public sealed class MissionRow : Control
     /// <summary>Gets whether its run can be reported: a mission's row, of another player's run.</summary>
     public bool CanReport => !_overall && !IsYou && _row.Run is not null;
 
-    /// <summary>Gets or sets whether it is laid out for a narrow page.</summary>
-    public bool Compact { get; set; }
+    /// <summary>Gets or sets how much room the page has.</summary>
+    public BoardSize Size { get; set; }
+
+    /// <summary>Gets or sets the first row's time, which the gap is from; null where there is none.</summary>
+    public int? Leader { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether it is pinned under the board as the player's best: two deep, washed.</summary>
+    public bool Pinned { get; set; }
 
     /// <summary>Gets whether its run can be watched and raced: a mission's row whose replay is kept.</summary>
     public bool HasReplay => !_overall && _row.Replay && _row.Run is not null;
+
+    private bool Compact => Size == BoardSize.Compact;
+
+    /// <summary>A time in ticks as a mission's clock shows it: 5:04.0.</summary>
+    /// <param name="ticks">The ticks.</param>
+    /// <returns>The time.</returns>
+    public static string Time(int ticks)
+    {
+        double seconds = Math.Max(0, ticks) / 30.0;
+        int minutes = (int)(seconds / 60.0);
+        return string.Create(CultureInfo.InvariantCulture, $"{minutes}:{seconds - (minutes * 60):00.0}");
+    }
 
     /// <summary>Races the row's run, where it can be.</summary>
     public void Race()
@@ -83,20 +102,7 @@ public sealed class MissionRow : Control
             return;
         }
 
-        if (_watch is { } watch && watch.Contains(point))
-        {
-            base.ActivateAt(point);
-        }
-    }
-
-    /// <summary>A time as a board shows it: minutes, seconds and tenths.</summary>
-    /// <param name="ticks">The ticks, thirty a second.</param>
-    /// <returns>The time.</returns>
-    public static string Time(int ticks)
-    {
-        double seconds = Math.Max(0, ticks) / 30.0;
-        int minutes = (int)(seconds / 60.0);
-        return string.Create(CultureInfo.InvariantCulture, $"{minutes}:{seconds - (minutes * 60):00.0}");
+        base.ActivateAt(point);
     }
 
     /// <inheritdoc/>
@@ -128,117 +134,270 @@ public sealed class MissionRow : Control
     }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(Compact ? 52f : 58f));
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(Pinned ? 58f : Compact ? 45f : 45f));
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
-        float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
         UiRect bounds = Bounds;
-        if (IsYou)
+        if (Pinned)
         {
-            painter.FillRect(bounds, UiPalette.AccentAt(0.12f * appear));
+            Span<Drawing.UiGradientStop> stops = [new(0f, UiPalette.AccentAt(0.2f * appear)), new(0.6f, UiPalette.AccentAt(0.06f * appear)), new(1f, Bgra32.FromRgba(17, 18, 19, (byte)(235f * appear)))];
+            painter.FillGradient(bounds, stops, Drawing.UiGradientDirection.Horizontal);
+            painter.StrokeRect(bounds, context.Px(1f), UiPalette.AccentAt(0.45f * appear));
             painter.FillRect(new UiRect(bounds.X, bounds.Y, context.Px(4f), bounds.Height), UiPalette.Fade(Theme.Accent, appear));
         }
-
-        if (hot > 0.001f)
+        else if (IsYou)
         {
-            painter.FillRect(bounds, UiPalette.White(0.06f * hot * appear));
+            painter.FillRect(bounds, UiPalette.AccentAt(0.1f * appear));
+            painter.FillRect(new UiRect(bounds.X, bounds.Y, context.Px(3f), bounds.Height), UiPalette.Fade(Theme.Accent, appear));
         }
 
-        if (Visual.Focus > 0.001f)
+        BoardLook.Lit(painter, Theme, bounds, Visual.Focus, IsPointerOver, appear);
+        if (!Pinned)
         {
-            painter.StrokeRect(bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
+            painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.1f * appear));
         }
 
-        painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.07f * appear));
-
-        float pad = context.Px(Compact ? 10f : 18f);
+        MissionColumns cols = MissionColumns.Lay(context, bounds, Size);
         float mid = bounds.Center.Y;
-        float small = context.Px(Compact ? 13f : 14f);
-        float nameSize = context.Px(Compact ? 15f : 17f);
-        float figureSize = context.Px(Compact ? 17f : 20f);
+        Bgra32 medal = _row.Place <= 3 ? BoardLook.Medal(Theme, _row.Place) : Theme.TextBright;
+        bool first = _row.Place == 1;
 
-        // The place, medal-coloured for the top three.
-        string place = string.Create(CultureInfo.InvariantCulture, $"#{_row.Place}");
-        Bgra32 placeInk = _row.Place <= 3 ? PodiumCard.MedalColour(Theme, _row.Place) : Theme.TextSecondary;
-        float x = bounds.X + pad;
-        painter.DrawText(Theme.Mono, place, new UiVec2(x, UiRowStyle.CenterY(Theme.Mono, small, bounds)), small, UiPalette.Fade(placeInk, appear));
-        x += context.Px(Compact ? 44f : 60f);
+        // The place.
+        float placeSize = context.Px(Pinned ? 20f : 15f);
+        painter.DrawText(Theme.Mono, LeaderboardMetric.Count(_row.Place), new UiVec2(cols.Rank, UiRowStyle.CenterY(Theme.Mono, placeSize, bounds)), placeSize, UiPalette.Fade(Pinned ? Theme.Accent : _row.Place > 20 ? Theme.TextMuted : medal, appear));
 
-        // The buttons at the right, where the run can be watched and raced.
-        float right = bounds.Right - pad;
-        _watch = null;
-        _race = null;
-        // A mission's rows keep the buttons' room whether or not their replay is kept, so every figure stands in one column.
-        if (!_overall)
+        // The buttons, or why there are none; then the check, the rank, the gap and the time, right to left.
+        DrawButtons(painter, cols, appear);
+        if (!_overall && !Compact)
         {
-            float height = context.Px(Compact ? 28f : 32f);
-            float top = mid - (height * 0.5f);
-            float labelSize = context.Px(Compact ? 13f : 14f);
-            UiRect Button(string caption, bool lead)
-            {
-                float width = UiPainter.MeasureLabel(Theme.Heading, caption, labelSize, 0.16f) + context.Px(22f);
-                UiRect box = new(right - width, top, width, height);
-                right = box.X - context.Px(8f);
-                if (!HasReplay)
-                {
-                    return box;
-                }
-
-                Bgra32 border = _feedback.Tint(lead ? Interpolate.Lerp(UiPalette.White(0.18f), Theme.Accent, hot) : UiPalette.White(0.18f), Theme, box);
-                Bgra32 ink = _feedback.Tint(lead ? Interpolate.Lerp(Theme.Text, Theme.Accent, hot) : Theme.Text, Theme, box);
-                _feedback.DrawFill(painter, Theme, box, appear);
-                painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(border, appear));
-                painter.DrawLabel(Theme.Heading, caption, new UiVec2(box.X + context.Px(11f), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, box)), labelSize, UiPalette.Fade(ink, appear), 0.16f);
-                return box;
-            }
-
-            UiRect watch = Button("WATCH", lead: true);
-            UiRect race = Button("RACE", lead: false);
-            if (HasReplay)
-            {
-                (_watch, _race) = (watch, race);
-            }
-
-            right -= context.Px(10f);
+            float tick = context.Px(14f);
+            BoardLook.Icon(painter, KitIcon.Check, new UiVec2(cols.Check + (tick / 2f), mid), tick, UiPalette.Fade(Theme.Success, appear));
+            painter.DrawText(Theme.Mono, "OK", new UiVec2(cols.Check + tick + context.Px(5f), UiRowStyle.CenterY(Theme.Mono, context.Px(10f), bounds)), context.Px(10f), UiPalette.Fade(Theme.Success, appear));
         }
 
-        // The figure, at the right of the room left: the time, a rank and its time, or an overall total.
-        (string figure, string? under) = Figure();
-        float figureWidth = UiPainter.MeasureLabel(Theme.Display, figure, figureSize, 0.02f);
-        painter.DrawLabel(Theme.Display, figure, new UiVec2(right - figureWidth, UiRowStyle.CapsCenterY(Theme.Display, figureSize, bounds) - (under is null ? 0f : context.Px(7f))), figureSize, UiPalette.Fade(Theme.Text, appear), 0.02f);
-        if (under is not null)
+        if (!Compact)
         {
-            float underWidth = UiPainter.MeasureLabel(Theme.Mono, under, small, 0f);
-            painter.DrawText(Theme.Mono, under, new UiVec2(right - underWidth, mid + context.Px(4f)), small, UiPalette.Fade(Theme.TextMuted, appear));
+            if (_overall)
+            {
+                string missions = _metric == "rank"
+                    ? string.Create(CultureInfo.InvariantCulture, $"{_row.Points:N0} points")
+                    : "Every mission";
+                painter.DrawText(Theme.Mono, missions, new UiVec2(cols.Rank2, UiRowStyle.CenterY(Theme.Mono, context.Px(12f), bounds)), context.Px(12f), UiPalette.Fade(Theme.TextSecondary, appear));
+            }
+            else
+            {
+                int lit = BoardLook.StripesLit(_row.Rank, OpenIGI.Core.Titles.GameTitle.RanksPerDifficulty);
+                string rank = OpenIGI.Core.Titles.GameTitle.RankName(_row.Rank, _difficulty) ?? "No rank";
+                BoardLook.Stripes(painter, Theme, cols.Rank2, mid, lit, rank, 12f, Theme.TextSecondary, appear);
+            }
         }
 
-        right -= MathF.Max(figureWidth, context.Px(70f)) + context.Px(18f);
+        float timeSize = context.Px(Pinned ? 18f : 16f);
+        Bgra32 timeInk = first ? BoardLook.Gold : IsYou || Pinned ? Theme.Accent : Theme.TextBright;
+        BoardLook.Right(painter, Theme.Mono, Time(_row.Ticks), cols.TimeRight, UiRowStyle.CenterY(Theme.Mono, timeSize, bounds), timeSize, UiPalette.Fade(timeInk, appear));
+        float gapSize = context.Px(12f);
+        string gap = first ? "WR" : Leader is { } leader ? SplitsBar.Delta(_row.Ticks - leader) : string.Empty;
+        BoardLook.Right(painter, Theme.Mono, gap, cols.GapRight, UiRowStyle.CenterY(Theme.Mono, gapSize, bounds), gapSize, UiPalette.Fade(first ? BoardLook.Gold : Theme.TextSecondary, appear));
+        if (Compact && !_overall)
+        {
+            float tick = context.Px(13f);
+            BoardLook.Icon(painter, KitIcon.Check, new UiVec2(cols.Check + (tick / 2f), mid), tick, UiPalette.Fade(Theme.Success, appear));
+        }
 
-        // The player: their mark and name in the room between.
-        float side = context.Px(Compact ? 28f : 34f);
-        KitDraw.PlayerMark(painter, Theme, new UiRect(x, mid - (side / 2f), side, side), _row.Name, null, signedIn: true, appear);
-        x += side + context.Px(12f);
-        string tag = IsYou ? "  ·  YOU" : Reported ? "  ·  REPORTED" : string.Empty;
-        string name = Theme.BodyStrong.Fit(_row.Name + tag, nameSize, MathF.Max(0f, right - x));
-        painter.DrawText(Theme.BodyStrong, name, new UiVec2(x, UiRowStyle.CenterY(Theme.BodyStrong, nameSize, bounds)), nameSize, UiPalette.Fade(Theme.Text, appear));
+        // The player: the mark, the name, and its tags.
+        float side = context.Px(Pinned ? 34f : 30f);
+        var mark = new UiRect(cols.Player, mid - (side / 2f), side, side);
+        BoardLook.Mark(painter, Theme, mark, _row.Name, null, _row.Place <= 3 ? medal : Theme.Accent, 1.5f, appear);
+        float x = mark.Right + context.Px(12f);
+        float nameSize = context.Px(15f);
+        float room = MathF.Max(0f, cols.PlayerRight - x);
+        if (Pinned)
+        {
+            float eyebrow = context.Px(10f);
+            float top = mid - ((eyebrow + context.Px(5f) + Theme.BodyStrong.LineHeight(context.Px(17f))) / 2f);
+            BoardLook.Caption(painter, Theme, Compact ? "Your best" : "Your best · always shown", new UiVec2(x, top), 10f, UiPalette.Fade(Theme.Accent, appear));
+            float nameTop = top + eyebrow + context.Px(5f);
+            float end = painter.DrawText(Theme.BodyStrong, Theme.BodyStrong.Fit(_row.Name, context.Px(17f), room), new UiVec2(x, nameTop), context.Px(17f), UiPalette.Fade(Theme.TextBright, appear)).X;
+            BoardLook.You(painter, Theme, end + context.Px(8f), nameTop + (Theme.BodyStrong.LineHeight(context.Px(17f)) / 2f), appear);
+            return;
+        }
+
+        string tag = first && !_overall ? "World record" : IsYou ? "You" : Reported ? "Reported" : string.Empty;
+        float tagWidth = tag.Length > 0 && !Compact ? BoardLook.TagWidth(context, Theme, tag) + context.Px(10f) : 0f;
+        float nameEnd = painter.DrawText(Theme.BodyStrong, Theme.BodyStrong.Fit(_row.Name, nameSize, room - tagWidth), new UiVec2(x, UiRowStyle.CenterY(Theme.BodyStrong, nameSize, bounds)), nameSize, UiPalette.Fade(Theme.TextBright, appear)).X;
+        if (tagWidth > 0f)
+        {
+            if (tag == "World record")
+            {
+                Bgra32 gold = UiPalette.Fade(BoardLook.Gold, appear);
+                BoardLook.Tag(painter, Theme, nameEnd + context.Px(10f), mid, tag, UiPalette.Fade(BoardLook.OnAccent, appear), gold, gold);
+            }
+            else if (IsYou)
+            {
+                BoardLook.You(painter, Theme, nameEnd + context.Px(10f), mid, appear);
+            }
+            else
+            {
+                BoardLook.Tag(painter, Theme, nameEnd + context.Px(10f), mid, tag, UiPalette.Fade(Theme.TextMuted, appear), UiPalette.White(0.22f * appear));
+            }
+        }
     }
 
-    // What the row's figure says, and the smaller line under it.
-    private (string Figure, string? Under) Figure()
+    // RACE and WATCH where the replay is kept; on the row with the keys, RACE is solid and both say their keys.
+    private void DrawButtons(UiPainter painter, MissionColumns cols, float appear)
     {
+        LayoutContext context = painter.Context;
+        UiRect bounds = Bounds;
+        float mid = bounds.Center.Y;
+        _watch = null;
+        _race = null;
         if (_overall)
         {
-            return _metric == "rank"
-                ? (string.Create(CultureInfo.InvariantCulture, $"{_row.Points} PTS"), Time(_row.Ticks))
-                : (Time(_row.Ticks), null);
+            return;
         }
 
-        // The rank by its name, as the mission's own screen gives it: IGI Operative, not the second of Hard's three.
-        string rank = (OpenIGI.Core.Titles.GameTitle.RankName(_row.Rank, _difficulty) ?? "No rank").ToUpperInvariant();
-        return _metric == "rank" ? (rank, Time(_row.Ticks)) : (Time(_row.Ticks), rank);
+        if (!HasReplay)
+        {
+            if (!Compact)
+            {
+                float px = context.Px(11f);
+                BoardLook.Right(painter, Theme.Mono, Pinned ? "No replay kept below #20" : "No replay · top 20 only", cols.ButtonsRight, UiRowStyle.CenterY(Theme.Mono, px, bounds), px, UiPalette.Fade(Theme.TextMuted, appear));
+            }
+
+            return;
+        }
+
+        bool lit = Visual.Focus > 0.5f;
+        float height = context.Px(34f);
+        float watchWidth = context.Px(Compact ? 92f : 122f);
+        float raceWidth = context.Px(Compact ? 84f : 108f);
+        var watch = new UiRect(cols.ButtonsRight - watchWidth, mid - (height / 2f), watchWidth, height);
+        var race = new UiRect(watch.X - context.Px(8f) - raceWidth, watch.Y, raceWidth, height);
+        float captionSize = context.Px(13f);
+
+        // RACE: solid on the lit row, else outlined in the accent.
+        if (lit)
+        {
+            painter.FillRect(race, UiPalette.Fade(Theme.Accent, appear));
+        }
+        else
+        {
+            painter.FillRect(race, UiPalette.AccentAt(0.08f * appear));
+            painter.StrokeRect(race, context.Px(1f), UiPalette.AccentAt(0.55f * appear));
+        }
+
+        _feedback.DrawFill(painter, Theme, race, appear);
+
+        Bgra32 raceInk = UiPalette.Fade(lit ? BoardLook.OnAccent : Theme.TextBright, appear);
+        DrawButton(painter, race, "RACE", KitIcon.Play, lit && !Compact ? "R" : string.Empty, captionSize, raceInk, lit, appear);
+
+        // WATCH: outlined, brighter on the lit row.
+        painter.FillRect(watch, Bgra32.FromRgba(10, 11, 12, (byte)(153f * appear)));
+        _feedback.DrawFill(painter, Theme, watch, appear);
+        painter.StrokeRect(watch, context.Px(1f), lit ? UiPalette.Fade(Theme.TextBright, appear) : UiPalette.White(0.22f * appear));
+        DrawButton(painter, watch, "WATCH", KitIcon.Eye, lit && !Compact ? "Enter" : string.Empty, captionSize, UiPalette.Fade(Theme.TextBright, appear), onAccent: false, appear);
+        (_watch, _race) = (watch, race);
+    }
+
+    private void DrawButton(UiPainter painter, UiRect box, string caption, KitIcon icon, string key, float captionSize, Bgra32 ink, bool onAccent, float appear)
+    {
+        LayoutContext context = painter.Context;
+        float iconSize = context.Px(13f);
+        float captionWidth = UiPainter.MeasureLabel(Theme.Heading, caption, captionSize, 0.12f);
+        float keyWidth = key.Length > 0 ? BoardLook.KeyWidth(context, Theme, key) + context.Px(8f) : 0f;
+        float width = iconSize + context.Px(8f) + captionWidth + keyWidth;
+        float x = box.Center.X - (width / 2f);
+        BoardLook.Icon(painter, icon, new UiVec2(x + (iconSize / 2f), box.Center.Y), iconSize, ink);
+        x += iconSize + context.Px(8f);
+        float end = painter.DrawLabel(Theme.Heading, caption, new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Heading, captionSize, box)), captionSize, ink, 0.12f).X;
+        if (key.Length > 0)
+        {
+            BoardLook.Key(painter, Theme, key, end + context.Px(8f), box.Center.Y, onAccent, appear);
+        }
+    }
+}
+
+/// <summary>
+/// Where a mission board row's columns stand: the place, the player, the time, the gap, the rank earned, the check and the
+/// buttons. On a phone the rank earned goes, and the check stands after the name.
+/// </summary>
+/// <param name="Rank">The place's left.</param>
+/// <param name="Player">The player's mark's left.</param>
+/// <param name="PlayerRight">The player's column's right.</param>
+/// <param name="TimeRight">The time's right.</param>
+/// <param name="GapRight">The gap's right.</param>
+/// <param name="Rank2">The rank earned's left.</param>
+/// <param name="Check">The check's left.</param>
+/// <param name="ButtonsRight">The buttons' right.</param>
+public readonly record struct MissionColumns(float Rank, float Player, float PlayerRight, float TimeRight, float GapRight, float Rank2, float Check, float ButtonsRight)
+{
+    /// <summary>Lays a row's columns: 58, the player, 120, 96, 190, 108 and 236 across on a monitor.</summary>
+    /// <param name="context">The layout.</param>
+    /// <param name="bounds">The row.</param>
+    /// <param name="size">How much room the page has.</param>
+    /// <returns>Where each column stands.</returns>
+    public static MissionColumns Lay(LayoutContext context, UiRect bounds, BoardSize size)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        float gap = context.Px(16f);
+        float pad = context.Px(16f);
+        float left = bounds.X + pad;
+        float right = bounds.Right - pad;
+        if (size == BoardSize.Compact)
+        {
+            float buttons = right;
+            float gapRight = buttons - context.Px(92f + 8f + 84f) - gap;
+            float time = gapRight - context.Px(58f) - context.Px(8f);
+            float check = time - context.Px(80f) - context.Px(10f);
+            return new MissionColumns(left, left + context.Px(34f), check - gap, time, gapRight, 0f, check, buttons);
+        }
+
+        float buttonsRight = right;
+        float check2 = buttonsRight - context.Px(236f) - gap - context.Px(108f);
+        float rank = check2 - gap - context.Px(190f);
+        float gapRight2 = rank - gap;
+        float timeRight = gapRight2 - context.Px(96f) - gap;
+        float player = left + context.Px(58f) + gap;
+        return new MissionColumns(left, player, timeRight - context.Px(120f) - gap, timeRight, gapRight2, rank, check2, buttonsRight);
+    }
+
+    /// <summary>A mission board's headings, in the columns its rows lay.</summary>
+    /// <param name="theme">The theme.</param>
+    /// <param name="size">How much room the page has.</param>
+    /// <param name="overall">Whether the board is every mission's together.</param>
+    /// <returns>The headings.</returns>
+    public static UiElement Header(UiTheme theme, BoardSize size, bool overall) => new Heading(theme, size, overall);
+
+    private sealed class Heading(UiTheme theme, BoardSize size, bool overall) : UiElement
+    {
+        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(28f));
+
+        protected override void OnDraw(UiPainter painter)
+        {
+            LayoutContext context = painter.Context;
+            MissionColumns at = Lay(context, Bounds, size);
+            float y = UiRowStyle.CapsCenterY(theme.Mono, context.Px(11f), Bounds);
+            void Left(string text, float x) => BoardLook.Caption(painter, theme, text, new UiVec2(x, y), 11f, theme.TextMuted);
+            void Right(string text, float right) => Left(text, right - BoardLook.CaptionWidth(context, theme, text, 11f));
+            Left("#", at.Rank);
+            Left("Player", at.Player);
+            Right(overall ? "Total" : "Time", at.TimeRight);
+            Right("Gap", at.GapRight);
+            if (size != BoardSize.Compact)
+            {
+                Left(overall ? "Board" : "Rank earned", at.Rank2);
+                if (!overall)
+                {
+                    Left("Check", at.Check);
+                    Right("Ghost · replay", at.ButtonsRight);
+                }
+            }
+
+            painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.22f));
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Releases.Accounts;
 using OpenIGI.UI.Drawing;
@@ -7,9 +8,11 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.UI.Kit.Leaderboards;
 
 /// <summary>
-/// One of a board's top three, as a card on its podium: the place in its medal's colour, the player's picture large, their
-/// name, the metric ranked by as the card's big figure, and under it their kills / deaths / assists and the share they won.
-/// The first stands taller than the two beside it. Pressed, it opens their record.
+/// One of a board's top three, as a card on its podium: lit from the top in its medal's colour with its place's numeral large
+/// behind it; the place, the Discord tag and the week's movement along the top; the player's mark and name, and the metric ranked
+/// by as the card's big figure; their kills / deaths / assists, the share they won and the matches they played under. The first
+/// stands taller than the two beside it. On a phone it is a short card in a column: the place, the mark, the name over the
+/// figure. Pressed, it opens their record.
 /// </summary>
 public sealed class PodiumCard : Control
 {
@@ -38,103 +41,167 @@ public sealed class PodiumCard : Control
     /// <summary>Gets or sets a value indicating whether the card is the player's own.</summary>
     public bool IsYou { get; set; }
 
-    /// <summary>Gets or sets a value indicating whether the cards are the small ones of a narrow page.</summary>
-    public bool Compact { get; set; }
+    /// <summary>Gets or sets a value indicating whether the player is new on the board this week.</summary>
+    public bool IsNew { get; set; }
 
-    /// <summary>A place's medal colour: gold, silver, bronze.</summary>
-    /// <param name="theme">The theme.</param>
-    /// <param name="rank">The place.</param>
-    /// <returns>The colour; the theme's quiet text past the third.</returns>
-    public static Bgra32 MedalColour(UiTheme theme, int rank)
-    {
-        ArgumentNullException.ThrowIfNull(theme);
-        return rank switch
+    /// <summary>Gets or sets how much room the page has.</summary>
+    public BoardSize Size { get; set; }
+
+    private bool Compact => Size == BoardSize.Compact;
+
+    /// <summary>The height a place's card stands, in design units.</summary>
+    /// <param name="place">The place.</param>
+    /// <param name="size">The page's room.</param>
+    /// <returns>The height.</returns>
+    public static float HeightOf(int place, BoardSize size) => size == BoardSize.Compact
+        ? 62f
+        : place switch
         {
-            1 => theme.Accent,
-            2 => Bgra32.FromRgb(196, 202, 208),
-            3 => Bgra32.FromRgb(205, 133, 72),
-            _ => theme.TextMuted,
+            1 => 200f,
+            2 => 184f,
+            _ => 176f,
         };
-    }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
-    {
-        float tall = Compact ? 164f : 236f;
-        float height = _row.Rank == 1 ? tall : tall - (Compact ? 20f : 32f);
-        return new UiVec2(available.X, context.Px(height));
-    }
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(available.X, context.Px(HeightOf(_row.Rank, Size)));
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
+        if (Compact)
+        {
+            DrawCompact(painter);
+            return;
+        }
+
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
-        float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
         UiRect bounds = Bounds;
-        Bgra32 medal = MedalColour(Theme, _row.Rank);
+        Bgra32 medal = BoardLook.Medal(Theme, _row.Rank);
+        bool first = _row.Rank == 1;
 
-        // The card: dark glass, lit from the top in its medal's colour, the colour along its top edge.
-        Span<UiGradientStop> stops = [new(0f, medal.WithAlpha((byte)(46f * appear))), new(0.6f, UiPalette.InkAt(0.82f * appear)), new(1f, UiPalette.InkAt(0.9f * appear))];
+        // The card: lit from the top in its medal's colour, the colour along its top, its place's numeral large behind.
+        if (first)
+        {
+            BoardLook.Glow(painter, bounds, medal, 40f, 0.12f * appear);
+        }
+
+        Span<UiGradientStop> stops =
+        [
+            new(0f, medal.WithAlpha((byte)((first ? 51f : 33f) * appear))),
+            new(0.72f, Bgra32.FromRgba(17, 18, 19, (byte)(235f * appear))),
+            new(1f, Bgra32.FromRgba(17, 18, 19, (byte)(235f * appear))),
+        ];
         painter.FillGradient(bounds, stops, UiGradientDirection.Vertical);
+        painter.PushClip(bounds);
+        string numeral = _row.Rank.ToString(CultureInfo.InvariantCulture);
+        float numeralSize = context.Px(first ? 210f : _row.Rank == 2 ? 193f : 184f);
+        float numeralWidth = Theme.Display.MeasureWidth(numeral, numeralSize);
+        painter.DrawText(Theme.Display, numeral, new UiVec2(bounds.Right - context.Px(10f) - numeralWidth, bounds.Bottom - (numeralSize * 0.74f)), numeralSize, medal.WithAlpha((byte)(20f * appear)));
+        painter.PopClip();
+        painter.StrokeRect(bounds, context.Px(1f), medal.WithAlpha((byte)(89f * appear)));
         painter.FillRect(new UiRect(bounds.X, bounds.Y, bounds.Width, context.Px(3f)), UiPalette.Fade(medal, appear));
-        painter.StrokeRect(bounds, context.Px(1f), UiPalette.Fade(IsYou ? Theme.Accent : UiPalette.White(0.1f), appear));
-        if (hot > 0.001f)
+        BoardLook.Lit(painter, Theme, bounds, Visual.Focus, IsPointerOver, appear);
+
+        float padX = context.Px(22f);
+        float padY = context.Px(18f);
+        float left = bounds.X + padX;
+        float right = bounds.Right - padX;
+
+        // The top: the place, its ordinal, the Discord tag and the week's movement.
+        float topMid = bounds.Y + padY + context.Px(12f);
+        float placeSize = context.Px(22f);
+        float x = painter.DrawLabel(Theme.Display, $"#{_row.Rank}", new UiVec2(left, UiRowStyle.CapsCenterY(Theme.Display, placeSize, Band(topMid, placeSize))), placeSize, UiPalette.Fade(medal, appear), 0.04f).X;
+        x += context.Px(10f);
+        float ordinalSize = context.Px(10f);
+        x = painter.DrawLabel(Theme.Mono, Ordinal(_row.Rank), new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Mono, ordinalSize, Band(topMid, ordinalSize))), ordinalSize, UiPalette.Fade(medal, appear), BoardLook.CaptionTracking).X;
+        if (_row.Account is not null)
         {
-            painter.FillRect(bounds, UiPalette.White(0.05f * hot * appear));
+            x = BoardLook.Discord(painter, Theme, x + context.Px(10f), topMid, appear);
         }
 
-        if (Visual.Focus > 0.001f)
-        {
-            painter.StrokeRect(bounds, context.Px(2f), UiPalette.Fade(Theme.AccentHover, Visual.Focus * appear));
-        }
-
-        float pad = context.Px(Compact ? 10f : 20f);
-        float placeSize = context.Px(Compact ? 16f : 22f);
-        painter.DrawText(Theme.Mono, $"#{_row.Rank}", new UiVec2(bounds.X + pad, bounds.Y + pad), placeSize, UiPalette.Fade(medal, appear));
         if (IsYou)
         {
-            float youSize = context.Px(11f);
-            float youWidth = UiPainter.MeasureLabel(Theme.Heading, "YOU", youSize, 0.12f) + context.Px(12f);
-            BoardColumns.DrawTag(painter, Theme, bounds.Right - pad - youWidth, bounds.Y + pad + (placeSize / 2f), "YOU", UiPalette.Fade(Theme.Accent, appear));
+            BoardLook.You(painter, Theme, x + context.Px(8f), topMid, appear);
         }
 
-        // From the bottom up: the line, the figure, the name, and the picture over them, in the middle.
-        float lineSize = context.Px(Compact ? 11f : 14f);
-        float figureSize = context.Px(Compact ? 26f : 44f);
-        float nameSize = context.Px(Compact ? 14f : 19f);
-        float y = bounds.Bottom - pad - Theme.Mono.LineHeight(lineSize);
-        string line = Compact
-            ? BoardColumns.Percent(_row.WinRate) + " won"
-            : $"{BoardColumns.KdaText(_row.Kills, _row.Deaths, _row.Assists)}  ·  {BoardColumns.Percent(_row.WinRate)} won";
-        Centred(painter, Theme.Mono, Theme.Mono.Fit(line, lineSize, bounds.Width - (2f * pad)), y, lineSize, Theme.TextMuted, appear);
+        float moveWidth = MovementWidth(context);
+        BoardLook.Movement(painter, Theme, right - moveWidth, topMid, _row.Climbed, IsNew, 13f, appear);
 
-        y -= figureSize * 0.82f + context.Px(Compact ? 4f : 8f);
+        // The middle: the mark and the name; the figure at the right with the metric under it.
+        float side = context.Px(first ? 68f : 56f);
+        float middle = bounds.Center.Y + context.Px(first ? 2f : 0f);
+        var mark = new UiRect(left, middle - (side / 2f), side, side);
+        BoardLook.Mark(painter, Theme, mark, _row.Name, _avatar(_row.Account?.Avatar), medal, 2f, appear);
+
+        float figureSize = context.Px(first ? 44f : 36f);
         string figure = _metric.Figure(_row);
-        float labelSize = context.Px(Compact ? 10f : 12f);
+        float figureWidth = Theme.Mono.MeasureWidth(figure, figureSize);
+        float labelSize = context.Px(10f);
+        float blockHeight = (figureSize * 0.9f) + context.Px(4f) + labelSize;
+        float figureTop = middle - (blockHeight / 2f) - (figureSize * 0.12f);
+        painter.DrawText(Theme.Mono, figure, new UiVec2(right - figureWidth, figureTop), figureSize, UiPalette.Fade(first ? BoardLook.Gold : Theme.TextBright, appear));
         string label = _metric.Label.ToUpperInvariant();
-        float figureWidth = Theme.Display.MeasureWidth(figure, figureSize);
-        float labelWidth = UiPainter.MeasureLabel(Theme.Heading, label, labelSize, 0.14f);
-        float gap = context.Px(8f);
-        float start = bounds.Center.X - ((figureWidth + gap + labelWidth) / 2f);
-        var figureBox = new UiRect(start, y, figureWidth, figureSize * 0.74f);
-        painter.DrawText(Theme.Display, figure, new UiVec2(start, UiRowStyle.CapsCenterY(Theme.Display, figureSize, figureBox)), figureSize, UiPalette.Fade(_row.Rank == 1 ? Theme.Accent : Theme.TextBright, appear));
-        painter.DrawLabel(Theme.Heading, label, new UiVec2(start + figureWidth + gap, figureBox.Bottom - (labelSize * 0.72f)), labelSize, UiPalette.Fade(Theme.TextMuted, appear), 0.14f);
+        painter.DrawLabel(Theme.Mono, label, new UiVec2(right - BoardLook.CaptionWidth(context, Theme, label, 10f), middle + (blockHeight / 2f) - labelSize), labelSize, UiPalette.Fade(Theme.TextSecondary, appear), BoardLook.CaptionTracking);
 
-        y -= Theme.BodyStrong.LineHeight(nameSize) + context.Px(Compact ? 2f : 6f);
-        Centred(painter, Theme.BodyStrong, Theme.BodyStrong.Fit(_row.Name, nameSize, bounds.Width - (2f * pad)), y, nameSize, Theme.Text, appear);
+        float nameSize = context.Px(first ? 30f : 26f);
+        float nameLeft = mark.Right + context.Px(16f);
+        float nameRoom = MathF.Max(0f, right - figureWidth - context.Px(16f) - nameLeft);
+        string name = Theme.Display.Fit(_row.Name.ToUpperInvariant(), nameSize, nameRoom);
+        painter.DrawLabel(Theme.Display, name, new UiVec2(nameLeft, UiRowStyle.CapsCenterY(Theme.Display, nameSize, Band(middle, nameSize))), nameSize, UiPalette.Fade(Theme.TextBright, appear), 0.02f);
 
-        float room = y - (bounds.Y + pad + placeSize) - context.Px(Compact ? 4f : 12f);
-        float side = MathF.Min(context.Px(Compact ? 48f : 76f), room);
-        if (side > context.Px(16f))
-        {
-            var box = new UiRect(bounds.Center.X - (side / 2f), y - context.Px(Compact ? 4f : 12f) - side, side, side);
-            KitDraw.PlayerMark(painter, Theme, box, _row.Name, _avatar(_row.Account?.Avatar), _row.Account is not null, appear);
-            painter.StrokeRect(box, context.Px(2f), UiPalette.Fade(medal, appear));
-        }
+        // The bottom: kills / deaths / assists, the share won and the matches.
+        float lineSize = context.Px(13f);
+        float lineY = bounds.Bottom - padY - Theme.Mono.LineHeight(lineSize);
+        float after = BoardColumns.DrawKda(painter, Theme, new UiVec2(left, lineY), lineSize, _row.Kills, _row.Deaths, _row.Assists, appear, Theme.TextSecondary);
+        string tail = string.Create(CultureInfo.InvariantCulture, $"  ·  {BoardColumns.Percent(_row.WinRate)} won  ·  {_row.Matches:N0} matches");
+        painter.DrawText(Theme.Mono, Theme.Mono.Fit(tail, lineSize, MathF.Max(0f, right - after)), new UiVec2(after, lineY), lineSize, UiPalette.Fade(Theme.TextSecondary, appear));
     }
 
-    // A line set in the card's middle.
-    private void Centred(UiPainter painter, Text.UiFont font, string text, float y, float size, Bgra32 colour, float appear) =>
-        painter.DrawText(font, text, new UiVec2(Bounds.Center.X - (font.MeasureWidth(text, size) / 2f), y), size, UiPalette.Fade(colour, appear));
+    // A phone's card: the place large, the mark, the name over the figure.
+    private void DrawCompact(UiPainter painter)
+    {
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
+        UiRect bounds = Bounds;
+        Bgra32 medal = BoardLook.Medal(Theme, _row.Rank);
+        Span<UiGradientStop> stops = [new(0f, medal.WithAlpha((byte)(40f * appear))), new(1f, Bgra32.FromRgba(17, 18, 19, (byte)(235f * appear)))];
+        painter.FillGradient(bounds, stops, UiGradientDirection.Horizontal);
+        painter.StrokeRect(bounds, context.Px(1f), medal.WithAlpha((byte)(89f * appear)));
+        painter.FillRect(new UiRect(bounds.X, bounds.Y, context.Px(3f), bounds.Height), UiPalette.Fade(medal, appear));
+        BoardLook.Lit(painter, Theme, bounds, Visual.Focus, IsPointerOver, appear);
+
+        float mid = bounds.Center.Y;
+        float placeSize = context.Px(22f);
+        float x = bounds.X + context.Px(14f);
+        painter.DrawLabel(Theme.Display, _row.Rank.ToString(CultureInfo.InvariantCulture), new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Display, placeSize, bounds)), placeSize, UiPalette.Fade(medal, appear), 0f);
+        x += context.Px(28f);
+        float side = context.Px(32f);
+        var mark = new UiRect(x, mid - (side / 2f), side, side);
+        BoardLook.Mark(painter, Theme, mark, _row.Name, _avatar(_row.Account?.Avatar), medal, 1.5f, appear);
+        float left = mark.Right + context.Px(12f);
+        float room = MathF.Max(0f, bounds.Right - context.Px(10f) - left);
+        float nameSize = context.Px(15f);
+        float figureSize = context.Px(15f);
+        float top = mid - ((Theme.BodyStrong.LineHeight(nameSize) + Theme.Mono.LineHeight(figureSize)) / 2f);
+        painter.DrawText(Theme.BodyStrong, Theme.BodyStrong.Fit(_row.Name, nameSize, room), new UiVec2(left, top), nameSize, UiPalette.Fade(Theme.TextBright, appear));
+        painter.DrawText(Theme.Mono, _metric.Figure(_row), new UiVec2(left, top + Theme.BodyStrong.LineHeight(nameSize)), figureSize, UiPalette.Fade(_row.Rank == 1 ? BoardLook.Gold : Theme.Accent, appear));
+    }
+
+    private float MovementWidth(LayoutContext context) =>
+        IsNew
+            ? BoardLook.TagWidth(context, Theme, "New", 13f * 0.75f)
+            : _row.Climbed is { } moved
+                ? (moved == 0 ? 0f : context.Px(13f) * 0.62f) + context.Px(3f) + Theme.Mono.MeasureWidth(moved == 0 ? "—" : Math.Abs(moved).ToString("N0", CultureInfo.InvariantCulture), context.Px(13f))
+                : 0f;
+
+    private static UiRect Band(float middle, float size) => new(0f, middle - size, 0f, 2f * size);
+
+    private static string Ordinal(int place) => place switch
+    {
+        1 => "1ST",
+        2 => "2ND",
+        3 => "3RD",
+        _ => string.Create(CultureInfo.InvariantCulture, $"{place}TH"),
+    };
 }

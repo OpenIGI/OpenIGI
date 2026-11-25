@@ -106,6 +106,13 @@ public sealed class MissionBoardFeed(IRunBoardReader reader, string title, Func<
     /// <param name="metric">The metric, by id.</param>
     public void ShowMetric(string metric) => Set(() => Metric = Metrics.Contains(metric) ? metric : Metrics[0], Metric != metric);
 
+    /// <summary>Forgets the board shown, for it to be read again now.</summary>
+    public void Refresh()
+    {
+        _boards.Forget(Key);
+        Revision++;
+    }
+
     /// <summary>Takes in what has come back, and asks for the board shown where it is missing or old.</summary>
     /// <param name="watching">Whether the page is up: nothing is asked for while it isn't.</param>
     public void Update(bool watching)

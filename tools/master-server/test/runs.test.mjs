@@ -7,7 +7,7 @@
 // to look at is queued: a new first place, a run that reached the boards sooner than it takes to play, a run reported.
 import assert from "node:assert/strict";
 import { webcrypto as crypto } from "node:crypto";
-import { ACCOUNT_CAP, CLOCK_SLACK_MS, DAILY, KEPT, PENDING_MS, REPORTS_DAILY, Runs } from "../src/runs.js";
+import { ACCOUNT_CAP, CLOCK_SLACK_MS, DAILY, KEPT, PENDING_MS, REPORTS_DAILY, Runs, splitsOf } from "../src/runs.js";
 
 function fakeStorage() {
   const store = new Map();
@@ -155,9 +155,18 @@ assert.deepEqual(board.rows.map((r) => [r.ticks, r.run]), [[800, better.id]]);
 assert.equal((await ask(new Request(`https://master/v1/runs/${checked.id}`))).status, 404);
 assert.equal((await storage.get("bytes")), 1500);
 
-// A faster run of a lower rank: the player's time and rank rows are two runs, both kept.
+// A faster run of a lower rank: the player's time and rank rows are two runs, both kept. The checker's splits come with its row;
+// splits that are not the run's own (past its end, or falling) are not kept.
 assert.equal((await submit(players[0], 1, 700, 1)).status, 202);
-const faster = await check();
+const faster = await check(() => ({ splits: [120, 300, 650] }));
+assert.deepEqual(splitsOf({ score: { ticks: 700 }, splits: [100, 90] }), null);
+assert.deepEqual(splitsOf({ score: { ticks: 700 }, splits: [100, 701] }), null);
+assert.deepEqual(splitsOf({ score: { ticks: 700 } }), null);
+assert.deepEqual((await get("/v1/runs/board?title=igi1&mission=1&difficulty=2&ruleset=modern&metric=time")).rows[0].splits, [120, 300, 650]);
+
+// A player's bests name their place on each board and how many it ranks.
+const bests = await get(`/v1/players/${players[0].account.id}/runs?title=igi1`);
+assert.deepEqual(bests.map((b) => [b.mission, b.timePlace, b.bestPlace, b.players]), [[1, 1, 1, 1]]);
 const byRank = await get("/v1/runs/board?title=igi1&mission=1&difficulty=2&ruleset=modern&metric=rank");
 assert.deepEqual(byRank.rows.map((r) => [r.rank, r.run]), [[2, better.id]]);
 board = await get("/v1/runs/board?title=igi1&mission=1&difficulty=2&ruleset=modern&metric=time");

@@ -51,11 +51,13 @@ public sealed partial class GameHost
         }
 
         string title = _titleRuntime.Title.Id;
-        string key = string.Create(CultureInfo.InvariantCulture, $"{title}/{missionId}/{difficulty}/{rules.Id}");
+        string? you = _account is { State: AccountLinkState.Linked, Account: { } account } ? account.Id : null;
+        string key = string.Create(CultureInfo.InvariantCulture, $"{title}/{missionId}/{difficulty}/{rules.Id}/{you}");
         _missionRecords.Collect();
-        _missionRecords.Ask(key, () => RunsService.BoardAsync(title, missionId, difficulty, rules.Id, "time", null));
-        return _missionRecords.Get(key)?.Rows is [{ Replay: true, Run: { } run } best, ..]
-            ? new ShellRecord(run, best.Name, best.Ticks / 30.0, rules.Name)
+        _missionRecords.Ask(key, () => RunsService.BoardAsync(title, missionId, difficulty, rules.Id, "time", you));
+        RunBoard? board = _missionRecords.Get(key);
+        return board?.Rows is [{ Replay: true, Run: { } run } best, ..]
+            ? new ShellRecord(run, best.Name, best.Ticks / 30.0, rules.Name, board.You?.Ticks / 30.0, board.You?.Place, board.Players)
             : null;
     }
 

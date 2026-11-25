@@ -8,7 +8,11 @@
 //                                         season (this month, UTC), a month (2026-10) or all; metric score, kills, assists, wins,
 //                                         kd or matches; with how many are ranked (players), the seasons the game has had
 //                                         (seasons, newest first), and with you (an account's id or a key's) that player's own
-//                                         row and place wherever they stand, top fifty or not (you, null when unranked)
+//                                         row and place wherever they stand, top fifty or not (you, null when unranked), and the
+//                                         row just above theirs (ahead, null when they lead or are unranked). This season's and
+//                                         all time's rows each carry the place they held when the week began (was: null for one
+//                                         who was not on the board then), and the board says which week that is (week: its
+//                                         Monday, UTC, in Unix milliseconds; null for a season gone by)
 //   GET  /v1/players/<id>/stats?title=    one player's record in one game (a key's id or an account's): this season, all
 //                                         time, latest, and the medals earned (medals.js)
 //   GET  /internal/servers/<keyId>        a registered server by its key's id ({ name }), or 404: what marks a server
@@ -28,6 +32,10 @@
 //                           game (assists counted from the servers that report them; a total kept before has none, read as nought)
 //   last:<title>:<player>   the player's latest results in one game, their keys, newest first
 //   seasons:<title>         the seasons (yyyy-MM) a game has had a match in, newest first
+//   week:<title>:<period>:<metric>  { week, places: { <player>: place } }: the board as this week began (its Monday, UTC), for
+//                           each row's movement since; taken before the week's first match counts, or at the week's first read
+//                           when none has, and replaced the next week. A forgotten player's place lingers here until then: an
+//                           id and a number, never a name
 //   schema                  2 once the totals are kept by game, 3 once each game's seasons are listed (migrate)
 //
 // Each game is a board and a record of its own: Project I.G.I.'s and I.G.I. 2's matches never add up together.
@@ -46,6 +54,8 @@ const BOARD_SIZE = 50;
 const BOARD_SECONDS = 30;
 const TITLES = ["igi1", "igi2"];
 const METRICS = ["score", "kills", "assists", "wins", "kd", "matches"];
+const WEEK_PLACES = 5000;
+const DAY_MS = 24 * 3600 * 1000;
 
 // Storage takes at most this many keys in one put or delete.
 const BATCH = 128;
@@ -54,6 +64,7 @@ const BATCH = 128;
 const totKey = (title, period, player) => `tot:${title}:${period}:${player}`;
 const lastKey = (title, player) => `last:${title}:${player}`;
 const seasonsKey = (title) => `seasons:${title}`;
+const weekKey = (title, period, metric) => `week:${title}:${period}:${metric}`;
 
 // A list of seasons with one more in it, newest first, each once.
 const withSeason = (seasons, season) => [...new Set([season, ...(seasons ?? [])])].sort().reverse();
@@ -99,6 +110,13 @@ export function isStatsPath(pathname) {
 export function seasonOf(time) {
   const date = new Date(time);
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// The Monday (UTC) of the week a time falls in, in Unix milliseconds.
+export function weekOf(time) {
+  const day = Math.floor(time / DAY_MS);
+  // 1 January 1970 was a Thursday: day 0 is three days after a Monday.
+  return (day - ((day + 3) % 7)) * DAY_MS;
 }
 
 // A result's points for a player: a kill 10, an assist 5, an objective 25, a win 50.
@@ -181,6 +199,9 @@ export class Stats {
     const periods = [seasonOf(at), "all"];
     const counted = result.players.filter((line) => line.player);
     const title = result.title;
+
+    // The week's boards as they stood before its first match counts, for each row's movement since.
+    for (const period of periods) await this.holdWeek(title, period);
     const totals = await this.storage.get(counted.flatMap((line) => periods.map((period) => totKey(title, period, line.player))));
     const lasts = await this.storage.get(counted.map((line) => lastKey(title, line.player)));
     for (const line of counted) {
@@ -215,7 +236,7 @@ export class Stats {
       this.boards.set(cacheKey, cached);
     }
 
-    const { ranked, owners, seasons } = cached;
+    const { ranked, owners, seasons, week } = cached;
     const wanted = typeof you === "string" && you.length > 0 ? owners.get(you) ?? you : null;
     const mine = wanted === null ? null : ranked.find((row) => row.player === wanted) ?? null;
     return {
@@ -227,12 +248,56 @@ export class Stats {
       players: ranked.length,
       seasons,
       you: mine,
+      ahead: mine && mine.rank > 1 ? ranked[mine.rank - 2] : null,
+      week,
     };
+  }
+
+  // Whether a period's boards keep the week's movement: this season's and all time's, never a season gone by.
+  movesWeekly(period) {
+    return period === "all" || period === seasonOf(this.now());
+  }
+
+  // A period's boards as this week began, taken once a week: before its first match counts, or at its first read when none
+  // has (the boards then still stand as the week began). Each metric's board is its own.
+  async holdWeek(title, period) {
+    if (!this.movesWeekly(period)) return;
+    const week = weekOf(this.now());
+    const names = METRICS.map((metric) => weekKey(title, period, metric));
+    const held = await this.storage.get(names);
+    if (names.every((name) => held.get(name)?.week === week)) return;
+    const { rows } = await this.gather(title, period);
+    const writes = {};
+    for (const metric of METRICS) {
+      const places = {};
+      for (const row of order(rows, metric).slice(0, WEEK_PLACES)) places[row.player] = row.rank;
+      writes[weekKey(title, period, metric)] = { week, places };
+    }
+
+    await this.storage.put(writes);
   }
 
   // Every ranked player of one game in a period by a metric, best first, each numbered; which row each key counts under;
   // and the game's seasons (this one always among them).
   async rank(title, season, metric) {
+    const { rows, owners } = await this.gather(title, season);
+    const ranked = order(rows, metric);
+    const seasons = withSeason(await this.storage.get(seasonsKey(title)), seasonOf(this.now()));
+
+    // Each row's place as the week began, where the period keeps the week's movement.
+    let week = null;
+    if (this.movesWeekly(season)) {
+      await this.holdWeek(title, season);
+      const held = await this.storage.get(weekKey(title, season, metric));
+      week = held?.week ?? null;
+      for (const row of ranked) row.was = held?.places?.[row.player] ?? null;
+    }
+
+    return { ranked, owners, seasons, week };
+  }
+
+  // Every player of one game in a period, a linked account's keys together under its name; and which row each key counts under.
+  async gather(title, season) {
     const prefix = totKey(title, season, "");
     const totals = await this.storage.list({ prefix });
     const byPlayer = new Map([...totals].map(([name, total]) => [name.slice(prefix.length), total]));
@@ -251,14 +316,7 @@ export class Stats {
       owners.set(player, row.player);
     }
 
-    const ranked = [...rows.values()]
-      .map(finish)
-      .filter((row) => metric !== "kd" || row.matches >= MIN_KD_MATCHES)
-      .sort((a, b) => b[metric] - a[metric] || b.score - a.score || a.name.localeCompare(b.name))
-      .map((row, index) => ({ rank: index + 1, ...row }));
-
-    const seasons = withSeason(await this.storage.get(seasonsKey(title)), seasonOf(this.now()));
-    return { ranked, owners, seasons };
+    return { rows: [...rows.values()].map(finish), owners };
   }
 
   // One player's record in one game, by a key's id or an account's: this season, all time, and the latest results they were in.
@@ -485,6 +543,14 @@ export function checkResult(body) {
   });
 
   return { title: body.title, mode, map, seconds: body.seconds, winner: Number.isInteger(body.winner) ? body.winner : -1, players };
+}
+
+// Players' rows ranked by a metric, best first, each numbered (K/D only among those with enough matches for it to mean much).
+function order(rows, metric) {
+  return rows
+    .filter((row) => metric !== "kd" || row.matches >= MIN_KD_MATCHES)
+    .sort((a, b) => b[metric] - a[metric] || b.score - a.score || a.name.localeCompare(b.name))
+    .map((row, index) => ({ rank: index + 1, ...row }));
 }
 
 function zero() {

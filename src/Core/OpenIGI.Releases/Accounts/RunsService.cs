@@ -107,7 +107,56 @@ public sealed record RunStatus(
 /// <param name="Points">Their ranks' points over every mission, on the overall board by rank.</param>
 /// <param name="Run">The run, on a mission's board.</param>
 /// <param name="Replay">Whether its replay is kept to watch and race.</param>
-public sealed record RunBoardRow(int Place, string Account, string Name, int Ticks, int Rank = -1, int Points = 0, string? Run = null, bool Replay = false);
+/// <param name="Splits">The played ticks each objective was first done at, as the checker found them; null where it sent none.</param>
+public sealed record RunBoardRow(int Place, string Account, string Name, int Ticks, int Rank = -1, int Points = 0, string? Run = null, bool Replay = false, IReadOnlyList<int>? Splits = null);
+
+/// <summary>A player's best on one board, by one metric: the run, its time, its rank and its place there.</summary>
+/// <param name="Run">The run.</param>
+/// <param name="Ticks">Its time.</param>
+/// <param name="Rank">Its rank, on the best-rank board; -1 on the time board, which does not keep it.</param>
+/// <param name="At">When it was checked, in Unix milliseconds.</param>
+public sealed record RunBest(string Run, int Ticks, int Rank = -1, long At = 0);
+
+/// <summary>A player's bests on one mission's board: their fastest and their best rank, and their places there.</summary>
+/// <param name="Mission">The mission.</param>
+/// <param name="Difficulty">The difficulty.</param>
+/// <param name="Ruleset">The rules.</param>
+/// <param name="Time">Their fastest, or null.</param>
+/// <param name="Best">Their best rank, or null.</param>
+/// <param name="TimePlace">Their place by time, from one; null from an older master.</param>
+/// <param name="BestPlace">Their place by rank, from one; null from an older master.</param>
+/// <param name="Players">How many the board ranks; nought from an older master.</param>
+public sealed record PlayerBest(int Mission, int Difficulty, string Ruleset, RunBest? Time, RunBest? Best, int? TimePlace = null, int? BestPlace = null, int Players = 0);
+
+/// <summary>
+/// A player's standing on the single-player boards of one difficulty and rules: their bests mission by mission, and their row
+/// on the overall board (every mission together, by time), where they have run every mission.
+/// </summary>
+/// <param name="Difficulty">The difficulty.</param>
+/// <param name="Ruleset">The rules.</param>
+/// <param name="Missions">Their bests on that difficulty and those rules, by mission.</param>
+/// <param name="Overall">Their row on the overall board, or null.</param>
+public sealed record MissionStanding(int Difficulty, string Ruleset, IReadOnlyList<PlayerBest> Missions, RunBoardRow? Overall = null)
+{
+    /// <summary>
+    /// The difficulty and rules a player's standing is best shown at: those they have run the most missions on, the harder first,
+    /// then the classic rules; null where they have run none.
+    /// </summary>
+    /// <param name="bests">Their bests on every board.</param>
+    /// <returns>The difficulty and rules, or null.</returns>
+    public static (int Difficulty, string Ruleset)? Pick(IReadOnlyList<PlayerBest> bests)
+    {
+        ArgumentNullException.ThrowIfNull(bests);
+        return bests.Count == 0
+            ? null
+            : bests
+                .GroupBy(static best => (best.Difficulty, best.Ruleset))
+                .OrderByDescending(static group => group.Count())
+                .ThenByDescending(static group => group.Key.Difficulty)
+                .ThenBy(static group => group.Key.Ruleset == "classic" ? 0 : 1)
+                .First().Key;
+    }
+}
 
 /// <summary>One mission board, or the overall one.</summary>
 /// <param name="Title">The game.</param>
@@ -230,6 +279,20 @@ public sealed class RunsService(HttpClient http, Uri master)
         return await ReadAsync(response, RunsJsonContext.Default.RunBoard, cancel).ConfigureAwait(false);
     }
 
+    /// <summary>A player's bests in one game, board by board, each with its place there.</summary>
+    /// <param name="account">The player's account.</param>
+    /// <param name="title">The game.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>Their bests.</returns>
+    public async Task<IReadOnlyList<PlayerBest>> BestsAsync(string account, string title, CancellationToken cancel = default)
+    {
+        using HttpResponseMessage response = await http.GetAsync(
+            new Uri(master, $"/v1/players/{Uri.EscapeDataString(account)}/runs?title={Uri.EscapeDataString(title)}"),
+            cancel).ConfigureAwait(false);
+        await MasterAnswers.ThrowIfRefusedAsync(response, "runs", cancel).ConfigureAwait(false);
+        return await ReadAsync(response, RunsJsonContext.Default.IReadOnlyListPlayerBest, cancel).ConfigureAwait(false);
+    }
+
     /// <summary>Whether some text is a run's id as the master gives them: 32 lowercase hexadecimal digits.</summary>
     /// <param name="text">The text.</param>
     /// <returns>Whether it is.</returns>
@@ -262,4 +325,5 @@ public sealed class RunsService(HttpClient http, Uri master)
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(RunStatus))]
 [JsonSerializable(typeof(RunBoard))]
+[JsonSerializable(typeof(IReadOnlyList<PlayerBest>))]
 internal sealed partial class RunsJsonContext : JsonSerializerContext;

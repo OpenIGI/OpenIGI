@@ -229,7 +229,7 @@ public sealed class ShellPageShots
     }
 
     /// <summary>A mission's kept runs, for the replays page's picture: the best of each rules, a failure, one of another build.</summary>
-    private sealed class FakeReplays : IShellReplays
+    internal sealed class FakeReplays : IShellReplays
     {
         private static readonly DateTimeOffset Night = new(2026, 11, 24, 21, 40, 0, TimeSpan.Zero);
 
@@ -246,7 +246,7 @@ public sealed class ShellPageShots
 
         public string? Race(string id) => null;
 
-        public ShellRecord? RecordOf(int missionId, int difficulty) => new("0123456789abcdef0123456789abcdef", "Kestrel", 304.1, "Classic");
+        public ShellRecord? RecordOf(int missionId, int difficulty) => new("0123456789abcdef0123456789abcdef", "Kestrel", 304.1, "Classic", 316.9, 5, 312);
     }
 
     /// <summary>A handful of community maps, one installed and one with a newer version out, for the Maps page's picture.</summary>

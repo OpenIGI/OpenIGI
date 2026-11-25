@@ -26,7 +26,10 @@ public sealed record ShellReplay(
 /// <param name="Name">Who ran it.</param>
 /// <param name="Seconds">How long it took.</param>
 /// <param name="Rules">The rules of the board, by name.</param>
-public sealed record ShellRecord(string Run, string Name, double Seconds, string Rules);
+/// <param name="YourSeconds">The player's own best on the board, or null where they have none there.</param>
+/// <param name="YourPlace">Their place on it, or null.</param>
+/// <param name="Players">How many the board ranks.</param>
+public sealed record ShellRecord(string Run, string Name, double Seconds, string Rules, double? YourSeconds = null, int? YourPlace = null, int Players = 0);
 
 /// <summary>The player's own replays, for the menu: what it keeps of a mission, and watching one.</summary>
 public interface IShellReplays

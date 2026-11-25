@@ -44,6 +44,18 @@ internal sealed class FakeLeaderboard : ILeaderboardSource
 
     public void OpenLink(string url) => Opened.Add(url);
 
+    public string YourName => "Joe";
+
+    public bool SignedIn => SignInHint is null;
+
+    public bool CanFindMatch => true;
+
+    public bool CanOpenProfile => true;
+
+    public bool CanPlay => true;
+
+    public bool CanReport => true;
+
     /// <summary>A board of so many rows, best first by score.</summary>
     public static IReadOnlyList<BoardRow> Rows(int count) =>
     [
@@ -70,6 +82,8 @@ internal sealed class FakeBoardReader : ILeaderboardReader
 
     public bool Hold { get; set; }
 
+    public bool Unranked { get; set; }
+
     public Task<Leaderboard> BoardAsync(string title, string period, string metric, string? you, CancellationToken cancel)
     {
         if (Hold)
@@ -84,9 +98,14 @@ internal sealed class FakeBoardReader : ILeaderboardReader
 
         LeaderboardMetric by = LeaderboardMetric.Of(metric);
         List<BoardRow> rows = [.. FakeLeaderboard.Rows(RowCount).OrderByDescending(row => by.Id == "kd" ? row.Kd : double.Parse(by.Figure(row), NumberStyles.AllowThousands, CultureInfo.InvariantCulture))];
-        rows = [.. rows.Select((row, i) => row with { Rank = i + 1 })];
-        BoardRow? own = you is null ? null : new BoardRow(212, you, null, "Operative", 9, 3, 41, 37, 6, 0, 5400, 715, 1.11);
-        return Task.FromResult(new Leaderboard(title, period == "all" ? "all" : "season", period == "season" ? "2026-11" : period, metric, rows, own, rows.Count == 0 ? 0 : 1480, ["2026-11", "2026-10", "2026-09"]));
+        // The week's movement: some up, some down, one new; none for a season gone by.
+        bool weekly = period is "season" or "all";
+        int?[] moved = [2, -1, 1, 3, -1, 0, 5, -2, null, 1, 1, -3];
+        rows = [.. rows.Select((row, i) => row with { Rank = i + 1, Was = weekly && moved[i % moved.Length] is { } m ? i + 1 + m : null })];
+        BoardRow? own = you is null || Unranked ? null : new BoardRow(212, you, null, "Joe", 9, 3, 41, 37, 6, 0, 5400, 715, 1.11, Was: 230);
+        BoardRow? ahead = own is null ? null : new BoardRow(211, "bbbbbbbbbbbbbbbb", null, "Sparrow", 10, 4, 44, 36, 7, 0, 5600, 755, 1.22);
+        long? week = weekly && rows.Count > 0 ? new DateTimeOffset(2026, 11, 23, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds() : null;
+        return Task.FromResult(new Leaderboard(title, period == "all" ? "all" : "season", period == "season" ? "2026-11" : period, metric, rows, own, rows.Count == 0 ? 0 : 1480, ["2026-11", "2026-10", "2026-09"], ahead, week));
     }
 
     public Task<PlayerRecord> RecordAsync(string player, string title, CancellationToken cancel)
@@ -107,17 +126,37 @@ internal sealed class FakeBoardReader : ILeaderboardReader
             new("ghost", "Ghost", "A match with five kills or more and no deaths."),
         ];
         long at = new DateTimeOffset(2026, 11, 22, 20, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        string[] servers = ["OpenIGI Official · Frankfurt #1", "OpenIGI Official · Frankfurt #2", "Covert Ops 24/7", "Mumbai Regulars"];
+        string[] modes = ["tdm", "sd", "tdm", "ffa"];
+        bool[] won = [true, true, false, true, true, false, true, true, true, false];
         RecordMatch[] latest =
         [
-            new("1", at, "OpenIGI Official · Frankfurt #1", "tdm", "1", 900, 0, [new RecordLine(player, "Jones", 0, 24, 6, 3, 0, 305, true)]),
-            new("2", at - 3600000, "OpenIGI Official · Frankfurt #2", "sd", "3", 1200, 1, [new RecordLine(player, "Jones", 0, 11, 9, 2, 1, 145, false)]),
-            new("3", at - 86400000, "OpenIGI Official · Mumbai", "ffa", "5", 600, 2, [new RecordLine(player, "Jones", 2, 17, 4, 0, 0, 220, true)]),
+            .. Enumerable.Range(0, LatestCount).Select(i => new RecordMatch(
+                (i + 1).ToString(CultureInfo.InvariantCulture),
+                at - (i * 14_400_000L),
+                servers[i % servers.Length],
+                modes[i % modes.Length],
+                ((i % 6) + 1).ToString(CultureInfo.InvariantCulture),
+                900,
+                won[i % won.Length] ? 0 : 1,
+                [new RecordLine(player, "Jones", 0, 24 - i, 6 + (i % 4), 3 - (i % 3), 0, won[i % won.Length] ? 305 - (i * 15) : 140, won[i % won.Length])])),
         ];
         return Task.FromResult(new PlayerRecord(player, "2026-11", season, all, medals, title, latest));
     }
 
     public Task<PlayerAccount?> PlayerAsync(string player, CancellationToken cancel) =>
         Task.FromResult<PlayerAccount?>(new PlayerAccount(player, "Jones", string.Empty, 0));
+
+    /// <summary>Gets or sets how many latest matches a record lists.</summary>
+    public int LatestCount { get; set; } = 3;
+
+    public Task<MissionStanding?> StandingAsync(string player, string title, CancellationToken cancel)
+    {
+        static PlayerBest Best(int mission, int ticks, int rank, int place) =>
+            new(mission, 2, "classic", new RunBest($"run{mission}", ticks, -1), new RunBest($"run{mission}", ticks, rank), place, place, 312);
+        PlayerBest[] bests = [Best(1, 9411, 2, 4), Best(2, 14526, 1, 9), Best(3, 20604, 2, 2), Best(5, 17730, 1, 15), Best(6, 12009, 2, 6), Best(8, 12987, 1, 21)];
+        return Task.FromResult<MissionStanding?>(new MissionStanding(2, "classic", bests, new RunBoardRow(7, player, "Jones", 160000)));
+    }
 }
 
 /// <summary>A mission board of made-up runs: times climbing a few seconds a place, ranks falling, every fourth replay let go.</summary>
@@ -137,7 +176,8 @@ internal sealed class FakeRunBoards(int count) : IRunBoardReader
                 Rank: Math.Max(-1, 2 - (i / 6)),
                 Points: mission is null ? 42 - i : 0,
                 Run: mission is null ? null : $"run{i}",
-                Replay: mission is not null && i % 4 != 3)),
+                Replay: mission is not null && i < 20 && i % 7 != 6,
+                Splits: mission is null ? null : [1446 + (i * 10), 4194 + (i * 30), 7581 + (i * 70)])),
         ];
         RunBoardRow? own = you is null ? null : rows.FirstOrDefault(r => r.Account == you);
         return Task.FromResult(new RunBoard(title, mission?.ToString(CultureInfo.InvariantCulture) ?? "all", difficulty, ruleset, metric, count * 7, rows, own));

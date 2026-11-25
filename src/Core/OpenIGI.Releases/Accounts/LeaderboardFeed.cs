@@ -16,12 +16,17 @@ public enum FeedState
     Failed,
 }
 
-/// <summary>A player's record as a page shows it: the record, the account it is under, and their place this season.</summary>
+/// <summary>
+/// A player's record as a page shows it: the record, the account it is under, their place this season, and their standing on
+/// the single-player boards.
+/// </summary>
 /// <param name="Id">Who was asked about: an account's id or a key's.</param>
 /// <param name="Record">The record.</param>
 /// <param name="Account">Their Discord account, or <see langword="null"/> for a key on its own (or when it couldn't be read).</param>
 /// <param name="Placed">Their row on this season's board by score, wherever they stand; <see langword="null"/> unranked.</param>
-public sealed record RecordView(string Id, PlayerRecord Record, PlayerAccount? Account, BoardRow? Placed)
+/// <param name="Standing">Their standing on the mission boards; <see langword="null"/> where they have no runs (or it couldn't be read).</param>
+/// <param name="Ahead">The row just above theirs this season, by score; <see langword="null"/> where they lead or are unranked.</param>
+public sealed record RecordView(string Id, PlayerRecord Record, PlayerAccount? Account, BoardRow? Placed, MissionStanding? Standing = null, BoardRow? Ahead = null)
 {
     /// <summary>Gets the name shown: the account's, the board's, the one they last played under, or <c>Operative</c>.</summary>
     public string Name => Account?.Name
@@ -57,6 +62,13 @@ public interface ILeaderboardReader
     /// <param name="cancel">Stops it.</param>
     /// <returns>The account, or <see langword="null"/>.</returns>
     Task<PlayerAccount?> PlayerAsync(string player, CancellationToken cancel);
+
+    /// <summary>Reads a player's standing on a game's mission boards; none where the build reads no runs.</summary>
+    /// <param name="player">The player: their account's id (a key alone has no runs).</param>
+    /// <param name="title">The game.</param>
+    /// <param name="cancel">Stops it.</param>
+    /// <returns>The standing, or <see langword="null"/> where they have none.</returns>
+    Task<MissionStanding?> StandingAsync(string player, string title, CancellationToken cancel) => Task.FromResult<MissionStanding?>(null);
 }
 
 /// <summary>
@@ -135,6 +147,17 @@ public sealed class LeaderboardFeed
 
     private string? RecordKey => RecordId is { } id ? $"{Title}/{id}" : null;
 
+    /// <summary>Gets the player whose record is read for a glance without being opened (the board's selected row), or null.</summary>
+    public string? PeekId { get; private set; }
+
+    /// <summary>Gets the record read for a glance, or null while it is not read.</summary>
+    public RecordView? Peeked => PeekKey is { } key ? _records.Get(key) : null;
+
+    /// <summary>Gets how the record read for a glance stands.</summary>
+    public FeedState PeekState => PeekKey is { } key ? _records.State(key) : FeedState.Idle;
+
+    private string? PeekKey => PeekId is { } id ? $"{Title}/{id}" : null;
+
     /// <summary>Shows another game's board (and record, when one is open).</summary>
     /// <param name="title">The game, by title id.</param>
     public void ShowTitle(string title)
@@ -190,6 +213,17 @@ public sealed class LeaderboardFeed
         }
     }
 
+    /// <summary>Reads a player's record for a glance, without opening it: the board's selected row's; null for none.</summary>
+    /// <param name="player">Their account's id or key's, or null.</param>
+    public void Peek(string? player)
+    {
+        if (PeekId != player)
+        {
+            PeekId = player;
+            Changed();
+        }
+    }
+
     /// <summary>Closes the open record, back to the board.</summary>
     public void CloseRecord()
     {
@@ -236,6 +270,11 @@ public sealed class LeaderboardFeed
         {
             Changed();
         }
+
+        if (PeekKey is { } peekKey && PeekId is { } peeked && _records.Ask(peekKey, () => ReadRecord(peeked, title)))
+        {
+            Changed();
+        }
     }
 
     // The record, the account it is under and its place this season, together; an account or a place that can't be read is
@@ -245,8 +284,10 @@ public sealed class LeaderboardFeed
         Task<PlayerRecord> record = _reader.RecordAsync(id, title, CancellationToken.None);
         Task<PlayerAccount?> account = _reader.PlayerAsync(id, CancellationToken.None);
         Task<Leaderboard> placed = _reader.BoardAsync(title, LeaderboardSeasons.Current, LeaderboardMetric.Default.Id, id, CancellationToken.None);
+        Task<MissionStanding?> standing = _reader.StandingAsync(id, title, CancellationToken.None);
         PlayerRecord read = await record.ConfigureAwait(false);
-        return new RecordView(id, read, await Quietly(account).ConfigureAwait(false), (await Quietly(placed).ConfigureAwait(false))?.You);
+        Leaderboard? board = await Quietly(placed).ConfigureAwait(false);
+        return new RecordView(id, read, await Quietly(account).ConfigureAwait(false), board?.You, await Quietly(standing).ConfigureAwait(false), board?.Ahead);
     }
 
     private static async Task<T?> Quietly<T>(Task<T> task)
@@ -265,17 +306,45 @@ public sealed class LeaderboardFeed
     private void Changed() => Revision++;
 }
 
-/// <summary>The master's own stats and accounts, read for a <see cref="LeaderboardFeed"/>.</summary>
+/// <summary>The master's own stats, accounts and runs, read for a <see cref="LeaderboardFeed"/>.</summary>
 /// <param name="stats">The stats.</param>
 /// <param name="accounts">The accounts.</param>
-public sealed class MasterLeaderboardReader(StatsService stats, AccountService accounts) : ILeaderboardReader
+/// <param name="runs">The runs, for a record's standing on the mission boards; null for none.</param>
+public sealed class MasterLeaderboardReader(StatsService stats, AccountService accounts, RunsService? runs = null) : ILeaderboardReader
 {
     /// <summary>Initializes a new instance of the <see cref="MasterLeaderboardReader"/> class on one client and master.</summary>
     /// <param name="http">The client to ask through.</param>
     /// <param name="master">The master server.</param>
     public MasterLeaderboardReader(HttpClient http, Uri master)
-        : this(new StatsService(http, master), new AccountService(http, master))
+        : this(new StatsService(http, master), new AccountService(http, master), new RunsService(http, master))
     {
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Their bests at the difficulty and rules they have run the most missions on (<see cref="MissionStanding.Pick"/>), and their
+    /// row on that overall board by time.
+    /// </remarks>
+    public async Task<MissionStanding?> StandingAsync(string player, string title, CancellationToken cancel)
+    {
+        // Runs are an account's: a key on its own has none.
+        if (runs is null || !player.All(char.IsAsciiDigit))
+        {
+            return null;
+        }
+
+        IReadOnlyList<PlayerBest> bests = await runs.BestsAsync(player, title, cancel).ConfigureAwait(false);
+        if (MissionStanding.Pick(bests) is not var (difficulty, ruleset))
+        {
+            return null;
+        }
+
+        RunBoard overall = await runs.BoardAsync(title, null, difficulty, ruleset, MissionBoardFeed.Metrics[0], player, cancel).ConfigureAwait(false);
+        return new MissionStanding(
+            difficulty,
+            ruleset,
+            [.. bests.Where(best => best.Difficulty == difficulty && best.Ruleset == ruleset).OrderBy(static best => best.Mission)],
+            overall.You);
     }
 
     /// <inheritdoc/>

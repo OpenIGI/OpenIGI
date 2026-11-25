@@ -25,6 +25,12 @@ public sealed record ReplayVerdict(
     /// <summary>Gets the rank the score earns in the mission, from nought up, as the level's own requirements weigh it; -1 for none.</summary>
     public int Rank { get; init; } = -1;
 
+    /// <summary>
+    /// Gets the run's splits as the boards keep them: the played ticks (<see cref="GhostTrack.PlayTicksAt"/>, as the score
+    /// counts its time) each objective was first done at, in the order they were done; none without a ghost.
+    /// </summary>
+    public IReadOnlyList<int> Splits => Ghost is { } ghost ? [.. ghost.Splits().Select(split => ghost.PlayTicksAt(split.Tick))] : [];
+
     /// <summary>A run refused before it is played, or after: why.</summary>
     /// <param name="reason">Why it is no ranked run.</param>
     /// <param name="ruleset">The rules it says it was played by.</param>

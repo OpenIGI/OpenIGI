@@ -4,7 +4,7 @@
 // with the medals its totals have earned.
 import assert from "node:assert/strict";
 import { webcrypto as crypto } from "node:crypto";
-import { Stats, checkResult, officialName, scoreOf, seasonOf } from "../src/stats.js";
+import { Stats, checkResult, officialName, scoreOf, seasonOf, weekOf } from "../src/stats.js";
 
 function fakeStorage() {
   const store = new Map();
@@ -204,6 +204,42 @@ assert.equal((await ask(await signed(official, tdm([line(BO, "Bo", 0, 1, 0, true
 
   // A negative or absurd count is refused like any other.
   assert.throws(() => checkResult(tdm([helped(BO, "Bo", 0, 1, 0, -1, true), line(CY, "Cy", 1, 0, 1, false)])));
+}
+
+// The week's movement: each row carries the place it held as the week began, taken before the week's first match counted;
+// one who was not on the board then has none; and the row just above the asker's comes with theirs.
+{
+  let clock = Date.UTC(2026, 10, 18, 12); // a Wednesday
+  const weekly = new Stats({ storage: fakeStorage() }, { ACCOUNTS: accounts }, () => clock);
+  const server = await serverKey();
+  await weekly.fetch(new Request("https://master/v1/admin/stats-servers", { method: "POST", body: JSON.stringify({ key: server.wire, name: "Official" }) }));
+  const board = async (query) => (await weekly.fetch(new Request(`https://master/v1/leaderboard?${query}`))).json();
+  assert.equal(weekOf(clock), Date.UTC(2026, 10, 16));
+  assert.equal(weekOf(Date.UTC(2026, 10, 16)), Date.UTC(2026, 10, 16));
+  assert.equal(weekOf(Date.UTC(2026, 10, 15, 23, 59)), Date.UTC(2026, 10, 9));
+
+  await weekly.fetch(await signed(server, tdm([line(BO, "Bo", 0, 9, 0, true), line(CY, "Cy", 1, 1, 9, false)])));
+  // The first week's board began empty: nobody held a place then.
+  const first = await board("metric=kills");
+  assert.equal(first.week, Date.UTC(2026, 10, 16));
+  assert.deepEqual(first.rows.map((row) => [row.name, row.was]), [["Bo", null], ["Cy", null]]);
+
+  // A week on, Cy passes Bo: Bo was first and is second, Cy was second and is first, a new player has no place before.
+  clock = Date.UTC(2026, 10, 24, 9);
+  await weekly.fetch(await signed(server, tdm([line(CY, "Cy", 0, 20, 0, true), line("dddddddddddddddd", "Di", 1, 0, 3, false)])));
+  const second = await board(`metric=kills&you=${BO}`);
+  assert.equal(second.week, Date.UTC(2026, 10, 23));
+  assert.deepEqual(second.rows.map((row) => [row.name, row.rank, row.was]), [["Cy", 1, 2], ["Bo", 2, 1], ["Di", 3, null]]);
+  assert.equal(second.you.name, "Bo");
+  assert.equal(second.ahead.name, "Cy");
+  assert.equal((await board(`metric=kills&you=${CY}`)).ahead, null);
+
+  // All time moves the same way; a season gone by does not move at all.
+  assert.deepEqual((await board("period=all&metric=kills")).rows.map((row) => row.was), [2, 1, null]);
+  clock = Date.UTC(2026, 11, 2);
+  const gone = await board("period=2026-11&metric=kills");
+  assert.equal(gone.week, null);
+  assert.ok(gone.rows.every((row) => row.was === undefined));
 }
 
 console.log("matches: ok");
