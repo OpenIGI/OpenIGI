@@ -46,12 +46,15 @@ public sealed class RetailIgi2MissionCatalogueTests
         Assert.True(campaign > 0, "not one mission declared the single-player mode.");
         Assert.True(multiplayer > 0, "not one map declared the multiplayer mode.");
 
-        // No mission names the one that follows it; Game_RunHandler takes the next node of the mission list, so each
-        // campaign mission leads to the next one defined, the last to none, and no multiplayer map leads anywhere.
-        MissionDescriptor[] singlePlayer = [.. catalogue.Missions.Where(static m => m.GameMode == Igi2MissionCatalogue.SinglePlayerMode)];
+        // No mission names the one that follows it; Game_RunHandler takes the next node of the mission list, which
+        // missions/igi2.qvm fills by id -- not the walk's order, which on the retail install's mixed-case directories
+        // (location1/LEVEL5 beside location1/level1) defined 15, 16 and 17 before 11. Each leads to the one after it,
+        // the last to none, and no multiplayer map leads anywhere.
+        int[] listed = [11, 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 35, 36];
+        Assert.Equal(listed, catalogue.InProgressionOrder().Select(static m => m.Id));
         Assert.Equal(
-            [.. singlePlayer.Skip(1).Select(static m => m.Id), MissionDescriptor.NextMissionUndefined],
-            singlePlayer.Select(static m => m.NextMissionId));
+            [.. listed.Skip(1), MissionDescriptor.NextMissionUndefined],
+            listed.Select(id => catalogue.TryGet(id, out MissionDescriptor? m) ? m.NextMissionId : int.MinValue));
         Assert.All(
             catalogue.Missions.Where(static m => m.GameMode != Igi2MissionCatalogue.SinglePlayerMode),
             m => Assert.Equal(MissionDescriptor.NextMissionUndefined, m.NextMissionId));
