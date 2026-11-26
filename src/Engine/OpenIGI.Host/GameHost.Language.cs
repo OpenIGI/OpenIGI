@@ -61,7 +61,7 @@ public sealed partial class GameHost
     /// <remarks>
     /// The title's archives are mounted before the settings load, in the default language, and the change the load makes is
     /// not heard: nothing watches the setting yet. A player who had chosen another language read the menus in English, and
-    /// I.G.I. 2, which asks for its in-game text under the chosen language's name (<c>LOCAL:usa/OBJ_2_COMPLETE</c>), showed
+    /// I.G.I. 2, which asks for its in-game text under the chosen language's name (<c>usa/OBJ_2_COMPLETE</c> on the local device), showed
     /// every objective, message and subtitle as its bare key.
     /// </remarks>
     private void MountSavedLanguage()
