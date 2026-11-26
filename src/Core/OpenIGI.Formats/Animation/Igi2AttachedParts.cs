@@ -19,6 +19,11 @@ public readonly record struct Igi2AttachedPart(string Model, Vector3f Position, 
 /// parent · bone · relative).
 /// </para>
 /// <para>
+/// One on no bone (<c>-1</c>) hangs on the body itself, at its relative placement in the body's frame
+/// (<c>BoneDynCubeObj_AttachHandler</c> leaves the bone out, and <c>ModelObj_UpdateAttachment</c> then places it under the parent
+/// alone): the door and hinges a laser cut drops, which their own key tracks move.
+/// </para>
+/// <para>
 /// One named <c>weapon</c> draws the weapon in hand's <c>Fixed Model</c>, as <c>WeaponMagicObj_GetModelName</c> (<c>0x4733B0</c>)
 /// finds it through the human that owns the body, and nothing when nothing is held; any other draws the model it names.
 /// </para>
@@ -52,7 +57,14 @@ public static class Igi2AttachedParts
             }
 
             (int bone, Vector3f position, Matrix3f orientation) = Resolve(clip, i, time);
-            if ((uint)bone >= (uint)pose.BoneCount)
+            if (bone < 0)
+            {
+                // On no bone it hangs on the body itself (BoneDynCubeObj_AttachHandler leaves the bone out): the door a cut drops.
+                yield return new Igi2AttachedPart(model, position, orientation);
+                continue;
+            }
+
+            if (bone >= pose.BoneCount)
             {
                 continue;
             }
