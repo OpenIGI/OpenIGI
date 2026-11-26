@@ -142,10 +142,21 @@ public sealed class Igi2Grenade : IDynamicTask
     /// <summary>The ticks without a contact after which the next one bounces again.</summary>
     public const int BounceRest = 10;
 
+    /// <summary>
+    /// The least speed a contact is struck at for it to bounce: what four ticks of falling from rest reach, about a 9 cm drop.
+    /// <b>Not retail</b>, which sounds any contact: on a slope a grenade at rest rocks over its contact points, touching down
+    /// at about one tick's fall every few ticks, and a smoke grenade clicked and was heard by the AI three times a second for
+    /// the whole of its smoke.
+    /// </summary>
+    public const float BounceSpeed = Gravity * 4f;
+
     private readonly WorldLineTrace _ground = new(1);
     private readonly Igi2Grenades? _owner;
     private Igi2SmokeTask? _smoke;
     private bool _smokeStarted;
+
+    // The speed the body went into its last move with: what the contact that move found was struck at.
+    private float _arrival;
 
     /// <summary>Gets the ticks since smoke began, <c>grenade.c Grenade_RunHandler</c>.</summary>
     public int SmokeTicks { get; private set; }
@@ -216,8 +227,9 @@ public sealed class Igi2Grenade : IDynamicTask
     /// object takes a tick under the grenade's gravity and damping.
     /// </para>
     /// <para>
-    /// An ordinary grenade tells the AI of itself on every fifth tick of its fuse. A contact at the last move sounds the
-    /// bounce, which an ordinary grenade tells the AI of too, once until ten ticks go by without one.
+    /// An ordinary grenade tells the AI of itself on every fifth tick of its fuse. A contact at the last move, struck hard
+    /// enough (<see cref="BounceSpeed"/>), sounds the bounce, which an ordinary grenade tells the AI of too, once until ten
+    /// ticks go by without one.
     /// </para>
     /// <para>
     /// The tick the fuse is out, the ground under it is probed and, for an ordinary grenade, the explosion goes off with the
@@ -238,11 +250,7 @@ public sealed class Igi2Grenade : IDynamicTask
             }
 
             ControlSound(effects, tick);
-            if (Body is { } body && !body.IsIdle())
-            {
-                body.Update(Gravity, AirResistance, SpinResistance, world);
-            }
-
+            Move(world);
             return true;
         }
 
@@ -280,11 +288,7 @@ public sealed class Igi2Grenade : IDynamicTask
             }
 
             ControlSound(effects, tick);
-            if (Body is { } smokingBody && !smokingBody.IsIdle())
-            {
-                smokingBody.Update(Gravity, AirResistance, SpinResistance, world);
-            }
-
+            Move(world);
             if (_smoke is { } smoke)
             {
                 smoke.Position = Position;
@@ -319,14 +323,27 @@ public sealed class Igi2Grenade : IDynamicTask
     }
 
     /// <summary>
+    /// <c>Grenade_Move</c> (<c>igi2 0x483FE0</c>): unless at rest, its physics object takes a tick under the grenade's gravity and
+    /// damping, the speed it goes in with kept for the bounce.
+    /// </summary>
+    private void Move(Igi2PhysicsWorld world)
+    {
+        if (Body is { } body && !body.IsIdle())
+        {
+            _arrival = body.Body.Speed;
+            body.Update(Gravity, AirResistance, SpinResistance, world);
+        }
+    }
+
+    /// <summary>
     /// <c>Grenade_ControlSound</c> (<c>igi2 0x483F20</c>): a contact at the last move bounces, if it has not since it last went
-    /// ten ticks without one.
+    /// ten ticks without one -- and, <b>not retail</b>, if it was struck faster than <see cref="BounceSpeed"/>.
     /// </summary>
     private void ControlSound(IIgi2GrenadeEffects effects, int tick)
     {
         if (Body is { ContactCount: not 0 })
         {
-            if (HasBounced)
+            if (HasBounced || _arrival <= BounceSpeed)
             {
                 return;
             }
