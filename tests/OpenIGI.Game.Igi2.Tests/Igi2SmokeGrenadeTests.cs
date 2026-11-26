@@ -51,20 +51,27 @@ public sealed class Igi2SmokeGrenadeTests
     {
         var (player, _, sounds) = Igi2PlayerFakes.OnFloor();
         player.SmokeArea(player.Position, 12288f);
-        player.Update();
+        Tick();
         Igi2PlayerFakes.FakeSound cough = Assert.Single(sounds.Started, static s => s.Name == "cough");
         player.SmokeArea(player.Position, 12288f);
-        player.Update();
+        Tick();
         Assert.Single(sounds.Started, static s => s.Name == "cough");
         cough.IsAlive = false;
-        player.Update();
+        Tick();
         Assert.Single(sounds.Started, static s => s.Name == "cough");
         player.SmokeArea(new Vector3d(player.Position.X + 12289.0, player.Position.Y, player.Position.Z), 12288f);
-        player.Update();
+        Tick();
         Assert.Single(sounds.Started, static s => s.Name == "cough");
         player.SmokeArea(player.Position, 12288f);
-        player.Update();
+        Tick();
         Assert.Equal(2, sounds.Started.Count(static s => s.Name == "cough"));
+
+        // A tick of the player as the level runs it: the update, then the delayed half, whose human tick keeps the cough.
+        void Tick()
+        {
+            player.Update();
+            player.RunDelayed();
+        }
     }
 
     /// <summary>Grenade smoke uses the particle module's stream, preserving the gameplay random stream.</summary>

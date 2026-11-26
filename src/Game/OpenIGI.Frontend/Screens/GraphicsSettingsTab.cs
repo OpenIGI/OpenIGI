@@ -1,8 +1,6 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Frontend.Settings;
-using OpenIGI.UI;
-using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend.Screens;
@@ -14,6 +12,9 @@ namespace OpenIGI.Frontend.Screens;
 /// </remarks>
 internal static class GraphicsSettingsTab
 {
+    /// <summary>The badge on a preset the game being played does not offer yet.</summary>
+    internal const string ComingSoon = "COMING SOON";
+
     /// <summary>Builds the category's groups.</summary>
     /// <param name="rowBuilder">What the rows are built with; its lookup goes through the draft.</param>
     /// <param name="theme">The theme.</param>
@@ -21,33 +22,7 @@ internal static class GraphicsSettingsTab
     public static List<SettingsGroup> Build(SettingsRowBuilder rowBuilder, UiTheme theme, SettingsDraft draft)
     {
         List<SettingsGroup> groups = [BuildPresetBand(rowBuilder, theme, draft)];
-
-        foreach (GraphicsSection section in GraphicsMenu.Sections)
-        {
-            var rows = new List<Control>();
-            foreach (QualityGroup group in section.Groups)
-            {
-                if (QualityBinding.CreateControl(theme, rowBuilder.Find, group, rowBuilder.Bindings) is not { } control)
-                {
-                    continue;
-                }
-
-                // A group can write a variable that only takes effect on the next level load. The player has
-                // to be told which, and the help line shows only the tooltip's first line, so the note goes
-                // there rather than at the end.
-                string restart = rowBuilder.NamesRequiringRestart(group.Variables) ? "   [takes effect on the next level]" : string.Empty;
-                string unavailable = rowBuilder.Unavailable(group.Variables);
-                control.IsEnabled = unavailable.Length == 0;
-                control.Tooltip =
-                    $"{unavailable}{group.Help}{restart}\n\nSets: {string.Join(", ", group.Variables)}\n\nReachable from the console by name.";
-                rows.Add(control);
-                rowBuilder.TrackForReset(group.Variables);
-            }
-
-            rows.AddRange(rowBuilder.SettingRows(theme, section.Settings));
-            groups.Add(SettingsGroup.Of(section.Title, rows));
-        }
-
+        groups.AddRange(SettingsPanelBuilder.Build(rowBuilder, theme, "Graphics", GraphicsMenu.Sections));
         return groups;
     }
 
@@ -58,113 +33,35 @@ internal static class GraphicsSettingsTab
     private static SettingsGroup BuildPresetBand(SettingsRowBuilder rowBuilder, UiTheme theme, SettingsDraft draft)
     {
         GraphicsPresetRegistry registry = rowBuilder.Context.Presets;
-        string[] presetNames = Enum.GetNames<GraphicsPreset>();
-        int Shown() => Math.Max(0, Array.IndexOf(presetNames, registry.Recognise(draft.Holds).ToString()));
+        GraphicsPreset[] presets = Enum.GetValues<GraphicsPreset>();
 
-        bool compact = ShellSizes.IsCompact(theme);
-        const string Help = "Sets every graphics variable at once, when you apply. Custom is what the settings become "
-            + "as soon as you change any of them yourself — it is a reading, not a choice.";
-
-        // Segments to press where there is room for five across; a row that steps where there is not.
-        Control control;
-        Action<int> show;
-        Action<Action<int>> onPicked;
-        if (compact)
+        // A game that offers one preset for now (GameTitle.GraphicsPresetHeld) shows the rest as coming, not as broken.
+        bool Offered(int index) => presets[index] == GraphicsPreset.Custom || registry.IsAllowed(presets[index]);
+        return new PresetBand
         {
-            var row = new Dropdown(theme, "Preset", presetNames, Shown()) { Tooltip = Help };
-            control = row;
-            show = index => row.SelectedIndex = index;
-            onPicked = handler => row.SelectionChanged += handler;
-        }
-        else
-        {
-            var strip = new TabStrip(theme, presetNames)
+            Title = "Quality preset",
+            Line = registry.HeldPreset is { } held
+                ? $"This game plays the {held} preset for now: the remastered presets are being tuned for its missions and are coming soon."
+                : "Start here. Changing any setting below switches the preset to Custom.",
+            Help = "Sets every graphics quality setting at once, when you apply. Custom is what the settings become as soon as "
+                + "you change any of them yourself — it is a reading, not a choice.",
+            Captions = [.. presets.Select(static preset => preset.ToString())],
+            Choosable = index => presets[index] != GraphicsPreset.Custom && Offered(index),
+            Badge = index => Offered(index) ? null : ComingSoon,
+            Reading = () => Math.Max(0, Array.IndexOf(presets, registry.Recognise(draft.Holds))),
+            Choose = index =>
             {
-                SegmentHeight = 36f,
-                TabPadding = 18f,
-                TextSize = 17f,
-                VerticalAlignment = VerticalAlignment.Center,
-                Tooltip = Help,
-            };
-            strip.SelectedIndex = Shown();
-            control = strip;
-            show = index => strip.SelectedIndex = index;
-            onPicked = handler => strip.SelectionChanged += handler;
-        }
-
-        // Choosing a preset stages its values, each of which the draft reports; the band reads the preset back
-        // once, at the end, rather than at every one of them.
-        bool updating = false;
-        void ShowPreset()
-        {
-            updating = true;
-            try
-            {
-                show(Shown());
-            }
-            finally
-            {
-                updating = false;
-            }
-        }
-
-        onPicked(i =>
-        {
-            if (updating || !Enum.TryParse(presetNames[i], out GraphicsPreset preset))
-            {
-                return;
-            }
-
-            updating = true;
-            try
-            {
-                foreach ((ICVar variable, string value) in registry.ValuesOf(preset))
+                foreach ((ICVar variable, string value) in registry.ValuesOf(presets[index]))
                 {
                     draft.Stage(variable).TrySetText(value, out _);
                 }
-            }
-            finally
+            },
+            Watch = changed =>
             {
-                updating = false;
-            }
-
-            ShowPreset();
-        });
-
-        EventHandler changed = (_, _) =>
-        {
-            if (!updating)
-            {
-                ShowPreset();
-            }
-        };
-
-        draft.Changed += changed;
-        rowBuilder.Bindings.Add(new Unsubscribe(() => draft.Changed -= changed));
-
-        if (compact)
-        {
-            return SettingsGroup.Of("General", [control]);
-        }
-
-        var words = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f, VerticalAlignment = VerticalAlignment.Center };
-        words.AddChild(new Label(theme.BodyStrong, "Quality preset", theme.BodyTextSize, theme.Text));
-        words.AddChild(new Label(theme.Body, "Start here. Changing any setting below switches the preset to Custom.", 15f, theme.TextSecondary) { Wrap = true });
-
-        var inner = new Grid { ColumnSpacing = 24f };
-        inner.RowDefinitions.Add(GridLength.Auto);
-        inner.ColumnDefinitions.Add(GridLength.Star);
-        inner.ColumnDefinitions.Add(GridLength.Auto);
-        inner.Add(words, 0, 0);
-        inner.Add(control, 0, 1);
-
-        var band = new OpenIGI.UI.Kit.Widgets.GlassPanel(theme)
-        {
-            Tint = OpenIGI.Core.Graphics.Bgra32.FromRgba(12, 14, 15, 199),
-            Border = UiPalette.White(0.12f),
-            Padding = new Thickness(20f, 14f),
-        };
-        band.AddChild(inner);
-        return new SettingsGroup("Quality preset", [control]) { Banner = band };
+                EventHandler handler = (_, _) => changed();
+                draft.Changed += handler;
+                return new Unsubscribe(() => draft.Changed -= handler);
+            },
+        }.Build(theme, rowBuilder.Bindings);
     }
 }

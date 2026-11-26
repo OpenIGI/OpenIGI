@@ -181,7 +181,7 @@ public sealed partial class ServerSession : IModeHost
                         break;
                     }
 
-                    BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
+                    BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty, request?.Avatar ?? string.Empty);
                     NoteWatch(e.Peer, request);
                     ApplyRates(e.Peer, request);
                     break;
@@ -203,10 +203,7 @@ public sealed partial class ServerSession : IModeHost
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _syncing.ContainsKey(e.Peer):
                     BitReader syncReader = new(e.Message.Data);
-                    if ((SessionMessage)syncReader.ReadBits(8) == SessionMessage.FileWant)
-                    {
-                        ReadFileWant(e.Peer, ref syncReader);
-                    }
+                    ReadFileMessage(e.Peer, (SessionMessage)syncReader.ReadBits(8), ref syncReader);
 
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _pending.TryGetValue(e.Peer, out PendingJoin? pending):
@@ -242,10 +239,10 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
-    private void BeginJoin(int slot, string name, string skin)
+    private void BeginJoin(int slot, string name, string skin, string avatar)
     {
         byte[] challenge = RandomNumberGenerator.GetBytes(PlayerIdentities.ChallengeSize);
-        _pending[slot] = new PendingJoin(name, skin, challenge, _now);
+        _pending[slot] = new PendingJoin(name, skin, challenge, _now) { Avatar = avatar };
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Prove, 8);
         foreach (byte b in challenge)
@@ -301,14 +298,14 @@ public sealed partial class ServerSession : IModeHost
             if (pending.Anonymous)
             {
                 _pending.Remove(slot);
-                Join(slot, pending.Name, pending.Skin, "anon-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)));
+                Join(slot, pending.Name, pending.Skin, "anon-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)), pending.Avatar);
             }
             else if (pending.Check is { IsCompleted: true } check)
             {
                 _pending.Remove(slot);
                 if (check.IsCompletedSuccessfully && check.Result)
                 {
-                    Join(slot, pending.Name, pending.Skin, PlayerIdentities.IdOf(pending.Key));
+                    Join(slot, pending.Name, pending.Skin, PlayerIdentities.IdOf(pending.Key), pending.Avatar);
                 }
                 else
                 {
@@ -368,9 +365,12 @@ public sealed partial class ServerSession : IModeHost
             Match.Rules = NetCVars.WithMoney(Match.Rules);
         }
 
+        // The tick's hits counted before its deaths, so a wound dealt in the same tick as the kill still helps it.
+        IReadOnlyList<CombatNote> combat = _world.TakeCombat();
+        CountDamage(combat);
         Mode.Tick(this, tick, _world.TakeDeaths());
         TellKits();
-        TellCombat();
+        TellCombat(combat);
         TellMatch(tick);
 
         if (tick % TickRate == 0)
@@ -411,6 +411,8 @@ public sealed partial class ServerSession : IModeHost
 
         Snapshot snapshot = _world.Capture(tick);
         LastSnapshot = snapshot;
+        NetProbe.Server?.WriteSnapshot(snapshot);
+        TellShields();
         LagCompensationHistory.Add(snapshot);
         foreach (ClientState client in _clients.Values)
         {
@@ -465,7 +467,7 @@ public sealed partial class ServerSession : IModeHost
                 ReplicatedHuman[] slice = snapshot.Humans.AsSpan(from, Math.Min(per, snapshot.Humans.Length - from)).ToArray();
                 Snapshot piece = part == 0
                     ? snapshot with { Humans = slice }
-                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Lifts = baseline?.Lifts, Cameras = baseline?.Cameras, Wrecks = baseline?.Wrecks, Projectiles = baseline?.Projectiles, Tasks = baseline?.Tasks, Impacts = null, Senses = null };
+                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Lifts = baseline?.Lifts, Cameras = baseline?.Cameras, Wrecks = baseline?.Wrecks, Projectiles = baseline?.Projectiles, Tasks = baseline?.Tasks, Fired = baseline?.Fired, Vehicles = baseline?.Vehicles, Impacts = null, Senses = null };
                 _writer.Reset();
                 _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
                 _writer.WriteBits((uint)part, 8);
@@ -599,7 +601,7 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
-    private void Join(int slot, string name, string skin, string playerId)
+    private void Join(int slot, string name, string skin, string playerId, string avatar = "")
     {
         if (TurnedAway(slot, playerId) is { } refusal)
         {
@@ -638,12 +640,15 @@ public sealed partial class ServerSession : IModeHost
         _clients[slot] = new ClientState(name, entity.Value, playerId);
         if (!Match.Players.ContainsKey(slot))
         {
-            int team = Mode.TeamFor(this, slot);
-            Match.Join(slot, name, team);
-            _world.SetTeam(slot, team);
+            Match.Join(slot, name, Mode.TeamFor(this, slot));
         }
 
+        // The world's side always the match's: one coming back has the side it was parked with, and the half's swap, a
+        // scramble or a new mode while it was away moved its match standing on without it -- the rounds that hurt by the
+        // world's side then let its enemies' through and stopped its team mates'.
+        _world.SetTeam(slot, Match.Players[slot].Team);
         Match.Players[slot].Skin = skin;
+        Match.Players[slot].Avatar = avatar;
         _world.SetSkin(slot, skin);
         Welcome(slot, entity.Value);
     }
@@ -707,7 +712,7 @@ public sealed partial class ServerSession : IModeHost
     /// <param name="text">What to tell.</param>
     public void Announce(string text) => Say(new ChatLine(-1, text, ChatKind.Server), null);
 
-    /// <summary>Marks a place for every player, as the listen server's own player.</summary>
+    /// <summary>Marks a place for the listen server's own player's team, or every player where the mode plays no teams.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position) => Mark(new WorldMark(HostEntity, position), HostSlot);
 
@@ -766,11 +771,8 @@ public sealed partial class ServerSession : IModeHost
     // to all. The listen host's own player hears what its team would.
     private void Say(ChatLine line, int? speaker)
     {
-        int? team = line.Kind == ChatKind.Team && Mode.IsTeamMode && speaker is { } from && Match.Players.TryGetValue(from, out MatchPlayer? who)
-            ? who.Team
-            : null;
-        bool Hears(int slot) =>
-            (team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side)) && !Withheld(speaker, slot);
+        int? team = line.Kind == ChatKind.Team ? SideOf(speaker) : null;
+        bool Hears(int slot) => OnSide(team, slot) && !Withheld(speaker, slot);
 
         if (Hears(HostSlot) || speaker == HostSlot)
         {
@@ -788,9 +790,13 @@ public sealed partial class ServerSession : IModeHost
         }
     }
 
+    // A mark to the marker's own team only where the mode plays teams, as a team line is: it shows where its side is looking, and
+    // the other side is not told. Co-op and a free-for-all play no sides, and everyone sees it. The marker sees its own mark.
     private void Mark(WorldMark mark, int speaker)
     {
-        if (!Withheld(speaker, HostSlot))
+        int? team = SideOf(speaker);
+        bool Sees(int slot) => slot == speaker || (OnSide(team, slot) && !Withheld(speaker, slot));
+        if (Sees(HostSlot))
         {
             _marked.Add(mark);
         }
@@ -799,12 +805,20 @@ public sealed partial class ServerSession : IModeHost
         SessionTalk.WriteMark(_writer, mark.Entity, mark.Position);
         foreach (int slot in _clients.Keys)
         {
-            if (!Withheld(speaker, slot))
+            if (Sees(slot))
             {
                 _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
             }
         }
     }
+
+    // The team a player's team-only talk reaches, or null where the mode plays no teams (or the player is on none).
+    private int? SideOf(int? speaker) =>
+        Mode.IsTeamMode && speaker is { } from && Match.Players.TryGetValue(from, out MatchPlayer? who) ? who.Team : null;
+
+    // Whether a player is on that side: anyone, when there is none.
+    private bool OnSide(int? team, int slot) =>
+        team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side);
 
     /// <summary>Tells every player the level the server has begun loading, for each to load alongside it.</summary>
     /// <param name="map">Its map.</param>
@@ -816,6 +830,7 @@ public sealed partial class ServerSession : IModeHost
     {
         ArgumentNullException.ThrowIfNull(map);
         _going++;
+        _foreseen = null;
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Going, 8);
         _writer.WriteBits(_going, 8);
@@ -843,6 +858,9 @@ public sealed partial class ServerSession : IModeHost
         PumpFiles(now);
         _net.Flush(now);
     }
+
+    /// <summary>Gets the players the last <see cref="Travel"/> could not put in the new level, who were let go: for the server's log.</summary>
+    public List<string> TravelDropped { get; } = [];
 
     /// <summary>Goes on to another level with every player: the next mission, or the same one again.</summary>
     /// <param name="world">The new level's world.</param>
@@ -881,10 +899,12 @@ public sealed partial class ServerSession : IModeHost
             }
         }
 
+        TravelDropped.Clear();
         foreach ((int slot, ClientState client) in _clients.ToArray())
         {
             if ((client.Watching ? WatcherEntity : world.AddPlayer(slot, client.Name)) is not { } entity)
             {
+                TravelDropped.Add(client.Name);
                 _clients.Remove(slot);
                 Match.Leave(slot);
                 _net.Disconnect(slot, "no room in the level");
@@ -951,7 +971,8 @@ public sealed partial class ServerSession : IModeHost
     private void ReadMessage(int slot, ClientState client, byte[] data)
     {
         BitReader reader = new(data);
-        switch ((SessionMessage)reader.ReadBits(8))
+        SessionMessage kind = (SessionMessage)reader.ReadBits(8);
+        switch (kind)
         {
             // Said or marked by a client: told to everyone, under its own entity whatever it claimed, and only as fast as its
             // budget allows -- what one client sends, every other is sent.
@@ -979,8 +1000,8 @@ public sealed partial class ServerSession : IModeHost
             case SessionMessage.Rcon:
                 ReadRcon(slot, client, ref reader);
                 return;
-            case SessionMessage.FileWant:
-                ReadFileWant(slot, ref reader);
+            case SessionMessage.FileWant or SessionMessage.ChunkWant:
+                ReadFileMessage(slot, kind, ref reader);
                 return;
             case SessionMessage.Ready:
                 byte ready = (byte)reader.ReadBits(8);
@@ -1026,6 +1047,8 @@ public sealed partial class ServerSession : IModeHost
         public string Name { get; } = name;
 
         public string Skin { get; } = skin;
+
+        public string Avatar { get; init; } = string.Empty;
 
         public byte[] Challenge { get; } = challenge;
 

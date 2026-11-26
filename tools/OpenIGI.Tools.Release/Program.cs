@@ -51,6 +51,11 @@ static int Run(ToolContext ctx)
         return ModsIndexCommand.Run(ctx, [.. args.Skip(1)]);
     }
 
+    if (args.Count >= 1 && args[0] == "maps")
+    {
+        return MapsCommand.Run(ctx, [.. args.Skip(1)]);
+    }
+
     if (args.Count >= 1 && args[0] == "site")
     {
         return SiteCommand.Run(ctx, [.. args.Skip(1)]);
@@ -61,6 +66,7 @@ static int Run(ToolContext ctx)
         return ctx.Usage(
             ContentCommand.Usage + "\n"
             + ModsIndexCommand.Usage + "\n"
+            + MapsCommand.Usage + "\n"
             + SiteCommand.Usage + "\n"
             + "usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
     }

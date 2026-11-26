@@ -531,7 +531,7 @@ internal sealed class VehicleArmaments(
     private static Matrix3f HeliTilt()
     {
         float angle = -1.5707964f;
-        float sine = (float)Math.Sin(angle), cosine = (float)Math.Cos(angle);
+        float sine = (float)SimMath.Sin(angle), cosine = (float)SimMath.Cos(angle);
         return new Matrix3f(1f, 0f, 0f, 0f, cosine, -sine, 0f, sine, cosine);
     }
 

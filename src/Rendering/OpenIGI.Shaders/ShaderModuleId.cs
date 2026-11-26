@@ -238,8 +238,26 @@ public enum ShaderModuleId
     /// <summary>World: the original's ground, a draw per texture per pass over an arena of chunks (<c>World/TerrainArena.slang</c>).</summary>
     TerrainArena,
 
-    /// <summary>World: search and destroy's bomb as the remaster draws it -- its fireball and column marched as a volume, and its shock front bending the picture (<c>World/BlastVolume.slang</c>).</summary>
-    BlastVolume,
+    /// <summary>World: a body as I.G.I. 2's thermal goggles see it, in the colours of a heat ramp looked up by how it faces the eye (<c>World/Infrared.slang</c>).</summary>
+    Infrared,
+
+    /// <summary>World: the bodies the remastered thermal sensor sees, drawn into its heat mask (<c>World/ThermalMask.slang</c>).</summary>
+    ThermalMask,
+
+    /// <summary>Post: the remastered thermal sensor, the lit scene re-imaged as heat before the tone map (<c>Post/Thermal.slang</c>).</summary>
+    Thermal,
+
+    /// <summary>World: a race's ghost, its bodies drawn into the ghost's own mask (<c>World/GhostMask.slang</c>).</summary>
+    GhostMask,
+
+    /// <summary>Post: a race's ghost laid over the lit scene before the tone map, with its glitches (<c>Post/Ghost.slang</c>).</summary>
+    Ghost,
+
+    /// <summary>Post: a bomb's after-blast, its front sweeping out over the lit scene before the tone map (<c>Post/BombAfterBlast.slang</c>).</summary>
+    BombAfterBlast,
+
+    /// <summary>Post: a picture in linear light laid into the back buffer, where the direct path's frame was (<c>Post/ScreenPicture.slang</c>).</summary>
+    ScreenPicture,
 
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is

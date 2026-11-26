@@ -531,13 +531,13 @@ public sealed class RetailSplineSegment
     /// <summary><c>0x4B2D00</c>: yaw from <c>fpatan</c> (0 when x is 0), pitch from the clamped <c>asin</c>.</summary>
     private static void DirectionToAngles(float x, float y, float z, out float pitch, out float yaw)
     {
-        yaw = x != 0f ? X87.ToFloat(Math.Atan2(y, x)) : 0f;
+        yaw = x != 0f ? X87.ToFloat(SimMath.Atan2(y, x)) : 0f;
         X87 length = X87.Sqrt((X87)x * x + (X87)y * y + (X87)z * z);
         if (length.Value != 0d)
         {
             float sine = ((X87)z / length).F;
             sine = Math.Clamp(sine, -1f, 1f);
-            pitch = X87.ToFloat(-Math.Asin(sine));
+            pitch = X87.ToFloat(-SimMath.Asin(sine));
         }
         else
         {
@@ -554,7 +554,7 @@ public sealed class RetailSplineSegment
             return 0f;
         }
 
-        double roll = m[8] == 0f ? (m[7] < 0f ? -Math.PI / 2 : Math.PI / 2) : Math.Atan2(m[7], m[8]);
+        double roll = m[8] == 0f ? (m[7] < 0f ? -Math.PI / 2 : Math.PI / 2) : SimMath.Atan2(m[7], m[8]);
         if (roll < 0d)
         {
             roll += 2 * Math.PI;
@@ -565,19 +565,19 @@ public sealed class RetailSplineSegment
 
     private static float[] RotZ(float a)
     {
-        float s = X87.ToFloat(Math.Sin(a)), c = X87.ToFloat(Math.Cos(a));
+        float s = X87.ToFloat(SimMath.Sin(a)), c = X87.ToFloat(SimMath.Cos(a));
         return [c, -s, 0f, s, c, 0f, 0f, 0f, 1f];
     }
 
     private static float[] RotY(float a)
     {
-        float s = X87.ToFloat(Math.Sin(a)), c = X87.ToFloat(Math.Cos(a));
+        float s = X87.ToFloat(SimMath.Sin(a)), c = X87.ToFloat(SimMath.Cos(a));
         return [c, 0f, s, 0f, 1f, 0f, -s, 0f, c];
     }
 
     private static float[] RotX(float a)
     {
-        float s = X87.ToFloat(Math.Sin(a)), c = X87.ToFloat(Math.Cos(a));
+        float s = X87.ToFloat(SimMath.Sin(a)), c = X87.ToFloat(SimMath.Cos(a));
         return [1f, 0f, 0f, 0f, c, -s, 0f, s, c];
     }
 

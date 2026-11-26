@@ -72,15 +72,17 @@ public sealed partial class GameHost
 
         public bool FailedMenu => host._session.FailedMenu;
 
-        public bool ComputerOpen => host._computerOpen;
+        public bool ComputerOpen => host._tickInput.Computer.Open;
+
+        public OpenIGI.Game.Player.TitlePlayerInput TickInput => host._tickInput;
 
         public bool MissionComputer => host.UsesMissionComputer;
 
         public bool MapComputerEnabled => host.MapComputerAvailable();
 
-        public (int Width, int Height) ComputerDisplay => host.ComputerDisplaySize;
+        public (int Width, int Height) ComputerDisplay => (host._tickInput.Computer.DisplayWidth, host._tickInput.Computer.DisplayHeight);
 
-        public OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput() => host.TakeComputerInput();
+        public OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput() => host._tickInput.Computer.Pointer;
 
         public void ComputerChanged(bool open) => host.MissionComputerChanged(open);
 
@@ -189,7 +191,7 @@ public sealed partial class GameHost
 
         public OpenIGI.Core.Threading.IWorkScheduler Work => host._work;
 
-        public bool PlayCutscenes => host._options.PlayCutscenes;
+        public bool PlayCutscenes => host.PlaysCutscenes;
 
         public int ActiveProfileIndex => host._configuration.ActiveIndex;
 

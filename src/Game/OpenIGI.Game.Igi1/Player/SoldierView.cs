@@ -28,6 +28,11 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
     private BonePose? _pose;
     private BonePose? _unrotatedPose;
 
+    // A pose another body lends it, in its own frame, which it stands in instead of its clips' (BorrowPose): its root's height
+    // taken out and kept apart, as the clips' root height is (RootSample).
+    private BonePose? _borrowed;
+    private float _borrowedRootHeight;
+
     /// <summary>Initializes a new instance of the <see cref="SoldierView"/> class.</summary>
     /// <param name="soldier">The placed task, already bound from the level script.</param>
     /// <param name="set">The animation set whose skeleton the task's <c>Bone Heirachy</c> names.</param>
@@ -315,19 +320,55 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
     /// <summary>Gets the pitch the body looks along — see <see cref="LookAlong"/>.</summary>
     public float LookPitch { get; private set; }
 
+    /// <summary>Gets the roll the torso leans out by, radians, positive to the right — see <see cref="LeanAlong"/>.</summary>
+    public float LeanRoll { get; private set; }
+
+    /// <summary>Gets how far the weapon is up on its sights, nought to one — see <see cref="LeanAlong"/>.</summary>
+    public float AimRaise { get; private set; }
+
+    /// <summary>Leans the torso and settles the head onto the stock, as modern aim's lean and sights hold a player.</summary>
+    /// <param name="roll">The lean, radians, positive to the right; the torso rolls out from the hips about the body's forward.</param>
+    /// <param name="aim">How far the weapon is up on its sights, nought to one.</param>
+    /// <remarks>
+    /// <b>Not retail.</b> Laid over the pose after the look (<see cref="LookAlong"/>), so a player leaning round a corner and
+    /// looking down it shows both: the torso and everything it carries -- the head, the arms, the weapon -- roll out over the
+    /// hips, and on the sights the head tips onto the stock, toward the shoulder the weapon is on.
+    /// </remarks>
+    public void LeanAlong(float roll, float aim)
+    {
+        if (roll == LeanRoll && aim == AimRaise)
+        {
+            return;
+        }
+
+        LeanRoll = roll;
+        AimRaise = aim;
+        _pose = null;
+        _unrotatedPose = null;
+    }
+
+    // How far the head tips onto the stock on the sights: towards the right shoulder, and down along the weapon.
+    private const float CheekRoll = 0.20f;
+    private const float CheekDip = 0.10f;
+
     // 0x489F70 on a built pose: the turn about the body's side, its column 0 (the rig's own +X when unrotated).
     private BonePose Looked(BonePose pose, Matrix3f? root)
     {
-        if (LookPitch == 0f)
+        if (LookPitch == 0f && LeanRoll == 0f && AimRaise == 0f)
         {
             return pose;
         }
 
         Vector3f side = root is { } body ? new Vector3f(body.M11, body.M21, body.M31) : new Vector3f(1f, 0f, 0f);
+        Vector3f ahead = root is { } facing ? new Vector3f(facing.M12, facing.M22, facing.M32) : new Vector3f(0f, 1f, 0f);
         float chest = Math.Clamp(LookPitch, -HumanUpperBody.LookLimitRadians, HumanUpperBody.LookLimitRadians);
         return pose
             .TurnSubtree(HumanUpperBody.Bone, side, chest)
-            .TurnSubtree(HumanUpperBody.NeckBone, side, LookPitch - chest);
+            .TurnSubtree(HumanUpperBody.NeckBone, side, LookPitch - chest - (AimRaise * CheekDip))
+            // A turn about the body's forward by a positive angle tips its top to the left, so a lean to the right turns by
+            // the roll negated.
+            .TurnSubtree(HumanUpperBody.Bone, ahead, -LeanRoll)
+            .TurnSubtree(HumanUpperBody.NeckBone, ahead, -AimRaise * CheekRoll);
     }
 
     /// <summary>Starts one of the three authored ladder animations.</summary>
@@ -510,7 +551,7 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
     /// anyway.
     /// </para>
     /// </remarks>
-    public Vector3f RootSample => _bones.SampleRootMotion();
+    public Vector3f RootSample => _borrowed is not null ? new Vector3f(0f, 0f, _borrowedRootHeight) : _bones.SampleRootMotion();
 
     /// <summary>Kills the soldier and starts its death animation.</summary>
     /// <param name="deathAnimation">
@@ -613,7 +654,7 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
 
     /// <summary>Gets the current pose, in the object's own space with the facing baked in.</summary>
     /// <returns>The posed rig.</returns>
-    public BonePose Pose() => _pose ??= Looked(_bones.Pose(Orientation), Orientation);
+    public BonePose Pose() => _pose ??= _borrowed is { } borrowed ? Turned(borrowed, Orientation) : Looked(_bones.Pose(Orientation), Orientation);
 
     /// <summary>Gets the pose built with an identity root, for a renderer that applies the facing itself.</summary>
     /// <returns>The posed rig, unrotated.</returns>
@@ -622,14 +663,65 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
     /// rotation only ever left-multiplies every bone — the trade the port's skinned draw already makes
     /// so that a shared pose skins once and turns per soldier (see <c>ViewModelRenderer</c>).
     /// </remarks>
-    public BonePose UnrotatedPose() => _unrotatedPose ??= Looked(_bones.Pose(), null);
+    public BonePose UnrotatedPose() => _unrotatedPose ??= _borrowed ?? Looked(_bones.Pose(), null);
 
     /// <summary>Gets the pose the clocks will reach on the next tick -- what a cast re-posing the body between ticks sees.</summary>
     /// <returns>The posed rig under <see cref="Orientation"/>, one tick on; not cached.</returns>
-    public BonePose PoseAhead() => Looked(_bones.PoseAhead(Orientation), Orientation);
+    public BonePose PoseAhead() => _borrowed is { } borrowed ? Turned(borrowed, Orientation) : Looked(_bones.PoseAhead(Orientation), Orientation);
 
     /// <summary>Gets <see cref="PoseAhead"/> built with an identity root.</summary>
     /// <returns>The posed rig, unrotated, one tick on; not cached.</returns>
-    public BonePose UnrotatedPoseAhead() => Looked(_bones.PoseAhead(), null);
+    public BonePose UnrotatedPoseAhead() => _borrowed ?? Looked(_bones.PoseAhead(), null);
+
+    /// <summary>Gets whether the soldier stands in a pose another body lends it (<see cref="BorrowPose"/>).</summary>
+    public bool IsPoseBorrowed => _borrowed is not null;
+
+    /// <summary>
+    /// Stands the soldier in a pose another body lends it, in place of its own clips', until given back: what it is drawn in and
+    /// what a round meets. Its own clips run on beneath, unseen.
+    /// </summary>
+    /// <param name="pose">The pose on this soldier's skeleton, in its own frame (unturned by <see cref="Orientation"/>); <see langword="null"/>
+    /// to stand in its own again.</param>
+    /// <remarks>
+    /// The pose's root height is the soldier's root height while it is lent (<see cref="RootSample"/>), as a clip's is: the pose
+    /// is kept with its root lowered to the soldier's origin, where its own clips keep theirs.
+    /// </remarks>
+    public void BorrowPose(BonePose? pose)
+    {
+        _pose = null;
+        _unrotatedPose = null;
+        if (pose is null || pose.BoneCount == 0)
+        {
+            _borrowed = null;
+            return;
+        }
+
+        int root = pose.Parents.IndexOf(BoneSkeleton.NoParent);
+        _borrowedRootHeight = pose.Positions[root < 0 ? 0 : root].Z;
+        Vector3f[] lowered = pose.Positions.ToArray();
+        for (int bone = 0; bone < lowered.Length; bone++)
+        {
+            lowered[bone] = new Vector3f(lowered[bone].X, lowered[bone].Y, lowered[bone].Z - _borrowedRootHeight);
+        }
+
+        _borrowed = BonePose.FromBones(pose.Rotations, lowered, pose.Parents);
+    }
+
+    // A pose in the soldier's own frame turned by its facing, as BonePose.Evaluate turns every bone under a root rotation: each
+    // bone's rotation on the left, each position by the palette's M . v.
+    private static BonePose Turned(BonePose pose, Matrix3f orientation)
+    {
+        int count = pose.BoneCount;
+        Matrix3f[] rotations = new Matrix3f[count];
+        Vector3f[] positions = new Vector3f[count];
+        Matrix3f inverse = orientation.Transposed();
+        for (int bone = 0; bone < count; bone++)
+        {
+            rotations[bone] = orientation * pose.Rotations[bone];
+            positions[bone] = inverse.Transform(pose.Positions[bone]);
+        }
+
+        return BonePose.FromBones(rotations, positions, pose.Parents);
+    }
 
 }

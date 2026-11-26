@@ -59,7 +59,7 @@ public readonly struct X87Single(double value) : IX87<X87Single>
     /// <summary>The product, rounded toward zero to 24 bits.</summary>
     /// <param name="a">The first factor.</param>
     /// <param name="b">The second factor.</param>
-    public static X87Single operator *(X87Single a, X87Single b) => new(Chop(X87.Multiply(a.Value, b.Value)));
+    public static X87Single operator *(X87Single a, X87Single b) => new(Multiply(a.Value, b.Value));
 
     /// <summary>The quotient, rounded toward zero to 24 bits.</summary>
     /// <param name="a">The dividend.</param>
@@ -83,23 +83,67 @@ public readonly struct X87Single(double value) : IX87<X87Single>
     /// <summary><c>fsin</c>: precision control does not apply to it.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The sine.</returns>
-    public static X87Single Sin(X87Single a) => new(Math.Sin(a.Value));
+    public static X87Single Sin(X87Single a) => new(SimMath.Sin(a.Value));
 
     /// <summary><c>fcos</c>: precision control does not apply to it.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The cosine.</returns>
-    public static X87Single Cos(X87Single a) => new(Math.Cos(a.Value));
+    public static X87Single Cos(X87Single a) => new(SimMath.Cos(a.Value));
 
     /// <summary>The arc tangent of <paramref name="y"/> over <paramref name="x"/>, <c>fpatan</c>, which precision control does not narrow.</summary>
     /// <param name="y">The rise.</param>
     /// <param name="x">The run.</param>
     /// <returns>The angle at full precision.</returns>
-    public static X87Single Atan2(X87Single y, X87Single x) => new(Math.Atan2(y.Value, x.Value));
+    public static X87Single Atan2(X87Single y, X87Single x) => new(SimMath.Atan2(y.Value, x.Value));
 
     /// <summary><c>fistp</c> under rounding toward zero: the integer part.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The truncated integer.</returns>
     public static int ToInt32(X87Single a) => (int)Math.Truncate(a.Value);
+
+    /// <summary>A product rounded toward zero to 24 bits: the same value as <c>Chop(X87.Multiply(a, b))</c>, found without a fused multiply-add where it can be.</summary>
+    /// <param name="a">The first factor.</param>
+    /// <param name="b">The second factor.</param>
+    /// <returns>The truncated product.</returns>
+    /// <remarks>
+    /// <para>
+    /// The double product <c>p</c> is within half a double ulp of the exact one. When <c>p</c> is not itself on the 24-bit grid,
+    /// the grid value below it in magnitude is also the one below the exact product, so truncating <c>p</c> is the answer. Only
+    /// a <c>p</c> that rounding may have carried onto the grid needs the exact error -- unless the factors' significant bits fit a
+    /// double between them, when the product was exact.
+    /// </para>
+    /// <para>
+    /// Why it matters: a browser has no fused multiply-add instruction, and <see cref="Math.FusedMultiplyAdd"/> there is a
+    /// software routine. Every I.G.I. 2 skinning and bone multiply paid for one, a tenth of the browser build's CPU. Most products
+    /// now take the first branch.
+    /// </para>
+    /// </remarks>
+    public static double Multiply(double a, double b)
+    {
+        double product = a * b;
+        if (double.IsNormal(product))
+        {
+            long bits = BitConverter.DoubleToInt64Bits(product);
+            if ((bits & DroppedFractionMask) != 0)
+            {
+                return BitConverter.Int64BitsToDouble(bits & ~DroppedFractionMask);
+            }
+
+            if (double.IsNormal(a) && double.IsNormal(b) && SignificantBits(a) + SignificantBits(b) <= 53)
+            {
+                return product;
+            }
+        }
+
+        return Chop(X87.Multiply(a, b));
+    }
+
+    // The bits of a normal double's significand up to its last set one.
+    private static int SignificantBits(double value)
+    {
+        long significand = (BitConverter.DoubleToInt64Bits(value) & ((1L << 52) - 1)) | (1L << 52);
+        return 53 - System.Numerics.BitOperations.TrailingZeroCount(significand);
+    }
 
     /// <summary>Truncates a register value to a 24-bit significand, keeping its exponent.</summary>
     /// <param name="value">The value.</param>

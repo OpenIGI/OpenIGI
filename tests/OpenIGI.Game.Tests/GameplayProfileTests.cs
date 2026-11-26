@@ -1,4 +1,6 @@
-﻿using Xunit;
+using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
+using Xunit;
 
 namespace OpenIGI.Game.Tests;
 
@@ -16,19 +18,41 @@ namespace OpenIGI.Game.Tests;
 /// — the same arrangement <c>AudioProfileTests</c> uses.
 /// </para>
 /// </remarks>
+[Collection(ExperienceSettings.Name)]
 public sealed class GameplayProfileTests : IDisposable
 {
-    private readonly GameplayProfile _preset = GameplayCVars.Preset.Value;
-    private readonly bool _ragdoll = GameplayCVars.Ragdoll.Value;
+    private readonly ExperiencePreset _preset = GameplayCVars.Preset.Value;
     private readonly float _force = GameplayCVars.RagdollForce.Value;
     private readonly int _substeps = GameplayCVars.RagdollSubsteps.Value;
+
+    // Every value an experience writes, for putting back: applying one reaches all of them.
+    private readonly (ICVar Variable, string Value)[] _managed =
+        [.. ExperiencePresetRegistry.Default.Managed.Select(static variable => (variable, variable.ValueText))];
 
     /// <summary>The vanilla profile turns simulated deaths off.</summary>
     [Fact]
     public void TheVanillaProfileRestoresTheOriginalsDeathAnimations()
     {
-        GameplayCVars.Apply(GameplayProfile.Vanilla);
+        GameplayCVars.Apply(ExperiencePreset.Vanilla);
         Assert.False(GameplayCVars.Ragdoll.Value);
+    }
+
+    /// <summary>The vanilla profile takes away what the original never had: saves mid-mission, and bodies that stay.</summary>
+    [Fact]
+    public void TheVanillaProfileTakesAwayTheRemastersAdditions()
+    {
+        GameplayCVars.Apply(ExperiencePreset.Enhanced);
+        Assert.True(GameplayCVars.Igi1Saves.Value);
+        Assert.True(GameplayCVars.BodiesStay.Value);
+        Assert.Equal(ExperiencePreset.Enhanced, ExperiencePresetRegistry.Default.Detect());
+
+        GameplayCVars.Apply(ExperiencePreset.Vanilla);
+        Assert.False(GameplayCVars.Igi1Saves.Value);
+        Assert.False(GameplayCVars.BodiesStay.Value);
+        Assert.Equal(ExperiencePreset.Vanilla, ExperiencePresetRegistry.Default.Detect());
+
+        GameplayCVars.BodiesStay.Value = true;
+        Assert.Equal(ExperiencePreset.Custom, ExperiencePresetRegistry.Default.Detect());
     }
 
     /// <summary>Simulated deaths ship off, and are something a player turns on.</summary>
@@ -45,7 +69,7 @@ public sealed class GameplayProfileTests : IDisposable
     public void TheEnhancedProfileLeavesSimulatedDeathsAlone(bool chosen)
     {
         GameplayCVars.Ragdoll.Value = chosen;
-        GameplayCVars.Apply(GameplayProfile.Enhanced);
+        GameplayCVars.Apply(ExperiencePreset.Enhanced);
         Assert.Equal(chosen, GameplayCVars.Ragdoll.Value);
     }
 
@@ -53,9 +77,9 @@ public sealed class GameplayProfileTests : IDisposable
     [Fact]
     public void SettingThePresetAppliesIt()
     {
-        GameplayCVars.Preset.Value = GameplayProfile.Enhanced;
+        GameplayCVars.Preset.Value = ExperiencePreset.Enhanced;
         GameplayCVars.Ragdoll.Value = true;
-        GameplayCVars.Preset.Value = GameplayProfile.Vanilla;
+        GameplayCVars.Preset.Value = ExperiencePreset.Vanilla;
         Assert.False(GameplayCVars.Ragdoll.Value);
     }
 
@@ -64,7 +88,7 @@ public sealed class GameplayProfileTests : IDisposable
     public void TheCustomProfileChangesNothing()
     {
         GameplayCVars.Ragdoll.Value = true;
-        GameplayCVars.Apply(GameplayProfile.Custom);
+        GameplayCVars.Apply(ExperiencePreset.Custom);
         Assert.True(GameplayCVars.Ragdoll.Value);
     }
 
@@ -82,7 +106,11 @@ public sealed class GameplayProfileTests : IDisposable
     public void Dispose()
     {
         GameplayCVars.Preset.Value = _preset;
-        GameplayCVars.Ragdoll.Value = _ragdoll;
+        foreach ((ICVar variable, string value) in _managed)
+        {
+            variable.TrySetText(value, out _);
+        }
+
         GameplayCVars.RagdollForce.Value = _force;
         GameplayCVars.RagdollSubsteps.Value = _substeps;
     }

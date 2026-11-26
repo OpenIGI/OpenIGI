@@ -31,32 +31,32 @@ mat4 spvWorkaroundRowMajor(mat4 wrap) { return wrap; }
 
 void main()
 {
-    vec3 _390 = input_normal;
-    vec2 _353 = input_diffuseUv;
-    vec2 _354 = input_lightmapUv;
-    vec4 _355 = input_colorBgra.zyxw;
-    vec4 _284 = vec4(input_position, 1.0) * spvWorkaroundRowMajor(push.modelViewProjection);
-    vec4 _266 = _284;
-    float _286 = _284.y;
-    float _344;
+    vec3 _391 = input_normal;
+    vec2 _354 = input_diffuseUv;
+    vec2 _355 = input_lightmapUv;
+    vec4 _356 = input_colorBgra.zyxw;
+    vec4 _285 = vec4(input_position, 1.0) * spvWorkaroundRowMajor(push.modelViewProjection);
+    vec4 _267 = _285;
+    float _287 = _285.y;
+    float _345;
     if (_89)
     {
-        _344 = -_286;
+        _345 = -_287;
     }
     else
     {
-        _344 = _286;
+        _345 = _287;
     }
-    vec4 _400 = _266;
-    _400.y = _344;
-    _400.z = (_400.w - _400.z) * 0.5;
-    _266 = _400;
-    gl_Position = _400;
-    entryPointParam_vertexMain_diffuseUv = _353;
-    entryPointParam_vertexMain_lightmapUv = _354;
-    entryPointParam_vertexMain_color = _355;
-    entryPointParam_vertexMain_worldNormal = ((push.normal0.xyz * _390.x) + (push.normal1.xyz * _390.y)) + (push.normal2.xyz * _390.z);
-    entryPointParam_vertexMain_viewDepth = _400.w;
+    vec4 _401 = _267;
+    _401.y = _345;
+    _401.z = (_401.w - _401.z) * 0.5;
+    _267 = _401;
+    gl_Position = _401;
+    entryPointParam_vertexMain_diffuseUv = _354;
+    entryPointParam_vertexMain_lightmapUv = _355;
+    entryPointParam_vertexMain_color = _356;
+    entryPointParam_vertexMain_worldNormal = ((push.normal0.xyz * _391.x) + (push.normal1.xyz * _391.y)) + (push.normal2.xyz * _391.z);
+    entryPointParam_vertexMain_viewDepth = _401.w;
     entryPointParam_vertexMain_fromEye = (((push.normal0.xyz * input_position.x) + (push.normal1.xyz * input_position.y)) + (push.normal2.xyz * input_position.z)) + vec3(push.normal0.w, push.normal1.w, push.normal2.w);
 }
 

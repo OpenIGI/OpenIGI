@@ -41,6 +41,13 @@ public sealed class SnapshotInterpolator
     /// <summary>Gets or sets the distance allowed on top of that, in world units.</summary>
     public double TeleportSlackUnits { get; set; } = 2 * 4096;
 
+    /// <summary>Gets how many times a human was asked for past the newest snapshot holding it, and so carried on along its velocity.</summary>
+    /// <remarks>A line's health: a client drawing the others far enough back has a snapshot either side, and this stands still.</remarks>
+    public long Extrapolations { get; private set; }
+
+    /// <summary>Gets how many times a human was asked for at all.</summary>
+    public long Samples { get; private set; }
+
     /// <summary>Gets the oldest tick it can still answer for, or <see cref="long.MaxValue"/> when empty.</summary>
     public long OldestTick => _snapshots.Count > 0 ? _snapshots[0].Tick : long.MaxValue;
 
@@ -90,8 +97,10 @@ public sealed class SnapshotInterpolator
         Snapshot from = _snapshots[before];
         from.TryGet(id, out ReplicatedHuman a);
         int next = after < 0 ? -1 : _snapshots.FindIndex(after, s => s.TryGet(id, out _));
+        Samples++;
         if (next < 0)
         {
+            Extrapolations += tick > from.Tick ? 1 : 0;
             double ahead = Math.Min(tick - from.Tick, MaxExtrapolationTicks);
             human = a with { Position = Int3.From(a.Position.ToVector() + (ToDouble(a.Velocity) * ahead)) };
             return true;

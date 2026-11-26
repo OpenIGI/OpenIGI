@@ -13,7 +13,8 @@ namespace OpenIGI.Game.Multiplayer;
 /// <param name="Killed">Whether it killed.</param>
 /// <param name="Head">Whether it was to the head.</param>
 /// <param name="From">Where the shot came from, in world units.</param>
-public readonly record struct CombatNote(int Attacker, int Victim, float Damage, bool Killed, bool Head, Vector3d From)
+/// <param name="Weapon">The title's key for the shooter's weapon (an I.G.I. script id), or empty.</param>
+public readonly record struct CombatNote(int Attacker, int Victim, float Damage, bool Killed, bool Head, Vector3d From, string Weapon = "")
 {
     /// <summary>Writes the note, after its message's id.</summary>
     /// <param name="writer">Where to.</param>
@@ -28,6 +29,7 @@ public readonly record struct CombatNote(int Attacker, int Victim, float Damage,
         writer.WriteBits((uint)(int)From.X, 32);
         writer.WriteBits((uint)(int)From.Y, 32);
         writer.WriteBits((uint)(int)From.Z, 32);
+        writer.WriteString(Weapon ?? string.Empty, Modes.KillNote.MaxWeaponBytes);
     }
 
     /// <summary>Reads a note <see cref="Write"/> wrote.</summary>
@@ -41,6 +43,7 @@ public readonly record struct CombatNote(int Attacker, int Victim, float Damage,
         bool killed = reader.ReadBool();
         bool head = reader.ReadBool();
         Vector3d from = new((int)reader.ReadBits(32), (int)reader.ReadBits(32), (int)reader.ReadBits(32));
-        return reader.IsOverflowed ? null : new CombatNote(attacker, victim, damage, killed, head, from);
+        string weapon = reader.ReadString(Modes.KillNote.MaxWeaponBytes);
+        return reader.IsOverflowed ? null : new CombatNote(attacker, victim, damage, killed, head, from, weapon);
     }
 }

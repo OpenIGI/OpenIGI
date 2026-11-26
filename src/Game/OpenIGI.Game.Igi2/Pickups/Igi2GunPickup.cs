@@ -150,6 +150,13 @@ public sealed partial class Igi2GunPickup
     /// <summary>Gets or sets a value indicating whether its own run handler runs it, in the level's tree or its dynamic tasks.</summary>
     public bool IsDriven { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether its model is in the world, and so drawn: a container whose condition fails takes it out
+    /// (<c>RigidDynCubeObj_RemoveHandler</c>). It stays on the pickups' list all the same, which only its deletion leaves
+    /// (<c>GunPickup_DeleteHandler</c>), so the player can still take it.
+    /// </summary>
+    public bool IsInWorld { get; set; } = true;
+
     /// <summary>Gets a value indicating whether it is falling, <c>isMoving</c> (<c>+0x1FD</c>): a dropped weapon's.</summary>
     public bool IsMoving { get; private set; }
 
@@ -456,8 +463,8 @@ public sealed partial class Igi2GunPickup
         float beta = 0f, gamma = 0f;
         if (!string.Equals(WeaponType.WeaponId, FlatWeaponId, StringComparison.Ordinal) && lx != 0f)
         {
-            beta = (-(Fpu)Math.Atan(((Fpu)lz / lx).Value)).F;
-            gamma = ((Fpu)Math.Atan(((Fpu)ly / lx).Value)).F;
+            beta = (-(Fpu)SimMath.Atan(((Fpu)lz / lx).Value)).F;
+            gamma = ((Fpu)SimMath.Atan(((Fpu)ly / lx).Value)).F;
         }
 
         float[] t = EngineEuler.Rotation(0f, beta, gamma);
@@ -570,6 +577,12 @@ public sealed partial class Igi2GunPickup
 
         return true;
     }
+
+    /// <summary>Gets a value indicating whether it is a co-op server's gun laid on a client (<see cref="Igi2PickupList.IsReplica"/>).</summary>
+    public bool IsReplica { get; init; }
+
+    /// <summary>Marks the pickup for deleting, nobody given it: on a co-op client, a weapon another player took on the server.</summary>
+    public void TakenElsewhere() => IsDelete = true;
 
     /// <summary>
     /// Gives the human the weapon and marks the pickup for deleting, <c>GunPickup_Pickup</c> (<c>igi2 0x46C010</c>).

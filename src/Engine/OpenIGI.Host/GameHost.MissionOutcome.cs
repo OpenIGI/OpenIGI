@@ -40,6 +40,12 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class MissionOutcomeHost(GameHost host) : IMissionOutcomeHost
     {
+        public void MissionDecided(bool completed) => host.MissionDecided(completed);
+
+        public bool WatchesReplay => host._playback is not null && host._editor is not { IsPlaying: true };
+
+        public void ReplayDecided(bool completed) => host.PlaybackDecided(completed);
+
         public IMissionProgress? Objectives => host._mission.Progress;
 
         public bool CutscenePlaying => host._mission.Scenes?.IsPlaying == true;
@@ -51,6 +57,8 @@ public sealed partial class GameHost
         public IGameWindow Window => host._window;
 
         public PlayerProfile? ActiveProfile => host._configuration.Active;
+
+        public string TitleId => host._titleRuntime.Title.Id;
 
         public IMissionCatalogue<MissionDescriptor> Missions => host._missions;
 
@@ -64,13 +72,30 @@ public sealed partial class GameHost
             {
                 HostConfiguration.Save(host._configuration, host._logger);
             }
+
+            host.ProfileSaved();
         }
 
-        public void StartMission(int id) => host.StartMission(id);
+        // Once its files are there: a browser reads the next level's large files only when it is first wanted, and loaded
+        // before they arrive it came up without its terrain and models, the player falling out of the world. The desktop's
+        // gate always says yes, so there this is the plain start.
+        public void StartMission(int id) => host.StartMissionWhenReadable(id);
 
         public bool FollowsSession => host.TickObserver is Multiplayer.ISessionFollower;
 
         public bool PlaysArena => host.TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
+
+        public bool RunsUnattended => host.TickObserver is Multiplayer.ISessionHold { Unattended: true };
+
+        public bool PlaysSolo => host.TickObserver is null;
+
+        public Multiplayer.ISessionMissionScore? ScoreSession => host.TickObserver as Multiplayer.ISessionMissionScore;
+
+        public long Milliseconds => host._loop.TimeSource.Milliseconds;
+
+        public bool ShowsScoreScreen => !host._options.SimulationOnly;
+
+        public Game.Scoring.MissionScoreWords ScoreWords => host.ScoreWords;
 
         public void ReleasePlayedMission() => host.ReleasePlayedMission();
     }

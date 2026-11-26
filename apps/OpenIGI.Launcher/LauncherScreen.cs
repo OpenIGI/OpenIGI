@@ -36,7 +36,7 @@ internal interface ILauncherWindow
     /// <summary>Decodes a picture file for drawing, once per file.</summary>
     /// <param name="path">The picture: PNG, JPEG or WebP.</param>
     /// <returns>The picture, or <see langword="null"/> when it is missing or cannot be decoded.</returns>
-    BackdropPicture? Picture(string path);
+    UiPicture? Picture(string path);
 }
 
 /// <summary>
@@ -50,18 +50,20 @@ internal interface ILauncherWindow
 /// </remarks>
 internal sealed class LauncherScreen : Screen
 {
+    /// <summary>The sections shown, in their tab order. Maps is left out for now (its page is kept for when it returns).</summary>
+    internal static readonly IReadOnlyList<LauncherSection> Shown =
+        [LauncherSection.Home, LauncherSection.Content, LauncherSection.Mods, LauncherSection.Servers, LauncherSection.Leaderboard, LauncherSection.Logs, LauncherSection.Settings];
+
     private const float ChromeHeight = 36f;
     private const float HeaderHeight = 76f;
     private const float FooterHeight = 60f;
-
-    private static readonly string[] Sections = ["Home", "Content", "Mods", "Servers", "Logs", "Settings"];
 
     private readonly UiTheme _theme;
     private readonly UiTheme _rowTheme;
     private readonly LauncherModel _model;
     private readonly ILauncherWindow _window;
-    private readonly BackdropPicture? _picture;
-    private readonly List<HeaderTab> _tabs = [];
+    private readonly UiPicture? _picture;
+    private readonly Dictionary<LauncherSection, HeaderTab> _tabs = [];
 
     private SectionDeck? _deck;
     private SectionTabs? _strip;
@@ -71,14 +73,16 @@ internal sealed class LauncherScreen : Screen
     private ContentPage? _content;
     private ContentPage? _mods;
     private ServersPage? _servers;
+    private LeaderboardPage? _leaderboard;
     private LogsPage? _logs;
     private GameSwitcher? _switcher;
+    private AccountMenu? _account;
     private UiElement? _chrome;
     private FooterBar? _footer;
     private int _section;
     private int _revision = -1;
 
-    public LauncherScreen(UiTheme theme, UiTheme rowTheme, LauncherModel model, ILauncherWindow window, BackdropPicture? picture)
+    public LauncherScreen(UiTheme theme, UiTheme rowTheme, LauncherModel model, ILauncherWindow window, UiPicture? picture)
     {
         _theme = theme;
         _rowTheme = rowTheme;
@@ -114,17 +118,11 @@ internal sealed class LauncherScreen : Screen
         // The main area first in tree order, so focus starts on the page rather than on the chrome.
         var main = new SectionDeck();
         _deck = main;
-        _home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(5), () => ShowSection(1));
-        AddPage(main, _home.Root);
-        _content = new ContentPage(_rowTheme, _model, _window.Picture);
-        AddPage(main, _content.Root);
-        _mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods);
-        AddPage(main, _mods.Root);
-        _servers = new ServersPage(_rowTheme, _model);
-        AddPage(main, _servers.Root);
-        _logs = new LogsPage(_theme, _model, _window);
-        AddPage(main, _logs.Root);
-        AddPage(main, SettingsPage.Build(_rowTheme, _model, _window));
+        // One page a shown section, in the tabs' order: the deck shows a page by its section's place there.
+        foreach (LauncherSection section in Shown)
+        {
+            AddPage(main, BuildPage(section));
+        }
         layout.Add(main, 2, 0);
 
         _chrome = BuildChrome();
@@ -135,7 +133,7 @@ internal sealed class LauncherScreen : Screen
         layout.Add(_footer, 3, 0);
 
         root.Add(layout);
-        ShowSection(_section, refocus: false);
+        ShowAt(_section, refocus: false);
         return root;
     }
 
@@ -156,11 +154,30 @@ internal sealed class LauncherScreen : Screen
             return false;
         }
 
-        // An open game list takes Back for itself: shutting it is what the player meant.
+        // An open game list or account panel takes Back for itself: shutting it is what the player meant.
         if (nav.Back && _switcher is { IsOpen: true } open)
         {
             open.Close();
             return false;
+        }
+
+        if (nav.Back && _account is { IsOpen: true } account)
+        {
+            account.Close();
+            return false;
+        }
+
+        // A press anywhere outside the open account panel shuts it, as a menu does.
+        // Back on an open record goes to the board it was opened from, before it goes home.
+        if (nav.Back && Current == LauncherSection.Leaderboard && _leaderboard?.Back() == true)
+        {
+            return false;
+        }
+
+        if (_account is { IsOpen: true } panel && input.Mouse.WasPressed(MouseButton.Left)
+            && !panel.PointerBounds.Contains(new UiVec2(input.Mouse.X, input.Mouse.Y)))
+        {
+            panel.Close();
         }
 
         // Ctrl+V into a text field: a folder path is far easier pasted than typed.
@@ -176,11 +193,11 @@ internal sealed class LauncherScreen : Screen
         bool typing = Focus?.Focused is TextBox;
         if (!typing && input.Keyboard.WasPressed(KeyCode.Q))
         {
-            ShowSection((_section + Sections.Length - 1) % Sections.Length);
+            ShowAt((_section + Shown.Count - 1) % Shown.Count);
         }
         else if (!typing && input.Keyboard.WasPressed(KeyCode.E))
         {
-            ShowSection((_section + 1) % Sections.Length);
+            ShowAt((_section + 1) % Shown.Count);
         }
 
         base.HandleInput(nav, input);
@@ -188,7 +205,7 @@ internal sealed class LauncherScreen : Screen
         // Back goes home rather than out: the launcher is a window, closed from its chrome.
         if (nav.Back && _section != 0)
         {
-            ShowSection(0);
+            ShowAt(0);
         }
 
         return false;
@@ -215,7 +232,12 @@ internal sealed class LauncherScreen : Screen
         _home?.Update();
         _content?.Update();
         _mods?.Update();
-        _servers?.Update(_section == 3);
+        _servers?.Update(Current == LauncherSection.Servers);
+        if (_leaderboard?.Update(Current == LauncherSection.Leaderboard) == true)
+        {
+            RequestLayout();
+        }
+
         _logs?.Update();
         if (_backdrop is not null)
         {
@@ -224,11 +246,26 @@ internal sealed class LauncherScreen : Screen
 
         if (_tabs.Count > 0)
         {
-            _tabs[0].Badge = _model.UpdatesAvailable;
-            _tabs[1].Badge = _model.Job is null ? 0 : 1;
-            _tabs[4].Badge = _logs?.Errors ?? 0;
+            _tabs[LauncherSection.Home].Badge = _model.UpdatesAvailable;
+            _tabs[LauncherSection.Content].Badge = _model.Job is null ? 0 : 1;
+            _tabs[LauncherSection.Logs].Badge = _logs?.Errors ?? 0;
         }
     }
+
+    private LauncherSection Current => Shown[_section];
+
+    // A section's page, made once.
+    private UiElement BuildPage(LauncherSection section) => section switch
+    {
+        LauncherSection.Home => (_home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(LauncherSection.Settings), () => ShowSection(LauncherSection.Content))).Root,
+        LauncherSection.Content => (_content = new ContentPage(_rowTheme, _model, _window.Picture)).Root,
+        LauncherSection.Mods => (_mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods)).Root,
+        LauncherSection.Maps => new MapsPage(_rowTheme, _model).Root,
+        LauncherSection.Servers => (_servers = new ServersPage(_theme, _model, _window.Picture)).Root,
+        LauncherSection.Leaderboard => (_leaderboard = new LeaderboardPage(_theme, _model, _window.Picture, () => Focus)).Root,
+        LauncherSection.Logs => (_logs = new LogsPage(_theme, _model, _window)).Root,
+        _ => SettingsPage.Build(_rowTheme, _model, _window),
+    };
 
     private static void AddPage(Panel host, UiElement page)
     {
@@ -236,12 +273,22 @@ internal sealed class LauncherScreen : Screen
         host.AddChild(page);
     }
 
-    /// <summary>Shows one of the sections: 0 Home, 1 Content, 2 Mods, 3 Logs, 4 Settings.</summary>
-    /// <param name="index">The section.</param>
+    /// <summary>Shows one of the sections; one not shown leaves the page as it is.</summary>
+    /// <param name="section">The section.</param>
     /// <param name="refocus">Whether focus moves to the section's first control.</param>
-    internal void ShowSection(int index, bool refocus = true)
+    internal void ShowSection(LauncherSection section, bool refocus = true)
     {
-        _section = Math.Clamp(index, 0, Sections.Length - 1);
+        int index = Shown.ToList().IndexOf(section);
+        if (index >= 0)
+        {
+            ShowAt(index, refocus);
+        }
+    }
+
+    // Shows the section at a place in the tabs.
+    private void ShowAt(int index, bool refocus = true)
+    {
+        _section = Math.Clamp(index, 0, Shown.Count - 1);
 
         // The page slides in and the tab underline glides to it (SectionTransitions).
         _deck?.Show(_section);
@@ -320,23 +367,32 @@ internal sealed class LauncherScreen : Screen
 
         var nav = new SectionTabs(_theme);
         _strip = nav;
-        for (int i = 0; i < Sections.Length; i++)
+        for (int i = 0; i < Shown.Count; i++)
         {
             int index = i;
-            var tab = new HeaderTab(_theme, Sections[i]) { TextSize = 19f, Padding = new Thickness(20f, 0f) };
-            if (i == 3)
+            LauncherSection section = Shown[i];
+            var tab = new HeaderTab(_theme, section.ToString()) { TextSize = 19f, Padding = new Thickness(20f, 0f) };
+            if (section == LauncherSection.Logs)
             {
+                // A count of errors, in the colour of one.
                 tab.BadgeColor = _theme.Danger;
             }
 
-            tab.Activated += _ => ShowSection(index);
-            _tabs.Add(tab);
+            tab.Activated += _ => ShowAt(index);
+            _tabs[section] = tab;
             nav.AddTab(tab);
         }
 
         row.Add(nav);
         row.Add(new Panel(), grow: 1f);
-        row.Add(new StatusIndicator(_theme));
+
+        // Who is signed in, where the bare ONLINE light used to stand: the account says whether the servers answer.
+        _account = new AccountMenu(_theme, _model, _window.Picture, own =>
+        {
+            ShowSection(LauncherSection.Leaderboard);
+            _leaderboard?.Show(own);
+        });
+        row.Add(_account);
         bar.AddChild(row);
         return bar;
     }
@@ -443,4 +499,32 @@ internal sealed class LauncherScreen : Screen
 
         private static string LauncherVersion => Services.LauncherUpdater.OwnVersion.ToString().ToUpperInvariant();
     }
+}
+
+/// <summary>The launcher's sections, each a tab and a page.</summary>
+internal enum LauncherSection
+{
+    /// <summary>The game: play, install, update, its news.</summary>
+    Home,
+
+    /// <summary>Optional content packs.</summary>
+    Content,
+
+    /// <summary>Code and data mods.</summary>
+    Mods,
+
+    /// <summary>Community maps (not shown for now).</summary>
+    Maps,
+
+    /// <summary>The multiplayer servers.</summary>
+    Servers,
+
+    /// <summary>The official servers' leaderboards and players' records.</summary>
+    Leaderboard,
+
+    /// <summary>The launcher's log.</summary>
+    Logs,
+
+    /// <summary>The settings.</summary>
+    Settings,
 }

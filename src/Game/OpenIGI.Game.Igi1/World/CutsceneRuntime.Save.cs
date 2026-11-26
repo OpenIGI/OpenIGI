@@ -110,5 +110,14 @@ public sealed partial class CutsceneRuntime : ISavedStateSource
     /// <summary>Gets what a save keeps of the walk as a whole: its clock.</summary>
     public ISaveSection SaveSection => new ExchangedSection(
         "Igi1LevelWalk",
-        exchange => _context.SimulationTick = exchange.Int(_context.SimulationTick));
+        exchange =>
+        {
+            _context.SimulationTick = exchange.Int(_context.SimulationTick);
+
+            // The clock set back: what ran on the ticks it now counts again runs on them again.
+            if (exchange.IsReading)
+            {
+                Vehicles.ForgetRuns();
+            }
+        });
 }

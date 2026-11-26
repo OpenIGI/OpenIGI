@@ -149,6 +149,33 @@ public sealed partial class ObjectCollisionIndex
         }
     }
 
+    /// <summary>Takes one exact placement's collision out of the world, or puts it back.</summary>
+    /// <param name="placement">The placement.</param>
+    /// <param name="away">Whether it is out of the world, and everything should now pass through it.</param>
+    /// <returns><see langword="true"/> when the placement has collision here.</returns>
+    /// <remarks>
+    /// By placement rather than by task, for a title whose placements all name one owner: its level takes an object out of the
+    /// world by the object's own id, and the others its owner placed stay where they are.
+    /// </remarks>
+    public bool SetAway(WorldPlacement placement, bool away)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        if (!_entriesByPlacement.TryGetValue(placement, out ObjectCollisionEntry[]? entries))
+        {
+            return false;
+        }
+
+        foreach (ObjectCollisionEntry entry in entries)
+        {
+            entry.IsAway = away;
+        }
+
+        return true;
+    }
+
+    // Whether an entry stops nothing just now: its task's door stands open, or its placement is out of the world.
+    private bool Passes(ObjectCollisionEntry entry) => entry.IsAway || _passable.Contains(entry.Owner);
+
     /// <summary>
     /// Opens or closes the authored doorway a door occupies for AI sight.
     /// </summary>
@@ -301,7 +328,7 @@ public sealed partial class ObjectCollisionIndex
             {
                 if (!entry.Owner.IsSelfOrDescendantOf(ancestor)
                     || IsRetired(entry)
-                    || _passable.Contains(entry.Owner)
+                    || Passes(entry)
                     || !ConditionalContainerGate.IsTaskActive(entry.Owner)
                     || entry.Radius <= 0.0)
                 {
@@ -431,7 +458,7 @@ public sealed partial class ObjectCollisionIndex
         {
             if (!entry.IsDynamic
                 || IsRetired(entry)
-                || _passable.Contains(entry.Owner)
+                || Passes(entry)
                 || (!includeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner))
                 || entry.Radius <= 0.0)
             {

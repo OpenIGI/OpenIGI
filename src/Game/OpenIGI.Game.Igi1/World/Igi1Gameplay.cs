@@ -11,9 +11,10 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle
+public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle, OpenIGI.Game.Replays.ISimulationDigest, OpenIGI.Game.Replays.IGhostSource
 {
     private readonly IMissionHostServices _host;
+    private readonly Igi1SimulationDigest _digest = new();
 
     /// <summary>Initializes a new instance of the <see cref="Igi1Gameplay"/> class.</summary>
     /// <param name="host">What shows and plays it.</param>
@@ -39,6 +40,9 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
+
+    /// <inheritdoc/>
+    public IMissionCutscenePreview? CutscenePreview => field ??= new Igi1CutscenePreview(this);
 
     /// <summary>Gets what hurts a player of the mission -- its own or a co-op partner -- and how it dies.</summary>
     public Igi1PlayerHarm Harm { get; }
@@ -70,6 +74,9 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <inheritdoc/>
     public ShotTally? PlayerShots => World.Player?.Shots;
+
+    /// <inheritdoc/>
+    public string PlayerWeapon => World.Player?.Weapons?.InHand?.Weapon.ScriptId ?? string.Empty;
 
     /// <summary>Gets what the mission's player is hurt and dies in.</summary>
     public Igi1MissionPlayerSurroundings PlayerSurroundings { get; }
@@ -122,8 +129,17 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
                 World.PlayerTicked &= stepped;
                 return stepped;
             },
+            Scorer = new Flow.Igi1MissionScorer(World, MissionRanks(request.World)),
         };
     }
+
+    // What the mission's ranks ask: its own ranks.json where its folder (a mod's first) has one, else the game's table.
+    private static Scoring.MissionRankRequirements? MissionRanks(in WorldBuildRequest level) =>
+        Flow.Igi1MissionRanks.Shipped.Read(
+            level.Mission.Descriptor.Id,
+            level.Resources.FileSystem,
+            level.Mission.LevelPack.Directory,
+            level.Logger);
 
     /// <inheritdoc/>
     MissionState IHostedMission.World => World;
@@ -269,4 +285,10 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     // The animation sets, by the installation they were read from.
     private (string Root, Task<Igi1PlayerAnimations> Sets)? _animations;
+
+    /// <inheritdoc/>
+    public void Fold(ref OpenIGI.Game.Replays.SimulationHash hash) => _digest.Fold(World, ref hash);
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.Multiplayer.ReplicatedHuman? GhostFrame() => Multiplayer.Igi1ReplicatedWorld.ReplicateHost(0, this);
 }

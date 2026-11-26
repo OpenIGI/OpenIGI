@@ -27,8 +27,8 @@ internal static class Igi1AiGeometry
             return false;
         }
 
-        double sin = Math.Sin(node.Gamma);
-        double cos = Math.Cos(node.Gamma);
+        double sin = SimMath.Sin(node.Gamma);
+        double cos = SimMath.Cos(node.Gamma);
         double localX = (cos * dx) + (sin * dy);
         double localY = (cos * dy) - (sin * dx);
         double halfExtent = (node.Radius + devianceMetres) * GraphNode.MetreInUnits;

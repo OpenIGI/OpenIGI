@@ -43,6 +43,23 @@ public sealed partial class Igi2HumanPlayer
     private static readonly int[] StandDeathAnimations = [92, 93, 94, 95, 96, 97, 98, 99];
     private static readonly int[] KneelDeathAnimations = [100, 101, 102, 103, 104, 105];
 
+    /// <summary>The first zone whose standing flinch plays a clip, read back from the clip.</summary>
+    /// <param name="animation">The state the flinch's clip was set from.</param>
+    /// <returns>The zone, or <see cref="Igi2DamagePart.Chest"/> (where a fall or a blast lands) for a clip no zone flinches with.</returns>
+    /// <remarks>Every zone that shares a clip flinches the same, so the first stands for them all.</remarks>
+    internal static Igi2DamagePart FlinchPart(int animation)
+    {
+        for (int part = 0; part < ShortHitAnimations.Length; part++)
+        {
+            if (ShortHitAnimations[part][0] == animation)
+            {
+                return (Igi2DamagePart)part;
+            }
+        }
+
+        return Igi2DamagePart.Chest;
+    }
+
     // State 54 -- InitStateHit 0x4B2090, RunStateHit 0x4B21F0.
     private void EnterHit()
     {
@@ -163,7 +180,12 @@ public sealed partial class Igi2HumanPlayer
             ImpactSpeed = default;
         }
 
-        Weapon.ClearAllWeapons();
+        // A co-op player down waits to be revived with what it carried; elsewhere death empties the inventory.
+        if (!KeepsWeaponsWhenDown)
+        {
+            Weapon.ClearAllWeapons();
+        }
+
         Locomotion.Current = (_, _) => NoteDeathAnimation();
     }
 

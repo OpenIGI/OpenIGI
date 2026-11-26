@@ -314,14 +314,12 @@ public sealed class WorldRendererRotorCullingTests
         int VisibleSample);
 
     // The draws a subset takes with culling off: its two-sided part, and its coincident skins culled after it (CoincidentSkins).
-    // The draws a model is made in, as WorldRenderer.DrawSubset makes them: a model drawn culled -- one with authored normals,
-    // while r_world_cull is on -- has each subset in one draw; one drawn two-sided has a subset's coincident skins in a
-    // draw of their own after the rest.
+    // The draws a model is made in, as WorldRenderer.DrawSubset makes them: a model drawn culled -- every model, while
+    // r_world_cull is on -- has each subset in one draw; one drawn two-sided has a subset's coincident skins in a draw of
+    // their own after the rest.
     private static int Draws(MeshGeometry geometry)
     {
-        bool culled = OpenIGI.Rendering.GeometryCVars.WorldCull.Value != 0
-            && !geometry.HasDerivedNormals
-            && MefMeshBuilder.HasNormals(geometry.Vertices);
+        bool culled = OpenIGI.Rendering.GeometryCVars.WorldCull.Value != 0;
         return geometry.Subsets.Sum(subset => culled
             ? (subset.IndexCount > 0 ? 1 : 0)
             : (subset.IndexCount - subset.SkinIndexCount > 0 ? 1 : 0) + (subset.SkinIndexCount > 0 ? 1 : 0));

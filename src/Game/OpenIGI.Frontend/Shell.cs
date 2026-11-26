@@ -72,6 +72,17 @@ public sealed class Shell
         return true;
     }
 
+    /// <summary>Opens the shell on the campaign's end: the credits, under word that every mission is done.</summary>
+    /// <remarks>
+    /// Where retail plays its outro (flow request 7, after the last mission). Without the word, the page read as the
+    /// game having dropped the player on a menu for no reason.
+    /// </remarks>
+    public void OpenCampaignComplete()
+    {
+        _context.InGame = false;
+        Stack.Reset(new ExtrasScreen(_context) { CampaignComplete = true }, animate: false);
+    }
+
     /// <summary>Opens the shell over a live mission, as the pause menu.</summary>
     /// <remarks>
     /// The whole stack is replaced rather than pushed onto, because the pause menu is a front end in its

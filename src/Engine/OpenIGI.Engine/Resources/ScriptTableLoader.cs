@@ -53,10 +53,43 @@ public static class ScriptTableLoader
         ArgumentException.ThrowIfNullOrEmpty(root);
         ArgumentException.ThrowIfNullOrEmpty(scriptName);
 
-        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<string> scripts = [];
         FindScripts(fileSystem, root, scriptName, scripts, 0, maxDepth);
+        return Run(scripts, resources, natives, root, logger ?? NullLogger.Instance);
+    }
 
+    /// <summary>Runs every matching script that sits directly in a directory, its sub-directories left alone.</summary>
+    /// <param name="fileSystem">The file system the directory is read on.</param>
+    /// <param name="resources">The registry the scripts are loaded through.</param>
+    /// <param name="natives">The script namespace the scripts call back into.</param>
+    /// <param name="directory">The resource path of the directory, for example <c>LOCAL:missions</c>.</param>
+    /// <param name="searchPattern">The files to run, for example <c>*.qvm</c>.</param>
+    /// <param name="logger">Where diagnostics go; defaults to a sink that discards them.</param>
+    /// <returns>How many scripts ran.</returns>
+    /// <remarks>
+    /// I.G.I. 2's mission open walks its root a second time this way, for the loose scripts beside the mission directories --
+    /// <c>missions/igi2.qvm</c>, which lists the campaign.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="EngineFatalException">A script failed to compile or faulted while running.</exception>
+    public static int RunInDirectory(
+        VirtualFileSystem fileSystem,
+        ResourceRegistry resources,
+        NativeRegistry natives,
+        string directory,
+        string searchPattern,
+        IOpenIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(natives);
+        ArgumentException.ThrowIfNullOrEmpty(directory);
+        ArgumentException.ThrowIfNullOrEmpty(searchPattern);
+        return Run(fileSystem.EnumerateFiles(directory, searchPattern), resources, natives, directory, logger ?? NullLogger.Instance);
+    }
+
+    private static int Run(IEnumerable<string> scripts, ResourceRegistry resources, NativeRegistry natives, string root, IOpenIgiLogger log)
+    {
         int ran = 0;
 
         foreach (string script in scripts)

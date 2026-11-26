@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -169,11 +169,21 @@ internal sealed class WorldLightmapPages
         {
             try
             {
+                // A file that is not a bake of the mesh drawn -- a mesh exported again after the level was baked, or
+                // a bake of another model under this one's name -- is turned down, and the model is lit white as
+                // the original lights it. Drawing the file instead stretches another mesh's light across this one.
                 ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data, _formats);
-                pages = new TextureHandle[lightmap.Images.Count];
+                IReadOnlyList<ObjectLightmapImage> images = lightmap.Images;
+                if (!lightmap.IsBakeOf(placement.Model))
+                {
+                    images = ObjectLightmap.Unbaked(placement.Model);
+                    _logger.Information(LogCategory, $"Lightmap '{entryName}' is not a bake of its mesh; lit white, as the original lights it.");
+                }
+
+                pages = new TextureHandle[images.Count];
                 for (int i = 0; i < pages.Length; i++)
                 {
-                    ObjectLightmapImage image = lightmap.Images[i];
+                    ObjectLightmapImage image = images[i];
 
                     // A path-traced bake, if one was applied, replaces the shipped page's pixels here --
                     // same dimensions, same upload, so nothing downstream knows the difference. Falls back

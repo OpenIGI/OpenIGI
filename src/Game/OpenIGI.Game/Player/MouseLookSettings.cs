@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Config;
 
 namespace OpenIGI.Game.Player;
@@ -63,7 +64,7 @@ public readonly record struct MouseLookSettings(float RadiansPerCount, bool Inve
     {
         float t = Math.Clamp(sensitivity, 0f, 1f);
         float rate = MinRadiansPerCount
-            * MathF.Pow(MaxRadiansPerCount / MinRadiansPerCount, t);
+            * SimMathF.Pow(MaxRadiansPerCount / MinRadiansPerCount, t);
         return new MouseLookSettings(rate, invertPitch);
     }
 
@@ -84,6 +85,22 @@ public readonly record struct MouseLookSettings(float RadiansPerCount, bool Inve
     /// </remarks>
     public double TurnDistanceCentimetres(int dotsPerInch = 800) =>
         (2.0 * Math.PI) / RadiansPerCount / dotsPerInch * 2.54;
+
+    /// <summary>The slider position whose full turn takes a given distance: the inverse of <see cref="TurnDistanceCentimetres"/>.</summary>
+    /// <param name="centimetres">The desk a full turn is to take.</param>
+    /// <param name="dotsPerInch">The mouse's resolution; 800 is the usual reference.</param>
+    /// <returns>The 0-to-1 sensitivity, held to the slider's ends; <see langword="null"/> for a distance that is not positive.</returns>
+    public static float? SensitivityForTurnDistance(double centimetres, int dotsPerInch = 800)
+    {
+        if (!(centimetres > 0.0) || dotsPerInch <= 0)
+        {
+            return null;
+        }
+
+        double rate = (2.0 * Math.PI) * 2.54 / (centimetres * dotsPerInch);
+        double t = SimMath.Log(rate / MinRadiansPerCount) / SimMath.Log((double)MaxRadiansPerCount / MinRadiansPerCount);
+        return (float)Math.Clamp(t, 0.0, 1.0);
+    }
 
     /// <summary>
     /// How much to slow the look while an optic has narrowed the field of view, so aiming stays as

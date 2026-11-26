@@ -22,6 +22,8 @@ namespace OpenIGI.Presentation;
 /// <param name="Hud">The original's HUD, or <see langword="null"/>.</param>
 /// <param name="RemasteredHud">The remaster's HUD, or <see langword="null"/>.</param>
 /// <param name="RetailUiScale">The original HUD's scale, which is its own (<c>hud_retail_scale</c>).</param>
+/// <param name="Eye">The camera the frame was drawn from, between ticks, in metres; what the HUD marks in the world is placed through it.</param>
+/// <param name="HorizontalTangent">The tangent of half the width the frame was projected through.</param>
 public readonly record struct MissionHudFrame(
     int Width,
     int Height,
@@ -40,7 +42,9 @@ public readonly record struct MissionHudFrame(
     float? BinocularRangeMetres,
     IHudPresenter? Hud,
     IRemasteredHudPresenter? RemasteredHud,
-    int RetailUiScale = 1);
+    int RetailUiScale = 1,
+    OpenIGI.Core.Graphics.Camera3D? Eye = null,
+    float HorizontalTangent = 1f);
 
 /// <summary>A title's mission HUD over the finished frame, drawn at four places in the host's overlay order.</summary>
 public interface IMissionHudOverlay

@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Passes;
 using OpenIGI.Rendering.Rhi;
@@ -8,21 +7,9 @@ using OpenIGI.Shaders;
 namespace OpenIGI.Rendering.Pipeline.Deferred;
 
 /// <summary>One body marked for the silhouette highlight, as it was drawn.</summary>
-/// <param name="Vertices">The pose it was drawn from.</param>
-/// <param name="PreviousVertices">The pose before it, which the blend mixes with the first.</param>
-/// <param name="Indices">The mesh's indices.</param>
-/// <param name="Ranges">The index ranges that make up the model.</param>
-/// <param name="Transform">Its model-view-projection, unjittered: the mask is laid over the finished picture.</param>
-/// <param name="PoseBlend">How much of the previous pose is in the position drawn.</param>
+/// <param name="Body">The body.</param>
 /// <param name="Group">Which group it is highlighted as.</param>
-internal readonly record struct SilhouetteDraw(
-    IRhiBuffer Vertices,
-    IRhiBuffer PreviousVertices,
-    IRhiBuffer Indices,
-    MeshDrawRange[] Ranges,
-    Matrix4f Transform,
-    float PoseBlend,
-    SilhouetteGroup Group);
+internal readonly record struct SilhouetteDraw(PosedBody Body, SilhouetteGroup Group);
 
 /// <summary>One group's look: its fill and its outline, each a colour and an opacity.</summary>
 /// <param name="Fill">The fill, red, green, blue and opacity from nought to one, as the display shows it.</param>
@@ -68,14 +55,13 @@ internal sealed class SilhouettePass : IDisposable
     private const RhiTextureFormat MaskFormat = RhiTextureFormat.Rgba8Unorm;
 
     private readonly IRhiDevice _device;
-    private readonly RetiredResources _retired;
+    private readonly ScreenImage _mask;
     private readonly IRhiShaderModule _maskModule;
     private readonly IRhiPipelineLayout _maskLayout;
     private readonly IRhiRenderPipeline _maskPipeline;
     private readonly IRhiBindGroupLayout _compositeLayout;
     private readonly ShaderBindings _compositeBindings;
     private readonly Dictionary<RhiTextureFormat, FullscreenPipeline> _composites = [];
-    private IRhiTexture? _mask;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="SilhouettePass"/> class.</summary>
@@ -86,7 +72,7 @@ internal sealed class SilhouettePass : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(retired);
         _device = device;
-        _retired = retired;
+        _mask = new ScreenImage(device, retired, MaskFormat, RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled, "silhouette.mask");
 
         // The mask is the selection outline's own vertex stage pushed out by nothing: the body exactly where it was drawn.
         ShaderReflection outline = ShaderCatalog.GetReflection(ShaderModuleId.Outline);
@@ -142,7 +128,7 @@ internal sealed class SilhouettePass : IDisposable
             return;
         }
 
-        IRhiTexture mask = Ensure(width, height);
+        IRhiTexture mask = _mask.Ensure(width, height);
         Span<float> push = stackalloc float[OutlinePipelineCache.PushDataBytes / sizeof(float)];
         using (IRhiRenderPassEncoder pass = encoder.BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(mask.View, RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
@@ -154,19 +140,13 @@ internal sealed class SilhouettePass : IDisposable
             foreach (SilhouetteDraw draw in draws)
             {
                 push.Clear();
-                draw.Transform.CopyColumnMajorTo(push[..16]);
+                draw.Body.Transform.CopyColumnMajorTo(push[..16]);
                 push[16 + (int)draw.Group] = 1f;
-                push[21] = draw.PoseBlend;
+                push[21] = draw.Body.PoseBlend;
                 push[24] = width;
                 push[25] = height;
                 pass.SetPushData(MemoryMarshal.AsBytes(push));
-                pass.SetVertexBuffer(0, draw.Vertices);
-                pass.SetVertexBuffer(1, draw.PreviousVertices);
-                pass.SetIndexBuffer(draw.Indices, RhiIndexFormat.Uint16);
-                foreach (MeshDrawRange range in draw.Ranges)
-                {
-                    pass.DrawIndexed(range.IndexCount, 1, range.IndexOffset);
-                }
+                draw.Body.Draw(pass);
             }
 
             pass.EndPass();
@@ -231,7 +211,7 @@ internal sealed class SilhouettePass : IDisposable
         _maskPipeline.Dispose();
         _maskLayout.Dispose();
         _maskModule.Dispose();
-        _mask?.Dispose();
+        _mask.Dispose();
     }
 
     // A colour as the target wants it: linear light for one that encodes as it stores, as the display shows it otherwise.
@@ -261,26 +241,5 @@ internal sealed class SilhouettePass : IDisposable
         }
 
         return pipeline;
-    }
-
-    private IRhiTexture Ensure(int width, int height)
-    {
-        if (_mask is { } mask && mask.Width == width && mask.Height == height)
-        {
-            return mask;
-        }
-
-        if (_mask is not null)
-        {
-            _retired.Retire(_mask);
-        }
-
-        _mask = _device.CreateTexture(new RhiTextureDescriptor(
-            width,
-            height,
-            MaskFormat,
-            RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled,
-            Label: "silhouette.mask"));
-        return _mask;
     }
 }

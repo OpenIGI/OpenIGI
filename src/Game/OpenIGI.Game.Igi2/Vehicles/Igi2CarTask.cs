@@ -38,7 +38,8 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// gun and its sound with it, and its destroyed model is left where it stood.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2PartMover, IIgi2ExplosionTarget, IIgi2Destructible, IIgi2AnimTarget
+public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2PartMover, IIgi2ExplosionTarget, IIgi2Destructible, IIgi2AnimTarget,
+    World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Car";
@@ -84,6 +85,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     private bool _isFire;
     private int _ticksToDie = -1;
     private byte _isExploded;
+    private IReadOnlyList<(IReadOnlyList<Igi2CollisionMesh?> Meshes, float Radius)>? _wholeSolids;
+    private Igi2AiStationaryGun? _wholeGun;
     private bool _isWeaponSystemsRun;
     private IReadOnlyList<Igi2DeathZone> _deathZones = [];
     private IReadOnlyList<Igi2CarDoor> _doors = [];
@@ -368,7 +371,11 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             IsDoorOpen = LevelExpression.Truncate(level.Evaluate(_openDoor)) != 0;
         }
 
-        RunDetection(level);
+        if (!IsPuppet)
+        {
+            RunDetection(level);
+        }
+
         level.RunChildren(this);
         RunWheels();
 
@@ -378,8 +385,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             door.Run(IsDoorOpen);
         }
 
-        // DeathZone_RunHandler: while the car is not at rest.
-        if (_deathZones.Count > 0 && _body is { } body && !body.IsIdle())
+        // DeathZone_RunHandler: while the car is not at rest. A co-op client's copy kills nobody: the server's car does.
+        if (!IsPuppet && _deathZones.Count > 0 && _body is { } body && !body.IsIdle())
         {
             Igi2Pose pose = Igi2Pose.FromMatrix(body.Position, Rows(body.Orientation));
             foreach (Igi2DeathZone zone in _deathZones)
@@ -395,7 +402,10 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         Gun?.Run(_detection, tick);
         _isWeaponSystemsRun = false;
-        Explode();
+        if (!IsPuppet)
+        {
+            Explode();
+        }
     }
 
     /// <inheritdoc/>
@@ -429,6 +439,11 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         IdealDeltaGamma = channels.Count > 0 ? channels[0] : 0f;
         IsBreak = channels.Count > 3 && channels[3] != HoldChannel;
+        if (IsPuppet)
+        {
+            return;
+        }
+
         if (time != 0)
         {
             if (flowTick != _movedTick && _body is { } body)
@@ -620,10 +635,11 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     }
 
     /// <summary>Gets the model it left when it blew up, where it stood, or <see langword="null"/> when it has not or leaves none.</summary>
+    /// <param name="tick">The tick the model is for: a wreck still sliding is drawn between its last two ticks.</param>
     /// <returns>The wreck.</returns>
-    public Game.Player.TitleWorldModel? Wreck() =>
+    public Game.Player.TitleWorldModel? Wreck(long tick) =>
         _isExploded != 0 && _type is { DestroyedModel.Length: > 0 } type && Models?.Invoke(type.DestroyedModel) is not null
-            ? new Game.Player.TitleWorldModel(type.DestroyedModel, CurrentPosition, Rows(CurrentOrientation))
+            ? new Game.Player.TitleWorldModel(type.DestroyedModel, CurrentPosition, Rows(CurrentOrientation), Instance: this, Tick: tick)
             : null;
 
     /// <inheritdoc/>
@@ -727,7 +743,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             return;
         }
 
-        if (_engineSound is null && _type is { EngineSound.Length: > 0 } type)
+        // A load deletes every sound the level made; one deleted so is made again, as a deleted task's reference reads as none.
+        if (_engineSound is not { IsDeleted: false } && _type is { EngineSound.Length: > 0 } type)
         {
             // Car_SoundUpdateParameterListHandler: its sounds read its channels -- the thrust, whether it drives, its speed.
             _engineSound = Sounds?.New(type.EngineSound, CurrentPosition, () => CurrentPosition, parameters: () => SoundChannels);
@@ -827,17 +844,54 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         }
     }
 
-    // Car_RemoveHandler on blowing up: its engine sound and its gun gone, and it out of the world.
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Car_RemoveHandler</c>, as a container takes it out: its engine sound is deleted and what hangs on it leaves with it, its gun's
+    /// sound among them. Its run makes the sound again once it is back.
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        _engineSound?.Delete();
+        _engineSound = null;
+        Gun?.StopSound();
+    }
+
+    // Car_RemoveHandler on blowing up: its engine sound and its gun gone, and it out of the world. What it wore whole is kept
+    // aside, for a save read back from before it blew up to give back (RestoreWhole).
     private void Remove()
     {
         _engineSound?.Delete();
         _engineSound = null;
         Gun?.StopSound();
+        _wholeGun ??= Gun;
         Gun = null;
+        if (_wholeSolids is null)
+        {
+            _wholeSolids = [.. _solids.Select(static solid => (solid.Meshes, solid.Radius))];
+        }
+
         foreach (Igi2RigidObject solid in _solids)
         {
             solid.ChangeModel([], 0f);
         }
+    }
+
+    // A wreck put back whole, as a save from before it blew up holds it (Car_DeSerializeHandler makes its attach objects again):
+    // its solids and its gun as they were, no longer blowing up; its run makes its engine sound again.
+    private void RestoreWhole()
+    {
+        if (_wholeSolids is { } whole)
+        {
+            for (int i = 0; i < _solids.Count && i < whole.Count; i++)
+            {
+                _solids[i].ChangeModel(whole[i].Meshes, whole[i].Radius);
+            }
+        }
+
+        Gun = _wholeGun ?? Gun;
+        _wholeSolids = null;
+        _wholeGun = null;
+        _isExploded = 0;
     }
 }
 

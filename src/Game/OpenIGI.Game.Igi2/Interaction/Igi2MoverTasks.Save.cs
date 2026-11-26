@@ -38,10 +38,15 @@ public sealed partial class Igi2DoorTask : ISavedState
     }
 
     /// <inheritdoc/>
-    /// <remarks>The angles follow from how far open it is; it is put where that leaves it.</remarks>
+    /// <remarks>
+    /// <c>Door_DeSerializeHandler</c>: the sound it moves with is deleted. The angles follow from how far open it is; it is put where
+    /// that leaves it. The portals it stands in count its state as it next runs, which compares it with the one they last counted.
+    /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _moveSound?.Delete();
+        _moveSound = null;
         Igi2ModelObjState.Read(reader);
         StopX = reader.Real();
         StopY = reader.Real();
@@ -102,10 +107,12 @@ public sealed partial class Igi2LiftTask : ISavedState
     }
 
     /// <inheritdoc/>
-    /// <remarks>It is put where it was along its way.</remarks>
+    /// <remarks><c>Lift_DeSerializeHandler</c>: the sound it moves with is deleted. It is put where it was along its way.</remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _moveSound?.Delete();
+        _moveSound = null;
         Igi2ModelObjState.Read(reader);
         Igi2FloorTask? floor = reader.TaskReference() as Igi2FloorTask;
         _startPosition = reader.Real64x3();
@@ -152,6 +159,7 @@ public sealed partial class Igi2SwitchTask : ISavedState
     }
 
     /// <inheritdoc/>
+    /// <remarks><c>Switch_DeSerializeHandler</c>: it wears the model its state names (<c>Switch_SetModel</c>).</remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -163,5 +171,6 @@ public sealed partial class Igi2SwitchTask : ISavedState
         _isLastPressed = reader.Bool() ? (byte)1 : (byte)0;
         _lastPressedTick = reader.Int();
         _isActive = reader.Bool() ? (byte)1 : (byte)0;
+        ModelSlot = SlotFor(IsOn, IsPressed, IsDestroyed);
     }
 }

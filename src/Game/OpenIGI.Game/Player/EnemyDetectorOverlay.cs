@@ -89,8 +89,8 @@ public readonly record struct EnemyOverlayBox(
         float centreY = (Top + Bottom) * 0.5f;
         float halfWidth = (Right - Left) * 0.5f * MathF.Max(0f, PulseScale);
         float halfHeight = (Bottom - Top) * 0.5f * MathF.Max(0f, PulseScale);
-        float cos = MathF.Abs(MathF.Cos(RotationRadians));
-        float sin = MathF.Abs(MathF.Sin(RotationRadians));
+        float cos = MathF.Abs(SimMathF.Cos(RotationRadians));
+        float sin = MathF.Abs(SimMathF.Sin(RotationRadians));
         float extentX = (halfWidth * cos) + (halfHeight * sin);
         float extentY = (halfWidth * sin) + (halfHeight * cos);
         return centreX + extentX > 0f && centreX - extentX < viewportWidth

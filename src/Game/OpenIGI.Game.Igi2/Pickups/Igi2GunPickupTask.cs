@@ -10,10 +10,18 @@ namespace OpenIGI.Game.Igi2.Pickups;
 /// weapon it gives by its <c>WEAPON_ID_*</c> name (<c>+0x1AC</c>) and how long it takes to come back (<c>+0x1CE</c>), which
 /// only a multiplayer game counts out. Its model is no parameter: it is the weapon's <c>Fixed Model</c>.
 /// </remarks>
-public sealed partial class Igi2GunPickupTask : Igi2Task
+public sealed partial class Igi2GunPickupTask : Igi2Task, World.IIgi2WorldMember
 {
     /// <summary>The name levels declare the type by.</summary>
     public const string TypeName = "GunPickup";
+
+    /// <inheritdoc/>
+    /// <remarks><c>RigidDynCubeObj_RemoveHandler</c>: its model leaves the world; it stays on the pickups' list.</remarks>
+    public void RemoveFromWorld() => Pickup?.IsInWorld = false;
+
+    /// <inheritdoc/>
+    /// <remarks><c>RigidDynCubeObj_RegisterHandler</c>: its model is back.</remarks>
+    public void PutInWorld() => Pickup?.IsInWorld = true;
 
     /// <summary>Gets or sets where the pickup lies.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]

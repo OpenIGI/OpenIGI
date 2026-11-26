@@ -7,6 +7,7 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Screens;
@@ -118,10 +119,27 @@ internal sealed class FakeHost : IShellHost
     /// <summary>The party the multiplayer page shows, or null for none.</summary>
     public IPartyPanel? Party { get; set; }
 
-    /// <summary>The missions' pictures, by mission, or null for none.</summary>
-    public Func<int, MissionPicture?>? Pictures { get; set; }
+    /// <summary>The community maps the Maps page shows, or null for a build without them.</summary>
+    public IShellMaps? Maps { get; set; }
 
-    public MissionPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
+    /// <summary>The player's replays the campaign and replays pages show, or null for a build without them.</summary>
+    public IShellReplays? Replays { get; set; }
+
+    /// <summary>The account the profile page shows, or null for a build without one.</summary>
+    public IAccountPanel? Account { get; set; }
+
+    /// <summary>The leaderboards the Leaderboard page shows, or null for a build without them.</summary>
+    public OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard { get; set; }
+
+    /// <summary>The missions' pictures, by mission, or null for none.</summary>
+    public Func<int, UiPicture?>? Pictures { get; set; }
+
+    public UiPicture? MissionPicture(int missionId) => Pictures?.Invoke(missionId);
+
+    /// <summary>The missions' best scores, by mission, or null for none.</summary>
+    public Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? Scores { get; set; }
+
+    public OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => Scores?.Invoke(missionId);
 
     public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
 

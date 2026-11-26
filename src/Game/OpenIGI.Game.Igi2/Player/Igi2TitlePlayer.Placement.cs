@@ -10,8 +10,15 @@ namespace OpenIGI.Game.Igi2.Player;
 public sealed partial class Igi2TitlePlayer : ITitlePlayerPlacement
 {
     /// <inheritdoc/>
+    /// <remarks>Another game's player standing in is the one placed, by its own rule.</remarks>
     public bool TryPlace(Vector3d cameraPosition, float yaw)
     {
+        if (StandInPlayer is not null)
+        {
+            // Not off a mounted gun: the body on it is held there.
+            return !MansGunForStandIn && StandInPlayer is ITitlePlayerPlacement standIn && standIn.TryPlace(cameraPosition, yaw);
+        }
+
         if (!CanPreviewLook) { return false; }
         // Remaster developer policy: PlayerCamera.Place/PlayerBody.PlaceOnGround search up to 500 metres below the camera.
         WorldLineTrace trace = new(1) { Mesh = 1 };

@@ -1,53 +1,10 @@
+using OpenIGI.Core.Titles;
+
 namespace OpenIGI.Game.Multiplayer.Modes;
 
-/// <summary>The modes a server can run, by the ids servers are listed with.</summary>
+/// <summary>How the modes a server can run (named by <see cref="MatchModes"/>) seat and count their players.</summary>
 public static class GameModes
 {
-    /// <summary>Everyone together against the level.</summary>
-    public const string Coop = "coop";
-
-    /// <summary>Two teams taking the map's objectives in order (I.G.I. 2's own game).</summary>
-    public const string Objective = "objective";
-
-    /// <summary>Two teams, a point a kill.</summary>
-    public const string TeamDeathmatch = "tdm";
-
-    /// <summary>Everyone for themselves, a point a kill.</summary>
-    public const string FreeForAll = "ffa";
-
-    /// <summary>Two teams, rounds of one life each, won by the team left standing.</summary>
-    public const string Elimination = "elim";
-
-    /// <summary>Two teams, rounds of one life each: one plants a bomb at the map's sites, the other stops it.</summary>
-    public const string SearchAndDestroy = "sd";
-
-    /// <summary>Gets every mode id, in the order a menu lists them.</summary>
-    public static IReadOnlyList<string> All { get; } = [Coop, Objective, TeamDeathmatch, FreeForAll, Elimination, SearchAndDestroy];
-
-    /// <summary>Gets whether a mode plays players against each other on a level made an arena.</summary>
-    /// <param name="id">The mode's id.</param>
-    /// <returns><see langword="true"/> for the versus modes.</returns>
-    public static bool IsVersus(string? id) => id is TeamDeathmatch or FreeForAll or Elimination or SearchAndDestroy;
-
-    /// <summary>Gets the name a mode is shown by, in capitals: <c>SEARCH &amp; DESTROY</c>.</summary>
-    /// <param name="id">The mode's id.</param>
-    /// <returns>Its name; co-op's is <c>CO-OP</c>.</returns>
-    public static string Title(string? id) => id switch
-    {
-        null or "" or Coop => "CO-OP",
-        TeamDeathmatch => "TEAM DEATHMATCH",
-        FreeForAll => "FREE FOR ALL",
-        Elimination => "ELIMINATION",
-        SearchAndDestroy => "SEARCH & DESTROY",
-        Objective => "OBJECTIVE",
-        _ => id.ToUpperInvariant(),
-    };
-
-    /// <summary>Gets whether a versus mode plays two teams, rather than everyone for themselves.</summary>
-    /// <param name="id">The mode's id.</param>
-    /// <returns><see langword="true"/> for the team modes.</returns>
-    public static bool HasTeams(string? id) => id is not FreeForAll;
-
     /// <summary>Gets the team a joining player is put on to keep the teams even: the smaller, as I.G.I. 2's <c>TeamManager_GetFairTeam</c>.</summary>
     /// <param name="host">The session.</param>
     /// <param name="slot">The player's slot.</param>
@@ -66,6 +23,30 @@ public static class GameModes
         }
 
         return roster.FairTeam();
+    }
+
+    /// <summary>Deals the players into two sides when a team mode begins with every one of them on the same side.</summary>
+    /// <param name="host">The session.</param>
+    /// <remarks>
+    /// The sides a match was played with are kept (a team mode after another keeps its teams); only a match carried over from
+    /// a free-for-all, which puts everyone on the one side, is dealt again, alternately in slot order. Left so, a team mode had
+    /// no enemy side: its rounds could only run out, and in search and destroy, with nobody attacking, nobody had the bomb.
+    /// </remarks>
+    public static void DealSidesIfOne(IModeHost host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        MatchPlayer[] playing = [.. host.Match.Players.Values.Where(static p => p.Slot >= 0).OrderBy(static p => p.Slot)];
+        if (playing.Length < 2 || playing.Select(static p => p.NextTeam ?? p.Team).Distinct().Count() > 1)
+        {
+            return;
+        }
+
+        for (int i = 0; i < playing.Length; i++)
+        {
+            playing[i].Team = i % 2 == 0 ? TeamRoster.Good : TeamRoster.Bad;
+            playing[i].NextTeam = null;
+            host.World.SetTeam(playing[i].Slot, playing[i].Team);
+        }
     }
 
     /// <summary>Makes the mode a server was asked for.</summary>
@@ -98,13 +79,13 @@ public static class GameModes
     private static IGameMode Made(string? id, IReplicatedWorld world, int tickRate)
     {
         ArgumentNullException.ThrowIfNull(world);
-        if (IsVersus(id) && world.TryPlayVersus(teams: HasTeams(id)))
+        if (MatchModes.IsVersus(id) && world.TryPlayVersus(teams: MatchModes.HasTeams(id)))
         {
             return id switch
             {
-                Elimination => new EliminationMode(tickRate, Rounds(null)) { SettingsEachRound = Rounds },
-                SearchAndDestroy => new SearchAndDestroyMode(tickRate, Rounds(null)) { SettingsEachRound = Rounds },
-                _ => new DeathmatchMode(tickRate, teams: id == TeamDeathmatch, Deathmatch()),
+                MatchModes.Elimination => new EliminationMode(tickRate, Rounds(null)) { SettingsEachRound = Rounds },
+                MatchModes.SearchAndDestroy => new SearchAndDestroyMode(tickRate, Rounds(null)) { SettingsEachRound = Rounds },
+                _ => new DeathmatchMode(tickRate, teams: id == MatchModes.TeamDeathmatch, Deathmatch()),
             };
         }
 
@@ -115,8 +96,8 @@ public static class GameModes
 
         return id switch
         {
-            TeamDeathmatch => new DeathmatchMode(tickRate, teams: true, Deathmatch()),
-            FreeForAll => new DeathmatchMode(tickRate, teams: false, Deathmatch()),
+            MatchModes.TeamDeathmatch => new DeathmatchMode(tickRate, teams: true, Deathmatch()),
+            MatchModes.FreeForAll => new DeathmatchMode(tickRate, teams: false, Deathmatch()),
             _ => new ObjectiveMode(tickRate),
         };
     }
@@ -142,7 +123,7 @@ public static class GameModes
             int victim = host.SlotOf(death.Victim);
             int killer = death.Killer < 0 ? -1 : host.SlotOf(death.Killer);
             host.Match.Kill(victim, killer, seconds);
-            host.Announce(victim, killer);
+            host.Announce(death, victim, killer);
             counted.Add((victim, killer));
         }
 

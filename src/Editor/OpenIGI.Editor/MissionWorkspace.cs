@@ -332,8 +332,14 @@ internal static class TaskPresentation
     /// </summary>
     /// <param name="task">The task.</param>
     /// <returns>The orientation parameter, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// A heading alone is an <c>Angle</c> under either name the levels give one: <c>Orientation</c>, or <c>Gamma</c> (a
+    /// <c>Fence</c>'s, <c>Task_DeclareParameters("Fence", ..., "Gamma", "Angle", ...)</c>).
+    /// </remarks>
     public static MissionParameter? Orientation(MissionTask task) =>
-        task.FindParameter(ScriptParamType.Real32x9) ?? (task.FindParameter("Orientation") is { Declaration.Type: ScriptParamType.Angle } heading ? heading : null);
+        task.FindParameter(ScriptParamType.Real32x9)
+        ?? (task.FindParameter("Orientation") is { Declaration.Type: ScriptParamType.Angle } heading ? heading : null)
+        ?? (task.FindParameter("Gamma") is { Declaration.Type: ScriptParamType.Angle } gamma ? gamma : null);
 
     /// <summary>Gets whether a task's orientation is a heading alone, turning about the up axis and nothing else.</summary>
     /// <param name="task">The task.</param>

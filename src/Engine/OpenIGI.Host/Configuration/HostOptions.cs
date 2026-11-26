@@ -114,6 +114,10 @@ public readonly record struct HostOptions(
     /// </remarks>
     public IReadOnlyList<(int Frame, string Statement)> DeferredCommands { get; init; } = [];
 
+    /// <summary>Gets the frames a still is written on besides the last, beside the <c>-screenshot</c> path (<c>-shotat</c>).</summary>
+    /// <remarks>So one run photographs a moment at several points, instead of a run per point.</remarks>
+    public IReadOnlyList<int> ShotFrames { get; init; } = [];
+
     /// <summary>Gets the content folders named with <c>-content</c>, highest priority first.</summary>
     /// <remarks>
     /// For development: a folder that mirrors the game's paths, stacked above every layer the content
@@ -360,6 +364,12 @@ public readonly record struct HostOptions(
     /// <summary>Gets the JSON output path for a deterministic 120 Hz/30 Hz benchmark.</summary>
     public string? BenchmarkPath { get; init; }
 
+    /// <summary>Gets the replay to play back from the start, in place of a mission (<c>-playreplay</c>), or <see langword="null"/>.</summary>
+    public string? PlayReplayPath { get; init; }
+
+    /// <summary>Gets the replay whose ghost to race, its mission played from the start (<c>-race</c>), or <see langword="null"/>.</summary>
+    public string? RacePath { get; init; }
+
     /// <summary>Gets a value indicating whether deterministic performance capture is active.</summary>
     public bool IsBenchmark => BenchmarkPath is not null;
 
@@ -368,8 +378,17 @@ public readonly record struct HostOptions(
     /// profile and save it, and save the settings as it stops.</remarks>
     public bool NoSave { get; init; }
 
+    /// <summary>Gets a value indicating whether the run plays as the player's own profiles, their controls among them.</summary>
+    /// <remarks>
+    /// Not under <c>-lockstep</c>, which depends on its arguments alone: its settings are not read from the player's file, and
+    /// so neither are its profiles -- a capture or a test plays on the shipped controls whoever's machine runs it, where it
+    /// once pressed whatever key the machine's owner had rebound.
+    /// </remarks>
+    public bool ReadsUserProfiles => !Lockstep;
+
     /// <summary>Gets a value indicating whether the run saves the player's profiles and settings.</summary>
-    public bool SavesUserFiles => !IsBenchmark && !NoSave;
+    /// <remarks>Never a run that did not read them: what it would write back is not the player's.</remarks>
+    public bool SavesUserFiles => !IsBenchmark && !NoSave && ReadsUserProfiles;
 
     /// <summary>
     /// Gets a value indicating whether every mission's global-illumination probe field is traced and
@@ -449,8 +468,14 @@ public readonly record struct HostOptions(
           -runat <n> <cmd> Run one console statement on frame n, once. Unlike +<command>, which runs
                            before any level exists, this reaches a loaded world -- so a capture can fire
                            impact_test or blood_test and photograph the result.
+          -shotat <n>      Also write a still on frame n, beside the -screenshot path as stem.fNNNNNN.bmp.
+                           Repeatable, so one run photographs a moment at several points.
           -benchmark <f>   Run 120 warm-up and 600 measured frames on a deterministic 120 Hz
                            presentation clock with 30 Hz simulation, then write JSON to <f>.
+          -playreplay <f>  Play back the replay in <f> (.oigr): its mission brought up under the settings
+                           it was recorded with, given its inputs, and told where it parts from them.
+          -race <f>        Race the ghost of the replay in <f> (.oigr): its mission played from the start
+                           under its settings, the run beside you as a ghost.
           -cutscene        Play the mission's authored opening cinematic. Cinematics already play by
                            default; this legacy flag remains accepted for capture-script compatibility.
           -skipcutscene    Skip the authored opening cinematic for scene benchmarks and references.

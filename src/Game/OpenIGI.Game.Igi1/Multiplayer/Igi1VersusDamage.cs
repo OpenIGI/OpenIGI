@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Igi1.Multiplayer;
 
 /// <summary>
@@ -63,6 +65,6 @@ public static class Igi1VersusDamage
         }
 
         double length = Math.Sqrt((toward.X * toward.X) + (toward.Y * toward.Y));
-        return length > 0 && ((toward.X * Math.Sin(yaw)) + (toward.Y * Math.Cos(yaw))) / length >= BackstabCosine;
+        return length > 0 && ((toward.X * SimMath.Sin(yaw)) + (toward.Y * SimMath.Cos(yaw))) / length >= BackstabCosine;
     }
 }

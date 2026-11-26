@@ -16,6 +16,7 @@ namespace OpenIGI.Host.Titles;
 /// <param name="Missions">Builds the title's own mission table; a factory, because the scan logs as it goes.</param>
 /// <param name="DataRoot">Where this title is installed, or empty when it is not.</param>
 /// <param name="Gameplay">The title's own player, or <see langword="null"/> for a title that walks the host's rig.</param>
+/// <param name="GameplayFiles">Which of its files a session makes the host's, or <see langword="null"/> when none are compared.</param>
 /// <remarks>
 /// <para>
 /// Four lookups that used to be four constructor parameters, resolved one title at a time. Bundling
@@ -35,7 +36,8 @@ public sealed record TitleBinding(
     ITitleWorldBuilder WorldBuilder,
     Func<IOpenIgiLogger, IMissionCatalogue<MissionDescriptor>> Missions,
     string DataRoot,
-    ITitleGameplay? Gameplay = null)
+    ITitleGameplay? Gameplay = null,
+    Game.Multiplayer.GameplayFileLayout? GameplayFiles = null)
 {
     /// <summary>Gets whether this title is installed where the catalogue looked.</summary>
     public bool IsInstalled => new GameProfile(Runtime.Title, DataRoot).IsInstalled;

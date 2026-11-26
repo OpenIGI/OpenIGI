@@ -5,6 +5,7 @@
 // world pipeline does not already bind.
 
 #include "../Common/GlassVertex.slang"
+#include "../Common/SampledColour.slang"
 
 /// The vertex stage: the shared glazing transform.
 [shader("vertex")]
@@ -25,7 +26,7 @@ float4 fragmentMain(GlassVaryings input) : SV_Target
     // in the G-buffer; this keeps the ones it dropped. Written as the same expression on both sides so
     // the two partition the texture between them: a texel drawn by neither is a hole in a window
     // frame, and one drawn by both is a frame shaded twice, once without shadows.
-    if (alpha >= 0.5)
+    if (alpha >= GlassFrameAlpha)
     {
         discard;
     }
@@ -59,6 +60,19 @@ float4 fragmentMain(GlassVaryings input) : SV_Target
     float sinRefracted = sqrt(saturate(1.0 - (cosine * cosine))) / 1.5;
     float cosRefracted = sqrt(saturate(1.0 - (sinRefracted * sinRefracted)));
     float through = (1.0 - GlassPaneReflectance(cosine)) * exp(-0.02 / max(cosRefracted, 0.05));
+
+    // A STAINED pane (materials.json's glassStains, GlassPush.glass.x) carries dirt rather than a painted reflection: its
+    // colour is laid over what gets through, by its alpha, as the original blends a translucent face group (SRCALPHA,
+    // INVSRCALPHA) -- lit by its lightmap at the forward pass's gain (glass.y), or by the model's flat light where it has
+    // none (glass.w), so a dirty windscreen does not glow in a dark garage.
+    if (push.glass.x > 0.5)
+    {
+        float3 light = push.glass.z > 0.5
+            ? SampledDisplay(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb)
+            : float3(push.glass.w, push.glass.w, push.glass.w);
+        float3 stain = DecodeSrgb(max(SampledDisplay(diffuse.rgb) * light * input.color.rgb, float3(0.0, 0.0, 0.0))) * push.glass.y;
+        return float4(stain * alpha, 1.0 - (through * (1.0 - alpha)));
+    }
 
     // Premultiplied over the scene: nothing added, the scene behind kept at the share that gets through.
     // The scene there is already lit and fogged for its own distance, so the pane needs neither.

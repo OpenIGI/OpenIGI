@@ -228,6 +228,12 @@ public sealed class PlayerWeapons
     /// <summary>Gets the accumulated view kick in pitch, in radians — <c>HumanView+296</c>.</summary>
     public float RecoilPitch { get; private set; }
 
+    /// <summary>Gets or sets what the sights make of a round's cone: one, the original's, unless modern aim has them up.</summary>
+    public float AimSpreadScale { get; set; } = 1f;
+
+    /// <summary>Gets or sets what the sights make of a round's kick: one, the original's, unless modern aim has them up.</summary>
+    public float AimRecoilScale { get; set; } = 1f;
+
     /// <summary>Gets whether the gun's trigger stood held this tick, after its burst and magazine gates (<c>0x478BA0</c>).</summary>
     /// <remarks>What an automatic's fire loop follows: it runs while this holds and ends, with its tail, the tick it does not.</remarks>
     public bool TriggerHeldThisTick { get; private set; }
@@ -726,6 +732,7 @@ public sealed class PlayerWeapons
 
         held.Gun.Tick(_machine.WantFire);
 
+        held.Gun.SpreadScale = AimSpreadScale;
         GunFireResult result = held.Gun.Fire(_machine.WantFire, eye, forward, right, up, _random);
         _firedThisTick = result.Fired;
 
@@ -746,6 +753,7 @@ public sealed class PlayerWeapons
         // The scale is the Dragunov's scoped 0.05, or one. It multiplies the ROUND'S OWN kick and
         // not the accumulated angles, exactly where 0x472E50 applies it -- damping what is already
         // accumulated would make opening the scope mid-burst yank the view back down.
+        recoilScale *= AimRecoilScale;
         if (_cheats.NoRecoil)
         {
             recoilScale = 0f;
@@ -771,6 +779,22 @@ public sealed class PlayerWeapons
     /// </remarks>
     public bool IsChargingThrow => State == HumanWeaponState.Throwing && _machine.ThrowCooking;
 
+    /// <summary>Gets or sets when the player's grenades cook (<see cref="GameplayCVars.GrenadeCook"/>); the original's by default.</summary>
+    /// <remarks>Its owner sets it each tick: from the setting for the player's own, from its command for a co-op client's.</remarks>
+    public GrenadeCook GrenadeCook { get; set; }
+
+    /// <summary>Gets the fuse the thrown grenade leaves with, in ticks: what a manual cook left of it, or the whole of it.</summary>
+    public int ThrowFuseTicks => _machine.ThrowFuseTicks is >= 0 and var left ? left : GrenadePhysics.FuseTicks;
+
+    /// <summary>Gets whether the last grenade went off in hand, its fuse burnt down before it was let go.</summary>
+    public bool ThrowExplodedInHand => _machine.ThrowExplodedInHand;
+
+    /// <summary>Gets whether the grenade in hand ticks, <c>grenade_tick_1</c>: while its fuse burns under a manual cook, otherwise retail's charge.</summary>
+    /// <remarks>Read by every sound that plays the tick, so the loop is heard over the fuse that is really burning.</remarks>
+    public bool IsGrenadeTicking => GrenadeCook == GrenadeCook.Manual
+        ? State == HumanWeaponState.Throwing && _machine.ThrowFuseBurning
+        : IsChargingThrow;
+
     /// <summary>Turns a throw's cook into the grenade's speed, in units a tick -- <c>0x462E50</c>'s grenade case.</summary>
     /// <param name="throwSpeed">The weapon row's thirteenth argument (record <c>+1632</c>), the muzzle velocity: 15 for both grenades.</param>
     /// <param name="chargeTicks">The cook, <c>Human+1248</c>.</param>
@@ -792,7 +816,7 @@ public sealed class PlayerWeapons
         }
 
         float tf = (float)t;
-        return (Math.Pow(t * 50.0, 0.7) + (tf * (double)0.1f)) * throwSpeed;
+        return (SimMath.Pow(t * 50.0, 0.7) + (tf * (double)0.1f)) * throwSpeed;
     }
 
     /// <summary>Gets whether a one-shot action finished on the last tick — the original's <c>Human+1232</c>.</summary>

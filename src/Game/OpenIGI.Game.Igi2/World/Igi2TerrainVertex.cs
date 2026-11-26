@@ -43,21 +43,20 @@ public static class Igi2TerrainVertex
     /// <param name="y">The Y relative to the terrain, <c>vInY</c>.</param>
     /// <param name="sample">The ground there.</param>
     /// <returns><see langword="false"/> when the level has no tiles.</returns>
-    public static bool TrySample(IReadOnlyList<Igi2TerrainTile> tiles, float x, float y, out Igi2TerrainSample sample)
+    public static bool TrySample(ReadOnlySpan<Igi2TerrainTile> tiles, float x, float y, out Igi2TerrainSample sample)
     {
-        ArgumentNullException.ThrowIfNull(tiles);
         sample = default;
-        if (tiles.Count == 0)
+        if (tiles.Length == 0)
         {
             return false;
         }
 
         // Backwards through the tiles; the first holds everything the others do not.
-        int index = tiles.Count - 1;
+        int index = tiles.Length - 1;
         Frame frame;
         while (true)
         {
-            frame = new Frame(tiles[index]);
+            frame = new Frame(in tiles[index]);
             if (index == 0 || frame.Holds(x, y))
             {
                 break;
@@ -66,7 +65,7 @@ public static class Igi2TerrainVertex
             index--;
         }
 
-        Igi2TerrainTile tile = tiles[index];
+        ref readonly Igi2TerrainTile tile = ref tiles[index];
         Fpu inverseTexelWidth = (Fpu)1f / frame.TexelWidth;
         float inverseTexelHeight = ((Fpu)1f / frame.TexelHeight).F;
         float column = (((((Fpu)x - frame.CentreX) + frame.HalfWidth) * inverseTexelWidth) - 0.5f).F;
@@ -189,7 +188,7 @@ public static class Igi2TerrainVertex
     /// <summary>One tile's placement as the query computes it, relative to the terrain and at the client's precision.</summary>
     private readonly struct Frame
     {
-        public Frame(Igi2TerrainTile tile)
+        public Frame(in Igi2TerrainTile tile)
         {
             CentreX = ((Fpu)tile.Centre.X - tile.TerrainOrigin.X).F;
             CentreY = ((Fpu)tile.Centre.Y - tile.TerrainOrigin.Y).F;

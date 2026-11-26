@@ -10,6 +10,7 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Saves;
 using OpenIGI.Game.World;
@@ -22,7 +23,7 @@ using OpenIGI.Rendering.Headless;
 namespace OpenIGI.Game.Igi2.Tests;
 
 /// <summary>Mission 1's soldiers given their minds and squads, and run, as <c>HumanAI</c> and <c>AISquad</c> load and run them.</summary>
-public sealed class RetailIgi2LevelAiTests
+public sealed partial class RetailIgi2LevelAiTests
 {
     /// <summary>A registration-only backdrop must not redirect the playing AI's script namespace.</summary>
     [RequiresTitleDataFact("igi2")]
@@ -234,6 +235,48 @@ public sealed class RetailIgi2LevelAiTests
     }
 
     /// <summary>
+    /// While the intro holds mission 1's guards' containers out of the world, their bodies are out too (<c>ConditionalContainer_RemoveChildren</c>,
+    /// <c>Human_RemoveDynCubeObjHandler</c>): not drawn, not among the bodies lines meet, not in the world. Once the intro is skipped
+    /// and the containers run, they are put back (<c>ConditionalContainer_RegisterChildren</c>) and drawn posed.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Guards_held_out_by_their_container_are_out_of_the_world_until_it_runs()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, _, Igi2TitlePlayer player) = Build();
+        for (int tick = 0; tick < 3; tick++)
+        {
+            m.Run.Tick();
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Igi2HumanSoldier[] held = [.. m.Tree.OfType<Igi2HumanSoldierTask>()
+            .Where(static t => !OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(t))
+            .Select(static t => t.Body).OfType<Igi2HumanSoldier>()];
+        Assert.NotEmpty(held);
+        Assert.All(held, body =>
+        {
+            Assert.False(body.IsActive);
+            Assert.DoesNotContain(body.Collider!, m.Collision!.Bodies);
+            Assert.DoesNotContain(soldiers.Models(m.Run.Ticks + 1000), model => ReferenceEquals(model.Instance, body));
+        });
+
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        for (int tick = 0; tick < 30; tick++)
+        {
+            m.Run.Tick();
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Igi2HumanSoldier[] back = [.. held.Where(static b => b.IsActive)];
+        Assert.NotEmpty(back);
+        Assert.All(back, body =>
+        {
+            Assert.Contains(body.Collider!, m.Collision!.Bodies);
+            Assert.Contains(soldiers.Models(m.Run.Ticks + 2000), model => ReferenceEquals(model.Instance, body) && model.Pose is not null);
+        });
+    }
+
+    /// <summary>
     /// With the intro skipped (<c>EditVariable_2112</c>, which ends <c>ConditionalContainer_3532</c> and lets the soldiers' containers
     /// run) and the player fifteen metres in front of soldier 400, his squad lists the player as a target and he fires his
     /// Makarov, reloads from the soldier's unlimited reserve and resumes firing.
@@ -260,6 +303,34 @@ public sealed class RetailIgi2LevelAiTests
         Assert.True(seen);
         Assert.True(held, "The guard fired with no weapon object on his body: his flashes and casings were skipped.");
         Assert.True(shots > 8, $"The guard must fire again after his first magazine; shots={shots}.");
+    }
+
+    /// <summary>
+    /// A save written before any soldier knew of the player, loaded over the running mission after a squad has made him its target,
+    /// leaves nobody onto him: <c>AISquad_DeSerializeHandler</c> lets go of each squad's enemy targets and
+    /// <c>HumanAI_DeSerializeHandler</c> clears each readied detection, so the display no longer says anyone is searching.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_save_loaded_over_a_fight_forgets_the_player()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, _, Igi2TitlePlayer player) = Build(facing: 400);
+        player.MapHumans = [player.Human, .. soldiers.Bodies];
+        m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        string script = SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
+        Igi2AiSquad[] squads = [.. m.Tree.OfType<Igi2AiSquadTask>().Select(static t => t.Squad).OfType<Igi2AiSquad>()];
+        for (int tick = 0; tick < 1800 && !squads.Any(static s => s.Targets.Count > 0); tick++)
+        {
+            m.Run.Tick();
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Assert.Contains(squads, static s => s.Targets.Count > 0);
+        Assert.NotEqual(PlayerAlertStatus.None, player.AlertStatus());
+
+        SaveScript.Load(script, m.Tree[0], Saves.Igi2SaveFormat.Context());
+
+        Assert.All(squads, static s => Assert.Empty(s.Targets));
+        Assert.Equal(PlayerAlertStatus.None, player.AlertStatus());
     }
 
     /// <summary>

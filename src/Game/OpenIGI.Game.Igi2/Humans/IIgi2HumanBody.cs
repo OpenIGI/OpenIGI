@@ -32,6 +32,10 @@ public interface IIgi2HumanAnimation
     /// <remarks>The human's update steps it once a tick, after the body has moved.</remarks>
     void StepMain();
 
+    /// <summary>Steps the main controller to a time: <c>AnimController_Step(main, time)</c>.</summary>
+    /// <param name="time">The time, in clip ticks; past either end it wraps or ends as the controller's flags say.</param>
+    void StepMainTo(int time);
+
     /// <summary>Takes the upper-body clip off, blending back to the main clip (<c>HumanAnim_ClearUpperBodyAnimation</c>).</summary>
     /// <param name="blendSeconds">The blend; 0 for a cut.</param>
     void ClearUpperBody(float blendSeconds);
@@ -74,8 +78,11 @@ public interface IIgi2HumanAnimation
     /// <summary>Gets or sets the state the upper-body clip was last set from, <c>iStateLastUsedToSetUpperBodyAnimation</c>.</summary>
     int LastUpperBodyState { get; set; }
 
-    /// <summary>Gets the state the main clip was last set from, <c>iStateLastUsedToSetMainAnimation</c>.</summary>
-    int LastState { get; }
+    /// <summary>
+    /// Gets or sets the state the main clip was last set from, <c>iStateLastUsedToSetMainAnimation</c>; a save game keeps it, and a
+    /// body loaded dead lies at the end of that state's clip.
+    /// </summary>
+    int LastState { get; set; }
 
     /// <summary>Plays a clip on the whole body, noting the state it stands for (<c>HumanAnim_SetAnimation</c>, <c>igi2 0x58F110</c>).</summary>
     /// <param name="clip">The clip.</param>
@@ -140,6 +147,16 @@ public interface IIgi2HumanAnimation
     /// <param name="raise">The bits to set.</param>
     /// <param name="clear">The bits to clear, before setting.</param>
     void SetMainFlags(Animation.Igi2AnimControllerBits raise, Animation.Igi2AnimControllerBits clear)
+    {
+    }
+
+    /// <summary>
+    /// Clears bits on every controller the body has -- the active main and upper-body ones and the four it keeps
+    /// (<c>HumanAnim_t.ptActiveMainController</c> to <c>ptAnimController3</c>) -- as <c>HumanSoldier_DeSerializeHandler</c> clears a
+    /// death's <c>0x40</c> from a body read back alive.
+    /// </summary>
+    /// <param name="clear">The bits to clear.</param>
+    void ClearFlagsOnEveryController(Animation.Igi2AnimControllerBits clear)
     {
     }
 }
@@ -294,6 +311,16 @@ public interface IIgi2HumanSurroundings
     void MarkBloodStain(in Igi2BloodStain stain)
     {
     }
+
+    /// <summary>The task a ground is, as a save names the body's <c>ptGroundQTaskRef</c> (<see cref="Collision.Igi2LevelGrounds"/>).</summary>
+    /// <param name="ground">The collider the body stands on.</param>
+    /// <returns>The task, or <see langword="null"/> when there is none a save can name.</returns>
+    Engine.Tasks.GameTask? GroundTaskOf(OpenIGI.Game.Physics.IWorldCollider? ground) => null;
+
+    /// <summary>The ground a task a save names is, for a body read back to stand on.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>Its collider, or <see langword="null"/>.</returns>
+    OpenIGI.Game.Physics.IWorldCollider? GroundOf(Engine.Tasks.GameTask? task) => null;
 }
 
 /// <summary>A sound a state holds on to: the task a <c>QReference</c> keeps, which may end on its own.</summary>

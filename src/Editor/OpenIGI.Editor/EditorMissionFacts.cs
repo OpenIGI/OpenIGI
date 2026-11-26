@@ -34,6 +34,10 @@ internal sealed class EditorMissionFacts(IEditorHost host, MissionWorkspace work
     public bool? HasModel(string model) => host.HasModel(model);
 
     /// <inheritdoc/>
+    public bool? HasMissionFile(string path) =>
+        workspace.Mission is { } mission ? host.TryReadFile("LOCAL:" + MissionWorkspace.GamePath(mission, path), out _) : null;
+
+    /// <inheritdoc/>
     /// <remarks>
     /// The first surface below, a roof or a floor as much as the terrain, as a body placed there lands on; when there is
     /// none, the terrain above, which is the ground over a buried one.

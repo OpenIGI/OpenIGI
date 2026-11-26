@@ -41,6 +41,21 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
     /// <summary>Gets or sets what an AI's input-channel activation reaches in the live world.</summary>
     public Action<int>? TaskActivator { get; set; }
 
+    /// <summary>Gets or sets the doors of another game's level the soldiers stand in, or <see langword="null"/> in the game's own.</summary>
+    public IReadOnlyList<IAiDoor>? HostDoors { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether an alarm of another game's level sounds, by its control's id; <see langword="null"/> in the game's
+    /// own, whose alarm controls are its level's tasks.
+    /// </summary>
+    public Func<int, bool>? HostAlarmIsOn { get; set; }
+
+    /// <summary>
+    /// Gets or sets where a task of another game's level stands, by its id -- an alarm's button a soldier runs to; answers
+    /// <see langword="null"/> for an id the level does not hold.
+    /// </summary>
+    public Func<int, Vector3d?>? HostTaskPosition { get; set; }
+
     /// <summary>Gets or sets the level's live StationaryGun tasks, which gunner AIs are connected to.</summary>
     public WorldInteractionRegistry? Interactions { get => _context.Interactions; set => _context.Interactions = value; }
 
@@ -173,7 +188,7 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                     }
                 });
                 brain.SetDefaultTarget(_context.PlayerTarget);
-                brain.SetAlarmStatusResolver(alarmControls is { } controls ? controls.IsOn : null);
+                brain.SetAlarmStatusResolver(alarmControls is { } controls ? controls.IsOn : HostAlarmIsOn);
                 brain.SetStationaryGunResolver(
                     Interactions is { } interactions ? interactions.FindStationaryGun : null);
                 brain.SetPatrolPaths(paths);
@@ -183,6 +198,11 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                 {
                     brain.SetDoorQuery(levelDoors.Nearest);
                 }
+                else if (HostDoors is { } hostDoors)
+                {
+                    // Another game's level, whose doors a soldier opens as it opens its own.
+                    brain.SetDoorQuery(near => IAiDoor.Nearest(hostDoors, near));
+                }
                 if (levelRoot is not null)
                 {
                     GameTask taskRoot = levelRoot;
@@ -190,7 +210,19 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                         _activationClaims,
                         (id, out position) =>
                         {
-                            return TryGetTaskPosition(taskRoot, id, out position);
+                            if (TryGetTaskPosition(taskRoot, id, out position))
+                            {
+                                return true;
+                            }
+
+                            // A task of the level the soldiers stand in, which their own tree does not hold.
+                            if (HostTaskPosition?.Invoke(id) is { } hosted)
+                            {
+                                position = hosted;
+                                return true;
+                            }
+
+                            return false;
                         },
                         id =>
                         {

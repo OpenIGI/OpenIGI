@@ -26,4 +26,5 @@ public sealed record HudChatEntry(string Text, int Caret, bool Team, int Scroll,
 /// <param name="AnchorMetres">Where, in metres.</param>
 /// <param name="Name">Who marked it.</param>
 /// <param name="Opacity">How much of it is left to see.</param>
-public readonly record struct HudMark(Vector3d AnchorMetres, string Name, float Opacity);
+/// <param name="AgeSeconds">How long ago it was put, which times its landing; a mark that stands for good (a bomb site) is long settled.</param>
+public readonly record struct HudMark(Vector3d AnchorMetres, string Name, float Opacity, float AgeSeconds = 60f);

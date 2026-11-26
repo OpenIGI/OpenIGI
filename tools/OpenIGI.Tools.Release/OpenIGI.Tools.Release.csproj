@@ -12,6 +12,14 @@
     <InternalsVisibleTo Include="OpenIGI.Releases.Tests" />
   </ItemGroup>
 
+  <!-- The site's stylesheet and the standings' drawing are the browser build's own; the site build carries them so the pages
+       it writes (SiteChrome) never wait on the next browser build to be styled. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\apps\OpenIGI.Web\wwwroot\landing\site.css" LogicalName="OpenIGI.Site.site.css" />
+    <EmbeddedResource Include="..\..\apps\OpenIGI.Web\wwwroot\landing\board.js" LogicalName="OpenIGI.Site.board.js" />
+    <EmbeddedResource Include="..\..\apps\OpenIGI.Web\wwwroot\landing\sessions.js" LogicalName="OpenIGI.Site.sessions.js" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\OpenIGI.Releases\OpenIGI.Releases.csproj" />
     <ProjectReference Include="..\OpenIGI.Tools.Common\OpenIGI.Tools.Common.csproj" />

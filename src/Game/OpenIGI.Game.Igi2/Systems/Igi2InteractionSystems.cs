@@ -123,7 +123,10 @@ internal static class Igi2InteractionSystems
         }
     }
 
-    /// <summary>Doors swing or slide, and carry what stands in them.</summary>
+    /// <summary>
+    /// Doors swing or slide, and carry what stands in them and what the level put beneath them: a padlock or a vent's wheel, a
+    /// crane's load and its button. A door beneath a door holds itself to it as it is made.
+    /// </summary>
     public static void Doors(Igi2LevelBuild b)
     {
         foreach (Igi2DoorTask door in b.Root.Descendants().OfType<Igi2DoorTask>())
@@ -131,6 +134,54 @@ internal static class Igi2InteractionSystems
             door.Bind(b.Player.CollisionWorld.SolidsOf(Igi2DoorTask.TypeName, door.Id));
             b.Activatables.Add(door);
             b.Movers.Add(door);
+            foreach (GameTask rider in Riders(door))
+            {
+                Carry(rider, b);
+            }
+
+            Igi2Attachment.AttachChildren(door, door);
+        }
+    }
+
+    /// <summary>
+    /// A model object something carries moves: its solids go with it, and it is drawn where it is carried. A prop a guide moves is
+    /// moved by its guide, and is not one.
+    /// </summary>
+    /// <param name="rider">What is carried.</param>
+    /// <param name="b">The level being built.</param>
+    internal static void Carry(GameTask rider, Igi2LevelBuild b)
+    {
+        switch (rider)
+        {
+            case Igi2EditRigidObjTask prop when prop.Guide is null:
+                Move(prop, b);
+                break;
+            case Igi2SwitchTask button:
+                button.Magic = b.Magic;
+                button.Bind(b.Player.CollisionWorld.SolidsOf(Igi2SwitchTask.TypeName, button.Id));
+                b.Movers.Add(button);
+                break;
+            case Igi2GenericTbaTask action:
+                b.Movers.Add(action);
+                break;
+        }
+    }
+
+    // What rides a door: everything beneath it down to another door, which carries its own.
+    private static IEnumerable<GameTask> Riders(GameTask carrier)
+    {
+        foreach (GameTask child in carrier.Children)
+        {
+            if (child is Igi2DoorTask)
+            {
+                continue;
+            }
+
+            yield return child;
+            foreach (GameTask below in Riders(child))
+            {
+                yield return below;
+            }
         }
     }
 
@@ -169,7 +220,8 @@ internal static class Igi2InteractionSystems
             sectors,
             locator,
             Igi2SectorVisibility.KeysOf(b.Request.Built.Scene),
-            portals is null ? null : portals.IsOpen);
+            portals is null ? null : portals.IsOpen,
+            b.Request.Built.Scene.Placements);
     }
 
     /// <summary>
@@ -213,8 +265,10 @@ internal static class Igi2InteractionSystems
         }
     }
 
-    // A prop that moves: its solids go with it, and it is drawn where it stands.
-    private static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
+    /// <summary>A prop that moves: its solids go with it, and it is drawn where it stands.</summary>
+    /// <param name="prop">The prop.</param>
+    /// <param name="b">The level being built.</param>
+    internal static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
     {
         prop.Models = b.Models;
         prop.Magic = b.Magic;
@@ -278,6 +332,7 @@ internal static class Igi2InteractionSystems
         void Arm(IIgi2ExplodingTask task, string typeName)
         {
             task.Explosive.Models = b.Models;
+            task.Explosive.Magic = b.Magic;
             task.Explosive.Explosions = player.Explosions;
             task.Explosive.Bind(player.CollisionWorld.SolidsOf(typeName, task.Id));
             player.Explosions?.AddTarget(task);

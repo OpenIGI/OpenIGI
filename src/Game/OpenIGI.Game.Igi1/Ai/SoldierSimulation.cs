@@ -371,7 +371,7 @@ public sealed partial class SoldierSimulation : IHumanEvents, OpenIGI.Game.Level
         _context.ForgetCombat();
         _context.ForgetHealth();
         _brains.ClearActivations();
-        _context.PlayerTarget = new AiCombatTarget("HumanPlayer");
+        _context.PlayerTarget = new AiCombatTarget("HumanPlayer") { Engaged = () => _context.PlayerTask?.NoteDetected() };
         _levelRoot = levelRoot;
         _graphs = graphs;
         IReadOnlyDictionary<GameTask, int> visionPhases = levelRoot is null

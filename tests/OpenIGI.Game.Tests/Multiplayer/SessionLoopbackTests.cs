@@ -556,6 +556,60 @@ public sealed class SessionLoopbackTests
     }
 
     [Theory]
+    [InlineData("tdm", false)]
+    [InlineData("ffa", true)]
+    public void A_mark_is_seen_by_the_markers_team_only_where_the_mode_plays_teams(string mode, bool otherSees)
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        server.Mode = GameModes.For(mode, world, TickRate);
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        List<WorldMark>[] seen = [[], [], []];
+        float[] idle = new float[ToyWorld.Channels];
+        Int3 there = new(4096, -8192, 512);
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            if (tick == 2 * TickRate)
+            {
+                clients[0].Mark(there);
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                seen[i].AddRange(clients[i].TakeMarks());
+            }
+        }
+
+        // In a team mode, which of the other two shares the marker's team; with no teams, either sees it.
+        int[] teams = [.. Enumerable.Range(0, clients.Length).Select(i => server.Match.Players.Values.First(p => p.Name == $"p{i}").Team)];
+        int mate = teams[1] == teams[0] ? 1 : 2;
+        int other = 3 - mate;
+        Assert.Contains(seen[0], m => m.Position == there);
+        Assert.Contains(seen[mate], m => m.Position == there);
+        Assert.Equal(otherSees, seen[other].Any(m => m.Position == there));
+    }
+
+    [Theory]
     [InlineData(ChatKind.All)]
     [InlineData(ChatKind.Team)]
     [InlineData(ChatKind.Server)]

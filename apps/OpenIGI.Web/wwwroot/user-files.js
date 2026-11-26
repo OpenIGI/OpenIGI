@@ -4,12 +4,19 @@
 // profile, no settings, no saves, and the installation's config.qvm read again as if new. Before the game boots, what
 // was kept is written back into the user folder; while it runs, whatever it wrote there is kept again -- every few
 // seconds, when the tab is hidden and when the game closes. The caches (shader, font, GI) are rebuilt on their own and
-// stay out of it.
+// stay out of it -- all but cache/mp, the files multiplayer hosts sent, which only a host can give again: each is named
+// by its hash and never changes, so it is written here once, and the game itself keeps that folder to its size.
 
 const DATABASE = 'openigi-user';
 const STORE = 'files';
 const EVERY = 3000;
-const SKIPPED = new Set(['cache']);
+
+/** Whether a path below the user folder is left out: the caches but the hosts' files, and a file still being written. */
+function skipped(relative) {
+  if (relative.endsWith('.part')) return true;
+  if (relative === '/cache' || relative === '/cache/mp' || relative.startsWith('/cache/mp/')) return false;
+  return relative.startsWith('/cache/');
+}
 
 let opened = null;
 
@@ -41,8 +48,9 @@ function walk(fs, root, below = '', into = new Map()) {
   }
 
   for (const name of names) {
-    if (name === '.' || name === '..' || (below === '' && SKIPPED.has(name))) continue;
+    if (name === '.' || name === '..') continue;
     const relative = `${below}/${name}`;
+    if (skipped(relative)) continue;
     const stat = fs.stat(root + relative);
     if (fs.isDir(stat.mode)) {
       walk(fs, root, relative, into);

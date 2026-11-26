@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Weapons;
@@ -172,7 +173,7 @@ public static class WeaponTaskParameters
     /// degree: the Dragunov's 5° gives <c>tan(2°)</c>.
     /// </remarks>
     public static float HalfAngleTangent(int fieldOfViewDegrees) =>
-        (float)Math.Tan((fieldOfViewDegrees / 2) * (double)DegreesToRadians);
+        (float)SimMath.Tan((fieldOfViewDegrees / 2) * (double)DegreesToRadians);
 
     private static WeaponTaskParameterSlot[] SlotsFor(string taskTypeName)
     {

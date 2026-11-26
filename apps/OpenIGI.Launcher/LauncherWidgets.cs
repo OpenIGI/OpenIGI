@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Drawing;
@@ -19,29 +20,6 @@ internal sealed class ChromeCaption(UiTheme theme) : UiElement
         painter.FillDiamond(new UiVec2(Bounds.X + context.Px(4f), Bounds.Center.Y), context.Px(8f), theme.Accent);
         float size = context.Px(14f);
         painter.DrawLabel(theme.Mono, "OPENIGI", new UiVec2(Bounds.X + context.Px(18f), UiRowStyle.CenterY(theme.Mono, size, Bounds)), size, theme.TextMuted, 0.28f);
-    }
-}
-
-/// <summary>The header's connection status: a glowing dot and a word.</summary>
-internal sealed class StatusIndicator(UiTheme theme) : UiElement
-{
-    public string Text { get; set; } = "ONLINE";
-
-    public Bgra32 Color { get; set; } = UiPalette.Success;
-
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        new(context.Px(7f + 10f) + UiPainter.MeasureLabel(theme.Mono, Text, context.Px(14f), 0.2f), available.Y);
-
-    protected override void OnDraw(UiPainter painter)
-    {
-        LayoutContext context = painter.Context;
-        var dot = new UiVec2(Bounds.X + context.Px(3.5f), Bounds.Center.Y);
-        Span<UI.Drawing.UiGradientStop> glow = [new(0f, Color.WithAlpha(110)), new(1f, Color.WithAlpha(0))];
-        float reach = context.Px(9f);
-        painter.FillRadialGradient(new UiRect(dot.X - reach, dot.Y - reach, reach * 2f, reach * 2f), dot, new UiVec2(reach, reach), glow);
-        painter.FillDiamond(dot, context.Px(5f), Color);
-        float size = context.Px(14f);
-        painter.DrawLabel(theme.Mono, Text, new UiVec2(Bounds.X + context.Px(17f), UiRowStyle.CenterY(theme.Mono, size, Bounds)), size, theme.TextMuted, 0.2f);
     }
 }
 
@@ -236,7 +214,7 @@ internal sealed class OnOffSwitch(UiTheme theme) : Control(theme)
 /// </summary>
 internal sealed class Thumbnail(UiTheme theme) : UiElement
 {
-    public BackdropPicture? Picture { get; set; }
+    public UiPicture? Picture { get; set; }
 
     public string Short { get; set; } = string.Empty;
 

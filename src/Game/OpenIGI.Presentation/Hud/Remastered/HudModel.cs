@@ -140,7 +140,11 @@ public readonly record struct HudWeaponView(
 /// <param name="Count">The rounds carried for it as the title counts them, or empty for none.</param>
 /// <param name="Selected">Whether it is the one in hand.</param>
 /// <param name="Head">Whether it heads its column; the others below show their names only.</param>
-public readonly record struct HudSlotView(int Column, string KeyLabel, string Name, HudIcon Icon, string Count, bool Selected, bool Head);
+/// <param name="More">
+/// How many more of its kind are carried than the strip has columns for, marked after its column; nought for none. Set on the
+/// last column of its kind shown.
+/// </param>
+public readonly record struct HudSlotView(int Column, string KeyLabel, string Name, HudIcon Icon, string Count, bool Selected, bool Head, int More = 0);
 
 /// <summary>One thing that may be done, on the action row.</summary>
 /// <param name="Icon">Its badge.</param>
@@ -148,6 +152,12 @@ public readonly record struct HudSlotView(int Column, string KeyLabel, string Na
 /// <param name="SecondOverlay">The badge laid over the second picture, or none.</param>
 /// <param name="Key">What identifies it from frame to frame.</param>
 public readonly record struct HudActionView(HudIcon Icon, HudIcon Second, HudIcon SecondOverlay, string Key);
+
+/// <summary>A place in the level an objective is still to be done at, marked where it is.</summary>
+/// <param name="Text">The objective's words.</param>
+/// <param name="Position">Where, in the level's units.</param>
+/// <param name="DistanceMetres">How far it is from the player, in metres.</param>
+public readonly record struct HudObjectiveMark(string Text, OpenIGI.Core.Numerics.Vector3d Position, float DistanceMetres);
 
 /// <summary>A message on the display.</summary>
 /// <param name="Text">What it says, as far as it has printed.</param>
@@ -238,6 +248,7 @@ public sealed class HudModel
 
     private readonly List<HudSlotView> _slots = [];
     private readonly List<HudActionView> _actions = [];
+    private readonly List<HudObjectiveMark> _objectives = [];
     private readonly List<HudMessageView> _messages = [];
     private readonly List<HudThreat> _threats = [];
 
@@ -255,6 +266,16 @@ public sealed class HudModel
 
     /// <summary>Gets or sets the visibility past which the meter warns, nought to one.</summary>
     public float VisibilityAlert { get; set; } = 0.75f;
+
+    /// <summary>
+    /// Gets or sets whether the enemy has spotted the player this mission, for a title that keeps the state (I.G.I. 2's eye turns
+    /// red once a squad has spotted the player, <c>Human.nSpotted</c>); <see langword="null"/> where the title has none, and the
+    /// meter's warning stands in for it.
+    /// </summary>
+    public bool? Spotted { get; set; }
+
+    /// <summary>Gets a value indicating whether the meter shows the player seen: the title's own state, else visibility past the warning.</summary>
+    public bool IsSeen => Spotted ?? (Visibility is { } visible && visible >= VisibilityAlert);
 
     /// <summary>Gets or sets the weapon in hand, or <see langword="null"/> for none.</summary>
     public HudWeaponView? Weapon { get; set; }
@@ -277,14 +298,8 @@ public sealed class HudModel
     /// <summary>Gets or sets where the player faces, in radians clockwise from north, or <see langword="null"/>.</summary>
     public float? HeadingRadians { get; set; }
 
-    /// <summary>Gets or sets the objective being worked on, or <see langword="null"/>.</summary>
-    public string? Objective { get; set; }
-
-    /// <summary>Gets or sets where the objective being worked on is, in the level's units, or <see langword="null"/> where it has no place.</summary>
-    public OpenIGI.Core.Numerics.Vector3d? ObjectivePosition { get; set; }
-
-    /// <summary>Gets or sets how far the objective is from the player, in metres.</summary>
-    public float ObjectiveDistanceMetres { get; set; }
+    /// <summary>Gets the places in the level still to be done for an objective, each marked where it is.</summary>
+    public IReadOnlyList<HudObjectiveMark> Objectives => _objectives;
 
     /// <summary>Gets or sets the wash in each corner from a hit.</summary>
     public HudDamage Damage { get; set; }
@@ -336,6 +351,7 @@ public sealed class HudModel
         Stance = HudStance.None;
         Visibility = null;
         VisibilityAlert = 0.75f;
+        Spotted = null;
         Weapon = null;
         _slots.Clear();
         _actions.Clear();
@@ -343,9 +359,7 @@ public sealed class HudModel
         Progress = null;
         TimerSeconds = null;
         HeadingRadians = null;
-        Objective = null;
-        ObjectivePosition = null;
-        ObjectiveDistanceMetres = 0f;
+        _objectives.Clear();
         Damage = default;
         PitchRadians = null;
         _threats.Clear();
@@ -361,6 +375,25 @@ public sealed class HudModel
     /// <summary>Adds a thing that may be done.</summary>
     /// <param name="action">The thing.</param>
     public void AddAction(in HudActionView action) => _actions.Add(action);
+
+    /// <summary>Adds every place an objective is still to be done at.</summary>
+    /// <param name="objective">The objective.</param>
+    /// <param name="from">Where the player stands, which the distances are from, in the level's units.</param>
+    /// <remarks>Each unfinished objective is marked, every place of it: three tanks to mine are three marks.</remarks>
+    public void AddObjective(OpenIGI.Game.World.MissionObjective objective, OpenIGI.Core.Numerics.Vector3d from)
+    {
+        ArgumentNullException.ThrowIfNull(objective);
+        if (objective.State != OpenIGI.Game.World.MissionObjectiveState.Incomplete)
+        {
+            return;
+        }
+
+        foreach (OpenIGI.Core.Numerics.Vector3d place in objective.Places)
+        {
+            double dx = place.X - from.X, dy = place.Y - from.Y, dz = place.Z - from.Z;
+            _objectives.Add(new HudObjectiveMark(objective.Text, place, (float)(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 4096.0)));
+        }
+    }
 
     /// <summary>Adds someone noticing the player.</summary>
     /// <param name="threat">Them.</param>

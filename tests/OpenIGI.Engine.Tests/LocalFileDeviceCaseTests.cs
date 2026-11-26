@@ -68,6 +68,19 @@ public sealed class LocalFileDeviceCaseTests : IDisposable
         Assert.Null(stream);
     }
 
+    /// <summary>A file written after its folder was first looked in is found: a browser writes a mission's files when it is chosen.</summary>
+    [Fact]
+    public void FindsAFileWrittenAfterItsDirectoryWasFirstLookedIn()
+    {
+        Write("MISSIONS/LOCATION1/LEVEL1/mission.qvm", "mission");
+        LocalFileDevice device = new(_root);
+        Assert.False(device.Exists("missions/location1/level1/terrain/terrain.dat"));
+
+        Write("MISSIONS/LOCATION1/LEVEL1/TERRAIN/TERRAIN.DAT", "ground");
+
+        Assert.True(device.Exists("missions/location1/level1/terrain/terrain.dat"));
+    }
+
     [Fact]
     public void EnumeratesInsideADirectoryNamedInAnotherCase()
     {

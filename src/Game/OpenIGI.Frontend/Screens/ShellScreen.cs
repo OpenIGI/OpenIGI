@@ -17,8 +17,14 @@ public enum ShellTab
     /// <summary>The campaign / mission select.</summary>
     Campaign,
 
+    /// <summary>Community maps: published, installed, played.</summary>
+    Maps,
+
     /// <summary>Multiplayer: the server browser, joining by code, parties and hosting every mode.</summary>
     Coop,
+
+    /// <summary>The official servers' leaderboards and players' records.</summary>
+    Leaderboard,
 
     /// <summary>The settings.</summary>
     Settings,
@@ -72,7 +78,8 @@ public abstract class ShellScreen : Screen
     /// <summary>Gets the margin either side of the header, footer and pages, in design units.</summary>
     protected float SideMargin => ShellSizes.SideMargin(Size);
 
-    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
+    // Maps is left out for now; its screen is kept for when it returns.
+    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Leaderboard, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
 
     private Canvas? _chrome;
     private GameSwitcher? _title;
@@ -170,9 +177,51 @@ public abstract class ShellScreen : Screen
     protected (int Done, int Total) CampaignProgress()
     {
         List<MissionInfo> missions = [.. Context.Missions.Where(static mission => mission.Campaign is null)];
-        int active = Context.Config.Active?.ActiveMission ?? 0;
-        int done = Math.Max(0, missions.FindIndex(mission => mission.Id == active));
-        return (done, missions.Count);
+        return (MissionsDone(missions), missions.Count);
+    }
+
+    /// <summary>Gets how many of the game's own campaign the active profile has completed.</summary>
+    /// <param name="missions">The game's own campaign, in the order it is played.</param>
+    /// <returns>
+    /// Those before the mission reached; all of them up to and including it once its completion finished the campaign, which
+    /// retail never records by moving the mission reached on (see <see cref="OpenIGI.Game.Config.PlayerProfile.FinaleOf"/>).
+    /// </returns>
+    protected int MissionsDone(IReadOnlyList<MissionInfo> missions)
+    {
+        ArgumentNullException.ThrowIfNull(missions);
+        if (Context.Config.Active is not { } profile)
+        {
+            return 0;
+        }
+
+        int reached = MissionReached(profile);
+        for (int i = 0; i < missions.Count; i++)
+        {
+            if (missions[i].Id == reached)
+            {
+                return profile.FinaleOf(Context.ActiveTitleId) == reached ? i + 1 : i;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>Gets the name the player is shown by: their Discord name once signed in, the profile's own until then.</summary>
+    /// <remarks>The profile's name stays what its saves are filed under; signed in, it is only never shown.</remarks>
+    protected string PlayerName => SignedInAccount?.Name ?? (Context.Config.Active?.Name is { Length: > 0 } name ? name : "No profile");
+
+    /// <summary>Gets the account the player is signed in with (or was, while the servers can't be reached), or <see langword="null"/>.</summary>
+    protected AccountSummary? SignedInAccount =>
+        Context.Host.Account is { Status: AccountStatus.SignedIn or AccountStatus.Offline, Account: { } account } ? account : null;
+
+    /// <summary>Gets the mission a profile has reached in the game being played.</summary>
+    /// <param name="profile">The profile.</param>
+    /// <returns>The mission's id; the campaign's first for a game not yet played.</returns>
+    protected int MissionReached(OpenIGI.Game.Config.PlayerProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        int reached = profile.MissionOf(Context.ActiveTitleId);
+        return reached > 0 || Context.Missions.Count == 0 ? reached : Context.Missions[0].Id;
     }
 
     /// <summary>Gets the active profile's difficulty, by name.</summary>
@@ -273,10 +322,11 @@ public abstract class ShellScreen : Screen
 
     /// <summary>The canvas width, in design units, under which the header draws its parts closer together.</summary>
     /// <remarks>
-    /// The title, the five sections between their keys, the operative and Quit are some 1,520 units across at their full
-    /// spacing. A 4:3 screen is 1,440 and a 5:4 one 1,350: there the two key caps go and the gaps close up.
+    /// The title, the six sections between their keys, the operative and Quit are some 1,700 units across at their full
+    /// spacing. A 16:10 screen is 1,728, a 4:3 one 1,440 and a 5:4 one 1,350: under the line the two key caps go and the gaps
+    /// close up.
     /// </remarks>
-    private const float RoomyHeaderWidth = 1600f;
+    private const float RoomyHeaderWidth = 1720f;
 
     private static string TabName(ShellTab tab) => tab == ShellTab.Coop ? "Multiplayer" : tab.ToString();
 
@@ -311,7 +361,7 @@ public abstract class ShellScreen : Screen
             var button = new HeaderTab(theme, TabName(tab));
             if (!roomy)
             {
-                button.Padding = new Thickness(14f, 0f);
+                button.Padding = new Thickness(11f, 0f);
             }
 
             ShellTab target = tab;
@@ -329,8 +379,11 @@ public abstract class ShellScreen : Screen
 
         var right = new FlexPanel { Orientation = Orientation.Horizontal, Gap = roomy ? 28f : 16f };
         (int done, int total) = CampaignProgress();
-        var operative = new OperativeBadge(theme, Context.Config.Active?.Name ?? "No profile")
+        var operative = new OperativeBadge(theme, PlayerName)
         {
+            // The account answers after the menu is up: the badge follows it, the Discord name and avatar in as they come.
+            NameSource = () => PlayerName,
+            Avatar = () => SignedInAccount is not null ? Context.Host.Account?.Avatar : null,
             Caption = Context.Config.Active is null || total == 0
                 ? string.Empty
                 : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{DifficultyName().ToUpperInvariant()} · {done}/{total}"),
@@ -350,7 +403,7 @@ public abstract class ShellScreen : Screen
         }
 
         Button quit = HeaderButton(theme, "Quit");
-        quit.LeadingGlyph = static (painter, centre, size, ink) => KitIcons.Draw(painter, KitIcon.Power, centre, size, ink);
+        quit.LeadingGlyph = KitIcons.Glyph(KitIcon.Power);
         quit.GlyphSize = 18f;
         quit.Activated += _ => Context.Host.Quit();
         right.Add(quit);
@@ -402,13 +455,14 @@ public abstract class ShellScreen : Screen
         return bar;
     }
 
-    // The compact page's sections: Home and the five, an icon over a word each, down the left edge.
+    // The compact page's sections: Home and the six, an icon over a word each, down the left edge.
     private SectionRail BuildRail()
     {
         var rail = new SectionRail(Context.Theme);
         rail.Add(KitIcon.None, "Home", Tab == ShellTab.Home, () => GoTo(ShellTab.Home));
         rail.Add(KitIcon.Target, "Campaign", Tab == ShellTab.Campaign, () => GoTo(ShellTab.Campaign));
         rail.Add(KitIcon.Globe, "Online", Tab == ShellTab.Coop, () => GoTo(ShellTab.Coop));
+        rail.Add(KitIcon.Leaderboard, "Ranks", Tab == ShellTab.Leaderboard, () => GoTo(ShellTab.Leaderboard));
         rail.Add(KitIcon.Sliders, "Settings", Tab == ShellTab.Settings, () => GoTo(ShellTab.Settings));
         rail.Add(KitIcon.Person, "Profile", Tab == ShellTab.Profile, () => GoTo(ShellTab.Profile));
         rail.Add(KitIcon.Archive, "Extras", Tab == ShellTab.Extras, () => GoTo(ShellTab.Extras));
@@ -435,7 +489,7 @@ public abstract class ShellScreen : Screen
 
         for (int i = 0; i < count; i++)
         {
-            games[i] = ShortName(Context.Games[i].DisplayName);
+            games[i] = OpenIGI.Core.Titles.GameTitle.ShortNameOf(Context.Games[i].DisplayName);
             if (Context.Games[i].Id == Context.ActiveTitleId)
             {
                 current = i;
@@ -492,13 +546,6 @@ public abstract class ShellScreen : Screen
         return title;
     }
 
-    /// <summary>A game's name without its subtitle: <c>I.G.I. 2: Covert Strike</c> is <c>I.G.I. 2</c>.</summary>
-    private static string ShortName(string displayName)
-    {
-        int colon = displayName.IndexOf(':', StringComparison.Ordinal);
-        return colon < 0 ? displayName : displayName[..colon].Trim();
-    }
-
     /// <summary>A game's tagline, set under its name in the switcher.</summary>
     private static string Tagline(string id, string displayName)
     {
@@ -521,7 +568,9 @@ public abstract class ShellScreen : Screen
     private static Screen CreateScreen(ShellTab tab, ShellContext context) => tab switch
     {
         ShellTab.Campaign => new CampaignScreen(context),
+        ShellTab.Maps => new MapsScreen(context),
         ShellTab.Coop => new MultiplayerScreen(context),
+        ShellTab.Leaderboard => new LeaderboardScreen(context),
         ShellTab.Settings => new SettingsScreen(context),
         ShellTab.Profile => new ProfilesScreen(context),
         ShellTab.Extras => new ExtrasScreen(context),

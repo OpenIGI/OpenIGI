@@ -44,6 +44,9 @@ public sealed record BrowserInfo(
 public sealed record BrowserServer(
     string Key, NetAddress? Address, string? Room, BrowserInfo Info, string Region, BrowserSource Sources, double? Ping)
 {
+    /// <summary>Gets a value indicating whether the master lists it as an official server: one of ours, whose matches count toward the stats.</summary>
+    public bool Official { get; init; }
+
     /// <summary>Gets a value indicating whether it has answered this game's own question: it is there and can be reached.</summary>
     public bool Answered => Ping is not null;
 

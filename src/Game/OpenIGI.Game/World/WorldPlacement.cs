@@ -85,6 +85,12 @@ public sealed record WorldPlacement(
     /// <summary>Gets whether the live task has no authored replacement and should no longer draw.</summary>
     public bool IsSuppressed { get; init; }
 
+    /// <summary>
+    /// Gets whether nothing is drawn here until the object is destroyed: it has no model of its own and is placed on the one it
+    /// wears destroyed (<see cref="DestroyedReplacement"/>), as I.G.I. 2's bridge charges are.
+    /// </summary>
+    public bool IsHiddenUntilDestroyed { get; init; }
+
     /// <summary>Gets pre-deformed geometry that replaces the model's own, or <see langword="null"/>.</summary>
     /// <remarks>
     /// A spline segment's vertices are bent along its waypoints' curve, so the mesh is unique to the
@@ -184,6 +190,8 @@ public sealed record WorldPlacement(
     public bool HasLightmap => LightmapEntry.Length > 0 || (LightmapIndex >= 0 && LightmapSet.Length > 0);
 
     /// <summary>The cached result of <see cref="LightmapEntryName"/>; the inputs are init-only.</summary>
+    /// <remarks>Filled when it is drawn, not by play: a checkpoint leaves it as it is.</remarks>
+    [OpenIGI.Core.Simulation.NotSimulationState]
     private string? _lightmapEntryName;
 
     /// <summary>Gets the archive entry name holding this object's bake.</summary>

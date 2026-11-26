@@ -74,6 +74,11 @@ public class Dropdown : Control
     /// </remarks>
     public Func<int, bool>? OptionEnabled { get; set; }
 
+    /// <summary>Whether an option is shown as one of the row's choices: one that can be chosen, or the one held.</summary>
+    /// <param name="index">The option's index.</param>
+    /// <returns><see langword="true"/> to show it.</returns>
+    public bool Offered(int index) => index == _selected || OptionEnabled is null || OptionEnabled(index);
+
     /// <summary>Gets the options.</summary>
     public IReadOnlyList<string> Options => _options;
 
@@ -261,7 +266,18 @@ public class Dropdown : Control
         float centre = _valueRect.Center.X;
         float valueSize = context.Px(Theme.BodyTextSize < 18f ? 16f : 18f);
         float caps = valueSize * 0.72f;
-        bool pips = _options.Count is > 1 and <= 8;
+        // A pip for each choice there is: an option that cannot be chosen -- a reading such as Custom -- has one only while
+        // it is the one held, so the pips never offer a step the arrows will not reach.
+        int shownPips = 0;
+        for (int i = 0; i < _options.Count; i++)
+        {
+            if (Offered(i))
+            {
+                shownPips++;
+            }
+        }
+
+        bool pips = shownPips is > 1 and <= 8;
         float pipHeight = context.Px(3f);
         float block = caps + (pips ? context.Px(6f) + pipHeight : 0f);
         float top = _valueRect.Center.Y - (block * 0.5f);
@@ -273,11 +289,18 @@ public class Dropdown : Control
         {
             float pip = context.Px(10f);
             float gap = context.Px(3f);
-            float x = centre - (((_options.Count * pip) + ((_options.Count - 1) * gap)) * 0.5f);
+            float x = centre - (((shownPips * pip) + ((shownPips - 1) * gap)) * 0.5f);
+            int slot = 0;
             for (int i = 0; i < _options.Count; i++)
             {
+                if (!Offered(i))
+                {
+                    continue;
+                }
+
                 Bgra32 ink = i != _selected ? UiPalette.White(0.22f) : IsEnabled ? Theme.Accent : Theme.TextDisabled;
-                painter.FillRect(new UiRect(x + (i * (pip + gap)), top + caps + context.Px(6f), pip, pipHeight), UiPalette.Fade(ink, appear));
+                painter.FillRect(new UiRect(x + (slot * (pip + gap)), top + caps + context.Px(6f), pip, pipHeight), UiPalette.Fade(ink, appear));
+                slot++;
             }
         }
 

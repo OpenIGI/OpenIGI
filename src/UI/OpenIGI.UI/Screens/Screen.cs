@@ -72,6 +72,9 @@ public abstract class Screen
 
     private readonly Tween _transition = new(0f, duration: 0.35f, Ease.OutQuint);
     private UiVec2 _builtViewport = new(-1f, -1f);
+
+    // Whether this entrance has played its controls in already: a rebuild during it shows them at once.
+    private bool _entrancePlayed;
     private Control? _hovered;
 
     // The control holding the pointer through a drag, or null; see Control.CapturesPointer.
@@ -79,6 +82,9 @@ public abstract class Screen
 
     // The viewport whose scrollbar is being dragged, or null. It holds the pointer as _captured does.
     private ScrollView? _scrollbarDrag;
+
+    // The modal text entry whose first frame has passed; see HandleTextEntry.
+    private ITextEntry? _armedEntry;
     private Control? _tooltipTarget;
     private UiVec2 _tooltipAnchor;
     private float _tooltipDwell;
@@ -155,9 +161,13 @@ public abstract class Screen
                 Focus!.FocusFirst();
             }
 
-            // Animate the controls in only on a real entrance; a rebuild from a resize while the screen
-            // is already up snaps them present so the layout does not replay its animation.
-            ApplyEntrance(Phase == ScreenPhase.Entering && !_transition.IsComplete);
+            // Animate the controls in only on a real entrance, and only its first build: a rebuild from a resize
+            // while the screen is up, or one a page makes as its data arrives while it is still coming in, snaps
+            // them present -- each rebuild played the stagger again from nothing, and a page whose list filled
+            // in over its first moments flashed its controls once a rebuild.
+            bool entrance = Phase == ScreenPhase.Entering && !_transition.IsComplete && !_entrancePlayed;
+            ApplyEntrance(entrance);
+            _entrancePlayed |= entrance;
         }
 
         Focus!.Validate();
@@ -183,6 +193,7 @@ public abstract class Screen
     public void BeginEnter()
     {
         Phase = ScreenPhase.Entering;
+        _entrancePlayed = false;
         _transition.Retarget(1f);
         OnEnter();
     }
@@ -234,6 +245,24 @@ public abstract class Screen
         }
     }
 
+    /// <summary>
+    /// Plays the screen's entrance on a part of a page built after the page came in -- a list's lines, a side panel made
+    /// again for what was picked: every control in it fades in, one a little after another, as the page's own did.
+    /// </summary>
+    /// <param name="part">The part, newly added.</param>
+    public static void PlayEntrance(UiElement part)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        int index = 0;
+        foreach (UiElement element in part.Descendants())
+        {
+            if (element is Control control)
+            {
+                control.PlayEnter(MathF.Min(index++ * EntranceStagger, MaxEntranceDelay));
+            }
+        }
+    }
+
     /// <summary>Begins the exit transition.</summary>
     public void BeginExit()
     {
@@ -261,12 +290,76 @@ public abstract class Screen
         bool popRequested = false;
         if (Phase == ScreenPhase.Active)
         {
-            popRequested = HandleInput(nav, input);
+            popRequested = !HandleTextEntry(nav, input) && HandleInput(nav, input);
+        }
+        else
+        {
+            _armedEntry = null;
         }
 
         UpdateTooltip(elapsedSeconds, input);
         OnUpdate(elapsedSeconds);
         return popRequested;
+    }
+
+    /// <summary>Feeds typed characters to the focused control that takes them, and runs a modal entry's frame.</summary>
+    /// <param name="nav">The frame's navigation intents.</param>
+    /// <param name="input">The frame's raw input.</param>
+    /// <returns><see langword="true"/> when a modal entry took the whole frame and the page is not to see it.</returns>
+    /// <remarks>
+    /// Text is decoded by the platform, not inferred from scan codes. Only the focused control drains the queue, so
+    /// opening a profile form cannot leak its name into another screen or the console. This runs ahead of
+    /// <see cref="HandleInput"/> so that a page's own keys -- Escape leaving it, Backspace discarding its changes, a
+    /// letter switching its tab -- never fire while a number is being typed into one of its sliders.
+    /// </remarks>
+    private bool HandleTextEntry(UiNavigation nav, InputState input)
+    {
+        if (Focus?.Focused is not ITextEntry { IsTakingText: true } entry)
+        {
+            _armedEntry = null;
+            return false;
+        }
+
+        KeyboardState keyboard = input.Keyboard;
+        if (entry.IsModal && !ReferenceEquals(_armedEntry, entry))
+        {
+            // The entry opened last frame. Whatever is still queued was typed before it did -- a weapon key in the
+            // mission behind the menu -- and is not meant for it.
+            while (keyboard.TryDequeueCharacter(out _))
+            {
+                // The loop's condition does the work.
+            }
+
+            _armedEntry = entry;
+            return true;
+        }
+
+        while (keyboard.TryDequeueCharacter(out char typed))
+        {
+            entry.Type(typed);
+        }
+
+        if (keyboard.WasPressed(KeyCode.Backspace))
+        {
+            entry.Backspace();
+        }
+
+        if (!entry.IsModal)
+        {
+            return false;
+        }
+
+        // Enter keeps the number and Escape drops it. A press anywhere keeps it too, and then lands as it would have,
+        // so a click on the next row's track is not lost to closing this one.
+        bool pressed = input.Mouse.WasPressed(MouseButton.Left);
+        if (nav.Accept || nav.Back || pressed)
+        {
+            entry.EndEntry(commit: !nav.Back);
+            _armedEntry = null;
+            return !pressed || nav.Back;
+        }
+
+        return true;
     }
 
     /// <summary>Times how long the pointer has rested where it is, which is what a tooltip waits on.</summary>
@@ -421,21 +514,6 @@ public abstract class Screen
             return nav.Back;
         }
 
-        // Text is decoded by the platform, not inferred from scan codes.  Only the focused field drains
-        // the queue, so opening a profile form cannot leak its name into another screen or the console.
-        if (focus.Focused is TextBox textBox)
-        {
-            while (input.Keyboard.TryDequeueCharacter(out char typed))
-            {
-                textBox.Append(typed);
-            }
-
-            if (input.Keyboard.WasPressed(KeyCode.Backspace))
-            {
-                textBox.Backspace();
-            }
-        }
-
         MouseState mouse = input.Mouse;
         var pointer = new UiVec2(mouse.X, mouse.Y);
 
@@ -515,6 +593,9 @@ public abstract class Screen
             }
             else
             {
+                // A click the page acts on is the page's: it may shut the menu, and the game it hands back to must not take the
+                // button still down for a press of its own -- a load chosen from a list firing the player's gun.
+                mouse.TakePress(MouseButton.Left);
                 clicked.ActivateAt(pointer);
             }
         }

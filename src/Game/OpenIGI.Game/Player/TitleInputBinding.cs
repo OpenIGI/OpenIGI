@@ -3,12 +3,38 @@ using OpenIGI.Input;
 
 namespace OpenIGI.Game.Player;
 
+/// <summary>A button a touch screen offers for a title's own control, where the title has one.</summary>
+/// <remarks>
+/// The shared buttons -- fire, jump, the binoculars -- are every title's. These are the controls one title has and another has
+/// not, so a touch screen shows them only while that title is played, and presses them as the title's own bits.
+/// </remarks>
+public enum TitleTouchControl
+{
+    /// <summary>No button: the control is at a keyboard only.</summary>
+    None,
+
+    /// <summary>The crouch button, where the title's own crouch stands for the shared one.</summary>
+    Crouch,
+
+    /// <summary>A button that goes down flat, or back up from it.</summary>
+    Prone,
+
+    /// <summary>A button that raises or lowers thermal goggles.</summary>
+    Thermal,
+}
+
 /// <summary>A title-specific action and its initial keyboard or mouse assignment.</summary>
 /// <param name="Mask">The action's bit in the title's input mask.</param>
 /// <param name="Default">The initial profile binding, also naming the persisted action.</param>
 /// <param name="Label">The label shown in controls settings.</param>
 /// <param name="Replaces">A shared action superseded by this title's own control.</param>
-public readonly record struct TitleInputBinding(ulong Mask, InputBinding Default, string? Label = null, PlayerAction Replaces = 0);
+/// <param name="Touch">The touch screen's button for the action, or none; one binding of an action carries it.</param>
+public readonly record struct TitleInputBinding(
+    ulong Mask,
+    InputBinding Default,
+    string? Label = null,
+    PlayerAction Replaces = 0,
+    TitleTouchControl Touch = TitleTouchControl.None);
 
 /// <summary>Feeds additional title controls through the same profile bindings as shared actions.</summary>
 public static class TitleInputBindings
@@ -57,6 +83,13 @@ public static class TitleInputBindings
             if (string.Equals(binding.Default.Action, action, StringComparison.OrdinalIgnoreCase)) { return binding.Label ?? action; }
             if (binding.Replaces != 0 && string.Equals(PlayerInputBindings.ConfigName(binding.Replaces), action, StringComparison.OrdinalIgnoreCase)) { return null; }
         }
+        // A title with rows of its own is I.G.I. 2, which reads neither Project I.G.I.'s flashlight nor modern aim's leans, brace
+        // and launcher: their rows are not its controls, so its page does not list them and they hold no key from its own.
+        if (bindings.Count > 0 && PlayerProfile.TitlesSkip(action))
+        {
+            return null;
+        }
+
         return action.StartsWith("Title_", StringComparison.OrdinalIgnoreCase) ? null : action;
     }
 

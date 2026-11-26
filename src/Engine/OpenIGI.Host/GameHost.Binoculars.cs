@@ -70,7 +70,8 @@ public sealed partial class GameHost
 
         if (_titleMarked.Count > 0)
         {
-            // Over every body, the ones the sector cull left out among them: the marks are what shows a soldier behind a wall.
+            // Over every body the binoculars can see, the ones the sector cull left out among them; one behind a wall is not a
+            // contact at all (ITitlePlayerOptics.BinocularContacts).
             models.DrawWorldOutlines(owned.OutlineModels, _titleMarked, eye, radiusPixels: 8f, _titlePresentationBlend);
         }
     }
@@ -116,8 +117,8 @@ public sealed partial class GameHost
     // The title's contacts as boxes on the screen: the person's height either side of their middle, through the title's view.
     private void AddTitleContacts(ITitlePlayer player, ITitlePlayerOptics optics)
     {
-        Matrix3f rows = player.ViewOrientation;
-        HudProjector projector = new(player.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(player.FieldOfViewScale, _window.Width, _window.Height), _window.Width, _window.Height);
+        // Through the camera the frame was drawn from, between ticks, so the boxes stay on the people the picture shows.
+        HudProjector projector = HudProjector.FromCamera(_inspectorEye, _inspectorTangent, _window.Width, _window.Height);
         foreach (TitleBinocularContact contact in optics.BinocularContacts)
         {
             Vector3d top = new(contact.Centre.X, contact.Centre.Y, contact.Centre.Z + contact.HalfHeight);

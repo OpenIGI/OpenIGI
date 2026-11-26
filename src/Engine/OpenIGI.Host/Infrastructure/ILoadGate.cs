@@ -1,3 +1,4 @@
+using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Host.Infrastructure;
@@ -14,8 +15,12 @@ namespace OpenIGI.Host.Infrastructure;
 /// is no, and runs the load on the frame it becomes yes. Being asked is also the gate's cue to fetch
 /// whatever the mission still lacks.
 /// </para>
+/// <para>
+/// A single folder can be asked for too (<see cref="IFolderArrival"/>), for what a level reads beyond its own: a co-op
+/// look's body, borrowed from another location's pack.
+/// </para>
 /// </remarks>
-public interface ILoadGate
+public interface ILoadGate : IFolderArrival
 {
     /// <summary>Whether a mission's files are all readable now.</summary>
     /// <param name="mission">The mission about to load; its directory is where its files are.</param>
@@ -36,4 +41,7 @@ public sealed class AlwaysReadyLoadGate : ILoadGate
         waitingFor = null;
         return true;
     }
+
+    /// <inheritdoc/>
+    public bool IsInPlace(string directory) => true;
 }

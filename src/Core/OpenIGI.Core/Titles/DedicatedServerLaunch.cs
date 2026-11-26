@@ -36,7 +36,7 @@ public sealed record DedicatedServerLaunch
     public int Mission { get; init; } = 1;
 
     /// <summary>Gets the mode it plays, as <c>tdm</c>.</summary>
-    public string Mode { get; init; } = "tdm";
+    public string Mode { get; init; } = MatchModes.TeamDeathmatch;
 
     /// <summary>Gets the region it says it plays from, or empty.</summary>
     public string Region { get; init; } = string.Empty;

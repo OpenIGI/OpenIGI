@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -67,20 +68,21 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     private readonly List<int> _waveYetToReach = [];
     private readonly List<(int Id, Vector3d At)> _glassYetToReach = [];
 
+    // Where on a player the wave is measured to, and where above the bomb it is measured from, in metres.
+    private const double ChestMetres = 1.2;
+    private const double BombAirMetres = 0.4;
+
     /// <summary>How far past the killing radius the wave still shatters glass, as a multiple of it: overpressure breaks windows long after it stops killing.</summary>
     public const double GlassReachShare = 2.5;
 
     // What the planted bomb would take from each living player where they stand, for their health bars.
     private readonly List<ModeRisk> _risks = [];
 
-    /// <summary>How fast the blast's front sweeps out, in metres a second: the speed of sound.</summary>
-    public const double WaveMetresPerSecond = 343.0;
-
     // How long the field may take building each tick: a sliver of the frame, wherever the server runs.
     private static readonly TimeSpan WaveBudget = TimeSpan.FromMilliseconds(2.0);
 
     /// <inheritdoc/>
-    public override string Id => GameModes.SearchAndDestroy;
+    public override string Id => MatchModes.SearchAndDestroy;
 
     /// <inheritdoc/>
     protected override bool SidesDiffer => true;
@@ -280,14 +282,8 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     // Better the warning shown at once and eased off behind a real wall than shown late.
     private double EffectiveMetres(Vector3d bomb, Vector3d feet)
     {
-        Vector3d chest = feet + new Vector3d(0.0, 0.0, 1.2 * WorldUnits.PerMetre);
-        if (_wave is { IsReady: true } wave)
-        {
-            return wave.EffectiveMetres(chest);
-        }
-
-        Vector3d air = bomb + new Vector3d(0.0, 0.0, 0.4 * WorldUnits.PerMetre);
-        return (chest - air).Length / WorldUnits.PerMetre;
+        Vector3d chest = feet + new Vector3d(0.0, 0.0, ChestMetres * WorldUnits.PerMetre);
+        return _wave is { IsReady: true } wave ? wave.EffectiveMetres(chest) : StraightMetres(bomb, chest);
     }
 
     // How far the wave effectively travels to a pane: its own centre, which the pane's surface may not hide from itself.
@@ -298,15 +294,17 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
             return wave.EffectiveMetres(pane);
         }
 
-        Vector3d air = bomb + new Vector3d(0.0, 0.0, 0.4 * WorldUnits.PerMetre);
-        double straight = (pane - air).Length / WorldUnits.PerMetre;
+        Vector3d air = bomb + new Vector3d(0.0, 0.0, BombAirMetres * WorldUnits.PerMetre);
+        double straight = StraightMetres(bomb, pane);
         return host.World.Collision is { } cast && cast(air, pane, out WorldRayHit hit)
             && (hit.Position - pane).Length > 0.35 * WorldUnits.PerMetre && !GameMaterial.IsBlastTransparent(hit.Material)
             ? (straight + BlastWaveField.WallPenaltyMetres) * (1.0 + BlastWaveField.DetourWeight)
             : straight;
     }
 
-    // The front sweeping out from the bomb: a player is hurt as it reaches them, by how far it travelled to get there.
+    // The front swelling out from the bomb (BombWave): each player is hit as it gets to them -- by how far the wave had to
+    // travel to get there, round corners and through walls. Each hears it coming on its own machine, which knows the front's
+    // clock as well as this does.
     private void TickWave(IModeHost host, long tick)
     {
         if (_wave is { IsReady: false } building && PlantedAt is not null && !Exploded && !Defused)
@@ -319,24 +317,26 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
             return;
         }
 
-        double front = (WaveMetresPerSecond * (tick - _waveFrom) / TickRate) + (_wave?.CellMetres ?? BlastWaveField.FinestCellMetres);
+        double seconds = (tick - _waveFrom) / (double)TickRate;
 
-        // Every pane the wave reaches, near enough, shatters as the front arrives: overpressure, not a hit.
+        // Every pane near enough shatters as the front arrives: overpressure, not a hit.
         double glassReach = Bomb.BlastMetres * GlassReachShare;
         for (int i = _glassYetToReach.Count - 1; i >= 0; i--)
         {
             (int id, Vector3d pane) = _glassYetToReach[i];
-            double effective = PaneMetres(host, bomb, pane);
-            if (effective > glassReach)
+            if (PaneMetres(host, bomb, pane) > glassReach)
             {
                 _glassYetToReach.RemoveAt(i);
             }
-            else if (effective <= front)
+            else if (BombWave.HasReached(seconds, StraightMetres(bomb, pane)))
             {
                 _glassYetToReach.RemoveAt(i);
                 host.World.ShatterGlass(id, bomb);
             }
         }
+
+        // Out to where the bell gives out, the front is felt even where it takes nothing.
+        double felt = BombDamage.ReachMetres(Bomb.BlastMetres);
         for (int i = _waveYetToReach.Count - 1; i >= 0; i--)
         {
             int slot = _waveYetToReach[i];
@@ -346,31 +346,37 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
                 continue;
             }
 
-            double effective = EffectiveMetres(bomb, feet);
-            if (effective > front)
+            Vector3d chest = feet + new Vector3d(0.0, 0.0, ChestMetres * WorldUnits.PerMetre);
+            double straight = StraightMetres(bomb, chest);
+            if (straight > felt)
+            {
+                continue;
+            }
+
+            if (!BombWave.HasReached(seconds, straight))
             {
                 continue;
             }
 
             _waveYetToReach.RemoveAt(i);
-            float share = BombDamage.Share(effective, Bomb.BlastMetres);
-            if (share > 0f)
-            {
-                host.World.BlastPlayer(slot, share, bomb);
-            }
+            host.World.BlastPlayer(slot, BombDamage.Share(EffectiveMetres(bomb, feet), Bomb.BlastMetres), bomb);
         }
 
-        // Past the farthest the bell reaches, nobody else is touched, and past the glass's reach no pane.
-        if (front > Bomb.BlastMetres * 3.0 * (1.0 + BlastWaveField.DetourWeight))
+        // Past the farthest the bell reaches nobody else is touched, and past the glass's reach no pane.
+        if (BombWave.IsSpent(seconds, felt))
         {
             _waveYetToReach.Clear();
         }
 
-        if (front > glassReach)
+        if (BombWave.IsSpent(seconds, glassReach))
         {
             _glassYetToReach.Clear();
         }
     }
+
+    // A place's straight distance from the bomb, measured from the air just above it where the blast centres.
+    private static double StraightMetres(Vector3d bomb, Vector3d at) =>
+        (at - (bomb + new Vector3d(0.0, 0.0, BombAirMetres * WorldUnits.PerMetre))).Length / WorldUnits.PerMetre;
 
     // Each player's body at its work -- kneeling over the plant, or at the defuse -- or back at its own moves.
     private void ShowWork(IModeHost host)
@@ -563,13 +569,15 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
 
         BombFlies = false;
         double ahead = far ? Bomb.DropAheadMetres * WorldUnits.PerMetre : 0.0;
-        DroppedAt = new Vector3d(stood.X + (Math.Sin(BombYaw) * ahead), stood.Y + (Math.Cos(BombYaw) * ahead), stood.Z);
+        DroppedAt = new Vector3d(stood.X + (SimMath.Sin(BombYaw) * ahead), stood.Y + (SimMath.Cos(BombYaw) * ahead), stood.Z);
     }
 
     // The attacker the bomb goes to next: the first standing after the one it went to last, round the team in slot order.
     private int NextCarrier(IModeHost host)
     {
-        int[] attackers = [.. host.Match.Players.Where(p => p.Value.Team == Attackers && p.Value.IsAlive).Select(p => p.Key).Order()];
+        // Only those in the level: one whose line dropped is kept under a negative slot, standing and on its side, and the bomb
+        // handed to it went nowhere -- a round with no one carrying it.
+        int[] attackers = [.. host.Match.Players.Where(p => p.Key >= 0 && p.Value.Team == Attackers && p.Value.IsAlive).Select(p => p.Key).Order()];
         if (attackers.Length == 0)
         {
             return -1;
@@ -610,8 +618,8 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         }
     }
 
-    // The bomb goes off and the round is the attackers': its front then sweeps out, hurting each player as it reaches them by
-    // how far it had to travel -- through the open, round corners, through walls -- to get there.
+    // The bomb goes off and the round is the attackers': its front, held a moment, then swells out (BombWave), hurting each
+    // player as it reaches them by how far it had to travel -- through the open, round corners, through walls -- to get there.
     private void Blow(IModeHost host, Vector3d bomb, long tick)
     {
         Exploded = true;

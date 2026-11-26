@@ -29,6 +29,23 @@ public sealed class RetailIgi2GunPickupTests
     });
 
     /// <summary>
+    /// The level's pickups given to the player reach its level surroundings too, which a weapon it drops or swaps away joins: without
+    /// them the throw made nothing and the weapon was lost.
+    /// </summary>
+    [Fact]
+    public void The_players_surroundings_take_the_levels_pickups()
+    {
+        Igi2CollisionWorld world = new([], null);
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world,
+            Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0f, Game.Ai.AiDifficulty.Normal);
+        Igi2PickupList pickups = new([], world, new Igi2GameMaterials());
+
+        player.Human.Pickups = pickups;
+
+        Assert.Same(pickups, Assert.IsType<Igi2LevelSurroundings>(player.Human.Surroundings).Pickups);
+    }
+
+    /// <summary>
     /// Mission 1 lays four grenades, in the order it declares them. Each gives one round in its load and one for its first
     /// fire type, and a full load for its second; each reaches at least a metre.
     /// </summary>
@@ -176,6 +193,162 @@ public sealed class RetailIgi2GunPickupTests
         Assert.True(inventory.FindWeapon(lying.WeaponId)!.IsActive);
         Assert.False(carried.IsActive);
         Assert.Contains(surroundings.Thrown, t => ReferenceEquals(t.WeaponType, carried.WeaponType));
+    }
+
+    /// <summary>
+    /// The retail weapons' tactical slots come from their sights: the submachine guns and the launchers have their own, every other
+    /// primary weapon is a long gun, and the original's loadout keeps the category alone.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_tactical_loadout_splits_the_primary_weapons_by_their_sights()
+    {
+        Igi2Inventory inventory = Igi2Gameplay.Arm(
+            Mission1.Value.Session.Session.Services, Mission1.Value.Level.Root, Mission1.Value.Session.Require<Igi2PlayerTuning>(), Mission1.Value.Library)!.Inventory;
+        Igi2PrimaryRole Role(string id) => Igi2CarrySlot.Of(inventory.FindWeapon(id)!.WeaponType, Igi2Loadout.Tactical).Role;
+
+        Assert.Equal(Igi2PrimaryRole.LongGun, Role("WEAPON_ID_AK47"));
+        Assert.Equal(Igi2PrimaryRole.LongGun, Role("WEAPON_ID_DRAGUNOV"));
+        Assert.Equal(Igi2PrimaryRole.LongGun, Role("WEAPON_ID_SPAS12"));
+        Assert.Equal(Igi2PrimaryRole.Smg, Role("WEAPON_ID_MP5SD"));
+        Assert.Equal(Igi2PrimaryRole.Smg, Role("WEAPON_ID_UZI"));
+        Assert.Equal(Igi2PrimaryRole.Launcher, Role("WEAPON_ID_RPG7"));
+        Assert.Equal(Igi2PrimaryRole.None, Role("WEAPON_ID_GLOCK"));
+        Assert.Equal(
+            Igi2CarrySlot.Of(inventory.FindWeapon("WEAPON_ID_AK47")!.WeaponType, Igi2Loadout.Original),
+            Igi2CarrySlot.Of(inventory.FindWeapon("WEAPON_ID_RPG7")!.WeaponType, Igi2Loadout.Original));
+    }
+
+    /// <summary>
+    /// Under a tactical loadout a launcher and a submachine gun lying by the player are taken outright beside its rifle; under the
+    /// original's, the launcher is only offered as a swap for the rifle.
+    /// </summary>
+    /// <param name="loadout">The loadout.</param>
+    [RequiresTitleDataTheory("igi2")]
+    [InlineData(Igi2Loadout.Tactical)]
+    [InlineData(Igi2Loadout.Original)]
+    public void A_tactical_loadout_takes_a_launcher_beside_the_rifle(Igi2Loadout loadout)
+    {
+        _ = Mission1.Value;
+        Igi2PickupList pickups = Pickups();
+        Igi2GunPickup grenade = pickups.Items[0];
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, Igi2PlayerFakes.FakeSurroundings surroundings) = StandingBy(grenade, pickups);
+        player.Loadout = loadout;
+        Igi2Inventory inventory = weapons.Inventory;
+        Igi2WeaponItem rifle = CarryOnly(weapons, "WEAPON_ID_AK47")[0];
+        Igi2GunPickup launcher = Lay(inventory, pickups, grenade, "WEAPON_ID_RPG7");
+        Igi2GunPickup smg = Lay(inventory, pickups, grenade, "WEAPON_ID_MP5SD");
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            Igi2PlayerFakes.Feed(player, Igi2PlayerAction.None);
+            player.Update();
+            player.RunDelayed();
+        }
+
+        bool tactical = loadout == Igi2Loadout.Tactical;
+        Assert.Equal(tactical, launcher.IsDelete);
+        Assert.Equal(tactical, smg.IsDelete);
+        Assert.Equal(tactical, inventory.FindWeapon("WEAPON_ID_RPG7")!.IsActive);
+        Assert.Equal(tactical, inventory.FindWeapon("WEAPON_ID_MP5SD")!.IsActive);
+        Assert.True(rifle.IsActive);
+        Assert.Empty(surroundings.Thrown);
+        Assert.Equal(!tactical, player.ActionMenu.Items.Contains(((object)launcher, (object?)rifle.WeaponType)));
+    }
+
+    /// <summary>
+    /// Under a tactical loadout a rifle lying by the player is offered as a swap for its rifle alone, never its submachine gun, and
+    /// the swap throws the rifle down and keeps the submachine gun.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_tactical_loadout_swaps_a_rifle_only_for_the_rifle()
+    {
+        _ = Mission1.Value;
+        Igi2PickupList pickups = Pickups();
+        Igi2GunPickup grenade = pickups.Items[0];
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, Igi2PlayerFakes.FakeSurroundings surroundings) = StandingBy(grenade, pickups);
+        player.Loadout = Igi2Loadout.Tactical;
+        Igi2Inventory inventory = weapons.Inventory;
+        Igi2WeaponItem[] carried = CarryOnly(weapons, "WEAPON_ID_AK47", "WEAPON_ID_MP5SD");
+        Igi2GunPickup m16 = Lay(inventory, pickups, grenade, "WEAPON_ID_M16A2");
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            Igi2PlayerFakes.Feed(player, Igi2PlayerAction.None);
+            player.Update();
+            player.RunDelayed();
+        }
+
+        Assert.False(m16.IsDelete);
+        Assert.True(player.ActionMenu.IsFirst(m16, carried[0].WeaponType));
+        Assert.Contains(((object)m16, (object?)carried[0].WeaponType), player.ActionMenu.Items);
+        Assert.DoesNotContain(((object)m16, (object?)carried[1].WeaponType), player.ActionMenu.Items);
+
+        Igi2PlayerFakes.Feed(player, Igi2PlayerAction.Activate);
+        player.Update();
+
+        Assert.True(m16.IsDelete);
+        Assert.True(inventory.FindWeapon("WEAPON_ID_M16A2")!.IsActive);
+        Assert.False(carried[0].IsActive);
+        Assert.True(carried[1].IsActive);
+        Assert.Contains(surroundings.Thrown, t => ReferenceEquals(t.WeaponType, carried[0].WeaponType));
+    }
+
+    /// <summary>
+    /// Putting a weapon away for good keeps the ammunition another weapon carried fires, when asked to: what a tactical loadout's
+    /// drop does. Asked not to, it empties it as the original does.
+    /// </summary>
+    /// <param name="keep">Whether ammunition another weapon fires is kept.</param>
+    [RequiresTitleDataTheory("igi2")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Ammunition_another_weapon_fires_stays_when_asked(bool keep)
+    {
+        Igi2Inventory inventory = Igi2Gameplay.Arm(
+            Mission1.Value.Session.Session.Services, Mission1.Value.Level.Root, Mission1.Value.Session.Require<Igi2PlayerTuning>(), Mission1.Value.Library)!.Inventory;
+        (Igi2WeaponItem dropped, Igi2WeaponItem other) = inventory.Weapons
+            .Where(static w => w.WeaponType.WeaponCategory > 0)
+            .SelectMany(w => inventory.Weapons, (w, o) => (w, o))
+            .First(p => !ReferenceEquals(p.w, p.o) && p.o.WeaponType.WeaponCategory > 0
+                && p.w.WeaponType.AmmoInfo(0, inventory.Tables).AmmoType is { } ammo
+                && ReferenceEquals(ammo, p.o.WeaponType.AmmoInfo(0, inventory.Tables).AmmoType));
+        inventory.EnableWeaponType(dropped.WeaponType.WeaponId, addAmmo: true);
+        inventory.EnableWeaponType(other.WeaponType.WeaponId, addAmmo: true);
+        Igi2AmmoItem pocket = inventory.FindAmmo(dropped.WeaponType.AmmoInfo(0, inventory.Tables).AmmoType!.AmmoId)!;
+        inventory.AddAmmo(pocket.AmmoType.AmmoId, 10);
+        int before = pocket.Count;
+
+        Assert.True(inventory.IsAmmoFiredByAnother(dropped, 0));
+        inventory.Disable(dropped, removeCarriedAmmo: true, keepAmmoFiredByAnother: keep);
+
+        Assert.False(dropped.IsActive);
+        Assert.Equal(keep ? before : 0, pocket.Count);
+    }
+
+    // Carries only the given primary weapons, each with a load, the first in hand.
+    private static Igi2WeaponItem[] CarryOnly(Igi2PlayerWeapons weapons, params string[] weaponIds)
+    {
+        Igi2Inventory inventory = weapons.Inventory;
+        foreach (Igi2WeaponItem primary in inventory.Weapons.Where(static w => w.IsActive && w.WeaponType.WeaponCategory == 3).ToArray())
+        {
+            inventory.Disable(primary, removeCarriedAmmo: false);
+        }
+
+        Igi2WeaponItem[] carried = [.. weaponIds.Select(id =>
+        {
+            Assert.True(inventory.EnableWeaponType(id, addAmmo: true));
+            return inventory.FindWeapon(id)!;
+        })];
+        Assert.True(weapons.Activate(carried[0]));
+        return carried;
+    }
+
+    // A weapon laid where a grenade lies, landed, with a load.
+    private static Igi2GunPickup Lay(Igi2Inventory inventory, Igi2PickupList pickups, Igi2GunPickup at, string weaponId)
+    {
+        Igi2GunPickup pickup = Igi2GunPickup.Thrown(
+            inventory.FindWeapon(weaponId)!.WeaponType, inventory.Tables, at.Position, at.Orientation, 0f, isMoving: false, isThrowShort: false, 1, null, 100f);
+        pickups.Add(pickup);
+        return pickup;
     }
 
     /// <summary>

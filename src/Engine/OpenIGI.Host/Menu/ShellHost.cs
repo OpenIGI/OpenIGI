@@ -1,6 +1,7 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Kit;
 
 namespace OpenIGI.Host.Menu;
 
@@ -35,10 +36,15 @@ namespace OpenIGI.Host.Menu;
 /// <param name="playedMods">The mods that change play the running title is played with.</param>
 /// <param name="coop">Co-op through rooms, where the build can make WebRTC connections.</param>
 /// <param name="party">Parties, where the build can play together at all.</param>
+/// <param name="account">The player's online account, where the build can reach the OpenIGI servers.</param>
+/// <param name="maps">Community maps, where the build can fetch and play them.</param>
 /// <param name="missionPicture">A mission's picture taken beforehand, or <see langword="null"/> where there is none.</param>
 /// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
 /// <param name="editTouchLayout">Leaves the pause menu for the touch layout editor, over the mission.</param>
 /// <param name="openEditor">Opens the editor, or <see langword="null"/> in a build without one.</param>
+/// <param name="bestScore">The card of the best the active profile has done in a mission of the running game, or <see langword="null"/>.</param>
+/// <param name="leaderboard">The official servers' leaderboards, where the build can reach the servers.</param>
+/// <param name="replays">The player's own replays, where the build keeps them.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -64,13 +70,33 @@ public sealed class ShellHost(
     Action? editTouchLayout = null,
     Func<bool>? openEditor = null,
     IPartyPanel? party = null,
-    Func<int, MissionPicture?>? missionPicture = null) : IShellHost
+    IAccountPanel? account = null,
+    IShellMaps? maps = null,
+    Func<int, UiPicture?>? missionPicture = null,
+    Func<int, OpenIGI.Game.Scoring.MissionScoreCard?>? bestScore = null,
+    OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? leaderboard = null,
+    IShellReplays? replays = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public IShellReplays? Replays => replays;
+
+    /// <inheritdoc/>
+    public OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard => leaderboard;
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => bestScore?.Invoke(missionId);
+
     /// <inheritdoc/>
     public ICoopRooms? Coop => coop;
 
     /// <inheritdoc/>
     public IPartyPanel? Party => party;
+
+    /// <inheritdoc/>
+    public IAccountPanel? Account => account;
+
+    /// <inheritdoc/>
+    public IShellMaps? Maps => maps;
 
     /// <inheritdoc/>
     public IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => playedMods?.Invoke() ?? [];
@@ -134,7 +160,7 @@ public sealed class ShellHost(
     public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
 
     /// <inheritdoc/>
-    public MissionPicture? MissionPicture(int missionId) => missionPicture?.Invoke(missionId);
+    public UiPicture? MissionPicture(int missionId) => missionPicture?.Invoke(missionId);
 
     /// <inheritdoc/>
     public bool TouchScreen => touchScreen?.Invoke() ?? false;

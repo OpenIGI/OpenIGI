@@ -22,6 +22,12 @@ public sealed partial class GameHost
     /// <param name="state">The frame loop's state.</param>
     private void UpdateCutsceneSkip(FrameLoopState state)
     {
+        // A play-test played back breaks its scenes on the ticks the recording broke them (PlaytestTickStarting).
+        if (Replaying)
+        {
+            return;
+        }
+
         int now = _loop.TimeSource.Milliseconds;
         float seconds = Math.Clamp((now - _lastCutsceneSkipMilliseconds) / 1000f, 0f, 0.1f);
         _lastCutsceneSkipMilliseconds = now;
@@ -34,9 +40,12 @@ public sealed partial class GameHost
             && _mission.Scenes is { IsPlaying: true } scenes
             && (scenes.CanBreak || _cutsceneSkip.Breaking)
             && TickObserver is not Multiplayer.ISessionFollower;
-        bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true };
+        // Another game's scenes the same: a client's skip ended its own scene while its host's played on.
+        bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true } && TickObserver is not Multiplayer.ISessionFollower;
         // On a touch screen the whole screen is the key: a finger held anywhere fills the ring.
-        bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown;
+        // And a play-test's skip holds it for the player, until the scene is over.
+        _playtestSkipping &= hostCutscene || titleCutscene;
+        bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown || _playtestSkipping;
 
         // A scene the host ended -- skipped, often -- is cut here as the host's skip cut it there.
         bool followed = TickObserver is Multiplayer.ISessionFollower && _mission.Scenes?.IsPlaying == true;
@@ -48,7 +57,11 @@ public sealed partial class GameHost
 
         _followedScene = followed;
 
-        bool completed = _cutsceneSkip.Update(hostCutscene || titleCutscene, held, seconds);
+        // A race skips every scene it may as it begins: both runs are timed without them, and the ghost's runner is away already.
+        bool playing = hostCutscene || titleCutscene;
+        bool completed = Racing && playing && !_cutsceneSkip.Breaking
+            ? _cutsceneSkip.BreakNow()
+            : _cutsceneSkip.Update(playing, held, seconds);
         if (!hostCutscene)
         {
             return;

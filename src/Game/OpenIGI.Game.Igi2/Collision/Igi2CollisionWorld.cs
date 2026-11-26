@@ -204,9 +204,17 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
     /// <param name="target">Where it stops.</param>
     /// <param name="hit">Receives the nearest surface; its material is the level material row the line went into.</param>
     /// <returns><see langword="true"/> when the line met something before its end.</returns>
-    public bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit)
+    public bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit) => Cast(origin, target, null, out hit);
+
+    /// <summary>Casts one line as <see cref="Cast(Vector3d, Vector3d, out WorldRayHit)"/> does, meeting only the owners a filter keeps.</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="target">Where it stops.</param>
+    /// <param name="includes">Whether an owner's colliders are met, or <see langword="null"/> to meet every one.</param>
+    /// <param name="hit">Receives the nearest surface; its material is the level material row the line went into.</param>
+    /// <returns><see langword="true"/> when the line met something before its end.</returns>
+    public bool Cast(Vector3d origin, Vector3d target, Func<object, bool>? includes, out WorldRayHit hit)
     {
-        WorldLineTrace trace = new(1);
+        WorldLineTrace trace = new(1) { Includes = includes };
         trace.Starts[0] = origin;
         trace.Ends[0] = target;
         TraceLines(trace, EveryTypeGroup | TerrainGroup);
@@ -267,7 +275,8 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
                 continue;
             }
 
-            if (placement.Geometry is not null)
+            // A bare object placed on its destroyed model has no solid: retail changes a solid on exploding only where one was.
+            if (placement.Geometry is not null || placement.IsHiddenUntilDestroyed)
             {
                 continue;
             }
@@ -437,7 +446,7 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
         List<Igi2MagicPlacement> found = [];
         foreach (Igi2Placement placement in scene.StaticPlacements)
         {
-            if (placement.Geometry is not null)
+            if (placement.Geometry is not null || placement.IsHiddenUntilDestroyed)
             {
                 continue;
             }
@@ -799,7 +808,7 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
         {
             foreach (Igi2BoneCollider body in _bodies)
             {
-                if ((groups & (body.Group | EveryTypeGroup)) != 0)
+                if ((groups & (body.Group | EveryTypeGroup)) != 0 && Reaches(body.Body))
                 {
                     body.TraceLines(trace);
                 }
@@ -812,6 +821,21 @@ public sealed partial class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2Sight
                     other.TraceLines(trace);
                 }
             }
+        }
+
+        // Whether the lines' box comes near a boned body. The original reaches one only through the cube tree's cells along the
+        // lines (World_TriggerQTaskEventAlongLineSpecificTree), the body filed there by its root's length plus its radius
+        // (BoneDynCubeObj_GetRadius) -- and its handler poses the whole skeleton before its own sphere test. Asked
+        // of every body on the map, as before, that posed every soldier for every line. The extent is doubled: the cells are
+        // coarser than the extent, and the pose the handler brings up to date may move the root this very tick.
+        bool Reaches(IIgi2BonedBody bonedBody)
+        {
+            Vector3f root = bonedBody.RootTranslation;
+            double r = 2.0 * (Math.Sqrt((root.X * (double)root.X) + (root.Y * (double)root.Y) + (root.Z * (double)root.Z)) + bonedBody.ModelRadius);
+            Vector3d p = bonedBody.Position;
+            return max.X >= p.X - r && min.X <= r + p.X
+                && max.Y >= p.Y - r && min.Y <= r + p.Y
+                && p.Z - r <= max.Z && min.Z <= r + p.Z;
         }
 
         void Grow(Vector3d v)

@@ -589,9 +589,9 @@ public sealed partial class RagdollBody
         double gravity = Gravity * gravityScale * step;
         double stubborn = Math.Clamp(_restingTicks / (double)SettleRampTicks, 0.0, 1.0);
         double settle = 1.0 - (SettleDamping * stubborn);
-        double linear = Math.Pow(LinearDamping * settle, step);
-        double angular = Math.Pow(AngularDamping * settle, step);
-        double joint = Math.Pow(1.0 - JointDamping, step);
+        double linear = SimMath.Pow(LinearDamping * settle, step);
+        double angular = SimMath.Pow(AngularDamping * settle, step);
+        double joint = SimMath.Pow(1.0 - JointDamping, step);
 
         for (int i = 0; i < substeps; i++)
         {

@@ -54,6 +54,13 @@ public sealed class Igi2BoneHierarchy
     /// <summary>Gets each bone's translation from its parent.</summary>
     public IReadOnlyList<Vector3f> Translations => _translations;
 
+    /// <summary>Gets <see cref="Parents"/> as a span, for the walk every pose makes.</summary>
+    /// <remarks>Read in place: a struct read through <see cref="IReadOnlyList{T}"/> is a call the browser's ahead-of-time compiler leaves to its interpreter.</remarks>
+    public ReadOnlySpan<int> ParentSpan => _parents;
+
+    /// <summary>Gets <see cref="Translations"/> as a span, for the walk every pose makes.</summary>
+    public ReadOnlySpan<Vector3f> TranslationSpan => _translations;
+
     /// <summary>Gets the size of a hierarchy chunk for a bone count.</summary>
     /// <param name="boneCount">The number of bones.</param>
     /// <returns>The bytes: the counts padded to four, then twelve per bone.</returns>

@@ -8,11 +8,11 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// A compact page's sections, down the left edge of the screen: Home and the five, an icon over a word each.
+/// A compact page's sections, down the left edge of the screen: Home and the six, an icon over a word each.
 /// </summary>
 /// <remarks>
 /// A phone on its side has some 390 units of height and twice that across. A header across the top would take a fifth of
-/// what there is least of; a rail down the side takes a tenth of what there is most of, and its six targets are each as
+/// what there is least of; a rail down the side takes a tenth of what there is most of, and its seven targets are each as
 /// large as a thumb. The current section is the one with the amber bar at its edge.
 /// </remarks>
 internal sealed class SectionRail : Panel
@@ -61,7 +61,7 @@ internal sealed class SectionRail : Panel
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
-        // Six entries at their full height are 366 units. A screen shorter than that shares what it has between them.
+        // Seven entries at their full height are 428 units. A screen shorter than that shares what it has between them.
         int count = Math.Max(1, _entries.Count);
         float gap = context.Px(EntryGap);
         float room = contentRect.Height - context.Px(Top);

@@ -21,6 +21,7 @@
 
     <Product>OpenIGI</Product>
     <Authors>OpenIGI Contributors</Authors>
+    <Company>OpenIGI</Company>
     <Copyright>Copyright (c) OpenIGI Contributors</Copyright>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>

@@ -41,6 +41,7 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     private Igi2AnimController? _current;
     private Igi2AnimController? _other;
     private Igi2AnimBlend? _blend;
+    private readonly Igi2AnimController?[] _made = new Igi2AnimController?[2];
     private int _listAt = -1;
     private int _blinkTimer;
     private Igi2BoneBuffer? _bones;
@@ -108,6 +109,9 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     /// <summary>Gets the clip it plays, or <see langword="null"/>.</summary>
     public Igi2AnimationClip? Clip => _current?.Clip;
 
+    /// <summary>Gets the time of the clip it plays, in clip ticks.</summary>
+    public int ClipTime => _current?.Time ?? 0;
+
     /// <summary>Gets the clips of its list, split as the original splits them.</summary>
     public IReadOnlyList<string> Clips => AnimationList.Split(Separators, StringSplitOptions.RemoveEmptyEntries);
 
@@ -129,15 +133,28 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         WornModel = wornModel;
         _clips = clips;
         _rig = models(WornModel)?.BoneHierarchy;
+        StartAnimation();
+    }
+
+    // Its clip controllers made anew, a blend between two when it has a transition, and its list played from its first clip
+    // (EditBoneObj_UpdateInternalDataHandler; EditBoneObj_DeSerializeDoneHandler does the same once a save is read).
+    private void StartAnimation()
+    {
+        _current = null;
+        _other = null;
+        _blend = null;
+        Array.Clear(_made);
         if (_rig is null)
         {
             return;
         }
 
         _current = NewController();
+        _made[0] = _current;
         if (TransitionTime > 0f)
         {
             _other = NewController();
+            _made[1] = _other;
             _blend = new Igi2AnimBlend();
             _blend.Create(_current, _other);
         }
@@ -162,8 +179,11 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
+        // The controllers and the blender are the figure's own child tasks, made after the level's children, so they run after them
+        // and in the order they were made: both controllers step, the one blended from as well, then the blend.
         level.RunChildren(this);
-        _current?.AutoStep();
+        _made[0]?.AutoStep();
+        _made[1]?.AutoStep();
         _blend?.Run();
         if (_current is { IsEnded: true } && _listAt >= 0)
         {
@@ -188,7 +208,32 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     /// <summary>The models it draws as this tick: itself posed, and what its clip hangs on it.</summary>
     /// <param name="tick">The tick.</param>
     /// <returns>The models, or none without a rig or while its container keeps it out of the world.</returns>
+    /// <remarks>
+    /// Built once a tick, as the soldiers' are (<see cref="Soldiers.Igi2Soldiers.Models"/>): the draw asks every frame, and posing
+    /// the rig again between two ticks gave the same answer. Moved, turned or dressed between ticks, it is built again.
+    /// </remarks>
     public IReadOnlyList<TitleWorldModel> Models(long tick)
+    {
+        if (_modelsTick == tick && _modelsAt == Position && _modelsFacing == Orientation && ReferenceEquals(_modelsWorn, WornModel))
+        {
+            return _models;
+        }
+
+        _models = BuildModels(tick);
+        _modelsTick = tick;
+        _modelsAt = Position;
+        _modelsFacing = Orientation;
+        _modelsWorn = WornModel;
+        return _models;
+    }
+
+    private IReadOnlyList<TitleWorldModel> _models = [];
+    private long _modelsTick = long.MinValue;
+    private Vector3d _modelsAt;
+    private Vector3f _modelsFacing;
+    private string? _modelsWorn;
+
+    private List<TitleWorldModel> BuildModels(long tick)
     {
         if (_rig is not { } rig || _current is null || !IsInWorld())
         {
@@ -205,10 +250,17 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         List<TitleWorldModel> models = [new TitleWorldModel(WornModel, Position, frame, pose, this, tick) { MorphWeights = Animation.Igi2MorphWeights.Drawn(MorphWeights) }];
         if (_current.Clip is { } clip)
         {
+            // Each part named by its place on the body, so it is drawn between ticks with the body rather than stepping beside it.
+            int index = 0;
             foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, _current.Time, pose, WeaponModel.Length > 0 ? WeaponModel : null))
             {
                 Vector3f local = frame.Transposed().Transform(part.Position);
-                models.Add(new TitleWorldModel(part.Model, new Vector3d(Position.X + local.X, Position.Y + local.Y, Position.Z + local.Z), frame * part.Orientation));
+                models.Add(new TitleWorldModel(
+                    part.Model,
+                    new Vector3d(Position.X + local.X, Position.Y + local.Y, Position.Z + local.Z),
+                    frame * part.Orientation,
+                    Instance: (this, index++),
+                    Tick: tick));
             }
         }
 
@@ -237,10 +289,12 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         }
     }
 
+    // AnimController_CreateHandler (animcontroller.c): a new controller steps itself and has no clip yet.
     private Igi2AnimController NewController()
     {
         Igi2AnimController controller = new()
         {
+            Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip,
             TimeStep = Fpu.ToInt32((Fpu)TimeFactor * (double)Igi2AnimController.TicksPerFrame),
         };
         controller.Flags = SplineInterpolation ? controller.Flags | Igi2AnimControllerBits.Spline : controller.Flags & ~Igi2AnimControllerBits.Spline;
@@ -267,8 +321,10 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
             name = name[..255];
         }
 
+        // EditBoneObj_SetAnimation: a figure's clips fire no anim triggers.
         if (_rig is { } rig && _clips?.Find(rig, name) is { } clip)
         {
+            _current.Flags |= Igi2AnimControllerBits.SuppressTriggers;
             _current.SetAnimationAndTime(clip, 0);
             _current.TimeStep = Fpu.ToInt32((Fpu)TimeFactor * (double)Igi2AnimController.TicksPerFrame);
         }

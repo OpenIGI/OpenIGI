@@ -45,18 +45,48 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
     /// sounds -- a car's group of start, stop and engine graphs -- or <see langword="null"/> for an owner that hands none.
     /// </param>
     /// <returns>The sound, or <see langword="null"/> for an empty name or one nothing defines.</returns>
-    public Igi2Sound? New(string name, Vector3d position, Func<Vector3d>? follow = null, bool? looping = null, Func<IReadOnlyList<float>>? parameters = null)
+    public Igi2Sound? New(string name, Vector3d position, Func<Vector3d>? follow = null, bool? looping = null, Func<IReadOnlyList<float>>? parameters = null) =>
+        Make(name, position, follow, looping, parameters, atMicrophone: false);
+
+    /// <summary>
+    /// Makes a sound at the microphone, <c>SoundSys_NewSoundFn</c> then <c>SoundSys_SetSoundRelativeToMicrophone</c> with
+    /// <c>isRelative</c> set: each sound of it loses its positional flag (bit 2, <c>SoundDefSound_SetRelativeToMicrophoneHandler</c>,
+    /// <c>igi2 0x5759B0</c>), so it is heard flat however the camera moves. A status message's line and an ambient area's bed are.
+    /// </summary>
+    /// <param name="name">The definition's name.</param>
+    /// <param name="microphone">Where the microphone is: what a set -- whose sounds are placed by their owner -- follows.</param>
+    /// <param name="looping">Whether it loops, or <see langword="null"/> for as its definition says.</param>
+    /// <returns>The sound, or <see langword="null"/> for an empty name or one nothing defines.</returns>
+    /// <remarks>
+    /// Placing a plain sound at the camera instead and moving it there once a tick left it behind the ear, which moves every
+    /// frame: under a cutscene camera flying with a plane the line jumped across the stereo image and in and out of its falloff
+    /// thirty times a second.
+    /// </remarks>
+    public Igi2Sound? AtMicrophone(string name, Func<Vector3d> microphone, bool? looping = null)
     {
+        ArgumentNullException.ThrowIfNull(microphone);
+        return Make(name, microphone(), microphone, looping, parameters: null, atMicrophone: true);
+    }
+
+    private Igi2Sound? Make(
+        string name,
+        Vector3d position,
+        Func<Vector3d>? follow,
+        bool? looping,
+        Func<IReadOnlyList<float>>? parameters,
+        bool atMicrophone)
+    {
+        Vector3d? heard = atMicrophone ? null : position;
         if (!Definitions.TryResolve(name, out SoundDefinition? definition))
         {
             // A name this game never defines may still be heard where the mixer finds it elsewhere: I.G.I. 2's clips name all
             // of Project I.G.I.'s reload clicks and ship two. Played or not at all.
-            if (audio is null || !audio.CanBorrow(name) || audio.Play(name, position, looping) is not { } borrowed)
+            if (audio is null || !audio.CanBorrow(name) || audio.Play(name, heard, looping) is not { } borrowed)
             {
                 return null;
             }
 
-            Igi2Sound found = new(this, name, borrowed, follow);
+            Igi2Sound found = new(this, name, borrowed, atMicrophone ? null : follow);
             _playing.Add(found);
             return found;
         }
@@ -65,7 +95,7 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
         // tree as a child of the owner); a plain sound is one voice.
         Igi2Sound sound = definition is { IsPlayable: false }
             ? new(this, name, null, follow, audio?.PlaySet(name), position, parameters, isSet: true)
-            : new(this, name, audio?.Play(name, position, looping), follow);
+            : new(this, name, audio?.Play(name, heard, looping), atMicrophone ? null : follow);
         _playing.Add(sound);
         return sound;
     }
@@ -119,6 +149,19 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
 
     /// <summary>Lets go of a deleted sound.</summary>
     internal void Forget(Igi2Sound sound) => _playing.Remove(sound);
+
+    /// <summary>
+    /// Deletes every sound the level has made, <c>Game_KillSoundTasks</c> as <c>Game_LoadFromSlot</c> calls it: a save keeps no sound,
+    /// and each owner makes again what it should be playing as it runs (an ambient area its bed, a sound generator what its save had
+    /// playing).
+    /// </summary>
+    public void DeleteAll()
+    {
+        foreach (Igi2Sound sound in _playing.ToArray())
+        {
+            sound.Delete();
+        }
+    }
 }
 
 /// <summary>One sound the level made: its voice, and what it follows.</summary>
@@ -187,6 +230,15 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     /// car's engine group -- lasts until it is deleted, heard or not: its graphs loop.
     /// </remarks>
     public bool IsAlive => !_deleted && (_isSet || _voice is { IsPlaying: true });
+
+    /// <summary>
+    /// Gets a value indicating whether a voice was made for it and has played to its end, as a sound task the original deletes once
+    /// its sample is done; one never heard -- no mixer, as on a server or in a test -- has not.
+    /// </summary>
+    public bool HasPlayedOut => !_deleted && !_isSet && _voice is { IsPlaying: false };
+
+    /// <summary>Gets a value indicating whether it was deleted, by its owner or by a load (<see cref="Igi2Sounds.DeleteAll"/>).</summary>
+    public bool IsDeleted => _deleted;
 
     /// <inheritdoc/>
     public void MoveToHuman()

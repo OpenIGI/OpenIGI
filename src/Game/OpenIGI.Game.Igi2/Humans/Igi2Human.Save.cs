@@ -51,6 +51,15 @@ public sealed class Igi2HumanSaveExtras
 
     /// <summary>Gets or sets its health, <c>nHealth</c>.</summary>
     public int Health { get; set; } = 100;
+
+    /// <summary>Gets or sets its state machine's signal as saved, <c>State.bStateSignal</c>.</summary>
+    public uint StateSignal { get; set; }
+
+    /// <summary>Gets or sets the state before the saved one, <c>State.nStatePreviousState</c>.</summary>
+    public int PreviousState { get; set; }
+
+    /// <summary>Gets or sets the state it was saved in, <c>State.nStateState</c>.</summary>
+    public int State { get; set; }
 }
 
 /// <content>
@@ -60,8 +69,6 @@ public sealed class Igi2HumanSaveExtras
 /// </content>
 public abstract partial class Igi2Human
 {
-    private static readonly byte[] IdentityFrame = Frame(Matrix3f.Identity);
-
     /// <summary>Writes the save state every human keeps, in its list's order.</summary>
     /// <param name="writer">The writer.</param>
     /// <param name="extras">The fields its kind keeps.</param>
@@ -69,7 +76,7 @@ public abstract partial class Igi2Human
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(extras);
-        Igi2ModelObjState.Write(writer, Position, Rows(Orientation));
+        Igi2ModelObjState.Write(writer, Position, Rows(Orientation), IsActive);
         writer.Array(Channels.Last);
         writer.Array(Channels.Current);
         writer.Real(Damage.Damage);
@@ -147,13 +154,14 @@ public abstract partial class Igi2Human
         writer.Int(Locomotion.CurrentState);
         writer.Array(ReadOnlySpan<byte>.Empty);
 
-        writer.TaskReference(GroundCollider?.Owner as GameTask);
+        // What it stands on, and where on it: the task the footing struck, as the save names it, and the platform's notes.
+        writer.TaskReference(Surroundings.GroundTaskOf(GroundCollider));
         writer.Real64x3(GroundRelativePosition);
         writer.Real64x3(GroundPreviousPosition);
-        writer.Real64x3(Position);
+        writer.Real64x3(GroundOriginalPosition);
         writer.Real3(GroundSpeed);
-        writer.Array(IdentityFrame);
-        writer.Array(IdentityFrame);
+        writer.Array(Frame(_groundInverseOriginal));
+        writer.Array(Frame(_groundRelativeOrientation));
         writer.Bool(IsUpdatePlatformPos);
         writer.Bool(IsPlatformMoving);
         writer.Bool(IsGroundRigidObject);
@@ -164,8 +172,8 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>
-    /// Reads the save state every human keeps back. Where it stands is its shadow's position; its state is entered afresh, which sets
-    /// up its state's running as retail's resumed sequence would.
+    /// Reads the save state every human keeps back. Its state machine is left to its kind, whose deserialize handler enters the
+    /// state the load puts it in (<see cref="Igi2HumanSaveExtras.State"/> is the one it was saved in).
     /// </summary>
     /// <param name="reader">The reader.</param>
     /// <returns>The fields its kind keeps.</returns>
@@ -173,9 +181,13 @@ public abstract partial class Igi2Human
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = new();
-        (Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
+        (Vector3d position, float[] orientation, bool inWorld) = Igi2ModelObjState.Read(reader);
         Position = position;
         Orientation = Matrix(orientation);
+
+        // ModelObjParameters_DeSerializeHandler: taken out of the world, read, and registered again only when the save had it in, so
+        // a soldier whose container was shut when the game was saved is out of it once more, neither drawn nor bumped into.
+        SetInWorld(inWorld);
         float[] last = reader.FloatArray();
         float[] current = reader.FloatArray();
         Channels.Restore(current, last);
@@ -219,7 +231,7 @@ public abstract partial class Igi2Human
         Gamma = reader.Real();
         IdealGamma = reader.Real();
         reader.Real();
-        reader.Real();
+        GroundAngle = reader.Real();
         GroundAngleFactor = reader.Real();
         reader.Real();
         extras.VisibilityFactor = reader.Real();
@@ -229,8 +241,8 @@ public abstract partial class Igi2Human
         TotalSpeed = reader.Real3();
         reader.Real3();
         reader.Quaternion();
-        reader.Real64();
-        reader.Real64();
+        DistanceToGround = reader.Real64();
+        DistanceToRoof = reader.Real64();
         reader.Real64x3();
         reader.Real64x3();
         reader.Real9();
@@ -253,33 +265,64 @@ public abstract partial class Igi2Human
         int state = reader.Int();
         reader.Array();
 
-        reader.TaskReference();
-        reader.Real64x3();
+        // ModelObjParameters_DeSerializeHandler parses the ground's reference and notes as they were written: the body stands on
+        // the platform it was saved on, at its saved place on it, so the platform's next carry puts it where it was saved.
+        GroundCollider = Surroundings.GroundOf(reader.TaskReference());
+        GroundRelativePosition = reader.Real64x3();
         GroundPreviousPosition = reader.Real64x3();
-        reader.Real64x3();
-        reader.Real3();
-        reader.Array();
-        reader.Array();
+        GroundOriginalPosition = reader.Real64x3();
+        GroundSpeed = reader.Real3();
+        ReadFrame(reader, _groundInverseOriginal);
+        ReadFrame(reader, _groundRelativeOrientation);
         IsUpdatePlatformPos = reader.Bool();
         IsPlatformMoving = reader.Bool();
-        reader.Bool();
+        IsGroundRigidObject = reader.Bool();
         IsProtectedFromFallDamage = reader.Bool();
         AveragedGroundNormal = reader.Real3();
         SlidingSpeed = reader.Real3();
         DeadOrientation = Matrix(reader.Real9());
 
-        if (state >= 0 && state < Locomotion.StateCount)
-        {
-            // Entering the state sets its running up; what the save held of the body's flags and of the state before is what
-            // retail's own load leaves, so they are put back over what the entry set.
-            var kept = (IsLockOrientation, IsDisableDeltaTranslation, IsRotateUpperBody, IsDisableCollision, IsGroundCollision, IsObjectCollision, IsHumanCollision);
-            Locomotion.Enter(state, this);
-            Locomotion.RestorePreviousState(previous);
-            (IsLockOrientation, IsDisableDeltaTranslation, IsRotateUpperBody, IsDisableCollision, IsGroundCollision, IsObjectCollision, IsHumanCollision) = kept;
-        }
-
-        Locomotion.Flags = flags;
+        extras.StateSignal = flags;
+        extras.PreviousState = previous;
+        extras.State = state;
         return extras;
+    }
+
+    /// <summary>
+    /// Stops what a body carried from before a load, as <c>HumanPlayer_DeSerializeHandler</c> does once its list is read: the
+    /// speed it took off with (<c>tAccumulatedSpeed</c>) and how far it moved over its last move (<c>tWorldSpeed</c>), neither of
+    /// which a save keeps.
+    /// </summary>
+    protected void ForgetCarriedSpeedsForLoad()
+    {
+        AccumulatedSpeed = default;
+        WorldSpeed = default;
+    }
+
+    /// <summary>
+    /// Enters the state a load puts a state machine in, as a kind's deserialize handler does: the saved fields put back, then the
+    /// state entered from the saved one -- its exit run, the saved state left as the one before, the new state's entry run.
+    /// </summary>
+    /// <param name="machine">The state machine: the body's, or the player's action machine.</param>
+    /// <param name="state">The state to enter.</param>
+    /// <param name="signal">The saved signal, <c>bStateSignal</c>.</param>
+    /// <param name="previous">The saved previous state.</param>
+    /// <param name="saved">The saved state.</param>
+    protected void EnterLoadedState(Engine.Tasks.TaskStateMachine machine, int state, uint signal, int previous, int saved)
+    {
+        ArgumentNullException.ThrowIfNull(machine);
+        machine.Flags = signal;
+        machine.RestoreSaved(previous, saved);
+        machine.Enter(state, this);
+    }
+
+    /// <summary>Enters the state a load puts the body in (<see cref="EnterLoadedState(Engine.Tasks.TaskStateMachine, int, uint, int, int)"/>).</summary>
+    /// <param name="state">The state to enter.</param>
+    /// <param name="saved">What the save held.</param>
+    protected void EnterLoadedState(int state, Igi2HumanSaveExtras saved)
+    {
+        ArgumentNullException.ThrowIfNull(saved);
+        EnterLoadedState(Locomotion, state, saved.StateSignal, saved.PreviousState, saved.State);
     }
 
     /// <summary>
@@ -298,16 +341,25 @@ public abstract partial class Igi2Human
     private static Matrix3f Matrix(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
     // A frame as it lies in memory: nine floats, then its operation count.
-    private static byte[] Frame(Matrix3f m)
+    private static byte[] Frame(float[] rows)
     {
         byte[] bytes = new byte[40];
-        float[] rows = Rows(m);
         for (int i = 0; i < 9; i++)
         {
             BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), rows[i]);
         }
 
         return bytes;
+    }
+
+    // A frame read back as it lay in memory: its nine floats, its operation count dropped.
+    private static void ReadFrame(StateReader reader, float[] into)
+    {
+        float[] read = reader.FloatArray();
+        if (read.Length >= 9)
+        {
+            Array.Copy(read, into, 9);
+        }
     }
 
     private sealed class ViewState(Igi2HumanView view) : ISavedState

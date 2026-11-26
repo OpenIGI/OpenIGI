@@ -51,6 +51,9 @@ public sealed record QualityGroup(string Caption, string Help, IReadOnlyList<Qua
     {
     }
 
+    /// <summary>Gets the setting the row is shown only while it is on, or <see langword="null"/> for a row always shown.</summary>
+    public RowCondition? ShownWhen { get; init; }
+
     /// <summary>Gets every variable any of the steps writes, once each, in the order first named.</summary>
     public IReadOnlyList<string> Variables
     {

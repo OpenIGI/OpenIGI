@@ -32,6 +32,9 @@ internal sealed class PlayerWeaponSelector
     private int _wheelPick = -1;
     private bool _wheelBinoculars;
     private int _lastNonBinocularWeaponId = -1;
+
+    // HumanPlayer+savedWeapon: what was in hand when the binocular key raised them, which the next and previous keys go back to.
+    private int _raisedBinocularsFrom = -1;
     private bool _binocularTogglePending;
     private bool _binocularOpenPending;
 
@@ -56,6 +59,7 @@ internal sealed class PlayerWeaponSelector
         _wheelPick = -1;
         _wheelBinoculars = false;
         _lastNonBinocularWeaponId = -1;
+        _raisedBinocularsFrom = -1;
         _binocularTogglePending = false;
         _binocularOpenPending = false;
     }
@@ -229,6 +233,7 @@ internal sealed class PlayerWeaponSelector
 
         if (_heldIndex == binocularIndex)
         {
+            _raisedBinocularsFrom = -1;
             _binocularTogglePending = true;
             _binocularOpenPending = false;
             _pendingWeaponId = IndexOf(_lastNonBinocularWeaponId);
@@ -245,13 +250,14 @@ internal sealed class PlayerWeaponSelector
         }
         else
         {
+            _raisedBinocularsFrom = InHand?.Weapon.WeaponId ?? -1;
             _binocularTogglePending = false;
             _binocularOpenPending = true;
             _pendingWeaponId = _carried[binocularIndex].Weapon.WeaponId;
         }
     }
 
-    // 0x40F760, reduced to the edges that reach it in practice.
+    // 0x40F760, reduced to the edges that reach it in practice, and the weapon the binoculars were raised from.
     internal void CycleWeapons(PlayerInputState input)
     {
         int step = 0;
@@ -274,6 +280,23 @@ internal sealed class PlayerWeaponSelector
             if (_categoryPick != -1 && _categoryPick != heldId && IndexOf(_categoryPick) >= 0)
             {
                 _pendingWeaponId = _categoryPick;
+            }
+
+            return;
+        }
+
+        // Either key, with the binoculars raised by their key, goes back to what was in hand before them and steps nothing
+        // (savedWeapon, taken and cleared ahead of the cycle): from the knife, back to the knife rather than on to the Glock.
+        if (_raisedBinocularsFrom != -1)
+        {
+            int before = _raisedBinocularsFrom;
+            _raisedBinocularsFrom = -1;
+            if (before != heldId && IndexOf(before) >= 0)
+            {
+                // Put away as their own key puts them away, so they close at once.
+                _binocularTogglePending = InHand?.Weapon.Category == WeaponCategory.Binocular;
+                _binocularOpenPending = false;
+                _pendingWeaponId = before;
             }
 
             return;
@@ -364,6 +387,12 @@ internal sealed class PlayerWeaponSelector
             }
 
             _heldIndex = index;
+
+            // Out of the hand by any other way -- a number key, the wheel -- they no longer have a weapon to go back to.
+            if (_carried[index].Weapon.Category != WeaponCategory.Binocular)
+            {
+                _raisedBinocularsFrom = -1;
+            }
         }
 
         _pendingWeaponId = -1;

@@ -99,7 +99,7 @@ public sealed partial class Igi2CollisionWorld
     }
 
     /// <inheritdoc/>
-    /// <remarks>Every type's group and the ground: what <see cref="Cast"/> traces.</remarks>
+    /// <remarks>Every type's group and the ground: what <see cref="Cast(Vector3d, Vector3d, out WorldRayHit)"/> traces.</remarks>
     void IHostCollisionWorld.TraceLines(WorldLineTrace trace) => TraceLines(trace, EveryTypeGroup | TerrainGroup);
 
     /// <inheritdoc/>

@@ -143,7 +143,7 @@ public sealed class Igi2GunFire : IIgi2FireHandler
     private static void Spread(IgiRandom random, float spreadDegrees, float[] o, float[] into)
     {
         Fpu theta = (Fpu)random.NextDouble() * 6.283185307179589;
-        Fpu tangent = Math.Tan(((Fpu)spreadDegrees * DegreesToRadians).Value);
+        Fpu tangent = SimMath.Tan(((Fpu)spreadDegrees * DegreesToRadians).Value);
         Fpu radius = tangent * random.NextDouble();
         float across = (Fpu.Sin(theta) * radius).F;
         Fpu up = Fpu.Cos(theta) * radius;
@@ -205,7 +205,7 @@ public sealed class Igi2GunFire : IIgi2FireHandler
 
         Fpu attack = (Fpu)(double)roundsFired / gun.KickbackFactorAttackTime;
         float progress = 1.0 < attack.Value ? 1f : attack.F;
-        Fpu factor = (Fpu)Math.Pow(progress, gun.KickbackFactorAcceleration) + gun.KickbackFactorFloor;
+        Fpu factor = (Fpu)SimMath.Pow(progress, gun.KickbackFactorAcceleration) + gun.KickbackFactorFloor;
         if (factor.Value < 0.0)
         {
             factor = 0.0;
@@ -254,23 +254,7 @@ public sealed class Igi2GunFire : IIgi2FireHandler
     /// </summary>
     private static void ShowShot(Igi2GunTask gun, in Igi2FireRequest request, IIgi2WeaponOwner owner, IIgi2WeaponEffects effects, IgiRandom random)
     {
-        int objects = owner.WeaponObjectCount();
-        if (objects == 0 || owner.IsZoomMode)
-        {
-            return;
-        }
-
-        int weaponObject = Math.Min(request.Weapon.Inventory.TotalBulletsFired % 2, objects - 1);
-        owner.Flash(HolderFlash);
-        string? front = gun.MuzzleFlashFrontSprite.Length == 0 ? null : gun.MuzzleFlashFrontSprite;
-        string? side = gun.MuzzleFlashSideSprite.Length == 0 ? null : gun.MuzzleFlashSideSprite;
-        effects.MuzzleFlash(weaponObject, front, gun.MuzzleFlashSize);
-        if (front is not null || side is not null)
-        {
-            request.Weapon.Flashes.Add(new Igi2MuzzleFlash(weaponObject, front, side, gun.MuzzleFlashSize));
-        }
-
-        if (gun.BulletCasingModel.Length == 0)
+        if (Flash(gun, request.Weapon, owner) is not { } weaponObject || gun.BulletCasingModel.Length == 0)
         {
             return;
         }
@@ -283,6 +267,35 @@ public sealed class Igi2GunFire : IIgi2FireHandler
         uint third = random.NextRaw();
         effects.EjectCasing(new Igi2CasingEjection(
             weaponObject, gun.BulletCasingModel, angle, isGun, ((int)(first & 1), (int)(second % 5), (int)(third % 5))));
+    }
+
+    /// <summary>
+    /// A shot's flash, from the holder's weapon object the bullets fired pick: the holder lit, the flash sprites shown. None when
+    /// the holder has no weapon object drawn or looks through a scope.
+    /// </summary>
+    /// <param name="gun">The gun.</param>
+    /// <param name="weapon">The holder's weapon.</param>
+    /// <param name="owner">The holder.</param>
+    /// <returns>The weapon object flashed, or <see langword="null"/>.</returns>
+    internal static int? Flash(Igi2GunTask gun, Igi2WeaponFiring weapon, IIgi2WeaponOwner owner)
+    {
+        int objects = owner.WeaponObjectCount();
+        if (objects == 0 || owner.IsZoomMode)
+        {
+            return null;
+        }
+
+        int weaponObject = Math.Min(weapon.Inventory.TotalBulletsFired % 2, objects - 1);
+        owner.Flash(HolderFlash);
+        string? front = gun.MuzzleFlashFrontSprite.Length == 0 ? null : gun.MuzzleFlashFrontSprite;
+        string? side = gun.MuzzleFlashSideSprite.Length == 0 ? null : gun.MuzzleFlashSideSprite;
+        weapon.Effects.MuzzleFlash(weaponObject, front, gun.MuzzleFlashSize);
+        if (front is not null || side is not null)
+        {
+            weapon.Flashes.Add(new Igi2MuzzleFlash(weaponObject, front, side, gun.MuzzleFlashSize));
+        }
+
+        return weaponObject;
     }
 
     /// <summary>The fire sound, only at the start of a pull: a loop for full automatic, a sequence for a burst, once otherwise.</summary>

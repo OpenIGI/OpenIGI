@@ -60,6 +60,16 @@ public readonly record struct TitlePlayerRequest(
 /// <param name="TitleHeld">Additional held actions in the title's vocabulary.</param>
 /// <param name="TitlePressed">Additional actions pressed since the last tick.</param>
 /// <param name="Raw">The fixed keys and buttons held, and the wheel's turns since the last tick, which a title's own screens read past the bindings.</param>
+/// <param name="ViewBlend">
+/// How far between the last two ticks the last picture before this tick was drawn, 0 to 1, with smooth motion; <see langword="null"/>
+/// when the picture was the tick itself. What the player's rounds meet a moving body at, so they land where the body was seen.
+/// </param>
+/// <param name="WheelPick">The weapon the weapon wheel picked since the last tick, by the title's own number for it; <see langword="null"/> for none.</param>
+/// <param name="Computer">The computer as it stood for this tick: whether it holds the player, and the mouse and keys it took.</param>
+/// <param name="Aim">
+/// The ray the crosshair sat on when the camera was over the shoulder, from the player's eye (<see cref="ITitlePlayer.EyePosition"/>
+/// as the tick began); <see langword="null"/> with the camera at the eye, which leaves the shots on the eye's own forward.
+/// </param>
 public readonly record struct TitlePlayerInput(
     float MouseX,
     float MouseY,
@@ -71,7 +81,36 @@ public readonly record struct TitlePlayerInput(
     bool UnfilteredMouse = false,
     ulong TitleHeld = 0,
     ulong TitlePressed = 0,
-    TitleRawKeys Raw = TitleRawKeys.None);
+    TitleRawKeys Raw = TitleRawKeys.None,
+    float? ViewBlend = null,
+    TitleAim? Aim = null,
+    int? WheelPick = null,
+    TitleComputerInput Computer = default);
+
+/// <summary>
+/// The computer's part of a tick's input: everything the player's computer reads while it is up, gathered by the host once a
+/// tick, so a replay or a server playing the tick again gives it the same -- the window is not theirs to read.
+/// </summary>
+/// <param name="Open">Whether the computer holds the player this tick.</param>
+/// <param name="Pointer">The mouse as it moved and was pressed since the last tick, and the map and page keys pressed, while it is up.</param>
+/// <param name="Held">The actions held this tick, which the open computer keeps from the player and reads itself.</param>
+/// <param name="DisplayWidth">The width its screens are laid out across, in its own pixels, which a click lands by.</param>
+/// <param name="DisplayHeight">The height they are laid out across.</param>
+public readonly record struct TitleComputerInput(
+    bool Open,
+    Computer.ComputerPointerInput Pointer,
+    PlayerAction Held,
+    int DisplayWidth,
+    int DisplayHeight);
+
+/// <summary>
+/// Where the crosshair points when the camera is not at the eye: a ray the shots converge on, as the camera over the shoulder
+/// drew it. Part of the tick's input, as a key is, because where the camera stood is the picture's, not the level's: a replay
+/// or a server playing the tick again has no camera to ask.
+/// </summary>
+/// <param name="EyeOffset">Where the ray starts, from the player's eye, in world units.</param>
+/// <param name="Direction">Which way it points, a unit vector.</param>
+public readonly record struct TitleAim(Vector3d EyeOffset, Vector3f Direction);
 
 /// <summary>
 /// Keys and buttons a title's own screens read directly, as the originals read the keyboard and the mouse past their bindings: held at
@@ -141,11 +180,29 @@ public interface ITitlePlayer
     /// <summary>Gets a value indicating whether the title's level played a cutscene on the last tick, which Escape breaks rather than pausing.</summary>
     bool IsCutscenePlaying => false;
 
+    /// <summary>
+    /// Gets a value indicating whether the view jumped on the last tick -- a cutscene cut to another of its cameras -- so the
+    /// picture draws it where it now is rather than sweeping there from where it was.
+    /// </summary>
+    bool IsViewCut => false;
+
     /// <summary>Gets a value indicating whether the title's level lets the in-game menu open.</summary>
     bool IsMenuEnabled => true;
 
+    /// <summary>
+    /// Gets a value indicating whether the computer the level keeps is up: the title's own, which the level opens and closes;
+    /// never where the computer is the host's.
+    /// </summary>
+    bool IsComputerOpen => false;
+
     /// <summary>Gets a value indicating whether the title hides the weather, as a screen of its own over the view does.</summary>
     bool IsWeatherHidden => false;
+
+    /// <summary>
+    /// Gets a value indicating whether the weapon in hand's second trigger steps it through its fire modes -- single, burst,
+    /// automatic -- rather than aiming or firing something else; a touch screen's sight button shows as much.
+    /// </summary>
+    bool AlternateFireSwitchesMode => false;
 
     /// <summary>Gets where the title's own objects move what they placed, or <see langword="null"/> when nothing it placed moves.</summary>
     IPlacementMotion? Motions => null;
@@ -165,6 +222,12 @@ public interface ITitlePlayer
     /// <summary>Gets which of their models the title's own placements wear, or <see langword="null"/> when none changes model.</summary>
     IPlacementVariant? Variants => null;
 
+    /// <summary>
+    /// Gets the level's walls and ground as the title itself keeps them, or <see langword="null"/> when the host's mission collision
+    /// already holds all of it.
+    /// </summary>
+    ICollisionWorld? Collision => null;
+
     /// <summary>Gets the title's own save games for the running mission, or <see langword="null"/> when it keeps none.</summary>
     ITitleSaveGames? SaveGames => null;
 
@@ -178,6 +241,14 @@ public interface ITitlePlayer
     void MissionCompleted(int nextMissionId)
     {
     }
+
+    /// <summary>
+    /// Gets how the player is playing a mission and what its ranks ask, which its rank is reckoned from at its end
+    /// (<see cref="Scoring.MissionScoring"/>).
+    /// </summary>
+    /// <param name="missionId">The mission being played.</param>
+    /// <returns>The sheet, or <see langword="null"/> for a title or a mission that is not ranked.</returns>
+    Scoring.MissionScoreSheet? ScoreSheet(int missionId) => null;
 
     /// <summary>Runs one game tick.</summary>
     /// <param name="input">The tick's input.</param>

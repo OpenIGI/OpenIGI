@@ -17,6 +17,12 @@ struct GlassPush_std140_0
 
 @binding(1) @group(0) var uDiffuseSampler_0 : sampler;
 
+@binding(2) @group(0) var uLightmap_0 : texture_2d<f32>;
+
+@binding(3) @group(0) var uLightmapSampler_0 : sampler;
+
+@id(66) override cSamplerDecodes_0 : i32 = i32(0);
+
 @id(64) override cClipYDown_0 : i32 = i32(1);
 
 fn OpenIgiClipY_0( y_0 : f32) -> f32
@@ -96,6 +102,30 @@ fn GlassPaneReflectance_0( cosine_0 : f32) -> f32
     return 2.0f * face_0 / (1.0f + face_0);
 }
 
+fn EncodeSrgb_0( c_0 : vec3<f32>) -> vec3<f32>
+{
+    return mix(vec3<f32>(1.0549999475479126f) * pow(max(c_0, vec3<f32>(0.0f, 0.0f, 0.0f)), vec3<f32>(0.4166666567325592f, 0.4166666567325592f, 0.4166666567325592f)) - vec3<f32>(0.05499999970197678f), c_0 * vec3<f32>(12.92000007629394531f), step(c_0, vec3<f32>(0.00313080009073019f, 0.00313080009073019f, 0.00313080009073019f)));
+}
+
+fn SampledDisplay_0( sampled_0 : vec3<f32>) -> vec3<f32>
+{
+    var _S5 : vec3<f32>;
+    if(cSamplerDecodes_0 != i32(0))
+    {
+        _S5 = EncodeSrgb_0(sampled_0);
+    }
+    else
+    {
+        _S5 = sampled_0;
+    }
+    return _S5;
+}
+
+fn DecodeSrgb_0( c_1 : vec3<f32>) -> vec3<f32>
+{
+    return mix(pow(max((c_1 + vec3<f32>(0.05499999970197678f)) / vec3<f32>(1.0549999475479126f), vec3<f32>(0.0f, 0.0f, 0.0f)), vec3<f32>(2.40000009536743164f, 2.40000009536743164f, 2.40000009536743164f)), c_1 / vec3<f32>(12.92000007629394531f), step(c_1, vec3<f32>(0.04044999927282333f, 0.04044999927282333f, 0.04044999927282333f)));
+}
+
 struct pixelOutput_0
 {
     @location(0) output_1 : vec4<f32>,
@@ -112,10 +142,11 @@ struct pixelInput_0
 };
 
 @fragment
-fn fragmentMain( _S5 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) -> pixelOutput_0
+fn fragmentMain( _S6 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) -> pixelOutput_0
 {
-    var alpha_0 : f32 = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S5.diffuseUv_3))).w * _S5.color_1.w;
-    if(alpha_0 >= 0.5f)
+    var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S6.diffuseUv_3)));
+    var alpha_0 : f32 = diffuse_0.w * _S6.color_1.w;
+    if(alpha_0 >= 0.98039215803146362f)
     {
         discard;
     }
@@ -123,9 +154,24 @@ fn fragmentMain( _S5 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) 
     {
         discard;
     }
-    var cosine_1 : f32 = abs(dot(normalize(_S5.worldNormal_1), normalize(_S5.fromEye_1)));
+    var cosine_1 : f32 = abs(dot(normalize(_S6.worldNormal_1), normalize(_S6.fromEye_1)));
     var sinRefracted_0 : f32 = sqrt(saturate(1.0f - cosine_1 * cosine_1)) / 1.5f;
-    var _S6 : pixelOutput_0 = pixelOutput_0( vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f - (1.0f - GlassPaneReflectance_0(cosine_1)) * exp(-0.01999999955296516f / max(sqrt(saturate(1.0f - sinRefracted_0 * sinRefracted_0)), 0.05000000074505806f))) );
-    return _S6;
+    var through_0 : f32 = (1.0f - GlassPaneReflectance_0(cosine_1)) * exp(-0.01999999955296516f / max(sqrt(saturate(1.0f - sinRefracted_0 * sinRefracted_0)), 0.05000000074505806f));
+    if((push_0.glass_0.x) > 0.5f)
+    {
+        var light_0 : vec3<f32>;
+        if((push_0.glass_0.z) > 0.5f)
+        {
+            light_0 = SampledDisplay_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S6.lightmapUv_3))).xyz);
+        }
+        else
+        {
+            light_0 = vec3<f32>(push_0.glass_0.w, push_0.glass_0.w, push_0.glass_0.w);
+        }
+        var _S7 : pixelOutput_0 = pixelOutput_0( vec4<f32>(DecodeSrgb_0(max(SampledDisplay_0(diffuse_0.xyz) * light_0 * _S6.color_1.xyz, vec3<f32>(0.0f, 0.0f, 0.0f))) * vec3<f32>(push_0.glass_0.y) * vec3<f32>(alpha_0), 1.0f - through_0 * (1.0f - alpha_0)) );
+        return _S7;
+    }
+    var _S8 : pixelOutput_0 = pixelOutput_0( vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f - through_0) );
+    return _S8;
 }
 

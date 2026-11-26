@@ -75,10 +75,10 @@ public abstract partial class Igi2Human
 
         float[] o = EngineEuler.Rotation(alpha, beta, gamma);
         view.Orientation = new Matrix3f(o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8]);
-        Vector3d eyes = EyesAt(Position, Pose);
+        Vector3d eyes = ViewEyes;
 
         Fpu leanX = view.PeekOffset.X, leanY = view.PeekOffset.Y, leanZ = view.PeekOffset.Z;
-        float objectDip = 0f;
+        float objectDip = ViewObjectDip;
         if (view.ShakeFactor != 0f)
         {
             leanX += Shake(view.ShakeRange, view.ShakeFactor);
@@ -88,7 +88,7 @@ public abstract partial class Igi2Human
 
         if (view.ImpactOffset != 0f)
         {
-            double sine = Math.Sin(view.ImpactAngle);
+            double sine = SimMath.Sin(view.ImpactAngle);
             Fpu dip = (Fpu)view.ImpactOffset * sine;
             leanZ += dip;
             objectDip = (((Fpu)view.ImpactOffset * ObjectImpactShare) * sine).F;
@@ -203,6 +203,13 @@ public abstract partial class Igi2Human
         };
         return new Vector3d(feet.X, feet.Y, ((Fpu)feet.Z + height).Value);
     }
+
+    /// <summary>Gets where the eyes are before a lean, a shake or a landing moves them: over the feet by the posture's height.</summary>
+    /// <remarks>A player standing on another game's body has that body's eyes (<see cref="Player.Igi2HumanPlayer"/>).</remarks>
+    protected virtual Vector3d ViewEyes => EyesAt(Position, Pose);
+
+    /// <summary>Gets how far another game's landing drops the held object beyond the eyes; the sequel's own is its dip's share.</summary>
+    protected virtual float ViewObjectDip => 0f;
 
     /// <summary>One shake draw: a value in [-1, 1) from the run stream, times a size and the shake left.</summary>
     private Fpu Shake(float size, float factor)

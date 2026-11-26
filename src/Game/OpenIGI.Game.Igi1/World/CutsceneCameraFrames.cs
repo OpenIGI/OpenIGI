@@ -27,63 +27,37 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
     {
         CutSceneTask scene = state.Task;
         List<CutsceneTimedShot> timed = state.Timed(scene.TimeScale);
-        // IGI1 0x4F4880 retains every authored knot, including duration zero.
-        // 0x4F5400 selects the last start <= the scene time without a duration filter.
-        // Scene completion/presentation must not be repaired by changing knot ownership.
-        int current = 0;
-        for (int i = 1; i < timed.Count; i++)
-        {
-            if (timed[i].Start > time)
-            {
-                break;
-            }
-            current = i;
-        }
 
-        int i0 = Math.Max(0, current - 1);
-        int i1 = current;
-        int i2 = Math.Min(timed.Count - 1, current + 1);
-        int i3 = Math.Min(timed.Count - 1, current + 2);
-
-        CutsceneTimedShot p0 = timed[i0];
-        CutsceneTimedShot p1 = timed[i1];
-        CutsceneTimedShot p2 = timed[i2];
-        CutsceneTimedShot p3 = timed[i3];
-        if (!p0.Shot.SmoothToNext) { p0 = p1; }
-        if (!p1.Shot.SmoothToNext) { p2 = p1; }
-        if (!p2.Shot.SmoothToNext) { p3 = p2; }
-
-        Vector3d position = new(
-            Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Position.X, p1.Shot.Position.X, p2.Shot.Position.X, p3.Shot.Position.X),
-            Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Position.Y, p1.Shot.Position.Y, p2.Shot.Position.Y, p3.Shot.Position.Y),
-            Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Position.Z, p1.Shot.Position.Z, p2.Shot.Position.Z, p3.Shot.Position.Z));
-        float alpha = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Alpha, p1.Shot.Alpha, p2.Shot.Alpha, p3.Shot.Alpha);
-        float beta = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Beta, p1.Shot.Beta, p2.Shot.Beta, p3.Shot.Beta);
-        float gamma = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Gamma, p1.Shot.Gamma, p2.Shot.Gamma, p3.Shot.Gamma);
-        float fov = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.FieldOfView, p1.Shot.FieldOfView, p2.Shot.FieldOfView, p3.Shot.FieldOfView);
-        float shake = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start, p0.Shot.Shake, p1.Shot.Shake, p2.Shot.Shake, p3.Shot.Shake);
-        float noise = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start,
-            p0.Shot.Noise, p1.Shot.Noise, p2.Shot.Noise, p3.Shot.Noise);
-        static float ShotTimeOfDay(EditCameraShot shot, CutSceneTask owner) =>
-            shot.TimeOfDay < 0f ? owner.TimeOfDay : shot.TimeOfDay;
-        float timeOfDay = (float)Hermite(time, p0.Start, p1.Start, p2.Start, p3.Start,
-            ShotTimeOfDay(p0.Shot, scene), ShotTimeOfDay(p1.Shot, scene),
-            ShotTimeOfDay(p2.Shot, scene), ShotTimeOfDay(p3.Shot, scene));
-        Matrix3f orientation = Matrix3f.FromEngineEulerAngles(alpha, beta, gamma);
+        // The path through the knots is the shared one the editor previews with (CutsceneCameraMath.Evaluate): every
+        // authored knot kept, the last start not after the time chosen, each channel on 0x4F55D0's Hermite.
+        CutscenePathPoint point = CutsceneCameraMath.Evaluate(state.Keys, scene.TimeScale, time, scene.TimeOfDay);
+        int current = point.Current;
+        int i2 = point.Next;
+        Vector3d position = point.Position;
+        Matrix3f orientation = point.Orientation;
+        float fov = point.FieldOfView;
+        float noise = point.Noise;
+        float shake = point.Shake;
+        float timeOfDay = point.TimeOfDay;
+        (double spanStart, double spanEnd) = (point.SpanStart, point.SpanEnd);
 
         EditCameraShot active = timed[current].Shot;
         bool shotChanged = state.LastShotIndex != current;
+        if (shotChanged || active.LinkTaskId < 0)
+        {
+            state.ShotSpace = active.LinkTaskId < 0 ? CutsceneShotSpace.World : null;
+        }
+
         if (active.LinkTaskId >= 0 && TryPose(active.LinkTaskId, out TaskTransformState? link))
         {
             if (shotChanged || active.UpdateLink || state.LinkedPosition is null)
             {
-                // Retail sub_508940 first maps the authored world offset through the cached link
-                // orientation, then maps that local offset through the transpose of the live link.
-                // Matrix3f.Transform is the engine's row-vector multiply, so both transposes here are
-                // significant. Reversing them makes a linked cinematic camera orbit on the wrong axes.
-                Vector3d relative = active.LinkOriginOrientation.Transform(position - active.LinkOrigin);
-                position = link!.Position + link.Orientation.Transposed().Transform(relative);
-                orientation = link.Orientation * active.LinkOriginOrientation.Transposed() * orientation;
+                // Retail sub_508940: the authored offset through the link's pose as loaded, then through its live pose
+                // (CutsceneShotSpace, which the editor writes a view back through). The space is kept with the frame, so an
+                // edit made on a shot that took its link once is written through the pose it took.
+                CutsceneShotSpace space = new(active.LinkOrigin, active.LinkOriginOrientation, link!.Position, link.Orientation);
+                (position, orientation) = space.ToWorld(position, orientation);
+                state.ShotSpace = space;
                 state.LinkedPosition = position;
                 state.LinkedOrientation = orientation;
             }
@@ -124,14 +98,14 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
         float fadeOut = scene.ViewportFadeOut > 0f ? Math.Clamp((float)((total - time) / scene.ViewportFadeOut), 0f, 1f) : 1f;
         float fade = Math.Min(fadeIn, fadeOut);
         float viewportHeight = 1f + ((scene.ViewportHeightFactor - 1f) * fade);
-        float local = p2.Start > p1.Start ? Math.Clamp((float)((time - p1.Start) / (p2.Start - p1.Start)), 0f, 1f) : 0f;
+        float local = spanEnd > spanStart ? Math.Clamp((float)((time - spanStart) / (spanEnd - spanStart)), 0f, 1f) : 0f;
         float colorLocal = local;
-        if (noise == 0f && IsBandFilter(active.Filter) && p2.Start - p1.Start > 0.5)
+        if (noise == 0f && IsBandFilter(active.Filter) && spanEnd - spanStart > 0.5)
         {
             // DrawBandFilter completes its colour transition half a second before a long zero-noise
             // segment ends (0x4F5E20), leaving the final half-second as a settled hold.
             colorLocal = Math.Clamp(
-                (float)((time - p1.Start) / ((p2.Start - p1.Start) - 0.5)), 0f, 1f);
+                (float)((time - spanStart) / ((spanEnd - spanStart) - 0.5)), 0f, 1f);
         }
 
         return new CutsceneFrame(
@@ -210,15 +184,37 @@ internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneA
                 RealStrict(camera, "Alpha"), RealStrict(camera, "Beta"), RealStrict(camera, "Gamma"),
                 Math.Clamp(RealStrict(camera, "FOV", 1f), 0.001f, 3f), RealStrict(camera, "Duration"),
                 link, BoolStrict(camera, "Update link continously"), target, BoolStrict(camera, "Update target continously"),
-                BoolStrict(camera, "Smooth to next"), RealStrict(camera, "Time of day", -1f),
-                TextOrEmpty(camera, "FILTER"), RealStrict(camera, "Noise"), Vector32(camera, "Filter color RGB"),
+                // The names the levels declare (Task_DeclareParameters("EditCamera", ...)): the original reads both by their
+                // place in its table (editcamera.c), so a name that matches nothing here read the shot's hour and colour as
+                // nought -- every band and line filter of every level came out black instead of the colour it was given.
+                BoolStrict(camera, "Smooth to next"), RealStrict(camera, "Time of day (-1 means use default)", -1f),
+                TextOrEmpty(camera, "FILTER"), RealStrict(camera, "Noise"), Vector32(camera, "Filter color"),
                 RealStrict(camera, "Camera shake"), linkOrigin, linkOrientation));
         }
         return shots;
     }
 
+    /// <summary>
+    /// Keeps every task's pose as the level built it, before anything moves: what a shot's link starts from when an editor
+    /// changes the shot -- or links it to another task -- in a level that has run since.
+    /// </summary>
+    public void RememberInitialPoses()
+    {
+        foreach ((GameTask task, TaskTransformState transform) in _context.TaskTransforms)
+        {
+            _initialPoses[task] = (transform.Position, transform.Orientation);
+        }
+    }
+
+    private readonly Dictionary<GameTask, (Vector3d Position, Matrix3f Orientation)> _initialPoses = [];
+
     private (Vector3d Position, Matrix3f Orientation) InitialPose(GameTask? task)
     {
+        if (task is not null && _initialPoses.TryGetValue(task, out (Vector3d Position, Matrix3f Orientation) built))
+        {
+            return built;
+        }
+
         if (task is not null && _context.TaskTransforms.TryGetValue(task, out TaskTransformState? transform))
         {
             return (transform.Position, transform.Orientation);

@@ -12,8 +12,14 @@ public sealed partial class Igi2TitlePlayer
     private readonly List<Igi2WeaponItem> _wheelItems = [];
     private int _wheelPick = -1;
 
+    private readonly WeaponWheel _wheel = new();
+
     /// <inheritdoc/>
-    public WeaponWheel Wheel { get; } = new();
+    /// <remarks>Another game's player standing in turns its own wheel, over what it carries.</remarks>
+    public WeaponWheel Wheel => StandInWheel?.Wheel ?? _wheel;
+
+    // The wheel of another game's player standing in.
+    private IWeaponWheelPlayer? StandInWheel => ActingStandIn as IWeaponWheelPlayer;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -22,6 +28,11 @@ public sealed partial class Igi2TitlePlayer
     /// </remarks>
     public (IReadOnlyList<string> Choices, int Current) WheelChoices()
     {
+        if (StandInWheel is { } standIn)
+        {
+            return standIn.WheelChoices();
+        }
+
         _wheelChoices.Clear();
         _wheelItems.Clear();
         int current = -1;
@@ -55,6 +66,12 @@ public sealed partial class Igi2TitlePlayer
     /// <inheritdoc/>
     public void ChooseFromWheel(string choice)
     {
+        if (StandInWheel is { } standIn)
+        {
+            standIn.ChooseFromWheel(choice);
+            return;
+        }
+
         if (int.TryParse(choice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
         {
             _wheelPick = number;
@@ -62,8 +79,8 @@ public sealed partial class Igi2TitlePlayer
     }
 
     // The wheel's pick goes into the weapon-select channel as a number key's would (Human_SelectWeaponFromCategory), on the tick
-    // after it was taken; a number key pressed on the same tick writes over it. The binoculars are raised instead, as their key
-    // raises them (Igi2HumanPlayer.CheckBinoculars): their channel pressed for the tick.
+    // after it was taken; a number key pressed on the same tick writes over it. The binoculars and the thermal goggles are raised
+    // instead, as their keys raise them (Igi2HumanPlayer.CheckBinoculars): their own channel pressed for the tick.
     private void TakeWheelPick()
     {
         if (_wheelPick < 0)
@@ -71,17 +88,30 @@ public sealed partial class Igi2TitlePlayer
             return;
         }
 
-        bool binoculars = false;
+        Igi2HumanChannel? opticsKey = null;
         foreach (Igi2WeaponItem item in Inventory?.Weapons ?? [])
         {
             if (item.Number == _wheelPick)
             {
-                binoculars = item.WeaponType.WeaponId == Igi2HumanPlayer.BinocularsWeaponId;
+                opticsKey = item.WeaponType.WeaponId switch
+                {
+                    Igi2HumanPlayer.BinocularsWeaponId => Igi2HumanChannel.Binoculars,
+                    Igi2HumanPlayer.ThermalWeaponId => Igi2HumanChannel.Thermal,
+                    _ => null,
+                };
                 break;
             }
         }
 
-        _frame[(int)(binoculars ? Igi2HumanChannel.Binoculars : Igi2HumanChannel.SelectWeapon)] = binoculars ? 1f : _wheelPick;
+        if (opticsKey is { } key)
+        {
+            _frame[(int)key] = 1f;
+        }
+        else
+        {
+            _frame[(int)Igi2HumanChannel.SelectWeapon] = _wheelPick;
+        }
+
         _wheelPick = -1;
     }
 }

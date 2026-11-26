@@ -21,6 +21,9 @@
 # finds the Vulkan loader. A loose executable on macOS is treated as a background process; the bundle is
 # ad-hoc signed (codesign on a Mac, rcodesign elsewhere), because Apple silicon runs nothing unsigned.
 #
+# The Windows executables leave here unsigned: release.yml has them Authenticode-signed by SignPath before
+# their hashes go into the manifest (tools/release/signpath/release.xml says what gets signed).
+#
 # The web build is not a download: it is packed into artifacts/web for the site deploy.
 set -euo pipefail
 
@@ -136,8 +139,11 @@ if [[ "$RID" == osx-* ]]; then
     mv "$APP/Contents/MacOS/libvulkan.1.dylib" "$APP/Contents/Frameworks/libvulkan.1.dylib"
   fi
 
+  # Ad-hoc (sign-macos.sh says how). rcodesign signs every library and the executable as codesign would, but its
+  # seal leaves out the files beside the executable; release.yml's macos job checks the code on a Mac and re-signs
+  # the launcher it puts in the disk image.
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP"
+    "$ROOT/tools/release/sign-macos.sh" "$APP"
   elif command -v rcodesign >/dev/null 2>&1; then
     rcodesign sign "$APP"
   else

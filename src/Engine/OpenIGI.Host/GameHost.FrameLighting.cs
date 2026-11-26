@@ -48,6 +48,9 @@ public sealed partial class GameHost
 
     /// <summary>Resolves every soldier-shaped thing's frame state once, so the shadow cascades and the geometry pass agree.</summary>
     /// <returns>What the shadow passes draw as characters, or <see langword="null"/> for nothing.</returns>
+    // How far between the last two ticks the last frame drew the played mission, with smooth motion; null at the tick itself.
+    private float? _drawnTickBlend;
+
     private ICharacterPresenter? BeginCharacterFrame(float tickBlend, bool smoothPresentation)
     {
         Debug.Assert(_world is not null, "Begun only while a level is up; see RenderWorld.");
@@ -64,6 +67,9 @@ public sealed partial class GameHost
             : new SoldierBodies(shadowCasters, shadowTasks, tickBlend);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
+
+        // Where between its ticks the played mission's picture stands, for the next tick's input: what its rounds meet.
+        _drawnTickBlend = _soldiers is not null && smoothPresentation ? tickBlend : null;
         WorldView?.BeginFrame(tickBlend, smoothPresentation);
 
         return casterBodies;
@@ -80,7 +86,7 @@ public sealed partial class GameHost
             resolution.RenderWidth,
             resolution.RenderHeight,
             FrameCVars.OffscreenScene.Value ? Math.Max(1, FrameCVars.MultiSampling.Value) : 1,
-            Deferred: FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value,
+            Deferred: (FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value) || SceneOverlayNeedsCapture,
 
             // An 8-bit target under the vanilla preset: with no tone map and unit exposure the whole
             // offscreen detour is then a copy, which is what keeps that preset identical to the
@@ -296,7 +302,7 @@ public sealed partial class GameHost
 
         // The mission's look beyond its air -- its painted sky and its brightness -- from the same entry.
         // Vanilla draws the original's picture and takes none of it.
-        _missionLook = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla
+        _missionLook = GraphicsPresetRegistry.Default.IsVanillaLook
             ? MissionLook.Empty
             : state.FogPresets.LookFor(fogMission, fogTitle);
         ExposureCVars.MissionExposureStops.Value = _missionLook.ExposureStops ?? 0f;
@@ -334,6 +340,15 @@ public sealed partial class GameHost
             if (_atmosphere is { } tint && tint.FogColour.LengthSquared > 0f)
             {
                 medium = medium with { Albedo = tint.FogColour };
+
+                // A title's own sky is its hour's, and so is its haze: moved off that hour, the colour goes with the dome
+                // (OwnSkyShare) and the air scatters as air. Mission 1's dark blue night fog over a noon sun was a haze too
+                // dark to see, and the far hills stood as crisp as the near ones.
+                if (_sky is { IsGameOwnSky: true } && OwnSkyShare() is var hourShare && hourShare < 1f)
+                {
+                    Vector3f air = VolumetricFogSettings.Off.ScatteringAlbedo;
+                    medium = medium with { Albedo = air + ((tint.FogColour - air) * hourShare) };
+                }
             }
 
             if (FogCVars.FogDensity.Value > 0f)

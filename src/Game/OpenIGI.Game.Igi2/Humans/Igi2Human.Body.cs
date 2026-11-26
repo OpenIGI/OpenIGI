@@ -16,8 +16,35 @@ public abstract partial class Igi2Human : IIgi2BonedBody
     private Igi2BoneBuffer? _bones;
     private bool _isPoseStale = true;
 
+    // The picture's own take of the pose while the simulation's is stale, and which staleness it was taken in.
+    private Igi2BoneBuffer? _presentedBones;
+    private Igi2BodyPose? _presentedPose;
+    private int _poseVersion;
+    private int _presentedVersion = -1;
+
+    private Igi2BodyModel? _model;
+
     /// <summary>Gets or sets what the human's model gives its body: bone names, collision, damage zones.</summary>
-    public Igi2BodyModel? Model { get; set; }
+    /// <remarks>
+    /// A boned model given to any human marks the branches its clips animate, as <c>Human_UpdateInternalDataHandler</c>
+    /// (<c>igi2 0x4FF2F0</c>) calls <c>HumanAnim_Init</c> for every human once its model is set: the main clip over the whole
+    /// body, the upper body's from the lower back up. Left unmarked, an upper-body clip posed every bone: a player's body, which
+    /// always holds its weapon's clip, stood in that clip's legs whatever its gait played beneath, and slid over the ground.
+    /// </remarks>
+    public Igi2BodyModel? Model
+    {
+        get => _model;
+        set
+        {
+            _model = value;
+            if (value is { BoneNames.Count: > 0 } && Animation is Igi2HumanAnimation layer)
+            {
+                layer.SetBranches(value.BoneNames);
+            }
+
+            TouchPose();
+        }
+    }
 
     /// <summary>Gets or sets the human's collider in the level's collision world, or <see langword="null"/> when not placed in one.</summary>
     public Igi2BoneCollider? Collider { get; set; }
@@ -64,6 +91,12 @@ public abstract partial class Igi2Human : IIgi2BonedBody
     /// </remarks>
     public Igi2BodyPose? BodyPose()
     {
+        // Read as the frame is drawn -- a trace for the laser's dot or a marker, the body's own draw -- it takes nothing.
+        if (OpenIGI.Game.World.SimulationPhase.IsPresenting)
+        {
+            return PresentedPose();
+        }
+
         if (_isPoseStale)
         {
             _pose = null;
@@ -74,7 +107,16 @@ public abstract partial class Igi2Human : IIgi2BonedBody
                     _bones = new Igi2BoneBuffer(rig.BoneCount) { Root = RootTranslation };
                 }
 
-                animation.Pose(_bones, BoneCallbacks);
+                EvaluatingForSimulation = true;
+                try
+                {
+                    animation.Pose(_bones, BoneCallbacks);
+                }
+                finally
+                {
+                    EvaluatingForSimulation = false;
+                }
+
                 RootTranslation = _bones.Root;
                 (Igi2AnimationClip? clip, int time) = animation.AttachSource;
                 _pose = new Igi2BodyPose(_bones.ToPose(rig.Parents), clip, time);
@@ -85,6 +127,65 @@ public abstract partial class Igi2Human : IIgi2BonedBody
 
         return _pose;
     }
+
+    /// <summary>
+    /// Gets the pose as the picture draws it, leaving the simulation's alone: its own pose where the simulation has taken it since
+    /// the clips last stepped, else the same evaluation into a buffer of the picture's own -- which writes no root translation,
+    /// keeps nothing and lets the bones' callbacks change nothing.
+    /// </summary>
+    /// <returns>The pose, or <see langword="null"/> when the body has no rig.</returns>
+    /// <remarks>
+    /// The original takes a body's pose whenever anything asks for it after its clips stepped -- a round's trace, a bone's place,
+    /// the render -- and a callback of the player's eases its shoulders on every take. The render is the simulation's business
+    /// here, once a tick (<see cref="TakeTickPose"/>); a frame drawn here, any number of times, must take nothing, or the level
+    /// would play by how often it was drawn.
+    /// </remarks>
+    public Igi2BodyPose? PresentedPose()
+    {
+        if (!_isPoseStale)
+        {
+            return _pose;
+        }
+
+        if (_presentedVersion == _poseVersion)
+        {
+            return _presentedPose;
+        }
+
+        _presentedVersion = _poseVersion;
+        _presentedPose = null;
+        if (Animation is Igi2HumanAnimation { Rig: { } rig } animation)
+        {
+            if (_presentedBones is null || _presentedBones.BoneCount != rig.BoneCount)
+            {
+                _presentedBones = new Igi2BoneBuffer(rig.BoneCount);
+            }
+
+            if (_bones is { } bones && bones.BoneCount == rig.BoneCount)
+            {
+                _presentedBones.CopyFrom(bones);
+            }
+            else
+            {
+                _presentedBones.Root = RootTranslation;
+            }
+
+            animation.Pose(_presentedBones, BoneCallbacks);
+            (Igi2AnimationClip? clip, int time) = animation.AttachSource;
+            _presentedPose = new Igi2BodyPose(_presentedBones.ToPose(rig.Parents), clip, time);
+        }
+
+        return _presentedPose;
+    }
+
+    /// <summary>
+    /// Takes the body's pose as the original's render of the tick does, once its update is done: what the bones' callbacks keep
+    /// from one take to the next -- the player's shoulders' pitch -- steps once a tick, however the level is drawn, or whether it is.
+    /// </summary>
+    public void TakeTickPose() => _ = BodyPose();
+
+    /// <summary>Gets a value indicating whether the pose is being taken for the simulation: the only take a callback may change state on.</summary>
+    protected bool EvaluatingForSimulation { get; private set; }
 
     /// <inheritdoc/>
     public BonePose? CurrentPose() => BodyPose()?.Pose;
@@ -141,5 +242,9 @@ public abstract partial class Igi2Human : IIgi2BonedBody
     }
 
     /// <summary>The body's pose is to be taken again: its clips have stepped or changed.</summary>
-    internal void TouchPose() => _isPoseStale = true;
+    internal void TouchPose()
+    {
+        _isPoseStale = true;
+        _poseVersion++;
+    }
 }

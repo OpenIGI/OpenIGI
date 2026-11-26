@@ -58,16 +58,14 @@ public static class WeatherCVars
     /// as rain with a second, wrong-looking layer behind it.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar Storm = Presets.Define(
+    public static readonly BoolCVar Storm = Experience.Define(
         CVar.Bool(
             "r_storm",
             true,
             CVarOptions.Archive,
             "Use the remastered particle storm instead of the original's rain band."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the storm wets the ground it falls on.</summary>
     /// <remarks>
@@ -105,5 +103,6 @@ public static class WeatherCVars
         "How much of the storm's tuned drop rate falls: 0 is dry, 1 is the full rate.");
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

@@ -66,6 +66,7 @@ internal static class HostOptionsParser
         bool lockstep = false;
         bool noSave = false;
         List<(int Frame, string Statement)> deferredCommands = [];
+        List<int> shotFrames = [];
         List<string> contentDirectories = [];
         string? contentProfile = null;
         string? streamlineDirectory = null;
@@ -91,6 +92,8 @@ internal static class HostOptionsParser
         int presetCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
+        string? playReplayPath = null;
+        string? racePath = null;
         bool bakeAll = false;
 
         List<string> startupCommands = [];
@@ -278,6 +281,10 @@ internal static class HostOptionsParser
                 int runFrame = NextInt(args, ref i, "runat", 0, "a non-negative frame");
                 deferredCommands.Add((runFrame, Next(args, ref i, "runat")));
             }
+            else if (arg.Equals("shotat", StringComparison.OrdinalIgnoreCase))
+            {
+                shotFrames.Add(NextInt(args, ref i, "shotat", 1, "a frame from 1"));
+            }
             else if (arg.Equals("content", StringComparison.OrdinalIgnoreCase))
             {
                 contentDirectories.Add(Next(args, ref i, "content"));
@@ -305,6 +312,14 @@ internal static class HostOptionsParser
             else if (arg.Equals("nosave", StringComparison.OrdinalIgnoreCase))
             {
                 noSave = true;
+            }
+            else if (arg.Equals("playreplay", StringComparison.OrdinalIgnoreCase))
+            {
+                playReplayPath = Next(args, ref i, "playreplay");
+            }
+            else if (arg.Equals("race", StringComparison.OrdinalIgnoreCase))
+            {
+                racePath = Next(args, ref i, "race");
             }
             else if (arg.Equals("benchmark", StringComparison.OrdinalIgnoreCase))
             {
@@ -500,6 +515,7 @@ internal static class HostOptionsParser
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             DeferredCommands = deferredCommands,
+            ShotFrames = shotFrames,
             ContentDirectories = contentDirectories,
             ContentProfilePath = contentProfile,
             StreamlineDirectory = streamlineDirectory,
@@ -518,6 +534,8 @@ internal static class HostOptionsParser
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
+            PlayReplayPath = playReplayPath,
+            RacePath = racePath,
             NoSave = noSave,
             BakeAll = bakeAll,
         };

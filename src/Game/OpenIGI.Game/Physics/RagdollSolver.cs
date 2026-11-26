@@ -126,7 +126,7 @@ public static class RagdollSolver
     {
         correction = Vector3f.Zero;
 
-        float angle = MathF.Asin(Math.Clamp(Vector3f.Dot(Vector3f.Cross(from, to), axis), -1f, 1f));
+        float angle = SimMathF.Asin(Math.Clamp(Vector3f.Dot(Vector3f.Cross(from, to), axis), -1f, 1f));
         if (Vector3f.Dot(from, to) < 0f)
         {
             angle = MathF.PI - angle;

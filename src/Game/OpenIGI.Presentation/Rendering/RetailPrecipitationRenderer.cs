@@ -38,6 +38,14 @@ public enum PrecipitationStyle
 /// layer it ends in only the drops still above it, which the quarter's list, highest first, makes a prefix.
 /// </para>
 /// <para>
+/// Flakes and I.G.I. 2's drops are built once a frame, as <c>Rain_UpdateVertexBuffer</c> builds them: the one tile's eighty drops at
+/// each of their copies, about the tile's corner, every quarter one after another; each tile's layer then draws its prefix of its
+/// quarter moved to its corner and floor, as <c>Rain_SortRenderCallbackVB</c> does with a transform. Building every drop again for
+/// each of the up to 243 layers it is drawn in was the weather's whole cost -- up to sixteen thousand quads, three megabytes a
+/// frame, a fifth of the browser's frame in mission 16's light rain and more in mission 13's thicker snow -- and the cap that held it
+/// there left out the tiles nearest the eye, drawn last. Project I.G.I.'s rain lines lean with where each drop stands from the eye, so those are still built tile by tile.
+/// </para>
+/// <para>
 /// The original's outcode test leaves out tiles wholly off one side of the screen; the device clips those anyway, so every tile
 /// whose four corners are known is drawn. Fog is off for it in both games; nothing it draws is far enough from the eye to fog.
 /// </para>
@@ -70,6 +78,8 @@ public sealed class RetailPrecipitationRenderer : IDisposable
     private readonly List<float>[] _groupHeights = [[], [], [], []];
     private readonly List<(double Depth, int I, int J)> _blocks = [];
     private readonly WeatherDrop[] _placed = new WeatherDrop[RetailPrecipitation.MaximumDrops];
+    private readonly int[] _groupStart = new int[4];
+    private readonly MeshInstance[] _instances = new MeshInstance[Drawn * Drawn * 3];
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumQuads * 4];
     private readonly ushort[] _indices = QuadIndices.Build(MaximumQuads);
     private Vector3f[] _offsets = [Vector3f.Zero];
@@ -173,33 +183,23 @@ public sealed class RetailPrecipitationRenderer : IDisposable
 
         // One pixel at a metre's depth, in metres: what a line is widened to either side by half of.
         float pixel = 2f / Math.Max(viewportHeight, 1) / MathF.Max(MathF.Abs(projection.M22), 1e-6f);
-        int quads = 0;
         bool lines = _style == PrecipitationStyle.Igi1 && !weather.IsSnow;
-        foreach ((_, int i, int j) in _blocks)
+        int quads = 0;
+        if (lines)
         {
-            ref Cell corner = ref At(i, j);
-            double highest = Math.Max(Math.Max(At(i, j).Z, At(i, j + 1).Z), Math.Max(At(i + 1, j).Z, At(i + 1, j + 1).Z));
-            int group = (((int)Math.Floor(corner.Y / RetailPrecipitation.TileUnits) & 1) << 1)
-                | ((int)Math.Floor(corner.X / RetailPrecipitation.TileUnits) & 1);
-            double above = highest - floor - Top;
-            for (int layer = 1; layer <= 3; layer++)
+            foreach ((_, int i, int j) in _blocks)
             {
-                double layerFloor = floor + Top - (layer * RetailPrecipitation.LayerUnits);
-                double standing = above + (layer * RetailPrecipitation.LayerUnits);
-                int count = Showing(group, standing);
-                if (lines)
+                for (int layer = 1; layer <= 3; layer++)
                 {
+                    int count = Showing(i, j, layer, floor, out int group, out double layerFloor);
+                    ref Cell corner = ref At(i, j);
                     quads = EmitLines(weather, group, count, corner.X, corner.Y, layerFloor, eye, quads, forward, pixel);
-                    continue;
-                }
-
-                for (int n = 0; n < count && quads < MaximumQuads; n++)
-                {
-                    WeatherDrop drop = drops[_groups[group][n]];
-                    Vector3d at = new(corner.X + drop.X, corner.Y + drop.Y, layerFloor + drop.Z);
-                    quads = Emit(weather, at - eye, quads, right, up, forward, pixel);
                 }
             }
+        }
+        else
+        {
+            quads = FillTile(weather, drops, right, up);
         }
 
         if (quads == 0)
@@ -220,8 +220,14 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         _device.SetMaterialOverride(Unlit);
         try
         {
-            TextureHandle texture = _style == PrecipitationStyle.Igi1 && !weather.IsSnow ? TextureHandle.None : Texture;
-            _device.DrawMesh(_mesh, 0, quads * 6, camera.CreateModelView(camera.Position), texture, TextureHandle.None, BlendMode.AlphaBlend);
+            if (lines)
+            {
+                _device.DrawMesh(_mesh, 0, quads * 6, camera.CreateModelView(camera.Position), TextureHandle.None, TextureHandle.None, BlendMode.AlphaBlend);
+            }
+            else
+            {
+                DrawTiles(camera, floor);
+            }
         }
         finally
         {
@@ -454,27 +460,12 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         return quads;
     }
 
-    // One drop's quad, camera-relative, in metres.
-    private int Emit(RetailPrecipitation weather, Vector3d fromEye, int quads, Vector3f right, Vector3f up, Vector3f forward, float pixel)
+    // Rain_UpdateVertexBuffer: the one tile's drops, each group's highest first and every drop at each of its copies, relative to the
+    // tile's corner and the layer's floor -- built once a frame, however many tiles and layers draw it.
+    private int FillTile(RetailPrecipitation weather, ReadOnlySpan<WeatherDrop> drops, Vector3f right, Vector3f up)
     {
-        float fade = weather.Fade;
-        Vector3f centre = new(
-            (float)(fromEye.X / WorldScene.UnitsPerMetre),
-            (float)(fromEye.Y / WorldScene.UnitsPerMetre),
-            (float)(fromEye.Z / WorldScene.UnitsPerMetre));
-        if (_style == PrecipitationStyle.Igi1 && !weather.IsSnow)
-        {
-            // A line from the drop up by the streak's length, clear at the top: widened across the view to a pixel.
-            float length = fade * StreakUnits / (float)WorldScene.UnitsPerMetre;
-            Vector3f top = centre + new Vector3f(0f, 0f, length);
-            float depth = MathF.Max(Vector3f.Dot(centre, forward), 0.05f);
-            Vector3f across = Vector3f.Cross(Vector3f.UnitZ, centre).NormalizedOrSelf() * (0.5f * pixel * depth);
-            Bgra32 foot = Colour;
-            Bgra32 clear = new(foot.B, foot.G, foot.R, 0);
-            return Quad(quads, centre - across, centre + across, top + across, top - across, foot, foot, clear, clear);
-        }
-
-        float half = fade * FlakeUnits / (float)WorldScene.UnitsPerMetre;
+        const float PerMetre = (float)WorldScene.UnitsPerMetre;
+        float half = weather.Fade * FlakeUnits / PerMetre;
         float wide = half, tall = half;
         Bgra32 colour = new(255, 255, 255, 255);
         if (_style == PrecipitationStyle.Igi2 && !weather.IsSnow)
@@ -484,19 +475,80 @@ public sealed class RetailPrecipitationRenderer : IDisposable
             colour = Colour;
         }
 
-        foreach (Vector3f offset in _offsets)
+        Vector3f x = right * wide, y = up * tall;
+        Vector3f[] offsets = _offsets;
+        int quads = 0;
+        for (int group = 0; group < _groups.Length; group++)
         {
-            if (quads >= MaximumQuads)
+            _groupStart[group] = quads;
+            List<int> members = _groups[group];
+            for (int n = 0; n < members.Count; n++)
             {
-                break;
+                WeatherDrop drop = drops[members[n]];
+                Vector3f centre = new(
+                    (float)(drop.X / WorldScene.UnitsPerMetre),
+                    (float)(drop.Y / WorldScene.UnitsPerMetre),
+                    (float)(drop.Z / WorldScene.UnitsPerMetre));
+                for (int c = 0; c < offsets.Length; c++)
+                {
+                    Vector3f at = centre + (offsets[c] / PerMetre);
+                    quads = Quad(quads, at - x - y, at + x - y, at + x + y, at - x + y, colour, colour, colour, colour);
+                }
             }
-
-            Vector3f at = centre + (offset / (float)WorldScene.UnitsPerMetre);
-            Vector3f x = right * wide, y = up * tall;
-            quads = Quad(quads, at - x - y, at + x - y, at + x + y, at - x + y, colour, colour, colour, colour);
         }
 
         return quads;
+    }
+
+    // Rain_SortRenderCallbackVB: each tile, farthest first, draws each of its layers' prefix of its group's drops from the one buffer,
+    // moved to its corner and the layer's floor. Neighbouring draws of the same range go together.
+    private void DrawTiles(in Camera3D camera, double floor)
+    {
+        int copies = _offsets.Length;
+        int run = 0, runStart = 0, runCount = 0;
+        foreach ((_, int i, int j) in _blocks)
+        {
+            for (int layer = 1; layer <= 3; layer++)
+            {
+                int count = Showing(i, j, layer, floor, out int group, out double layerFloor);
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                int start = _groupStart[group] * 6, indices = count * copies * 6;
+                if (run > 0 && (start != runStart || indices != runCount))
+                {
+                    _device.DrawMeshInstances(_mesh, runStart, runCount, Texture, BlendMode.AlphaBlend, _instances.AsSpan(0, run));
+                    run = 0;
+                }
+
+                ref Cell corner = ref At(i, j);
+                Vector3d origin = new(
+                    corner.X / WorldScene.UnitsPerMetre,
+                    corner.Y / WorldScene.UnitsPerMetre,
+                    layerFloor / WorldScene.UnitsPerMetre);
+                _instances[run++] = new MeshInstance(camera.CreateModelView(origin), TextureHandle.None);
+                runStart = start;
+                runCount = indices;
+            }
+        }
+
+        if (run > 0)
+        {
+            _device.DrawMeshInstances(_mesh, runStart, runCount, Texture, BlendMode.AlphaBlend, _instances.AsSpan(0, run));
+        }
+    }
+
+    // A tile's layer: which group of drops it draws, where its floor is, and how many of them show above the tile's highest corner.
+    private int Showing(int i, int j, int layer, double floor, out int group, out double layerFloor)
+    {
+        ref Cell corner = ref At(i, j);
+        double highest = Math.Max(Math.Max(corner.Z, At(i, j + 1).Z), Math.Max(At(i + 1, j).Z, At(i + 1, j + 1).Z));
+        group = (((int)Math.Floor(corner.Y / RetailPrecipitation.TileUnits) & 1) << 1)
+            | ((int)Math.Floor(corner.X / RetailPrecipitation.TileUnits) & 1);
+        layerFloor = floor + Top - (layer * RetailPrecipitation.LayerUnits);
+        return Showing(group, highest - floor - Top + (layer * RetailPrecipitation.LayerUnits));
     }
 
     // A quad in drawing order: its two lower corners, then its two upper ones.

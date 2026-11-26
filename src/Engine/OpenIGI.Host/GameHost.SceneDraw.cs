@@ -40,12 +40,30 @@ public sealed partial class GameHost
             return 0f;
         }
 
+        return share * PaintedHourShare();
+    }
+
+    /// <summary>How much of a title's own sky this frame keeps over the atmosphere, nought to one.</summary>
+    /// <remarks>
+    /// All of it at the hour it was painted for, which is every mission left on its own clock. It used to be all of it at
+    /// every hour, so a night level moved to noon (r_time_of_day, the cycle) kept its starry night dome over a noon sun, and
+    /// the haze and the sky light were the night's. The same fade as a mission's painted look; a level with no outdoors keeps it.
+    /// </remarks>
+    private float OwnSkyShare() => _timeOfDay.Sunless ? 1f : PaintedHourShare();
+
+    // Whole within an hour of the hour the level's sun is bound at, gone three hours away, eased between.
+    private float PaintedHourShare()
+    {
         float painted = (_timeOfDay.BoundSun ?? _timeOfDay.Sun)?.TimeOfDay is > 0f and <= 24f and var hour ? hour : 12f;
         float away = MathF.Abs(_timeOfDay.DayNight.TimeHours - painted) % 24f;
         away = MathF.Min(away, 24f - away);
         float t = Math.Clamp((away - 1f) / 2f, 0f, 1f);
-        return share * (1f - (t * t * (3f - (2f * t))));
+        return 1f - (t * t * (3f - (2f * t)));
     }
+
+    /// <summary>Gets the flat light the level's models without a lightmap are lit by: the level's own under baked light, else none.</summary>
+    private Vector3f LevelModelAmbient =>
+        _gi.EffectiveLighting == LightingModel.Baked ? _globalLight.ObjectAmbient : GlobalLightSettings.DefaultAmbient;
 
     /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
     /// <summary>Gets the ground, unless the title's culling leaves the world outside its buildings out of this frame.</summary>
@@ -62,6 +80,21 @@ public sealed partial class GameHost
 
         lod.Reach = FrameCVars.ModelLodReach.Value;
         return lod;
+    }
+
+    /// <summary>The level the eye's pass draws a placement at, as the world renderer picks it, or none when every model is whole.</summary>
+    /// <param name="eye">The frame's eye.</param>
+    /// <param name="projection">The eye's projection, without jitter.</param>
+    /// <returns>The pick, <c>-1</c> beyond a model's cutoff; <see langword="null"/> with levels of detail off.</returns>
+    private Func<WorldPlacement, int>? LevelPicker(Camera3D eye, Matrix4f projection)
+    {
+        if (ActiveModelLod() is not { } lod)
+        {
+            return null;
+        }
+
+        float fieldOfView = WidescreenLens.AuthoredTangent(projection);
+        return placement => lod.Select(placement, placement.Position, eye, fieldOfView);
     }
 
     private void DrawSceneGeometry(
@@ -90,20 +123,17 @@ public sealed partial class GameHost
             detailedWorld.Lod = ActiveModelLod();
 
             // The original's face groups on its own look: the opaque ones without an alpha test, the sorted ones blended after.
-            detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.IsVanillaLook;
 
             // The glows the models carry, drawn as the original draws them on its own look. The other looks light the
             // lamps those glows mark instead (GlowLamps), and a sprite over a lit lamp would be the lamp twice.
-            detailedWorld.CollectGlows = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            detailedWorld.CollectGlows = GraphicsPresetRegistry.Default.IsVanillaLook;
         }
 
         // None of it over the remastered computer's map, which is read in clear air (ComputerMapClear).
         bool retailFog = FogCVars.RetailFog.Value && !ComputerMapClear;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
-        _device.SetModelAmbient(
-            _gi.EffectiveLighting == LightingModel.Baked
-                ? _globalLight.ObjectAmbient
-                : GlobalLightSettings.DefaultAmbient);
+        _device.SetModelAmbient(LevelModelAmbient);
 
         if (mapScene is null || _computerFlight.IsFlying)
         {
@@ -123,7 +153,7 @@ public sealed partial class GameHost
             // A title that keeps its own sky keeps all of it. One whose sky the atmosphere replaces keeps as
             // much of its painted dome as the mission's look asks for, and only near the hour it was painted
             // at: the painted sky is one moment's sky, and the cycle's atmosphere is every other.
-            float paintedShare = _sky is { IsGameOwnSky: true } ? 1f : PaintedSkyShare();
+            float paintedShare = _sky is { IsGameOwnSky: true } ? OwnSkyShare() : PaintedSkyShare();
             _device.SetPaintedSkyWeight(paintedShare, fogged: _sky is { IsGameOwnSky: true });
             bool paintedSky = captured && _sky is { HasSky: true } && paintedShare > 0f;
             _paintedLayers = paintedSky && _sky is { IsGameOwnSky: false } ? paintedShare : 0f;
@@ -140,13 +170,18 @@ public sealed partial class GameHost
 
             // The original draws its whole sky unfogged: the dome (SkyDome_Draw) and the cloud layers' strips, whose QVertex
             // states turn fog off (Direct3DQVertex_SetGenericState). Added clouds fogged here dimmed toward black.
-            bool unfoggedSky = retailFog && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            bool unfoggedSky = retailFog && GraphicsPresetRegistry.Default.IsVanillaLook;
             if (unfoggedSky)
             {
                 _device.SetFog(SceneFog.None);
             }
 
+            // Unlit as well: SkyDome_Draw turns D3DRS_LIGHTING off and selects the vertex colour alone (COLOROP SELECTARG2,
+            // DIFFUSE). A dome has no lightmap, so the device would otherwise tint it by the level's flat model light, which
+            // on a night level drew mission 1's sky at a third of its authored colour.
+            _device.SetModelAmbient(Vector3f.One);
             _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
+            _device.SetModelAmbient(LevelModelAmbient);
             if (unfoggedSky)
             {
                 _device.SetFog(RetailAir(_globalLight.ObjectFog));
@@ -243,7 +278,7 @@ public sealed partial class GameHost
         {
             // The original fogs its trees in the objects' colour at four fifths of the ground's density
             // (ForestRender_SetGenericState_*), on its own look.
-            bool retailForest = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            bool retailForest = GraphicsPresetRegistry.Default.IsVanillaLook;
             if (retailForest && retailFog && _forest is not null)
             {
                 _device.SetFog(RetailAir(_globalLight.ObjectFog) with
@@ -384,6 +419,50 @@ public sealed partial class GameHost
         _device.SetFirstPersonGeometry(false);
     }
 
+    /// <summary>
+    /// Draws the leaves the forest left to blend, over every body in the picture, in the air and through the windows the scene
+    /// pass drew the forest in.
+    /// </summary>
+    /// <param name="eye">The camera.</param>
+    /// <remarks>
+    /// Blended in the scene pass, with the trunks, the leaves wrote their depth over the whole of each card, and every guard and
+    /// co-op partner drawn after them vanished behind a bush the picture showed the ground through.
+    /// </remarks>
+    private void DrawBlendedForest(in Camera3D eye)
+    {
+        if (_forest is not { } forest || _world?.Visibility?.IsOutsideVisible == false)
+        {
+            return;
+        }
+
+        bool retailFog = FogCVars.RetailFog.Value && !ComputerMapClear;
+        bool retailForest = retailFog && GraphicsPresetRegistry.Default.IsVanillaLook;
+        if (retailForest)
+        {
+            _device.SetFog(RetailAir(_globalLight.ObjectFog) with
+            {
+                DensityPerMetre = RetailAir(_globalLight.TerrainFog).DensityPerMetre * 0.8f,
+            });
+        }
+
+        ViewClip? outsideClip = _world?.Visibility?.OutsideClip;
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(outsideClip);
+        }
+
+        forest.DrawBlended(eye);
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(null);
+        }
+
+        if (retailForest)
+        {
+            _device.SetFog(RetailAir(_globalLight.ObjectFog));
+        }
+    }
+
     /// <summary>Draws what the forward pass owns over the lit picture: the translucent world, the water, the light streaks, the effects and the weather.</summary>
     private void DrawForwardPass(
         HostConsole console, bool captured, Camera3D eye, Matrix4f projection, MapSceneView? mapScene, RenderResolution resolution,
@@ -447,6 +526,8 @@ public sealed partial class GameHost
             _world.Draw(_scene, eye, projection, new WorldDrawOptions(FromEye: true, BlendedOnly: true));
         }
 
+        DrawBlendedForest(eye);
+
         // The level's glazing, over a picture the lighting has finished. It has to follow the
         // opaque world for the ordinary reason anything blended does, and it is a pass of its own
         // rather than part of the rotor pass above because the two share nothing: a rotor is a
@@ -465,7 +546,7 @@ public sealed partial class GameHost
         // G-buffer it was written as if opaque and then lit away: the deferred frame showed no sea.
         _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
         EndStageIfSlow("the water");
-        DrawTitleGroundDecals(eye, projection);
+        DrawTitleSurfaceMarks(eye, projection);
 
         // And the level's own bodies' marks on the ground, on the original's look (Shadow_MagicObjEnterHandler).
         if (_world.FaceGroupBlending)
@@ -482,7 +563,7 @@ public sealed partial class GameHost
                 eye,
                 projection,
                 captured ? resolution.RenderHeight : _window.Height,
-                GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla);
+                GraphicsPresetRegistry.Default.IsVanillaLook);
         }
 
         // A multiplayer mode's places -- the bomb sites -- on the ground, over the lit scene like the tracers.
@@ -573,7 +654,7 @@ public sealed partial class GameHost
                 // units, so the drops never sink below a faint grey whatever the night.
                 RainVeilDisplay / MathF.Max(_device.SceneExposure, 1e-3f));
         }
-        else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
+        else if (GraphicsPresetRegistry.Default.IsVanillaLook && _retailWeather is { } retailWeather)
         {
             // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
             // Smooth motion draws each drop partway through its last tick's fall, as everything else between ticks is drawn.
@@ -601,7 +682,7 @@ public sealed partial class GameHost
         // Snow uses the same authored building shells and weather band, but renders small,
         // drifting flakes instead of rain droplets.
         if (_snow is { IsWeatherEnabled: true } snow
-            && !(GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is not null))
+            && !(GraphicsPresetRegistry.Default.IsVanillaLook && _retailWeather is not null))
         {
             snow.Indoors = cameraIndoors;
             snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
@@ -626,6 +707,15 @@ public sealed partial class GameHost
             _modelGlows ??= new ModelGlowRenderer(_device, _resources, _titleRuntime.Layout.CommonSearchDirectory, _logger);
             _modelGlows.Draw(glowing.DrawnGlows, eye, projection);
         }
+
+        // Every other player spawn protection shields, in the shielded look over the finished scene, seen through walls.
+        _soldiers?.DrawShieldedPartners(eye);
+
+        // A race's ghost, handed to the picture's ghost pass: nothing of the level, only drawn.
+        DrawRaceGhost(eye);
+
+        // The title's thermal goggles: its people in heat colours, through walls, in the forward pass with the tracers.
+        DrawTitleInfrared(eye, projection);
 
         // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD
         // pass and for the same reason as the inspector selection below: submitted from the world

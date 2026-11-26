@@ -56,6 +56,10 @@ public readonly record struct PlayerAimFeedback(
     /// <summary>No crosshair and nothing to report.</summary>
     public static PlayerAimFeedback None => default;
 
+    /// <summary>Gets how far the weapon is up on its sights, nought (hip) to one, eased: the crosshair fades out as it rises.</summary>
+    /// <remarks>Modern aim's; nought whenever it is off, and the hit and kill marks are drawn whatever it is.</remarks>
+    public float Sights { get; init; }
+
     /// <summary>The feedback with a tally's hits and kills.</summary>
     /// <param name="shape">The crosshair.</param>
     /// <param name="spreadRadians">The cone's half-angle.</param>

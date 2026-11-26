@@ -14,22 +14,36 @@ namespace OpenIGI.Game.Igi2.Soldiers;
 public sealed class Igi2Soldiers
 {
     private readonly List<Igi2HumanSoldier> _bodies;
-    private TitleWorldModel[] _drawn = [];
+    private readonly List<Igi2HumanSoldier> _doubles;
+    private TitleWorldModel[]? _all;
     private long _drawnTick = -1;
-    private readonly List<(Igi2HumanSoldier Soldier, IReadOnlyList<TitleWorldModel> Parts)> _perBody = [];
+    // Each active body this tick, and its models once something has asked for them.
+    private readonly List<(Igi2HumanSoldier Soldier, IReadOnlyList<TitleWorldModel>? Parts)> _perBody = [];
 
-    private Igi2Soldiers(List<Igi2HumanSoldier> bodies)
+    private Igi2Soldiers(List<Igi2HumanSoldier> bodies, List<Igi2HumanSoldier> doubles)
     {
         _bodies = bodies;
+        _doubles = doubles;
     }
 
     /// <summary>Gets the bodies, in the order the level makes them.</summary>
     public IReadOnlyList<Igi2HumanSoldier> Bodies => _bodies;
 
+    /// <summary>
+    /// Gets the bodies kept for the soldiers another game's stand for (<see cref="Igi2HumanSoldierTask.Double"/>), which only the
+    /// level's cutscenes run: none of <see cref="Bodies"/>, so none is drawn.
+    /// </summary>
+    public IReadOnlyList<Igi2HumanSoldier> Doubles => _doubles;
+
     /// <summary>The models the soldiers draw as a tick left them: each body posed, and the weapon in its hand.</summary>
     /// <param name="tick">The tick.</param>
     /// <param name="isDrawn">Whether a body is drawn this frame, the sector cull's answer, or <see langword="null"/> for every body.</param>
-    /// <returns>The models: each body's built once a tick, the drawn ones gathered per call.</returns>
+    /// <returns>The models: each body's built once a tick, and only once something asks for it, the drawn ones gathered per call.</returns>
+    /// <remarks>
+    /// A body's models are built from its pose, and posing a skeleton is the dearest thing a soldier does in a tick; the original
+    /// brings a body's bones up to date only when it is drawn or a line reaches it (<c>BoneDynCubeObj_UpdateHierarchy</c>,
+    /// <c>igi2 0x564B50</c>). So a body the sector cull leaves out is not posed for drawing.
+    /// </remarks>
     public IReadOnlyList<TitleWorldModel> Models(long tick, Func<Igi2HumanSoldier, bool>? isDrawn = null)
     {
         if (_drawnTick != tick)
@@ -37,31 +51,56 @@ public sealed class Igi2Soldiers
             _perBody.Clear();
             foreach (Igi2HumanSoldier body in _bodies)
             {
-                if (body.Model is { } model)
+                // A body out of the world (its container's condition failed, Human_RemoveDynCubeObjHandler) is not drawn.
+                if (body.IsActive && body.Model is not null)
                 {
-                    _perBody.Add((body, Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes)));
+                    _perBody.Add((body, null));
                 }
             }
 
-            _drawn = [.. _perBody.SelectMany(static b => b.Parts)];
+            _all = null;
             _drawnTick = tick;
         }
 
         if (isDrawn is null)
         {
-            return _drawn;
+            if (_all is null)
+            {
+                List<TitleWorldModel> all = [];
+                for (int i = 0; i < _perBody.Count; i++)
+                {
+                    all.AddRange(PartsOf(i, tick));
+                }
+
+                _all = [.. all];
+            }
+
+            return _all;
         }
 
-        List<TitleWorldModel> drawn = new(_drawn.Length);
-        foreach ((Igi2HumanSoldier body, IReadOnlyList<TitleWorldModel> parts) in _perBody)
+        List<TitleWorldModel> drawn = [];
+        for (int i = 0; i < _perBody.Count; i++)
         {
-            if (isDrawn(body))
+            if (isDrawn(_perBody[i].Soldier))
             {
-                drawn.AddRange(parts);
+                drawn.AddRange(PartsOf(i, tick));
             }
         }
 
         return drawn;
+    }
+
+    // A body's models this tick, built the first time they are asked for.
+    private IReadOnlyList<TitleWorldModel> PartsOf(int index, long tick)
+    {
+        (Igi2HumanSoldier body, IReadOnlyList<TitleWorldModel>? parts) = _perBody[index];
+        if (parts is null)
+        {
+            parts = Igi2BodyFrame.Build(body, body.PresentedPose(), body.Model!.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes);
+            _perBody[index] = (body, parts);
+        }
+
+        return parts;
     }
 
     /// <summary>
@@ -91,16 +130,13 @@ public sealed class Igi2Soldiers
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(random);
         List<Igi2HumanSoldier> bodies = [];
+        List<Igi2HumanSoldier> doubles = [];
         Dictionary<string, Igi2BodyModel> looks = new(StringComparer.OrdinalIgnoreCase);
         Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in levelRoot.Descendants().OfType<Igi2HumanSoldierTask>())
         {
-            // Claimed by another game, whose body stands for it: it is given none.
-            if (task.Driver is not null)
-            {
-                continue;
-            }
-
+            // Claimed by another game, whose body stands for it: it is given a double, which the level's cutscenes alone run.
+            bool claimed = task.Driver is not null;
             string wornModel = worn is not null && worn.TryGetValue(task, out string? face) ? face : task.Model;
             Formats.World.MefModel? model = models(wornModel);
             Igi2BoneHierarchy? rig = model?.BoneHierarchy;
@@ -139,9 +175,12 @@ public sealed class Igi2Soldiers
             }
 
             soldier.Model = look;
-            if (animation is Igi2HumanAnimation layer)
+
+            if (claimed)
             {
-                layer.SetBranches(look.BoneNames);
+                task.Double = soldier;
+                doubles.Add(soldier);
+                continue;
             }
 
             soldier.Collider = new Igi2BoneCollider(soldier, soldier);
@@ -149,7 +188,7 @@ public sealed class Igi2Soldiers
             bodies.Add(soldier);
         }
 
-        return new Igi2Soldiers(bodies);
+        return new Igi2Soldiers(bodies, doubles);
     }
 
     /// <summary>

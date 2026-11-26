@@ -71,6 +71,8 @@ internal static class Igi2PlayerFakes
             MainTime += MainTimeStep;
         }
 
+        public void StepMainTo(int time) => MainTime = time;
+
         public List<float> UpperBodyClears { get; } = [];
 
         public void ClearUpperBody(float blendSeconds) => UpperBodyClears.Add(blendSeconds);

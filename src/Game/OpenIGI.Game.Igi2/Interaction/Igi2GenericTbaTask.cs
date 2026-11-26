@@ -29,9 +29,13 @@ public interface IIgi2TimedAction : IIgi2WorkedActivatable
 /// <para>
 /// It answers bullets and blasts as any <c>ExplodeObject</c> does; one that is not explodable only counts them.
 /// </para>
+/// <para>
+/// One the level puts beneath a door -- a padlock on the gate it locks, the wheel of a vent -- goes with the door as it opens
+/// (<c>Door_SetPosition</c>'s <c>RigidDynCubeObj_UpdateAttachments</c>), drawn and solid where the door holds it.
+/// </para>
 /// </remarks>
 public sealed partial class Igi2GenericTbaTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2TimedAction
+    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2TimedAction, IIgi2Carried, IIgi2Mover
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "GenericTBA";
@@ -56,6 +60,7 @@ public sealed partial class Igi2GenericTbaTask
     private int _clientId;
     private LevelExpression? _activeExpression;
     private Igi2LevelFlowTask? _flow;
+    private Igi2Pose? _built;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2GenericTbaTask"/> class.</summary>
     public Igi2GenericTbaTask() => Explosive = new Igi2Explosive(this, this);
@@ -145,7 +150,7 @@ public sealed partial class Igi2GenericTbaTask
     [ScriptParam(ScriptParamType.Real32, "Activate Time (s)")]
     public float ActivateTime { get; set; } = 4f;
 
-    /// <summary>Gets or sets the status screen's icon for it, which the status screen shows (not ported).</summary>
+    /// <summary>Gets or sets the status screen's icon for it, which the action menu shows when it is offered.</summary>
     [ScriptParam(ScriptParamType.DropDownCombo, "Click to select sprite")]
     public string Sprite { get; set; } = string.Empty;
 
@@ -189,10 +194,41 @@ public sealed partial class Igi2GenericTbaTask
     public IReadOnlyList<float> CurrentOrientation => Explosive.Frame;
 
     /// <inheritdoc/>
+    /// <remarks>Where the level placed it, as the world scene placed it.</remarks>
+    public Igi2Pose Built => _built ??= Igi2Pose.FromAngles(Position, Orientation);
+
+    /// <inheritdoc/>
+    public Vector3d CurrentPosition => Explosive.Carried.Position;
+
+    /// <inheritdoc/>
+    public Vector3d LastPosition => Explosive.Carried.LastPosition;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> LastOrientation => Explosive.Carried.LastOrientation;
+
+    /// <inheritdoc/>
+    public bool AttachTo(OpenIGI.Game.World.IAttachParent parent)
+    {
+        Explosive.Carried.AttachTo(parent);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>ExplodeObject_UpdateAttachmentHandler</c>, which a <c>GenericTBA</c> inherits.</remarks>
+    public void UpdateAttachment()
+    {
+        if (Explosive.Follow(out Vector3d position))
+        {
+            Position = position;
+        }
+    }
+
+    /// <inheritdoc/>
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;
+        Explosive.Carried.Settle(level.Ticks);
         if (_isFinishedThisTick != 0)
         {
             _isFinishedThisTick = 0;
@@ -316,7 +352,11 @@ public sealed partial class Igi2GenericTbaTask
     /// <inheritdoc/>
     /// <remarks>
     /// <c>GenericTBA_UpdateInternalDataHandler</c> (<c>igi2 0x4C2450</c>): the <c>ExplodeObject</c>'s, then its icon looked up among
-    /// the status screen's (not ported) and its script compiled.
+    /// the status screen's (by name, as the HUD resolves <see cref="Sprite"/>) and its script compiled.
     /// </remarks>
-    protected override void OnParsed() => Explosive.Reset();
+    protected override void OnParsed()
+    {
+        _built = Igi2Pose.FromAngles(Position, Orientation);
+        Explosive.Reset();
+    }
 }

@@ -280,7 +280,7 @@ public sealed class RetailIgi2CarTests
         {
         }
 
-        public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null) => null;
+        public ITitleVoice? Play(string definition, Vector3d? positionInUnits, bool? looping = null) => null;
 
         public ITitleSoundSet? PlaySet(string definition)
         {
@@ -295,6 +295,38 @@ public sealed class RetailIgi2CarTests
         }
 
         public void Silence() => Silenced = true;
+    }
+
+    /// <summary>
+    /// Mission 15's armoured car saved whole, then blown up, its save read back: it is whole again, as <c>Car_DeSerializeHandler</c>
+    /// leaves it -- its solids wear its model's collision once more, its gun is back, and it is no longer blowing up.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_car_blown_up_after_the_save_is_whole_once_it_is_read_back()
+    {
+        (RetailIgi2Mission1 m, Igi2CarTask car) = Car(1300);
+        Collision.Igi2RigidObject[] solids = [.. m.Collision!.SolidsOf(Igi2CarTask.TypeName, car.Id)];
+        Assert.NotEmpty(solids);
+        var whole = solids.Select(static s => (s.Meshes, s.Radius)).ToArray();
+        Weapons.Igi2AiStationaryGun gun = Assert.IsType<Weapons.Igi2AiStationaryGun>(car.Gun);
+        string saved = Game.Saves.SaveScript.WriteState(car.WriteState);
+
+        car.HitZoneDestroyed();
+        for (int tick = 0; tick < 90 && !car.IsExploded; tick++)
+        {
+            m.Run.Tick();
+            car.Run(m.Run);
+        }
+
+        Assert.True(car.IsExploded);
+        Assert.Null(car.Gun);
+        Assert.All(solids, static s => Assert.Empty(s.Meshes));
+
+        Assert.True(Game.Saves.SaveScript.ReadState(saved, car.ReadState));
+        Assert.False(car.IsExploded);
+        Assert.False(car.IsExploding);
+        Assert.Same(gun, car.Gun);
+        Assert.Equal(whole, solids.Select(static s => (s.Meshes, s.Radius)).ToArray());
     }
 
     private static Matrix3f Rows(IReadOnlyList<float> f) => new(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);

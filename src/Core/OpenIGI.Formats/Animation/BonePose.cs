@@ -168,12 +168,14 @@ public sealed class BonePose
         }
 
         float half = angle * 0.5f;
-        float sin = MathF.Sin(half);
-        Matrix3f turn = ToMatrix(new Quaternion32(axis.X * sin, axis.Y * sin, axis.Z * sin, MathF.Cos(half)));
+        float sin = SimMathF.Sin(half);
+        Matrix3f turn = ToMatrix(new Quaternion32(axis.X * sin, axis.Y * sin, axis.Z * sin, SimMathF.Cos(half)));
 
         Matrix3f[] rotations = (Matrix3f[])_rotations.Clone();
         Vector3f[] positions = (Vector3f[])_positions.Clone();
-        bool[] turned = new bool[rotations.Length];
+        // On the stack: a soldier's look turns its head and spine every frame it is drawn.
+        Span<bool> turned = rotations.Length <= 256 ? stackalloc bool[rotations.Length] : new bool[rotations.Length];
+        turned.Clear();
         Vector3f joint = _positions[bone];
         turned[bone] = true;
         rotations[bone] = turn * rotations[bone];

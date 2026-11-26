@@ -63,6 +63,9 @@ public static class Igi2LevelSystems
     /// <summary>The scripted overlays.</summary>
     public const string ScreenOverlay = "ScreenOverlay";
 
+    /// <summary>The countdowns on the game screen.</summary>
+    public const string MissionTimers = "MissionTimers";
+
     /// <summary>The wires.</summary>
     public const string Wires = "Wires";
 
@@ -144,6 +147,9 @@ public static class Igi2LevelSystems
     /// <summary>The soldiers' minds.</summary>
     public const string Ai = "Ai";
 
+    /// <summary>Project I.G.I.'s body for the player to stand on, when its movement is asked for.</summary>
+    public const string Igi1Feet = "Igi1Feet";
+
     /// <summary>Makes the title's systems, in order.</summary>
     /// <returns>A fresh list, which the caller may edit.</returns>
     public static LevelSystems<Igi2LevelBuild> Create() => new LevelSystems<Igi2LevelBuild>()
@@ -163,6 +169,7 @@ public static class Igi2LevelSystems
         .Add(System(Flocks, Igi2WorldSystems.Flocks))
         .Add(System(CutsceneCameraLinks, Igi2WorldSystems.CutsceneCameraLinks))
         .Add(System(ScreenOverlay, Igi2WorldSystems.ScreenOverlay))
+        .Add(System(MissionTimers, Igi2WorldSystems.MissionTimers))
         .Add(System(Wires, Igi2InteractionSystems.Wires))
         .Add(System(Ladders, Igi2InteractionSystems.Ladders))
         .Add(System(Switches, Igi2InteractionSystems.Switches))
@@ -189,7 +196,8 @@ public static class Igi2LevelSystems
         .Add(System(Activation, Igi2InteractionSystems.Activation))
         .Add(System(Motions, Igi2InteractionSystems.Motions))
         .Add(System(Difficulty, Igi2WorldSystems.Difficulty))
-        .Add(System(Ai, Igi2ScriptSystems.Ai));
+        .Add(System(Ai, Igi2ScriptSystems.Ai))
+        .Add(System(Igi1Feet, Igi2WorldSystems.Igi1Feet));
 
     private static LevelSystem<Igi2LevelBuild> System(string name, Action<Igi2LevelBuild> build) => new(name, build);
 }

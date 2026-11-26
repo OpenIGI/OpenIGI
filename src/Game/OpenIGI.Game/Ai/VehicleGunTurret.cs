@@ -169,7 +169,7 @@ public sealed class VehicleGunTurret
             return 0f;
         }
 
-        float angle = (float)Math.Acos(Math.Clamp(offset.Y / length, -1d, 1d));
+        float angle = (float)SimMath.Acos(Math.Clamp(offset.Y / length, -1d, 1d));
         return offset.X > 0d ? -angle : angle;
     }
 
@@ -183,7 +183,7 @@ public sealed class VehicleGunTurret
             return 0f;
         }
 
-        float angle = (float)Math.Acos(Math.Min(1d, horizontal / full));
+        float angle = (float)SimMath.Acos(Math.Min(1d, horizontal / full));
         return offset.Z < 0d ? -angle : angle;
     }
 

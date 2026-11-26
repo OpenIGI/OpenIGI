@@ -19,7 +19,10 @@ public sealed partial class GameHost
         ulong pressed = TitleInputBindings.Sample(_configuration.Active, ViewInput, SaveBindings, pressed: true);
         // Not under a menu -- but the quick load does answer the failed page, where it is what a dead player reaches for.
         bool save = (pressed & QuickSaveBit) != 0;
-        if (pressed != 0 && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
+
+        // Not in a play-test from the editor, which is recorded from the level's start and plays its recording back on F9; nor in
+        // a replay being watched, whose level plays only its recording.
+        if (pressed != 0 && !TransportActive && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
         {
             QuickSaveOrLoad(save);
         }
@@ -52,7 +55,7 @@ public sealed partial class GameHost
         console.Commands.Add("quickload", "Loads the mission's newest save, as F9 does.", _ => QuickSaveOrLoad(save: false));
     }
 
-    // One quick save or quick load, said on the screen and in the log.
+    // One quick save or quick load, written in the log; the save games say how it went on the screen themselves (SaveReport).
     private void QuickSaveOrLoad(bool save)
     {
         if (MissionSaveGames is not { } saves)
@@ -72,6 +75,5 @@ public sealed partial class GameHost
         }
 
         _logger.Information("Saves", said + ".");
-        _mission.Progress?.ShowTransientMessage(said);
     }
 }

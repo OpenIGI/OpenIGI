@@ -237,6 +237,10 @@ public sealed class LevelVehicles
     internal bool RunsIn(LevelRun level) => ReferenceEquals(level, _walker);
 
     /// <summary>A car's run: its eye, its children, its guns, what it runs over; once a tick.</summary>
+    /// <summary>Forgets which tick each vehicle last ran on, as the walk's clock is set back by a save read onto the level.</summary>
+    /// <remarks>Kept, a vehicle whose last run fell on the tick the clock was set back to was passed over on that tick.</remarks>
+    internal void ForgetRuns() => _lastCarTick.Clear();
+
     /// <param name="car">The car's task.</param>
     internal void RunCar(GameTask car)
     {

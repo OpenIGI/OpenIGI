@@ -239,6 +239,62 @@ public static class KitDraw
         return box;
     }
 
+    /// <summary>
+    /// Draws a player's mark: their avatar, or the initial of their name, in a square outlined in the accent once they are
+    /// signed in. The menus' profile, the header's badge and the launcher's account all draw it so.
+    /// </summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="box">The square, in pixels.</param>
+    /// <param name="name">The player's name, for the initial.</param>
+    /// <param name="avatar">The avatar, or <see langword="null"/> for the initial.</param>
+    /// <param name="signedIn">Whether the player is signed in: the accent, rather than the plain border.</param>
+    /// <param name="appear">How far the mark has faded in, 0 to 1.</param>
+    public static void PlayerMark(UiPainter painter, UiTheme theme, UiRect box, string name, UiPicture? avatar, bool signedIn, float appear = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        LayoutContext context = painter.Context;
+        painter.FillRect(box, signedIn ? UiPalette.AccentAt(0.13f * appear) : UiPalette.InkAt(0.5f * appear));
+        if (avatar is { } picture)
+        {
+            picture.DrawCover(painter, box, appear);
+        }
+        else
+        {
+            string initial = name.Trim() is { Length: > 0 } trimmed ? trimmed[..1].ToUpperInvariant() : "?";
+            float size = box.Height * 0.5f;
+            float width = theme.Display.MeasureWidth(initial, size);
+            painter.DrawText(theme.Display, initial, new UiVec2(box.Center.X - (width * 0.5f), UiRowStyle.CapsCenterY(theme.Display, size, box)), size, UiPalette.Fade(signedIn ? theme.Accent : theme.TextMuted, appear));
+        }
+
+        float edge = context.Px(box.Height >= context.Px(64f) && signedIn ? 2f : 1f);
+        painter.StrokeRect(box, edge, UiPalette.Fade(signedIn ? theme.Accent : theme.Border, appear));
+    }
+
+    /// <summary>Draws a five-pointed star, filled: a fan of triangles about its middle, since its outline is not convex.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="centre">Its middle, in pixels.</param>
+    /// <param name="size">Its height, in pixels.</param>
+    /// <param name="colour">Its colour.</param>
+    public static void FillStar(UiPainter painter, UiVec2 centre, float size, Bgra32 colour)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        float outer = size * 0.5f;
+        Span<UiVec2> points = stackalloc UiVec2[10];
+        for (int i = 0; i < 10; i++)
+        {
+            float radius = i % 2 == 0 ? outer : outer * 0.4f;
+            (float sin, float cos) = MathF.SinCos((i * MathF.PI / 5f) - (MathF.PI * 0.5f));
+            points[i] = new UiVec2(centre.X + (cos * radius), centre.Y + (sin * radius));
+        }
+
+        for (int i = 0; i < 10; i++)
+        {
+            painter.FillTriangle(centre, points[i], points[(i + 1) % 10], colour);
+        }
+    }
+
     /// <summary>Draws a glass panel: the blurred scene behind it, a dark tint and a hairline.</summary>
     /// <param name="painter">The painter.</param>
     /// <param name="theme">The theme.</param>

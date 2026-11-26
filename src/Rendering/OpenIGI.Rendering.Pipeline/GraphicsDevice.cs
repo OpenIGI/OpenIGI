@@ -197,6 +197,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// </remarks>
     public RhiTextureFormat PresentFormat { get; }
 
+    /// <inheritdoc/>
+    public bool DisplayEncodes => PresentFormat.IsSrgb();
+
     /// <summary>The format an offscreen frame is taken in when nothing else says.</summary>
     /// <remarks>
     /// Only for a caller attaching its own offscreen target — a headless capture, a test — which has no
@@ -470,8 +473,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeBackdrop();
         DisposeDeferred();
         DisposeTracers();
+        DisposeInfrared();
+        DisposeThermal();
+        DisposeGhost();
+        DisposeAfterBlast();
         DisposeModePoints();
-        DisposeBlastVolume();
         DisposeCompute();
         _ownedTracedWorld?.Dispose();
         _profiler.Dispose();
@@ -615,6 +621,8 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _inFrame = true;
         EndHudLayer();
         _silhouetteDraws.Clear();
+        _thermalDraws.Clear();
+        _ghostDraws.Clear();
         _backdropFresh = false;
         ReleaseWorldIfAsked();
 

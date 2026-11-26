@@ -11,13 +11,21 @@ public abstract partial class Igi2Human
 {
     private readonly float[] _attachOrientation = EngineEuler.Rotation(0f, 0f, 0f);
 
+    // The rows OrientationRows hands out, refilled on every read: the AI reads them several times a soldier a tick.
+    private readonly float[] _orientationRows = new float[9];
+
     /// <summary>Gets the body's frame, row by row, as the original reads <c>tOrientation</c>.</summary>
+    /// <remarks>The human's own buffer, refilled on every read: read it at once, and do not keep or write it.</remarks>
     public float[] OrientationRows
     {
         get
         {
             Matrix3f o = Orientation;
-            return [o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33];
+            float[] rows = _orientationRows;
+            rows[0] = o.M11; rows[1] = o.M12; rows[2] = o.M13;
+            rows[3] = o.M21; rows[4] = o.M22; rows[5] = o.M23;
+            rows[6] = o.M31; rows[7] = o.M32; rows[8] = o.M33;
+            return rows;
         }
     }
 

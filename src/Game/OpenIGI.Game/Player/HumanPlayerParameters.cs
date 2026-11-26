@@ -70,9 +70,9 @@ public sealed class HumanPlayerParameters
         JumpHorizontalSpeed = _raw[1] * UnitsPerTickPerKilometrePerHour;
         JumpVerticalSpeed = _raw[2] * UnitsPerTickPerKilometrePerHour;
         Speed3 = _raw[3] * UnitsPerTickPerKilometrePerHour;
-        Distance4 = (float)(_raw[4] * UnitsPerMetre);
-        Distance5 = (float)(_raw[5] * UnitsPerMetre);
-        Duration6Ticks = IgiMath.TruncToInt32(_raw[6] * TicksPerSecond);
+        LeanSideUnits = (float)(_raw[4] * UnitsPerMetre);
+        LeanUpUnits = (float)(_raw[5] * UnitsPerMetre);
+        LeanTicks = IgiMath.TruncToInt32(_raw[6] * TicksPerSecond);
         MaximumHealth = _raw[7];
         ElectricFenceDose = _raw[8];
 
@@ -103,18 +103,18 @@ public sealed class HumanPlayerParameters
     /// <summary>Gets argument 3 in units per tick — a speed read by <c>0x408460</c> (retail 0.5 km/h).</summary>
     public float Speed3 { get; }
 
-    /// <summary>Gets argument 4 in units — a distance read by <c>0x40DFC0</c> (retail 0.85 m).</summary>
-    public float Distance4 { get; }
+    /// <summary>Gets argument 4 in units — how far the lean (<c>0x40DFC0</c>) slides the eye to either side (retail 0.85 m).</summary>
+    public float LeanSideUnits { get; }
 
-    /// <summary>Gets argument 5 in units — a distance read by <c>0x40DFC0</c> (retail 0.85 m).</summary>
-    public float Distance5 { get; }
+    /// <summary>Gets argument 5 in units — how far the crouched lean (<c>0x40DFC0</c>) raises the eye (retail 0.85 m).</summary>
+    public float LeanUpUnits { get; }
 
-    /// <summary>Gets argument 6 in ticks — a duration read by <c>0x40DFC0</c> (retail 0.25 s).</summary>
+    /// <summary>Gets argument 6 in ticks — how long the lean (<c>0x40DFC0</c>) takes to cover either range (retail 0.25 s).</summary>
     /// <remarks>
     /// Stored with <c>fistp</c>, so it <b>truncates</b>: the retail 0.25 s is 7 ticks, not 8. Rounding
     /// here would be a one-tick behaviour change.
     /// </remarks>
-    public int Duration6Ticks { get; }
+    public int LeanTicks { get; }
 
     /// <summary>Gets argument 7 — the player's <b>maximum health</b>, <c>Human+600</c> (retail <b>3.0</b>).</summary>
     /// <remarks>

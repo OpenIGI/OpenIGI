@@ -48,6 +48,23 @@ public sealed class Igi2BoneBuffer
     /// <summary>Gets or sets the root translation the animation writes.</summary>
     public Vector3f Root { get; set; }
 
+    /// <summary>Takes another buffer's bones as they stand, every orientation, count, matrix and translation, and its root.</summary>
+    /// <param name="other">The buffer, of the same rig.</param>
+    public void CopyFrom(Igi2BoneBuffer other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (other.BoneCount != BoneCount)
+        {
+            throw new ArgumentException("A buffer of another rig's bones.", nameof(other));
+        }
+
+        other.Orientations.CopyTo(Orientations, 0);
+        other.Ops.CopyTo(Ops, 0);
+        other.Matrices.CopyTo(Matrices, 0);
+        other.Translations.CopyTo(Translations, 0);
+        Root = other.Root;
+    }
+
     /// <summary>The bones as a pose.</summary>
     /// <param name="parents">Each bone's parent.</param>
     /// <returns>The pose.</returns>
@@ -141,7 +158,7 @@ public static class Igi2BoneMath
     {
         ArgumentNullException.ThrowIfNull(bones);
         Fpu half = angle * 0.5f;
-        Fpu s = Math.Sin(half.Value), c = Math.Cos(half.Value);
+        Fpu s = SimMath.Sin(half.Value), c = SimMath.Cos(half.Value);
         Quaternion32 q = bones.Orientations[bone];
         float a = (((Fpu)q.Y - q.Z) * 0f).F;
         float b = (((Fpu)q.W - q.X) * 0f).F;
@@ -225,8 +242,8 @@ public static class Igi2BoneMath
     {
         ArgumentNullException.ThrowIfNull(rig);
         ArgumentNullException.ThrowIfNull(bones);
-        IReadOnlyList<int> parents = rig.Parents;
-        IReadOnlyList<Vector3f> rest = rig.Translations;
+        ReadOnlySpan<int> parents = rig.ParentSpan;
+        ReadOnlySpan<Vector3f> rest = rig.TranslationSpan;
         int count = Math.Min(rig.BoneCount, bones.BoneCount);
         for (int bone = 0; bone < count; bone++)
         {

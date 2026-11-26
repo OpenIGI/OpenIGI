@@ -177,7 +177,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             if (soldier.Body is { } body)
             {
                 pool.Add((squad, body));
-                body.IsActive = false;
+                body.SetInWorld(false);
             }
         }
 
@@ -301,20 +301,8 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
         if (_drawnTick != Ticks)
         {
             List<TitleWorldModel> models = [];
-            if (Pickups is { } lying)
-            {
-                models.AddRange(lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation))));
-            }
-
-            if (Grenades is { } grenades)
-            {
-                models.AddRange(grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation))));
-                models.AddRange(grenades.Dynamic.Tasks.OfType<Igi2ImpactGrenade>()
-                    .Where(static g => g.Parameters.Model.Length != 0)
-                    .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))));
-                models.AddRange(grenades.Dynamic.Tasks.OfType<Igi2Missile>()
-                    .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))));
-            }
+            models.AddRange(Igi2LevelModels.Lying(Pickups, Ticks));
+            models.AddRange(Igi2LevelModels.InFlight(Grenades, Ticks));
 
             foreach ((HumanTask host, Igi2HumanSoldier body) in _standIns)
             {
@@ -322,7 +310,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
                 {
                     models.AddRange(Igi2BodyFrame.Build(
                         body,
-                        body.BodyPose(),
+                        body.PresentedPose(),
                         model.Name,
                         body.Weapon.Inventory?.Current?.WeaponType.FixedModel,
                         Ticks,
@@ -332,7 +320,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
 
             if (Casings is { } casings)
             {
-                models.AddRange(casings.Models());
+                models.AddRange(casings.Models(Ticks));
             }
 
             if (Explosions is { } explosions)
@@ -376,7 +364,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             if (initial || _inWorld.GetValueOrDefault(host) != now)
             {
                 _inWorld[host] = now;
-                body.IsActive = now;
+                body.SetInWorld(now);
             }
         }
     }
@@ -437,7 +425,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
         host.IsDead = false;
         bool now = ConditionalContainerGate.IsTaskActive(host);
         _inWorld[host] = now;
-        body.IsActive = now;
+        body.SetInWorld(now);
         _drawnTick = -1;
     }
 
@@ -456,7 +444,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             // 0x487EE0: the dead life is deleted (0x4015F0) as the next is cloned (0x488000).
             if (_current >= 0)
             {
-                lives[_current].Body.IsActive = false;
+                lives[_current].Body.SetInWorld(false);
             }
 
             if (_current + 1 >= lives.Count)
@@ -468,9 +456,6 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             level.Wear(template, lives[_current].Squad, lives[_current].Body);
         }
     }
-
-    // Nine floats row by row as a matrix.
-    private static Matrix3f Rows(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
     // A soldier as a blast finds it: only while it is in the world.
     private sealed class InWorld(Igi2HumanSoldierTask soldier) : IExplosionHitTarget

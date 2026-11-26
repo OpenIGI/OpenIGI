@@ -248,6 +248,7 @@ public sealed class MissionPreviewLoader(
         // them, and a preview that is never promoted is still never advanced.
         var fileSystem = new VirtualFileSystem(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
+        fileSystem.Arrival = context.Arrival;
         var resources = new ResourceRegistry(fileSystem, logger);
 
         // Before a single Register call, because registering an archive substitutes its entries on the

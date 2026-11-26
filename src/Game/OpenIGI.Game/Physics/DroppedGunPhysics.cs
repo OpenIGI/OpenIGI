@@ -479,7 +479,7 @@ public sealed class RetailGunDrop
     /// </remarks>
     public static Matrix3f LyingOrientation(Matrix3f hand)
     {
-        float heading = MathF.Atan2(hand.M21, hand.M11);
+        float heading = SimMathF.Atan2(hand.M21, hand.M11);
         return Matrix3f.FromEngineEulerAngles(0f, MathF.PI / 2f, heading);
     }
 

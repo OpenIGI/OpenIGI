@@ -13,6 +13,8 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public sealed class LevelExpressionRuntime
 {
+    // Compiled expressions by their text: a cache, not play, so a level checkpoint leaves it as it is.
+    [Core.Simulation.NotSimulationState]
     private readonly Dictionary<(string Source, GameTask? Owner), LevelExpression> _cache = [];
     private readonly Context _context;
 

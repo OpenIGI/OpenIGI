@@ -54,7 +54,9 @@ public sealed class Igi2PlacementBindingTests
                 }
 
                 declared[task.Type.Name] = declared.GetValueOrDefault(task.Type.Name) + 1;
-                if (ids.Contains(task.Id))
+
+                // One wearing "none" has no levels of detail (Game_CreateHandler) and places nothing: counted as placed.
+                if (ids.Contains(task.Id) || WearsNoModel(task))
                 {
                     placed[task.Type.Name] = placed.GetValueOrDefault(task.Type.Name) + 1;
                 }
@@ -69,10 +71,12 @@ public sealed class Igi2PlacementBindingTests
         Assert.Equal(8, declared["Lift"]);
         Assert.Equal(713, declared["SplineObjWaypoint"]);
 
-        // A waypoint with an empty Waypoint Model has nothing to place. The rest of the type's tasks
-        // are placed like any other, so the shortfall is exactly those.
-        Assert.Equal(678, placed["SplineObjWaypoint"]);
-        Assert.Equal(35, declared["SplineObjWaypoint"] - placed["SplineObjWaypoint"]);
+        // A waypoint's segment carries its level id, so the id count above cannot tell a waypoint placed from one whose segment
+        // is: they are counted by type. 35 name no Waypoint Model and place nothing; of the 678 that do, the 567 on splines
+        // whose "Display waypoints" is off are out of the world (SplineObjWaypoint_UpdateInternalDataHandler), every one of them
+        // the editor's `ai-arrow`. The 94 naming a real model all sit on splines that display them.
+        int waypoints = Igi2Level.All().Sum(static l => l.Scene.Placements.Count(static p => p.TypeName == "SplineObjWaypoint"));
+        Assert.Equal(678 - 567, waypoints);
 
         foreach ((string type, int count) in declared)
         {
@@ -83,6 +87,20 @@ public sealed class Igi2PlacementBindingTests
 
             Assert.Equal(count, placed.GetValueOrDefault(type));
         }
+    }
+
+    // Whether a task wears the model that stands for none: the one its binding reads, or its alternate when that flag is set.
+    private static bool WearsNoModel(GameTask task)
+    {
+        Igi2PlacementBinding binding = Igi2WorldScene.Bindings.GetValueOrDefault(task.Type.Name, Igi2WorldScene.DefaultBinding);
+        string parameter = binding.AlternateWhen.Length > 0 && Value(task, binding.AlternateWhen) is true
+            ? binding.AlternateModel
+            : binding.Model;
+        return Value(task, parameter) is string model && Igi2WorldScene.IsNoModel(model);
+
+        static object? Value(GameTask task, string name) =>
+            task is IIgi2PlacedTask placed ? (placed.TryGetValue(name, out object? v) ? v : null)
+            : task.TryGetScriptValue(name, out object? raw) ? raw : null;
     }
 
     /// <summary>A door stands closed, at the position and facing its own parameters name.</summary>
@@ -127,6 +145,7 @@ public sealed class Igi2PlacementBindingTests
         string[] slots = ["On model", "On pressed model", "Off model", "Off pressed model", "Destroyed model"];
         int switches = 0;
         int offSlot = 0;
+        int noModel = 0;
 
         foreach (Igi2Level level in Igi2Level.All())
         {
@@ -136,6 +155,24 @@ public sealed class Igi2PlacementBindingTests
                 bool initial = Assert.IsType<bool>(rawInitial);
                 Assert.True(task.TryGetValue(initial ? "On model" : "Off model", out object? rawModel));
                 string expected = Assert.IsType<string>(rawModel);
+
+                // One wearing "none" has no levels of detail (Game_CreateHandler) and places nothing -- but for its destroyed model,
+                // where it has one, which it is placed on and hidden until it wears it (mission 24's fuel pump switch).
+                if (Igi2WorldScene.IsNoModel(expected))
+                {
+                    if (task.DestroyedModel.Length > 0 && !Igi2WorldScene.IsNoModel(task.DestroyedModel))
+                    {
+                        Igi2Placement hidden = level.Scene.Placements.Single(p => p.LevelId == task.Id);
+                        Assert.Equal((task.DestroyedModel, true), (hidden.Model, hidden.IsHiddenUntilDestroyed));
+                    }
+                    else
+                    {
+                        Assert.DoesNotContain(level.Scene.Placements, p => p.LevelId == task.Id && p.TypeName == "Switch");
+                    }
+
+                    noModel++;
+                    continue;
+                }
 
                 Igi2Placement placement = level.Scene.Placements.Single(p => p.LevelId == task.Id);
                 Assert.Equal(expected, placement.Model);
@@ -158,7 +195,8 @@ public sealed class Igi2PlacementBindingTests
             }
         }
 
-        Assert.Equal(155, switches);
+        Assert.Equal(155, switches + noModel);
+        Assert.Equal(11, noModel);
         Assert.True(offSlot > 0, "No switch in the corpus reaches the off slot, so its letter is untested.");
     }
 

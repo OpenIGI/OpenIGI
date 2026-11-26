@@ -14,12 +14,14 @@ namespace OpenIGI.Host.Titles;
 /// <param name="WorldBuilder">The title's scene walk.</param>
 /// <param name="Missions">Makes the title's mission catalogue.</param>
 /// <param name="Gameplay">The title's own player, when it brings one; the host's I.G.I. rig otherwise.</param>
+/// <param name="GameplayFiles">Which of its files a session makes the host's on every player's machine; none when omitted.</param>
 public sealed record TitlePackage(
     IGameTitleRuntime Runtime,
     ITitlePresentationProvider Presentation,
     ITitleWorldBuilder WorldBuilder,
     Func<IOpenIgiLogger?, IMissionCatalogue<MissionDescriptor>> Missions,
-    ITitleGameplay? Gameplay = null)
+    ITitleGameplay? Gameplay = null,
+    Game.Multiplayer.GameplayFileLayout? GameplayFiles = null)
 {
     /// <summary>Gets the title.</summary>
     public GameTitle Title => Runtime.Title;
@@ -28,7 +30,7 @@ public sealed record TitlePackage(
     /// <param name="dataRoot">The installation's data root.</param>
     /// <returns>The binding.</returns>
     public TitleBinding Bind(string dataRoot) =>
-        new(Runtime, Presentation, WorldBuilder, log => Missions(log), dataRoot, Gameplay);
+        new(Runtime, Presentation, WorldBuilder, log => Missions(log), dataRoot, Gameplay, GameplayFiles);
 }
 
 /// <summary>The titles this build can play, in the order they are offered; a mod adds a title or replaces one here.</summary>

@@ -179,6 +179,94 @@ public sealed class RetailIgi2SwitchTests
         Assert.Null(away.Human.EvaluateTarget);
     }
 
+    /// <summary>
+    /// A switch its container has taken out of the world is not found: <c>Human_UpdateActivate</c> searches the world's stationary
+    /// tree, which a container's remove handler takes its children off. The last mission keeps two rocket ignition buttons at one
+    /// spot -- <c>Switch_3593</c> under "Launch Button - Game" and <c>Switch_1405</c>, always active, under "Launch Button - CutScene"
+    /// -- and the outro's answered the player's press, so the launch never went.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_switch_out_of_the_world_is_not_found()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true, location: "location3", levelName: "LEVEL6");
+        m.Tree.OfType<Game.Flow.EditVariableTask>().Single(static t => t.Id == 2112).Value = 1;
+        for (int tick = 0; tick < 30; tick++)
+        {
+            m.Step();
+        }
+
+        Igi2SwitchTask game = m.Switch(3593), outro = m.Switch(1405);
+        Assert.Equal(game.Position, outro.Position);
+        Assert.False(OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(outro));
+
+        float[] f = EngineEuler.Rotation(game.Orientation.X, game.Orientation.Y, game.Orientation.Z);
+        Vector3d ahead = new(f[1], f[4], f[7]);
+        Igi2TitlePlayer player = RetailIgi2Mission1.Stand(m.Collision!, m.Level, game, game.Position + (ahead * 1200.0), MathF.Atan2((float)ahead.X, (float)-ahead.Y));
+        player.Activatables.Add(outro);
+
+        IIgi2Activatable[] found = [.. player.Human.Surroundings.FindActivatables(game.Position, 2048f)];
+        Assert.Contains(game, found);
+        Assert.DoesNotContain(outro, found);
+    }
+
+    /// <summary>
+    /// The last mission's launch, step by step as its script chains it: with the first three objectives done the outer code pad
+    /// opens the bunker; the inner one seals it, and only once both doors have shut (6.7 s for the slower) does the shutter switch
+    /// wake; the shutter open, the launch computer; then the two ignition buttons in turn, the second under the game's own
+    /// container; and the third press starts the outro.
+    /// </summary>
+    /// <remarks>
+    /// A player reported the shutter switch and the ignition buttons dead; their objective marker still stood on the inner pad.
+    /// The chain is the script's own: no switch answers before the step ahead of it is done.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_last_missions_launch_goes_step_by_step()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true, location: "location3", levelName: "LEVEL6");
+        Game.Flow.EditVariableTask Var(int id) => m.Tree.OfType<Game.Flow.EditVariableTask>().Single(t => t.Id == id);
+        Igi2GenericTbaTask Pad(int id) => m.Tree.OfType<Igi2GenericTbaTask>().Single(t => t.Id == id);
+        void Run(int ticks)
+        {
+            for (int tick = 0; tick < ticks; tick++)
+            {
+                m.Step();
+            }
+        }
+
+        Igi2SwitchTask shutter = m.Switch(1407), computer = m.Switch(2541), ignition = m.Switch(3444), launch = m.Switch(3593);
+        Var(2112).Value = 1;
+        Var(3897).Value = 1;
+        Run(30);
+        Assert.Equal((true, true), (Pad(3924).IsActive, m.Door(2708).IsClosed));
+
+        Pad(3924).Finish();
+        Run(250);
+        Assert.Equal((true, true, false), (m.Door(2708).IsOpen, m.Door(2709).IsOpen, shutter.IsActive));
+
+        Pad(4062).Finish();
+        Run(150);
+        Assert.False(shutter.IsActive);
+        Run(100);
+        Assert.Equal((true, true, true), (m.Door(2708).IsClosed, m.Door(2709).IsClosed, shutter.IsActive));
+
+        shutter.Press(0);
+        Run(250);
+        Assert.Equal((true, true), (m.Door(1708).IsOpen, computer.IsActive));
+
+        computer.Press(0);
+        Run(10);
+        Assert.Equal((1, true), (Var(3995).Value, ignition.IsActive));
+
+        ignition.Press(0);
+        Run(10);
+        Assert.Equal((2, true, true), (Var(3995).Value, launch.IsActive, OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(launch)));
+
+        launch.Press(0);
+        Run(10);
+        Assert.Equal(3, Var(3995).Value);
+        Assert.True(OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(m.Tree.Single(static t => t.Id == 3914)));
+    }
+
     private static TitlePlayerInput Idle => RetailIgi2Mission1.Idle;
 
     private static Igi2TitlePlayer Stand(Igi2Level level, Igi2SwitchTask button, Vector3d at, float gamma) =>

@@ -132,6 +132,11 @@ public sealed class DockSpace : EditorElement
     /// <returns><see langword="true"/> when it is.</returns>
     public bool IsOpen(string id) => GroupOf(id) is not null;
 
+    /// <summary>Gets whether a panel is docked with its tab in front, so it can be seen.</summary>
+    /// <param name="id">The panel id.</param>
+    /// <returns><see langword="true"/> when it is.</returns>
+    public bool IsInFront(string id) => GroupOf(id) is { } group && group.Active >= 0 && group.Active < group.Panels.Count && group.Panels[group.Active].Id == id;
+
     /// <summary>Shows a panel: brings its tab forward, or docks it into the largest group when it is closed.</summary>
     /// <param name="id">The panel id.</param>
     /// <param name="beside">A panel whose tab group a closed panel opens in, when that one is open; otherwise the largest group.</param>

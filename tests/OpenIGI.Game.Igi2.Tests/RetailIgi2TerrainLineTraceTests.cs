@@ -117,7 +117,7 @@ public sealed class RetailIgi2TerrainLineTraceTests
     private static void AssertOnGround(Igi2TerrainSurface surface, WorldIntersection hit)
     {
         Vector3d origin = surface.Origin;
-        Assert.True(Igi2TerrainVertex.TrySample(surface.Tiles, ((Fpu)hit.Position.X - origin.X).F, ((Fpu)hit.Position.Y - origin.Y).F, out Igi2TerrainSample sample));
+        Assert.True(Igi2TerrainVertex.TrySample(surface.TileSpan, ((Fpu)hit.Position.X - origin.X).F, ((Fpu)hit.Position.Y - origin.Y).F, out Igi2TerrainSample sample));
         Igi2TerrainTile tile = surface.Tiles[sample.Tile];
         int x = Math.Clamp((int)Math.Floor(tile.ColumnAt(hit.Position.X)), 0, tile.Width - 2);
         int y = Math.Clamp((int)Math.Floor(tile.RowAt(hit.Position.Y)), 0, tile.Height - 2);
@@ -149,7 +149,7 @@ public sealed class RetailIgi2TerrainLineTraceTests
                 Vector3d corner = tile.PositionOf(x, y);
                 double atX = corner.X + (0.37 * tile.TexelWidth), atY = corner.Y + (0.21 * tile.TexelHeight);
                 if (!surface.IsDiscarded(atX, atY)
-                    && Igi2TerrainVertex.TrySample(surface.Tiles, ((Fpu)atX - surface.Origin.X).F, ((Fpu)atY - surface.Origin.Y).F, out Igi2TerrainSample sample))
+                    && Igi2TerrainVertex.TrySample(surface.TileSpan, ((Fpu)atX - surface.Origin.X).F, ((Fpu)atY - surface.Origin.Y).F, out Igi2TerrainSample sample))
                 {
                     yield return new Vector3d(atX, atY, sample.RelativeZ + surface.Origin.Z);
                 }

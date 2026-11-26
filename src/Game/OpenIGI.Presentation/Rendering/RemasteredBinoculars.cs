@@ -1,10 +1,8 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Player;
-using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
-using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
@@ -58,25 +56,15 @@ public sealed class RemasteredBinoculars
     /// <returns>Whether they loaded.</returns>
     public bool Load()
     {
-        if (!UiFontLibrary.TypographyAvailable)
+        if (OpticsFaces.Load(_device, _logger, "the remastered binoculars") is not { } faces)
         {
-            _logger.Warning("Hud", $"No interface font at {UiFontLibrary.FontsDirectory}; the remastered binoculars cannot draw.");
             return false;
         }
 
-        try
-        {
-            IgiTypography typography = UiFontLibrary.Typography(_device);
-            _theme = typography.CreateTheme();
-            _body = typography.Body;
-            _display = typography.Display;
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or InvalidDataException)
-        {
-            _logger.Warning("Hud", $"Could not load the remastered binoculars' faces: {ex.Message}");
-            return false;
-        }
+        _theme = faces.Theme;
+        _body = faces.Body;
+        _display = faces.Display;
+        return true;
     }
 
     /// <summary>Draws the interface into an open batch.</summary>
@@ -95,13 +83,8 @@ public sealed class RemasteredBinoculars
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         var painter = UiPainter.Create(batch, context);
 
-        // No full-screen wash and no opaque frame: the lens post-process owns the glass, so the interface stays crisp
-        // chrome over it. Thin rails and corner ticks read as an optics frame without tinting the picture a second time.
-        float inset = context.Px(30f);
-        UiRect frame = new(inset, inset, context.SafeRect.Width - (inset * 2f), context.SafeRect.Height - (inset * 2f));
-        painter.FillRect(new UiRect(frame.X, frame.Y, frame.Width, context.Px(2f)), Signal.WithAlpha(190));
-        painter.FillRect(new UiRect(frame.X, frame.Bottom - context.Px(2f), frame.Width, context.Px(2f)), Signal.WithAlpha(120));
-        DrawCornerTicks(painter, context, frame, Signal.WithAlpha(170));
+        // The lens post-process owns the glass; thin rails and corner ticks read as an optics frame over it.
+        UiRect frame = OpticsChrome.DrawFrame(painter, context, Signal);
 
         if (_theme is { } theme)
         {
@@ -110,7 +93,7 @@ public sealed class RemasteredBinoculars
 
         float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
         float centreY = context.SafeRect.Y + (context.SafeRect.Height * 0.5f);
-        DrawReticle(painter, context, centreX, centreY);
+        OpticsChrome.DrawReticle(painter, context, centreX, centreY, Signal.WithAlpha(210), Accent);
 
         foreach (EnemyOverlayBox target in view.Contacts)
         {
@@ -204,37 +187,6 @@ public sealed class RemasteredBinoculars
             painter.DrawText(body, text, new UiVec2(centreX - (width * 0.5f) + 1f, topY + 1f), size, backing);
             painter.DrawText(body, text, new UiVec2(centreX - (width * 0.5f), topY), size, white);
         }
-    }
-
-    /// <summary>Draws the gapped rangefinder reticle: crosshair arms, a framing ring and a centre dot.</summary>
-    private static void DrawReticle(UiPainter painter, LayoutContext context, float centreX, float centreY)
-    {
-        Bgra32 mint = Signal.WithAlpha(210);
-        float arm = context.Px(24f);
-        float gap = context.Px(10f);
-        float weight = MathF.Max(1f, context.Px(1.5f));
-        painter.FillRect(new UiRect(centreX - gap - arm, centreY - (weight * 0.5f), arm, weight), mint);
-        painter.FillRect(new UiRect(centreX + gap, centreY - (weight * 0.5f), arm, weight), mint);
-        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY - gap - arm, weight, arm), mint);
-        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY + gap, weight, arm), mint);
-        UiVectors.StrokeRing(
-            painter, new UiVec2(centreX, centreY), context.Px(3.4f), MathF.Max(1f, context.Px(1.2f)), mint.WithAlpha(150));
-        UiVectors.FillDisc(painter, new UiVec2(centreX, centreY), MathF.Max(1f, context.Px(1.6f)), Accent);
-    }
-
-    /// <summary>Draws short L-brackets at the corners of the optics frame.</summary>
-    private static void DrawCornerTicks(UiPainter painter, LayoutContext context, UiRect frame, Bgra32 colour)
-    {
-        float length = context.Px(28f);
-        float weight = MathF.Max(1f, context.Px(2f));
-        painter.FillRect(new UiRect(frame.X, frame.Y, length, weight), colour);
-        painter.FillRect(new UiRect(frame.X, frame.Y, weight, length), colour);
-        painter.FillRect(new UiRect(frame.Right - length, frame.Y, length, weight), colour);
-        painter.FillRect(new UiRect(frame.Right - weight, frame.Y, weight, length), colour);
-        painter.FillRect(new UiRect(frame.X, frame.Bottom - weight, length, weight), colour);
-        painter.FillRect(new UiRect(frame.X, frame.Bottom - length, weight, length), colour);
-        painter.FillRect(new UiRect(frame.Right - length, frame.Bottom - weight, length, weight), colour);
-        painter.FillRect(new UiRect(frame.Right - weight, frame.Bottom - length, weight, length), colour);
     }
 
     private static Bgra32 Text => UiPalette.Text;

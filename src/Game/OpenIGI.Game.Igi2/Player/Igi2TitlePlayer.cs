@@ -14,7 +14,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>The ported player as the host steps it.</summary>
-public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels, IWeaponWheelPlayer, IShotTallySource
+public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels, IWeaponWheelPlayer, IShotTallySource, OpenIGI.Game.Replays.IGhostSource
 {
     /// <summary>Gets or sets the title profile whose HUD preferences are currently active.</summary>
     public Config.Igi2GameConfig? GameConfig { get; set; }
@@ -42,9 +42,26 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         (PlayerAction.ZoomOut, Igi2PlayerAction.ZoomOut),
         (PlayerAction.NextWeapon, Igi2PlayerAction.NextWeapon),
         (PlayerAction.PreviousWeapon, Igi2PlayerAction.PrevWeapon),
+
+        // The drop key is the original's in a single-player game too (HumanPlayer_RunActionIdle drops a weapon its type marks
+        // isDropWeaponInSinglePlayer); its config files it with the combat keys, not the multiplayer ones.
+        (PlayerAction.DropWeapon, Igi2PlayerAction.DropWeapon),
         (PlayerAction.ToggleWalkRun, Igi2PlayerAction.ToggleWalkRun),
         (PlayerAction.Binoculars, Igi2PlayerAction.Binoculars),
         (PlayerAction.MapComputer, Igi2PlayerAction.ComputerMap),
+        (PlayerAction.ComputerObjectives, Igi2PlayerAction.ComputerObjectives),
+        (PlayerAction.ComputerLog, Igi2PlayerAction.ComputerLog),
+
+        // The number keys, as the original's config.qvm binds them: 1 is its third category and 3 its first, 4 to 7 their
+        // own, 9 the ninth; it binds nothing to 8.
+        (PlayerAction.WeaponCategory1, Igi2PlayerAction.WeaponCategory3),
+        (PlayerAction.WeaponCategory2, Igi2PlayerAction.WeaponCategory2),
+        (PlayerAction.WeaponCategory3, Igi2PlayerAction.WeaponCategory1),
+        (PlayerAction.WeaponCategory4, Igi2PlayerAction.WeaponCategory4),
+        (PlayerAction.WeaponCategory5, Igi2PlayerAction.WeaponCategory5),
+        (PlayerAction.WeaponCategory6, Igi2PlayerAction.WeaponCategory6),
+        (PlayerAction.WeaponCategory7, Igi2PlayerAction.WeaponCategory7),
+        (PlayerAction.WeaponCategory9, Igi2PlayerAction.WeaponCategory9),
     ];
 
     private readonly Igi2PlayerInputReader _reader = new();
@@ -81,30 +98,35 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public OpenIGI.Game.World.Particles.Particle2DModule? Particles => Human.Surroundings.Particles?.Module;
 
-    private TitleGroundDecal[] _decals = [];
-    private long _decalsTick = -1;
+    private TitleSurfaceMark[] _surfaceMarks = [];
+    private long _surfaceMarksTick = -1;
+    private readonly Igi2LaserDot _laserDot = new();
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>), the player's and the soldiers': coloured by the
-    /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>).
+    /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>) -- in I.G.I. 2 a dead body's pool of blood --
+    /// the player's, the soldiers' and the other players' in a co-op session (whose pools showed on no screen): coloured by the
+    /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>). Then the
+    /// player's weapon's laser dot where it points, when the weapon shows one (<see cref="Igi2LaserDot"/>).
     /// </remarks>
-    public IReadOnlyList<TitleGroundDecal> GroundDecals
+    public IReadOnlyList<TitleSurfaceMark> SurfaceMarks
     {
         get
         {
-            if (_decalsTick != _ticks)
+            if (_surfaceMarksTick != _ticks)
             {
                 IEnumerable<Humans.Igi2Human> bodies = Soldiers?.Bodies ?? [];
-                _decals = [.. bodies.Prepend(Human).Select(static h => Decal(h.Shadow)).OfType<TitleGroundDecal>()];
-                _decalsTick = _ticks;
+                IEnumerable<Humans.Igi2Human> others = _networkHumans.Select(static n => (Humans.Igi2Human)n.Human);
+                IEnumerable<TitleSurfaceMark?> marks = bodies.Prepend(Human).Concat(others).Select(static h => ShadowMark(h.Shadow));
+                _surfaceMarks = [.. marks.Append(Weapons is { } weapons ? _laserDot.Place(weapons.Firing) : null).OfType<TitleSurfaceMark>()];
+                _surfaceMarksTick = _ticks;
             }
 
-            return _decals;
+            return _surfaceMarks;
         }
     }
 
-    private static TitleGroundDecal? Decal(OpenIGI.Game.World.HumanShadow shadow)
+    private static TitleSurfaceMark? ShadowMark(OpenIGI.Game.World.HumanShadow shadow)
     {
         if (!shadow.IsEnabled || !shadow.IsPositionValid || shadow.Size <= 0f)
         {
@@ -113,7 +135,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         float shade = (shadow.Light ?? 0.9f) * shadow.Strength;
         byte channel = (byte)Math.Clamp((int)(shade * 255f), 0, 255);
-        return new TitleGroundDecal(
+        return new TitleSurfaceMark(
             "LOCAL:common/textures/" + shadow.Texture,
             shadow.Position,
             shadow.Normal,
@@ -187,6 +209,18 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets the collision world the player moves through.</summary>
     public Igi2CollisionWorld CollisionWorld => _surroundings.World;
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The world as the player's eye looks across it: the player's own body is no wall. A line from the eye starts inside the
+    /// head's bones, so the world itself would answer with the player, as the crosshair's trace also passes him (<see cref="EnemyUnderAim"/>).
+    /// </remarks>
+    ICollisionWorld? ITitlePlayer.Collision => EyeWorld;
+
+    private Igi2EyeCollision? _eyeWorld;
+
+    // The level's collision as the player's own eye looks across it.
+    private Igi2EyeCollision EyeWorld => _eyeWorld ??= new Igi2EyeCollision(this);
+
     /// <summary>Gets the level's conveyor belts the player may stand on, by level id.</summary>
     public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors => _surroundings.Conveyors;
 
@@ -236,10 +270,14 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public bool IsCutscenePlaying => Level?.IsCutsceneRunning ?? false;
 
     /// <inheritdoc/>
+    /// <remarks>The cutscene's camera changed this tick (<c>CutScene_InterpolateCamera</c>'s just-changed flag), which starts its filters afresh too.</remarks>
+    public bool IsViewCut => Level?.CutsceneView?.IsCameraJustChanged == true;
+
+    /// <inheritdoc/>
     public bool IsMenuEnabled => Flow?.IsMenuEnabled ?? true;
 
     /// <inheritdoc/>
-    public Vector3d Position => StandInPlayer?.Position ?? Human.Position;
+    public Vector3d Position => ActingStandIn?.Position ?? Human.Position;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -249,8 +287,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.Position
-        : StandInPlayer is { } standIn ? standIn.EyePosition
-        : (Human.CameraMode is 3 or 5 ? _movementCamera.Position
+        : ActingStandIn is { } standIn ? standIn.EyePosition
+        : (IsOrbitView ? _orbit.Camera.Position * HumanOrbitCamera.UnitsPerMetre
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position) + ViewError.Offset(0f);
 
     /// <inheritdoc/>
@@ -277,13 +315,17 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 return OpenIGI.Game.Igi2.Computer.Igi2ComputerMap.Orientation;
             }
 
-            if (StandInPlayer is { } standIn)
+            if (ActingStandIn is { } standIn)
             {
                 return standIn.ViewOrientation;
             }
 
-            Matrix3f m = Human.CameraMode is 3 or 5 ? _movementCamera.Orientation
-                : Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
+            if (IsOrbitView)
+            {
+                return _orbit.Camera.Orientation;
+            }
+
+            Matrix3f m = Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
                 new Vector3f(m.M13, m.M23, m.M33),
@@ -295,8 +337,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
     public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.FieldOfView
-        : StandInPlayer is { } standIn ? standIn.FieldOfViewScale
-        : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
+        : ActingStandIn is { } standIn ? standIn.FieldOfViewScale
+        : IsOrbitView ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -307,9 +349,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     {
         get
         {
-            if (StandInPlayer is not null)
+            if (ActingStandIn is { } acting)
             {
-                return Level?.CutsceneView is null && !IsComputerShown ? (StandInPlayer as ITitleFirstPerson)?.FirstPerson : null;
+                return Level?.CutsceneView is null && !IsComputerShown ? (acting as ITitleFirstPerson)?.FirstPerson : null;
             }
 
             if (Level?.CutsceneView is not null || Human.CameraMode != 1 || Human.IsThirdPerson || IsComputerShown)
@@ -345,9 +387,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             return;
         }
 
-        if (Human.CameraMode is 3 or 5 && Human.Model is { } body)
+        if (IsBodyShown && Human.Model is { } body)
         {
-            EjectFrom(casings, ejection, Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, held, _ticks), held, Human.TotalSpeed);
+            EjectFrom(casings, ejection, Igi2BodyFrame.Build(Human, Human.PresentedPose(), body.Name, held, _ticks), held, Human.TotalSpeed);
             return;
         }
 
@@ -447,6 +489,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the overlay the scripts have put on the game screen, which the HUD draws.</summary>
     public Igi2ScreenOverlay? ScreenOverlay { get; set; }
 
+    /// <summary>Gets or sets the level's countdowns, which the HUD draws while each is shown (<see cref="Igi2MissionTimerTask.IsShown"/>).</summary>
+    public IReadOnlyList<Igi2MissionTimerTask> MissionTimers { get; set; } = [];
+
     /// <summary>Gets or sets the level's figures (<see cref="World.Igi2EditBoneObjTask"/>), drawn with the soldiers.</summary>
     public IReadOnlyList<World.Igi2EditBoneObjTask> Figures { get; set; } = [];
 
@@ -497,33 +542,58 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     private TitleWorldModel[] Gather(Func<Soldiers.Igi2HumanSoldier, bool>? isDrawn)
     {
-        IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
-            ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
-            : [];
-        IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
-            ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
-                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
-                    .Where(static g => g.Parameters.Model.Length != 0)
-                    .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
-                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
-                    .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
-            : [];
-        IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
+        // Everything but the soldiers is the tick's and is gathered once a tick; only the soldiers the sector cull lets through
+        // change between two ticks, and the cull decides a new frame for every frame drawn.
+        if (_gatheredTick != _ticks)
+        {
+            GatherTick();
+            _gatheredTick = _ticks;
+        }
+
+        IReadOnlyList<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
+        TitleWorldModel[] all = new TitleWorldModel[_gatheredBefore.Length + soldiers.Count + _gatheredAfter.Length];
+        _gatheredBefore.CopyTo(all, 0);
+        for (int i = 0; i < soldiers.Count; i++)
+        {
+            all[_gatheredBefore.Length + i] = soldiers[i];
+        }
+
+        _gatheredAfter.CopyTo(all, _gatheredBefore.Length + soldiers.Count);
+        return all;
+    }
+
+    private long _gatheredTick = long.MinValue;
+    private TitleWorldModel[] _gatheredBefore = [];
+    private TitleWorldModel[] _gatheredAfter = [];
+
+    // The tick's models either side of the soldiers, in the order Gather hands them out.
+    private void GatherTick()
+    {
+        long tick = _ticks;
+        IEnumerable<TitleWorldModel> pickups = Igi2LevelModels.Lying(Human.Pickups, tick);
+        IEnumerable<TitleWorldModel> flying = Igi2LevelModels.InFlight(Grenades, tick);
         IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
-        IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
-        IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+        // A container that holds them out of the world holds their models out too, as it does the placements'.
+        IEnumerable<TitleWorldModel> barrels = StationaryGuns
+            .Where(static g => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(g))
+            .Select(g => g.Barrel(tick)).OfType<TitleWorldModel>();
+        IEnumerable<TitleWorldModel> wrecks = Cars
+            .Where(static c => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(c))
+            .Select(c => c.Wreck(tick)).OfType<TitleWorldModel>();
         IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
-            ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
+            ? mineWorld.Laid.Select(m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame]), Instance: m, Tick: tick))
             : [];
         // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
-        // interaction mode draws the working body rather than the first-person weapon.
-        IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
-            ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
-        IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
+        // interaction mode draws the working body rather than the first-person weapon, as the remaster's view over the
+        // shoulder does.
+        IReadOnlyList<TitleWorldModel> working = IsBodyShown && Human.Model is { } body
+            ? Igi2BodyFrame.Build(Human, Human.PresentedPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
+        IEnumerable<TitleWorldModel> casings = Casings?.Models(tick) ?? [];
 
         // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
         IEnumerable<TitleWorldModel> pieces = Explosions is { } explosions ? ExplosionPieceModels.Of(explosions, _ticks) : [];
-        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces, .. NetworkModels()];
+        _gatheredBefore = [.. pickups, .. flying];
+        _gatheredAfter = [.. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces, .. NetworkModels()];
     }
 
     /// <summary>Makes the player at its spawn, as <c>HumanPlayer_CreateHandler</c> does, over a collision world.</summary>
@@ -587,16 +657,30 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
     {
+        // The weapon wheel's pick since the last tick, taken as the tick begins as a number key's would be.
+        if (input.WheelPick is { } pick)
+        {
+            ChooseFromWheel(pick.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        TakeTickAim(input);
         ViewError.Tick();
+        TakeCheats();
         Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);
         Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
+        _pressedThisTick = pressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
         Human.SteadyTurns = GameplayCVars.SteadyTurns.Value;
+        Human.Loadout = GameplayCVars.Igi2Loadout.Value;
+        Human.GrenadeCook = GameplayCVars.GrenadeCook.Value;
+        TakeMovementChoice(Igi2MovementChoice.Current);
         // Retail keeps the profile's flag the other way round from its menu (config.c: isInvertMouse is 1 by default, and the menu's
         // get and set negate it); the host's says what the player chose.
         _reader.InvertMouse = !input.InvertMouse;
         Human.InvertMouse = !input.InvertMouse;
-        Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;
+        // Project I.G.I.'s movement looks as that game does, one mouse count one step whatever the frame pacing: Smooth Motion's
+        // unfiltered look, without the tick averaging, the fine-aim curve and the clamp.
+        Human.UnfilteredMouse = (input.UnfilteredMouse || Human.Movement == Igi2PlayerMovement.Igi1) && CanPreviewLook;
         _lookInput = input;
         _rawKeys = input.Raw;
         _reader.Read(new Igi2PlayerInputState(
@@ -604,7 +688,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         TakeWheelPick();
         if (Level is { } level)
         {
-            Flow?.IsBreakKeyDown = input.BreakCutscene;
+            Flow?.IsBreakKeyDown = FollowedBreakKey ?? input.BreakCutscene;
             level.Tick();
 
             // The glass container is the level's last child, made as the first pane was: its panes' glass tick follows the level's.
@@ -621,7 +705,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             StatusMessages.Run();
         }
 
-        _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);
+        RunOrbit(input);
         ResetLook();
         Casings?.Run();
         ReadBinoculars();
@@ -641,7 +725,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// </summary>
     internal void RunPlayer()
     {
-        if (StoodFor is not null)
+        if (StoodFor is not null && !CarryStandInOnGun())
         {
             if (StandInPlayer is { } standIn)
             {
@@ -651,6 +735,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 if (StandIn is not { IsDead: true })
                 {
                     Human.OfferGenericPickups(standIn.EyePosition);
+                    DesignateForStandIn(standIn);
+                    ToggleThermalForStandIn();
                 }
             }
 
@@ -673,21 +759,57 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
     }
 
-    /// <summary>The player's delayed half: its pickups, zoom, update and delayed handler (<c>HumanPlayer_RunDelayedHandler</c>, <c>igi2 0x4B8A50</c>).</summary>
+    /// <summary>The player's delayed half: its pickups, update, zoom and delayed handler (<c>HumanPlayer_RunDelayedHandler</c>, <c>igi2 0x4B8A50</c>).</summary>
     private void RunPlayerDelayed()
     {
         Human.Pickups?.Run();
-        Human.View.RunZoom();
         if (Human.UnfilteredMouse) { WriteSmoothLook(); }
         Human.Ticks = (int)_ticks;
+        TakeOverShoulderAim();
+
+        // A co-op client's player draws from a stream of its own, set from the command's seed before each tick, as the server's
+        // copy of it is set before it runs the command: the same rounds scatter the same way on both.
+        uint seed = 0;
+        if (SeedsCommands)
+        {
+            seed = Multiplayer.Igi2Command.SeedFor(_ticks);
+            Multiplayer.Igi2Command.Reseed(Human.Random, seed);
+        }
+
+        CommandStart = new Multiplayer.Igi2CommandStart(
+            Human.IdealGamma,
+            Human.View.IdealPitch,
+            Human.UnfilteredMouse,
+            Human.SteadyTurns,
+            Human.InvertMouse,
+            Human.Movement,
+            Human.Igi1Weight,
+            seed,
+            Human.Loadout,
+            Human.GrenadeCook,
+            Human.AimConvergence);
         Human.Update(_frame);
+
+        // HumanView_RunHandler: the view is a child of the player run after HumanPlayerInput, whose run handler reads the
+        // channels and updates the player at once, so a zoom fired this tick takes its first step this tick.
+        Human.View.RunZoom();
         Human.RunDelayed();
+
+        // HumanPlayer_RunDelayedHandler: in the world, the inventory key pressed shows or hides the inventory, a profile option.
+        if (Human.IsActive && Human.Channels.WasPressed(Humans.Igi2HumanChannel.Inventory) && GameConfig?.Active is { } profile)
+        {
+            profile.HideInventory = !profile.HideInventory;
+        }
+
         RunNetworkHumans();
 
         // The computer's menu, a task of the game screen, runs after the player, and its screens with it.
         RunComputerSaves();
         Computer?.Run();
         RunComputerDisplay();
+
+        // The original's render of the tick takes the player's pose: here, once, whoever draws it or not.
+        Human.TakeTickPose();
     }
 
     /// <summary>Nine floats row by row as a matrix.</summary>

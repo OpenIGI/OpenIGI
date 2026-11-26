@@ -47,6 +47,9 @@ public sealed class ShaderBindings : IDisposable
 
     // What a group's slots are filled with, gathered for the lookup in GroupFor and reused by every call.
     private readonly List<RhiBindGroupEntry> _filled = [];
+
+    // Each texture name's sampler name, the texture's with SamplerSuffix.
+    private readonly Dictionary<string, string> _samplerNames = new(StringComparer.Ordinal);
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ShaderBindings"/> class.</summary>
@@ -142,7 +145,8 @@ public sealed class ShaderBindings : IDisposable
     public void Bind(string name, IRhiTextureView view)
     {
         ArgumentNullException.ThrowIfNull(view);
-        Set(name, binding => RhiBindGroupEntry.Of(binding, view));
+        (int group, int binding) = SlotToSet(name);
+        Set(group, binding, RhiBindGroupEntry.Of(binding, view));
     }
 
     /// <summary>Binds a texture and the sampler the module reads it through.</summary>
@@ -162,9 +166,16 @@ public sealed class ShaderBindings : IDisposable
 
         Bind(name, view);
 
-        if (Declares(name + SamplerSuffix))
+        // The paired name, made once per texture name rather than on every bind of every draw.
+        if (!_samplerNames.TryGetValue(name, out string? samplerName))
         {
-            Bind(name + SamplerSuffix, sampler);
+            samplerName = name + SamplerSuffix;
+            _samplerNames[name] = samplerName;
+        }
+
+        if (Declares(samplerName))
+        {
+            Bind(samplerName, sampler);
         }
     }
 
@@ -174,7 +185,8 @@ public sealed class ShaderBindings : IDisposable
     public void Bind(string name, IRhiSampler sampler)
     {
         ArgumentNullException.ThrowIfNull(sampler);
-        Set(name, binding => RhiBindGroupEntry.Of(binding, sampler));
+        (int group, int binding) = SlotToSet(name);
+        Set(group, binding, RhiBindGroupEntry.Of(binding, sampler));
     }
 
     /// <summary>Binds a buffer, or a range of one.</summary>
@@ -185,7 +197,8 @@ public sealed class ShaderBindings : IDisposable
     public void Bind(string name, IRhiBuffer buffer, ulong offset = 0, ulong size = 0)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        Set(name, binding => RhiBindGroupEntry.Of(binding, buffer, offset, size));
+        (int group, int binding) = SlotToSet(name);
+        Set(group, binding, RhiBindGroupEntry.Of(binding, buffer, offset, size));
     }
 
     /// <summary>Binds an acceleration structure, for a module that traces rays.</summary>
@@ -194,7 +207,8 @@ public sealed class ShaderBindings : IDisposable
     public void Bind(string name, IRhiAccelerationStructure structure)
     {
         ArgumentNullException.ThrowIfNull(structure);
-        Set(name, binding => RhiBindGroupEntry.Of(binding, structure));
+        (int group, int binding) = SlotToSet(name);
+        Set(group, binding, RhiBindGroupEntry.Of(binding, structure));
     }
 
     /// <summary>Binds a sampler to every slot the module declares that nothing has bound.</summary>
@@ -361,19 +375,22 @@ public sealed class ShaderBindings : IDisposable
         _bound.TryGetValue(binding.Group, out Dictionary<int, RhiBindGroupEntry>? entries)
         && entries.ContainsKey(binding.Binding);
 
-    private void Set(string name, Func<int, RhiBindGroupEntry> entry)
+    // The slot a bind fills, refused once disposed.
+    private (int Group, int Binding) SlotToSet(string name)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        return Slot(name);
+    }
 
-        (int group, int binding) = Slot(name);
-
+    // The entry is built by the caller rather than through a callback: a bind is made for every draw, and a closure
+    // over the resource was an allocation each time.
+    private void Set(int group, int binding, RhiBindGroupEntry built)
+    {
         if (!_bound.TryGetValue(group, out Dictionary<int, RhiBindGroupEntry>? entries))
         {
             entries = [];
             _bound[group] = entries;
         }
-
-        RhiBindGroupEntry built = entry(binding);
 
         if (entries.TryGetValue(binding, out RhiBindGroupEntry existing) && existing == built)
         {

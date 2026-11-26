@@ -43,6 +43,12 @@ public sealed class EditorProject
     /// <summary>The folder under the project root that holds the project's macros, which every mission in it can use.</summary>
     public const string MacrosFolder = "macros";
 
+    /// <summary>The folder for cutscene rigs' settings, which make camera keys again and which the game never reads.</summary>
+    public const string RigsFolder = "rigs";
+
+    /// <summary>The extension of a script's rigs sidecar.</summary>
+    public const string RigsExtension = ".rigs.json";
+
     /// <summary>The extension of a macro file.</summary>
     public const string MacroExtension = ".macro.json";
 
@@ -199,6 +205,29 @@ public sealed class EditorProject
     /// <param name="gamePath">The script's game path.</param>
     /// <param name="bytes">The sidecar's bytes.</param>
     public void WriteGraph(string gamePath, ReadOnlySpan<byte> bytes) => WriteAtomically(GraphPathFor(gamePath), bytes);
+
+    /// <summary>Where the cutscene rigs of a script are kept: beside the project's files, never among them, as graphs are.</summary>
+    /// <param name="gamePath">The script's game path.</param>
+    /// <returns>The sidecar's full path, <c>rigs/&lt;game path&gt;.rigs.json</c> under the project root.</returns>
+    public string RigsPathFor(string gamePath)
+    {
+        string relative = Path.GetRelativePath(FilesDirectory, PathFor(gamePath));
+        return Path.Combine(Root, RigsFolder, Path.ChangeExtension(relative, RigsExtension));
+    }
+
+    /// <summary>Reads a script's cutscene rigs.</summary>
+    /// <param name="gamePath">The script's game path.</param>
+    /// <returns>The sidecar's bytes, or <see langword="null"/> when it has none.</returns>
+    public byte[]? ReadRigs(string gamePath)
+    {
+        string path = RigsPathFor(gamePath);
+        return File.Exists(path) ? File.ReadAllBytes(path) : null;
+    }
+
+    /// <summary>Saves a script's cutscene rigs.</summary>
+    /// <param name="gamePath">The script's game path.</param>
+    /// <param name="bytes">The sidecar's bytes.</param>
+    public void WriteRigs(string gamePath, ReadOnlySpan<byte> bytes) => WriteAtomically(RigsPathFor(gamePath), bytes);
 
     /// <summary>Reads every macro the project keeps.</summary>
     /// <returns>Each macro file's bytes, by the macro's file name without extension.</returns>

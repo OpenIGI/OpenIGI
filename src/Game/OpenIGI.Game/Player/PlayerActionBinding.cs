@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// </remarks>
 [Flags]
-public enum PlayerAction
+public enum PlayerAction : long
 {
     /// <summary>Strafe left.</summary>
     MoveLeft = 0x1,
@@ -56,7 +56,34 @@ public enum PlayerAction
 
     /// <summary>Drop what is in hand for others to pick up: a gun, or a bomb mode's bomb.</summary>
     /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the last free bit, <c>0x80000000</c>. Multiplayer only.</remarks>
-    DropWeapon = int.MinValue,
+    DropWeapon = 0x80000000,
+
+    /// <summary>Fire the weapon's second barrel: the M16's M203 launcher, which modern aim takes off the sight's button.</summary>
+    /// <remarks><b>Not retail</b>: the first of the remaster's bits past the original's thirty-two, read only while modern aim is on.</remarks>
+    Underbarrel = 0x1_0000_0000,
+
+    /// <summary>Lean out to the left with the weapon up, under modern aim.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Underbarrel"/>. The original's own lean is <see cref="Peek"/>.</remarks>
+    LeanLeft = 0x2_0000_0000,
+
+    /// <summary>Lean out to the right with the weapon up, under modern aim.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Underbarrel"/>.</remarks>
+    LeanRight = 0x4_0000_0000,
+
+    /// <summary>Brace the weapon on the ledge, table or edge in front, under modern aim.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Underbarrel"/>. Aiming at a surface braces on its own unless that is turned off.</remarks>
+    Mount = 0x8_0000_0000,
+
+    /// <summary>Open the computer on its objectives, or turn it to them; again, close it.</summary>
+    /// <remarks>
+    /// <b>Not retail</b> in Project I.G.I., whose computer opens only on the map key. I.G.I. 2 binds it itself
+    /// (<c>ComputerObjectives</c>, <c>KEY_O</c> in its <c>config.qvm</c>), and both games take it as that game does.
+    /// </remarks>
+    ComputerObjectives = 0x10_0000_0000,
+
+    /// <summary>Open the computer on its log of messages, or turn it to it; again, close it.</summary>
+    /// <remarks><b>Not retail</b> in Project I.G.I., as <see cref="ComputerObjectives"/>; I.G.I. 2's <c>ComputerLog</c>.</remarks>
+    ComputerLog = 0x20_0000_0000,
 
     /// <summary>Fire the held weapon.</summary>
     Fire = 0x100,

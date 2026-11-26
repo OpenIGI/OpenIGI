@@ -25,9 +25,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerComputer
     /// <param name="objective">The objective.</param>
     /// <returns>The place, or <see langword="null"/> for an objective that links to nothing placed.</returns>
     private Vector3d? ObjectivePlace(OpenIGI.Game.Flow.ComputerObjective objective) =>
-        objective.LinkToPosition != -1
-            ? (_mapWorld ??= new Igi2ComputerMapWorld(this)).Task(objective.LinkToPosition)?.CameraTargetPosition
-            : null;
+        objective.LinksToPlace ? TaskPlace(objective.LinkToPosition) : null;
+
+    // Where a task stands as the computer's map sees it: its camera target.
+    private Vector3d? TaskPlace(int id) => (_mapWorld ??= new Igi2ComputerMapWorld(this)).Task(id)?.CameraTargetPosition;
 
     private readonly List<Vector3d> _computerContacts = [];
     private readonly List<ComputerMapHighlight> _computerPlaces = [];
@@ -145,6 +146,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerComputer
                     {
                         Text = player.Strings?.Get(objective.TextResource) ?? objective.TextResource,
                         Slot = i,
+                        Places = MissionObjective.PlacesOf(objective, place, target => player.TaskPlace(target.Id)),
                     });
                 }
             }

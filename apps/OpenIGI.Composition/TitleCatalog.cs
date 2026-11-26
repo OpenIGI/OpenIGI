@@ -42,13 +42,15 @@ public static class TitleCatalog
             new Igi1Runtime(),
             new Igi1PresentationProvider(),
             new Igi1WorldBuilder(),
-            static log => new MissionRegistry(log)))
+            static log => new MissionRegistry(log),
+            GameplayFiles: OpenIGI.Game.Igi1.Multiplayer.Igi1GameplayFiles.Layout))
         .Register(new TitlePackage(
             new Igi2Runtime(),
             new Igi2PresentationProvider(),
             new Igi2WorldBuilder(),
             static log => new Igi2MissionCatalogue(log),
-            new Igi2Gameplay()));
+            new Igi2Gameplay(),
+            OpenIGI.Game.Igi2.Multiplayer.Igi2GameplayFiles.Layout));
 
     /// <summary>Gets the catalogue the host resolves titles through.</summary>
     /// <remarks>

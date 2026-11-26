@@ -61,6 +61,10 @@ internal sealed class EditorPlacementVisibility : IPlacementVisibility
         Inner?.BeginView(eye, tangentHalfFovX, tangentHalfFovY);
 
     /// <inheritdoc/>
+    public void BeginView(in Camera3D eye, float tangentHalfFovX, float tangentHalfFovY, Func<WorldPlacement, int>? levelOf) =>
+        Inner?.BeginView(eye, tangentHalfFovX, tangentHalfFovY, levelOf);
+
+    /// <inheritdoc/>
     public bool IsVisible(WorldPlacement placement) => Shown(placement) && (Inner?.IsVisible(placement) ?? true);
 
     /// <inheritdoc/>

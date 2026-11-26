@@ -171,7 +171,7 @@ public sealed class Igi2Pose
         Fpu lengths = Fpu.Sqrt((((Fpu)a.X * a.X) + ((Fpu)a.Y * a.Y)) + ((Fpu)a.Z * a.Z))
             * Fpu.Sqrt((((Fpu)b.X * b.X) + ((Fpu)b.Y * b.Y)) + ((Fpu)b.Z * b.Z));
         double cosine = (dot / lengths).Value;
-        return cosine >= 1.0 ? 0f : cosine > -1.0 ? (float)Math.Acos(cosine) : 3.1415927f;
+        return cosine >= 1.0 ? 0f : cosine > -1.0 ? (float)SimMath.Acos(cosine) : 3.1415927f;
     }
 
     /// <summary>

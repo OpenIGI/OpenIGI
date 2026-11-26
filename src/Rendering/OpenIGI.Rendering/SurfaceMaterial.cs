@@ -128,6 +128,18 @@ public readonly record struct SurfaceMaterial(
     /// </remarks>
     public bool AuthoredDetail { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether a <see cref="Glass"/> pane's texture is dirt on the glass rather than a painted reflection:
+    /// its colour is laid over what the pane lets through, by its alpha, lit as the original lights a translucent face group --
+    /// by its lightmap, or the model's ambient light without one.
+    /// </summary>
+    /// <remarks>
+    /// Project I.G.I.'s panes paint grey-white streaks as a stand-in for a reflection, which the reflection pass now supplies,
+    /// so their colour is left out. I.G.I. 2's smudged windows carry real dirt, and drawn the same way they came out crystal
+    /// clear. A property rather than a constructor parameter, for the reason <see cref="AuthoredDetail"/> is.
+    /// </remarks>
+    public bool GlassStains { get; init; }
+
     /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
     /// <remarks>
     /// <para>

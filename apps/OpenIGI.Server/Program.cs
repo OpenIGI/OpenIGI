@@ -20,6 +20,7 @@ using OpenIGI.Host.Dedicated;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Net;
+using OpenIGI.Net.Identity;
 using OpenIGI.Net.Rooms;
 using OpenIGI.Net.Udp;
 using OpenIGI.Net.WebRtc;
@@ -33,6 +34,24 @@ using OpenIGI.Server;
 // and its operator types commands at its terminal.
 
 const string LogCategory = "Server";
+
+// The checker's official game files: every mission's fingerprint in every edition installed here (FingerprintMode).
+if (FingerprintMode.Asked(args))
+{
+    return FingerprintMode.Run(args);
+}
+
+// A replay checker, not a server: one run played again and its verdict written (VerifyMode).
+if (VerifyMode.Asked(args))
+{
+    return VerifyMode.Run(args);
+}
+
+// The boards' checker: the master's runs taken one at a time, each checked as -verify checks one (VerifyWorker).
+if (VerifyWorker.Asked(args))
+{
+    return await VerifyWorker.RunAsync(args);
+}
 
 using LogRouter logger = new();
 logger.AddSink(new ConsoleSink(minimumLevel: LogLevel.Information));
@@ -134,7 +153,8 @@ if (config.Room && DataChannelPeerFactory.IsAvailable())
         version,
         config.MaxPlayers,
         config.Public,
-        config.Password.Length > 0);
+        config.Password.Length > 0,
+        Net: MultiplayerProtocol.Version);
     // A server outlives any one room: when the master restarts, or is out of reach for longer than a room waits, it opens
     // another, so browsers can still join it weeks on.
     room = RoomTransport.Host(config.Master, request, new DataChannelPeerFactory(logger), logger, reopens: true);
@@ -161,7 +181,12 @@ if (bans.Load() is { } banProblem)
     logger.Warning(LogCategory, banProblem);
 }
 
-MasterHeartbeat? heartbeat = config.Public ? new MasterHeartbeat(config.Master, logger) : null;
+// The server's own key, which its match results and its heartbeats are signed with: the master counts its matches, and
+// lists it as official, once this key is registered there.
+using EcdsaPlayerIdentity statsKey = EcdsaPlayerIdentity.LoadOrCreate(config.StatsKeyFile);
+logger.Information(LogCategory, $"Stats key {PlayerIdentities.IdOf(statsKey.PublicKey)}: {Convert.ToBase64String(statsKey.PublicKey)}");
+var serverKey = new PlayerRequestSigner(statsKey);
+MasterHeartbeat? heartbeat = config.Public ? new MasterHeartbeat(config.Master, logger, serverKey) : null;
 using DedicatedServer dedicated = new(
     server,
     config,
@@ -174,8 +199,9 @@ using DedicatedServer dedicated = new(
     () => host.MissionList)
 {
     Arenas = host.HasArena,
+    Reporter = config.Public ? new MatchReporter(server, config.Master, serverKey, logger) : null,
 };
-if (GameModes.IsVersus(mode) && !host.HasArena(mission))
+if (MatchModes.IsVersus(mode) && !host.HasArena(mission))
 {
     logger.Warning(LogCategory, $"Mission {map} has no multiplayer layout, so {mode} plays it from the level's own start; the laid-out maps are {string.Join(", ", host.ArenaMissionList.Select(m => m.Id))}.");
 }

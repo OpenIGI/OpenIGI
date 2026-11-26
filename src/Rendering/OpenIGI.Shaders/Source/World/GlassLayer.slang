@@ -27,7 +27,7 @@ float4 fragmentMain(GlassVaryings input) : SV_Target
     float alpha = uDiffuse.Sample(uDiffuseSampler, input.diffuseUv).a * input.color.a;
 
     // The same cuts the transmission draw makes, so the two agree about what a pane is.
-    if (alpha >= 0.5 || alpha < GlassHoleAlpha)
+    if (alpha >= GlassFrameAlpha || alpha < GlassHoleAlpha)
     {
         discard;
     }

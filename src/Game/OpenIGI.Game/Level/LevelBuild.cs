@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
 
@@ -24,6 +25,9 @@ public abstract class LevelBuild
         Services = services ?? throw new ArgumentNullException(nameof(services));
         LevelServices = new ScopedServiceCatalog(services);
     }
+
+    /// <summary>Gets the log the level's systems report to: the host's, or nothing where none is given.</summary>
+    public IOpenIgiLogger Logger { get; init; } = NullLogger.Instance;
 
     /// <summary>Gets the level's run, which a system binds the tasks it drives to.</summary>
     public LevelRun Run { get; }

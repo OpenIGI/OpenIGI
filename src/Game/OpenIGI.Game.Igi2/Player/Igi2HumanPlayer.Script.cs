@@ -51,16 +51,38 @@ public sealed partial class Igi2HumanPlayer
     }
 
     /// <summary>
-    /// Puts the player back in its default states, <c>HumanPlayer_GoToDefaultState</c> (humanplayer.c): the activation ends, the
-    /// locomotion stands and the hands go idle, each through its state's exit.
+    /// Puts the player back in its default states, <c>HumanPlayer_GoToDefaultState</c> (humanplayer.c): what a timed action locked
+    /// is let go, the activation ends, the locomotion stands and the hands go idle, each through its state's exit.
     /// </summary>
     /// <remarks>
-    /// The original also clears a handful of flags of its view and status screen and drops two tasks the player owns; the ones
-    /// this port keeps elsewhere are reset by the states entered.
+    /// <para>
+    /// The original clears every flag a timed action's init sets (<c>HumanPlayer_InitStateActivateGenericTBA</c>): the action lock,
+    /// the view's and the body's orientation locks, the interaction camera (back to mode 1), the progress bar and the delta-scale
+    /// lock; and it deletes the timed action's and the slide wire's sounds. Then the activation ends (<c>isCheckActivateButton</c>
+    /// set, the target dropped).
+    /// </para>
+    /// <para>
+    /// A script pops the player out of a cutscene this way -- location2/level6 after the capture, location3/level4 as its midtro
+    /// begins -- and both scenes start as the player begins hacking a computer. Ending only the activation left the player
+    /// walking in the hacking camera with its view locked and its action locked, so it could neither look about nor shoot.
+    /// </para>
+    /// <para>
+    /// The script's own activation lock (<c>HumanPlayer_LockActivate</c>, a byte of the player's own) is a different one and stays.
+    /// </para>
     /// </remarks>
     public void GoToDefaultState()
     {
+        IsLockAction = false;
+        View.IsLockOrientation = false;
+        IsLockOrientation = false;
         EndActivate();
+        CameraMode = 1;
+        IsProgressBar = false;
+        IsDisableDeltaTranslationScale = false;
+        _slideSound?.Delete();
+        _slideSound = null;
+        _timedActionSound?.Delete();
+        _timedActionSound = null;
         Go(Igi2PlayerState.Stand);
         GoAction(Igi2PlayerActionState.Idle);
     }

@@ -1,7 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Vocabulary;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -28,6 +30,13 @@ public interface IIgi2AreaOccupant
 
     /// <summary>Gets where a side-kick is counted at, its root as it holds what it drops (<c>bonedyncubeobj.c sub_580CA0</c>).</summary>
     Vector3d SideKickPosition => RootPosition;
+
+    /// <summary>
+    /// Gets a value indicating whether it has been taken out of the level: a player whose client left, or a dedicated server's own
+    /// level player, which nobody plays, once a client's player has joined (before that it stands in for the players to come). No
+    /// area counts it.
+    /// </summary>
+    bool IsGone => false;
 }
 
 /// <summary>
@@ -66,21 +75,29 @@ public static class Igi2AreaCriteria
     /// <returns>Its bit, <c>Human_abAreaActivateCriteriaHuman[team]</c>.</returns>
     public static int Team(int team) => (uint)team < Teams ? FirstTeam << team : 0;
 
+    /// <summary>Gets the criteria in the order they are registered, each with what it counts.</summary>
+    public static IReadOnlyList<AreaCriterion> All { get; } =
+    [
+        new("CRITERIA_VEHICLE", Vehicle, "every vehicle"),
+        new("CRITERIA_CAMERA", Camera, "the camera"),
+        new("CRITERIA_HUMAN", Human, "every active human"),
+        .. Enumerable.Range(0, Teams).Select(static team => new AreaCriterion("CRITERIA_HUMAN" + team, Team(team), AreaCriteriaFamily.TeamNote(team))),
+        new("CRITERIA_HUMANPLAYER", HumanPlayer, "the player alone"),
+        new("CRITERIA_HUMANAI_SIDEKICK", SideKick, "the side-kicks"),
+    ];
+
+    /// <summary>Gets the criteria as a constant family, for the title's script vocabulary.</summary>
+    public static ConstantFamily Family { get; } = AreaCriteriaFamily.Build(Igi1AreaCriteria.FamilyName, All);
+
     /// <summary>Registers the criteria's names as the constants a level's criteria are written in.</summary>
     /// <param name="natives">The namespace.</param>
     public static void Register(NativeRegistry natives)
     {
         ArgumentNullException.ThrowIfNull(natives);
-        natives.RegisterConstant("CRITERIA_VEHICLE", Vehicle);
-        natives.RegisterConstant("CRITERIA_CAMERA", Camera);
-        natives.RegisterConstant("CRITERIA_HUMAN", Human);
-        for (int team = 0; team < Teams; team++)
+        foreach (AreaCriterion criterion in All)
         {
-            natives.RegisterConstant("CRITERIA_HUMAN" + team, Team(team));
+            natives.RegisterConstant(criterion.Name, criterion.Bit);
         }
-
-        natives.RegisterConstant("CRITERIA_HUMANPLAYER", HumanPlayer);
-        natives.RegisterConstant("CRITERIA_HUMANAI_SIDEKICK", SideKick);
     }
 }
 
@@ -217,10 +234,12 @@ public sealed partial class Igi2AreaActivateTask : OpenIGI.Game.Flow.AreaActivat
         {
             foreach (IIgi2AreaOccupant human in Humans)
             {
-                if (human.IsActive && IsInside(human.RootPosition))
-                {
-                    hits++;
-                }
+                hits += CountsAsHuman(human) ? 1 : 0;
+            }
+
+            foreach (IIgi2AreaOccupant player in Players)
+            {
+                hits += IsJoinedPlayer(player) && CountsAsHuman(player) ? 1 : 0;
             }
 
             return hits;
@@ -230,18 +249,39 @@ public sealed partial class Igi2AreaActivateTask : OpenIGI.Game.Flow.AreaActivat
         {
             foreach (IIgi2AreaOccupant human in Humans)
             {
-                if ((Igi2AreaCriteria.Team(human.Team) & mask) == 0 || (human.IsAi && human.IsDead))
-                {
-                    continue;
-                }
+                hits += CountsForTeams(human, mask) ? 1 : 0;
+            }
 
-                if (IsInside(human.RootPosition))
-                {
-                    hits++;
-                }
+            foreach (IIgi2AreaOccupant player in Players)
+            {
+                hits += IsJoinedPlayer(player) && CountsForTeams(player, mask) ? 1 : 0;
             }
         }
 
         return hits;
+    }
+
+    private bool CountsAsHuman(IIgi2AreaOccupant human) => !human.IsGone && human.IsActive && IsInside(human.RootPosition);
+
+    private bool CountsForTeams(IIgi2AreaOccupant human, int mask) =>
+        !human.IsGone
+        && (Igi2AreaCriteria.Team(human.Team) & mask) != 0
+        && !(human.IsAi && human.IsDead)
+        && IsInside(human.RootPosition);
+
+    // The criteria that count humans read the level's list (Human_ptQTaskList), which holds the level's own player and not the
+    // session's others: a co-op partner is a human of the level too, so one standing inside counts as the level's player does.
+    // Without it a dedicated server, whose level player nobody plays, never saw anyone reach mission 1's mine shaft.
+    private bool IsJoinedPlayer(IIgi2AreaOccupant player)
+    {
+        foreach (IIgi2AreaOccupant human in Humans)
+        {
+            if (ReferenceEquals(human, player))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

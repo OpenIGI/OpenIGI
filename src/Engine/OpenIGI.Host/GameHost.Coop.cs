@@ -23,6 +23,19 @@ public sealed partial class GameHost
     /// </remarks>
     public Func<int, Net.INetTransport>? OpenUdp { get; set; }
 
+    /// <summary>Gets a value indicating whether this game is in a multiplayer session, or on its way into a room.</summary>
+    /// <remarks>
+    /// Asked by a browser page whose tab is hidden: it gets no animation frames then, and a game in a session must go on being
+    /// stepped -- a host that stopped would stop everyone's game and catch the whole of its time away up on its return, and a
+    /// joiner that stopped would be dropped. However the session began: from the command line, or from the menu's rooms.
+    /// </remarks>
+    public bool InSession =>
+        TickObserver is not null || _coop?.Status.Phase is Frontend.CoopPhase.Connecting or Frontend.CoopPhase.Playing;
+
+    /// <summary>Gets or sets the Discord Activity this game runs in, or <see langword="null"/>: the room the menu hosts is then its.</summary>
+    /// <remarks>Set by the browser build's composition root, from <c>-instance</c>, before <see cref="Start"/>.</remarks>
+    public string? DiscordInstance { get; set; }
+
     // Into a mission from over a played one -- a restart, or a co-op client following its server -- behind the same going-in
     // sequence: the frozen level under the menu is the picture held, the menu leaves, and the place comes back as asked.
     private void GoIntoMission(FrameLoopState state, int missionId)
@@ -91,6 +104,14 @@ public sealed partial class GameHost
             return;
         }
 
+        // The server's shared files went in: the game's tables are read again at this frame's end, and the level gone to after.
+        if (follower.TakeTablesReload())
+        {
+            _logger.Information("Coop", "The server's shared files are in; the game's tables are read again before its level.");
+            ReloadTitleTables();
+            return;
+        }
+
         if (follower.TakeTravel() is { } map
             && int.TryParse(map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int missionId))
         {
@@ -110,19 +131,21 @@ public sealed partial class GameHost
         ? new CoopRooms(
             peers,
             () => _titleRuntime.Title.Id,
-            () => _configuration.Active?.Name is { Length: > 0 } name ? name : "Jones",
+            PlayerName,
             () => _configuration.Active?.Difficulty ?? 1,
             () => Game.Multiplayer.MultiplayerProtocol.ContentFingerprint(_titleRuntime.Title.Id, _titleRuntime.Mods.Select(m => $"{m.Id}@{m.Version}")),
             observer => TickObserver = observer,
             PreviewLook,
             TurnLook,
-            typeof(GameHost).Assembly
-                .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev",
+            BuildVersion,
             _logger)
         {
             OpenUdp = OpenUdp,
+            Instance = DiscordInstance,
+            Avatar = () => Game.Multiplayer.DiscordAvatar.Reference(_account is { IsSignedIn: true } signedIn ? signedIn.Account?.Avatar : null),
             ReloadTables = ReloadTitleTables,
+            NewFileSync = NewSessionFileSync,
+            MapFilesInPlace = MapFilesInPlace,
             Arenas = HasArena,
             GamePath = () => _gamePath,
             BookPath = OpenUdp is null ? null : Core.Configuration.SettingsPaths.GetFilePath("servers.json"),

@@ -378,7 +378,7 @@ public sealed partial class Igi2AiGraph
                     double angle = way * (double)6.2831855f * (double)0.03125f;
                     int line = (height * Directions) + way;
                     trace.Starts[line] = new Vector3d(at.X, at.Y, z);
-                    trace.Ends[line] = new Vector3d((Math.Cos(angle) * CoverReach) + at.X, (Math.Sin(angle) * CoverReach) + at.Y, z);
+                    trace.Ends[line] = new Vector3d((SimMath.Cos(angle) * CoverReach) + at.X, (SimMath.Sin(angle) * CoverReach) + at.Y, z);
                 }
             }
 
@@ -418,6 +418,9 @@ internal sealed class Igi2AiGraphGround(Igi2AiGraph graph) : IWorldCollider
 {
     /// <inheritdoc/>
     public object Owner => graph;
+
+    /// <summary>Gets the graph.</summary>
+    public Igi2AiGraph Graph => graph;
 
     /// <inheritdoc/>
     public void NextZ(WorldLineTrace trace)

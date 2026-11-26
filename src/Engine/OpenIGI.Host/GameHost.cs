@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -247,14 +247,17 @@ public sealed partial class GameHost : IDisposable
     /// that ran several times too fast until it had caught up: guards sprinting, a cutscene over before it was seen.
     /// </para>
     /// <para>
-    /// Not in a session, whose clock is everyone's: there the page keeps stepping from a worker while it is hidden, and a
-    /// player who does fall behind has to catch up with the others. Not under lockstep, whose clock only the frames move.
-    /// The desktop never leaves its loop, so this finds nothing there.
+    /// Not hosting a session, whose clock is everyone's: there the page keeps stepping from a worker while it is hidden, and
+    /// a host that does fall behind has to catch up with the others. A session's client forgets it as a player alone does:
+    /// its world is its server's, shown from the snapshots whenever they come, and the ticks it ran to catch up were a
+    /// second and more of commands sent together -- more than its server lets one player run at once, so what was over was
+    /// dropped there and its player went on from somewhere its server never had it. Not under lockstep, whose clock only the
+    /// frames move. The desktop never leaves its loop, so this finds nothing there.
     /// </para>
     /// </remarks>
     private void ForgetTimeAway(int leftAt)
     {
-        if (_options.Lockstep || TickObserver is not null)
+        if (_options.Lockstep || (TickObserver is not null && TickObserver is not Multiplayer.ISessionFollower))
         {
             return;
         }
@@ -399,6 +402,7 @@ public sealed partial class GameHost : IDisposable
         _platform = platform;
         _window = window;
         _device = device;
+        Presentation.Rendering.RemasteredHudPresentation.SceneCaptureAvailable = device.Capabilities.SupportsSceneCapture;
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
@@ -417,10 +421,14 @@ public sealed partial class GameHost : IDisposable
         _loadGate = loadGate;
         _titles = titles;
         _titleRuntime = binding.Runtime;
+        _gameplayFiles = binding.GameplayFiles ?? Game.Multiplayer.GameplayFileLayout.None;
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
         _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
+
+        // A level reaching beyond its own folders (a co-op look borrowed from another location's pack) asks the gate first.
+        _fileSystem.Arrival = loadGate;
         _options = options;
         _gamePath = gamePath;
         _logger = logger;
@@ -431,7 +439,7 @@ public sealed partial class GameHost : IDisposable
         _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
-        _effects = new WorldEffects(device, logger, () => _mission.SoundRandom, new WorldEffectsHost(this), _work);
+        _effects = new WorldEffects(device, logger, new WorldEffectsHost(this), _work);
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);
@@ -519,7 +527,13 @@ public sealed partial class GameHost : IDisposable
     // under the several seconds the bake itself takes, so the two do not read as one long event.
     private const float ProbeFadeMilliseconds = 600f;
 
-    private const int ShowcaseMissionId = 1;
+    // The level behind the menu when nothing has chosen one: the campaign's first. Not a fixed id -- I.G.I. 2's mission 1
+    // is a multiplayer map, which a build without its maps (the browser's) does not offer, and its menu stood over black.
+    private int ShowcaseMissionId =>
+        (_missions is null ? null : _missions.InProgressionOrder().FirstOrDefault()?.Id) ?? FirstGameShowcaseMissionId;
+
+    // The first game's opening mission, for the moment before any catalogue is read.
+    private const int FirstGameShowcaseMissionId = 1;
 
     // How long a mission has to stay selected before its level is built. Every selection re-arms the
     // timer, so running down the list faster than this builds nothing at all. It can be short now that
@@ -587,8 +601,10 @@ public sealed partial class GameHost : IDisposable
             LoadTitleResources();
 
         // Settings load from the retail config.qvm, and from our own file in preference to it when one
-        // exists. Nothing here ever writes into the original installation.
-        _configuration = HostConfiguration.Load(_fileSystem, _logger);
+        // exists -- the player's own only where the run plays as the player (HostOptions.ReadsUserProfiles). Nothing here
+        // ever writes into the original installation.
+        _configuration = HostConfiguration.Load(_fileSystem, _logger, _options.ReadsUserProfiles);
+        MountSavedLanguage();
         RestoreTitleInputBindings();
         _menuDisplay = new RetailMenuDisplay(
             () => _device.Capabilities.Renderer,
@@ -674,6 +690,8 @@ public sealed partial class GameHost : IDisposable
 
         while (state.Running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
+            // Everything a pass does before the level's tick and after it draws or reads; only the tick steps.
+            Game.World.SimulationPhase.Present();
             // The top of a frame is where a step returns to its host: everything since the last step is
             // one frame, and nothing of the next has started. A host that asked to stop while it was away
             // is answered here, before the frame it would otherwise draw.
@@ -748,6 +766,8 @@ public sealed partial class GameHost : IDisposable
                 UpdateShell(state);
                 UpdateEntryShot(state);
                 RunSessionCycles(state);
+                HandleReplayViewer(state);
+                CollectBoardReplay(state);
                 HandleEscape(state);
                 RunDeferredCommands(state);
                 UpdatePlayerDevices(state);
@@ -783,15 +803,22 @@ public sealed partial class GameHost : IDisposable
             // its patrols and its scripted clocks all start from the frame the player first SEES, not
             // from the frame the load finished -- a cut-scene that played out behind the loading screen
             // is one the player never gets to watch.
+            // The editor's cutscene preview takes up a level loaded afresh, and stops its scene at its end, before the hold is decided.
+            _cutscenePreview?.AfterFrame();
             if (_session.LevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel;
+                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel || CutscenePreviewHoldsLevel || PlaytestHoldsLevel;
             }
 
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
             TickObserver?.Poll();
 
+            // A play-test's recording notes, and its replay gives, what comes before the level's next tick; and the run's recording.
+            PlaytestTickStarting();
+            RunTickStarting();
+
             BeginStage();
+            Game.World.SimulationPhase.Step();
             FrameOutcome outcome = _loop.RunFrame();
             state.LastOutcome = outcome;
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
@@ -818,19 +845,31 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel || CutscenePreviewHoldsLevel || PlaytestHoldsLevel))
             {
                 // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
                 if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
                 {
-                    hold.Pump(_hosted);
+                    hold.Pump(ReplicatedTitle);
                 }
 
                 continue;
             }
 
             TickMission(state, outcome);
+            if (outcome == FrameOutcome.Tick)
+            {
+                int ran = TickOfLevel;
+                PlaytestTicked();
+                RunTicked(ran);
+                PlaybackTicked(ran);
+                PlaybackOpeningTicked(ran);
+                CutsceneTicked(ran);
+                RaceTicked(ran);
+                DigestTick();
+            }
 
+            Game.World.SimulationPhase.Present();
             if (outcome != FrameOutcome.Render || _options.SimulationOnly)
             {
                 continue;
@@ -857,6 +896,7 @@ public sealed partial class GameHost : IDisposable
             }
         }
 
+        FinishRun(Game.Replays.ReplayOutcome.Abandoned, "the game was closed");
         WriteBenchmarkSnapshot(state);
 
         LogStageTimingsAtExit();
@@ -914,9 +954,10 @@ public sealed partial class GameHost : IDisposable
         {
             while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode key))
             {
-                if (executeBinds)
+                // Nothing bound runs under a replay being watched: its level plays only the recording.
+                if (executeBinds && !Watching && !PlaytestOwns(key))
                 {
-                    state.Console.System.ExecuteBind(BindKeyNames.NameOf(key));
+                    state.Console.System.ExecuteBind(Input.BindKeyNames.NameOf(key));
                 }
             }
         }
@@ -984,8 +1025,11 @@ public sealed partial class GameHost : IDisposable
         ReleaseSettingHandlers();
         ReleaseSessionCheatLock();
 
-        // A party is told this member has gone, rather than waiting for it to stop asking.
+        // A party is told this member has gone, rather than waiting for it to stop asking; Discord, that nothing is played.
         LeaveParty();
+        ReleasePresence();
+        _avatar?.Dispose();
+        _playerAvatars?.Dispose();
 
         _sky?.Dispose();
         _rain?.Dispose();
@@ -1018,6 +1062,7 @@ public sealed partial class GameHost : IDisposable
         _retailMenus?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
+        _titleWorldModels?.Dispose();
         _titleHud?.Dispose();
         _gi?.Dispose();
         _detailMaps?.Dispose();

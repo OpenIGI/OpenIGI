@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
@@ -79,11 +80,73 @@ public sealed class RetailIgi2LadderTests
         Assert.True(player.Human.Position.Z > ladder.MagicVertex(3).Z - 4096.0);
     }
 
-    // The player at a ladder of mission 1's, half a metre before its foot, facing it, armed, settled for two seconds.
+    /// <summary>
+    /// With Project I.G.I.'s movement the player gets off every ladder of mission 1 at its top where I.G.I. 2's own movement
+    /// leaves it. The get-off pops the feet two metres up from the clip's last frame, which on the tall building left them half a
+    /// metre under its roof: the first game's body, never handed back while the player hung on the ladder, took over where the
+    /// feet were and fell through the building to the ground.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void On_Project_IGIs_feet_the_player_gets_off_every_ladder_where_IGI_2s_own_leaves_it()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        Igi2MagicObjTypes magic = m.Services!.Require<Igi2MagicObjTypes>();
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(
+            Igi2LevelScene.Build(m.Level, magic).Built.Scene.Placements, AssetFormatProfile.Igi2.Collision, m.Level.ModelFor);
+        WorldRayCast terrain = WorldTrace.AsRayCast(((IHostCollisionWorld)m.Collision!).Trace, WorldTraceMask.Terrain);
+        Igi2PlayerMovement before = GameplayCVars.Igi2Movement.Value;
+        try
+        {
+            foreach (Igi2LadderTask ladder in Ladders(m))
+            {
+                GameplayCVars.Igi2Movement.Value = Igi2PlayerMovement.Igi2;
+                Vector3d own = ClimbToTheTop(AtLadderFoot(m, ladder), ladder);
+                GameplayCVars.Igi2Movement.Value = Igi2PlayerMovement.Igi1;
+                Igi2TitlePlayer player = AtLadderFoot(m, ladder, human => new Igi1FootMotion(
+                    new Igi1FootWorld(solids.PlayerCaster(), terrain, m.Collision!.Ground, null), human));
+                Vector3d onIgi1 = ClimbToTheTop(player, ladder);
+
+                Assert.True(player.Human.Igi1Feet!.IsSeated, $"{ladder.MagicVertex(2)}: not back on Project I.G.I.'s feet");
+                Assert.True(
+                    Math.Abs(onIgi1.Z - own.Z) < 1024.0,
+                    $"{ladder.MagicVertex(2)}: stood at {onIgi1.Z} on Project I.G.I.'s feet, at {own.Z} on I.G.I. 2's own");
+            }
+        }
+        finally
+        {
+            GameplayCVars.Igi2Movement.Value = before;
+        }
+    }
+
+    // Climbs from the foot to the top holding forward, gets off, and stands three seconds: where the feet are then.
+    private static Vector3d ClimbToTheTop(Igi2TitlePlayer player, Igi2LadderTask ladder)
+    {
+        player.Tick(RetailIgi2Mission1.Idle with { Held = PlayerAction.Activate, Pressed = PlayerAction.Activate });
+        Assert.True(player.Human.IsClimbLadder, $"{ladder.MagicVertex(2)}: not on the ladder");
+        int offFor = 0;
+        for (int tick = 0; tick < 4000 && offFor < 90; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle with { Held = offFor == 0 ? PlayerAction.MoveUp : default(PlayerAction) });
+            offFor = player.Human.AttachParent is null && player.Human.Locomotion.CurrentState != Igi2PlayerState.ClimbLadderGetOffTop
+                ? offFor + 1
+                : 0;
+        }
+
+        Assert.True(offFor >= 90, $"{ladder.MagicVertex(2)}: never got off at the top");
+        return player.Human.Position;
+    }
+
+    // The player at the first of mission 1's ladders, half a metre before its foot, facing it, armed, settled for two seconds.
     private static (Igi2TitlePlayer Player, Igi2LadderTask Ladder) AtLadderFoot()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
         Igi2LadderTask ladder = Ladders(m)[0];
+        return (AtLadderFoot(m, ladder), ladder);
+    }
+
+    // The player at a ladder, half a metre before its foot, facing it, armed, on the feet given, settled for two seconds.
+    private static Igi2TitlePlayer AtLadderFoot(RetailIgi2Mission1 m, Igi2LadderTask ladder, Func<Igi2HumanPlayer, Igi1FootMotion>? feet = null)
+    {
         IReadOnlyList<float> f = ladder.Frame;
         Vector3d ahead = new(f[1], f[4], f[7]);
         Vector3d foot = ladder.MagicVertex(2);
@@ -103,13 +166,14 @@ public sealed class RetailIgi2LadderTests
         player.Human.ModelRadius = body.NativeMarkerBound;
         player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
         player.Human.AnimTriggers = m.Services!.Require<Igi2AnimTriggers>();
+        player.Human.Igi1Feet = feet?.Invoke(player.Human);
         player.Activatables.Add(ladder);
         for (int tick = 0; tick < 60; tick++)
         {
             player.Tick(RetailIgi2Mission1.Idle);
         }
 
-        return (player, ladder);
+        return player;
     }
 
     private static Igi2LadderTask[] Ladders(RetailIgi2Mission1 m)

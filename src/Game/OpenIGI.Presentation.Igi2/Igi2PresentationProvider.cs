@@ -47,7 +47,16 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     public Igi2PresentationProvider() =>
         Presenters = new PresenterRegistry()
             .Add<HudPresentationRequest, ITitleHudPresenter>(CreateTitleHud)
+
+            // The session's overlays -- the scoreboard, the co-op talk, the fallen teammates, the names over heads -- are both
+            // games' own: the shared remastered display draws them over either title's HUD.
+            .Add<HudPresentationRequest, IRemasteredHudPresenter>(static (in HudPresentationRequest request) =>
+                new OpenIGI.Presentation.Hud.Remastered.RemasteredHudRenderer(
+                    request.Device,
+                    request.Logger,
+                    OpenIGI.Presentation.Igi2.Hud.Igi2HudTheme.Theme))
             .Add<ViewModelPresentationRequest, ITitleViewModelPresenter>(CreateTitleViewModel)
+            .Add<ViewModelPresentationRequest, ITitleWorldModelPresenter>(CreateTitleWorldModels)
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<GroundPresentationRequest, ITerrainPresenter>(CreateGround)
@@ -74,6 +83,10 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
     private static ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
+        new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
+
+    // The level's own models -- its figures, the soldiers it draws, what lies about, its blasts -- where another's arms are drawn.
+    private static ITitleWorldModelPresenter? CreateTitleWorldModels(in ViewModelPresentationRequest request) =>
         new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
 
     /// <inheritdoc/>
@@ -341,7 +354,8 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             task.TracelineStart,
             task.TracelineEnd,
             new Bgra32(Channel(task.Colour.Z), Channel(task.Colour.Y), Channel(task.Colour.X), Channel(task.Alpha)),
-            () => task.IsActive);
+            // RainEffect_RemoveHandler: a container that holds it out of the world takes the rain away with it.
+            () => task.IsActive && OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(task));
         return new RetailWeather(request.Device, PrecipitationStyle.Igi2, settings, texture, random, offsets[..task.Layers]);
     }
 

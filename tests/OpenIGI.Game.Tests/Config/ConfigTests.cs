@@ -44,6 +44,58 @@ public sealed class ConfigTests
         Assert.Equal(GameConfig.CurrentControlsVersion, config.ControlsVersion);
     }
 
+    /// <summary>Each game's progress is kept in OpenIGI's file: the first game's in the original's own line, another's in its own.</summary>
+    [Fact]
+    public void Every_games_progress_round_trips()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        profile.ActiveMission = 7;
+        profile.SetMission("igi2", 4);
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        Assert.Equal(7, reloaded.Active!.ActiveMission);
+        Assert.Equal(4, reloaded.Active.MissionOf("igi2"));
+        Assert.Equal(7, reloaded.Active.MissionOf(PlayerProfile.RetailTitle));
+        Assert.Equal(0, reloaded.Active.MissionOf("igi3"));
+    }
+
+    /// <summary>A finished campaign is kept in OpenIGI's file by game, beside the original's mission reached, and a new player made from the profile keeps it with that progress.</summary>
+    [Fact]
+    public void A_finished_campaign_round_trips()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        profile.ActiveMission = 14;
+        Assert.True(profile.SetFinale(PlayerProfile.RetailTitle, 14));
+        Assert.False(profile.SetFinale(PlayerProfile.RetailTitle, 14));
+
+        PlayerProfile reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config)).Active!;
+        Assert.Equal(14, reloaded.ActiveMission);
+        Assert.Equal(14, reloaded.FinaleOf(PlayerProfile.RetailTitle));
+        Assert.Equal(0, reloaded.FinaleOf("igi2"));
+        Assert.Equal(14, reloaded.Clone().FinaleOf(PlayerProfile.RetailTitle));
+    }
+
+    /// <summary>A mission's best is kept in OpenIGI's file by game and mission, every figure exactly, and a new player starts with none.</summary>
+    [Fact]
+    public void Mission_records_round_trip_and_stay_with_their_player()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        var record = new OpenIGI.Game.Scoring.TitleMissionRecord([11, 1, 0, 76, 40, 9, 98, 3, 26760, 0], [1200f, 5f, -1f, 25.5f, 0.1f, 900f, 2f, 1f, 50f, 30f, 600f, 0f, 0f, 80f, 60f]);
+        profile.SetMissionRecord("igi2", 11, record);
+
+        PlayerProfile reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config)).Active!;
+        OpenIGI.Game.Scoring.TitleMissionRecord? read = reloaded.MissionRecordOf("igi2", 11);
+        Assert.NotNull(read);
+        Assert.Equal(record.Counts, read.Counts);
+        Assert.Equal(record.Figures, read.Figures);
+        Assert.Null(reloaded.MissionRecordOf("igi2", 12));
+        Assert.Null(reloaded.MissionRecordOf("igi1", 11));
+        Assert.Null(profile.Clone().MissionRecordOf("igi2", 11));
+    }
+
     [Fact]
     public void AProfileItsPlayerReboundKeepsItsControlsAndItsInversion()
     {
@@ -382,7 +434,7 @@ public sealed class ConfigTests
         Assert.Contains(new InputBinding("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_D"), joe.Bindings);
         Assert.Contains(new InputBinding("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_S"), joe.Bindings);
         Assert.Contains(new InputBinding("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"), joe.Bindings);
-        Assert.Contains(new InputBinding("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"), joe.Bindings);
+        Assert.Contains(new InputBinding("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"), joe.Bindings);
         Assert.Contains(new InputBinding("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"), joe.Bindings);
         Assert.Contains(new InputBinding("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_B"), joe.Bindings);
         Assert.Contains(new InputBinding("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_SHIFT"), joe.Bindings);
@@ -414,16 +466,16 @@ public sealed class ConfigTests
     {
         GameConfig partial = new();
         PlayerProfile joe = new() { Name = "Joe" };
-        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_F"));
+        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_L"));
         partial.Add(joe);
 
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
+        Assert.Equal("KEY_L", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
         Assert.Contains(loaded.Active.Bindings, binding => binding.Action == "Binoculars");
 
-        // The flashlight's own default is F, which this player gave to MoveLeft: it comes back without a key
+        // The flashlight's own default is L, which this player gave to MoveLeft: it comes back without a key
         // rather than making one key drive two actions.
         InputBinding flashlight = loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight");
         Assert.Equal(PlayerProfile.UnboundKey, flashlight.Key);
@@ -431,7 +483,7 @@ public sealed class ConfigTests
     }
 
     [Fact]
-    public void A_profile_saved_before_the_flashlight_gains_it_on_F()
+    public void A_profile_saved_before_the_flashlight_gains_it_on_L()
     {
         GameConfig partial = new();
         PlayerProfile joe = new() { Name = "Joe" };
@@ -441,7 +493,7 @@ public sealed class ConfigTests
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
+        Assert.Equal("KEY_L", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
     }
 
     [Fact]

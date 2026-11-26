@@ -4,19 +4,35 @@ namespace OpenIGI.Game.Igi2.Flow;
 public sealed partial class Igi2SoundGeneratorTask : ISavedState
 {
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>SoundGenerator_SerializeHandler</c>: a sound that has played out is written as not playing, though <c>isPlaying</c> is
+    /// left set as the level runs on.
+    /// </remarks>
     public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Text(Sound);
-        writer.Bool(_isPlaying != 0);
+        writer.Bool(_isPlaying != 0 && _sound is { HasPlayedOut: false });
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>SoundGenerator_DeSerializeHandler</c>: the sound it has now is deleted, and one the save had playing is made again from
+    /// its start -- a siren that rang when the game was saved rings, and one that started since falls silent.
+    /// </remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        Sound = reader.Text();
-        _isPlaying = reader.Bool() ? (byte)1 : (byte)0;
+        Stop();
+        string sound = reader.Text();
+        if (reader.Bool())
+        {
+            Play(sound);
+        }
+        else
+        {
+            Sound = sound;
+        }
     }
 }
 

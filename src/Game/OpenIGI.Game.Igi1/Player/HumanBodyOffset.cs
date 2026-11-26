@@ -2,53 +2,36 @@ using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.Player;
 
-/// <summary>The pair of offsets locomotion state 44 eases.</summary>
-/// <param name="Sideways"><c>model+412</c>, ±argument 4, driven by the strafe slots.</param>
-/// <param name="Forward"><c>model+420</c>, 0..argument 5, driven by forward while crouched.</param>
-public readonly record struct HumanBodyOffsets(float Sideways, float Forward);
+/// <summary>The lean locomotion state 44 eases: the eye's slide to either side and its raise out of a crouch.</summary>
+/// <param name="Sideways"><c>HumanView+412</c> (<c>lean[0]</c>), ±argument 4, driven by the strafe slots.</param>
+/// <param name="Up"><c>HumanView+420</c> (<c>lean[2]</c>), 0..argument 5, driven by forward while crouched.</param>
+public readonly record struct HumanBodyOffsets(float Sideways, float Up);
 
 /// <summary>
-/// The two body offsets locomotion state <b>44</b> drives — <c>0x40DFC0</c>.
+/// The lean locomotion state <b>44</b> drives — <c>0x40DFC0</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is what consumes general arguments <b>4</b>, <b>5</b> and <b>6</b> of
-/// <c>DefineHumanPlayerGeneral</c>, which had been named as "two 0.85 m distances and a 7-tick timer"
-/// without a consumer. They are not distances travelled: they are the <b>range</b> of two offsets and
-/// the <b>time</b> either takes to cover it.
-/// </para>
-/// <para>
-/// State 44's entry (<c>0x40DF70</c>) is the ordinary three-line shape — play a clip, install the
-/// per-tick — except that it plays <b>animation 19</b> when the crouch byte <c>Human+829</c> is set and
-/// the state's own clip otherwise. Its per-tick then eases two floats on the model instance at
-/// <c>Human+1260</c>:
+/// Holding the peek slot puts the weapon machine into its lean (<c>0x40F370</c>), which lowers the weapon and forces the
+/// body into state 44. The state's entry (<c>0x40DF70</c>) plays the state's own clip, or the crouch's (slot 19) when the
+/// crouch byte <c>Human+829</c> is set, and its per-tick moves nothing: it eases two of the three lean floats on the view
+/// (<c>HumanView+412..+420</c>), arguments 4, 5 and 6 of <c>DefineHumanPlayerGeneral</c> being their ranges and time.
 /// </para>
 /// <list type="bullet">
-/// <item>
-/// <description>
-/// <b>Sideways</b> (<c>model+412</c>), toward <c>±</c><see cref="HumanPlayerParameters.Distance4"/> while
-/// the strafe slots are held and back to zero when they are not. Always live.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <b>Forward</b> (<c>model+420</c>), toward <see cref="HumanPlayerParameters.Distance5"/> while forward
-/// is held — but <b>only while crouched</b>. Standing, this axis is not touched at all.
-/// </description>
-/// </item>
+/// <item><description>
+/// <b>Sideways</b> (<c>lean[0]</c>), toward ±<see cref="HumanPlayerParameters.LeanSideUnits"/> while a strafe slot is held and
+/// back to zero when neither is. Always live.
+/// </description></item>
+/// <item><description>
+/// <b>Up</b> (<c>lean[2]</c>), toward <see cref="HumanPlayerParameters.LeanUpUnits"/> while forward is held — <b>only while
+/// crouched</b>, which is the peek over cover. Standing, this axis is not touched at all.
+/// </description></item>
 /// </list>
 /// <para>
-/// Both ease at <c>range / </c><see cref="HumanPlayerParameters.Duration6Ticks"/> per tick, and the rate
-/// is recomputed on the <b>edge</b> — the tick the key goes down, or the tick the last one comes up —
-/// from the previous input frame at <c>Human+272</c> against the current at <c>+432</c>. Retail: 0.85 m
-/// either way, reached in 7 ticks, so a quarter of a second.
-/// </para>
-/// <para>
-/// <b>What the offsets do to the body is not established.</b> They are written to the model instance,
-/// not to the human's position, and what reads <c>model+412</c> and <c>+420</c> has not been traced. A
-/// lean is what a 0.85 m sideways offset gated behind a crouch looks like, and state 44 sits among the
-/// self-driving interactive states — but that is an inference and it is recorded as one. The easing
-/// itself is transcribed exactly.
+/// The consumer is the view's commit (<c>0x464BD0</c>): it adds <c>lean[0]</c> along the eye's right axis and <c>lean[2]</c>
+/// on world Z to the eye, then sweeps the eye from the body's eye to the leaned one and stops it short of anything it meets
+/// (<see cref="HumanLeanEye"/>). The weapon state's exit (<c>0x40F3F0</c>) zeroes all three and puts the body back in state 0.
+/// Both ease at <c>range / </c><see cref="HumanPlayerParameters.LeanTicks"/> per tick — retail 0.85 m either way in 7 ticks.
 /// </para>
 /// </remarks>
 public static class HumanBodyOffset
@@ -58,7 +41,7 @@ public static class HumanBodyOffset
     /// Entry <c>0x40DF70</c> at <c>0x538664</c>, which is <c>(0x538664 − 0x5385B4) / 4</c> into the
     /// 49-entry function table.
     /// </remarks>
-    public const int State = 44;
+    public const int State = HumanBodyStateMachine.Lean;
 
     /// <summary>The animation the entry plays instead of the state's own while crouched.</summary>
     public const int CrouchedAnimationId = 19;
@@ -105,42 +88,43 @@ public static class HumanBodyOffset
         return current;
     }
 
-    /// <summary>The sideways offset's target for a tick.</summary>
+    /// <summary>Eases the sideways lean one tick, as <c>0x40DFC0</c> does.</summary>
+    /// <param name="current">Where the lean is now.</param>
     /// <param name="left">Whether the strafe-left slot is held.</param>
     /// <param name="right">Whether strafe-right is held.</param>
     /// <param name="range">Argument 4, in world units.</param>
-    /// <returns>Negative for left, positive for right, zero for neither or both.</returns>
+    /// <param name="rate">The per-tick step from <see cref="Rate"/>.</param>
+    /// <returns>The lean after the tick.</returns>
     /// <remarks>
-    /// Left is tested first and right is <i>added</i> to its result — <c>v13 = Speed3 + v13</c> in the
-    /// sibling integrator and the same shape here — so holding both cancels rather than one winning.
+    /// Not one target but up to two eases in a row: left toward <c>-range</c>, then right toward <c>+range</c>, and back toward
+    /// zero only when neither is held. Holding both therefore steps out and straight back again, so a lean held to one side
+    /// stays there and one at rest stays at rest.
     /// </remarks>
-    public static float SidewaysTarget(bool left, bool right, float range)
+    public static float Sideways(float current, bool left, bool right, float range, float rate)
     {
-        float target = 0f;
-
         if (left)
         {
-            target = -range;
+            current = Ease(current, -range, rate);
         }
 
         if (right)
         {
-            target += range;
+            current = Ease(current, range, rate);
         }
 
-        return target;
+        return left || right ? current : Ease(current, 0f, rate);
     }
 
-    /// <summary>The forward offset's target for a tick.</summary>
+    /// <summary>The raise's target for a tick.</summary>
     /// <param name="forward">Whether the forward slot is held.</param>
     /// <param name="crouching">Whether <c>Human+829</c> is set.</param>
     /// <param name="range">Argument 5, in world units.</param>
     /// <returns>The range while crouched and moving forward, zero otherwise.</returns>
     /// <remarks>
     /// <b>Standing, this axis is not driven at all</b> — the whole block sits behind the crouch byte, so
-    /// a standing body's forward offset holds whatever it had rather than easing back to zero.
+    /// a standing body's raise holds whatever it had rather than easing back to zero.
     /// </remarks>
-    public static float ForwardTarget(bool forward, bool crouching, float range) =>
+    public static float UpTarget(bool forward, bool crouching, float range) =>
         crouching && forward ? range : 0f;
 
     /// <summary>Advances both offsets one tick.</summary>
@@ -162,21 +146,19 @@ public static class HumanBodyOffset
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        float sideways = Ease(
-            offset.Sideways,
-            SidewaysTarget(left, right, parameters.Distance4),
-            Rate(parameters.Distance4, parameters.Duration6Ticks));
+        float sideways = Sideways(
+            offset.Sideways, left, right, parameters.LeanSideUnits, Rate(parameters.LeanSideUnits, parameters.LeanTicks));
 
         if (!crouching)
         {
-            return new HumanBodyOffsets(sideways, offset.Forward);
+            return new HumanBodyOffsets(sideways, offset.Up);
         }
 
-        float ahead = Ease(
-            offset.Forward,
-            ForwardTarget(forward, crouching, parameters.Distance5),
-            Rate(parameters.Distance5, parameters.Duration6Ticks));
+        float up = Ease(
+            offset.Up,
+            UpTarget(forward, crouching, parameters.LeanUpUnits),
+            Rate(parameters.LeanUpUnits, parameters.LeanTicks));
 
-        return new HumanBodyOffsets(sideways, ahead);
+        return new HumanBodyOffsets(sideways, up);
     }
 }

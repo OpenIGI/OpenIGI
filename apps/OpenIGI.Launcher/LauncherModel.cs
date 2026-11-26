@@ -168,7 +168,7 @@ internal sealed partial class LauncherModel : IDisposable
         Games =
         [
             new LauncherGame { Id = "igi1", Title = "Project I.G.I.", Tagline = "I'M GOING IN", Retail = GameTitle.Igi1, Released = true },
-            new LauncherGame { Id = "igi2", Title = "I.G.I. 2", Tagline = "COVERT STRIKE", Retail = GameTitle.Igi2, State = GameState.Unavailable },
+            new LauncherGame { Id = "igi2", Title = "I.G.I. 2", Tagline = "COVERT STRIKE", Retail = GameTitle.Igi2, Released = true },
             new LauncherGame
             {
                 Id = "editor",
@@ -438,6 +438,8 @@ internal sealed partial class LauncherModel : IDisposable
     {
         TickServers();
         TickInvite(elapsedSeconds);
+        TickAccount();
+        TickLeaderboard();
         while (_results.TryDequeue(out Action? result))
         {
             result();
@@ -479,6 +481,7 @@ internal sealed partial class LauncherModel : IDisposable
         _download?.Dispose();
         _running?.Dispose();
         DisposeServers();
+        DisposeAccount();
         _http.Dispose();
     }
 

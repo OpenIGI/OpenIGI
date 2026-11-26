@@ -42,7 +42,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed partial class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|map|rules|script),0.3:T(content*|sequencer|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -61,6 +61,16 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly ContentPanel _content;
     private readonly ProblemsPanel _problems;
     private readonly GraphPanel _logic;
+    private readonly RulesPanel _rules;
+    private readonly LogicWatch _logicWatch;
+    private readonly MapPanel _map;
+    private readonly PlaytestOverlay _playtestOverlay = new();
+    private readonly SequencerPanel _sequencer;
+    private readonly GuidePanel _guide;
+
+    // The level load in which the mission was last saved: while it is still the level up, what was saved is not in it.
+    private int _savedInLevelLoad = -1;
+    private readonly GuardOrders _guards;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -103,7 +113,14 @@ internal sealed partial class EditorSession : IEditorSession
         _dock = new DockSpace(_theme);
         _dock.Register(new DockPanel("viewport", "Viewport", _viewport) { Icon = KitIcon.Camera, CanClose = false, IsTransparent = true });
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
-        _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace, host)) { Icon = KitIcon.Gear });
+        _guards = new GuardOrders(host, _workspace);
+        InspectorPanel inspector = new(_theme, _workspace, host, _guards)
+        {
+            EditPatrol = soldier => { _workspace.Selection.Set(soldier); StartPatrol(); },
+            Notify = (message, isError) => Notify(message, isError),
+            PilotKey = camera => { _dock.Show("sequencer"); _sequencer?.Pilot(camera); },
+        };
+        _dock.Register(new DockPanel("inspector", "Inspector", inspector) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
         ScriptPanel script = new(_theme, host, _workspace);
         _dock.Register(new DockPanel("script", "Script", script) { Icon = KitIcon.Script });
@@ -142,7 +159,30 @@ internal sealed partial class EditorSession : IEditorSession
         _problems.GoTo += _viewport.Frame;
         _dock.Register(new DockPanel("problems", "Problems", _problems) { Icon = KitIcon.Search });
         _logic = new GraphPanel(_theme, host, _workspace, () => _problems.Issues, (message, isError) => Notify(message, isError));
-        _dock.Register(new DockPanel("logic", "Logic", _logic) { Icon = KitIcon.Graph });
+        _dock.Register(new DockPanel("logic", "Logic Graph", _logic) { Icon = KitIcon.Graph });
+        _rules = new RulesPanel(_theme, host, _workspace, (message, isError) => Notify(message, isError));
+        _dock.Register(new DockPanel("rules", "Rules", _rules) { Icon = KitIcon.Play });
+        _logicWatch = new LogicWatch(host, _workspace);
+        _map = new MapPanel(_theme, host, _workspace, _guards) { Notify = (message, isError) => Notify(message, isError) };
+        _map.GoTo += task =>
+        {
+            _dock.Show("viewport");
+            _viewport.Frame(task);
+        };
+        _dock.Register(new DockPanel("map", "Map", _map) { Icon = KitIcon.Search });
+        _sequencer = new SequencerPanel(_theme, host, _workspace) { PlayInGame = Play, PlaceCamera = _viewport.PlaceCamera, Notify = (message, isError) => Notify(message, isError) };
+        WireCutsceneCamera(host, inspector);
+        _sequencer.PrepareLive = PrepareLive;
+
+        // An edit during a live scene ends it as Play would: the mission saved, the level loaded afresh with the edit in it.
+        _sequencer.LiveInterrupted = () =>
+        {
+            Save();
+            host.CutscenePreview?.Finish(reload: true);
+        };
+        _dock.Register(new DockPanel("sequencer", "Sequencer", _sequencer) { Icon = KitIcon.Play });
+        _guide = new GuidePanel(_theme, _workspace, Core.Missions.MissionGuide.Igi1) { Show = ShowGuideStep };
+        _dock.Register(new DockPanel("guide", "Getting Started", _guide) { Icon = KitIcon.Info });
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
         _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
@@ -156,6 +196,16 @@ internal sealed partial class EditorSession : IEditorSession
             // A layout saved before the preview had a panel of its own: it joins History's tabs, History still in front.
             _dock.Show("preview", beside: "history");
             _dock.Show("history");
+        }
+
+        // A layout saved before the map and the rules had panels: they join the viewport's tabs, the viewport still in front.
+        foreach ((string added, string beside) in ((string, string)[])[("map", "viewport"), ("rules", "viewport"), ("sequencer", "content")])
+        {
+            if (saved is not null && !saved.Contains(added, StringComparison.Ordinal) && _dock.GroupOf(beside) is not null)
+            {
+                _dock.Show(added, beside: beside);
+                _dock.Show(beside);
+            }
         }
 
         _dock.LayoutChanged += SaveLayout;
@@ -197,6 +247,15 @@ internal sealed partial class EditorSession : IEditorSession
     }
 
     /// <inheritdoc/>
+    public void WhilePlaying()
+    {
+        if (_pendingSteps.TryPeek(out Func<bool>? step) && step())
+        {
+            _pendingSteps.Dequeue();
+        }
+    }
+
+    /// <inheritdoc/>
     public void Frame(float elapsedSeconds, bool hasInput)
     {
         TakePickedExports();
@@ -216,6 +275,7 @@ internal sealed partial class EditorSession : IEditorSession
         }
 
         _workspace.Sync();
+        Autosave(elapsedSeconds);
         _live.Update();
         if (!_pendingPick && _workspace.Document is not null && _host.View.Width > 0f
             && _pendingSteps.TryPeek(out Func<bool>? step) && step())
@@ -254,7 +314,15 @@ internal sealed partial class EditorSession : IEditorSession
     {
         if (IsPlaying)
         {
-            DrawPlayingBanner(painter);
+            // The banner before the guards' minds: text drawn after another run of text and the banner's shadow lost its
+            // first glyphs (seen on the D3D12 path, cause not found), and the minds keep clear of the banner anyway.
+            float underBanner = DrawPlayingBanner(painter);
+            if (_host.Playtest.Overlay)
+            {
+                _playtestOverlay.Draw(painter, _theme, _host, underBanner);
+            }
+
+            _logicWatch.Draw(painter, _theme);
             return;
         }
 
@@ -282,6 +350,7 @@ internal sealed partial class EditorSession : IEditorSession
 
         _disposed = true;
         SaveLayout();
+        _map.Release();
         // Played outside the editor too (ed_play_project), the project stays over the game when the editor closes.
         if (!EditorCVars.PlayProject.Value)
         {
@@ -490,6 +559,12 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterTerrainActions(actions);
         RegisterNavGraphActions(actions);
         RegisterPatrolActions(actions);
+        RegisterCameraActions(actions);
+        RegisterReinforcementActions(actions);
+        RegisterPrefabActions(actions);
+        RegisterPublishActions(actions);
+        RegisterFenceActions(actions);
+        StartAutosave();
         RegisterMissionActions(actions);
         RegisterShellActions(actions);
         actions.Add(new EditorAction("view.light", "Light Theme", () => EditorCVars.LightTheme.Value = !EditorCVars.LightTheme.Value)
@@ -504,7 +579,7 @@ internal sealed partial class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "logic", "terrain" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "map", "rules", "sequencer", "logic", "terrain", "guide" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -571,6 +646,17 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["tool.rotate"]),
                 MenuItem.For(actions["tool.scale"]),
                 MenuItem.For(actions["tool.terrain"]),
+                MenuItem.For(actions["tool.patrol"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["ai.addguard"]),
+                MenuItem.For(actions["ai.patrolround"]),
+                MenuItem.For(actions["ai.guardbuilding"]),
+                MenuItem.For(actions["ai.reinforcement"]),
+                MenuItem.For(actions["tools.fencerun"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["tools.saveprefab"]),
+                MenuItem.For(actions["tools.placeprefab"]),
+                MenuItem.For(actions["tools.intro"]),
             ])
             .Add("View", [
                 MenuItem.For(actions["view.palette"]),
@@ -598,7 +684,12 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["window.script"]),
                 MenuItem.For(actions["window.content"]),
                 MenuItem.For(actions["window.problems"]),
+                MenuItem.For(actions["window.map"]),
+                MenuItem.For(actions["window.rules"]),
+                MenuItem.For(actions["window.sequencer"]),
                 MenuItem.For(actions["window.logic"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["window.guide"]),
             ]);
     }
 
@@ -744,6 +835,55 @@ internal sealed partial class EditorSession : IEditorSession
         }
     }
 
+    // The level made to match the mission before a scene plays live on it: saved and loaded afresh when the mission has changes
+    // not yet saved, then the scene begun once the level is up.
+    private void PrepareLive(Action begin)
+    {
+        // The level plays the mission as its files hold it: changes not saved, or saved since the level was loaded, are not in it --
+        // unless they went into it as they were made, while a scene played live.
+        bool behind = !_sequencer.LevelHoldsDocument && (_workspace.History.IsDirty || _savedInLevelLoad == _host.LevelLoads);
+        if (!behind)
+        {
+            begin();
+            return;
+        }
+
+        if (_workspace.History.IsDirty && !Save())
+        {
+            return;
+        }
+
+        _host.ReloadMission();
+        int frames = 0;
+        _pendingSteps.Enqueue(() =>
+        {
+            // The reload is taken up between frames: a frame or two for it to start, then until the level is in.
+            if (++frames < 3 || _host.IsWarmingUp || _workspace.Document is null)
+            {
+                return false;
+            }
+
+            begin();
+            return true;
+        });
+        Notify("Saved; loading the level to play the scene on it.");
+    }
+
+    // What a guide step opens or runs: a panel brought forward, or an action.
+    private void ShowGuideStep(string show)
+    {
+        if (show.StartsWith("panel:", StringComparison.Ordinal))
+        {
+            _dock.Show(show["panel:".Length..]);
+            return;
+        }
+
+        if (_root.Actions.All.FirstOrDefault(a => a.Id == show) is { } action && !action.TryExecute())
+        {
+            Notify($"{action.CurrentTitle} cannot be done yet: {(action.Id == "tool.patrol" ? "select a guard first." : "see the step's hint.")}", isError: true);
+        }
+    }
+
     private void Play()
     {
         if (_workspace.Document is null || (_workspace.History.IsDirty && !Save()))
@@ -754,18 +894,12 @@ internal sealed partial class EditorSession : IEditorSession
         _root.CloseAllPopups();
         _root.SetFocus(null);
         IsPlaying = true;
+        _guide.HasPlayed = true;
         _host.ReloadMission(play: true);
     }
 
-    private void DrawPlayingBanner(UiPainter painter)
-    {
-        const string text = "Playing  •  Esc returns to the editor";
-        float width = _theme.Font.MeasureWidth(text, _theme.TextSize) + _theme.Px(28f);
-        UiRect banner = new(MathF.Round((_host.Width - width) * 0.5f), _theme.Px(14f), width, _theme.ControlHeight + _theme.Px(4f));
-        EditorDraw.Shadow(painter, _theme, banner);
-        EditorDraw.Frame(painter, _theme, banner, _theme.Popup.WithAlpha(230), _theme.Accent);
-        EditorDraw.Label(painter, _theme, text, banner.Deflate(new Thickness(_theme.Px(14f), 0f)), _theme.Text);
-    }
+    // The banner over a play-test: the way back, and the play-test's keys, those in force lit.
+    private float DrawPlayingBanner(UiPainter painter) => PlaytestBanner.Draw(painter, _theme, _host.Playtest, _host.Width);
 
     // Does something that leaves the open mission, asking first whether to save it when it has changes.
     private void AfterSaving(Action leave)
@@ -797,6 +931,7 @@ internal sealed partial class EditorSession : IEditorSession
         {
             if (_workspace.Save())
             {
+                _savedInLevelLoad = _host.LevelLoads;
                 Notify($"Saved to {_workspace.Project.Name}. Ctrl+R reloads the level from it.");
                 return true;
             }

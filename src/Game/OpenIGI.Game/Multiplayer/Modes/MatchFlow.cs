@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer.Modes;
@@ -156,19 +157,19 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
     /// <returns>The banner, or <see langword="null"/> for a match with nothing to show (co-op).</returns>
     public MatchBanner? Banner(double secondsSince)
     {
-        if (Mode == GameModes.Coop || string.IsNullOrEmpty(Mode))
+        if (Mode == MatchModes.Coop || string.IsNullOrEmpty(Mode))
         {
             return null;
         }
 
         string? clock = SecondsLeft is { } left ? Clock(Math.Max(0, left - secondsSince)) : null;
-        string title = GameModes.Title(Mode);
+        string title = MatchModes.Title(Mode);
         return Phase switch
         {
             MatchPhase.Warmup => new MatchBanner("WARMUP", clock, "The match begins when the clock runs out"),
             MatchPhase.Intermission or MatchPhase.RoundOver => new MatchBanner(
                 title, clock, Winner < 0 || WinnerName.Length == 0 ? "DRAW" : $"{WinnerName.ToUpperInvariant()} WINS"),
-            _ when Round > 0 && Mode is GameModes.Elimination or GameModes.SearchAndDestroy =>
+            _ when Round > 0 && Mode is MatchModes.Elimination or MatchModes.SearchAndDestroy =>
                 new MatchBanner($"{title}  ·  ROUND {Round}", clock, Status(secondsSince) is { Length: > 0 } status ? status : null),
             _ => new MatchBanner(title, clock, null),
         };

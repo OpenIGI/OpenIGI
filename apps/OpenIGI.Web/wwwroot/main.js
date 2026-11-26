@@ -17,6 +17,11 @@ import * as userFiles from './user-files.js';
 
 const GAME_ROOT = '/game';
 
+// Every file the page loads is listed for the service worker once the game is up (keepShell), so the list must not stop at
+// the browser's default of 250 entries: the runtime alone is more, and a short list would let the worker drop files the page
+// still needs.
+performance.setResourceTimingBufferSize?.(10000);
+
 const $ = id => document.getElementById(id);
 const canvas = $('view');
 const landing = $('landing');
@@ -32,11 +37,172 @@ const party = (query.get('party') ?? '').replace(/[^A-Za-z0-9]/g, '');
 if (party) args.push('+party_join', party);
 if (query.has('host')) args.push('-host');
 if (query.get('name')) args.push('-name', query.get('name'));
+// A mission board's run, from the site's leaderboard: ?replay=ID watches it, ?race=ID races its ghost.
+const run = (key) => (/^[0-9a-f]{32}$/.test(query.get(key) ?? '') ? query.get(key) : null);
+if (run('replay')) args.push('-playreplay', run('replay'));
+else if (run('race')) args.push('-race', run('race'));
 
-const HINT = 'The folder with IGI.exe in it, usually pc inside the installation.';
+// --- Which game ----------------------------------------------------------------------------------------
+//
+// The browser card plays either game: ?game=igi2 links to one, and the switch's last choice is kept for the next
+// visit. A Discord Activity plays the first game unless its link says otherwise -- multiplayer is that game's.
 
-/** Where the site hosts the game's files (tools/web-data/pack.py); ?data-host=<url> points elsewhere. */
-const HOSTED_DATA = new URL(query.get('data-host') ?? 'https://data.openigi.com/igi1/', location.href).href.replace(/\/?$/, '/');
+const GAME_KEY = 'openigi-game';
+const IN_DISCORD = query.has('frame_id') && query.has('instance_id');
+
+// The page kept for a visit with no network (sw.js): not inside Discord's frame, which reaches everything through its proxy,
+// not for an automated run's served folder (?data=), and not when asked not to (?sw=0).
+const OFFLINE_SHELL = 'serviceWorker' in navigator && window.isSecureContext && !IN_DISCORD
+  && !query.has('data') && query.get('sw') !== '0';
+if (OFFLINE_SHELL) {
+  navigator.serviceWorker.register('sw.js').catch(error => console.warn(`The page can't be kept for offline play: ${error.message}`));
+}
+
+/** Tells the service worker every file of the page's the game loaded, so it keeps them all and lets older ones go. */
+function keepShell() {
+  if (!OFFLINE_SHELL) return;
+  navigator.serviceWorker.ready.then(registration => {
+    // The game's own files are not the page's: game-files.js keeps those, and a data host on the page's own address (a local
+    // test server's /data/) would otherwise have them copied here a second time.
+    const data = hostedData();
+    const urls = performance.getEntriesByType('resource').map(entry => entry.name)
+      .filter(name => name.startsWith(registration.scope) && !name.startsWith(data) && !name.startsWith(`${registration.scope}data/`));
+    registration.active?.postMessage({ type: 'keep', urls });
+  }).catch(() => {});
+}
+
+function savedGame() {
+  try {
+    return localStorage.getItem(GAME_KEY);
+  } catch {
+    return null; // Storage blocked: the default.
+  }
+}
+
+let game = [query.get('game'), IN_DISCORD ? null : savedGame()].find(id => id in files.TITLES) ?? 'igi1';
+
+// Sent here by the game's own switcher: played at once. Taken off the address, so reloading by hand later lands on
+// the page as usual.
+const SWITCHED = query.has('play');
+if (SWITCHED) {
+  const address = new URL(location.href);
+  address.searchParams.delete('play');
+  history.replaceState(null, '', address.href);
+}
+
+/** Shows a game as the chosen one, and keeps the choice. */
+function showGame(id) {
+  game = id;
+  $('game-name').textContent = files.TITLES[id].name;
+  for (const button of $('games').querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.game === id));
+  $('files-point').textContent = files.TITLES[id].hosted
+    ? "Nothing to install: the game's files download once and are kept for the next visit."
+    : 'Plays from your own copy of the game: choose its folder once and it is remembered.';
+  try {
+    localStorage.setItem(GAME_KEY, id);
+  } catch {
+    // Not kept; chosen again next visit.
+  }
+}
+showGame(game);
+
+const hint = () => `The folder ${files.TITLES[game].name} is installed in${game === 'igi1' ? ' (usually the pc folder inside it)' : ''}.`;
+
+// --- Inside a Discord Activity --------------------------------------------------------------------------
+//
+// Discord opens the page in its own frame with ?frame_id and ?instance_id. There the page reaches other sites only through
+// Discord's proxy, by the paths the app's URL mappings name (/master, /data), and WebRTC is not allowed: the SDK rewrites
+// every request to the master and the game's files onto those paths, and the voice channel's players share one room that
+// carries the game itself (rooms.js), its code made from the Activity's instance -- the first one in hosts it, the rest
+// join it.
+
+const DISCORD_APP = '1534229764519497768';
+
+/** The Discord SDK once the Activity is set up: the frame opens another site only through it. */
+let discordSdk = null;
+
+$('elsewhere').addEventListener('click', event => {
+  if (!discordSdk) return;
+  event.preventDefault();
+  discordSdk.commands.openExternalLink({ url: event.currentTarget.href }).catch(error => console.warn('Discord link', error));
+});
+
+async function enterDiscord() {
+  const { DiscordSDK, patchUrlMappings } = await import('./discord-sdk.js');
+  patchUrlMappings([
+    { prefix: '/master', target: 'master.openigi.com' },
+    { prefix: '/data', target: 'data.openigi.com' },
+  ]);
+  const sdk = new DiscordSDK(DISCORD_APP);
+  await sdk.ready();
+  discordSdk = sdk;
+  const instance = sdk.instanceId;
+
+  // Who is playing: Discord asks once to share the player's name, then never again. They play under it; without it, as
+  // the game's own name.
+  try {
+    const { code } = await sdk.commands.authorize({ client_id: DISCORD_APP, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
+    // Signed with this browser's player key, so the same sign-in links the game here to the account.
+    const body = JSON.stringify({ code });
+    const traded = await fetch('https://master.openigi.com/v1/auth/discord/activity', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...await signedHeaders('POST', '/v1/auth/discord/activity', body) },
+      body,
+    });
+    if (traded.ok) {
+      const { access_token: accessToken, account } = await traded.json();
+      await sdk.commands.authenticate({ access_token: accessToken });
+      if (!args.includes('-name') && account?.name) args.push('-name', account.name);
+    }
+  } catch (error) {
+    console.warn('Discord sign-in', error);
+  }
+
+  const reply = await fetch(`https://master.openigi.com/v1/rooms/instance/${encodeURIComponent(instance)}`);
+  const room = reply.ok ? await reply.json() : null;
+  if (args.includes('-join') || args.includes('-host')) return;
+
+  // Someone in the voice channel already hosts: straight into their game. Otherwise the menu, where co-op hosted is the
+  // channel's room for the others to come into.
+  if (room?.hosted) args.push('-join', room.code);
+  args.push('-instance', instance);
+}
+
+/** The headers that sign a request to the master with this browser's player key (SignedRequest.cs, signed.js). */
+async function signedHeaders(method, path, body) {
+  identity.imports.start();
+  const time = Math.floor(Date.now() / 1000);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)));
+  const hash = [...digest].map(b => b.toString(16).padStart(2, '0')).join('');
+  const text = new TextEncoder().encode(`${method}\n${path}\n${time}\n${hash}`);
+  let raw = '';
+  for (const b of text) raw += String.fromCharCode(b);
+  const signature = await identity.imports.sign(btoa(raw));
+  return { 'x-openigi-key': identity.imports.publicKey(), 'x-openigi-signature': signature, 'x-openigi-time': String(time) };
+}
+
+if (IN_DISCORD) {
+  try {
+    await enterDiscord();
+  } catch (error) {
+    console.error('Discord', error);
+  }
+}
+
+/**
+ * Where the site hosts a game's files (tools/web-data/pack.py), a folder per game; ?data-host=<url> points
+ * elsewhere, with {game} standing for the game's id (a URL without it is taken for the chosen game's folder).
+ */
+const hostedData = (id = game) => new URL((query.get('data-host') ?? 'https://data.openigi.com/{game}/').replaceAll('{game}', id), location.href)
+  .href.replace(/\/?$/, '/');
+
+/** Whether the chosen game's files come from the site; a game it does not serve is played from the person's own folder. */
+const siteServes = () => files.TITLES[game].hosted;
+
+// Files an earlier page downloaded for a game the site no longer serves, let go: I.G.I. 2 was hosted for a while.
+for (const [id, title] of Object.entries(files.TITLES)) {
+  if (!title.hosted) files.clearHosted(hostedData(id)).catch(() => {});
+}
 
 // --- The landing page ----------------------------------------------------------------------------------
 
@@ -91,7 +257,16 @@ async function acquireDevice() {
   const requiredLimits = {};
   for (const name in adapter.limits) requiredLimits[name] = adapter.limits[name];
   const device = await adapter.requestDevice({ requiredFeatures: [...adapter.features], requiredLimits });
-  device.onuncapturederror = e => console.error(`WebGPU: ${e.error.message}`);
+  // Each distinct error once, then a count now and again: a broken pipeline repeats the same two errors every frame, and
+  // writing them all to the console lagged the game it was reporting on.
+  const seen = new Map();
+  device.onuncapturederror = e => {
+    const message = e.error.message;
+    const count = (seen.get(message) ?? 0) + 1;
+    seen.set(message, count);
+    if (count === 1) console.error(`WebGPU: ${message}`);
+    else if (count % 600 === 0) console.error(`WebGPU: the error above again (${count} times so far).`);
+  };
   device.lost.then(info => {
     // Destroyed on purpose once the game has ended; anything else is a fault worth saying.
     if (info.reason !== 'destroyed') console.error(`WebGPU device lost: ${info.message}`);
@@ -105,16 +280,17 @@ async function acquireDevice() {
 async function pickFolder() {
   if (window.showDirectoryPicker) {
     try {
-      return await files.fromDirectory(await window.showDirectoryPicker({ id: 'openigi-game', mode: 'read' }));
+      return await files.fromDirectory(await window.showDirectoryPicker({ id: game === 'igi1' ? 'openigi-game' : `openigi-${game}`, mode: 'read' }), game);
     } catch (error) {
       if (error.name === 'AbortError') return null;
-      throw error;
+      // A frame of another site (Discord's) may not show the picker: the plain file input below may still be allowed.
+      if (error.name !== 'SecurityError') throw error;
     }
   }
 
   return new Promise((chosen, failed) => {
     const input = Object.assign(document.createElement('input'), { type: 'file', webkitdirectory: true });
-    input.addEventListener('change', () => files.fromFileList(input.files).then(chosen, failed));
+    input.addEventListener('change', () => files.fromFileList(input.files, game).then(chosen, failed));
     input.addEventListener('cancel', () => chosen(null));
     input.click();
   });
@@ -166,8 +342,14 @@ function hostedLine(status) {
  * the person's own folder, picked or remembered from their last visit. Nothing starts until Play is pressed.
  */
 async function chooseSource() {
+  const gameButtons = [...$('games').querySelectorAll('button')];
+  const lockGame = () => gameButtons.forEach(button => { button.disabled = true; });
+
   const data = query.get('data');
-  if (data) return files.fromUrl(data.endsWith('/') ? data : `${data}/`);
+  if (data) {
+    lockGame();
+    return files.fromUrl(data.endsWith('/') ? data : `${data}/`, game);
+  }
 
   const { adapter, reason } = await adapterReady;
   if (!adapter) {
@@ -178,40 +360,108 @@ async function chooseSource() {
 
   const own = $('own');
   const clear = $('clear');
-  const hosted = await files.hostedStatus(HOSTED_DATA);
+  const elsewhere = $('elsewhere');
+  // Each of these is the chosen game's, and is read again when the switch changes it. A game the site does not serve
+  // has no hosted status: its own folder is the only way to play it.
+  const statusOfSite = async () => (siteServes() ? files.hostedStatus(hostedData()) : null);
+  let hosted = await statusOfSite();
   // The site's files unless the person chooses their own folder.
+  let ownChosen = false;
   let folderMode = hosted === null;
 
   // What Play would start now in folder mode: a folder just picked and found to be the game, or one remembered.
   let ready = null;
-  let remembered = await files.rememberedFolder();
+  let remembered = await files.rememberedFolder(game);
+  // The folder's files as kept in the browser on an earlier visit: played from without the folder being asked for.
+  let keptCopy = await files.keptCopy(game);
   const offerFolder = () => {
-    if (remembered) offer('Play game', `Game folder: /${remembered.name}`, 'neutral', true);
-    else offer('Choose game folder', hosted === null ? `The game's files could not be reached. ${HINT}` : HINT);
+    if (keptCopy) offer('Play now', `Kept in this browser, from /${keptCopy.name}. Ready.`, 'ok', true);
+    else if (remembered) offer('Play now', `Game folder: /${remembered.name}`, 'neutral', true);
+    else if (hosted === null && siteServes()) offer('Choose game folder', `The game's files could not be reached. ${hint()}`);
+    else offer('Choose game folder', hint());
     own.hidden = true;
+    clear.hidden = !keptCopy;
+    clear.textContent = 'Delete the kept files';
+    // Discord's frame may refuse a folder picker of any kind; the site in a browser of its own always offers one.
+    elsewhere.hidden = !IN_DISCORD;
+    elsewhere.href = `https://openigi.com/?game=${game}`;
   };
   const offerHosted = status => {
     offer('Play now', hostedLine(status), status.start === 0 ? 'ok' : 'neutral');
     own.hidden = false;
     clear.hidden = status.all === status.total;
+    clear.textContent = 'Delete the downloaded files';
+    elsewhere.hidden = true;
   };
   if (folderMode) offerFolder();
   else offerHosted(hosted);
 
+  // Inside a Discord Activity the voice channel came to play, and a game's switcher has just sent the page here
+  // (?play): straight in, no Play to press -- with the site's files, or a remembered folder the browser still lets the
+  // page read (asking again needs a click, which only Play can give).
+  if (IN_DISCORD || SWITCHED) {
+    if (!folderMode) {
+      lockGame();
+      return files.fromHosted(hostedData());
+    }
+    if (keptCopy) {
+      try {
+        const source = await files.fromKept(game);
+        lockGame();
+        return source;
+      } catch (error) {
+        if (!(error instanceof files.InstallationError)) throw error;
+        keptCopy = null; // Cleared by the browser: the folder below, or Play.
+        offerFolder();
+      }
+    }
+    if (remembered && await files.readable(remembered)) {
+      try {
+        const source = await files.reopen(remembered, game);
+        lockGame();
+        return source;
+      } catch (error) {
+        if (!(error instanceof files.InstallationError)) throw error;
+        // Gone or changed: Play below asks again.
+      }
+    }
+  }
+
   return new Promise((settle, fail) => {
     // Once the installation is settled the buttons are the page's again (Play again, Reload).
     const listening = new AbortController();
-    const resolve = source => { listening.abort(); settle(source); };
-    const reject = error => { listening.abort(); fail(error); };
+    const resolve = source => { listening.abort(); lockGame(); settle(source); };
+    const reject = error => { listening.abort(); lockGame(); fail(error); };
 
     let busy = false;
+
+    /** The other game chosen: its own files, its own remembered folder, and the same choice of where from. */
+    const switchTo = async id => {
+      if (busy || id === game) return;
+      busy = true;
+      play.disabled = true;
+      try {
+        showGame(id);
+        hosted = await statusOfSite();
+        remembered = await files.rememberedFolder(game);
+        keptCopy = await files.keptCopy(game);
+        ready = null;
+        folderMode = ownChosen || hosted === null;
+        if (folderMode) offerFolder();
+        else offerHosted(hosted);
+      } finally {
+        busy = false;
+        play.disabled = false;
+      }
+    };
+
     const act = async choose => {
       if (busy) return;
       busy = true;
       play.disabled = true;
       try {
         if (!choose && !folderMode) {
-          resolve(await files.fromHosted(HOSTED_DATA));
+          resolve(await files.fromHosted(hostedData()));
           return;
         }
 
@@ -220,17 +470,29 @@ async function chooseSource() {
           return;
         }
 
+        if (!choose && keptCopy) {
+          try {
+            resolve(await files.fromKept(game));
+          } catch (error) {
+            if (!(error instanceof files.InstallationError)) throw error;
+            keptCopy = null;
+            offerFolder();
+            offer(remembered ? 'Play now' : 'Choose game folder', error.message, 'error', Boolean(remembered));
+          }
+          return;
+        }
+
         if (!choose && remembered) {
           try {
-            resolve(await files.reopen(remembered));
+            resolve(await files.reopen(remembered, game));
           } catch (error) {
             if (!(error instanceof files.InstallationError)) throw error;
             if (error.permission) {
-              offer('Play game', error.message, 'error', true);
+              offer('Play now', error.message, 'error', true);
               return;
             }
             // Gone, or no longer the game: forgotten, and the person picks again.
-            await files.forgetFolder();
+            await files.forgetFolder(game);
             remembered = null;
             offer('Choose game folder', error.message, 'error');
           }
@@ -239,9 +501,15 @@ async function chooseSource() {
 
         const picked = await pickFolder();
         if (picked) {
+          // A folder of the other game is played as that game: the switch follows the folder.
+          if (picked.title !== game) {
+            showGame(picked.title);
+            remembered = await files.rememberedFolder(game);
+            keptCopy = await files.keptCopy(game);
+          }
           ready = picked;
-          if (picked.handle) await files.rememberFolder(picked.handle);
-          offer('Play game', `Found the game in /${picked.name}. Ready.`, 'ok', true);
+          if (picked.handle) await files.rememberFolder(picked.title, picked.handle);
+          offer('Play now', `Found ${files.TITLES[picked.title].name} in /${picked.name}. Ready.`, 'ok', true);
         }
       } catch (error) {
         if (!(error instanceof files.InstallationError)) {
@@ -249,24 +517,34 @@ async function chooseSource() {
           return;
         }
         if (!folderMode) offer('Play now', error.message, 'error');
-        else offer(ready || remembered ? 'Play game' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
+        else offer(ready || remembered ? 'Play now' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
       } finally {
         busy = false;
         play.disabled = false;
       }
     };
 
+    for (const button of gameButtons) {
+      button.addEventListener('click', () => switchTo(button.dataset.game), { signal: listening.signal });
+    }
     play.addEventListener('click', () => { takeTheScreen(); act(false); }, { signal: listening.signal });
     change.addEventListener('click', () => act(true), { signal: listening.signal });
     own.addEventListener('click', () => {
+      ownChosen = true;
       folderMode = true;
       clear.hidden = true;
       offerFolder();
     }, { signal: listening.signal });
     clear.addEventListener('click', async () => {
-      await files.clearHosted();
+      if (folderMode) {
+        await files.forgetKept(game);
+        keptCopy = null;
+        offerFolder();
+        return;
+      }
+      await files.clearHosted(hostedData());
       clear.hidden = true;
-      if (!folderMode) offerHosted((await files.hostedStatus(HOSTED_DATA)) ?? hosted);
+      if (!folderMode) offerHosted((await statusOfSite()) ?? hosted);
     }, { signal: listening.signal });
   });
 }
@@ -287,6 +565,22 @@ async function writeHostAssets(fs) {
   }));
 }
 
+/** Copies the folder being played from into the browser (game-files.js keepCopy), saying how far it has got. */
+async function keepOwnFiles(source) {
+  const STEP = 256 * 1048576;
+  let said = 0;
+  try {
+    const whole = await files.keepCopy(source, (done, total) => {
+      if (done - said < STEP && done < total) return;
+      said = done;
+      console.log(`Keeping the game's files in this browser: ${megabytes(done)} of ${megabytes(total)} MB.`);
+    });
+    if (whole) console.log("The game's files are kept in this browser; the next visit plays from them without asking for the folder.");
+  } catch (error) {
+    console.warn(`The game's files could not be kept in this browser: ${error.message}`);
+  }
+}
+
 /** After the game, or instead of it: the page offers a reload, which starts again from the landing page. */
 function offerReload(label, status, tone) {
   showLanding();
@@ -298,6 +592,8 @@ function offerReload(label, status, tone) {
 
 async function start() {
   const source = await chooseSource();
+  // The game the files are, which the host is told; an explicit -title in ?args= stands.
+  if (!args.includes('-title')) args.push('-title', source.title);
 
   progress('Starting graphics');
   const { adapter, device } = await acquireDevice();
@@ -329,6 +625,21 @@ async function start() {
   runtime.setModuleImports('openigi-identity', identity.imports);
   runtime.setModuleImports('openigi-audio', audio.imports);
   runtime.setModuleImports('openigi-files', files.imports);
+  // The switcher's other game (WebLinks.OpenGame): the page holds one game's files at a time, so it reloads into it,
+  // after the player's files -- a sign-in made a moment ago among them -- are kept.
+  let keptFiles = null;
+  runtime.setModuleImports('openigi-page', {
+    openGame: id => {
+      if (!(id in files.TITLES)) return false;
+      showGame(id);
+      const next = new URL(location.href);
+      next.searchParams.set('game', id);
+      next.searchParams.set('play', '');
+      next.searchParams.delete('data'); // A folder served for automated runs is one game's.
+      Promise.resolve(keptFiles?.flush()).catch(() => {}).finally(() => location.assign(next.href));
+      return true;
+    },
+  });
 
   progress('Starting the game');
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
@@ -336,6 +647,7 @@ async function start() {
 
   // The player's own profile, settings and saves from an earlier visit, back where the game reads them before it boots.
   const kept = await userFiles.keep(fs, game.UserDirectory());
+  keptFiles = kept;
   if (kept.files) console.log(`Restored ${kept.files} of the player's files.`);
 
   // The canvas takes the page before Boot: the game sizes itself to it.
@@ -351,14 +663,22 @@ async function start() {
   // The missions' files, downloaded ahead while the menu is up, so the first mission chosen starts at once.
   if (source.hosted) setTimeout(() => source.prefetch(), 3000);
 
+  // A folder's files, copied into the browser while the game is played, so the next visit asks for nothing. ?keep does
+  // the same for a folder served for an automated run, which otherwise is not kept.
+  if (source.own || (query.has('keep') && !source.hosted && !source.kept)) setTimeout(() => keepOwnFiles(source), 5000);
+
+  // Everything the page needed has loaded by now: kept for a visit with no network.
+  keepShell();
+
   // In a room the game can't stop when its tab is hidden: a host that stopped would stop everyone's game, and a joiner
   // that stopped would be dropped. A hidden tab gets no animation frames and its timers are held to one a second, but a
-  // worker's timers run on, so while hidden the next frame comes from a worker's tick instead.
-  const inRoom = args.includes('-host') || args.includes('-join') || args.includes('+party_join');
+  // worker's timers run on, so while hidden the next frame comes from a worker's tick instead. Whether it is in a room is the
+  // game's to say, asked only while hidden: a room is as often hosted or joined from the menu as from the command line.
+  const inRoom = () => game.InSession();
   let ticker = null;
   let pending = 0;
   const next = () => {
-    if (inRoom && document.hidden) {
+    if (document.hidden && inRoom()) {
       if (!ticker) {
         const tick = 'let t; onmessage = () => { clearTimeout(t); t = setTimeout(() => postMessage(0), 16); };';
         ticker = new Worker(URL.createObjectURL(new Blob([tick], { type: 'text/javascript' })));
@@ -373,7 +693,7 @@ async function start() {
 
   // Hidden with an animation frame still asked for: that frame won't come, so the worker takes over now.
   document.addEventListener('visibilitychange', () => {
-    if (inRoom && document.hidden && pending) {
+    if (document.hidden && pending && inRoom()) {
       cancelAnimationFrame(pending);
       pending = 0;
       next();
@@ -464,8 +784,11 @@ async function showGitHub() {
   $('github-stars').hidden = false;
 }
 
-showDiscord().catch(() => {});
-showGitHub().catch(() => {});
+// Outside sites the page can't reach from inside Discord's frame.
+if (!IN_DISCORD) {
+  showDiscord().catch(() => {});
+  showGitHub().catch(() => {});
+}
 
 // What the header says about the browser, as soon as it is known.
 adapterReady.then(({ adapter }) => {

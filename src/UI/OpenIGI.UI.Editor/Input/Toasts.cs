@@ -109,7 +109,7 @@ public sealed class Toasts
             UiRect iconBox = new(box.X + theme.Px(10f), box.Y, theme.Px(20f), box.Height);
             EditorDraw.Icon(painter, theme, icon, iconBox, ink, theme.Px(18f));
             float textX = iconBox.Right + theme.Px(8f);
-            string shown = EditorDraw.Fit(theme.Font, message, theme.TextSize, box.Right - textX - theme.Px(10f));
+            string shown = theme.Font.Fit(message, theme.TextSize, box.Right - textX - theme.Px(10f));
             EditorDraw.Label(painter, theme, shown, new UiRect(textX, box.Y, box.Right - textX - theme.Px(10f), box.Height), theme.Text);
             painter.PopOpacity();
         }

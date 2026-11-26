@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -16,7 +17,8 @@ namespace OpenIGI.Game.Igi1.Player;
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
 public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground)
-    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement, IWeaponWheelPlayer, ITitleMatchPlayer
+    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitlePlayerPlacement, IWeaponWheelPlayer, ITitleMatchPlayer, ITitleBinoculars,
+        ITitleOrbitView
 {
     private TitleLookPreview? _look;
 
@@ -24,7 +26,7 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <summary>Gets the player.</summary>
     public Igi1HumanPlayer Human { get; } = human ?? throw new ArgumentNullException(nameof(human));
 
-    private readonly Igi1HumanCamera _death = new();
+    private readonly HumanOrbitCamera _death = new();
     private Vector3d _deathFeet;
 
     /// <summary>
@@ -34,12 +36,24 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// </summary>
     public Func<Action<PlayerCamera>, bool>? Step { get; init; }
 
+    /// <summary>
+    /// Gets what reads the player's mission score where the player is the game's own mission's; <see langword="null"/> in another
+    /// game's level, which ranks its own.
+    /// </summary>
+    public Flow.Igi1MissionScorer? Scorer { get; init; }
+
+    /// <inheritdoc/>
+    public Scoring.MissionScoreSheet? ScoreSheet(int missionId) => Scorer?.Sheet(missionId);
+
     /// <inheritdoc/>
     /// <remarks>Not while dead, nor on a mounted gun, whose look turns the gun rather than the head.</remarks>
     public bool CanPreviewLook => !Human.Life.IsDead && Human.Rig.MountedStationaryGun is null;
 
     /// <inheritdoc/>
     public Matrix3f LookOrientation => Look.Orientation;
+
+    /// <inheritdoc/>
+    public bool IsBinocularsRaised => !Human.Life.IsDead && Human.Rig.IsBinocularsOpen;
 
     /// <summary>Gets the ticks the player has run.</summary>
     public long Ticks { get; private set; }
@@ -83,8 +97,19 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <remarks>The body's yaw: its forward is (sin yaw, cos yaw).</remarks>
     public float? Heading => Human.Rig.Yaw;
 
+    /// <inheritdoc/>
+    public bool IsComputerOpen => Human.Rig.IsMapComputerOpen;
+
     /// <summary>Gets a value indicating whether the death camera has the view: the player is dead and its camera pulled back.</summary>
     public bool IsDeathViewActive => Human.Life.IsDead && _death.IsActive;
+
+    /// <inheritdoc/>
+    /// <remarks>The death camera, which the tick turns by the tick's mouse and the frame draws between ticks.</remarks>
+    public bool IsOrbiting => IsDeathViewActive;
+
+    /// <inheritdoc/>
+    public Camera3D PreviewOrbit(float tickBlend, float mouseX, float mouseY, float sensitivity, bool invertMouse) =>
+        _death.Preview(tickBlend, mouseX, mouseY, MouseLookSettings.FromSensitivity(sensitivity, invertMouse));
 
     /// <summary>Pulls the camera back from the player's body as it falls (the human camera's mode 5).</summary>
     /// <param name="feet">Where the body lies, in world units.</param>
@@ -112,6 +137,15 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     public void Tick(in TitlePlayerInput input)
     {
         TitlePlayerInput given = input;
+
+        // The weapon wheel's pick since the last tick, taken as the tick begins as a number key's would be.
+        if (input.WheelPick is { } pick)
+        {
+            ChooseFromWheel(pick.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // The crosshair's ray over the shoulder, from the eye it was measured from as the tick began.
+        Human.Rig.AimConvergenceRay = input.Aim is { } aim ? (EyePosition + aim.EyeOffset, aim.Direction) : null;
 
         // Whatever look the frames were shown is the rig's own from here: this tick takes it.
         Human.Rig.ShowLook(null);
@@ -200,9 +234,12 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     private (float Gamma, float Pitch) Turn(float mouseX, float mouseY, float sensitivity, bool invertMouse, float yaw, float pitch)
     {
         MouseLookSettings settings = MouseLookSettings.FromSensitivity(sensitivity, invertMouse);
-        float zoom = Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f;
-        return (yaw + (settings.YawDelta(mouseX) * zoom),
+        float zoom = (Human.Rig.View is { } view ? MouseLookSettings.ZoomSensitivityScale(view.TanX) : 1f) * Human.Rig.AimLookScale;
+        (float Yaw, float Pitch) turned = (yaw + (settings.YawDelta(mouseX) * zoom),
             Math.Clamp(pitch + (settings.PitchDelta(mouseY) * zoom), -PlayerBody.PitchLimit, PlayerBody.PitchLimit));
+
+        // A braced weapon holds the look to its sector between ticks as on them, or the frames would show a turn the tick takes back.
+        return Human.Rig.LookLimit is { } limit ? limit.Clamp(turned.Yaw, turned.Pitch) : turned;
     }
 
     // The eye of a body standing on these feet, which the death camera orbits and looks at.

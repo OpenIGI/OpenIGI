@@ -12,7 +12,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// <summary>Project I.G.I.'s mission HUD over the finished frame: the weapon readout or the optics, the status, the washes and the remaster's HUD.</summary>
 /// <param name="device">The device it draws with.</param>
 /// <param name="gameplay">The first game's mission, whose player and objectives it reads.</param>
-internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gameplay) : IMissionHudOverlay, ITouchHudSource
+internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gameplay) : IMissionHudOverlay, ITouchHudSource, IKillFeedArt
 {
     private readonly IGraphicsDevice _device = device;
     private readonly Igi1Gameplay _gameplay = gameplay;
@@ -23,17 +23,34 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     /// <inheritdoc/>
     public HudTheme Theme => Igi1HudTheme.Theme;
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="ITouchHudSource.Icons"/>
     public IHudIconSource? Icons => _icons;
 
     /// <inheritdoc/>
     public HudModel Model => _model;
 
     /// <inheritdoc/>
+    /// <remarks>The status screen's weapons are drawn muzzle to the left.</remarks>
+    public bool WeaponsFaceLeft => true;
+
+    /// <inheritdoc/>
+    public HudIcon WeaponIcon(string weaponKey) =>
+        string.IsNullOrEmpty(weaponKey) ? HudIcon.None : new HudIcon(StatusScreenRenderer.IconFor(weaponKey));
+
+    /// <inheritdoc/>
+    public string WeaponName(string weaponKey) =>
+        !string.IsNullOrEmpty(weaponKey) && _gameplay.PlayerSetup?.Weapons is { } types && types.TryGetByScriptId(weaponKey, out Game.Weapons.WeaponType type)
+            ? type.DisplayName
+            : string.Empty;
+
+    /// <inheritdoc/>
     public void DrawWeaponHud(SpriteBatch batch, in MissionHudFrame frame)
     {
         ArgumentNullException.ThrowIfNull(batch);
         MissionWorld mission = _gameplay.World;
+
+        // The status archive's pictures, kept for what draws outside the mission's own HUD: a session's kill feed.
+        _icons = frame.Hud as IHudIconSource ?? _icons;
     if (RemasteredHudPresentation.UsesRetailWeaponHud(
             frame.RemasterHud,
             mission.Player?.IsBinocularsOpen == true,
@@ -188,8 +205,11 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model, messages: frame.TacticalMessages);
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        HudProjector? projector = modernPlayer.View is { } view
-            ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, WidescreenLens.HorizontalTangent(view.TanX, frame.Width, frame.Height), frame.Width, frame.Height)
+        // Through the camera the frame was drawn from, between ticks, so a marker stays on what it marks as the view glides.
+        HudProjector? projector = frame.Eye is { } drawn
+            ? HudProjector.FromCamera(drawn, frame.HorizontalTangent, frame.Width, frame.Height)
+            : modernPlayer.View is { } view
+            ? HudProjector.FromYawPitch(modernPlayer.EyeUnits, modernPlayer.Yaw, modernPlayer.Pitch, WidescreenLens.HorizontalTangent(view.TanX, frame.Width, frame.Height), frame.Width, frame.Height)
             : null;
         _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 8f) with
         {

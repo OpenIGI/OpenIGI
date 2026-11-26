@@ -40,7 +40,7 @@ public sealed partial class Igi1MissionTick
         computer.Saves = host.ComputerSaves;
         player.SetMapComputerOpen(true);
         (int width, int height) = host.ComputerDisplay;
-        computer.Open(mission.PlayerTask, width, height);
+        computer.Open(mission.PlayerTask, width, height, player.AskedComputerPage);
         host.TakeComputerInput();
         host.ComputerChanged(true);
     }
@@ -57,8 +57,26 @@ public sealed partial class Igi1MissionTick
         computer.MapEnabled = host.MapComputerEnabled;
         ComputerPointerInput mouse = host.TakeComputerInput();
 
-        // 0x40E3C0: the map key closes it. The open computer holds the window's input, so the key comes with the mouse.
-        bool mapKey = player.TickMapComputer(host.ViewInput) | mouse.MapKey;
+        // 0x40E3C0: the map key closes it. The open computer holds the player's controls, so the key comes with the mouse -- both
+        // from the tick's input, never the window, so a replay closes it on the tick it was closed.
+        bool mapKey = player.TickMapComputer(PlayerInputSampler.FromActions(host.TickInput.Computer.Held)) | mouse.MapKey;
+
+        // The objectives' and the log's keys turn it to their page, and close it from that page (not retail: I.G.I. 2's keys).
+        ComputerPageKind pageKey = player.AskedComputerPage;
+        if (pageKey == ComputerPageKind.None)
+        {
+            pageKey = mouse.PageKey;
+        }
+
+        if (!mapKey && pageKey != ComputerPageKind.None && computer.ShownPage != pageKey && Igi1Computer.ScreenFor(pageKey) is { } screen)
+        {
+            computer.SetScreen(screen);
+        }
+        else if (pageKey != ComputerPageKind.None)
+        {
+            mapKey = true;
+        }
+
         if (mapKey)
         {
             computer.Close();
@@ -67,15 +85,14 @@ public sealed partial class Igi1MissionTick
             return;
         }
 
-        computer.Run(ComputerInput(mouse, host.InputProfile), paused: false);
+        computer.Run(ComputerInput(mouse, host.TickInput.MouseSensitivity, host.TickInput.InvertMouse), paused: false);
     }
 
     // 0x45E060's first two channels: the mouse's counts over 255 at the profile's sensitivity, the second inverted when the
     // profile says so.
-    private static Igi1ComputerInput ComputerInput(in ComputerPointerInput mouse, PlayerProfile? profile)
+    private static Igi1ComputerInput ComputerInput(in ComputerPointerInput mouse, float mouseSensitivity, bool invert)
     {
-        float sensitivity = Math.Clamp(profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity, MinimumSensitivity, MaximumSensitivity);
-        bool invert = profile?.InvertMouse ?? false;
+        float sensitivity = Math.Clamp(mouseSensitivity, MinimumSensitivity, MaximumSensitivity);
         float x = (float)(sensitivity * (mouse.CountsX * (1.0 / 255.0)));
         float y = (float)(sensitivity * (mouse.CountsY * (1.0 / 255.0)));
         return new Igi1ComputerInput(x, invert ? -y : y, invert, mouse.Buttons);

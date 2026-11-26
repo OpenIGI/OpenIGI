@@ -36,6 +36,9 @@ public sealed partial class GameHost
     /// </summary>
     private void SaveReadOntoLevel()
     {
+        // The run recorded from the start is over where the save takes the level up.
+        RunSaveLoaded();
+
         // The failed page, if the mission stood failed, is put away as its own resume does: the level plays on behind it.
         if (_session.FailedMenu)
         {
@@ -75,8 +78,8 @@ public sealed partial class GameHost
 
         if (said is not null)
         {
+            // The save games say how it went on the screen themselves (SaveReport).
             _logger.Information("Saves", said + ".");
-            _mission.Progress?.ShowTransientMessage(said);
         }
     }
 

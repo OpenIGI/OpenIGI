@@ -95,7 +95,7 @@ public sealed class ConfigScript
         return config;
     }
 
-    /// <summary>The names a configuration file may call: the retail file's, and OpenIGI's own <c>GOControlsVersion</c>.</summary>
+    /// <summary>The names a configuration file may call: the retail file's, and OpenIGI's own <c>GOControlsVersion</c> and <c>GOTitleMission</c>.</summary>
     /// <remarks>Listed in the order a retail file uses them, which is also the order the writer emits.</remarks>
     public static IReadOnlyList<string> NativeNames { get; } =
     [
@@ -104,6 +104,7 @@ public sealed class ConfigScript
         "GOControlsVersion",
         "GOPlayer",
         "GOActiveMission",
+        "GOTitleMission",
         "GOInMouInv",
         "GOInMouSens",
         "GOInRemap",
@@ -170,6 +171,29 @@ public sealed class ConfigScript
             }), 1);
 
             natives.RegisterFunction("GOActiveMission", c => OnProfile(p => p.ActiveMission = c.GetInt32(0)), 1);
+            natives.RegisterFunction("GOTitleMission", c => OnProfile(p =>
+            {
+                // A line without a game names none; it is passed over rather than failing the whole file.
+                if (c.GetString(0) is { Length: > 0 } title)
+                {
+                    p.SetMission(title, c.GetInt32(1));
+                }
+            }), 2);
+            natives.RegisterFunction("GOTitleFinale", c => OnProfile(p =>
+            {
+                if (c.GetString(0) is { Length: > 0 } title)
+                {
+                    p.SetFinale(title, c.GetInt32(1));
+                }
+            }), 2);
+            natives.RegisterFunction("GOTitleMissionRecord", c => OnProfile(p =>
+            {
+                // A line that can't be read is passed over, as a bad GOTitleMission is.
+                if (c.GetString(0) is { Length: > 0 } title && MissionRecordText.TryParse(c.GetString(2), c.GetString(3), out Scoring.TitleMissionRecord? record))
+                {
+                    p.SetMissionRecord(title, c.GetInt32(1), record);
+                }
+            }), 4);
             natives.RegisterFunction("GOInMouInv", c => OnProfile(p => p.InvertMouse = c.GetInt32(0) != 0), 1);
             natives.RegisterFunction("GOInMouSens", c => OnProfile(p => p.MouseSensitivity = c.GetSingle(0)), 1);
 

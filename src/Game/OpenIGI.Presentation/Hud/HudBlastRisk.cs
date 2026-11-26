@@ -11,8 +11,7 @@ namespace OpenIGI.Presentation.Hud;
 /// flashes.
 /// </para>
 /// <para>
-/// CS2 added the same read-out to its bomb in July 2026 (the health the blast would take, shown under the health as the
-/// fuse runs); this is the port's own drawing of it, on each title's own bar.
+/// The health the blast would take is shown under the health as the fuse runs, drawn on each title's own bar.
 /// </para>
 /// </remarks>
 public static class HudBlastRisk

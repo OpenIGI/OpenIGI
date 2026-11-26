@@ -44,6 +44,9 @@ public sealed record CoopRoomInfo(string Code, string Name, int MissionId, int P
     /// <summary>Gets a value indicating whether it is a dedicated server rather than a player's room.</summary>
     public bool Dedicated { get; init; }
 
+    /// <summary>Gets a value indicating whether it is an official server, whose matches count toward the stats.</summary>
+    public bool Official { get; init; }
+
     /// <summary>Gets a value indicating whether it answered from this network.</summary>
     public bool Lan { get; init; }
 
@@ -104,6 +107,13 @@ public interface ICoopRooms
 
     /// <summary>Stands every player of the room this player hosts up again where the squad last stood together.</summary>
     void RetryFromCheckpoint();
+
+    /// <summary>Gets a line's files ready while the player looks at it: those its host plays that differ here, fetched ahead of a join.</summary>
+    /// <param name="code">The line's <see cref="CoopRoomInfo.Code"/>; <see langword="null"/> when none is picked.</param>
+    /// <remarks>Called as often as the page likes: the same line again changes nothing.</remarks>
+    void Prefetch(string? code)
+    {
+    }
 
     /// <summary>Leaves the room, if in one.</summary>
     void Leave();

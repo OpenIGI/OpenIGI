@@ -588,7 +588,7 @@ public sealed class TreeView<T> : EditorElement
         if (_source.Detail?.Invoke(item) is { Length: > 0 } detail)
         {
             float width = MathF.Min(Theme.SmallFont.MeasureWidth(detail, Theme.SmallTextSize), (right - x) * 0.45f);
-            string shown = EditorDraw.Fit(Theme.SmallFont, detail, Theme.SmallTextSize, width);
+            string shown = Theme.SmallFont.Fit(detail, Theme.SmallTextSize, width);
             float y = MathF.Round(row.Y + ((row.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f));
             painter.DrawText(Theme.SmallFont, shown, new UiVec2(right - width, y), Theme.SmallTextSize, Theme.TextDisabled);
             right -= width + Theme.Px(8f);

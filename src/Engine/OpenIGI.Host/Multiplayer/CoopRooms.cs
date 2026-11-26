@@ -70,6 +70,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         _logger = logger;
     }
 
+    /// <summary>Gets the signed-in player's Discord avatar, a <see cref="DiscordAvatar"/> reference; empty for none.</summary>
+    public Func<string> Avatar { get; init; } = static () => string.Empty;
+
     /// <summary>Gets which missions' maps can be played as arenas; every one when unset.</summary>
     public Func<int, bool>? Arenas { get; init; }
 
@@ -78,6 +81,97 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
 
     /// <summary>Gets or sets what reads the game's tables again, for a server's shared files put in place before the join.</summary>
     public Action? ReloadTables { get; set; }
+
+    /// <summary>Gets or sets what makes this game's side of a server's files, for a line's files fetched ahead of a join.</summary>
+    public Func<SessionFileSync>? NewFileSync { get; set; }
+
+    /// <summary>Gets or sets whether a map's own files are where the game reads them (<see cref="SessionClient.MapFilesInPlace"/>).</summary>
+    public Func<string, bool>? MapFilesInPlace { get; set; }
+
+    // How long a line stays picked before its files are fetched: a player scrolling the list starts nothing.
+    private const double PrefetchAfterSeconds = 1.5;
+
+    // The line picked and since when, and the fetch of its files once begun.
+    private (string Code, double Since)? _prefetchWanted;
+    private (string Code, ServerFileFetch Fetch)? _prefetch;
+
+    /// <inheritdoc/>
+    public void Prefetch(string? code)
+    {
+        if (code == _prefetchWanted?.Code)
+        {
+            return;
+        }
+
+        _prefetchWanted = code is null ? null : (code, _clock.Elapsed.TotalSeconds);
+        if (_prefetch is { } running && running.Code != code)
+        {
+            EndPrefetch();
+        }
+    }
+
+    // The picked line's files: begun once it has stayed picked a moment, polled while they come, let go once in or not to be had.
+    private void PumpPrefetch()
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        if (_session is not null || _finding is not null || _waitingFor is not null)
+        {
+            // Joining or playing: the session fetches what it needs itself.
+            EndPrefetch();
+            return;
+        }
+
+        if (_prefetch is null && _prefetchWanted is { } wanted && now - wanted.Since >= PrefetchAfterSeconds && NewFileSync is { } newSync
+            && OpenFetch(wanted.Code, newSync) is { } fetch)
+        {
+            _prefetch = (wanted.Code, fetch);
+        }
+
+        if (_prefetch is not { } running)
+        {
+            return;
+        }
+
+        running.Fetch.Poll(now, running.Code);
+        if (running.Fetch.Done || running.Fetch.Ended is not null)
+        {
+            if (running.Fetch.Done)
+            {
+                _logger.Information(LogCategory, $"The files of {running.Code} are ready ahead of a join.");
+            }
+
+            // Kept from being begun again for the same line: the cache holds what came.
+            _prefetchWanted = (running.Code, double.PositiveInfinity);
+            EndPrefetch();
+        }
+    }
+
+    // A connection that asks only for a line's files: to a server by its address, or through its room; none for a line this
+    // game could not join anyway.
+    private ServerFileFetch? OpenFetch(string code, Func<SessionFileSync> newSync)
+    {
+        if (_browser?.Servers.FirstOrDefault(s => s.Key == code) is not { } line
+            || line.Info.Passworded || !line.Info.Compatible || line.Info.Players >= line.Info.MaxPlayers)
+        {
+            return null;
+        }
+
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id, Avatar: Avatar());
+        if (line.Address is { } address && line.Answered && OpenUdp is { } open)
+        {
+            return new ServerFileFetch(open(0), ownsTransport: true, address, request, _titleId(), newSync(), MapFilesInPlace, _logger);
+        }
+
+        return line.Room is { } room
+            ? new ServerFileFetch(RoomTransport.Join(RoomTransport.DefaultMaster, room, _peers, _logger), ownsTransport: true, RoomTransport.HostAddress, request, _titleId(), newSync(), MapFilesInPlace, _logger)
+            : null;
+    }
+
+    private void EndPrefetch()
+    {
+        _prefetch?.Fetch.Dispose();
+        _prefetch = null;
+    }
 
     // A joined server's mission, started once the server's files are in: the mission and difficulty, and whether the tables
     // have been asked to be read again for it.
@@ -147,8 +241,14 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
 
     private string Protocol => MultiplayerProtocol.IdFor(_titleId()).ToString("x16", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Gets or sets the Discord Activity this game runs in, or <see langword="null"/>: a room hosted from the menu is then
+    /// the Activity's own, which everyone in the voice channel reaches, and carries the game itself.
+    /// </summary>
+    public string? Instance { get; set; }
+
     /// <inheritdoc/>
-    public void Host(int missionId, int difficulty, bool listed, string mode = Game.Multiplayer.Modes.GameModes.Coop)
+    public void Host(int missionId, int difficulty, bool listed, string mode = MatchModes.Coop)
     {
         Leave();
 
@@ -156,7 +256,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         bool versus = Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
         SessionArguments arguments = new(
             Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: $"{_playerName()}'s game", MaxPlayers: versus ? 15 : 3,
-            Password: string.Empty, Mode: versus ? mode : Game.Multiplayer.Modes.GameModes.Coop, Host: true, Public: listed);
+            Password: string.Empty, Mode: versus ? mode : MatchModes.Coop, Host: true, Public: listed, Instance: Instance, Avatar: Avatar());
         Begin(RoomSessions.Start(arguments, _titleId(), missionId, _version, _peers, _logger, _content()));
         Shell?.StartMission(missionId, difficulty);
     }
@@ -224,7 +324,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             return;
         }
 
-        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.Of(PlayerSkins.Chosen.Value).Id);
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.For(_titleId()).Own.Id, Avatar: Avatar());
         Begin(new SessionClient(open(0), address, request, _titleId(), _logger, reopen: () => open(0)) { Mode = line.Info.Mode });
         _logger.Information(LogCategory, $"Joining {line.Info.Name} at {address} on mission {mission} ({line.Info.Mode}).");
         _startWhenReady = (mission, _difficulty(), false);
@@ -249,6 +349,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <inheritdoc/>
     public void Leave()
     {
+        EndPrefetch();
         _waitingFor = null;
         _finding = null;
         _findingCode = null;
@@ -457,7 +558,8 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     private CoopRoomInfo[] Lines()
     {
         double now = _clock.Elapsed.TotalSeconds;
-        return [.. new BrowserFilter().Apply(_browser?.Servers ?? []).Select(s => new CoopRoomInfo(
+        // Only this game's servers: the saved and recent are both games', and one of the other never answers this one.
+        return [.. new BrowserFilter { Title = _titleId() }.Apply(_browser?.Servers ?? []).Select(s => new CoopRoomInfo(
             s.Key,
             s.Info.Name,
             int.TryParse(s.Info.Map, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) ? mission : 0,
@@ -469,6 +571,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             PingMs = s.Ping is { } ping ? (int)Math.Round(ping * 1000) : null,
             Region = s.Region,
             Dedicated = s.Address is not null && s.Sources.HasFlag(BrowserSource.Internet),
+            Official = s.Official,
             Lan = s.Sources.HasFlag(BrowserSource.Lan),
             Favourite = s.Sources.HasFlag(BrowserSource.Favourite),
             Recent = s.Sources.HasFlag(BrowserSource.History),
@@ -481,6 +584,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     public void Update()
     {
         StartWhenFilesReady();
+        PumpPrefetch();
 
         if (_waitingFor is { } waiting && _browser is { } asked)
         {
@@ -556,7 +660,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             {
                 SessionArguments arguments = new(
                     Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: string.Empty, MaxPlayers: 0,
-                    Password: string.Empty, Mode: room.Mode, Join: code);
+                    Password: string.Empty, Mode: room.Mode, Join: code, Avatar: Avatar());
                 Begin(RoomSessions.Start(arguments, _titleId(), mission, _version, _peers, _logger, _content()));
                 _logger.Information(LogCategory, $"Joining room {code} on mission {mission}.");
                 _startWhenReady = (mission, _difficulty(), false);

@@ -62,6 +62,19 @@ public sealed class SiteWriterTests : IDisposable
         string invite = Read("404.html");
         Assert.Contains("'/?' + (party ? 'party=' : 'join=') + code", invite, StringComparison.Ordinal);
         Assert.Contains("'openigi://' + (party ? 'party/' : 'join/') + code", invite, StringComparison.Ordinal);
+        Assert.Contains("location.replace('/leaderboard/?player=' + player[1])", invite, StringComparison.Ordinal);
+
+        // The leaderboard (each player's record, medals and latest matches), the privacy page and the code signing policy,
+        // whose opening line is the attribution SignPath Foundation requires.
+        Assert.Contains("id=\"medals\"", Read("leaderboard/index.html"), StringComparison.Ordinal);
+        // The mission boards beside the matches', with each game's missions by name and runs opened in the browser build.
+        Assert.Contains("id=\"missions-board\"", Read("leaderboard/index.html"), StringComparison.Ordinal);
+        Assert.Contains("\"Trainyard\"", Read("leaderboard/index.html"), StringComparison.Ordinal);
+        Assert.Contains("/v1/runs/board?title=", Read("leaderboard/index.html"), StringComparison.Ordinal);
+        Assert.Contains("Delete account", Read("privacy/index.html"), StringComparison.Ordinal);
+        string signing = Read("code-signing/index.html");
+        Assert.Contains("<title>Code signing · OpenIGI</title>", signing, StringComparison.Ordinal);
+        Assert.Contains("Free code signing provided by <a href=\"https://about.signpath.io\">SignPath.io</a>", signing, StringComparison.Ordinal);
         Assert.StartsWith("ok 3 release(s)", Read("healthz"), StringComparison.Ordinal);
     }
 

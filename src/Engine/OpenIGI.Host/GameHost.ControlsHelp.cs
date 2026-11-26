@@ -1,9 +1,9 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Game.Player;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Hud;
@@ -106,7 +106,13 @@ public sealed partial class GameHost
 
         Add(move, Bound(PlayerAction.Jump), "Jump");
         Add(move, Bound(PlayerAction.Crouch), "Crouch");
-        Add(move, Bound(PlayerAction.Peek), "Lean out");
+        bool modernAim = Game.Player.Aim.ModernAimCVars.Enabled.Value;
+        Add(move, Bound(PlayerAction.Peek), modernAim ? "Peek (weapon down)" : "Lean out");
+        if (modernAim && Bound(PlayerAction.LeanLeft) is { } leanLeft && Bound(PlayerAction.LeanRight) is { } leanRight)
+        {
+            move.Add(new ControlsLine([leanLeft, leanRight], "Lean left / right"));
+        }
+
         Add(move, Bound(PlayerAction.ToggleWalkRun), "Walk / run");
         Add(move, BoundCommand("toggle g_thirdperson"), "Third-person view");
         Add(move, Bound(PlayerAction.Binoculars), "Binoculars");
@@ -117,7 +123,13 @@ public sealed partial class GameHost
 
         List<ControlsLine> combat = [];
         Add(combat, Bound(PlayerAction.Fire), "Fire");
-        Add(combat, Bound(PlayerAction.AlternateFire), "Aim / second fire");
+        Add(combat, Bound(PlayerAction.AlternateFire), modernAim ? "Aim down sights / scope" : "Aim / second fire");
+        if (modernAim)
+        {
+            Add(combat, Bound(PlayerAction.Underbarrel), "Underbarrel launcher (M16)");
+            Add(combat, Bound(PlayerAction.Mount), "Mount weapon (or aim at a ledge)");
+        }
+
         Add(combat, Bound(PlayerAction.Reload), "Reload");
         Add(combat, Bound(PlayerAction.NextWeapon), "Next weapon");
         Add(combat, Bound(PlayerAction.PreviousWeapon), "Previous weapon");
@@ -143,7 +155,7 @@ public sealed partial class GameHost
             Add(match, Bound(PlayerAction.DropWeapon, "X"), "Drop weapon / bomb");
         }
 
-        if (hud is { Teams: not null } || (versus && GameModes.HasTeams(mode)))
+        if (hud is { Teams: not null } || (versus && MatchModes.HasTeams(mode)))
         {
             Add(match, KeyLabel(TeamMenuCVars.Key.Value), "Team menu");
         }
@@ -169,7 +181,7 @@ public sealed partial class GameHost
         return new ControlsHelp(
             [new ControlsSection("MOVEMENT", move), new ControlsSection("COMBAT", combat), new ControlsSection("MATCH", match)],
             holdKey,
-            mode.Length > 0 ? GameModes.Title(mode) : string.Empty);
+            mode.Length > 0 ? MatchModes.Title(mode) : string.Empty);
 
         static void Add(List<ControlsLine> lines, string? key, string action)
         {
@@ -190,7 +202,7 @@ public sealed partial class GameHost
             && int.TryParse(place.AsSpan(Prefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)
             && _missions.TryGet(id, out Game.World.MissionDescriptor? mission)
             && mission is { Name.Length: > 0 }
-                ? mission.Name
+                ? Shown(mission.Name)
                 : place;
     }
 

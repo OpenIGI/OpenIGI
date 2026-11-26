@@ -3,6 +3,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -29,6 +30,21 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Gets or sets the session's anim trigger types, or <see langword="null"/> for none: then no trigger does anything.</summary>
     public Igi2AnimTriggers? AnimTriggers { get; set; }
+
+    /// <summary>Gets or sets when the player's grenades cook (<see cref="GameplayCVars.GrenadeCook"/>); the original's by default.</summary>
+    public GrenadeCook GrenadeCook { get; set; }
+
+    /// <summary>The cook key's press in the current throw.</summary>
+    private GrenadeCookLatch _cookLatch;
+
+    /// <summary>Whether the current throw's pin is past deciding: pulled, or the grenade thrown with it still in.</summary>
+    private bool _pinSettled;
+
+    /// <summary>
+    /// Whether a manual cook went off in hand with fire still held, so nothing more fires until fire has been let go: the
+    /// weapon changed to would otherwise open up at once.
+    /// </summary>
+    private bool _fireAwaitingRelease;
 
     /// <summary>
     /// A trigger one of the body's clips fired, <c>HumanPlayer_TriggerAnimTriggerHandler</c> (<c>igi2 0x4B7F10</c>) with the
@@ -87,11 +103,45 @@ public sealed partial class Igi2HumanPlayer
         if (trigger.TriggerId == Igi2HumanAnimTrigger.ThrowGrenade)
         {
             IsFire = true;
+            _pinSettled = true;
         }
         else if (trigger.TriggerId == Igi2HumanAnimTrigger.StopAnimation)
         {
             ActionSignal |= Igi2PlayerSignal.StopAnimation;
         }
+    }
+
+    /// <summary>
+    /// Pulls the pin (the secondary fire type, <c>PullPin</c>): its trigger is let go and the weapon left ready, with the primary
+    /// the fire type again. The fuse burns from here (<see cref="Igi2WeaponFiring.RunDelayed"/>).
+    /// </summary>
+    private void PullPin()
+    {
+        _pinSettled = true;
+        Weapon.Fire(1);
+        if (Weapon.Firing is { } firing)
+        {
+            firing.FireTypeState(1).IsReleaseFire = true;
+        }
+
+        if (Weapon.Inventory is { } inventory)
+        {
+            inventory.Status = Igi2WeaponStatus.Ready;
+        }
+
+        FireType = 0;
+    }
+
+    /// <summary>Whether fire is still held from a manual cook that went off in hand; the wait ends once fire is let go.</summary>
+    /// <returns><see langword="true"/> while the fire keys are to be passed over.</returns>
+    private bool AwaitsFireRelease()
+    {
+        if (_fireAwaitingRelease && Channels[Igi2HumanChannel.Fire] == 0f && Channels[Igi2HumanChannel.AlternateFire] == 0f)
+        {
+            _fireAwaitingRelease = false;
+        }
+
+        return _fireAwaitingRelease;
     }
 
     /// <summary>Whether a trigger's id is defined for the player's type, which is what sends it to this handler.</summary>
@@ -114,6 +164,8 @@ public sealed partial class Igi2HumanPlayer
         GrenadeHeld = 0;
         GrenadeTickTime = 0;
         FireType = 0;
+        _cookLatch.Reset();
+        _pinSettled = false;
         SetUpperBody(7);
         Action.Current = (_, _) => RunThrowGrenade();
     }
@@ -121,8 +173,9 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>One tick of a throw, <c>HumanPlayer_RunActionThrowGrenade</c> (<c>igi2 0x4B4880</c>).</summary>
     /// <remarks>
     /// <para>
-    /// On its eighth tick the pin is pulled (the secondary fire type), its trigger let go and the weapon left ready, with the
-    /// primary the fire type again. At the clip's hold point, while the fire key is down, the first-person clip and the upper
+    /// On its eighth tick the pin is pulled (<see cref="PullPin"/>) -- or, under <see cref="GrenadeCook.Manual"/>, on the first
+    /// tick from then on that the reload key has been pressed in this throw, and never once the grenade has gone; a grenade
+    /// thrown with its pin in flies with its whole fuse. At the clip's hold point, while the fire key is down, the first-person clip and the upper
     /// body stand still and the hold counts up, the first tick of it to the sound of the grenade handled; let go, they play on
     /// to the sound of the throw and the hold point is passed. The clip's throw trigger then fires the primary, which throws.
     /// </para>
@@ -137,20 +190,16 @@ public sealed partial class Igi2HumanPlayer
         Igi2PlayerSignal signal = ActionSignal;
         bool forceChange = false;
         Igi2AnimController firstPerson = View.ObjectAnimation;
-        if (GrenadeTickTime++ == PullPinTick)
+        // Retail pulls the pin on the eighth tick, once; a manual cook waits for the reload key and pulls it then, for as long
+        // as the grenade is still in hand.
+        _cookLatch.Note(Channels[Igi2HumanChannel.Reload] != 0f);
+        bool pinReached = GrenadeCook == GrenadeCook.Original
+            ? GrenadeTickTime == PullPinTick
+            : GrenadeTickTime >= PullPinTick && !_pinSettled && Weapon.Inventory?.IsPinPulled != true;
+        GrenadeTickTime++;
+        if (_cookLatch.PinDue(GrenadeCook, pinReached))
         {
-            Weapon.Fire(1);
-            if (Weapon.Firing is { } firing)
-            {
-                firing.FireTypeState(1).IsReleaseFire = true;
-            }
-
-            if (Weapon.Inventory is { } inventory)
-            {
-                inventory.Status = Igi2WeaponStatus.Ready;
-            }
-
-            FireType = 0;
+            PullPin();
         }
 
         if ((signal & Igi2PlayerSignal.StopAnimation) != 0)
@@ -175,6 +224,7 @@ public sealed partial class Igi2HumanPlayer
                 if (Weapon.Inventory?.Status == Igi2WeaponStatus.ExplodedInHand)
                 {
                     forceChange = true;
+                    _fireAwaitingRelease = GrenadeCook == GrenadeCook.Manual;
                 }
             }
         }

@@ -13,30 +13,8 @@ namespace OpenIGI.Presentation.Rendering;
 public sealed partial class TacticalComputerRenderer
 {
     // A strip of glass across the screen: the feed behind it blurred under the title's tint, and a rule along its inner edge.
-    private static void DrawStrip(ComputerCanvas canvas, UiRect strip, bool ruleBelow)
-    {
-        canvas.Painter.DrawBackdrop(strip, HudPanel.BlurSigma, canvas.Palette.Glass.WithAlpha(170));
-        canvas.Painter.FillRect(strip, Bgra32.FromRgba(0, 0, 0, 150));
-        canvas.Painter.FillRect(strip, ComputerCanvas.Fade(canvas.Palette.Primary, 0.05f));
-        float weight = canvas.Hairline;
-        Bgra32 rule = ComputerCanvas.Fade(canvas.Palette.Primary, 0.6f);
-        if (ruleBelow)
-        {
-            canvas.Painter.FillRect(new UiRect(strip.X, strip.Bottom - weight, strip.Width, weight), rule);
-            if (canvas.Theme.Motifs.DoubleRules)
-            {
-                canvas.Painter.FillRect(new UiRect(strip.X, strip.Bottom + (weight * 2f), strip.Width, weight), ComputerCanvas.Fade(rule, 0.4f));
-            }
-        }
-        else
-        {
-            canvas.Painter.FillRect(new UiRect(strip.X, strip.Y, strip.Width, weight), rule);
-            if (canvas.Theme.Motifs.DoubleRules)
-            {
-                canvas.Painter.FillRect(new UiRect(strip.X, strip.Y - (weight * 3f), strip.Width, weight), ComputerCanvas.Fade(rule, 0.4f));
-            }
-        }
-    }
+    private static void DrawStrip(ComputerCanvas canvas, UiRect strip, bool ruleBelow) =>
+        HudPanel.Strip(canvas.Painter, canvas.Theme, canvas.Hairline, strip, ruleBelow);
 
     // The tabs, and at the right what the mission stands at: its objectives done of all, and the hostile on the map.
     private void DrawTopStrip(ComputerCanvas canvas, IComputerObjectives runtime, int contacts)

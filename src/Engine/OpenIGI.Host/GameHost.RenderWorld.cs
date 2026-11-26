@@ -33,10 +33,16 @@ public sealed partial class GameHost
         ComposeFrameEye(state, console, ref view);
         NoteEditorView(view.Eye, view.UnjitteredProjection);
 
+        // A bomb's after-blast is drawn against this frame's eye, which only now is settled: its front is placed by the
+        // depth this frame draws, and an eye a frame old would set it swimming over the walls as the view turns.
+        view.PostProcess = view.PostProcess with { AfterBlast = _effects.Bomb.AfterBlast(view.Eye, view.TickBlend) };
+
         // The title's own culling, decided once from the eye before the first pass draws: every pass of the frame -- the
         // cascades and the lamps' maps among them -- then leaves out what the eye's place in the level leaves out.
+        // It is told the level the eye's pass draws each model at, the renderer's own pick, so a building drawn as its coarse
+        // closed box is not also given the rooms inside it.
         float tangentHalfFovY = MathF.Tan(view.VerticalFieldOfView * 0.5f);
-        _world.Visibility?.BeginView(view.Eye, tangentHalfFovY * view.AspectRatio, tangentHalfFovY);
+        _world.Visibility?.BeginView(view.Eye, tangentHalfFovY * view.AspectRatio, tangentHalfFovY, LevelPicker(view.Eye, view.UnjitteredProjection));
 
         // The soldiers are drawn by the same answer, outside the world renderer.
         _soldiers?.Visibility = _world.Visibility;
@@ -88,6 +94,13 @@ public sealed partial class GameHost
         DrawForwardPass(
             console, captured, view.Eye, view.Projection, view.MapScene, view.Resolution, view.SceneTarget, view.SmoothPresentation,
             view.TickBlend, cameraIndoors, view.RemasteredOptics);
+
+        // Drawn straight to the back buffer there is no resolve to sweep a bomb's after-blast over the picture: it is drawn over
+        // the frame here instead, while the depth still holds the world it places its front by.
+        if (!captured)
+        {
+            _device.DrawAfterBlastOverFrame(view.PostProcess.AfterBlast);
+        }
 
         float? binocularRangeMetres = DrawFirstPersonView(
             view.Eye, view.ShowViewModel, view.Sight, view.SmoothPresentation, view.TickBlend);
@@ -146,13 +159,26 @@ public sealed partial class GameHost
         EndStageIfSlow("the shadow cascades");
     }
 
+    /// <summary>
+    /// Gets a value indicating whether a pass over the finished scene is up this frame -- the thermal sensor, or a race's
+    /// ghost -- so the scene is drawn offscreen and deferred for it whatever the preset asks.
+    /// </summary>
+    /// <remarks>
+    /// Both run in the resolve of the offscreen scene, which a preset that draws straight to the back buffer never has: there
+    /// neither would be seen as it is on the others. Only the detour comes on with them -- nothing else the preset turned off --
+    /// and under Vanilla's tone map and unit exposure it is a copy of the original's picture. The capture asked for and the
+    /// target described both read this, so the two cannot disagree: a capture asked for of a target that is not deferred is
+    /// declined.
+    /// </remarks>
+    private bool SceneOverlayNeedsCapture => ThermalNeedsScene || Racing;
+
     /// <summary>Opens the offscreen scene and sets its lighting, or draws straight to the back buffer where there is none.</summary>
     /// <returns><see langword="true"/> when the scene is being drawn offscreen.</returns>
     private bool OpenSceneCapture(
         SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
         RenderResolution resolution)
     {
-        bool captured = FrameCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
+        bool captured = (FrameCVars.OffscreenScene.Value || SceneOverlayNeedsCapture) && _device.BeginSceneCapture(sceneTarget);
         if (captured)
         {
             // The scheduler cleared the back buffer; the target it did not know about needs it too.

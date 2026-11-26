@@ -15,9 +15,8 @@ public sealed partial class GameHost
     private const int ChatLineMilliseconds = 10_000;
     private const int MarkMilliseconds = 8_000;
 
-    // How far a mark is cast along the view before it lands in the open, and where it is put when nothing is met. Metres.
-    private const double MarkReachMetres = 300;
-    private const double MarkOpenMetres = 100;
+    // How far a mark is cast along the view, in metres: as far as either game's levels are seen across. Nothing met is no mark.
+    private const double MarkReachMetres = 2000;
 
     private readonly List<(string Name, Vector3d Metres, int At)> _coopMarks = [];
 
@@ -77,6 +76,23 @@ public sealed partial class GameHost
             });
 
         console.Commands.Add(
+            "killfeed_sample",
+            "Lists a sample of every kind of kill feed row in every player's feed: 1 the host's kills and the weapons, 2 the marks.",
+            context =>
+            {
+                int set = context.Rest(0) is "2" ? 2 : 1;
+                if (TickObserver is not Multiplayer.HostedSession hosted || !hosted.SampleKillFeed(set))
+                {
+                    context.Error("Only a session's host can do that.");
+                    return;
+                }
+
+                // It is there to be looked at: the team menu a team match opens with is put away.
+                CloseTeamMenu();
+            },
+            "[1|2]");
+
+        console.Commands.Add(
             "coop_mark",
             "Marks the place under the crosshair for the others in the co-op room.",
             context =>
@@ -87,7 +103,11 @@ public sealed partial class GameHost
                     return;
                 }
 
-                talk.Mark(Int3.From(AimedPoint() * WorldScene.UnitsPerMetre));
+                // The sky, or anything past the reach, is no place: nothing is marked.
+                if (AimedPoint() is { } aimed)
+                {
+                    talk.Mark(Int3.From(aimed * WorldScene.UnitsPerMetre));
+                }
             });
 
         console.Commands.Add(
@@ -152,19 +172,23 @@ public sealed partial class GameHost
         return (
             ChatShown(now),
             ChatEntryShown(now),
-            [.. _coopMarks.Select(m => new HudMark(m.Metres, m.Name, Fade(now - m.At, MarkMilliseconds)))]);
+            [.. _coopMarks.Select(m => new HudMark(m.Metres, m.Name, Fade(now - m.At, MarkMilliseconds), (now - m.At) / 1000f))]);
     }
 
-    // The point the crosshair is on, in metres: the first thing the view meets, or a way out into the open.
-    private Vector3d AimedPoint()
+    // The point the crosshair is on, in metres: the first wall, object or ground the view meets, or null when it meets nothing.
+    // A title that keeps its own collision (I.G.I. 2's object tree and height grid) is asked; the host's mission collision holds
+    // no ground for it.
+    private Vector3d? AimedPoint()
     {
         Camera3D eye = _inspectorEye;
         Vector3f look = eye.Orientation.Row3;
         Vector3d forward = new(look.X, look.Y, look.Z);
         Vector3d from = eye.Position * WorldScene.UnitsPerMetre;
         Vector3d to = from + (forward * (MarkReachMetres * WorldScene.UnitsPerMetre));
-        return _mission.Collision.EffectWalls is { } walls && walls(from, to, out WorldRayHit hit)
-            ? hit.Position / WorldScene.UnitsPerMetre
-            : eye.Position + (forward * MarkOpenMetres);
+        WorldRayHit hit = default;
+        bool met = TitlePlayer?.Collision is { } title
+            ? title.Cast(from, to, out hit)
+            : _mission.Collision.EffectWalls is { } walls && walls(from, to, out hit);
+        return met ? hit.Position / WorldScene.UnitsPerMetre : null;
     }
 }

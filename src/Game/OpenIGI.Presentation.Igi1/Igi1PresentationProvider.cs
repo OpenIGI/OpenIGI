@@ -274,7 +274,10 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     private static IRemasteredHudPresenter CreateRemasteredHud(in HudPresentationRequest request) =>
-        new RemasteredHudRenderer(request.Device, request.Logger);
+        new OpenIGI.Presentation.Hud.Remastered.RemasteredHudRenderer(
+            request.Device,
+            request.Logger,
+            OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme);
 
     /// <inheritdoc/>
     private static IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>

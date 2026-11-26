@@ -78,8 +78,14 @@ struct vertexInput_0
 @vertex
 fn vertexMain( _S2 : vertexInput_0) -> WaterVaryings_0
 {
-    const sun_0 : vec3<f32> = vec3<f32>(cSunX_0, cSunY_0, cSunZ_0);
-    const sunColour_0 : vec3<f32> = vec3<f32>(cSunRed_0, cSunGreen_0, cSunBlue_0);
+    var sun_0 : vec3<f32>;
+    sun_0[i32(0)] = cSunX_0;
+    sun_0[i32(1)] = cSunY_0;
+    sun_0[i32(2)] = cSunZ_0;
+    var sunColour_0 : vec3<f32>;
+    sunColour_0[i32(0)] = cSunRed_0;
+    sunColour_0[i32(1)] = cSunGreen_0;
+    sunColour_0[i32(2)] = cSunBlue_0;
     var normal_1 : vec3<f32> = _S2.normal_0 * vec3<f32>(push_0.fogNormalScale_0.w);
     var toEye_0 : vec3<f32> = normalize(push_0.eyeFacing_0.xyz - _S2.position_1);
     var lit_0 : vec3<f32> = sunColour_0 * vec3<f32>(dot(normal_1, sun_0)) * push_0.diffuseScale_0.xyz + vec3<f32>(cAmbientRed_0, cAmbientGreen_0, cAmbientBlue_0);

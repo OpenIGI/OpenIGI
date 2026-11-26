@@ -103,11 +103,14 @@ public sealed partial class GameHost
         // between them keeps sweeping 0 to 1 with real time, which rocked the eye, the arms and
         // every guard back and forth between two poses a thirtieth of a second apart. At blend 1
         // every one of those readings is simply the tick that was last run.
-        // Cutscene camera and vehicle transforms are authored and committed on the 30 Hz task
+        // Project I.G.I.'s cutscene camera and vehicle transforms are authored and committed on the 30 Hz task
         // tick. Blending only the SoldierRenderer between its previous/current records while the
         // camera and its parent vehicle stay on the current record makes a seated actor sweep
         // backwards after every tick, then glide forwards again. Retail presents the cinematic
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
+        // I.G.I. 2's cutscenes are drawn between ticks instead, all of a piece: its camera, its movers and its
+        // bodies take the same blend, so a camera riding a plane glides with it. Holding the camera alone on
+        // the tick while the plane was drawn between left the plane sawing back and forth against the frame.
         bool smoothPresentation = !MenuPausesGame
             && _mission.Scenes?.IsPlaying != true
             && (!_options.Lockstep || _options.CaptureRate > _loop.Clock.TickRate)
@@ -116,7 +119,7 @@ public sealed partial class GameHost
         float tickBlend = smoothPresentation
             ? _loop.Clock.TickFraction(pacingWall)
             : 1f;
-        _titlePresentationBlend = TitlePlayer is { IsCutscenePlaying: true } ? 1f : tickBlend;
+        _titlePresentationBlend = tickBlend;
         PresentTitleLook(smoothPresentation && !console.WantsPointer);
 
         // Whether the picture's own clock keeps step with the wall clock, behind
@@ -226,6 +229,12 @@ public sealed partial class GameHost
         view.MapScene = mapScene;
     }
 
+    /// <summary>
+    /// The bloom threshold the thermal sensor's picture is bloomed from at most: the palette's hottest is a little brighter
+    /// than white (<c>Post/Thermal.slang</c>), so a body and a blaze glow on the sensor as heat does.
+    /// </summary>
+    private const float ThermalBloomThreshold = 1f;
+
     /// <summary>Settles the resolve's settings, and the map's own lens where the map owns the frame.</summary>
     private void ResolvePostProcess(ref FrameView view)
     {
@@ -258,6 +267,11 @@ public sealed partial class GameHost
         // the lens carries chromatic aberration that ramps in with the glass.
         float binocularAberration = binocularDisplay.Amount * 2f;
 
+        // The remastered thermal sensor, raised on the same clock. While it is up the picture is the palette's, so the grade
+        // the player chose for the world is eased out as the sensor comes in: a graded palette is no longer its own colours.
+        ThermalDisplaySettings thermal = UpdateThermal(binocularElapsed);
+        float sensor = thermal.Amount;
+
         // The bomb's concussion, measured at last frame's eye: the flash whites the picture out, the stun after it drains its
         // colour, closes its edges in and splits it.
         BlastConcussion concussion = _earCamera is { } concussed
@@ -272,15 +286,15 @@ public sealed partial class GameHost
             // able to edit, and then have to put back, the setting the player chose.
             ExposureCVars.EffectiveExposure * (1f + (concussion.Flash * 3f)),
             PostCVars.Bloom.Value,
-            PostCVars.BloomThreshold.Value,
+            float.Lerp(PostCVars.BloomThreshold.Value, MathF.Min(PostCVars.BloomThreshold.Value, ThermalBloomThreshold), sensor),
             ExposureCVars.WhitePoint.Value,
             // The dynamic model now composites in linear space -- albedo decoded before the multiply
             // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
             // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
             // display-encoded and has to be decoded before the tone map.
             SceneIsDisplayEncoded: _gi.EffectiveLighting != LightingModel.Dynamic,
-            Contrast: PostCVars.Contrast.Value * (1f - (concussion.Stun * 0.18f)),
-            Saturation: PostCVars.Saturation.Value * (1f - (concussion.Stun * 0.75f)),
+            Contrast: float.Lerp(PostCVars.Contrast.Value, 1f, sensor) * (1f - (concussion.Stun * 0.18f)),
+            Saturation: float.Lerp(PostCVars.Saturation.Value, 1f, sensor) * (1f - (concussion.Stun * 0.75f)),
             Vignette: PostCVars.Vignette.Value + (concussion.Stun * 0.9f),
             Grain: PostCVars.Grain.Value,
             ChromaticAberration: MathF.Max(PostCVars.ChromaticAberration.Value, binocularAberration) + (concussion.Stun * 2.5f),
@@ -288,10 +302,11 @@ public sealed partial class GameHost
             MotionBlur: MathF.Max(PostCVars.MotionBlur.Value, computerFlightBlur),
             SpatialAa: PostCVars.SpatialAa.Value,
             SpatialAaThreshold: PostCVars.SpatialAaThreshold.Value,
-            ColourLookup: PostCVars.ColourLookup.Value,
+            ColourLookup: PostCVars.ColourLookup.Value * (1f - sensor),
             AutoExposure: ExposureCVars.AutoExposure.Value,
             GreenPhosphor: false,
             Binocular: binocularDisplay,
+            Thermal: thermal,
 
             // Fast while the GI is still filling in after a load, slow once it has settled. Counted
             // down here so a frame that never reaches the cache update (a menu, a paused load) does
@@ -307,7 +322,7 @@ public sealed partial class GameHost
             // The eye's night vision, only as deep as the night: a day is untouched.
             // Only once the sun is some six degrees under (Nightfall past about 0.45): dusk keeps its
             // colour, and the eye's night vision takes over only as real night does.
-            NightShift: PostCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(ExposureCVars.Nightfall.Value));
+            NightShift: PostCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(ExposureCVars.Nightfall.Value) * (1f - sensor));
 
         if (_gi.ExposureWarmup > 0)
         {
@@ -424,8 +439,20 @@ public sealed partial class GameHost
         // camera and a title player's eye, which are the host's. A title with no viewpoint of its
         // own looks through those two alone.
         Camera3D? titlePlayerEye = _playerMode && TitlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend) : null;
+        Vector3d titleEyeLead = titlePlayerEye is { } drawnTitleEye && _titlePresentationBlend < 1f
+            ? _titlePresentation.Camera(1f).Position - drawnTitleEye.Position
+            : default;
         Camera3D eye;
         Camera3D flashlightBody;
+        Vector3d earLead;
+
+        // Whether nothing the host shows has taken the view, which the move over the shoulder runs only under.
+        bool thirdPersonAllowed = !_session.FailedMenu
+            && !_computerOpen
+            && !_entry.IsCameraActive
+            && _mission.Scenes?.IsPlaying != true
+            && mapScene is null
+            && !_menuFlow.OverShowcase;
         if (Viewpoint is { } viewpoint)
         {
             eye = viewpoint.ComposeEye(
@@ -435,27 +462,41 @@ public sealed partial class GameHost
                     tickBlend,
                     titlePlayerEye,
                     _camera.Camera,
-                    ThirdPersonAllowed: !_session.FailedMenu
-                        && !_computerOpen
-                        && !_entry.IsCameraActive
-                        && _mission.Scenes?.IsPlaying != true
-                        && mapScene is null
-                        && !_menuFlow.OverShowcase,
+                    thirdPersonAllowed,
                     Paused: _menuFlow.MenuMode,
                     _loop.TimeSource.Milliseconds,
-                    ThirdPersonWalls()),
+                    ThirdPersonWalls(),
+                    titleEyeLead),
                 out flashlightBody);
+            earLead = viewpoint.EarLead;
         }
         else
         {
             eye = titlePlayerEye ?? _camera.Camera;
             flashlightBody = eye;
+
+            // A title's own player is watched over its shoulder by the same camera the first game's viewpoint drives.
+            eye = ComposeTitleOverShoulder(eye, thirdPersonAllowed && titlePlayerEye is not null);
+            earLead = titlePlayerEye is not null ? titleEyeLead : default;
+        }
+
+        // A replay watched from the free camera: the picture is taken from where the viewer flies it, the player drawn as from behind.
+        if (ReplayFlies && thirdPersonAllowed)
+        {
+            eye = _camera.Camera;
+            earLead = default;
         }
 
         // The ear goes where the picture is taken from: the original's microphone is the camera controller's own
         // (0x4EBBF0, set from the camera each frame), so a cut-scene, the camera over a dead body or the orbit round a
         // climber is heard from there, not from the head the player no longer looks out of.
-        _earCamera = eye;
+        //
+        // But from where the CURRENT tick has the eye, turned as the frame is: every sound is placed on the tick -- a voice
+        // at the player's eye, a line at the microphone, an engine on its car -- while the eye is drawn between the last
+        // two, a share of a tick behind. An ear on the drawn eye left a moving player's own sounds that far ahead of it,
+        // and snapped back each tick, so they swung across the stereo image thirty times a second: a crackle in a plane, a
+        // car or a fall. Retail draws no tick blend, so its eye and its sounds always agree.
+        _earCamera = new Camera3D(eye.Position + earLead, eye.Orientation);
 
         bool flashlightShown = _playerMode
             && !_mission.IsPlayerDead

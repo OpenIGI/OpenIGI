@@ -92,11 +92,25 @@ public interface ITitleViewModelPresenter : IDisposable
 
 /// <summary>Draws the rigid models a title's own player has lying in its level, among the world's geometry.</summary>
 /// <remarks>
+/// <para>
 /// The world-pass counterpart of <see cref="ITitleViewModelPresenter"/>, for a player that is also
 /// <see cref="ITitleWorldModels"/>: the same models from the same packs, under the world's projection and depth.
+/// </para>
+/// <para>
+/// Made for itself (a <see cref="ViewModelPresentationRequest"/> for this interface) where the arms the player sees are
+/// another's -- a mod's player standing in -- so the level's own models are still drawn by the level's own game.
+/// </para>
 /// </remarks>
-public interface ITitleWorldModelPresenter
+public interface ITitleWorldModelPresenter : IDisposable
 {
+    /// <summary>Gets or sets how the level lights an object with no bake, which is what these models are.</summary>
+    ObjectShading Shading { get; set; }
+
+    /// <summary>Gets ready to draw a mission's models.</summary>
+    /// <param name="mission">The mission whose packs the models are read from.</param>
+    /// <returns><see langword="false"/> when the mission has nothing to draw them from.</returns>
+    bool Load(LoadedMission mission);
+
     /// <summary>Gets or sets how a body gives up detail with distance, or <see langword="null"/> to draw each whole.</summary>
     Rendering.ModelLodPolicy? Lod
     {
@@ -122,6 +136,42 @@ public interface ITitleWorldModelPresenter
     /// <param name="blend">Where between the last two ticks the world draw stood.</param>
     void DrawWorldOutlines(
         IReadOnlyList<TitleWorldModel> models, IReadOnlyDictionary<object, BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels, float blend = 1f)
+    {
+    }
+
+    /// <summary>
+    /// Hands a race's ghost's models (<see cref="ITitleWorldModels.GhostModels"/>) to the picture's ghost pass, each posed for its
+    /// tick; a presenter that draws no people draws nothing.
+    /// </summary>
+    /// <param name="models">The ghost's models.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="blend">Where between the last two ticks the frame stands.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    void DrawWorldGhosts(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, float blend, in GhostLook look)
+    {
+    }
+
+    /// <summary>
+    /// Draws the bodies of the models drawn last as the title's infrared view sees them, over the finished scene and through what
+    /// stands before them (<see cref="ITitlePlayerOptics.IsInfraredView"/>); a presenter whose title has no such view draws nothing.
+    /// </summary>
+    /// <param name="models">The models the world draw drew.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The world's projection, as the world draw was given it.</param>
+    /// <param name="blend">Where between the last two ticks the world draw stood.</param>
+    void DrawWorldInfrared(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f)
+    {
+    }
+
+    /// <summary>
+    /// Hands the bodies of the models drawn last to the remastered thermal sensor, each with how hot it is
+    /// (<see cref="OpenIGI.Rendering.IGraphicsDevice.DrawThermalBody"/>); a presenter whose title has no thermal view hands none.
+    /// </summary>
+    /// <param name="models">The models the world draw drew.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The world's projection, as the world draw was given it.</param>
+    /// <param name="blend">Where between the last two ticks the world draw stood.</param>
+    void DrawWorldThermal(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f)
     {
     }
 
@@ -164,11 +214,17 @@ public interface ITitleWorldModelPresenter
     /// <param name="projection">The world projection.</param>
     void DrawWorldMuzzleFlashes(in Camera3D camera, in Matrix4f projection) { }
 
-    /// <summary>Draws marks lying on the ground, blended over the world and tested against its depth.</summary>
-    /// <param name="decals">The marks.</param>
+    /// <summary>Draws marks laid on surfaces, blended over the world or added to it, and tested against its depth.</summary>
+    /// <param name="marks">The marks.</param>
     /// <param name="camera">The world camera.</param>
     /// <param name="projection">The world projection.</param>
-    void DrawGroundDecals(IReadOnlyList<TitleGroundDecal> decals, in Camera3D camera, in Matrix4f projection) { }
+    void DrawSurfaceMarks(IReadOnlyList<TitleSurfaceMark> marks, in Camera3D camera, in Matrix4f projection) { }
+
+    /// <summary>Draws untextured triangles flat in the scene's ambient colour, tested against the world's depth.</summary>
+    /// <param name="polygons">The triangle lists.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawWorldPolygons(IReadOnlyList<TitleWorldPolygons> polygons, in Camera3D camera, in Matrix4f projection) { }
 }
 
 /// <summary>Draws the weapon the player is holding.</summary>

@@ -132,9 +132,7 @@ public sealed class GraphicsMenuPresetAlignmentTests : IDisposable
         HashSet<string> accounted =
         [
             .. GraphicsMenu.Groups.SelectMany(group => group.Variables),
-            .. GraphicsMenu.Settings.Select(setting => setting.Variable),
-            .. GraphicsMenu.InterfaceSettings.Select(setting => setting.Variable),
-            .. GraphicsMenu.DisplaySettings.Select(setting => setting.Variable),
+            .. SettingsMenus.Rows.Select(setting => setting.Variable),
             .. GraphicsMenu.ConsoleOnly,
         ];
 

@@ -7,6 +7,11 @@
 // the relay list's choice (relays.js), from where the host and each joiner are; the logins expire.
 //
 // Hibernating WebSockets: a room spends nearly all its life idle with sockets open, and is only woken by a message.
+//
+// A relayed room (one opened from inside a Discord Activity, where WebRTC is not allowed) carries the game itself, over the
+// same sockets: a binary message from the host is [peer, 2 bytes little-endian][datagram], sent on to that joiner as the
+// bare datagram; a joiner's binary message is a datagram, sent on to the host with the joiner's peer in front. A Discord
+// Activity's room has a code made from the Activity's instance, so everyone in one voice channel finds the same room.
 
 import { builtinIce } from "./relays.js";
 
@@ -42,6 +47,15 @@ const MESSAGE_WINDOW_MS = 10_000;
 
 const MAX_FIELD = 64;
 
+// A relayed datagram, at most: the game's own datagrams stay well under it.
+const MAX_DATAGRAM = 2048;
+
+// The bytes one joiner may relay in ten seconds: a player's traffic is a few kilobytes a second.
+const RELAY_BYTES_PER_WINDOW = 2 * 1024 * 1024;
+
+// The longest Discord Activity instance id taken.
+const MAX_INSTANCE = 128;
+
 /**
  * The rooms' routes, under /v1/rooms. `geo` is where the request came from ({lat, lon, country} from Cloudflare, or
  * null): the Worker's to say, since a room only sees the requests the Worker sends it.
@@ -49,12 +63,34 @@ const MAX_FIELD = 64;
 export async function handleRooms(request, env, url, geo) {
   const parts = url.pathname.split("/").filter(Boolean); // ["v1", "rooms", code?, "ws"?]
 
+  // The room of a Discord Activity's instance: its code, and whether its host is there to be joined.
+  if (request.method === "GET" && parts.length === 4 && parts[2] === "instance") {
+    const instance = decodeURIComponent(parts[3]);
+    if (!isInstance(instance)) {
+      return json({ error: "no such instance" }, 404);
+    }
+
+    const code = await instanceCode(instance);
+    const info = await roomStub(env, code).fetch("https://room/info");
+    return json({ code, hosted: info.ok ? (await info.json()).hosted === true : false });
+  }
+
   if (request.method === "POST" && parts.length === 2) {
     const ip = request.headers.get("CF-Connecting-IP") ?? "";
     const body = await request.json().catch(() => null);
     const meta = validateRoom(body);
     if (typeof meta === "string") {
       return json({ error: meta }, 400);
+    }
+
+    // An Activity's room has its instance's code: one already there is said so, for the game to join it instead.
+    if (meta.instance) {
+      const code = await instanceCode(meta.instance);
+      const response = await roomStub(env, code).fetch("https://room/create", {
+        method: "POST",
+        body: JSON.stringify({ ...meta, code, ip, geo }),
+      });
+      return response.status === 409 ? json({ error: "code taken", room: code }, 409) : response;
     }
 
     // A fresh code: one in a billion collides with a live room, and the room says so if it does.
@@ -132,7 +168,7 @@ export class Room {
     }
 
     if (url.pathname === "/info") {
-      return json(roomView(room));
+      return json({ ...roomView(room), hosted: room.hostConnected === true });
     }
 
     if (url.pathname === "/ws") {
@@ -155,7 +191,7 @@ export class Room {
       }
 
       this.ctx.acceptWebSocket(server, ["host"]);
-      server.serializeAttachment({ role: "host" });
+      server.serializeAttachment({ role: "host", relayed: room.relayed === true });
       room.hostConnected = true;
       room.hostAwaySince = null;
       // A host that comes back after its socket drops says so; one that doesn't (older games) is gone with its socket.
@@ -182,7 +218,7 @@ export class Room {
       const peer = room.nextPeer++;
       await this.ctx.storage.put("room", room);
       this.ctx.acceptWebSocket(server, ["join", `peer:${peer}`]);
-      server.serializeAttachment({ role: "join", peer });
+      server.serializeAttachment({ role: "join", peer, relayed: room.relayed === true });
       // The joiner and the host each get logins on the relays chosen for the two of them. A host from before relays were
       // chosen per pair ignores the join's ice and keeps the relay it was given when it made the room.
       const joinerWho = `${room.code}-${peer}`;
@@ -213,6 +249,54 @@ export class Room {
     return true;
   }
 
+  /** A datagram of a relayed room, sent on: a joiner's to the host with its peer in front, the host's to the peer it names. */
+  relay(ws, message) {
+    const from = ws.deserializeAttachment();
+    const bytes = new Uint8Array(message);
+    if (!from?.relayed || bytes.length === 0 || bytes.length > MAX_DATAGRAM + 2) {
+      ws.close(1003, "this room carries no datagrams");
+      return;
+    }
+
+    if (from.role === "join") {
+      if (!this.mayRelay(ws, bytes.length)) {
+        return;
+      }
+
+      const framed = new Uint8Array(bytes.length + 2);
+      framed[0] = from.peer & 0xff;
+      framed[1] = (from.peer >> 8) & 0xff;
+      framed.set(bytes, 2);
+      for (const host of this.ctx.getWebSockets("host")) {
+        host.send(framed);
+      }
+
+      return;
+    }
+
+    if (bytes.length < 3) {
+      return;
+    }
+
+    const peer = bytes[0] | (bytes[1] << 8);
+    for (const socket of this.ctx.getWebSockets(`peer:${peer}`)) {
+      socket.send(bytes.subarray(2));
+    }
+  }
+
+  /** Whether a joiner may relay so many more bytes in this window; past it, datagrams are dropped, as a full line would. */
+  mayRelay(ws, length) {
+    const now = Date.now();
+    this.relayed ??= new WeakMap();
+    let count = this.relayed.get(ws);
+    if (!count || now - count.since >= MESSAGE_WINDOW_MS) {
+      count = { since: now, bytes: 0 };
+      this.relayed.set(ws, count);
+    }
+    count.bytes += length;
+    return count.bytes <= RELAY_BYTES_PER_WINDOW;
+  }
+
   /** Whether a socket may send another message in this window. */
   maySend(ws) {
     const now = Date.now();
@@ -226,13 +310,18 @@ export class Room {
   }
 
   async webSocketMessage(ws, message) {
+    if (typeof message !== "string") {
+      this.relay(ws, message);
+      return;
+    }
+
     // A joiner's only: the host, which proved itself with its token, answers every joiner at once -- a full server coming
     // back up sends hundreds of messages in a few seconds.
     if (ws.deserializeAttachment()?.role === "join" && !this.maySend(ws)) {
       ws.close(1008, "too many messages");
       return;
     }
-    if (typeof message !== "string" || message.length > MAX_MESSAGE) {
+    if (message.length > MAX_MESSAGE) {
       ws.close(1009, "message too large");
       return;
     }
@@ -453,6 +542,16 @@ export function readGeo(text) {
   return null;
 }
 
+/**
+ * The network protocol version a server or room says it plays (the game's MultiplayerProtocol.Version), or null for one that
+ * doesn't say: a build from before it was told. What a page offering a session checks a browser build against, which can't
+ * ask the session itself.
+ */
+export function netOf(value) {
+  const net = Number(value);
+  return value !== undefined && value !== null && Number.isInteger(net) && net >= 1 && net <= 10000 ? net : null;
+}
+
 function validateRoom(body) {
   if (!body || typeof body !== "object") {
     return "body is not JSON";
@@ -476,10 +575,24 @@ function validateRoom(body) {
     map: body.map,
     mode: body.mode,
     version: body.version,
+    net: netOf(body.net),
     maxPlayers,
     public: body.public === true,
     passworded: body.passworded === true,
+    relayed: body.relayed === true || isInstance(body.instance),
+    ...(isInstance(body.instance) ? { instance: body.instance } : {}),
   };
+}
+
+/** Whether a value is a Discord Activity instance id as the room takes one. */
+function isInstance(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_INSTANCE && /^[A-Za-z0-9_.:-]+$/.test(value);
+}
+
+/** The code of an Activity instance's room: from a hash of the instance, so everyone in it reaches the same room. */
+export async function instanceCode(instance) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`discord-instance:${instance}`)));
+  return [...digest.subarray(0, CODE_LENGTH)].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
 }
 
 /** What anyone may see of a room: never the host's address or token. */
@@ -492,9 +605,11 @@ export function roomView(room) {
     map: room.map,
     mode: room.mode,
     version: room.version,
+    net: room.net ?? null,
     players: room.players,
     maxPlayers: room.maxPlayers,
     passworded: room.passworded,
+    relayed: room.relayed === true,
   };
 }
 

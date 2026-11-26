@@ -69,7 +69,10 @@ public sealed partial class GameHost
             return false;
         }
 
-        foreach (GameTitle candidate in _titles.Titles)
+        // The catalogue's titles; and where another game is opened anew rather than switched to (a browser's catalogue
+        // holds only the game it loaded), every title there is -- the page decides whether it can open it.
+        IEnumerable<GameTitle> offered = OpenTitleElsewhere is null ? _titles.Titles : _titles.Titles.Union(GameTitle.All);
+        foreach (GameTitle candidate in offered)
         {
             if (!string.Equals(candidate.Id, titleId.Trim(), StringComparison.OrdinalIgnoreCase))
             {
@@ -86,6 +89,12 @@ public sealed partial class GameHost
 
             if (!_titles.TryResolve(candidate, out TitleBinding? binding) || !binding.IsInstalled)
             {
+                if (OpenTitleElsewhere is { } open)
+                {
+                    _logger.Information(TitleLogCategory, $"Opening {candidate.DisplayName} anew.");
+                    return open(candidate.Id);
+                }
+
                 _logger.Warning(
                     TitleLogCategory,
                     $"{candidate.DisplayName} is not installed where this build looks for it, so it cannot be run.");
@@ -159,6 +168,8 @@ public sealed partial class GameHost
         ReleaseTitleScopedPresentation();
 
         _titleRuntime = binding.Runtime;
+        HoldTitleGraphicsPreset();
+        _gameplayFiles = binding.GameplayFiles ?? Game.Multiplayer.GameplayFileLayout.None;
         _presentation = binding.Presentation;
         _hudOverlay = null;
         _firstPerson = null;
@@ -201,6 +212,20 @@ public sealed partial class GameHost
             $"{target.DisplayName} is up in {clock.Elapsed.TotalMilliseconds:F0} ms: "
                 + $"{_missions.Count} mission(s).");
         return true;
+    }
+
+    // The picture the running title offers: a title that holds one preset (GameTitle.GraphicsPresetHeld) is drawn with it, the
+    // player's own picture kept aside for a title that offers every preset -- and for the settings file meanwhile.
+    private void HoldTitleGraphicsPreset()
+    {
+        GraphicsPreset? held = ActiveTitle.GraphicsPresetHeld;
+        if (GraphicsPresetRegistry.Default.HeldPreset != held)
+        {
+            GraphicsPresetRegistry.Default.Hold(held);
+            _logger.Information(TitleLogCategory, held is { } preset
+                ? $"{ActiveTitle.DisplayName} offers the {preset} graphics preset for now; the player's own is kept for later."
+                : $"{ActiveTitle.DisplayName} offers every graphics preset; the player's own is back.");
+        }
     }
 
     /// <summary>Builds the running title's resource registry and the archives the menus resolve through.</summary>
@@ -350,7 +375,11 @@ public sealed partial class GameHost
                 // than this build goes.
                 foreach (PlayerProfile profile in _configuration.Profiles)
                 {
-                    profile.ActiveMission = limitedMissions.ClampToOffered(profile.ActiveMission);
+                    string title = _titleRuntime.Title.Id;
+                    if (profile.MissionOf(title) is > 0 and var reached)
+                    {
+                        profile.SetMission(title, limitedMissions.ClampToOffered(reached));
+                    }
                 }
             }
         }
@@ -397,7 +426,8 @@ public sealed partial class GameHost
             _worldBuilder,
             _device.Capabilities.SupportsCompute,
             _titleRuntime.Title.Id,
-            _device.Capabilities.SupportsBlockCompression);
+            _device.Capabilities.SupportsBlockCompression,
+            _loadGate);
     }
 
     /// <summary>The campaign as the shell lists it, for the title running now.</summary>
@@ -448,10 +478,16 @@ public sealed partial class GameHost
         new(
             descriptor.Id,
             number,
-            _menuStrings?.Get(descriptor.Name) ?? descriptor.Name,
-            _menuStrings?.Get(descriptor.Description) ?? descriptor.Description,
+            Shown(descriptor.Name),
+            Shown(descriptor.Description),
             descriptor.BriefingSprite,
             campaign);
+
+    /// <summary>A text of the title's menus as the player reads it: a key such as <c>Mission 2 Name</c> looked up in the menus'
+    /// strings, in the language they are shown in; the text itself where there is no such key.</summary>
+    /// <param name="key">The key, or the text.</param>
+    /// <returns>The text shown.</returns>
+    internal string Shown(string key) => _menuStrings?.Get(key) ?? key;
 
     /// <summary>Builds the shell's context for the title running now.</summary>
     /// <param name="host">The seam the shell acts through; it belongs to the session, not to a game.</param>
@@ -504,12 +540,22 @@ public sealed partial class GameHost
     /// what it is rather than as what it was at boot.
     /// </remarks>
     private IReadOnlyList<GameProfile> TitleCatalogue() =>
-        GameProfileResolver.BuildCatalogue(
-            ActiveTitle,
-            _gamePath,
-            null,
-            null,
-            title => _titles.TryResolve(title, out TitleBinding? other) ? other.DataRoot : null);
+        [.. GameProfileResolver.BuildCatalogue(
+                ActiveTitle,
+                _gamePath,
+                null,
+                null,
+                title => _titles.TryResolve(title, out TitleBinding? other) ? other.DataRoot : null)
+            .Select(profile => OpenTitleElsewhere is not null && !profile.IsInstalled
+                ? new GameProfile(profile.Title, profile.DataRoot) { PlayableElsewhere = true }
+                : profile)];
+
+    /// <summary>Gets or sets how a host that cannot run another game in this session opens it anew instead.</summary>
+    /// <remarks>
+    /// A browser holds one game's files at a time, so choosing the other reloads the page into it -- downloaded once and
+    /// kept, like the first. Given the title's id; returns whether that is happening. Null where a switch is in-process.
+    /// </remarks>
+    public Func<string, bool>? OpenTitleElsewhere { get; set; }
 
     /// <summary>Brings what is loaded up to date with the content layers, after anything changed them.</summary>
     /// <param name="report">Receives a sentence on what was reloaded.</param>

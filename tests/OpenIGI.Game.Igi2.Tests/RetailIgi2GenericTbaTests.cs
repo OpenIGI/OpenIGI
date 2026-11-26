@@ -3,6 +3,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -24,6 +25,9 @@ public sealed class RetailIgi2GenericTbaTests
 
     /// <summary>An outer padlock, <c>GenericTBA_260</c>, explodable, which its script blows once it is finished.</summary>
     private const int Padlock = 260;
+
+    /// <summary>The gate the outer padlock hangs on, <c>Door_3955</c>, which opens once the padlock is blown.</summary>
+    private const int PadlockGate = 3955;
 
     /// <summary>All seven are typed and read with their authored parameters, active as they are made.</summary>
     [RequiresTitleDataFact("igi2")]
@@ -94,6 +98,60 @@ public sealed class RetailIgi2GenericTbaTests
     }
 
     /// <summary>
+    /// The outer padlock is a child of the gate it locks, and goes with it (<c>Door_SetPosition</c>'s
+    /// <c>RigidDynCubeObj_UpdateAttachments</c>, then <c>ExplodeObject_UpdateAttachmentHandler</c>): blown, the gate swings open
+    /// and the padlock stays where it sat on the gate, its solid with it and drawn there, rather than hanging where the gate was.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_padlock_goes_with_the_gate_it_locks()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        Igi2GenericTbaTask padlock = Arm(m, Padlock, null);
+        Igi2DoorTask gate = m.Door(PadlockGate);
+        Assert.Same(gate, padlock.Parent);
+        Igi2Attachment.AttachChildren(gate, gate);
+        Vector3d placed = padlock.Position;
+        Vector3d onGate = OnGate(gate, placed);
+
+        m.Run.Tick();
+        padlock.Finish();
+        for (int tick = 0; tick < 200 && !gate.IsOpen; tick++)
+        {
+            m.Run.Tick();
+        }
+
+        Assert.True(gate.IsOpen);
+        Assert.True(padlock.Explosive.IsExploded);
+        Assert.True(Distance(placed, padlock.Position) > 4096.0, $"the padlock stayed at {padlock.Position}");
+        Assert.True(Distance(onGate, OnGate(gate, padlock.Position)) < 1.0);
+        Assert.Equal(padlock.Position, padlock.CurrentPosition);
+        Assert.True(Distance(padlock.Position, m.Collision!.SolidsOf(Igi2GenericTbaTask.TypeName, Padlock)[0].Position) < 1.0);
+
+        // Drawn where the world scene placed it, as built, and moved from there to where the gate holds it now.
+        WorldPlacement drawn = new(
+            WorldScene.ToMetres(padlock.Built.Position), padlock.Built.ToMatrix(), default, null!, null!, Igi2GenericTbaTask.TypeName, null!)
+        {
+            LevelId = Padlock,
+        };
+        Assert.True(new Igi2MoverMotions([gate, padlock]).TryGetTransform(drawn, 1f, out Vector3d metres, out _));
+        Assert.True(Distance(padlock.Position, WorldScene.ToUnits(metres)) < 1.0);
+    }
+
+    // A point in the gate's frame as it stands, as Igi2Attachment holds what the gate carries.
+    private static Vector3d OnGate(Igi2DoorTask gate, Vector3d point)
+    {
+        IReadOnlyList<float> m = gate.CurrentOrientation;
+        Vector3d d = point - gate.CurrentPosition;
+        return new Vector3d(
+            (m[0] * d.X) + (m[3] * d.Y) + (m[6] * d.Z),
+            (m[1] * d.X) + (m[4] * d.Y) + (m[7] * d.Z),
+            (m[2] * d.X) + (m[5] * d.Y) + (m[8] * d.Z));
+    }
+
+    private static double Distance(Vector3d a, Vector3d b) =>
+        Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2) + Math.Pow(a.Z - b.Z, 2));
+
+    /// <summary>
     /// The player facing an active code pad works it while the key is held: it kneels at the pad's second vertex facing it, the
     /// pad sounds and is in use, and once its four seconds are out the pad is finished on the next tick and the player stands.
     /// </summary>
@@ -131,6 +189,31 @@ public sealed class RetailIgi2GenericTbaTests
         Assert.Equal((true, true), (pad.IsFinished, pad.IsInUse));
     }
 
+    /// <summary>
+    /// A player popped out of its work by a script stands free again: <c>HumanPlayer_GoToDefaultState</c> lets go of everything the
+    /// timed action locked -- the action, both orientation locks, the interaction camera, the progress bar and the work's sound.
+    /// location2/level6 and location3/level4 pop the player this way around the cutscenes that begin as it hacks a computer.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_script_pop_frees_the_player_from_its_work()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        Igi2GenericTbaTask pad = Arm(m, Pad, null);
+        m.Run.Tick();
+        Igi2TitlePlayer player = Before(m, pad);
+        Hold(player, pressed: true);
+        Igi2HumanPlayer human = player.Human;
+        Assert.Equal((3, true, true), (human.CameraMode, human.IsLockAction, human.View.IsLockOrientation));
+
+        human.GoToDefaultState();
+
+        Assert.Equal(Igi2PlayerState.Stand, human.Locomotion.CurrentState);
+        Assert.Equal(
+            (1, false, false, false, false, false),
+            (human.CameraMode, human.IsLockAction, human.View.IsLockOrientation, human.IsLockOrientation, human.IsProgressBar, human.IsActivating));
+        Assert.DoesNotContain(m.Sounds.Playing, static s => s.Name == "tba_codepad" && s.IsAlive);
+    }
+
     /// <summary>The key held over from the tick before does not start the work; the activation simply ends.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_held_key_does_not_start_the_work()
@@ -149,6 +232,26 @@ public sealed class RetailIgi2GenericTbaTests
         Hold(player);
         Assert.NotEqual(Igi2PlayerState.ActivateGenericTba, player.Human.Locomotion.CurrentState);
         Assert.False(player.Human.IsActivating);
+    }
+
+    /// <summary>
+    /// Mission 14's first bridge charge, <c>GenericTBA_1200</c>, wears the editor's "none", no model of its own: it is no solid, and once set it wears its
+    /// destroyed model, the placed brick (<c>ExplodeObject_SetExploded</c>), which the world draws in its place.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_set_bridge_charge_wears_its_brick()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true, location: "location1", levelName: "level4");
+        Igi2GenericTbaTask charge = Arm(m, 1200, null);
+        Assert.Empty(m.Collision!.SolidsOf(Igi2GenericTbaTask.TypeName, 1200));
+        Assert.Equal(("none", "113_04_1"), (charge.Model, charge.DestroyedModel));
+        m.Run.Tick();
+        Assert.False(charge.IsDestroyed);
+
+        charge.Finish();
+        m.Run.Tick();
+        Assert.Equal((true, true, "113_04_1"), (charge.IsFinished, charge.IsDestroyed, charge.Explosive.Model));
+        Assert.True(new Igi2PlacementDestruction([charge]).IsDestroyed(1200));
     }
 
     private static Igi2GenericTbaTask Arm(RetailIgi2Mission1 m, int id, Igi2ExplosionWorld? blasts)

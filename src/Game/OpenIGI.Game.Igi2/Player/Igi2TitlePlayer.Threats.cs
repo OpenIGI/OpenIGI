@@ -106,7 +106,7 @@ public sealed partial class Igi2TitlePlayer
             }
 
             double ahead = ((m[1] * dx) + (m[4] * dy) + (m[7] * dz)) / length;
-            float off = (float)Math.Acos(Math.Clamp(ahead, -1.0, 1.0));
+            float off = (float)SimMath.Acos(Math.Clamp(ahead, -1.0, 1.0));
             float strength = Math.Clamp((GlintNoAngle - off) / (GlintNoAngle - GlintFullAngle), 0f, 1f);
             if (strength <= 0f)
             {
@@ -146,7 +146,7 @@ public sealed partial class Igi2TitlePlayer
     // that line, so the point on it nearest the weapon object is the glass. A body with no rifle in its hands glints at the eye.
     private static Vector3d ScopeAt(Igi2HumanSoldier soldier, Vector3d eye, double dx, double dy, double dz)
     {
-        if (ViewModel.Igi2BodyFrame.HeldWeaponAt(soldier, soldier.BodyPose(), soldier.Weapon.Inventory?.Current?.WeaponType.FixedModel) is not { } rifle)
+        if (ViewModel.Igi2BodyFrame.HeldWeaponAt(soldier, soldier.PresentedPose(), soldier.Weapon.Inventory?.Current?.WeaponType.FixedModel) is not { } rifle)
         {
             return eye;
         }
@@ -210,31 +210,5 @@ public sealed partial class Igi2TitlePlayer
         }
 
         return status;
-    }
-
-    /// <summary>
-    /// The objective being worked on: the first of the map computer's not yet done or failed, its words in the game's own text,
-    /// and where its map would look (<c>LinkToPosition</c>), where it names a place.
-    /// </summary>
-    /// <returns>The objective's words and place, or <see langword="null"/> for none.</returns>
-    public (string Text, Vector3d? Position)? CurrentObjective()
-    {
-        if (Human.Computer?.Objectives?.Objectives is not { } objectives)
-        {
-            return null;
-        }
-
-        foreach (OpenIGI.Game.Flow.ComputerObjective objective in objectives)
-        {
-            if (objective.TextResource.Length == 0 || objective.IsComplete || objective.IsFailed)
-            {
-                continue;
-            }
-
-            string text = Strings?.Get(objective.TextResource) ?? objective.TextResource;
-            return (text, ObjectivePlace(objective));
-        }
-
-        return null;
     }
 }

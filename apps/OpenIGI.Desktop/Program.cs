@@ -63,7 +63,7 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
         return RoomSessions.Start(session, title.Id, options.StartMission, version, new DataChannelPeerFactory(logger), logger);
     }
 
-    JoinRequest join = new(session.PlayerName, version, session.Password);
+    JoinRequest join = new(session.PlayerName, version, session.Password, Skin: session.LookFor(title.Id));
     if (session.Demo is { } demo)
     {
         try
@@ -100,7 +100,7 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
         string map = options.StartMission.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return new HostedSession(
             UdpTransport.Open(session.Port),
-            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName),
+            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, HostSkin: session.LookFor(title.Id)),
             title.Id,
             OpenIGI.Engine.Time.GameClock.DefaultTickRate,
             logger);
@@ -560,6 +560,8 @@ try
         game.EditorFactory = new OpenIGI.Editor.EditorFactory { PickFolder = (title, initial) => FolderPicker.PickAsync(title, initial, owner) };
         game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
         game.OpenUdp = port => UdpTransport.Open(port);
+        game.OpenLink = OpenInBrowser;
+        game.ShowsPresence = true;
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;
@@ -647,4 +649,22 @@ finally
 {
     window.Dispose();
 }
+}
+
+// A page in the player's own browser: the system opens the address (xdg-open, open, or the shell on Windows).
+static void OpenInBrowser(string url)
+{
+    if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+    {
+        return;
+    }
+
+    try
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+    }
+    catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or PlatformNotSupportedException)
+    {
+        // Nothing to open it with: the profile page still shows the address to copy.
+    }
 }

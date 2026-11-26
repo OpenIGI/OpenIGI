@@ -65,7 +65,8 @@ public sealed partial class GameHost
     private void AdvanceAudio()
     {
         // A level open in the editor is being built, not played: its score, beds and voices wait for Play.
-        _audioOut.GameSilenced = _editor is not null && !_playerMode;
+        // Nor is a replay's opening cutscene, run through at a seek's speed before the run is shown.
+        _audioOut.GameSilenced = (_editor is not null && !_playerMode) || PlaybackHidesOpening;
         UpdateListener();
         float delta = _audioOut.Advance();
         UpdateRainAmbience(delta);
@@ -74,10 +75,12 @@ public sealed partial class GameHost
     /// <summary>Puts the listener where the player's eye is.</summary>
     /// <remarks>
     /// <para>
-    /// Every frame rather than every tick, and from the same blended pose the view model uses, so a
-    /// source does not step across the stereo image at 30 Hz under a camera that glides. The camera
-    /// already reports metres — it divides the body's engine units by 4096 — which is the unit the
-    /// device works in, so nothing is converted here.
+    /// Every frame, turned as the frame's drawn eye is, so the stereo image follows the mouse smoothly;
+    /// but standing where the current tick has the eye (see ComposeFrameEye), because that is where every
+    /// sound was placed: an ear on the drawn eye, a share of a tick behind, heard a moving player's own
+    /// sounds swing across it thirty times a second. The camera already reports metres — it divides
+    /// the body's engine units by 4096 — which is the unit the device works in, so nothing is
+    /// converted here.
     /// </para>
     /// <para>
     /// Without this, every positional sound in the game would be placed relative to a listener sitting

@@ -592,8 +592,8 @@ public static partial class Igi2AiContent
             return;
         }
 
-        float s = (float)(Math.Sin(context.CurrentRotation) * 40960.0);
-        float c = (float)(Math.Cos(context.CurrentRotation) * 40960.0);
+        float s = (float)(SimMath.Sin(context.CurrentRotation) * 40960.0);
+        float c = (float)(SimMath.Cos(context.CurrentRotation) * 40960.0);
         double step = context.CurrentTarget - (double)context.CurrentRotation;
         step = step >= -0.05235987901687622 ? (step > 0.05235987901687622 ? 0.05235987901687622 : step) : -0.05235987901687622;
         float[] o = ai.Soldier.OrientationRows;

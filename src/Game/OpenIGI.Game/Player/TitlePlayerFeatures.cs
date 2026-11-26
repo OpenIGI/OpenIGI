@@ -19,7 +19,19 @@ public sealed class TitlePlayerFeatures
         WorldModels = player as ITitleWorldModels;
         Placement = player as ITitlePlayerPlacement;
         Diagnostics = player as ITitlePlayerDiagnostics;
+        OverShoulder = player as ITitleOverShoulder;
+        Ghost = player as ITitleGhost;
+        Orbit = player as ITitleOrbitView;
     }
+
+    /// <summary>Gets the orbit it is watched from around its own body, when it has one the frame draws between ticks.</summary>
+    public ITitleOrbitView? Orbit { get; }
+
+    /// <summary>Gets how it shows a race's ghost, when it can.</summary>
+    public ITitleGhost? Ghost { get; }
+
+    /// <summary>Gets how it is watched over the shoulder, when the host's third-person view may do so.</summary>
+    public ITitleOverShoulder? OverShoulder { get; }
 
     /// <summary>Gets the player.</summary>
     public ITitlePlayer Player { get; }

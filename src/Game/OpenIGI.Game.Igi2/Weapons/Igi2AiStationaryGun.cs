@@ -53,7 +53,7 @@ public sealed record Igi2AiGunParameters(
 /// Its carrier places it, <c>AIStationaryGun_UpdateAttachmentHandler</c>: a holder once, a car each time it moves.
 /// </para>
 /// </remarks>
-public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
+public sealed partial class Igi2AiStationaryGun : IIgi2WeaponOwner
 {
     /// <summary>The magic task type the gun's attach point is.</summary>
     public const string TypeName = "AIStationaryGun";
@@ -232,6 +232,12 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
     public void Run(Igi2AiDetection? detection, int ticks)
     {
         _ticks = ticks;
+        if (IsPuppet)
+        {
+            RunPuppet();
+            return;
+        }
+
         if (detection is null || _base is null)
         {
             return;
@@ -259,7 +265,7 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
             double lz = (b[8] * dz) + (b[5] * dy) + (b[2] * dx);
             aimTurn = Igi2Pose.CalcGamma(lx, ly);
             double length = Math.Sqrt((ly * ly) + (lz * lz) + (lx * lx));
-            aimTilt = length <= 0.10000000149011612 ? 0f : (float)Math.Asin(Math.Clamp((float)(lz / length), -1.0, 1.0));
+            aimTilt = length <= 0.10000000149011612 ? 0f : (float)SimMath.Asin(Math.Clamp((float)(lz / length), -1.0, 1.0));
             found = true;
             break;
         }
@@ -331,7 +337,7 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
         float heldTurn = aimTurn < -_maxGamma ? -_maxGamma : aimTurn > _maxGamma ? _maxGamma : aimTurn;
         if (Math.Abs(_tilt - heldTilt) > Turning || Math.Abs(_turn - heldTurn) > Turning)
         {
-            if (_rotationSound is null && _parameters.RotationSound.Length > 0)
+            if (_rotationSound is not { IsDeleted: false } && _parameters.RotationSound.Length > 0)
             {
                 _rotationSound = Sounds?.New(_parameters.RotationSound, from, () => _base?.Position ?? from);
             }

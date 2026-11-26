@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Cameras;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -17,9 +18,9 @@ namespace OpenIGI.Presentation.Igi1;
 /// <param name="logger">Where a view takeover that fails is reported.</param>
 internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger) : IMissionViewpoint
 {
-    private readonly ThirdPersonCamera _thirdPerson = new();
-    private Igi1HumanCamera _death = new();
-    private Igi1HumanCamera _interaction = new();
+    private readonly OverShoulderView _thirdPerson = new();
+    private HumanOrbitCamera _death = new();
+    private HumanOrbitCamera _interaction = new();
     private readonly TeammateView _teammate = new();
     private WorldRayCast? _deathWalls;
     private Vector3d _interactionOrigin;
@@ -37,7 +38,6 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
 
     // A corpse's feet under the centre the death camera follows.
     private static Vector3d FeetUnder(Vector3d centre) => new(centre.X, centre.Y, centre.Z - (PlayerBody.StandingEyeHeight * 0.5));
-    private int _thirdPersonMilliseconds;
 
     /// <inheritdoc/>
     public MouseLookSettings LookSettings
@@ -67,6 +67,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
     // Whether another player is watched while the player's own body is left aside (a demo's viewer), and what pulls that
     // camera in off the walls.
     private bool _following;
+
+    // How far the current tick's eye stood ahead of the one last composed; see EarLead.
+    private Vector3d _earLead;
     private WorldRayCast? _followWalls;
 
     /// <inheritdoc/>
@@ -91,13 +94,16 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
     public bool IsThirdPersonEngaged => _thirdPerson.IsEngaged;
 
     /// <inheritdoc/>
+    public Vector3d EarLead => _earLead;
+
+    /// <inheritdoc/>
     public bool HasPlayer => gameplay.World.Player is not null;
 
     /// <inheritdoc/>
     public Vector3d? BodyPositionUnits => gameplay.World.Player?.Body.Position;
 
     /// <inheritdoc/>
-    public Vector3d? EyeUnits => gameplay.World.Player?.Body.Eye;
+    public Vector3d? EyeUnits => gameplay.World.Player?.EyeUnits;
 
     /// <inheritdoc/>
     public IReadOnlyList<string>? DebugLines()
@@ -243,6 +249,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
         }
 
         // A downed co-op player watching a teammate sees what the teammate sees.
+        bool takenView = ((mission.IsPlayerDead || _following) && _teammate.IsActive)
+            || (mission.IsPlayerDead && _death.IsActive)
+            || ((mission.Player is { IsOnLadder: true } or { IsInWorldInteraction: true }) && _interaction.IsActive);
         Camera3D eye = (mission.IsPlayerDead || _following) && _teammate.IsActive
             ? _teammate.Present(frame.Smooth ? frame.TickBlend : 1f, _following ? _followWalls : _deathWalls)
             : mission.IsPlayerDead && _death.IsActive
@@ -253,6 +262,10 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
                 : frame.PlayerMode && frame.TitleEye is { } titleEye ? titleEye
                 : frame.PlayerMode && mission.Player is not null ? mission.Player.Camera : frame.FreeEye;
 
+        // Only the title's walking eye and the player's own are drawn behind the tick their sounds were placed on; the
+        // cameras that take the view are heard from where they are drawn.
+        _earLead = !takenView && frame.PlayerMode && frame.TitleEye is not null ? frame.TitleEyeLead : default;
+
         // The walking eye glides between its tick pair, and so does the recoil kick inside its
         // orientation; the mouse half of the look is this frame's own. The fly and death cameras
         // move per frame on their own and need nothing.
@@ -262,6 +275,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
             && mission.Player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
         {
             eye = mission.Player.SmoothedCamera(frame.TickBlend);
+            _earLead = mission.Player.SmoothedEyeMetres(1f) - eye.Position;
         }
 
         // A mod has taken the view (MissionWorld.ViewTakeover): its eye, whatever else would have had it, with no
@@ -271,13 +285,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
         {
             eye = eyeTaken;
             bodyEye = eye;
-            _thirdPerson.Reset();
-            _thirdPersonMilliseconds = frame.NowMilliseconds;
-            if (mission.Player is not null)
-            {
-                mission.Player.AimConvergenceRay = null;
-            }
-
+            _earLead = default;
+            _thirdPerson.Reset(frame.NowMilliseconds);
+            AimRay = null;
             return eye;
         }
 
@@ -301,50 +311,17 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
             && frame.ThirdPersonAllowed
             && mission.Player is { IsOnLadder: false, IsInWorldInteraction: false };
 
-        if (thirdPersonEligible && mission.Player is { } thirdPersonPlayer)
-        {
-            float thirdPersonElapsed =
-                Math.Clamp((frame.NowMilliseconds - _thirdPersonMilliseconds) / 1000f, 0f, 0.1f);
-            _thirdPersonMilliseconds = frame.NowMilliseconds;
-
-            _thirdPerson.DistanceInMetres = GameplayCVars.ThirdPersonDistance.Value;
-            _thirdPerson.ShoulderInMetres = GameplayCVars.ThirdPersonShoulder.Value;
-            _thirdPerson.HeightInMetres = GameplayCVars.ThirdPersonHeight.Value;
-            _thirdPerson.BlendSeconds = GameplayCVars.ThirdPersonBlend.Value;
-
-            // Optics are a first-person act. Raising the binoculars or leaning into the Dragunov's
-            // scope replaces the picture with what the eye sees, so the camera comes back to the
-            // eye first -- by the same move, not by a cut -- and goes out again on the way down.
-            bool wantsThirdPerson = GameplayCVars.ThirdPerson.Value
-                && thirdPersonPlayer is { IsBinocularsOpen: false, IsSniperScoped: false };
-
-            // A paused view does not move. Advancing the blend behind the menu would have the
-            // camera quietly travel while the player was reading, and arrive somewhere else.
-            eye = _thirdPerson.Update(
-                frame.Paused ? 0f : thirdPersonElapsed,
-                wantsThirdPerson,
-                eye,
-                frame.Walls);
-
-            ConvergeThirdPersonAim(thirdPersonPlayer, eye);
-        }
-        else
-        {
-            // A cut, not a move: the view was taken by something that put the camera somewhere
-            // else entirely, and interpolating back from there draws a frame from a line between
-            // two unrelated places.
-            _thirdPerson.Reset();
-            _thirdPersonMilliseconds = frame.NowMilliseconds;
-            if (mission.Player is not null)
-            {
-                mission.Player.AimConvergenceRay = null;
-            }
-        }
-
+        // Optics are a first-person act. Raising the binoculars or leaning into the Dragunov's scope replaces the picture with
+        // what the eye sees, so the camera comes back to the eye first -- by the same move, not by a cut -- and goes out again on
+        // the way down.
+        bool wantsThirdPerson = GameplayCVars.ThirdPerson.Value
+            && mission.Player is { IsBinocularsOpen: false, IsSniperScoped: false };
+        eye = _thirdPerson.Compose(thirdPersonEligible, wantsThirdPerson, eye, frame.NowMilliseconds, frame.Paused, frame.Walls);
+        AimRay = mission.Player is null ? null : _thirdPerson.AimRay;
         return eye;
     }
 
-    /// <summary>Hands the player the ray their crosshair sits on.</summary>
+    /// <summary>Gets the ray the player's crosshair sits on, in world units, which the host hands their next tick.</summary>
     /// <remarks>
     /// <para>
     /// Only the ray. What it is over is settled on the simulation tick, by
@@ -358,22 +335,12 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger
     /// Cleared the moment the camera is back at the eye, which is what leaves first person firing along
     /// the body's forward with no branch anywhere to say so.
     /// </para>
+    /// <para>
+    /// Handed over as the tick's input (<see cref="Game.Player.TitlePlayerInput.Aim"/>), never written into the player from
+    /// here: where the camera stood is the picture's, and a replay or a server playing the tick again has no camera to ask.
+    /// </para>
     /// </remarks>
-    private void ConvergeThirdPersonAim(PlayerCamera player, in Camera3D drawn)
-    {
-        if (!_thirdPerson.IsEngaged)
-        {
-            player.AimConvergenceRay = null;
-            return;
-        }
-
-        player.AimConvergenceRay = (
-            new Vector3d(
-                drawn.Position.X * WorldScene.UnitsPerMetre,
-                drawn.Position.Y * WorldScene.UnitsPerMetre,
-                drawn.Position.Z * WorldScene.UnitsPerMetre),
-            drawn.Orientation.Row3);
-    }
+    public (Vector3d OriginUnits, Vector3f Direction)? AimRay { get; private set; }
 
     /// <summary>Gets the eye a mod has taken the view with (<see cref="MissionWorld.ViewTakeover"/>), or <see langword="null"/> while none has.</summary>
     /// <param name="mission">The mission.</param>

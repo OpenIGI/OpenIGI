@@ -25,20 +25,73 @@ public static class Igi1Command
     // Where the look and the crosshair's ray sit after the frame's slots.
     private const int Look = PlayerInputFrame.SlotCount;
     private const int Aim = Look + 2;
-    private const int Chosen = Aim + 6;
+    private const int Chosen = Aim + AimRayChannels.Count;
+    private const int Preferences = Chosen + 1;
+
+    // The preferences channel: modern aim's two flags, its zoom and look speed in hundredths, then a manual grenade cook.
+    private const int ToggleBit = 1;
+    private const int AutoMountBit = 2;
+    private const int ZoomShift = 2;
+    private const int SpeedShift = 9;
+    private const int ManualCookBit = 1 << 17;
+    private const int PreferencesLimit = 1 << 18;
 
     /// <summary>
-    /// The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray, and the weapon its
-    /// player had chosen once the tick ran.
+    /// The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray, the weapon its
+    /// player had chosen once the tick ran, and how its player likes to play.
     /// </summary>
-    public const int ChannelCount = Chosen + 1;
+    public const int ChannelCount = Preferences + 1;
 
-    /// <summary>The farthest a crosshair's ray may start from the eye, in world units: the over-the-shoulder camera's reach and some.</summary>
-    /// <remarks>
-    /// The camera sits at most 2.6 m back, 0.55 m aside and 0.25 m up (<see cref="ThirdPersonCamera"/>). A ray from further off
-    /// is a client aiming from somewhere its player is not, and is drawn back to this.
-    /// </remarks>
-    public const double MaxAimReach = 3.5 * WorldUnits.PerMetre;
+    /// <summary>Writes how a player likes to play into a command: modern aim's toggle, brace, zoom and look speed, and its grenade cook.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <param name="aim">The player's own aim settings; whether modern aim is on at all is the server's to say, not theirs.</param>
+    /// <param name="cook">When the player's grenades cook (<see cref="GameplayCVars.GrenadeCook"/>).</param>
+    /// <remarks>One channel, a whole number a float holds exactly: two flags, the zoom and the look speed in hundredths, the cook.</remarks>
+    public static void PackPreferences(Span<float> channels, in Game.Player.Aim.ModernAimOptions aim, GrenadeCook cook)
+    {
+        int zoom = (int)MathF.Round(Math.Clamp(aim.Zoom, 0f, 1f) * 100f);
+        int speed = (int)MathF.Round(Math.Clamp(aim.Sensitivity, 0f, 2.55f) * 100f);
+        channels[Preferences] = (aim.Toggle ? ToggleBit : 0) | (aim.AutoMount ? AutoMountBit : 0) | (zoom << ZoomShift)
+            | (speed << SpeedShift) | (cook == GrenadeCook.Manual ? ManualCookBit : 0);
+    }
+
+    /// <summary>Reads a player's modern aim settings back out of a command, under the server's own switch.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <param name="enabled">Whether the server plays with modern aim.</param>
+    /// <returns>The settings the server runs the player's tick with; a value that is no packing reads as the defaults.</returns>
+    public static Game.Player.Aim.ModernAimOptions UnpackAimPreferences(ReadOnlySpan<float> channels, bool enabled)
+    {
+        Game.Player.Aim.ModernAimOptions defaults = Game.Player.Aim.ModernAimOptions.Off with { Enabled = enabled };
+        if (ReadPreferences(channels) is not { } packed)
+        {
+            return defaults;
+        }
+
+        float speed = ((packed >> SpeedShift) & 0xFF) / 100f;
+        return defaults with
+        {
+            Toggle = (packed & ToggleBit) != 0,
+            AutoMount = (packed & AutoMountBit) != 0,
+            Zoom = Math.Clamp(((packed >> ZoomShift) & 0x7F) / 100f, 0f, 1f),
+            Sensitivity = speed is >= 0.2f and <= 2f ? speed : 1f,
+        };
+    }
+
+    /// <summary>Reads when a command's player's grenades cook.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <returns>The player's cook; a value that is no packing reads as the original's.</returns>
+    public static GrenadeCook UnpackGrenadeCook(ReadOnlySpan<float> channels) =>
+        ReadPreferences(channels) is { } packed && (packed & ManualCookBit) != 0 ? GrenadeCook.Manual : GrenadeCook.Original;
+
+    // The preferences channel as the whole number it was packed as, or null for a value that is no packing.
+    private static int? ReadPreferences(ReadOnlySpan<float> channels)
+    {
+        float value = channels[Preferences];
+        return float.IsFinite(value) && value >= 0f && value < PreferencesLimit ? (int)value : null;
+    }
+
+    /// <inheritdoc cref="AimRayChannels.MaxReach"/>
+    public const double MaxAimReach = AimRayChannels.MaxReach;
 
     /// <summary>Writes a tick's input, look and crosshair into a command's channels.</summary>
     /// <param name="frame">The input frame.</param>
@@ -53,13 +106,7 @@ public static class Igi1Command
         copy.AsSpan().CopyTo(channels);
         channels[Look] = yaw;
         channels[Look + 1] = pitch;
-        (Vector3d offset, Vector3f direction) = aim ?? default;
-        channels[Aim] = (float)offset.X;
-        channels[Aim + 1] = (float)offset.Y;
-        channels[Aim + 2] = (float)offset.Z;
-        channels[Aim + 3] = direction.X;
-        channels[Aim + 4] = direction.Y;
-        channels[Aim + 5] = direction.Z;
+        AimRayChannels.Pack(channels.Slice(Aim, AimRayChannels.Count), aim);
         channels[Chosen] = chosen + 1;
     }
 
@@ -88,36 +135,11 @@ public static class Igi1Command
         return frame;
     }
 
-    /// <summary>Reads the crosshair's ray a command carries.</summary>
+    /// <summary>Reads the crosshair's ray a command carries (<see cref="AimRayChannels.Unpack"/>).</summary>
     /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
     /// <returns>Its origin as an offset from the eye and its direction, or <see langword="null"/> when the player was in first person.</returns>
-    /// <remarks>
-    /// What a client sends is not taken on trust: a direction that is no direction leaves the player in first person, it is
-    /// made unit length, and an origin past <see cref="MaxAimReach"/> is drawn back to it.
-    /// </remarks>
-    public static (Vector3d EyeOffset, Vector3f Direction)? UnpackAim(ReadOnlySpan<float> channels)
-    {
-        Vector3f direction = new(channels[Aim + 3], channels[Aim + 4], channels[Aim + 5]);
-        float length = MathF.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (!float.IsFinite(length) || length < 0.5f || length > 2f)
-        {
-            return null;
-        }
-
-        Vector3d offset = new(channels[Aim], channels[Aim + 1], channels[Aim + 2]);
-        double reach = offset.Length;
-        if (!double.IsFinite(reach))
-        {
-            return null;
-        }
-
-        if (reach > MaxAimReach)
-        {
-            offset *= MaxAimReach / reach;
-        }
-
-        return (offset, new Vector3f(direction.X / length, direction.Y / length, direction.Z / length));
-    }
+    public static (Vector3d EyeOffset, Vector3f Direction)? UnpackAim(ReadOnlySpan<float> channels) =>
+        AimRayChannels.Unpack(channels.Slice(Aim, AimRayChannels.Count));
 }
 
 /// <summary>Another player in an I.G.I. co-op session: a rig of the mission's own kind, driven by its client's commands.</summary>
@@ -130,6 +152,10 @@ public static class Igi1Command
 public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) : World.IHarmedPlayer
 {
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
+
+    // Modern aim as the last command asked for it, under the server's own switch.
+    private Game.Player.Aim.ModernAimOptions _aimOptions = Game.Player.Aim.ModernAimOptions.Off;
+    private GrenadeCook _grenadeCook;
     private bool _down;
 
     /// <summary>Gets the rig.</summary>
@@ -284,6 +310,12 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
 
         // Its rounds converge where its crosshair was, as on its client's own game.
         Player.AimConvergenceRay = Igi1Command.UnpackAim(_channels) is { } aim ? (Player.Body.Eye + aim.EyeOffset, aim.Direction) : null;
+
+        // Modern aim as this server plays it, with its client's own toggle, brace, zoom and look speed.
+        _aimOptions = Igi1Command.UnpackAimPreferences(_channels, Game.Player.Aim.ModernAimCVars.Enabled.Value);
+        Player.ModernAimSource ??= () => _aimOptions;
+        _grenadeCook = Igi1Command.UnpackGrenadeCook(_channels);
+        Player.GrenadeCookSource ??= () => _grenadeCook;
         Player.TickFrame(frame, ground);
         KeepChosenWeapon(Igi1Command.UnpackChosen(_channels));
         _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;

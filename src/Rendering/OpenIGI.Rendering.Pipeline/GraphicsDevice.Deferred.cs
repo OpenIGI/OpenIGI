@@ -520,7 +520,7 @@ public sealed partial class GraphicsDevice
 
         if (_material.Glass)
         {
-            DrawGlass(pass, call, ranges, modelView);
+            DrawGlass(pass, call, ranges, modelView, hasLightmap);
             return;
         }
 

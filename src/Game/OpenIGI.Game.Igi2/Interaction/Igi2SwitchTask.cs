@@ -32,9 +32,18 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// once its on or pressed state next changes. Project I.G.I.'s run (<c>0x4450F0</c>) copies after, and swaps at once.
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
+/// <para>
+/// Put beneath something that moves -- mission 12's train carries the switch that drives it -- it rides it, as a model object does
+/// (<see cref="Igi2CarriedPose"/>): drawn, met and found where it is carried to, not where the level put it.
+/// </para>
 /// </remarks>
-public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2PlacedTask, IWeaponHitTarget
+public sealed partial class Igi2SwitchTask
+    : Igi2Task, IIgi2Pressable, IIgi2PlacedTask, IWeaponHitTarget, IIgi2Carried, IIgi2Mover, IIgi2MovedTick
 {
+    private readonly Igi2CarriedPose _pose = new();
+    private Igi2Pose? _built;
+    private IReadOnlyList<Collision.Igi2RigidObject> _solids = [];
+
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Switch";
 
@@ -144,8 +153,57 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
     [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
+    /// <summary>Gets or sets the magic object types its solids were built through, which it moves them through.</summary>
+    public Igi2MagicObjTypes? Magic { get; set; }
+
     /// <inheritdoc/>
-    public Vector3d Centre => Position;
+    public Vector3d Centre => _pose.Position;
+
+    /// <inheritdoc/>
+    public Igi2Pose Built => _built ??= Igi2Pose.FromAngles(Position, Orientation);
+
+    /// <inheritdoc/>
+    public Vector3d CurrentPosition => _pose.Position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> CurrentOrientation => _pose.Orientation;
+
+    /// <inheritdoc/>
+    public Vector3d LastPosition => _pose.LastPosition;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> LastOrientation => _pose.LastOrientation;
+
+    /// <inheritdoc/>
+    public int MovedTick => _pose.MovedTick;
+
+    /// <summary>Takes the solids the collision world built of it, which go where it is carried.</summary>
+    /// <param name="solids">Its solids, as <see cref="Collision.Igi2CollisionWorld.SolidsOf"/> gives them.</param>
+    public void Bind(IReadOnlyList<Collision.Igi2RigidObject> solids) => _solids = solids ?? throw new ArgumentNullException(nameof(solids));
+
+    /// <inheritdoc/>
+    public bool AttachTo(OpenIGI.Game.World.IAttachParent parent)
+    {
+        _pose.AttachTo(parent);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>ModelObj_UpdateAttachment</c>: where its carrier now holds it, its solids with it.</remarks>
+    public void UpdateAttachment()
+    {
+        if (!_pose.TryFollow(out Vector3d position, out float[] frame, out int tick))
+        {
+            return;
+        }
+
+        _pose.Move(position, frame, tick);
+        if (_solids.Count > 0 && Models is { } models)
+        {
+            Collision.Igi2CollisionWorld.Repose(
+                _solids, models, Model, Igi2Pose.FromMatrix(position, new Matrix3f(frame[0], frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8])), Magic);
+        }
+    }
 
     /// <inheritdoc/>
     /// <remarks>Its model's radius, as <c>World_RegisterDynCubeObjFirstTimeRadius</c> is given it by <c>Switch_CreateHandler</c> (<c>igi2 0x4DA480</c>).</remarks>
@@ -159,6 +217,7 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
     {
         ArgumentNullException.ThrowIfNull(level);
         Start(level);
+        _pose.Settle(level.Ticks);
         level.RunChildren(this);
         if (!_active!.IsEmpty)
         {
@@ -178,7 +237,7 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
         if (IsPressed && _isLastPressed == 0)
         {
             _isOn = IsOn ? (byte)0 : (byte)1;
-            Sounds?.New(Sound, Position);
+            Sounds?.New(Sound, _pose.Position);
         }
 
         if (IsOn != wasOn || IsPressed != wasPressed || IsDestroyed != wasDestroyed)
@@ -219,8 +278,8 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
             return;
         }
 
-        float[] m = Frame();
-        Vector3d vertex = Igi2MagicVertex.Position(Models?.Invoke(Model), 0, m, Position);
+        float[] m = [.. _pose.Orientation];
+        Vector3d vertex = Igi2MagicVertex.Position(Models?.Invoke(Model), 0, m, _pose.Position);
         Fpu dx = (Fpu)context.ViewPosition.X - vertex.X;
         Fpu dy = (Fpu)context.ViewPosition.Y - vertex.Y;
         Fpu dz = (Fpu)context.ViewPosition.Z - vertex.Z;
@@ -276,6 +335,7 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
     /// </remarks>
     protected override void OnParsed()
     {
+        _pose.Place(Position, Orientation);
         _isOn = InitialOn ? (byte)1 : (byte)0;
         _isLastOn = _isOn;
         ModelSlot = IsOn ? 0 : 2;
@@ -299,6 +359,4 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
         _flow = level.LevelFlow;
         _started = true;
     }
-
-    private float[] Frame() => EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
 }

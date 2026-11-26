@@ -93,9 +93,9 @@ public static class ExposureCVars
         // and r_screen_gi_max bounds its feedback loop. Change the lighting model on a preset without
         // bringing all of them and the frame is mis-exposed, not merely cheaper.
         //
-        // Vanilla stays at one, and not because it would be ignored: vanilla never tone maps, so the
-        // value genuinely does nothing there, and the preset that has to stay pixel-identical to the
-        // retail build is the last place to carry a number that says the picture was graded.
+        // Vanilla stays at one, the neutral: the preset that has to stay pixel-identical to the retail
+        // build is the last place to carry a number that says the picture was graded. The player can still
+        // move it there -- with r_hdr off no resolve runs, so DirectBrightness applies it over the world.
         vanilla: "1",
         enhanced: "1.414",
         high: "1.414",
@@ -230,11 +230,14 @@ public static class ExposureCVars
     /// <c>-sundir</c>, which is a comparison capture and keeps every lamp as the level ships it.
     /// </para>
     /// </remarks>
-    public static readonly EnumCVar<LampDaylight> LampDaylight = CVar.Choice(
-        "r_lamp_daylight",
-        global::OpenIGI.Rendering.LampDaylight.Outdoors,
-        CVarOptions.Archive,
-        "Which lamps go off by day and come on at dusk: off, outdoors or everywhere. Not in the original.");
+    public static readonly EnumCVar<LampDaylight> LampDaylight = Experience.Define(
+        CVar.Choice(
+            "r_lamp_daylight",
+            global::OpenIGI.Rendering.LampDaylight.Outdoors,
+            CVarOptions.Archive,
+            "Which lamps go off by day and come on at dusk: off, outdoors or everywhere. Not in the original."),
+        vanilla: "off",
+        enhanced: "outdoors");
 
     /// <summary>The brightness the frame is actually exposed at: the player's, less the night's, moved by the mission's look.</summary>
     /// <remarks>
@@ -414,4 +417,6 @@ public static class ExposureCVars
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
+
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
 }

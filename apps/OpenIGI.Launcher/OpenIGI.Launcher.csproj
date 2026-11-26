@@ -9,6 +9,8 @@
          draw, through Skia onto a plain OpenGL window, and references none of the game itself. -->
     <OutputType>WinExe</OutputType>
     <AssemblyName>OpenIGI.Launcher</AssemblyName>
+    <!-- The file description Windows shows beside the signature (Properties, SmartScreen, the UAC prompt). -->
+    <AssemblyTitle>OpenIGI Launcher</AssemblyTitle>
     <ApplicationIcon>..\..\src\Platform\OpenIGI.Platform.Desktop\Assets\openigi-launcher.ico</ApplicationIcon>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- The window is sized to the screen through GLFW directly, whose calls take native pointers. -->
@@ -41,6 +43,12 @@
          composition project, which would pull the whole engine in behind the files. -->
     <None Include="..\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\Barlow-Medium.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-SemiBold.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-Bold.ttf;..\OpenIGI.Composition\Assets\fonts\JetBrainsMono-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\OFL-Barlow.txt;..\OpenIGI.Composition\Assets\fonts\OFL-JetBrainsMono.txt"
           Link="Assets\fonts\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- The maps' pictures the game's Multiplayer page shows, linked from its assets: the released game keeps its files
+         inside its single executable, so the launcher's server list ships the same pictures itself. -->
+    <None Include="..\OpenIGI.Composition\Assets\missions\**\*.jpg"
+          Link="Assets\missions\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
 
     <!-- The background picture: the same night shot the web landing page uses, linked so there is one copy. -->

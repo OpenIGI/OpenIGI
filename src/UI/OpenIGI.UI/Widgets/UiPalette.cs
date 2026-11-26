@@ -19,6 +19,24 @@ namespace OpenIGI.UI.Widgets;
 /// </remarks>
 public static class UiPalette
 {
+    /// <summary>
+    /// Gets or sets the colour vision the interface is drawn for. The pairs a player must tell apart -- alive and down, good and
+    /// bad, one team and the other -- are drawn in colours that stay apart for it: for red-green colour blindness (deuteranopia,
+    /// protanopia) the healthy green becomes a sky blue and the alarm red a vermillion; for blue-yellow (tritanopia) the blue
+    /// team becomes a reddish purple. The colours are Okabe and Ito's, chosen to be told apart by every kind of colour vision.
+    /// </summary>
+    public static ColourVision Vision { get; set; }
+
+    /// <summary>The colour health is shown in: the healthy colour, then the accent, then the alarm colour as it runs low.</summary>
+    /// <param name="health">The health left, 0 to 1.</param>
+    /// <returns>The colour.</returns>
+    public static Bgra32 Health(float health) => Math.Clamp(health, 0f, 1f) switch
+    {
+        > 0.55f => Success,
+        > 0.28f => Accent,
+        _ => Danger,
+    };
+
     /// <summary>The page behind everything: <c>#050607</c>.</summary>
     public static Bgra32 Backdrop => Bgra32.FromRgb(5, 6, 7);
 
@@ -62,16 +80,16 @@ public static class UiPalette
     public static Bgra32 TextDisabled => Bgra32.FromRgb(90, 92, 95);
 
     /// <summary>Success, ready, a fix: <c>#7FD49A</c>.</summary>
-    public static Bgra32 Success => Bgra32.FromRgb(127, 212, 154);
+    public static Bgra32 Success => Vision is ColourVision.Deuteranopia or ColourVision.Protanopia ? Bgra32.FromRgb(86, 180, 233) : Bgra32.FromRgb(127, 212, 154);
 
     /// <summary>Information, a plugin, a change: <c>#8FB8FF</c>.</summary>
-    public static Bgra32 Info => Bgra32.FromRgb(143, 184, 255);
+    public static Bgra32 Info => Vision is ColourVision.Tritanopia ? Bgra32.FromRgb(204, 121, 167) : Bgra32.FromRgb(143, 184, 255);
 
     /// <summary>A warning's message text: <c>#F4D29A</c>.</summary>
     public static Bgra32 Warning => Bgra32.FromRgb(244, 210, 154);
 
     /// <summary>An error: <c>#FF7A66</c>.</summary>
-    public static Bgra32 Danger => Bgra32.FromRgb(255, 122, 102);
+    public static Bgra32 Danger => Vision is ColourVision.Deuteranopia or ColourVision.Protanopia ? Bgra32.FromRgb(230, 97, 0) : Bgra32.FromRgb(255, 122, 102);
 
     /// <summary>A destructive action's caption: <c>#E08A78</c>.</summary>
     public static Bgra32 Destructive => Bgra32.FromRgb(224, 138, 120);
@@ -131,4 +149,20 @@ public static class UiPalette
     public static Bgra32 Fade(Bgra32 color, float factor) => color.WithAlpha((byte)(color.A * Math.Clamp(factor, 0f, 1f)));
 
     private static byte ToByte(float alpha) => (byte)MathF.Round(Math.Clamp(alpha, 0f, 1f) * 255f);
+}
+
+/// <summary>The colour vision the interface is drawn for (<see cref="UiPalette.Vision"/>).</summary>
+public enum ColourVision
+{
+    /// <summary>Full colour vision.</summary>
+    Normal,
+
+    /// <summary>Red-green, the commonest: green weak.</summary>
+    Deuteranopia,
+
+    /// <summary>Red-green: red weak.</summary>
+    Protanopia,
+
+    /// <summary>Blue-yellow.</summary>
+    Tritanopia,
 }

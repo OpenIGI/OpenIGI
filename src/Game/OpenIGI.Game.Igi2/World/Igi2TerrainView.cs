@@ -74,7 +74,7 @@ public readonly struct Igi2TerrainView
     /// </remarks>
     public static Igi2TerrainView FromCamera(in Camera3D camera, float verticalFieldOfView, float aspectRatio)
     {
-        float tanY = MathF.Tan(verticalFieldOfView * 0.5f);
+        float tanY = SimMathF.Tan(verticalFieldOfView * 0.5f);
         float tanX = tanY * aspectRatio;
 
         Span<Vector3f> view =

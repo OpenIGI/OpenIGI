@@ -130,6 +130,108 @@ public sealed class RetailIgi2GrenadeThrowTests
         Assert.NotEqual(Igi2PlayerActionState.ThrowGrenade, player.ActionState);
     }
 
+    /// <summary>
+    /// Under a manual cook fire only winds the throw up: held at the hold point the pin stays in, nothing goes off in hand, and
+    /// the grenade let go flies with the whole of its fuse.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_manual_cook_never_pulls_the_pin_on_fire_alone()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _, RecordingGrenades grenades) = Thrower();
+        player.GrenadeCook = GrenadeCook.Manual;
+        Igi2Inventory inventory = weapons.Inventory;
+
+        for (int i = 0; i < 300; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire);
+            Assert.False(inventory.IsPinPulled);
+        }
+
+        Assert.Equal(Igi2PlayerActionState.ThrowGrenade, player.ActionState);
+        Assert.Empty(grenades.Thrown);
+        for (int i = 0; i < 60 && grenades.Thrown.Count == 0; i++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+        }
+
+        Assert.InRange(Assert.Single(grenades.Thrown).ExplodeTime, 145, 150);
+    }
+
+    /// <summary>
+    /// Under a manual cook the reload key, pressed while the throw is held, pulls the pin then: the fuse burns in hand from that
+    /// tick, the grenade flies with what is left of it, and a second press pulls nothing more.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_manual_cook_pulls_the_pin_on_the_reload_key()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _, RecordingGrenades grenades) = Thrower();
+        player.GrenadeCook = GrenadeCook.Manual;
+        Igi2Inventory inventory = weapons.Inventory;
+
+        for (int i = 0; i < 30; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire);
+        }
+
+        Assert.False(inventory.IsPinPulled);
+        Tick(player, Igi2PlayerAction.Fire | Igi2PlayerAction.Reload);
+        Assert.True(inventory.IsPinPulled);
+        int lit = inventory.Timer;
+        Assert.InRange(lit, 145, 150);
+
+        for (int i = 0; i < 30; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire | Igi2PlayerAction.Reload);
+        }
+
+        Assert.Equal(lit - 30, inventory.Timer);
+        for (int i = 0; i < 60 && grenades.Thrown.Count == 0; i++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+        }
+
+        Assert.InRange(Assert.Single(grenades.Thrown).ExplodeTime, 1, lit - 31);
+    }
+
+    /// <summary>
+    /// A manual cook held until it goes off in hand changes weapon as the original's does, but with fire still held nothing
+    /// fires -- no gun opens up, no grenade is wound up -- until fire has been let go.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_manual_cook_gone_off_in_hand_fires_nothing_until_fire_is_let_go()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _, _) = Thrower();
+        player.GrenadeCook = GrenadeCook.Manual;
+        Igi2Inventory inventory = weapons.Inventory;
+
+        for (int i = 0; i < 30; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire);
+        }
+
+        Tick(player, Igi2PlayerAction.Fire | Igi2PlayerAction.Reload);
+        Assert.True(inventory.IsPinPulled);
+        for (int i = 0; i < 400 && player.ActionState == Igi2PlayerActionState.ThrowGrenade; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire);
+        }
+
+        Assert.NotEqual(Igi2PlayerActionState.ThrowGrenade, player.ActionState);
+        for (int i = 0; i < 120; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire);
+            Assert.DoesNotContain(player.ActionState, new[] { Igi2PlayerActionState.InitFire, Igi2PlayerActionState.Fire, Igi2PlayerActionState.ThrowGrenade });
+        }
+
+        Tick(player, Igi2PlayerAction.None);
+        for (int i = 0; i < 5 && player.ActionState == Igi2PlayerActionState.Idle; i++)
+        {
+            Tick(player, Igi2PlayerAction.Fire);
+        }
+
+        Assert.NotEqual(Igi2PlayerActionState.Idle, player.ActionState);
+    }
+
     private static Igi2AnimationClip FirstPersonClip(string name)
     {
         Mission1Setup m = Mission1.Value;

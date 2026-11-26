@@ -10,6 +10,7 @@ public sealed class TitlePlayerPresentation
     private Frame? _previous;
     private Frame? _current;
     private Matrix3f? _previewLook;
+    private Camera3D? _orbitPreview;
 
     /// <summary>Gets whether the captured tick pair and this frame permit live mouse aim.</summary>
     public bool HasLookPreview => _previewLook is not null && _previous?.Look is not null && _current?.Look is not null;
@@ -17,6 +18,10 @@ public sealed class TitlePlayerPresentation
     /// <summary>Sets the render-time mouse aim; null selects the ordinary tick camera.</summary>
     /// <param name="orientation">The preview's local-to-world right/forward/up orientation.</param>
     public void SetLookPreview(Matrix3f? orientation) => _previewLook = orientation;
+
+    /// <summary>Sets the orbit round the player's body as this frame draws it (<see cref="ITitleOrbitView"/>); null for none.</summary>
+    /// <param name="camera">The orbit's eye, in metres, which the camera then is.</param>
+    public void SetOrbitPreview(Camera3D? camera) => _orbitPreview = camera;
 
     /// <summary>Starts a new camera history, including after loading or changing camera mode.</summary>
     /// <param name="player">The title player, with what it can do.</param>
@@ -26,6 +31,7 @@ public sealed class TitlePlayerPresentation
         _current = Capture(player);
         _previous = _current;
         _previewLook = null;
+        _orbitPreview = null;
     }
 
     /// <summary>Captures a completed tick without changing simulation state.</summary>
@@ -36,7 +42,11 @@ public sealed class TitlePlayerPresentation
         Frame frame = Capture(player);
         _previous = _current;
         _current = frame;
-        if (_previous is null || frame.Cutscene || _previous.Cutscene != frame.Cutscene
+        // A cutscene's camera is drawn between its ticks as the player's eyes are, so it glides with the plane it rides rather
+        // than holding a tick while the world it looks at moves on between them. Only a cut, the start or end of a cutscene, or a
+        // jump no camera could make in a tick starts afresh, and so does the orbit round the body taking the view or giving it
+        // back: drawn between, the eye swept from the head out through whatever stood behind it.
+        if (_previous is null || frame.Cut || _previous.Cutscene != frame.Cutscene || _previous.Orbiting != frame.Orbiting
             || (frame.Eye.Position - _previous.Eye.Position).Length > 32.0)
         {
             _previous = frame;
@@ -49,6 +59,7 @@ public sealed class TitlePlayerPresentation
     public Camera3D Camera(float alpha)
     {
         Frame current = _current ?? throw new InvalidOperationException("No title frame captured.");
+        if (_orbitPreview is { } orbit) { return orbit; }
         Frame previous = _previous ?? current;
         if (_previewLook is { } look && current.Look is { } currentLook && previous.Look is { } previousLook)
         {
@@ -153,13 +164,14 @@ public sealed class TitlePlayerPresentation
         ITitlePlayer player = features.Player;
         return new(
             new Camera3D(player.EyePosition * (1.0 / 4096.0), player.ViewOrientation), player.FieldOfViewScale,
-            features.FirstPerson?.FirstPerson, player.IsCutscenePlaying,
-            features.Look is { CanPreviewLook: true } look ? look.LookOrientation : null);
+            features.FirstPerson?.FirstPerson, player.IsCutscenePlaying, player.IsViewCut,
+            features.Look is { CanPreviewLook: true } look ? look.LookOrientation : null,
+            features.Orbit?.IsOrbiting == true);
     }
 
     private static Matrix3f CameraOrientation(Matrix3f look) => Matrix3f.FromRows(look.Column1, look.Column3, look.Column2);
 
     private static Vector3f ToFloat(Vector3d value) => new((float)value.X, (float)value.Y, (float)value.Z);
 
-    private sealed record Frame(Camera3D Eye, float FieldOfView, TitleFirstPersonView? Hands, bool Cutscene, Matrix3f? Look);
+    private sealed record Frame(Camera3D Eye, float FieldOfView, TitleFirstPersonView? Hands, bool Cutscene, bool Cut, Matrix3f? Look, bool Orbiting);
 }

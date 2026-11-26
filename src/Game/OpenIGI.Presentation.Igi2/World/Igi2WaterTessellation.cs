@@ -43,8 +43,16 @@ public sealed class Igi2WaterTessellation
 
     private readonly Vertex[] _vertices = new Vertex[MaximumVertices];
     private readonly ushort[] _indices = new ushort[MaximumIndices];
-    private readonly Stack<(int A, int B, int C)> _stack = new();
     private readonly Vertex3D[] _output = new Vertex3D[MaximumVertices];
+
+    // The triangles still to measure, three corners each: a plain array, which the browser's ahead-of-time compiler handles
+    // better than a stack of tuples. Each split pops one and pushes at most four, so it never holds more than three per
+    // vertex made.
+    private int[] _stack = new int[3 * 64];
+    private int _stackCount;
+
+    // The ground under each sheet drawn lately, one memo per sheet; see Igi2WaterGroundMemo.
+    private readonly List<Igi2WaterGroundMemo> _grounds = [];
 
     /// <summary>Gets how many vertices the last <see cref="Build"/> made.</summary>
     public int VertexCount { get; private set; }
@@ -79,9 +87,9 @@ public sealed class Igi2WaterTessellation
 
         VertexCount = 0;
         IndexCount = 0;
-        _stack.Clear();
+        _stackCount = 0;
 
-        Context context = new(sheet, field, seconds, eye, orientation, projection, ground);
+        Context context = new(sheet, field, seconds, eye, orientation, projection, ground is null ? null : GroundOf(ground, sheet));
         float radius = (float)sheet.Radius;
 
         // The square's corners, (−,−), (+,−), (−,+), (+,+), each at its depth on the sheet's plane.
@@ -99,9 +107,10 @@ public sealed class Igi2WaterTessellation
 
         Span<bool> split = stackalloc bool[3];
         Span<float> morph = stackalloc float[3];
-        while (_stack.Count > 0)
+        while (_stackCount > 0)
         {
-            (int a, int b, int c) = _stack.Pop();
+            _stackCount -= 3;
+            int a = _stack[_stackCount], b = _stack[_stackCount + 1], c = _stack[_stackCount + 2];
             ReadOnlySpan<int> corners = [a, b, c];
             int splits = 0, lastSplit = 0, lastWhole = 0;
 
@@ -163,15 +172,41 @@ public sealed class Igi2WaterTessellation
         }
     }
 
+    // The memo of the ground under this sheet, made the first time the sheet is drawn over this ground.
+    private Igi2WaterGroundMemo GroundOf(Func<double, double, double?> ground, in Igi2WaterSheet sheet)
+    {
+        foreach (Igi2WaterGroundMemo memo in _grounds)
+        {
+            if (memo.IsFor(ground, sheet.Centre.X, sheet.Centre.Y))
+            {
+                return memo;
+            }
+        }
+
+        Igi2WaterGroundMemo made = new(ground, sheet.Centre.X, sheet.Centre.Y);
+        _grounds.Add(made);
+        return made;
+    }
+
     private bool Culled(int a, int b, int c) =>
         (_vertices[a].Outcode & _vertices[b].Outcode & _vertices[c].Outcode) != 0;
 
     private void Push(int a, int b, int c)
     {
-        if (!Culled(a, b, c))
+        if (Culled(a, b, c))
         {
-            _stack.Push((a, b, c));
+            return;
         }
+
+        if (_stackCount + 3 > _stack.Length)
+        {
+            Array.Resize(ref _stack, _stack.Length * 2);
+        }
+
+        _stack[_stackCount] = a;
+        _stack[_stackCount + 1] = b;
+        _stack[_stackCount + 2] = c;
+        _stackCount += 3;
     }
 
     private void Emit(int a, int b, int c)
@@ -275,7 +310,7 @@ public sealed class Igi2WaterTessellation
         Vector3f eye,
         Matrix3f orientation,
         Matrix4f projection,
-        Func<double, double, double?>? ground)
+        Igi2WaterGroundMemo? ground)
     {
         private readonly Vector3f _right = orientation.Row1;
         private readonly Vector3f _up = orientation.Row2;
@@ -296,10 +331,10 @@ public sealed class Igi2WaterTessellation
             return new Vertex
             {
                 Position = new Vector3f(x, y, z),
-                Normal = field.NormalAt(x, y, seconds, depth),
+                Normal = field.NormalAt(x, y, seconds, depth, z),
                 Shallowness = Igi2WaterPresenter.ShallownessAt(
                     z + sheet.Centre.Z,
-                    ground?.Invoke(sheet.Centre.X + x, sheet.Centre.Y + y),
+                    ground?.At(x, y),
                     sheet.AbsorptionLength),
                 Depth = depth,
             };

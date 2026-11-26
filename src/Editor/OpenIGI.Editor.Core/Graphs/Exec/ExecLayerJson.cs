@@ -24,6 +24,24 @@ public static class ExecLayerJson
             WriteIfAny(json, "pin", node.TargetPin);
             WriteIfAny(json, "macro", node.Macro);
             WriteIfAny(json, "scope", node.Scope ?? string.Empty);
+            WriteIfAny(json, "name", node.Name);
+            WriteIfAny(json, "group", node.Group ?? string.Empty);
+            if (node.IsDisabled)
+            {
+                json.WriteBoolean("disabled", true);
+            }
+
+            if (node.Guards.Count > 0)
+            {
+                json.WriteStartArray("guards");
+                foreach (string guard in node.Guards)
+                {
+                    json.WriteStringValue(guard);
+                }
+
+                json.WriteEndArray();
+            }
+
             if (node.Arguments.Count > 0)
             {
                 json.WriteStartObject("arguments");
@@ -99,6 +117,12 @@ public static class ExecLayerJson
                 TargetPin = Text(node, "pin"),
                 Macro = Text(node, "macro"),
                 Scope = Text(node, "scope") is { Length: > 0 } scope ? scope : null,
+                Name = Text(node, "name"),
+                Group = Text(node, "group") is { Length: > 0 } group ? group : null,
+                IsDisabled = node.TryGetProperty("disabled", out JsonElement disabled) && disabled.GetBoolean(),
+                Guards = node.TryGetProperty("guards", out JsonElement guards)
+                    ? [.. guards.EnumerateArray().Select(static g => g.GetString() ?? string.Empty)]
+                    : ExecNode.NoGuards,
                 Arguments = node.TryGetProperty("arguments", out JsonElement arguments)
                     ? arguments.EnumerateObject().ToDictionary(static a => a.Name, static a => a.Value.GetString() ?? string.Empty, StringComparer.Ordinal)
                     : ExecNode.NoArguments,

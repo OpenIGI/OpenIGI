@@ -16,8 +16,15 @@ namespace OpenIGI.Game.Igi2.Player;
 /// The <c>Weapon</c> script is evaluated once the level is loaded (<see cref="Weapons.Igi2HumanWeapons"/>).
 /// </para>
 /// </remarks>
-public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask
+public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask, World.IIgi2WorldMember
 {
+    /// <inheritdoc/>
+    /// <remarks>The player's remove handler: its container shut, the player leaves the world (<see cref="Igi2HumanPlayer.RemoveFromWorld"/>).</remarks>
+    public void RemoveFromWorld() => Human?.RemoveFromWorld();
+
+    /// <inheritdoc/>
+    /// <remarks><c>Human_RegisterDynCubeObjHandler</c>: its container open again, the player is back.</remarks>
+    public void PutInWorld() => Human?.PutInWorld();
     /// <summary>Gets or sets the position the level places the player at.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
     public Vector3d LevelPosition { get => SpawnPosition; set => SpawnPosition = value; }
@@ -61,6 +68,12 @@ public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask
     /// <summary>Gets or sets the player the session made for this task, or <see langword="null"/>.</summary>
     public Igi2HumanPlayer? Human { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether the level's players are down, which the task's <c>isDead</c> reads beside its own latch: the one
+    /// player dead, or of several none left alive, so one player down in co-op is not the mission lost.
+    /// </summary>
+    internal Func<bool>? Fallen { get; set; }
+
     /// <inheritdoc/>
     /// <remarks>
     /// <c>Human_RegisterScriptSymbolsHandler</c>: <c>isDead</c> and <c>eTeam</c> as every human exports them, and <c>nSpotted</c>, the
@@ -69,6 +82,10 @@ public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         base.OnExportVars(variables);
+
+        // Retail's task is the human, so its isDead is the player's own death byte: read through to the players here, as the
+        // missions' "Mission Failed Player dead" flows read HumanPlayer_0.isDead. A script's write still sets the latch.
+        variables.BindBool(this, "isDead", () => IsDead || Fallen?.Invoke() == true, value => IsDead = value);
         variables.BindInt(this, "nSpotted", () => Human?.TimesSpotted ?? 0, value =>
         {
             if (Human is { } human)

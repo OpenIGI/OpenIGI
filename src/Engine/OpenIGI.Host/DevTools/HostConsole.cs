@@ -149,6 +149,11 @@ public sealed class HostConsole : IDisposable
         {
             _logger.Information(LogCategory, $"No saved settings found; using the {firstRunPreset} graphics preset.");
             GraphicsPresetRegistry.Default.Apply(firstRunPreset);
+
+            // And the remaster's experience, whatever the quality: a weak machine starting on a cheap picture is not
+            // asking for the original HUD. Its values are not all the variables' defaults, so without this a first run
+            // would read Custom.
+            ExperiencePresetRegistry.Default.Apply(ExperiencePreset.Enhanced);
         }
 
         // Labels the restored settings, so a player who saved on High and has touched nothing since is

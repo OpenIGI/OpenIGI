@@ -5,7 +5,8 @@ using System.Runtime.InteropServices;
 namespace OpenIGI.Game.Player;
 
 /// <summary>
-/// One tick of player input: the 40 floats <c>HumanPlayerInput</c> samples, records and replays.
+/// One tick of player input: the 40 floats <c>HumanPlayerInput</c> samples, records and replays, and the remaster's own slots after
+/// them.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,9 +25,17 @@ namespace OpenIGI.Game.Player;
 public struct PlayerInputFrame : IEquatable<PlayerInputFrame>
 {
     /// <summary>The number of <see cref="float"/> slots in a frame.</summary>
-    public const int SlotCount = 40;
+    /// <remarks>
+    /// The original's 40, then the four modern aim adds (<see cref="PlayerInputSlot.Underbarrel"/> to
+    /// <see cref="PlayerInputSlot.Mount"/>) and the computer's two page keys (<see cref="PlayerInputSlot.ComputerObjectives"/>,
+    /// <see cref="PlayerInputSlot.ComputerLog"/>), which the original's sampler never writes.
+    /// </remarks>
+    public const int SlotCount = 46;
 
-    /// <summary>The size of a frame in bytes, as the original memcpys it.</summary>
+    /// <summary>The slots of the original's own frame, <c>0x45E060</c>'s forty, which it memcpys, records and replays.</summary>
+    public const int RetailSlotCount = 40;
+
+    /// <summary>The size of a frame in bytes: the original's 160, and the remaster's slots after them.</summary>
     public const int SizeInBytes = SlotCount * sizeof(float);
 
     /// <summary>The most frames the original's record and playback buffers hold.</summary>

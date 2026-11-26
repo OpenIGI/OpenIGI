@@ -65,6 +65,45 @@ public readonly record struct Igi2RotationKey(
     Quaternion32 OutgoingTangent,
     int Ops = 0);
 
+/// <summary>Which key of a track a controller at a time stands on: the last whose time it has reached, as the stepper scans with <c>&lt;=</c>.</summary>
+/// <remarks>
+/// The one place both the controller (<c>AnimController_InterpolateHandler</c>) and the sampler find it. Over spans, one method per key
+/// type: a generic search over <see cref="IReadOnlyList{T}"/> with a delegate is a call the browser's ahead-of-time compiler leaves to
+/// its interpreter, and every bone of every body makes it every pose.
+/// </remarks>
+public static class Igi2ActiveKey
+{
+    /// <summary>The active translation key.</summary>
+    /// <param name="track">The keys, in time order.</param>
+    /// <param name="time">The controller's time.</param>
+    /// <returns>Its index, or <c>-1</c> before the first key or for an empty track.</returns>
+    public static int Of(ReadOnlySpan<Igi2TranslationKey> track, int time)
+    {
+        int key = -1;
+        for (int i = 0; i < track.Length && track[i].Time <= time; i++)
+        {
+            key = i;
+        }
+
+        return key;
+    }
+
+    /// <summary>The active rotation key.</summary>
+    /// <param name="track">The keys, in time order.</param>
+    /// <param name="time">The controller's time.</param>
+    /// <returns>Its index, or <c>-1</c> before the first key or for an empty track.</returns>
+    public static int Of(ReadOnlySpan<Igi2RotationKey> track, int time)
+    {
+        int key = -1;
+        for (int i = 0; i < track.Length && track[i].Time <= time; i++)
+        {
+            key = i;
+        }
+
+        return key;
+    }
+}
+
 /// <summary>One key of an attach object's own track.</summary>
 /// <param name="Time">The key's time, in the clip's integer units.</param>
 /// <param name="Translation">The object's position relative to its bone.</param>

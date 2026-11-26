@@ -40,7 +40,7 @@ public sealed class ControlsMigrationTests
     }
 
     [Fact]
-    public void AProfileWithAnyOriginalActionReboundKeepsEveryKey()
+    public void AProfileWithAnActionReboundKeepsThatKeyAndTheRestComeOver()
     {
         GameConfig config = new() { ControlsVersion = 1 };
         PlayerProfile profile = Previous();
@@ -48,9 +48,10 @@ public sealed class ControlsMigrationTests
         profile.Bindings[jump] = new("Jump", InputBindingKeyNames.KeyboardDevice, "KEY_J");
         config.Add(profile);
 
-        Assert.False(config.MigrateControls());
-        Assert.Equal("KEY_BACKSPACE", Key(profile, "AlternateFire"));
-        Assert.Equal("KEY_NUMPAD1", Key(profile, "Peek"));
+        Assert.True(config.MigrateControls());
+        Assert.Equal("KEY_J", Key(profile, "Jump"));
+        Assert.Equal("MOUSE_BUTTON_2", Key(profile, "AlternateFire"));
+        Assert.Equal("KEY_LEFT_ALT", Key(profile, "Peek"));
     }
 
     [Fact]

@@ -217,11 +217,11 @@
       "adaptation opened into a plain bright day; exposureStops closes it again by as much as each one needed."
     ],
     "igi2:11": {
-      "$comment": "Night over the Carpathian oil depot. Read as a pale blue day: the moonlit ground and tanks stood white.",
+      "$comment": "Night over the Carpathian oil depot. Read as a pale blue day: the moonlit ground and tanks stood white. Its haze is the level's own dark blue lit by that eighth of a moon, so at half strength it was black on black and the far mountains stood out as if there were no air at all, where the original draws a blue mist down the valley; four times puts that mist back.",
       "moonlight": 0.12,
       "nightSky": 0.35,
       "nightAdaptation": 0.4,
-      "nightFog": 0.5,
+      "nightFog": 4.0,
       "nightExposureStops": -0.5
     },
     "igi2:13": {

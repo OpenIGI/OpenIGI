@@ -168,11 +168,45 @@ public enum KitIcon
 
     /// <summary>A keyboard: type a code.</summary>
     Keyboard,
+
+    /// <summary>A head in a sight: a kill by a round to the head.</summary>
+    Headshot,
+
+    /// <summary>A skull: a death by the player's own hand or the level's.</summary>
+    Skull,
+
+    /// <summary>A burst: a kill by a blast.</summary>
+    Explosion,
+
+    /// <summary>An arrow onto the ground: a death by a fall.</summary>
+    Fall,
+
+    /// <summary>A blade: a kill by a knife.</summary>
+    Knife,
+
+    /// <summary>One of one's own, struck through: a kill of a teammate.</summary>
+    TeamKill,
+
+    /// <summary>A podium of three, the middle tallest: the leaderboard.</summary>
+    Leaderboard,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
 public static partial class KitIcons
 {
+    /// <summary>
+    /// Gets or sets the baked icons the interface draws from (<see cref="KitIconAtlas"/>, made on the renderer's images), so an
+    /// icon looks the same on every page; an icon they do not hold, or none set, is drawn in lines as before.
+    /// </summary>
+    /// <remarks>Set once by the host when it makes its renderer's images: one interface renderer to a process.</remarks>
+    public static IUiIcons? Baked { get; set; }
+
+    /// <summary>An icon as a button's or a field's glyph: what <c>LeadingGlyph</c> and <c>TrailingGlyph</c> take.</summary>
+    /// <param name="icon">The icon.</param>
+    /// <returns>The glyph, drawing the icon in the ink it is given.</returns>
+    public static Action<UiPainter, UiVec2, float, Bgra32> Glyph(KitIcon icon) =>
+        (painter, centre, size, ink) => Draw(painter, icon, centre, size, ink);
+
     /// <summary>Draws an icon centred in a box.</summary>
     /// <param name="painter">The painter.</param>
     /// <param name="icon">The icon.</param>
@@ -182,6 +216,10 @@ public static partial class KitIcons
     public static void Draw(UiPainter painter, KitIcon icon, UiVec2 center, float size, Bgra32 color)
     {
         ArgumentNullException.ThrowIfNull(painter);
+        if (Baked?.TryDraw(painter, icon.ToString(), center, size, color) == true)
+        {
+            return;
+        }
         float h = size * 0.5f;
         float stroke = MathF.Max(1f, size * 0.09f);
         float cx = center.X;
@@ -300,6 +338,10 @@ public static partial class KitIcons
                 painter.StrokeLine(At(8f, 22f), At(16f, 22f), stroke, color);
                 break;
             }
+
+            case var combat when IsCombatIcon(combat):
+                DrawCombatIcon(painter, combat, center, size, stroke, color);
+                break;
 
             default:
                 DrawEditorIcon(painter, icon, center, size, stroke, color);

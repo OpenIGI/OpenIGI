@@ -78,38 +78,9 @@ public sealed class SimulationTraceTests : IDisposable
 
     private void Trace(GameDataSource data, GameTitle title, int mission, params string[] script)
     {
-        // The console variables are process-wide; a test run before this one may have left any of them changed. Lockstep reads
-        // no saved settings, so the defaults are the whole configuration.
-        Core.Configuration.CVarRegistry.Default.ResetAll();
-
-        string root = data.RequireRoot();
-        IGameTitleRuntime runtime = TitleCatalog.For(title);
         using RecordingGraphicsDevice device = new();
-
-        VirtualFileSystem fileSystem = new(NullLogger.Instance);
-        fileSystem.RegisterDevice(new LocalFileDevice(root));
-        FileSystemConfig.LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(fileSystem);
-
-        HostOptions options = HostOptions.Parse(
-        [
-            "-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep",
-            "-frames", Frames.ToString(System.Globalization.CultureInfo.InvariantCulture), .. script,
-            "-benchmark", Path.Combine(_scratch, "benchmark.json"),
-        ]);
-
-        GameHost host = new(
-            new HeadlessPlatformHost(),
-            new HeadlessGameWindow(),
-            device,
-            new SilentAudioFactory(),
-            InlineWorkScheduler.Instance,
-            AlwaysReadyLoadGate.Instance,
-            TitleCatalog.Catalog,
-            runtime.Title,
-            fileSystem,
-            options,
-            root,
-            NullLogger.Instance);
+        GameHost host = ParityHost.Create(
+            data, title, mission, device, Frames, simulationOnly: false, [.. script, "-benchmark", Path.Combine(_scratch, "benchmark.json")]);
 
         List<string> hashes = [];
         host.Start();
@@ -121,7 +92,7 @@ public sealed class SimulationTraceTests : IDisposable
         host.Stop();
 
         string name = $"{title.Id}-m{mission}.txt";
-        string path = Path.Combine(RepositoryRoot(), "tests", "OpenIGI.Parity.Tests", "Baselines", name);
+        string path = Path.Combine(ParityHost.RepositoryRoot(), "tests", "OpenIGI.Parity.Tests", "Baselines", name);
         if (Environment.GetEnvironmentVariable(UpdateVariable) == "1")
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -182,22 +153,6 @@ public sealed class SimulationTraceTests : IDisposable
         }
 
         return hash;
-    }
-
-    private static string RepositoryRoot()
-    {
-        DirectoryInfo? dir = new(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "OpenIGI.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException("OpenIGI.slnx was not found above the test binary.");
-    }
-
-    private sealed class SilentAudioFactory : IAudioDeviceFactory
-    {
-        public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => NullAudioDevice.Instance;
     }
 }
 

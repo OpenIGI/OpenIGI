@@ -80,6 +80,7 @@ function applyPointer() {
   if (wantLock) relock();
   else clearTimeout(lockRetry);
   if (!wantLock && document.pointerLockElement === canvas) document.exitPointerLock();
+  updateHint();
 }
 
 // Unadjusted movement is the sensor's own counts, without the desktop's pointer acceleration -- what a
@@ -116,6 +117,41 @@ function lock() {
   } catch {
     refused();
   }
+}
+
+// Whether the game is waiting on the mouse: it wants the lock and the browser has not given it. After the player's own Escape
+// the lock may not be taken back at all until they click -- the Pointer Lock spec refuses a request made straight after the
+// user's unlock gesture, with or without a press, and Chrome holds a short cool-down besides -- so a timer cannot end this.
+// Meanwhile the pointer runs free and hidden, and its motion stops dead at the edge of the screen: a turn that hit an unseen
+// wall. So while waiting the motion is not given to the game, the player is told to click, and that click takes the mouse
+// back and nothing else (no shot).
+const awaitingLock = () => wantLock && !touching && canvas !== null && document.pointerLockElement !== canvas;
+const HINT_DELAY_MS = 400; // A lock granted at once -- Play pressed, a menu closed by a click -- shows no hint.
+let hint = null;
+let hintTimer = 0;
+let swallowed = -1; // The button whose press took the mouse back, so its release is not the game's either.
+
+function updateHint() {
+  if (!hint) return;
+  clearTimeout(hintTimer);
+  if (!awaitingLock()) {
+    hint.hidden = true;
+    return;
+  }
+
+  hintTimer = setTimeout(() => { hint.hidden = !awaitingLock(); }, HINT_DELAY_MS);
+}
+
+function makeHint() {
+  const element = document.createElement('div');
+  element.textContent = 'Click to resume';
+  element.hidden = true;
+  element.setAttribute('role', 'status');
+  element.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 18px;border-radius:999px;'
+    + 'background:rgba(11,12,11,0.72);color:#ecebe6;font:600 15px/1.2 system-ui,sans-serif;letter-spacing:0.04em;'
+    + 'pointer-events:none;z-index:10;user-select:none';
+  document.body.appendChild(element);
+  return element;
 }
 
 // The lock again, from inside the player's own press, when the game wants it and the browser has not given it.
@@ -304,12 +340,24 @@ export function install(target) {
 
   canvas.addEventListener('pointerdown', e => { touching = e.pointerType === 'touch'; }, { signal });
   canvas.addEventListener('mousedown', e => {
+    e.preventDefault();
+    if (awaitingLock()) {
+      // The click that takes the mouse back is only that: the game does not see the press or its release.
+      swallowed = e.button;
+      relock();
+      return;
+    }
+
     relock();
     if (!touching) retakeScreen();
     queue.push(`button ${e.button} 1`);
-    e.preventDefault();
   }, { signal });
   window.addEventListener('mouseup', e => {
+    if (e.button === swallowed) {
+      swallowed = -1;
+      return;
+    }
+
     queue.push(`button ${e.button} 0`);
     // The side buttons are the browser's back and forward: bound to an action in the game, they left the page instead.
     if (e.button > 2) e.preventDefault();
@@ -318,7 +366,9 @@ export function install(target) {
   canvas.addEventListener('contextmenu', e => e.preventDefault(), { signal });
   window.addEventListener('mousemove', e => {
     const [x, y] = pointerPosition(e);
-    queue.push(`move ${e.movementX} ${e.movementY} ${x} ${y}`);
+    // Waiting on the mouse, its motion is not the look's: the free pointer's counts stop at the screen's edge.
+    if (awaitingLock()) queue.push(`move 0 0 ${x} ${y}`);
+    else queue.push(`move ${e.movementX} ${e.movementY} ${x} ${y}`);
   }, { signal });
   canvas.addEventListener('wheel', e => {
     // Notches, positive away from the player: a pixel delta is about a hundred to the notch, a line
@@ -337,6 +387,7 @@ export function install(target) {
 
     queue.push(`lock ${locked ? 1 : 0}`);
     if (!locked && wantLock) escapeTaken();
+    updateHint();
   }, { signal });
   document.addEventListener('fullscreenchange', () => {
     const fullscreen = document.fullscreenElement !== null;
@@ -350,6 +401,7 @@ export function install(target) {
   document.addEventListener('visibilitychange', () => queue.push(`focus ${document.hidden ? 0 : 1}`), { signal });
   window.addEventListener('pagehide', () => queue.push('close'), { signal });
 
+  hint ??= makeHint();
   touch.install(canvas, line => queue.push(line), pointerPosition);
   gyro.install(canvas);
 
@@ -377,6 +429,10 @@ export function uninstall() {
   queue = [];
   wantLock = false;
   clearTimeout(lockRetry);
+  clearTimeout(hintTimer);
+  hint?.remove();
+  hint = null;
+  swallowed = -1;
   clearTimeout(escapeHeld);
   escapeHeld = 0;
   holdEscape(false);
@@ -413,6 +469,8 @@ export const imports = {
     if (!fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },
+  // A page in a new tab (the Discord sign-in); only an https address, never one the game didn't make.
+  openLink: url => { if (/^https:\/\//.test(url)) window.open(url, '_blank', 'noopener'); },
   setGyro: wanted => gyro.setWanted(wanted),
   setTextEntry: wanted => {
     textWanted = wanted;

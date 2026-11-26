@@ -103,6 +103,7 @@ public sealed class Igi2Explosive
     private int _delay = -1;
     private LevelExpression? _expression;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
+    private readonly Igi2CarriedPose _carried = new();
 
     /// <summary>Initializes a new instance of the <see cref="Igi2Explosive"/> class.</summary>
     /// <param name="parameters">The owner's parameters.</param>
@@ -128,8 +129,17 @@ public sealed class Igi2Explosive
     /// <summary>Gets the model it wears now.</summary>
     public string Model { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// Gets where it stands as something that moves carries it, a padlock on the gate it locks: where it stood at the start of the
+    /// tick it last moved in, for drawing between, and how it is held to its parent.
+    /// </summary>
+    public Igi2CarriedPose Carried => _carried;
+
     /// <summary>Gets or sets the level's models.</summary>
     public Func<string, MefModel?>? Models { get; set; }
+
+    /// <summary>Gets or sets the magic object types its solids were built through, which it moves them through.</summary>
+    public World.Igi2MagicObjTypes? Magic { get; set; }
 
     /// <summary>Gets or sets the explosions its blast goes off in, or <see langword="null"/> for none.</summary>
     public Igi2ExplosionWorld? Explosions { get; set; }
@@ -156,6 +166,7 @@ public sealed class Igi2Explosive
         Model = _parameters.Model;
         Vector3f angles = _parameters.Orientation;
         _frame = frame is null ? EngineEuler.Rotation(angles.X, angles.Y, angles.Z) : [.. frame];
+        _carried.Place(_parameters.Position, _frame);
         _isExplode = 0;
         _isExploded = 0;
         _damage = 0f;
@@ -168,6 +179,20 @@ public sealed class Igi2Explosive
     /// <param name="level">The level's tick; <see langword="null"/> for an object made while the level runs, which has no script.</param>
     public void Run(Igi2LevelRun? level)
     {
+        // A co-op client's object is the server's: exploded when the server's isExploded comes (mirrored), never by what this
+        // client's own rounds and blasts did to it. Set off here too it went up twice on the shooter's screen, here and in the
+        // server's blast replayed; left to the mirror alone it kept its whole model and its solid. The blast itself comes once,
+        // with the server's (Igi2BlastLog).
+        if (level is { IsReplica: true })
+        {
+            if (_isExploded != 0 && !_wornExploded)
+            {
+                SetExploded();
+            }
+
+            return;
+        }
+
         if (_isExploded != 0)
         {
             return;
@@ -197,6 +222,36 @@ public sealed class Igi2Explosive
         {
             _delay--;
         }
+    }
+
+    /// <summary>
+    /// Follows what carries it as that moves, <c>ExplodeObject_UpdateAttachmentHandler</c> over <c>ModelObj_UpdateAttachment</c>: it
+    /// stands where its parent now holds it, in the tick its parent moved, its solids with it; and that pose is its own from then on,
+    /// copied over its parameters, so its blast, its vertices and its sphere are where it now is.
+    /// </summary>
+    /// <param name="position">Receives where it now stands, which its owner takes as its position.</param>
+    /// <returns><see langword="false"/> while nothing holds it.</returns>
+    public bool Follow(out Vector3d position)
+    {
+        if (!_carried.TryFollow(out position, out float[] frame, out int tick))
+        {
+            return false;
+        }
+
+        _carried.Move(position, frame, tick);
+        _frame = frame;
+        if (_solids.Count > 0 && Models is { } models)
+        {
+            // The solids were built of the model it was placed wearing, and are found again by that name, whatever it wears now.
+            Igi2CollisionWorld.Repose(
+                _solids,
+                models,
+                _parameters.Model,
+                World.Igi2Pose.FromMatrix(position, new Matrix3f(frame[0], frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7], frame[8])),
+                Magic);
+        }
+
+        return true;
     }
 
     /// <summary>Asks it to explode on its next tick, as a kind of it that sets its own <c>isExplode</c> does.</summary>
@@ -318,7 +373,11 @@ public sealed class Igi2Explosive
         }
 
         _isExploded = 1;
+        _wornExploded = true;
     }
+
+    // Whether it wears what exploding leaves of it: its destroyed model and solid.
+    private bool _wornExploded;
 
     /// <summary>
     /// Writes its save state, <c>ExplodeObject_ptSerializeParameterList</c>: a model object's, then whether it has exploded and is
@@ -363,7 +422,31 @@ public sealed class Igi2Explosive
         }
         else
         {
-            _isExploded = 0;
+            SetIntact();
         }
+    }
+
+    /// <summary>
+    /// Wears its whole model and solid again, as <c>ExplodeObject_DeSerializeHandler</c> does for one a save holds unexploded: a
+    /// save read onto the level after it was blown up puts it back as it stood.
+    /// </summary>
+    private void SetIntact()
+    {
+        _isExploded = 0;
+        if (!_wornExploded)
+        {
+            return;
+        }
+
+        if (!string.Equals(Model, _parameters.Model, StringComparison.Ordinal)
+            && _solids.Count > 0
+            && Models?.Invoke(_parameters.Model) is { } whole
+            && Igi2CollisionWorld.Meshes(whole) is { } meshes)
+        {
+            _solids[0].ChangeModel(meshes, whole.NativeMarkerBound);
+        }
+
+        Model = _parameters.Model;
+        _wornExploded = false;
     }
 }

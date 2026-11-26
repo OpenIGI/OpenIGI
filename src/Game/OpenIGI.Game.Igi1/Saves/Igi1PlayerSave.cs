@@ -21,11 +21,35 @@ internal static class Igi1PlayerSave
     public static ISaveSection Section(MissionWorld world) => new ExchangedSection("Igi1Player", exchange =>
     {
         PlayerCamera? rig = world.Player;
+        (Vector3d Feet, float Yaw, float Pitch) stance = ExchangeStance(exchange, rig, world.PlayerLife);
+        world.PlayerTicks = exchange.Int((int)world.PlayerTicks);
+        world.SavesUsed = exchange.Int(world.SavesUsed);
+        world.GameLoads = exchange.Int(world.GameLoads);
+        world.MenusEnabled = exchange.Bool(world.MenusEnabled);
+        ExchangeArms(exchange, rig, stance, world.WeaponTypes, world.AmmoTypes);
+    });
+
+    /// <summary>
+    /// The player as it stands in another game's level, for that level's save: where it stands and looks, its life, and what it
+    /// carries, throws and has laid. The level's own save keeps the rest -- its clock, its saves, its menus.
+    /// </summary>
+    /// <param name="rig">The player's rig.</param>
+    /// <param name="life">Its life.</param>
+    /// <param name="weapons">The game's weapons, which what it carried is made of again.</param>
+    /// <param name="ammunition">The game's ammunition.</param>
+    /// <returns>The section.</returns>
+    public static ISaveSection GuestSection(PlayerCamera rig, Igi1PlayerLife life, WeaponTypeRegistry weapons, AmmoTypeRegistry ammunition) =>
+        new ExchangedSection("Igi1GuestPlayer", exchange =>
+            ExchangeArms(exchange, rig, ExchangeStance(exchange, rig, life), weapons, ammunition));
+
+    // Where the player stands and looks, its health, whether it is dead, and how long its cries are held.
+    private static (Vector3d Feet, float Yaw, float Pitch) ExchangeStance(StateExchange exchange, PlayerCamera? rig, Igi1PlayerLife life)
+    {
         Vector3d feet = exchange.Position(rig?.PositionUnits ?? default);
         float yaw = exchange.Real(rig?.Yaw ?? 0f);
         float pitch = exchange.Real(rig?.Pitch ?? 0f);
 
-        if (world.PlayerLife.Health is IExchangedState health)
+        if (life.Health is IExchangedState health)
         {
             health.Exchange(exchange);
         }
@@ -35,13 +59,21 @@ internal static class Igi1PlayerSave
             exchange.Int(0);
         }
 
-        world.IsPlayerDead = exchange.Bool(world.IsPlayerDead);
-        world.PlayerLife.HitQuietUntil = exchange.Int(world.PlayerLife.HitQuietUntil);
-        world.PlayerTicks = exchange.Int((int)world.PlayerTicks);
-        world.SavesUsed = exchange.Int(world.SavesUsed);
-        world.GameLoads = exchange.Int(world.GameLoads);
-        world.MenusEnabled = exchange.Bool(world.MenusEnabled);
+        life.IsDead = exchange.Bool(life.IsDead);
+        life.HitQuietUntil = exchange.Int(life.HitQuietUntil);
+        return (feet, yaw, pitch);
+    }
 
+    // What the player carries, with the rounds in each clip and its pool; the weapon in hand; its grenades and mines; and, read
+    // back, the rig stood where it was saved and armed again.
+    private static void ExchangeArms(
+        StateExchange exchange,
+        PlayerCamera? rig,
+        (Vector3d Feet, float Yaw, float Pitch) stance,
+        WeaponTypeRegistry? weaponTypes,
+        AmmoTypeRegistry? ammoTypes)
+    {
+        (Vector3d feet, float yaw, float pitch) = stance;
         PlayerWeapons? weapons = rig?.Weapons;
         (int Weapon, int Rounds)[] carried = exchange.Run<(int Weapon, int Rounds)>(
             [.. (weapons?.Carried ?? []).Select(static c => (c.Weapon.WeaponId, c.Gun.State.RoundsInClip))],
@@ -70,7 +102,7 @@ internal static class Igi1PlayerSave
         }
 
         rig.StandAfresh(feet, yaw, pitch);
-        if (weapons is null || world.WeaponTypes is not { } types)
+        if (weapons is null || weaponTypes is not { } types)
         {
             return;
         }
@@ -85,7 +117,7 @@ internal static class Igi1PlayerSave
                 continue;
             }
 
-            AmmoType? ammo = world.AmmoTypes is { } ammunition && ammunition.TryGetByCalibre(type.CalibreId, out AmmoType found) ? found : null;
+            AmmoType? ammo = ammoTypes is { } ammunition && ammunition.TryGetByCalibre(type.CalibreId, out AmmoType found) ? found : null;
             if (rig.Carry(type, ammo) && weapons.Carried.Count > 0 && weapons.Carried[^1].Gun is { } gun && gun.Weapon.WeaponId == weaponId)
             {
                 gun.State.RoundsInClip = rounds;
@@ -101,5 +133,5 @@ internal static class Igi1PlayerSave
         {
             weapons.RequestWeapon(inHand);
         }
-    });
+    }
 }

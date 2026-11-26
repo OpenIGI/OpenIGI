@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
@@ -130,10 +131,15 @@ internal static class Igi2WorldSystems
     {
         if (b.Services.TryGet(out Igi2FlockRandom? flockRandom))
         {
+            List<Igi2BirdFlockTask> flocks = [];
             foreach (Igi2BirdFlockTask flock in b.Root.Descendants().OfType<Igi2BirdFlockTask>())
             {
                 flock.Prepare(flockRandom);
+                flocks.Add(flock);
             }
+
+            // BirdFlock_CreateHandler puts each on the world's redraw list, which the player hands the renderer.
+            b.Player.Flocks = flocks;
         }
     }
 
@@ -168,6 +174,10 @@ internal static class Igi2WorldSystems
             }
         }
     }
+
+    /// <summary>The level's countdowns, whose displays the HUD draws while they count (<c>MissionTimerDrawTask</c>).</summary>
+    public static void MissionTimers(Igi2LevelBuild b) =>
+        b.Player.MissionTimers = [.. b.Root.Descendants().OfType<Igi2MissionTimerTask>()];
 
     /// <summary>Spline path guides connect to the models they move once the level is loaded; those models move, and are drawn moving.</summary>
     public static void SplineGuides(Igi2LevelBuild b)
@@ -237,5 +247,46 @@ internal static class Igi2WorldSystems
         {
             profile.Difficulty = (int)b.Player.Human.Difficulty;
         }
+    }
+
+    /// <summary>
+    /// Project I.G.I.'s body for the player to stand on when its movement is asked for (<see cref="Igi2PlayerMovement.Igi1"/>):
+    /// the level's objects as that game's collision, kept where the level's doors, lifts and trains have moved them, its
+    /// terrain, and the level's humans it cannot walk through.
+    /// </summary>
+    /// <remarks>
+    /// Made for every level, so the setting can change between ticks; the collision follows the level only while a body is
+    /// moving a player (a co-op partner's stands on the same world), and catches up with whatever moved meanwhile when one next
+    /// does.
+    /// </remarks>
+    public static void Igi1Feet(Igi2LevelBuild b)
+    {
+        if (b.Request.Built.Solids is not { } solids)
+        {
+            return;
+        }
+
+        Igi2HumanPlayer human = b.Player.Human;
+        Collision.Igi2CollisionWorld world = b.Player.CollisionWorld;
+        WorldTraceCast trace = ((IHostCollisionWorld)world).Trace;
+        List<Igi2Human> humans = b.LevelHumans();
+        if (!humans.Contains(human))
+        {
+            humans.Add(human);
+        }
+
+        Igi1FootWorld feet = new(
+            solids.PlayerCaster(), WorldTrace.AsRayCast(trace, WorldTraceMask.Terrain), world.Ground, () => humans);
+        human.Igi1Feet = new Igi1FootMotion(feet, human);
+
+        PlacementCollisionFollower follower = new(solids, b.Request.Built.Scene.Placements, b.Player.Motions, b.Player.Presence);
+        follower.Follow();
+        b.Level.AddTickEnd(() =>
+        {
+            if (feet.TakeUse())
+            {
+                follower.Follow();
+            }
+        });
     }
 }

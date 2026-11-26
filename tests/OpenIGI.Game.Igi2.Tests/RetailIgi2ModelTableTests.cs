@@ -118,10 +118,13 @@ public sealed class RetailIgi2ModelTableTests
 
         // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,550
         // placements 9,536 resolve by file name alone and 10,545 through the packs -- the ones the packs
-        // add are the characters and everything else the global pack carries.
-        Assert.Equal(13_044, total);
-        Assert.Equal(11_446, byFileName);
-        Assert.Equal(12_455, byTable);
+        // add are the characters and everything else the global pack carries. 567 fewer than were once placed: the `ai-arrow`
+        // waypoints on splines that do not display them are out of the world (Igi2WorldScene.IsHiddenWaypoint).
+        // And 204 fewer again: what wears "none" has no levels of detail (Game_CreateHandler) and is not placed -- less the five
+        // that also name a destroyed model, placed on it and hidden until destroyed (mission 14's bridge charges, a switch of 24's).
+        Assert.Equal(12_278, total);
+        Assert.Equal(11_247, byFileName);
+        Assert.Equal(12_256, byTable);
     }
 
     /// <summary>The five placements the shipped data cannot resolve, and why they are the data's fault.</summary>
@@ -167,9 +170,10 @@ public sealed class RetailIgi2ModelTableTests
         // The editor's waypoint marker. No file of that name is anywhere in the retail installation, and
         // the only thing that mentions it is the level scripts that name it -- which is the case
         // SplineObjWaypoint_CreateHandler (igi2ed 0x641250) handles by asking MTP_GetLODVirModelExists
-        // first and creating the object without a model. So these 584 are placed and draw nothing, which
-        // is what retail does with them too.
-        Assert.Equal(584, unresolved["ai-arrow"]);
+        // first and creating the object without a model. 584 name it; 567 of them sit on splines whose waypoints are not displayed
+        // and are out of the world before that matters (SplineObjWaypoint_UpdateInternalDataHandler). The 17 left are placed and
+        // draw nothing, which is what retail does with them too.
+        Assert.Equal(17, unresolved["ai-arrow"]);
         Assert.Equal(5, unresolved.Count);
     }
 
@@ -203,17 +207,48 @@ public sealed class RetailIgi2ModelTableTests
         }
     }
 
-    /// <summary>The global pack carries Explosion0's FireBall, whose material names the first frame of an animated texture.</summary>
-    /// <remarks><c>Explosion0_FireBallNew</c> asks for <c>1006_01_1</c> and aborts without it; the shared drawer steps the numbered run.</remarks>
+    /// <summary>
+    /// The global pack carries Explosion0's FireBall, whose face group's slot its <c>TXAN</c> animates through all 26 of the
+    /// instance's slots.
+    /// </summary>
+    /// <remarks>
+    /// <c>Explosion0_FireBallNew</c> asks for <c>1006_01_1</c> and aborts without it. The face group draws with slot 25, the last
+    /// frame; a loader that counted texture names up from it found one frame, and the flame showed its faded end for its whole life.
+    /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void The_global_pack_carries_the_fireball()
+    public void The_global_pack_carries_the_fireball_and_its_animation()
     {
         string root = GameDataSource.Igi2.RequireRoot();
+        string model = OpenIGI.Game.World.ExplosionFireBall.Model;
         Igi2ModelTable table = Igi2ModelTable.Create([MtpPack.Read(File.ReadAllBytes(Path.Combine(root, "COMMON", "common.mtp")))]);
+        IresArchive models = IresArchive.Read(File.ReadAllBytes(Path.Combine(root, "COMMON", "models", "common.res")));
+        Assert.True(table.TryResolveMesh(model, out _));
+        Assert.True(Igi2Level.TryRead([models], Igi2WorldScene.ModelResourceName(model), out ReadOnlyMemory<byte> bytes));
+        MefModel fireball = MefModel.Read(bytes, OpenIGI.Formats.AssetFormatProfile.Igi2);
 
-        Assert.True(table.TryResolveMesh(OpenIGI.Game.World.ExplosionFireBall.Model, out _));
-        Assert.True(table.TryResolveTexture(OpenIGI.Game.World.ExplosionFireBall.Model, 0, out string? first), "The FireBall names no texture.");
-        Assert.Matches("[0-9]{3}$", first);
+        int slot = OpenIGI.Presentation.Rendering.RetailExplosionEffects.FireBallSlot(fireball);
+        MefTextureAnimation animation = Assert.Single(fireball.TextureAnimations);
+        Assert.Equal(25, slot);
+        Assert.Equal(slot, animation.Slot);
+        Assert.Equal(26, animation.FrameCount);
+        Assert.Equal(Enumerable.Range(0, 26), animation.FrameSlots);
+
+        List<string> names = [];
+        OpenIGI.Rendering.TextureHandle[] frames = OpenIGI.Presentation.Rendering.RetailExplosionEffects.AnimationFrames(
+            fireball,
+            slot,
+            frameSlot =>
+            {
+                if (!table.TryResolveTexture(model, frameSlot, out string? name))
+                {
+                    return OpenIGI.Rendering.TextureHandle.None;
+                }
+
+                names.Add(name);
+                return new OpenIGI.Rendering.TextureHandle((uint)names.Count);
+            });
+        Assert.Equal(26, frames.Length);
+        Assert.Equal([.. Enumerable.Range(0, 26).Select(static n => $"1006_anim{n:D3}")], names);
     }
 
     /// <summary>

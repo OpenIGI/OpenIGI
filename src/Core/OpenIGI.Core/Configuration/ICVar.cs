@@ -29,6 +29,12 @@ public interface ICVar
     /// <summary>Gets the current value rendered as text, in the form the settings file stores.</summary>
     string ValueText { get; }
 
+    /// <summary>
+    /// Gets the value the running code reads, rendered as <see cref="ValueText"/> is: the stored value, or an override in force
+    /// over it. What a run's settings are recorded as, since it is what the game played by.
+    /// </summary>
+    string EffectiveText => ValueText;
+
     /// <summary>Gets the default value rendered as text.</summary>
     string DefaultText { get; }
 
@@ -50,6 +56,12 @@ public interface ICVar
     /// </para>
     /// </remarks>
     IReadOnlyList<string> ValueChoices => [];
+
+    /// <summary>
+    /// Gets where it is read: words that must each hold there -- a game's id, <see cref="CVarScope.Multiplayer"/>,
+    /// <see cref="CVarScope.Coop"/> -- or none for everywhere (<see cref="CVarScope.ReadIn"/>).
+    /// </summary>
+    IReadOnlyList<string> Scope => [];
 
     /// <summary>Gets a value indicating whether the current value equals the default.</summary>
     bool IsDefault { get; }

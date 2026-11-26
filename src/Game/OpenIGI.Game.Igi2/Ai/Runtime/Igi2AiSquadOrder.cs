@@ -156,8 +156,8 @@ public static class Igi2AiFormations
             data[V, i] = (new Vector3f(half * sign, -half, 0f), new Vector3f(0f, 1f, 0f));
 
             double angle = i * 0.7853981852531433;
-            float across = (float)-Math.Sin(angle);
-            float along = (float)Math.Cos(angle);
+            float across = (float)-SimMath.Sin(angle);
+            float along = (float)SimMath.Cos(angle);
             data[Diamond, i] = (new Vector3f(across, (float)(along - 1.0), 0f), new Vector3f(across, along, 0f));
 
             data[StaggeredColumn, i] = (new Vector3f(sign, -i, 0f), new Vector3f(sign, 1f, 0f));

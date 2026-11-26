@@ -257,7 +257,7 @@ public sealed class ConvexHull
             double z = 1.0 - ((2.0 * d) + 1.0) / directions;
             double radius = Math.Sqrt(Math.Max(0.0, 1.0 - (z * z)));
             double angle = golden * d;
-            Vector3d direction = new(Math.Cos(angle) * radius, Math.Sin(angle) * radius, z);
+            Vector3d direction = new(SimMath.Cos(angle) * radius, SimMath.Sin(angle) * radius, z);
 
             int support = 0;
             double furthest = double.NegativeInfinity;

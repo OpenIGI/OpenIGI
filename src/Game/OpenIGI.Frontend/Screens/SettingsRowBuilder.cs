@@ -84,10 +84,10 @@ internal sealed class SettingsRowBuilder
     /// variable's own help — text written for the console. The variable name still ends the tooltip, as the
     /// handle for going further from the console.
     /// </remarks>
-    public List<Control> SettingRows(UiTheme theme, IReadOnlyList<GraphicsSetting> settings)
+    public List<Control> SettingRows(UiTheme theme, IReadOnlyList<SettingRow> settings)
     {
         var rows = new List<Control>();
-        foreach (GraphicsSetting setting in settings)
+        foreach (SettingRow setting in settings)
         {
             if (Find(setting.Variable) is not { } cvar || !CVarBinding.CanBind(cvar))
             {
@@ -99,6 +99,15 @@ internal sealed class SettingsRowBuilder
                 continue;
             }
 
+            if (control is Dropdown dropdown && setting.Readings is { Count: > 0 } readings)
+            {
+                // The values in the order the row lists them: an enum's own, or the row's named ones.
+                string[] values = cvar.ValueType.IsEnum
+                    ? cvar.RangeText.Split(" | ", StringSplitOptions.RemoveEmptyEntries)
+                    : [.. setting.Choices?.Keys ?? []];
+                dropdown.OptionEnabled = index => index >= values.Length || !readings.Contains(values[index], StringComparer.OrdinalIgnoreCase);
+            }
+
             DescribeRow(control, cvar, setting);
             rows.Add(control);
             TabCvars.Add(cvar);
@@ -108,7 +117,7 @@ internal sealed class SettingsRowBuilder
     }
 
     /// <summary>Greys a row out where its setting cannot take effect, and gives it its help.</summary>
-    public void DescribeRow(Control control, ICVar cvar, GraphicsSetting setting)
+    public void DescribeRow(Control control, ICVar cvar, SettingRow setting)
     {
         string restart = cvar.Flags.HasFlag(CVarOptions.RequiresRestart)
             ? "   [takes effect on the next level]"

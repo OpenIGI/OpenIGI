@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -17,7 +18,7 @@ public sealed class Igi1ArenaGateTests(Xunit.Abstractions.ITestOutputHelper outp
     [RequiresGameDataFact]
     public void A_gate_switched_from_one_side_gets_a_switch_on_the_other_and_each_opens_and_shuts_it_on_every_end()
     {
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.05, 0.05);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.05, 0.05);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         trio.RunUntil(() => false, 30);
 
@@ -81,7 +82,7 @@ public sealed class Igi1ArenaGateTests(Xunit.Abstractions.ITestOutputHelper outp
         // Live: a dedicated server's doorway check met only its own (absent) player, so it shut a gate through a joined player
         // whose own game sent it back open each time it reached them -- the two ends taking turns, the gate's sound looping
         // for as long as the player stood near it.
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.05, 0.05);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.05, 0.05);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         trio.RunUntil(() => false, 30);
 
@@ -137,7 +138,7 @@ public sealed class Igi1ArenaGateTests(Xunit.Abstractions.ITestOutputHelper outp
     [RequiresGameDataFact]
     public void A_switch_a_joiner_presses_clicks_once_on_its_game_though_the_servers_word_of_the_press_comes_back_and_the_hosts_press_clicks_there_too()
     {
-        using Igi1CoopPair pair = new(GameModes.SearchAndDestroy, mission: 5, hostSkipsIntro: true);
+        using Igi1CoopPair pair = new(MatchModes.SearchAndDestroy, mission: 5, hostSkipsIntro: true);
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
         WorldInteractionRegistry server = pair.Host!.World.Interactions!;
         WorldInteractionRegistry joiner = pair.Joiner!.World.Interactions!;
@@ -173,7 +174,7 @@ public sealed class Igi1ArenaGateTests(Xunit.Abstractions.ITestOutputHelper outp
     [RequiresGameDataFact]
     public void A_gate_already_switched_from_both_sides_gets_no_new_switch_but_shuts_to_them()
     {
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.05, 0.05);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.05, 0.05);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         trio.RunUntil(() => false, 30);
 

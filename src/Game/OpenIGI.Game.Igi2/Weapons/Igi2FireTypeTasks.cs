@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -204,10 +205,19 @@ public sealed partial class Igi2ZoomTask : Igi2Task
     public float MaximumFieldOfViewScale => HalfTangent(MaximumFOV);
 
     /// <summary>The tangent of half an angle in degrees, at the FPU's precision: <c>(a × 0.5) × 0.017453292</c> through <c>fptan</c>.</summary>
-    private static float HalfTangent(float degrees) => new Fpu(Math.Tan(((new Fpu(degrees) * 0.5f) * 0.017453292f).Value)).F;
+    private static float HalfTangent(float degrees) => new Fpu(SimMath.Tan(((new Fpu(degrees) * 0.5f) * 0.017453292f).Value)).F;
 
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "Zoom";
+
+    /// <summary>The tag a scope that sees in infrared carries, <c>Infrared on/off</c>: the thermal Barrett's.</summary>
+    public const string InfraredTag = "Infrared on/off";
+
+    /// <summary>
+    /// Gets a value indicating whether the scope sees in infrared: its <see cref="InfraredTag"/> set, which a sniper overlay reads
+    /// as it is made (<c>SniperOverlay_CreateParameterHandler</c>, <c>TagItem_Find</c>) and draws with (<c>SniperOverlay_CreateHandler</c>).
+    /// </summary>
+    public bool IsInfrared => Children.OfType<Igi2TagItemBool8Task>().FirstOrDefault(static t => t.TagName == InfraredTag)?.Value == true;
 
     /// <summary>Gets or sets the <c>Minimum FOV</c> parameter.</summary>
     [ScriptParam(ScriptParamType.Degrees, "Minimum FOV")]

@@ -26,6 +26,9 @@ public interface ISessionScoreboard
     /// <summary>Gets how far this end's own fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> while it is up.</summary>
     float? OwnRevive => null;
 
+    /// <summary>Gets how long this end's own player's spawn protection has left, in seconds; nought when it has none.</summary>
+    float OwnShield => 0f;
+
     /// <summary>Gets whether this player's connection goes through the TURN relay rather than straight to the others.</summary>
     bool Relayed => false;
 
@@ -72,8 +75,8 @@ public interface ISessionScoreboard
     /// <summary>Gets how many weapons and items the match has handed the local player, its buys and loadouts: a count that only grows.</summary>
     int OwnHandedOver => 0;
 
-    /// <summary>Gets the kills of late, oldest first, as the feed in the corner lists them.</summary>
-    IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => [];
+    /// <summary>Gets the kills of late, oldest first, each with its age, as the feed in the corner lists them for this end's player.</summary>
+    IReadOnlyList<Game.Multiplayer.Modes.KillFeedEntry> KillFeed => [];
 }
 
 /// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>

@@ -160,7 +160,11 @@ public sealed class Igi1Computer
     /// <param name="player">The player's task, which the map opens over.</param>
     /// <param name="width">The display's width the screens are laid out across.</param>
     /// <param name="height">Its height.</param>
-    public void Open(GameTask? player, float width, float height)
+    /// <param name="page">
+    /// The page a key asked for: the objectives' or the log's (not retail, I.G.I. 2's keys), or none for the map where the level
+    /// gives it, else the objectives, as the original opens.
+    /// </param>
+    public void Open(GameTask? player, float width, float height, ComputerPageKind page = ComputerPageKind.None)
     {
         Width = width;
         Height = height;
@@ -176,8 +180,29 @@ public sealed class Igi1Computer
         Buttons = 0;
         Pressed = 0;
         _nextScreen = ComputerScreenKind.None;
-        OpenScreen(MapEnabled ? ComputerScreenKind.Map : ComputerScreenKind.Objectives);
+        OpenScreen(ScreenFor(page) is { } asked and not ComputerScreenKind.Map ? asked
+            : MapEnabled ? ComputerScreenKind.Map : ComputerScreenKind.Objectives);
     }
+
+    /// <summary>Gets the screen showing as one of the pages a key opens, or none for another (the save games) or while closed.</summary>
+    public ComputerPageKind ShownPage => Screen?.Kind switch
+    {
+        ComputerScreenKind.Map => ComputerPageKind.Map,
+        ComputerScreenKind.Objectives => ComputerPageKind.Objectives,
+        ComputerScreenKind.Log => ComputerPageKind.Log,
+        _ => ComputerPageKind.None,
+    };
+
+    /// <summary>The screen a page is, or none.</summary>
+    /// <param name="page">The page.</param>
+    /// <returns>Its screen, or <see langword="null"/> for <see cref="ComputerPageKind.None"/>.</returns>
+    public static ComputerScreenKind? ScreenFor(ComputerPageKind page) => page switch
+    {
+        ComputerPageKind.Map => ComputerScreenKind.Map,
+        ComputerPageKind.Objectives => ComputerScreenKind.Objectives,
+        ComputerPageKind.Log => ComputerScreenKind.Log,
+        _ => null,
+    };
 
     /// <summary>Closes it (<c>0x46BF80</c>).</summary>
     public void Close()
@@ -333,7 +358,7 @@ public sealed class Igi1Computer
         X87 dy = ((X87)m.M22 * DeviceForward) - ((X87)m.M23 * DeviceDown);
         X87 dz = ((X87)m.M32 * DeviceForward) - ((X87)m.M33 * DeviceDown);
         Vector3d position = new(dx.Value + eye.X, dy.F + eye.Y, dz.F + eye.Z);
-        float c = (float)Math.Cos(1.5707964f), s = (float)Math.Sin(1.5707964f);
+        float c = (float)SimMath.Cos(1.5707964f), s = (float)SimMath.Sin(1.5707964f);
 
         // The look times RotX(π/2), whose rows are (1, 0, 0), (0, c, -s), (0, s, c).
         Matrix3f axes = new(

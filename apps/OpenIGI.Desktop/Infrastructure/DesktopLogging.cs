@@ -62,6 +62,13 @@ internal sealed class DesktopLogging : IDisposable
             policy.SetOverride(OpenIGI.Host.Multiplayer.NetDiagnostics.LogCategory, LogLevel.Information);
         }
 
+        // Discord's answers to the presence (a line per connection and per activity change), so a profile that shows
+        // nothing can be traced from the file.
+        if (!policy.Overrides.ContainsKey(OpenIGI.Net.Discord.DiscordPresence.LogCategory))
+        {
+            policy.SetOverride(OpenIGI.Net.Discord.DiscordPresence.LogCategory, LogLevel.Information);
+        }
+
         LogRouter router = new(policy);
         router.AddSink(new ConsoleSink(LogWire.IsRequested ? ConsoleSinkLayout.Wire : ConsoleSinkLayout.Text));
 

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 
@@ -15,7 +16,33 @@ public sealed record TeamStrip(int Team, string Name, int Score, IReadOnlyList<b
 /// <param name="Title">What happened, as <c>ROUND WON</c> or <c>VICTORY</c>.</param>
 /// <param name="Detail">Why, or the final score.</param>
 /// <param name="Outcome">1 for the local player's side winning, -1 for it losing, 0 for a draw or nobody's.</param>
-public sealed record ResultCard(string Title, string Detail, int Outcome);
+/// <param name="Summary">At a match's end, the local player's own match in numbers; <see langword="null"/> otherwise.</param>
+public sealed record ResultCard(string Title, string Detail, int Outcome, MatchSummary? Summary = null);
+
+/// <summary>The local player's match in numbers, on the card at its end.</summary>
+/// <param name="Place">Where it finished among the players, from 1, by kills and then by fewest deaths.</param>
+/// <param name="Players">How many played.</param>
+/// <param name="Kills">Its kills.</param>
+/// <param name="Deaths">Its deaths.</param>
+public sealed record MatchSummary(int Place, int Players, int Kills, int Deaths)
+{
+    /// <summary>Gets a value indicating whether it finished first: the match's most valuable player.</summary>
+    public bool Best => Place == 1 && Players > 1;
+
+    /// <summary>Gets its kills for each death, as the card says it: <c>2.33</c>, or its kills where it never died.</summary>
+    public string Ratio => (Deaths == 0 ? Kills : Kills / (double)Deaths).ToString("0.00", CultureInfo.InvariantCulture);
+
+    /// <summary>Makes the summary of a player's line among a match's lines.</summary>
+    /// <param name="own">The player's line.</param>
+    /// <param name="lines">Every player's line.</param>
+    /// <returns>The summary.</returns>
+    public static MatchSummary Of(ScoreboardLine own, IReadOnlyList<ScoreboardLine> lines)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        int place = 1 + lines.Count(l => l.Slot != own.Slot && (l.Kills > own.Kills || (l.Kills == own.Kills && l.Deaths < own.Deaths)));
+        return new MatchSummary(place, Math.Max(1, lines.Count), own.Kills, own.Deaths);
+    }
+}
 
 /// <summary>An action the local player can take where it stands, as <c>HOLD [E] TO PLANT AT A</c>.</summary>
 /// <param name="Verb">The verb before the key, as <c>HOLD</c>.</param>
@@ -165,7 +192,7 @@ public sealed record MatchHud
         bool bombInHand = true)
     {
         ArgumentNullException.ThrowIfNull(state);
-        if (state.Mode == GameModes.Coop || string.IsNullOrEmpty(state.Mode))
+        if (state.Mode == MatchModes.Coop || string.IsNullOrEmpty(state.Mode))
         {
             return null;
         }
@@ -173,8 +200,8 @@ public sealed record MatchHud
         ModeReport report = state.Report ?? ModeReport.None;
         ScoreboardLine[] lines = board?.Lines ?? [];
         ScoreboardLine? own = localEntity is { } entity && Array.FindIndex(lines, l => l.Entity == entity) is var at and >= 0 ? lines[at] : null;
-        bool teams = GameModes.HasTeams(state.Mode);
-        bool rounds = state.Mode is GameModes.Elimination or GameModes.SearchAndDestroy;
+        bool teams = MatchModes.HasTeams(state.Mode);
+        bool rounds = state.Mode is MatchModes.Elimination or MatchModes.SearchAndDestroy;
         double? left = state.SecondsLeft is { } s ? Math.Max(0, s - secondsSince) : null;
 
         // The freeze time: its own countdown on the clock, and a word on what it is for.
@@ -187,7 +214,7 @@ public sealed record MatchHud
         MatchHud hud = new()
         {
             Mode = state.Mode,
-            Title = GameModes.Title(state.Mode),
+            Title = MatchModes.Title(state.Mode),
             Phase = state.Phase,
             Round = rounds ? state.Round : 0,
             Target = report.Target,
@@ -269,12 +296,16 @@ public sealed record MatchHud
         {
             Money = rounds ? own?.Money : null,
             BuyClock = buyLeft > 0 && own is { IsAlive: true } ? MatchState.Clock(buyLeft) : null,
-            FreeLoadout = state.Mode is GameModes.TeamDeathmatch or GameModes.FreeForAll
+            FreeLoadout = state.Mode is MatchModes.TeamDeathmatch or MatchModes.FreeForAll
                 && state.Phase is MatchPhase.Live or MatchPhase.Warmup
                 && own is { IsAlive: true },
         };
 
-        return hud with { Result = ResultOf(state, report, own, hud, left) };
+        ResultCard? result = ResultOf(state, report, own, hud, left);
+        return hud with
+        {
+            Result = result is not null && state.Phase == MatchPhase.Intermission && own is { } mine ? result with { Summary = MatchSummary.Of(mine, lines) } : result,
+        };
     }
 
 

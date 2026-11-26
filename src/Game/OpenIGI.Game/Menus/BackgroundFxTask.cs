@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.Menus;
@@ -128,15 +129,15 @@ public sealed class BackgroundFxTask : GameTask
         ArgumentNullException.ThrowIfNull(layer);
 
         float wave = layer.ScaleUsesSine
-            ? MathF.Sin(time * layer.ScaleRate)
-            : MathF.Cos(time * layer.ScaleRate);
+            ? SimMathF.Sin(time * layer.ScaleRate)
+            : SimMathF.Cos(time * layer.ScaleRate);
 
         float scale = (wave * layer.ScaleAmplitude) + layer.ScaleBase;
         float angle = time * layer.RotationRate;
 
         return new BackgroundFxTransform(
-            MathF.Cos(angle) * scale,
-            MathF.Sin(angle) * scale,
+            SimMathF.Cos(angle) * scale,
+            SimMathF.Sin(angle) * scale,
             layer.CentreX,
             layer.CentreY,
             scale);

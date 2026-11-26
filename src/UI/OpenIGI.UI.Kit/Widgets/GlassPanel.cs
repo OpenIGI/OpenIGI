@@ -25,6 +25,28 @@ public class GlassPanel : Panel
         Theme = theme;
     }
 
+    /// <summary>
+    /// A panel of a multiplayer page, as the game's menu and the launcher both draw them: dark glass with a faint hairline,
+    /// filling the room it is given; more opaque where the page is small and the picture behind would show through.
+    /// </summary>
+    /// <param name="theme">The theme.</param>
+    /// <param name="content">What it holds.</param>
+    /// <param name="opaque">Whether it is the more opaque kind.</param>
+    /// <param name="padding">Its padding, or none.</param>
+    /// <returns>The panel.</returns>
+    public static GlassPanel Card(UiTheme theme, UiElement content, bool opaque = false, Thickness? padding = null)
+    {
+        var panel = new GlassPanel(theme)
+        {
+            Padding = padding ?? new Thickness(0f),
+            Tint = Bgra32.FromRgba(12, 14, 15, opaque ? (byte)235 : (byte)199),
+            Border = UiPalette.White(0.12f),
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        panel.AddChild(content);
+        return panel;
+    }
+
     /// <summary>Gets the theme.</summary>
     public UiTheme Theme { get; }
 

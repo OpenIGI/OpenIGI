@@ -12,7 +12,7 @@ namespace OpenIGI.UI.Widgets;
 /// Keeping that boundary lets a form use the same field with keyboard, pointer and gamepad focus without
 /// making a page responsible for clipping, drawing or validating individual characters.
 /// </remarks>
-public sealed class TextBox : Control
+public sealed class TextBox : Control, ITextEntry
 {
     private string _text = string.Empty;
 
@@ -56,6 +56,22 @@ public sealed class TextBox : Control
 
     /// <summary>Gets or sets the maximum accepted character count.</summary>
     public int MaxLength { get; set; } = 256;
+
+    /// <inheritdoc/>
+    /// <remarks>Always: a field with the focus is open for typing.</remarks>
+    public bool IsTakingText => true;
+
+    /// <inheritdoc/>
+    public bool IsModal => false;
+
+    /// <inheritdoc/>
+    public bool Type(char character) => Append(character);
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing to end: the field stays open for as long as it has the focus.</remarks>
+    public void EndEntry(bool commit)
+    {
+    }
 
     /// <summary>Appends one printable platform-decoded character.</summary>
     /// <param name="character">The character to append.</param>

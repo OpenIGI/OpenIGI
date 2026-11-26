@@ -5,6 +5,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -13,6 +14,31 @@ public sealed partial class SoldierRenderer
 {
     private readonly Dictionary<object, PlayerBodyRenderer> _partners = [];
     private readonly Dictionary<object, string> _partnerNames = [];
+
+    // Each standing partner's health, for its name tag.
+    private readonly Dictionary<object, float?> _partnerHealth = [];
+
+    // The partners spawn protection shields now, drawn in the shielded look; and the ranges list that drawing reuses.
+    private readonly HashSet<object> _partnerShielded = [];
+    private readonly List<MeshDrawRange> _shieldRanges = [];
+
+    /// <inheritdoc/>
+    public void DrawShieldedPartners(in Camera3D camera)
+    {
+        if (_partnersHidden || _partnerShielded.Count == 0)
+        {
+            return;
+        }
+
+        foreach (object key in _partnerShielded)
+        {
+            if (_partners.TryGetValue(key, out PlayerBodyRenderer? body) && !_fallen.ContainsKey(key))
+            {
+                // The "out of the fight" look: a soft blue outline over a faint blue fill, through walls.
+                body.DrawSilhouette(camera, SilhouetteGroup.Disabled, _shieldRanges);
+            }
+        }
+    }
 
     // The fallen partners: what lies where, and how far each one's revival has gone.
     private readonly Dictionary<object, (Vector3d Feet, float? Progress)> _fallen = [];
@@ -39,7 +65,7 @@ public sealed partial class SoldierRenderer
         {
             if (!_fallen.ContainsKey(key) && _partnerNames.TryGetValue(key, out string? name) && body.HeadAnchorMetres() is { } head)
             {
-                tags.Add(new WorldNameTag(head, name));
+                tags.Add(new WorldNameTag(head, name, _partnerHealth.GetValueOrDefault(key)));
             }
         }
 
@@ -179,6 +205,16 @@ public sealed partial class SoldierRenderer
                 _partnerNames[partner.Key] = name;
             }
 
+            _partnerHealth[partner.Key] = partner.Health;
+            if (partner.Shielded)
+            {
+                _partnerShielded.Add(partner.Key);
+            }
+            else
+            {
+                _partnerShielded.Remove(partner.Key);
+            }
+
             if (partner.CarriesBomb)
             {
                 _partnerBombs.Add(partner.Key);
@@ -215,6 +251,8 @@ public sealed partial class SoldierRenderer
             _partnerBombs.Remove(gone);
             _partnerHolding.Remove(gone);
             _partnerNames.Remove(gone);
+            _partnerHealth.Remove(gone);
+            _partnerShielded.Remove(gone);
             _fallen.Remove(gone);
             _partnerModels.Remove(gone);
         }
@@ -246,7 +284,7 @@ public sealed partial class SoldierRenderer
             return (mission, wanted is { Length: > 0 } ? wanted : fallback);
         }
 
-        if (OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == wanted) is { } skin
+        if (OpenIGI.Game.Multiplayer.PlayerSkins.Igi1.All.FirstOrDefault(s => s.Model == wanted) is { } skin
             && BorrowLevel?.Invoke(skin.HomeLevel) is { } home
             && home.TryGetModel(wanted, out _))
         {
@@ -262,7 +300,7 @@ public sealed partial class SoldierRenderer
     // mission hasn't loaded, or one of another shape, keeps the player's set.
     private BoneAnimationSet AnimationsFor(string model, LoadedMission mission, BoneAnimationSet player)
     {
-        if (OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == model) is not { } skin || skin.Skeleton == player.Skeleton.Id)
+        if (OpenIGI.Game.Multiplayer.PlayerSkins.Igi1.All.FirstOrDefault(s => s.Model == model) is not { } skin || skin.Skeleton == player.Skeleton.Id)
         {
             return player;
         }
@@ -292,6 +330,12 @@ public sealed partial class SoldierRenderer
         foreach (PlayerBodyRenderer body in _partners.Values)
         {
             body.ResolveFrameState();
+        }
+
+        // A race's ghost is posed for the frame as a partner is, though only its silhouette is drawn of it: no shadow, no trace.
+        if (_ghostShown)
+        {
+            _ghost?.ResolveFrameState();
         }
     }
 
@@ -374,6 +418,9 @@ public sealed partial class SoldierRenderer
         _carriedBombs?.Dispose();
         _carriedBombs = null;
         _partnerNames.Clear();
+        _partnerHealth.Clear();
+        _partnerShielded.Clear();
         _partnerLoad = null;
+        ReleaseGhost();
     }
 }

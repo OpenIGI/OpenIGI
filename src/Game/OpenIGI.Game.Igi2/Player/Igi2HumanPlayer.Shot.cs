@@ -43,6 +43,12 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// <summary>Gets or sets when a passing bullet was last heard, shared for the whole run of the game.</summary>
     public Igi2WhizzbyClock WhizzbyClock { get; set; } = new();
 
+    /// <summary>
+    /// Gets or sets whether a round or blast from someone does this player no harm, which the original never needed: in a co-op
+    /// room without friendly fire, another player's (<c>coop_friendlyfire</c>). Null for none spared.
+    /// </summary>
+    public Func<IIgi2WeaponOwner?, bool>? Spares { get; set; }
+
     /// <summary>Gets or sets the level's tick, <c>LevelFlow_ptLevelFlow-&gt;nTick</c>.</summary>
     public Func<int> LevelTick { get; set; } = static () => 0;
 
@@ -61,6 +67,11 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// </remarks>
     public void WeaponHit(in Igi2WeaponHit hit)
     {
+        if (Spares?.Invoke(hit.Shooter) == true)
+        {
+            return;
+        }
+
         Weapon.LeaveZoomAlternateFireMode();
         Fpu damage = hit.Damage;
         damage = Difficulty switch
@@ -69,11 +80,14 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
             AiDifficulty.Hard => damage * 1.25f,
             _ => damage,
         };
-        HandleDamage(DamagePartOf(hit), damage.F, hit.ShotVector);
+        Igi2DamagePart part = DamagePartOf(hit);
+        HandleDamage(part, damage.F, hit.ShotVector);
         if (Damage.IsFatal && Killer is null && hit.Shooter is { } shooter)
         {
             Killer = shooter;
         }
+
+        Struck?.Invoke(hit.Shooter, part);
 
         CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
     }
@@ -90,6 +104,36 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     {
         Damage.LastPart = part;
         Damage.Add(part, ((Fpu)hitDamage * Damage.Multiplier(part)).F);
+        Felt?.Invoke(part, direction);
+        FeelHit(part, direction);
+    }
+
+    /// <summary>
+    /// Gets or sets what hears of each hit the player takes, its zone and the shot's way: a co-op server records them, for the
+    /// player's own game to feel (<see cref="FeelHit"/>).
+    /// </summary>
+    public Action<Igi2DamagePart, Vector3f>? Felt { get; set; }
+
+    /// <summary>
+    /// Gets or sets what hears of each round or blast that hurts the player, by whom (or <see langword="null"/>) and in what zone:
+    /// a co-op server, for its players' hit marks and the kill feed.
+    /// </summary>
+    public Action<object?, Igi2DamagePart>? Struck { get; set; }
+
+    /// <summary>
+    /// The player's reaction to a hit, <c>HumanPlayer_HandleDamage</c> past the damage: the flinch, the cry, the shake, the red
+    /// flash and the push along the shot.
+    /// </summary>
+    /// <param name="part">The zone hit.</param>
+    /// <param name="direction">Which way the shot travelled; nought for none, which flashes the screen evenly and pushes nothing.</param>
+    /// <remarks>
+    /// A co-op client's player feels here the hits the server's copy of it took: the guards' rounds land on that copy, so its
+    /// damage comes with the snapshots, but left without the flinch and the push it ran on where the server's had stopped and
+    /// been knocked aside, and was put back.
+    /// </remarks>
+    public void FeelHit(Igi2DamagePart part, Vector3f direction)
+    {
+        Damage.LastPart = part;
         Signal |= Igi2PlayerSignal.Hit;
         if (!IsDead)
         {
@@ -183,6 +227,72 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     }
 
     /// <summary>The body pushed along the shot's line on the ground, its impact speed taking the unit direction's share.</summary>
+    /// <summary>
+    /// Feels a hit the server's copy of this co-op client's player took some commands ago, which carried that copy on through every
+    /// command since: the cry, the shake and the flash now, and the knock caught up -- this player moved as far as the knock carried
+    /// the server's through those commands, and left with what of it is still to come. <b>Not retail.</b>
+    /// </summary>
+    /// <param name="part">The zone struck.</param>
+    /// <param name="direction">Which way the round went.</param>
+    /// <param name="commands">The commands this client has run since the server's copy took it.</param>
+    /// <returns>
+    /// How far the knock had carried the player after each of those commands, oldest first: what the client predicted for them moves
+    /// with it (<see cref="Game.Multiplayer.PredictionReconciler.ShiftNewest"/>), or the server's word on each puts it back. Empty
+    /// when nothing was caught up -- a knock felt as it lands, as <see cref="FeelHit"/> feels it.
+    /// </returns>
+    /// <remarks>
+    /// Felt late as it struck, the server's copy had gone a fifth of a metre further along the shot by the time this one was pushed,
+    /// and every hit cost a correction. The knock is the one <see cref="Push"/> gives, fading as the move fades it each tick, swept
+    /// through the walls as one move. Only on the game's own feet: Project I.G.I.'s body (<see cref="StandsOnIgi1Feet"/>) moves by its own.
+    /// </remarks>
+    public List<Vector3d> FeelHitLate(Igi2DamagePart part, Vector3f direction, int commands)
+    {
+        bool none = direction.X == 0f && direction.Y == 0f && direction.Z == 0f;
+        if (commands <= 0 || none || IsDead || IsDisableDeltaTranslationScale || StandsOnIgi1Feet || AttachParent is not null)
+        {
+            FeelHit(part, direction);
+            return [];
+        }
+
+        // The cry, the shake and the flash, the knock left out of them.
+        bool held = IsDisableDeltaTranslationScale;
+        IsDisableDeltaTranslationScale = true;
+        FeelHit(part, direction);
+        IsDisableDeltaTranslationScale = held;
+
+        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        Vector3d impact = new(direction.X / length * BulletPush, direction.Y / length * BulletPush, 0);
+        List<Vector3d> each = new(commands);
+        Vector3d carried = default;
+        for (int i = 0; i < commands; i++)
+        {
+            impact *= ImpactDecay;
+            carried += impact;
+            each.Add(carried);
+        }
+
+        Vector3d from = Position;
+        Vector3d to = from + carried;
+        if (!IsDisableCollision && IsObjectCollision)
+        {
+            ObjectCollision(from, ref to, out _);
+        }
+
+        // A wall stopped it short: each command's share stopped with it, as far along as the whole.
+        Vector3d moved = to - from;
+        double whole = carried.Length;
+        double share = whole > 1e-6 ? Math.Clamp(moved.Length / whole, 0, 1) : 0;
+        for (int i = 0; i < each.Count; i++)
+        {
+            each[i] *= share;
+        }
+
+        Shift(moved);
+        Vector3f left = ImpactSpeed;
+        ImpactSpeed = new Vector3f((float)(left.X + impact.X), (float)(left.Y + impact.Y), left.Z);
+        return each;
+    }
+
     private void Push(Vector3f d)
     {
         Fpu x = d.X;

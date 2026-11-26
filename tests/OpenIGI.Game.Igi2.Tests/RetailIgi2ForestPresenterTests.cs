@@ -181,10 +181,17 @@ public sealed class RetailIgi2ForestPresenterTests
                 }
 
                 // Sorted foliage moves the leaves to the end and blends them, which is the third state
-                // block. The same draws come out; the foliage is simply in a different pass.
+                // block. The same draws come out; the foliage is simply in a different pass -- left by the
+                // scene pass's draw for the forward pass's, after every body.
                 presenter.SortedFoliage = true;
                 device.MeshDraws.Clear();
-                presenter.Draw(CameraIn(stand, 0));
+                Camera3D camera = CameraIn(stand, 0);
+                presenter.Draw(camera);
+                Assert.DoesNotContain(device.MeshDraws, static d => d.Blend == BlendMode.AlphaBlend);
+                presenter.DrawBlended(camera);
+
+                // Once a frame: a second call draws nothing more.
+                presenter.DrawBlended(camera);
                 presenter.SortedFoliage = false;
 
                 Assert.Equal(unsorted, device.MeshDraws.Count);

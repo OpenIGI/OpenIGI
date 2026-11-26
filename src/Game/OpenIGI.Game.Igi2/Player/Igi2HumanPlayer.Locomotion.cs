@@ -201,7 +201,7 @@ public sealed partial class Igi2HumanPlayer
         }
         else if (!Has(Igi2PlayerSignal.Grounded))
         {
-            Go(Igi2PlayerState.Fall);
+            Go(LeftGround());
         }
         else if (Has(Igi2PlayerSignal.Hit))
         {
@@ -224,7 +224,7 @@ public sealed partial class Igi2HumanPlayer
         }
         else if (!Has(Igi2PlayerSignal.Grounded))
         {
-            Go(Igi2PlayerState.Fall);
+            Go(LeftGround());
         }
         else if (Has(Igi2PlayerSignal.Dead))
         {
@@ -314,10 +314,13 @@ public sealed partial class Igi2HumanPlayer
         return true;
     }
 
-    /// <summary>Jump on the press, when jumping is allowed.</summary>
+    /// <summary>The state for the ground gone from under the player: a fall, or the jump Project I.G.I.'s body took off in.</summary>
+    private int LeftGround() => TookOffOnIgi1Feet ? Igi2PlayerState.Jump : Igi2PlayerState.Fall;
+
+    /// <summary>Jump on the press, when jumping is allowed; on Project I.G.I.'s body the body jumps, and the state follows it.</summary>
     private bool TryJump()
     {
-        if (!Channels.WasPressed(Igi2HumanChannel.Jump) || !Allows(Igi2AllowedStance.Jump))
+        if (StandsOnIgi1Feet || !Channels.WasPressed(Igi2HumanChannel.Jump) || !Allows(Igi2AllowedStance.Jump))
         {
             return false;
         }

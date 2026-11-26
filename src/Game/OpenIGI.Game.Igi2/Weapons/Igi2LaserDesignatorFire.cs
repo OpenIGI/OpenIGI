@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Physics;
-using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -35,23 +34,32 @@ internal sealed class Igi2LaserDesignatorFire : IIgi2FireHandler
         float[] m = request.Orientation;
         Fpu range = (Fpu)designator.Range * 4096.0;
         Vector3d from = request.Position;
-        _trace.Starts[0] = from;
-        _trace.Ends[0] = new Vector3d(
+        Vector3d to = new(
             (((Fpu)m[1] * range) + from.X).Value,
             ((range * m[4]) + from.Y).Value,
             ((range * m[7]) + from.Z).Value);
-        _trace.Mesh = 0;
-        _trace.TracePortals = false;
-        _trace.IgnoreMaterial = WorldLineTrace.AirMaterial;
-        WeaponCollisionQuery query = new(request.Operator, null, 1f);
-        _trace.Includes = owner => owner is not IWeaponCollisionTarget target || target.EvaluateWeaponCollision(query);
-        world.Collision.TraceLines(_trace, uint.MaxValue);
+        Designate(state, world, _trace, from, to, request.Operator);
+        return Igi2FireResult.Nothing;
+    }
 
-        WorldIntersection hit = _trace.Intersections[0];
+    /// <summary>
+    /// Rests the designator on whatever a line meets first: the task that placed it is the target, and the level tick the line
+    /// first came to rest there is noted; a line that meets nothing forgets the target.
+    /// </summary>
+    /// <param name="state">The designator's target, which the level's scripts read.</param>
+    /// <param name="world">The level's world.</param>
+    /// <param name="trace">A one-line trace to cast with.</param>
+    /// <param name="from">Where the line starts: the holder's eyes.</param>
+    /// <param name="to">Where it ends: the designator's range along the view.</param>
+    /// <param name="holder">Who holds it, which the line passes.</param>
+    internal static void Designate(
+        Igi2LaserDesignatorState state, IIgi2GunShotWorld world, WorldLineTrace trace, Vector3d from, Vector3d to, object? holder)
+    {
+        WorldIntersection hit = Igi2WeaponSightLine.Cast(world, trace, from, to, holder);
         if (!hit.IsHit || hit.HitObject is not { } struck)
         {
             state.LoseLock();
-            return Igi2FireResult.Nothing;
+            return;
         }
 
         object target = struck.Owner is Igi2CollisionOwner owner ? state.TaskById(owner.LevelId) ?? owner : struck.Owner;
@@ -60,8 +68,6 @@ internal sealed class Igi2LaserDesignatorFire : IIgi2FireHandler
             state.HitTask = target;
             state.TickFirstHit = state.LevelTick();
         }
-
-        return Igi2FireResult.Nothing;
     }
 
     /// <inheritdoc/>

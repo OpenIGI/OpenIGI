@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>How a round-based match is played: rounds to win, how long a round lasts, and the pauses between.</summary>
@@ -25,7 +26,7 @@ public sealed record RoundSettings
     public double BuySeconds { get; init; } = 20;
 
     /// <summary>Gets the seconds a round of a mode with a buy phase opens on, everyone held where they start to buy and plan
-    /// (Counter-Strike's freeze time); the buy time and the round's clock run from its end.</summary>
+    /// (the freeze time); the buy time and the round's clock run from its end.</summary>
     public double FreezeSeconds { get; init; } = 10;
 
     /// <summary>Gets how far from where it started the round a player may still buy, in metres, on a map without buy zones.</summary>
@@ -217,6 +218,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     {
         ArgumentNullException.ThrowIfNull(host);
         host.Match.IsFreeForAll = false;
+        GameModes.DealSidesIfOne(host);
         host.Match.NewMap();
         host.World.BeginMatch();
         RoundsPlayed = 0;
@@ -469,7 +471,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 public sealed class EliminationMode(int tickRate, RoundSettings? settings = null) : RoundMode(tickRate, settings)
 {
     /// <inheritdoc/>
-    public override string Id => GameModes.Elimination;
+    public override string Id => MatchModes.Elimination;
 
     /// <inheritdoc/>
     /// <remarks>Its rounds are bought for as search and destroy's are: the freeze time, the buy time, and the round's money.</remarks>

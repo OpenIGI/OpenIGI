@@ -64,8 +64,10 @@ public sealed class GameConfig
     /// <remarks>
     /// One: the modern WASD layout with the mouse not inverted, for profiles never rebound. Two: the sight on the right mouse
     /// button, the weapons on the wheel, and leaning out and the zoom on keys a laptop has, for profiles that never moved them.
+    /// Three: reload on R, use on F, crouch on the left Ctrl, the flashlight on T and modern aim's leans on Q and E -- each
+    /// action moved on its own, where it still sits on an older default (<see cref="PlayerProfile.AdoptCurrentLayout"/>).
     /// </remarks>
-    public const int CurrentControlsVersion = 2;
+    public const int CurrentControlsVersion = 3;
 
     /// <summary>Moves every profile still on the original's controls onto the modern ones, once.</summary>
     /// <returns><see langword="true"/> when anything was migrated, so the caller knows to save.</returns>
@@ -98,7 +100,12 @@ public sealed class GameConfig
                 changed = true;
             }
 
-            changed |= profile.AdoptReachableControls();
+            if (ControlsVersion < 2)
+            {
+                changed |= profile.AdoptReachableControls();
+            }
+
+            changed |= profile.AdoptCurrentLayout();
         }
 
         ControlsVersion = CurrentControlsVersion;
@@ -223,11 +230,29 @@ public sealed class GameConfig
     public static GameConfig CreateDefault()
     {
         GameConfig config = new() { ControlsVersion = CurrentControlsVersion };
+        config.EnsureProfile();
+        return config;
+    }
+
+    /// <summary>Gives a configuration with no profiles the original's default one, and makes it the active one.</summary>
+    /// <returns><see langword="true"/> when one was added.</returns>
+    /// <remarks>
+    /// A player is never left as nobody. An I.G.I. 2 <c>config.qvm</c> holds no profiles the first game's reader knows
+    /// (the GOG release's has none at all), and the shell then named the player "No profile" until they made one.
+    /// </remarks>
+    public bool EnsureProfile()
+    {
+        if (_profiles.Count > 0)
+        {
+            return false;
+        }
+
         PlayerProfile profile = PlayerProfile.CreateDefault();
         profile.Name = DefaultProfileName;
         profile.Difficulty = 1;
-        config.Add(profile);
-        return config;
+        Add(profile);
+        _activeIndex = 0;
+        return true;
     }
 
     /// <summary>Truncates a name to the original's buffer.</summary>

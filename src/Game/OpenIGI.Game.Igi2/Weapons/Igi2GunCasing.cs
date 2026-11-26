@@ -102,7 +102,7 @@ public sealed class Igi2GunCasings(Func<string, MefModel?> models)
         Vector3d at = new(objectPosition.X + offset.X, objectPosition.Y + offset.Y, objectPosition.Z + offset.Z);
 
         double angle = ejection.Angle;
-        Vector3f local = new((float)(Math.Cos(angle) * EjectionSpeed), ejection.IsGun ? EjectionSpeed : 0f, (float)(Math.Sin(angle) * EjectionSpeed));
+        Vector3f local = new((float)(SimMath.Cos(angle) * EjectionSpeed), ejection.IsGun ? EjectionSpeed : 0f, (float)(SimMath.Sin(angle) * EjectionSpeed));
         Vector3f speed = objectOrientation.Transposed().Transform(local);
         speed = new Vector3f(speed.X + holderSpeed.X, speed.Y + holderSpeed.Y, speed.Z + holderSpeed.Z);
 
@@ -120,7 +120,8 @@ public sealed class Igi2GunCasings(Func<string, MefModel?> models)
     public void Run() => _casings.RemoveAll(static c => !c.Run());
 
     /// <summary>The casings as models to draw.</summary>
+    /// <param name="tick">The tick the models are for: a casing is drawn between where it was a tick ago and where it is.</param>
     /// <returns>One rigid model a casing.</returns>
-    public IEnumerable<TitleWorldModel> Models() =>
-        _casings.Select(static c => new TitleWorldModel(c.Model, c.Position, c.Orientation));
+    public IEnumerable<TitleWorldModel> Models(long tick) =>
+        _casings.Select(c => new TitleWorldModel(c.Model, c.Position, c.Orientation, Instance: c, Tick: tick));
 }

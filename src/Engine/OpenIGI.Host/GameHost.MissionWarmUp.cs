@@ -79,20 +79,24 @@ public sealed partial class GameHost
 
     /// <summary>
     /// Whether the presentation still owns the level -- it is withheld, the card is up, or the shot has
-    /// the camera -- so nothing in it may run yet: a cut-scene that started under the card, or a patrol
+    /// the camera, or a completed mission's rank screen is up over it -- so nothing in it may run yet: a cut-scene that started under the card, or a patrol
     /// that walked off during the hold, would be one the player never saw begin.
     /// </summary>
     /// <remarks>
     /// Released as the reveal BEGINS rather than as it ends: the level's intro has to be on its first
     /// frame by the time the picture clears, and it cannot be until the level has ticked. Under the
     /// dissolve its first moments are seen arriving, which is what a dissolve is for; after it they would
-    /// be a second of the player's own view before the cut.
+    /// be a second of the player's own view before the cut. Not while a replay's opening cutscene is run through: the
+    /// level ticks under the loading screen then, which stays up until the run is where it is shown from -- held here as
+    /// well, the screen waited on ticks the hold kept from running.
     /// </remarks>
     private bool PresentationHoldsLevel =>
-        IsWarmingUp
+        (!PlaybackHidesOpening
+            && (IsWarmingUp
+                || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
+                || _entry.IsCameraActive))
         || CoopHoldsLevel
-        || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
-        || _entry.IsCameraActive;
+        || _session.Score is not null;
 
     /// <summary>Whether a co-op level is held for the other players to have it loaded too, so all of them begin it at once.</summary>
     private bool CoopHoldsLevel => TickObserver is Multiplayer.ISessionHold { HoldsLevel: true };
@@ -385,7 +389,9 @@ public sealed partial class GameHost
             bool fieldPending = _gi.FieldBake is not null;
             bool lightingReady = !_gi.Pending;
 
-            _warmUp.Update(lightingReady, fieldPending, _gi.ConvergeProgress, elapsed);
+            // A replay's opening cutscene is run through under the loading screen, the level ticking behind it (see
+            // PresentationHoldsLevel): the screen stays up until the run is where it is shown from.
+            _warmUp.Update(lightingReady && !PlaybackHidesOpening, fieldPending, _gi.ConvergeProgress, elapsed);
 
             if (!_warmUp.IsActive)
             {
@@ -551,7 +557,7 @@ public sealed partial class GameHost
         if (!_loadSequence.LiveScene)
         {
             string title = (_loadingInfo?.Name
-                ?? (_loadingMission is { } mission ? _menuStrings?.Get(mission.Name) ?? mission.Name : string.Empty))
+                ?? (_loadingMission is { } mission ? Shown(mission.Name) : string.Empty))
                 .ToUpperInvariant();
             float fit = MathF.Min(1f, (width - (left * 2f)) / MathF.Max(1f, UiPainter.MeasureLabel(type.Display, title, titleSize, 0.01f)));
             float size = titleSize * fit;

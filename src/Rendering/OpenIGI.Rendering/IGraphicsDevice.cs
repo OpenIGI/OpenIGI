@@ -104,6 +104,35 @@ public interface IGraphicsDevice :
         _ = towardsSun;
     }
 
+    /// <summary>Draws one range of a mesh many times over: a run of copies sharing the mesh, its texture and the state.</summary>
+    /// <param name="mesh">The mesh.</param>
+    /// <param name="indexOffset">The range's first index.</param>
+    /// <param name="indexCount">How many indices it has.</param>
+    /// <param name="diffuse">The texture every copy samples.</param>
+    /// <param name="blend">How every copy blends.</param>
+    /// <param name="instances">The copies, drawn in this order.</param>
+    /// <param name="setsVertexSun">
+    /// Whether each copy brings its own <see cref="MeshInstance.VertexSun"/>; when it does, the device's sun is the last
+    /// copy's afterwards. Otherwise every copy is lit by the sun already set.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// The same picture as a <see cref="SetVertexSun"/> and a <see cref="IMeshDrawDevice.DrawMesh"/> per copy, in order, which
+    /// is what this default does. A backend overrides it to do the work the copies share once: resolving the mesh and the
+    /// state, choosing the pipeline, binding the buffers. A forest is thousands of copies of a few trees, and that shared
+    /// work was most of what drawing one cost.
+    /// </para>
+    /// </remarks>
+    void DrawMeshInstances(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        TextureHandle diffuse,
+        BlendMode blend,
+        ReadOnlySpan<MeshInstance> instances,
+        bool setsVertexSun = false) =>
+        MeshInstances.DrawEach(this, mesh, indexOffset, indexCount, diffuse, blend, instances, setsVertexSun);
+
     /// <summary>Makes the following draws multiply their lightmap texture into the base colour.</summary>
     /// <param name="modulate">Whether the lightmap slot is a colour to modulate rather than a bake.</param>
     /// <remarks>
@@ -228,6 +257,17 @@ public interface IGraphicsDevice :
     /// <exception cref="GraphicsDeviceException">Nothing has been captured this frame.</exception>
     void ResolveScene(in PostProcessSettings post);
 
+    /// <summary>Draws a bomb's after-blast over the frame drawn straight into the back buffer, where its front is out.</summary>
+    /// <param name="afterBlast">The after-blast at this frame; inactive draws nothing.</param>
+    /// <remarks>
+    /// For the direct path, which keeps no picture of its own: after the world and before the first-person view, whose
+    /// drawing clears the depth the after-blast places its front by. A scene drawn offscreen has it drawn in its resolve
+    /// (<see cref="PostProcessSettings.AfterBlast"/>) instead. A device that cannot read its frame back leaves it as it is.
+    /// </remarks>
+    void DrawAfterBlastOverFrame(in BombAfterBlastSettings afterBlast)
+    {
+    }
+
     /// <summary>Draws camera-facing tracer strips through the tracer shader.</summary>
     /// <param name="mesh">The strips: u along each one (0 tail, 1 head), v across it, the vertex colour the tracer's
     /// colour at the display encoding and its alpha the brightness at that end.</param>
@@ -251,6 +291,47 @@ public interface IGraphicsDevice :
             TextureHandle.None,
             style == TracerStyle.Retail ? BlendMode.AlphaBlend : BlendMode.Additive);
 
+    /// <summary>Draws a body in a heat ramp's colours, as I.G.I. 2's infrared view does, through the infrared shader.</summary>
+    /// <param name="mesh">The body's mesh, drawn in the pose currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">The body's transform into view space; the caller draws <see cref="InfraredDraw.SeenThrough"/> nearer.</param>
+    /// <param name="ramp">The heat ramp, looked up across its first row by how squarely each part faces the eye.</param>
+    /// <param name="draw">Which of the two draws.</param>
+    /// <remarks>
+    /// Unlit and unfogged, drawn from both sides, tested against the scene's depth and never writing it; over the finished
+    /// scene, in the pass the tracers draw in. A device without the shader draws nothing.
+    /// </remarks>
+    void DrawInfrared(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, TextureHandle ramp, InfraredDraw draw)
+    {
+    }
+
+    /// <summary>Hands the remastered thermal sensor a body to see as heat this frame (<see cref="ThermalDisplaySettings"/>).</summary>
+    /// <param name="mesh">The body's mesh, drawn in the pose currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">The body's transform into view space, in metres.</param>
+    /// <param name="heat">How hot the body is: one for the living, less as a body cools.</param>
+    /// <remarks>
+    /// Seen through the frame's sensor only while <see cref="PostProcessSettings.Thermal"/> is active. Drawn where it stands, seen
+    /// through a little cover, and never into the scene itself. A device without the sensor ignores it.
+    /// </remarks>
+    void DrawThermalBody(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, float heat)
+    {
+    }
+
+    /// <summary>Hands this frame's picture a body of a race's ghost (<see cref="GhostLook"/>).</summary>
+    /// <param name="mesh">The body's mesh, drawn in the pose currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.</param>
+    /// <param name="ranges">The index ranges that make up the body.</param>
+    /// <param name="modelView">The body's transform into view space, in metres.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    /// <remarks>
+    /// Laid over the lit scene before the tone map: its rim and edges glowing, scan lines climbing it, fainter where the scene
+    /// stands before it, and glitching as the look says. Never drawn into the scene itself, nor into a shadow. A device without
+    /// the shader ignores it.
+    /// </remarks>
+    void DrawGhost(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, in GhostLook look)
+    {
+    }
+
     /// <summary>Draws a place a multiplayer mode plays for -- a bomb site -- through the mode point shader: a disc and a low wall.</summary>
     /// <param name="mesh">The point's disc (lightmap u 0, diffuse uv -1..1 across it) and wall (lightmap u 1, v up it).</param>
     /// <param name="indexOffset">The first index to draw.</param>
@@ -259,24 +340,6 @@ public interface IGraphicsDevice :
     /// <param name="look">Its colour, letter and state.</param>
     /// <remarks>Depth tested, never written, never fogged. A device without the shader draws nothing.</remarks>
     void DrawModePoint(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, in ModePointLook look)
-    {
-    }
-
-    /// <summary>
-    /// Draws one bomb blast through the blast volume shader: its fireball and smoke column marched as a volume over the lit
-    /// image, and its shock front bending the picture behind it.
-    /// </summary>
-    /// <param name="mesh">A box about the blast, in the blast's own frame: everything it can touch lies inside it.</param>
-    /// <param name="indexOffset">The first index to draw.</param>
-    /// <param name="indexCount">How many indices to draw.</param>
-    /// <param name="modelView">The box's transform into view space.</param>
-    /// <param name="look">The blast at this frame.</param>
-    /// <remarks>
-    /// Only into a scene capture's forward pass, which has the depth and lit image it reads; the box's inside faces are
-    /// drawn with no depth test, so it runs whether the eye is in the box or not. A device without the shader draws
-    /// nothing, and the blast is the original's rocket fire alone.
-    /// </remarks>
-    void DrawBlastVolume(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, in BlastVolumeLook look)
     {
     }
 

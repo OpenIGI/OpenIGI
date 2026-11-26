@@ -52,10 +52,12 @@ public sealed class RetailIgi2WorldSceneTests
 
         Assert.Equal(24, levels);
 
-        // Nine short of the 13,044 the drawable scene reaches, and deliberately: this walk is given no
+        // Nine short of the 12,477 the drawable scene reaches, and deliberately: this walk is given no
         // models, and a Train cannot be placed without one -- its carriages are spaced by the distance
-        // between their model's two couplings, which nothing authors. See Igi2Train.
-        Assert.Equal(13_035, placements);
+        // between their model's two couplings, which nothing authors. See Igi2Train. (567 waypoints on
+        // splines that do not display them are out of the world: Igi2WorldScene.IsHiddenWaypoint.) Five wear "none" and a
+        // destroyed model, placed on that, hidden until destroyed: mission 14's four bridge charges and a fuel pump switch of 24's.
+        Assert.Equal(12_269, placements);
         // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
         // registered, and a character is not a static placement. Wire is the twenty-first, and is the
         // one type here that is not placed at a position it authors -- it is strung between two.
@@ -63,7 +65,9 @@ public sealed class RetailIgi2WorldSceneTests
         // is the twenty-third and is not a task type at all: no level declares one, and every one of
         // them is made between a pair of waypoints. See Igi2SplineObject. Train would be the
         // twenty-fourth and is absent for the reason given above.
-        Assert.Equal(23, types.Count);
+        // Twenty-two, not twenty-three: every AlarmControl wears "none", which has no levels of detail (Game_CreateHandler) and
+        // places nothing.
+        Assert.Equal(22, types.Count);
     }
 
     /// <summary>
@@ -83,7 +87,7 @@ public sealed class RetailIgi2WorldSceneTests
     /// </para>
     /// <para>
     /// The editor's waypoint marker is skipped rather than counted against the tolerance. It ships with
-    /// nothing, so every one of the 584 waypoints that names it would fail here and drag the figure down
+    /// nothing, so every one of the waypoints that names it would fail here and drag the figure down
     /// by five points for a reason that has nothing to do with decoding — and one that
     /// <c>The_models_that_do_not_resolve_are_missing_from_the_shipped_data</c> already pins exactly.
     /// </para>
@@ -109,7 +113,7 @@ public sealed class RetailIgi2WorldSceneTests
             }
         }
 
-        Assert.Equal(11_241, total);
+        Assert.Equal(11_050, total);
         Assert.True(
             resolved >= total * 96 / 100,
             $"Only {resolved} of {total} static placements resolved, below the 96% the corpus reaches.");

@@ -105,6 +105,26 @@ public enum TouchButton
 
     /// <summary>Loads the mission's newest save.</summary>
     QuickLoad,
+
+    /// <summary>Raises or lowers the thermal goggles, where the title has them.</summary>
+    Thermal,
+
+    /// <summary>Goes down flat, or back up from it, where the title has a prone stance.</summary>
+    Prone,
+}
+
+/// <summary>The buttons the title being played offers beyond every title's own, each only where it has the control.</summary>
+[Flags]
+public enum TouchTitleButtons
+{
+    /// <summary>None: the title has no controls of its own on a touch screen.</summary>
+    None = 0,
+
+    /// <summary>The thermal goggles.</summary>
+    Thermal = 1,
+
+    /// <summary>Going prone.</summary>
+    Prone = 2,
 }
 
 /// <summary>The match's own buttons a multiplayer session offers, each only where it has something to do.</summary>
@@ -245,6 +265,15 @@ public sealed class TouchControls
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the sight button steps the weapon in hand through its fire modes (I.G.I. 2's
+    /// rifles), and is drawn so.
+    /// </summary>
+    public bool ScopeSwitchesMode { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the crouch button holds the body down by itself, latched by a tap.</summary>
+    public bool CrouchLatched { get; set; }
+
     /// <summary>Gets or sets how far a drag turns the view against the shipped rate (<see cref="LookCountsPerPixel"/>).</summary>
     public float LookScale { get; set; } = 1f;
 
@@ -277,6 +306,22 @@ public sealed class TouchControls
     }
 
     private TouchMatchButtons _matchButtons;
+
+    /// <summary>Gets or sets the buttons the title being played offers of its own: its thermal goggles, its prone stance.</summary>
+    public TouchTitleButtons TitleButtons
+    {
+        get => _titleButtons;
+        set
+        {
+            if (_titleButtons != value)
+            {
+                _titleButtons = value;
+                _laidOutFor = default;
+            }
+        }
+    }
+
+    private TouchTitleButtons _titleButtons;
 
     /// <summary>Gets or sets whether the button tapped to type a line of chat is offered: in a multiplayer room.</summary>
     public bool ChatShown
@@ -526,6 +571,8 @@ public sealed class TouchControls
         TouchControlId.Team => (_matchButtons & TouchMatchButtons.Team) != 0,
         TouchControlId.Drop => (_matchButtons & TouchMatchButtons.Drop) != 0,
         TouchControlId.QuickSave or TouchControlId.QuickLoad => _savesShown,
+        TouchControlId.Thermal => (_titleButtons & TouchTitleButtons.Thermal) != 0,
+        TouchControlId.Prone => (_titleButtons & TouchTitleButtons.Prone) != 0,
         _ => true,
     };
 

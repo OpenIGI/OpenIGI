@@ -9,14 +9,17 @@ namespace OpenIGI.Game.Igi2.Player;
 /// </content>
 /// <remarks>
 /// The lower back runs first. With an upper-body clip playing it swaps its parent's turn for the clip's root key, as a soldier's
-/// does. Then it eases the view's shoulder pitch a fifth of the way toward the view's pitch (toward level unless the player
-/// stands) and tilts by a share of it; the upper back and the shoulders tilt by their own shares of that pitch. A dead player's
-/// spine is left as its clips pose it.
+/// does. Then it eases the view's shoulder pitch a fifth of the way toward the view's pitch (toward level unless the upper body
+/// holds its weapon up or fires it) and tilts by a share of it; the upper back and the shoulders tilt by their own shares of
+/// that pitch. A dead player's spine is left as its clips pose it.
 /// </remarks>
 public sealed partial class Igi2HumanPlayer : IIgi2BoneCallbacks
 {
-    /// <summary>The empty slot of the player's state table its lower back also treats as standing, <c>83</c>.</summary>
-    private const int UnusedStandingState = 83;
+    /// <summary>The upper-body state of a standing player holding its weapon up, <c>0</c>.</summary>
+    private const int UpperBodyHeld = 0;
+
+    /// <summary>The upper-body state of a standing player firing, <c>83</c>.</summary>
+    private const int UpperBodyFiring = 83;
 
     /// <summary>The share of the way the shoulder pitch eases each update, the float <c>0x3E4CCCCD</c>.</summary>
     private const float ShoulderPitchEase = 0.2f;
@@ -55,9 +58,16 @@ public sealed partial class Igi2HumanPlayer : IIgi2BoneCallbacks
             Igi2BoneMath.SwapParentTurn(bones, bone, parent, key.Rotation, key.Ops);
         }
 
-        int state = Locomotion.CurrentState;
-        float target = state is UnusedStandingState or Igi2PlayerState.Stand ? View.Pitch : 0f;
-        View.ShouldersPitch = ((((Fpu)target - View.ShouldersPitch) * ShoulderPitchEase) + View.ShouldersPitch).F;
+        // The state last used to set the upper body's clip (iStateLastUsedToSetUpperBodyAnimation), not the state the body
+        // moves in: a player turning on the spot or running keeps its spine on its aim. Read as the moving state, the spine
+        // went level whenever the player left standing still -- any turn of the mouse does -- and eased back once it stood.
+        // The ease is a step of the simulation's: taken on its take of the pose, once a tick, never on a frame's.
+        if (EvaluatingForSimulation)
+        {
+            float target = Animation.LastUpperBodyState is UpperBodyFiring or UpperBodyHeld ? View.Pitch : 0f;
+            View.ShouldersPitch = ((((Fpu)target - View.ShouldersPitch) * ShoulderPitchEase) + View.ShouldersPitch).F;
+        }
+
         Tilt(bones, bone, 0.32352942f, 0.5f);
     }
 

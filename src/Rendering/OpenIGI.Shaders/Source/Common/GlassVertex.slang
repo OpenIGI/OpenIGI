@@ -83,6 +83,12 @@ struct GlassVaryings
 /// or reflect. Both glazing draws make this cut, so the layer and the transmission agree about it.
 static const float GlassHoleAlpha = 0.02;
 
+/// The alpha at and above which a glazing texel is the FRAME, drawn by the opaque world and not by these passes:
+/// 250 out of 255, the reference the world renderer draws a glass subset into the G-buffer at
+/// (WorldRenderer.GlassFrameAlphaReference). The two must stay the exact inverse of each other, or a texel is drawn by
+/// neither -- a smudge above half alpha was, and I.G.I. 2's dirty windows came out crystal clear -- or by both.
+static const float GlassFrameAlpha = 250.0 / 255.0;
+
 /// Thin-pane reflectance: a sheet has two faces, and the light that crosses the first and is reflected
 /// back by the second partly escapes too. Summing every bounce, a pane reflects 2R/(1+R) of what reaches
 /// it, R being one face's Schlick reflectance with glass's 0.04 at normal incidence -- 7.7 per cent head-on,

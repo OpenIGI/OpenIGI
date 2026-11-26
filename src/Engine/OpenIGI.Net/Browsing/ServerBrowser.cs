@@ -94,8 +94,9 @@ public sealed class ServerBrowser : IDisposable
             .Concat(_book.History.Select(static h => (h, BrowserSource.History))))
         {
             // A server at an address is a line until it answers; a room has no address to ask and is there only while the
-            // master lists it -- booked, it only marks the master's line (see TakeMasterList), or it would stand for good.
-            if (!IsRoom(booked.Key))
+            // master lists it -- booked, it only marks the master's line (see TakeMasterList), or it would stand for good. The
+            // book is both games': one of the other game's is not this one's line at all.
+            if (!IsRoom(booked.Key) && (booked.Title.Length == 0 || string.Equals(booked.Title, _options.Title, StringComparison.OrdinalIgnoreCase)))
             {
                 Merge(Booked(booked, source));
             }
@@ -186,7 +187,7 @@ public sealed class ServerBrowser : IDisposable
     public void Played(BrowserServer server)
     {
         ArgumentNullException.ThrowIfNull(server);
-        _book.Played(server.Key, server.Info.Name);
+        _book.Played(server.Key, server.Info.Name, server.Info.Title);
         _servers[server.Key] = server with { Sources = server.Sources | BrowserSource.History };
     }
 
@@ -196,7 +197,7 @@ public sealed class ServerBrowser : IDisposable
     public void SetFavourite(BrowserServer server, bool favourite)
     {
         ArgumentNullException.ThrowIfNull(server);
-        _book.SetFavourite(server.Key, server.Info.Name, favourite);
+        _book.SetFavourite(server.Key, server.Info.Name, favourite, server.Info.Title);
         _servers[server.Key] = server with { Sources = favourite ? server.Sources | BrowserSource.Favourite : server.Sources & ~BrowserSource.Favourite };
     }
 
@@ -240,7 +241,10 @@ public sealed class ServerBrowser : IDisposable
                 (string?)entry["version"] ?? string.Empty,
                 Compatible: protocol.Length == 0 || string.Equals((string?)entry["protocol"], protocol, StringComparison.OrdinalIgnoreCase));
             string key = address is { } at ? BrowserServer.KeyOf(at) : BrowserServer.KeyOfRoom(room!);
-            servers.Add(new BrowserServer(key, address, room, info, (string?)entry["region"] ?? string.Empty, BrowserSource.Internet, null));
+            servers.Add(new BrowserServer(key, address, room, info, (string?)entry["region"] ?? string.Empty, BrowserSource.Internet, null)
+            {
+                Official = (bool?)entry["official"] ?? false,
+            });
         }
 
         return servers;
@@ -325,11 +329,12 @@ public sealed class ServerBrowser : IDisposable
     private static bool IsRoom(string key) => key.StartsWith(BrowserServer.KeyOfRoom(string.Empty), StringComparison.Ordinal);
 
     // A booked server as a line of its own until it answers or the master lists it.
-    private BrowserServer Booked(BookedServer booked, BrowserSource source)
+    private static BrowserServer Booked(BookedServer booked, BrowserSource source)
     {
         NetAddress? address = TryAddressOf(booked.Key, out NetAddress at) ? at : null;
         string? room = booked.Key.StartsWith("room:", StringComparison.Ordinal) ? booked.Key["room:".Length..] : null;
-        BrowserInfo info = new(_options.Title, booked.Name, string.Empty, string.Empty, 0, 0, false, string.Empty, Compatible: true);
+        // Its game as the book kept it; one kept before the book said is of no game known until it answers this one's question.
+        BrowserInfo info = new(booked.Title, booked.Name, string.Empty, string.Empty, 0, 0, false, string.Empty, Compatible: true);
         return new BrowserServer(booked.Key, address, room, info, string.Empty, source, null);
     }
 
@@ -349,6 +354,7 @@ public sealed class ServerBrowser : IDisposable
             Region = known.Region.Length > 0 ? known.Region : heard.Region,
             Info = known.Answered || heard.Info.Map.Length == 0 ? known.Info : heard.Info,
             Sources = known.Sources | heard.Sources,
+            Official = heard.Sources.HasFlag(BrowserSource.Internet) ? heard.Official : known.Official,
         };
     }
 

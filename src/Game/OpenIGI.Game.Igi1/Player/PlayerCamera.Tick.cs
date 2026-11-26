@@ -7,6 +7,13 @@ namespace OpenIGI.Game.Igi1.Player;
 
 public sealed partial class PlayerCamera
 {
+    /// <summary>Gets or sets where the player's grenade cook comes from, or <see langword="null"/> for the setting (<see cref="GameplayCVars.GrenadeCook"/>).</summary>
+    /// <remarks>A co-op server's copy of a client's player reads the client's choice from its command.</remarks>
+    public Func<GrenadeCook>? GrenadeCookSource { get; set; }
+
+    /// <summary>Gets whether the grenade in hand ticks (<see cref="PlayerWeapons.IsGrenadeTicking"/>).</summary>
+    public bool IsGrenadeTicking => _weapons?.IsGrenadeTicking ?? false;
+
     /// <summary>Advances the body by one simulation tick.</summary>
     /// <param name="input">The window's input.</param>
     /// <param name="terrain">The level's terrain.</param>
@@ -38,6 +45,7 @@ public sealed partial class PlayerCamera
     public void TickFrame(in PlayerInputFrame frame, IGroundHeightField? terrain)
     {
         ApplyCheats(PlayerCheatOptions.Current);
+        _weapons?.GrenadeCook = GrenadeCookSource?.Invoke() ?? GameplayCVars.GrenadeCook.Value;
 
         FrameYaw = _body.Yaw;
         FramePitch = _body.Pitch;
@@ -49,7 +57,9 @@ public sealed partial class PlayerCamera
             _wheelChoice = -1;
         }
 
-        _input.Accept(taken);
+        // Modern aim takes the alternate-fire button for the sights before the original's machines read the frame.
+        _input.Accept(TakeModernAimInput(taken));
+        TickAds();
 
         // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them. The
         // level's switches and fences still pulse, and what the player threw before still flies and goes off.
@@ -60,6 +70,10 @@ public sealed partial class PlayerCamera
             return;
         }
 
+        // The body's state machine reads the walk/run latch as it stood, and the toggle flips it after (HumanPlayer_Update,
+        // 0x4109A0: the machine at 0x4105C0 builds its walking bit from the latch, and the press is taken once the machines
+        // have run): a press shows on the next tick's gait.
+        bool running = _locomotion.Running;
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
 
@@ -96,7 +110,13 @@ public sealed partial class PlayerCamera
             return;
         }
 
-        PlayerCommand command = PlayerInputSampler.Command(_input, _locomotion.Running, CanJump);
+        PlayerCommand command = PlayerInputSampler.Command(_input, running, CanJump);
+
+        // A brace on a top lower than a standing body can bend to is held from a crouch.
+        if (MountCrouches)
+        {
+            command = command with { Crouch = true };
+        }
 
         Vector3d previousPosition = _body.Position;
 
@@ -105,7 +125,19 @@ public sealed partial class PlayerCamera
         TickWeapons();
         TickDrop();
 
+        // The weapon machine's lean (0x40F370) forces the body into state 44 and its exit (0x40F3F0) puts it back in state 0,
+        // both before the body's own machine runs this tick.
+        command = command with { Lean = _weapons?.State == HumanWeaponState.Peeking };
         _locomotion.Move(command, terrain);
+
+        // State 44's per-tick (0x40DFC0) eases the lean from the move keys, which no longer move the body.
+        _firstPerson.AdvanceLean(
+            _locomotion.State == HumanBodyStateMachine.Lean,
+            _input.IsSet(PlayerInputSlot.MoveLeft),
+            _input.IsSet(PlayerInputSlot.MoveRight),
+            _input.IsSet(PlayerInputSlot.MoveUp),
+            _body.IsCrouched,
+            _body.Parameters);
 
         _interaction.TouchFences(_interactions, previousPosition);
 
@@ -158,6 +190,7 @@ public sealed partial class PlayerCamera
         [
             PlayerInputSlot.MoveLeft, PlayerInputSlot.MoveRight, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown,
             PlayerInputSlot.Fire, PlayerInputSlot.AlternateFire, PlayerInputSlot.Activate, PlayerInputSlot.Jump, PlayerInputSlot.Peek,
+            PlayerInputSlot.Underbarrel, PlayerInputSlot.LeanLeft, PlayerInputSlot.LeanRight, PlayerInputSlot.Mount,
         ];
         foreach (PlayerInputSlot slot in let)
         {

@@ -14,9 +14,13 @@ namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Project I.G.I.'s mission heard: the player's weapon and body, the soldiers' guns and feet, the doors and lifts,
 /// the sirens and cameras, and the level's ambience.</summary>
-/// <remarks>Every voice the mission holds is held here, so the host only opens the device and places the ear.</remarks>
+/// <remarks>
+/// Every voice the mission holds is held here, so the host only opens the device and places the ear. Voices, not play: a
+/// level checkpoint leaves it out (its draws are the mission's stream, which is recorded).
+/// </remarks>
 /// <param name="mission">The mission whose things make the sounds, and whose stream picks among them.</param>
 /// <param name="host">Where they play.</param>
+[OpenIGI.Core.Simulation.NotSimulationState]
 public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
     /// <summary>The cue a gun the player picks up plays, at the listener, wherever the player stands.</summary>
@@ -87,7 +91,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// </remarks>
     private void TickGrenadeCook()
     {
-        if (host.SoundOutput is null || mission.Player is null || !mission.Player.IsChargingThrow)
+        if (host.SoundOutput is null || mission.Player is null || !mission.Player.IsGrenadeTicking)
         {
             StopGrenadeCook();
             return;
@@ -95,7 +99,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
 
         if (!_grenadeCookStarted)
         {
-            _grenadeCookVoice = host.SoundOutput.PlayDefinition("grenade_tick_1", priority: 200);
+            _grenadeCookVoice = host.SoundOutput.PlayDefinition(TimedActionSounds.GrenadeCook, priority: 200);
             _grenadeCookStarted = true;
         }
     }
@@ -145,13 +149,10 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             return;
         }
 
-        foreach (AnimTriggerDefinition trigger in mission.AnimationTriggers.Definitions.Values)
+        foreach (string sound in mission.AnimationTriggers.SoundsCrossed(view.CrossedEvent))
         {
-            if (view.CrossedEvent(trigger.EventId))
-            {
-                // The player's view rig is at the listener, so this is deliberately non-positional.
-                host.SoundOutput.PlayDefinition(trigger.Resource, priority: 180);
-            }
+            // The player's view rig is at the listener, so this is deliberately non-positional.
+            host.SoundOutput.PlayDefinition(sound, priority: 180);
         }
     }
 
@@ -170,12 +171,9 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             return;
         }
 
-        foreach (AnimTriggerDefinition trigger in mission.AnimationTriggers.Definitions.Values)
+        foreach (string sound in mission.AnimationTriggers.SoundsCrossed(body.CrossedEvent))
         {
-            if (body.CrossedEvent(trigger.EventId))
-            {
-                host.SoundOutput.PlayDefinition(trigger.Resource, feet, priority: 180);
-            }
+            host.SoundOutput.PlayDefinition(sound, feet, priority: 180);
         }
     }
 
@@ -326,12 +324,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     private void SoundTimedAction(PlayerCamera player)
     {
         int state = player.InteractionLocomotionState;
-        string? loop = state switch
-        {
-            HumanInteractionDispatch.PickLockState => "picklock_loop",
-            HumanInteractionDispatch.ComputerState => "typecomp_loop",
-            _ => null,
-        };
+        string? loop = TimedActionSounds.LoopOf(state);
 
         if (state != _actionVoiceState)
         {
@@ -347,12 +340,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             output.SetDefinitionVoicePosition(loop!, _actionVoice, player.Body.Position, priority: 200);
         }
 
-        string? end = player.TakeCompletedActionState() switch
-        {
-            HumanInteractionDispatch.PickLockState => "pickloop_end",
-            HumanInteractionDispatch.ComputerState => "typecomp_end",
-            _ => null,
-        };
+        string? end = TimedActionSounds.EndOf(player.TakeCompletedActionState());
 
         if (end is not null)
         {
@@ -922,21 +910,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
         // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
         // null also closes an automatic gun loop when the player switches to the syringe.
-        WeaponType? weaponForSound = player.HeldWeaponType?.Category == WeaponCategory.Medipack
-            ? null
-            : player.HeldWeaponType;
         bool m203Launched = player.M203LaunchedThisTick;
-
-        // On a stationary gun the hand's trigger is not the one pulled: the gun's own weapon fires (0x474360 hands it the
-        // fire button), so its report runs on the rounds it fires, as a soldier's does. Read from the hand, an automatic
-        // mounted gun's loop never opened and the gun fired in silence.
-        bool? triggerHeld = player.IsMountedStationaryGun
-            ? null
-            : !m203Launched && weaponForSound is not null && player.Weapons?.TriggerHeldThisTick == true;
-        _weaponSounds?.Tick(
-            player.FiredThisTick && !m203Launched && weaponForSound is not null,
-            weaponForSound,
-            triggerHeld: triggerHeld);
+        _weaponSounds?.TickPlayer(player);
         if (m203Launched)
         {
             // GunM16A2's native callback (0x473510) plays this launch report itself; it is
@@ -948,7 +923,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
                 launchPosition = m203Shots[0].Origin;
             }
 
-            host.SoundOutput?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
+            host.SoundOutput?.PlayDefinition(TimedActionSounds.M203Launch, launchPosition, priority: 250);
         }
 
         // The grenade's cook tick: a looping sound held while the throw charges, stopped the

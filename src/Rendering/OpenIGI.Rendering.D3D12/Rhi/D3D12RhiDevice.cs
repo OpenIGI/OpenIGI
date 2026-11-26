@@ -28,7 +28,8 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
 
     private readonly List<(ulong Ticket, Action Release)> _retired = [];
     private readonly Dictionary<string, D3D12RootSignature> _rootSignatures = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, D3D12SamplerTable> _samplerTables = new(StringComparer.Ordinal);
+    private readonly Dictionary<D3D12SamplerTableKey, D3D12SamplerTable> _samplerTables = [];
+    private readonly D3D12SamplerTableKey _samplerScratch = new();
     private ID3D12CommandSignature* _draw;
     private ID3D12CommandSignature* _drawIndexed;
     private ID3D12CommandSignature* _dispatch;
@@ -302,8 +303,8 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
     public D3D12SamplerTable SamplerTableFor(IReadOnlyList<D3D12RhiSampler> samplers)
     {
         // By what the samplers do, not which objects they are: a level makes the same sampler many times.
-        string key = string.Join("|", samplers.Select(sampler => (sampler.Descriptor with { Label = string.Empty }).ToString()));
-        if (!_samplerTables.TryGetValue(key, out D3D12SamplerTable? table))
+        _samplerScratch.Fill(samplers);
+        if (!_samplerTables.TryGetValue(_samplerScratch, out D3D12SamplerTable? table))
         {
             int start = SamplerHeap.Allocate(samplers.Count);
             for (int i = 0; i < samplers.Count; i++)
@@ -311,6 +312,7 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
                 WriteSampler(samplers[i].Descriptor, SamplerHeap.Cpu(start + i));
             }
 
+            D3D12SamplerTableKey key = _samplerScratch.Copy();
             table = new D3D12SamplerTable(this, key, start, samplers.Count);
             _samplerTables[key] = table;
         }

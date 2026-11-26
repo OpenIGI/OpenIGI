@@ -83,6 +83,7 @@ public static class Igi2DrawableScene
         string placementType = string.Empty;
         int placementGroup = WorldPlacement.DefaultRenderGroup;
         string placementDestroyed = string.Empty;
+        bool placementHidden = false;
         string placementMountedOn = string.Empty;
         IReadOnlyList<string>? placementWears = null;
 
@@ -201,6 +202,9 @@ public static class Igi2DrawableScene
                 // hang on as they were.
                 DestroyedReplacement = depth == 0 ? Replacement(placementDestroyed) : null,
 
+                // An object with no model of its own, placed on the one it wears destroyed, and drawn only from then on.
+                IsHiddenUntilDestroyed = placementHidden,
+
                 // The models a switch wears by its state; only the object's own model changes.
                 Variants = depth == 0 && placementWears is { } wears && wears.Select(Replacement).ToArray() is var bound
                     && Array.Exists(bound, static binding => binding is not null)
@@ -216,38 +220,20 @@ public static class Igi2DrawableScene
                 return true;
             }
 
-            // The model this one carries, on the host's first magic vertex. The vertex is a point in
-            // the host's own space, and RigidDynCubeObj_GetMagicVertexPos (igi2 0x58E430) takes it to
-            // the world exactly as an attachment point is taken: the host's rows dotted with it, plus
-            // the host's position. A host with no magic vertex mounts at its own origin, which is what
-            // that function returns when there is none to read.
-            //
-            // Emitted after the attachments because that is the order the lightmap enumerator walks:
-            // a node's own model, then its attach objects, then its task children -- and the camera body
-            // is a child task of the bracket (SCamera_SCameraLensCreateHandler, 0x48EC90).
-            if (mounted.Length > 0 && (depth > 0 || placementMountedOn.Length == 0 || magic is null))
-            {
-                Vector3d mountPosition = unitsPosition;
-                if (model.TryGetMagicVertex(0, out Vector3f mount))
-                {
-                    Vector3f mountOffset = orientation.Transposed().Transform(mount);
-                    mountPosition = new Vector3d(
-                        unitsPosition.X + mountOffset.X,
-                        unitsPosition.Y + mountOffset.Y,
-                        unitsPosition.Z + mountOffset.Z);
-                }
+            // A room of a building's shell -- an attach point that is a sector (SectorObject_CreateAttachObjects).
+            bool IsRoom(MefAttachment attachment) =>
+                depth == 0
+                && key is { Kind: Igi2VisibilityKind.Shell }
+                && Igi2SectorGraph.RoomModel(attachment, magic) is { } roomName
+                && models(roomName) is { IsSector: true };
 
-                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, key, ref index))
-                {
-                    attached++;
-                }
-                else
-                {
-                    attachmentsUnresolved++;
-                }
-            }
-
-            foreach (MefAttachment attachment in model.Attachments)
+            // A building's shell walks every attach point that is not a room first, then the rooms, each in file
+            // order. SectorObject_CreateAttachObjects moves each sector it creates out of the magic container and
+            // into the sector container, and RigidDynCubeObj_EnumerateLightmapVirModelsHandler numbers the magic
+            // container's children before the sector container's. Walking the attach points in file order put a
+            // room's number among its siblings' and bound it a bake of another model's size, and the stretched page
+            // lit whole rooms past white under the doubled stage.
+            foreach (MefAttachment attachment in model.Attachments.Where(a => !IsRoom(a)).Concat(model.Attachments.Where(IsRoom)))
             {
                 // The magic table decides what the point becomes: its type's model, its own name, or -- for a
                 // shadow volume or a mark -- nothing drawn, which enumerates no lightmap and takes no number.
@@ -267,14 +253,10 @@ public static class Igi2DrawableScene
 
                 // A building's shell makes a room of each attach point that is a sector (SectorObject_CreateAttachObjects);
                 // the room and all it carries are drawn by the room, every other part by the shell.
-                Igi2VisibilityKey? attachedKey = key;
-                if (depth == 0
-                    && key is { Kind: Igi2VisibilityKind.Shell }
-                    && Igi2SectorGraph.RoomModel(attachment, magic) is { } roomName
-                    && models(roomName) is { IsSector: true })
-                {
-                    attachedKey = key with { Kind = Igi2VisibilityKind.Room, Room = rooms++ };
-                }
+                // The rooms come after the other parts but keep their own file order, the order the sector graph numbers them in.
+                Igi2VisibilityKey? attachedKey = IsRoom(attachment)
+                    ? key! with { Kind = Igi2VisibilityKind.Room, Room = rooms++ }
+                    : key;
 
                 bool carries = depth == 0 && placementMountedOn.Length > 0 && magic?.Find(attachment.Name)?.TaskType == placementMountedOn;
                 if (Emit(
@@ -305,6 +287,40 @@ public static class Igi2DrawableScene
                 }
             }
 
+            // The model this one carries, on the host's first magic vertex. The vertex is a point in
+            // the host's own space, and RigidDynCubeObj_GetMagicVertexPos (igi2 0x58E430) takes it to
+            // the world exactly as an attachment point is taken: the host's rows dotted with it, plus
+            // the host's position. A host with no magic vertex mounts at its own origin, which is what
+            // that function returns when there is none to read.
+            //
+            // Emitted after the attachments and the rooms because that is the order the lightmap enumerator
+            // walks: RigidDynCubeObj_EnumerateLightmapVirModelsHandler numbers a node's own model, then its
+            // magic container, then its sector container, then its task children -- and the camera body is a
+            // task child of the bracket, made at run time with no level id of its own, so it shares the
+            // bracket's count (SCamera_SCameraLensCreateHandler). Walking it before the attachments gave it
+            // their first number and moved each of theirs up by one.
+            if (mounted.Length > 0 && (depth > 0 || placementMountedOn.Length == 0 || magic is null))
+            {
+                Vector3d mountPosition = unitsPosition;
+                if (model.TryGetMagicVertex(0, out Vector3f mount))
+                {
+                    Vector3f mountOffset = orientation.Transposed().Transform(mount);
+                    mountPosition = new Vector3d(
+                        unitsPosition.X + mountOffset.X,
+                        unitsPosition.Y + mountOffset.Y,
+                        unitsPosition.Z + mountOffset.Z);
+                }
+
+                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, key, ref index))
+                {
+                    attached++;
+                }
+                else
+                {
+                    attachmentsUnresolved++;
+                }
+            }
+
             return true;
         }
 
@@ -319,6 +335,7 @@ public static class Igi2DrawableScene
                 : $"{placement.TypeName}:{placement.LevelId}";
             placementGroup = placement.RenderGroup;
             placementDestroyed = placement.DestroyedModel;
+            placementHidden = placement.IsHiddenUntilDestroyed;
             placementMountedOn = placement.MountedOn;
             placementWears = placement.Wears;
 
@@ -392,8 +409,9 @@ public static class Igi2DrawableScene
         return new Igi2VisibilityKey(
             Igi2VisibilityKind.Object, placement.LevelId, placement.Model, pose.Position, Igi2Sector.Shell, centre, model.RenderSphereRadius)
         {
-            RegistersInRooms = Igi2SectorInteriorTypes.RegistersInRooms(placement.TypeName),
-            SkipsRoomTest = Igi2SectorInteriorTypes.SkipsRoomTest(placement.TypeName),
+            // One excluded from clipping against portals is no room's and left to the view, as a door is.
+            RegistersInRooms = !placement.IsExcludedFromPortalClipping && Igi2SectorInteriorTypes.RegistersInRooms(placement.TypeName),
+            SkipsRoomTest = placement.IsExcludedFromPortalClipping || Igi2SectorInteriorTypes.SkipsRoomTest(placement.TypeName),
         };
     }
 
@@ -429,9 +447,11 @@ public static class Igi2DrawableScene
         [NotNullWhen(true)] out LoadedPack? pack,
         [NotNullWhen(true)] out MefModel? model)
     {
-        // Nearest first, which is the order the packs were opened in and the order the original searches.
-        foreach (LoadedPack candidate in packs)
+        // Nearest first, which is the order the packs were opened in and the order the original searches. Indexed rather than
+        // enumerated: the view-model draw asks this for every model every frame, and the interface's enumerator is boxed.
+        for (int i = 0; i < packs.Count; i++)
         {
+            LoadedPack candidate = packs[i];
             if (candidate.TryGetModel(mesh, out MefModel? found) && found is not null)
             {
                 pack = candidate;

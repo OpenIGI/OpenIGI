@@ -96,6 +96,36 @@ public sealed class RetailIgi2AnimationClipTests
         Assert.Equal([0, 0, 0], clip.Hierarchy.Parents.Skip(1).Take(3));
     }
 
+    /// <summary>
+    /// The laser cut hangs the door and its three hinges on no bone, the body itself (<c>BoneDynCubeObj_AttachHandler</c>), and its own keys
+    /// drop them: the hinges fall to the floor and the door topples flat.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_laser_cut_hangs_the_door_and_its_hinges_on_the_body()
+    {
+        Igi2AnimationClip clip = Clip("tba_lazercut_door");
+        int bones = clip.BoneCount;
+        BonePose pose = BonePose.FromBones(
+            Enumerable.Repeat(Core.Numerics.Matrix3f.Identity, bones).ToArray(),
+            new Core.Numerics.Vector3f[bones],
+            clip.Hierarchy.Parents.ToArray());
+
+        Assert.Equal(4, clip.AttachObjects.Count(static a => a.Bone < 0 && a.Name.StartsWith("502_", StringComparison.Ordinal)));
+        Igi2AttachedPart[] start = [.. Igi2AttachedParts.Of(clip, 0, pose, null).Where(static p => p.Model.StartsWith("502_", StringComparison.Ordinal))];
+        Igi2AttachedPart[] end = [.. Igi2AttachedParts.Of(clip, clip.TotalTime, pose, null).Where(static p => p.Model.StartsWith("502_", StringComparison.Ordinal))];
+
+        Assert.Equal(["502_02_1", "502_02_1", "502_02_1", "502_01_1"], start.Select(static p => p.Model));
+        Assert.Equal(4, end.Length);
+        for (int hinge = 0; hinge < 3; hinge++)
+        {
+            Assert.True(end[hinge].Position.Z < 200f && start[hinge].Position.Z > 1000f, $"Hinge {hinge} did not fall to the floor.");
+        }
+
+        // The door stands on its bottom edge and topples flat.
+        Assert.Equal(1f, start[3].Orientation.M33, 3);
+        Assert.InRange(end[3].Orientation.M33, -0.05f, 0.05f);
+    }
+
     /// <summary>The child counts are read breadth-first.</summary>
     [Fact]
     public void Child_counts_read_breadth_first()

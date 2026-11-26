@@ -85,6 +85,13 @@ public sealed class AiCombatTarget
     /// <summary>Gets whether the record still has attackers, and so is still in use.</summary>
     public bool IsLive => _attackers.Count > 0;
 
+    /// <summary>
+    /// Gets or sets what is told when the first soldier takes the target on while nobody else is fighting it: the mission's score
+    /// counts it as the player spotted, as I.G.I. 2 counts a squad first spotting the player when no other squad has
+    /// (<c>sub_4C9E00</c>). <b>Not retail</b>: Project I.G.I. keeps no such count; nothing the soldiers do reads it.
+    /// </summary>
+    public Action? Engaged { get; set; }
+
     /// <summary>Adds an attacker, as <c>sub_451080</c>'s tail does.</summary>
     /// <param name="attacker">The attacker.</param>
     /// <exception cref="ArgumentNullException"><paramref name="attacker"/> is <see langword="null"/>.</exception>
@@ -97,8 +104,13 @@ public sealed class AiCombatTarget
             return;
         }
 
+        bool first = _attackers.Count == 0;
         _attackers.Add(attacker);
         _modes.Add(AiAimMode.None);
+        if (first)
+        {
+            Engaged?.Invoke();
+        }
     }
 
     /// <summary>Sets an attacker's aim mode — <c>sub_4511F0</c>.</summary>

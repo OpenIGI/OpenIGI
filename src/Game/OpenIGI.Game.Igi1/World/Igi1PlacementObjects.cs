@@ -13,7 +13,14 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="mission">The mission whose objects these are.</param>
 public sealed class Igi1PlacementObjects(MissionWorld mission) : IPlacementObjects
 {
+    // How many ticks a vehicle's part may go undrawn before its pose history is let go.
+    private const int ForgetAfterTicks = 300;
+
     private readonly MissionWorld _mission = mission ?? throw new ArgumentNullException(nameof(mission));
+
+    // The cut-scene vehicles' parts as the last two ticks posed them: see Between.
+    private readonly TickPoseHistory<WorldPlacement> _vehiclePoses = new(ReferenceEqualityComparer.Instance);
+    private long _vehiclePosesForgotten;
 
     /// <inheritdoc/>
     public bool Claims(WorldPlacement placement)
@@ -141,6 +148,12 @@ public sealed class Igi1PlacementObjects(MissionWorld mission) : IPlacementObjec
 
         if (_mission.Cutscenes?.TryGetRotorDrawState(placement, out rotor) == true)
         {
+            if (smooth)
+            {
+                TickPose drawn = Between(placement, rotor.Position, rotor.BaseOrientation, tickFraction);
+                rotor = rotor with { Position = drawn.Position, BaseOrientation = drawn.Orientation };
+            }
+
             position = rotor.Position;
             hasRotor = true;
             return true;
@@ -149,6 +162,12 @@ public sealed class Igi1PlacementObjects(MissionWorld mission) : IPlacementObjec
         if (_mission.Cutscenes?.TryGetPlacementDrawTransform(
             placement, out Vector3d cinematicPosition, out Matrix3f cinematicOrientation) == true)
         {
+            if (smooth)
+            {
+                TickPose drawn = Between(placement, cinematicPosition, cinematicOrientation, tickFraction);
+                (cinematicPosition, cinematicOrientation) = (drawn.Position, drawn.Orientation);
+            }
+
             position = cinematicPosition;
             orientation = cinematicOrientation;
             return true;
@@ -177,5 +196,23 @@ public sealed class Igi1PlacementObjects(MissionWorld mission) : IPlacementObjec
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Where a vehicle's part is drawn between its last two ticks. The vehicles move once a tick and the eye between ticks, so a
+    /// truck or a helicopter drawn at its tick pose alone stepped at 30 Hz across a gliding picture, and its motion read nothing,
+    /// nothing, then the whole step. Doors and lifts already draw between; a vehicle is the cut-scene runtime's and keeps only
+    /// the tick it is at, so its parts' tick poses are remembered here.
+    /// </summary>
+    private TickPose Between(WorldPlacement placement, Vector3d position, Matrix3f orientation, float tickFraction)
+    {
+        long tick = _mission.Cutscenes?.SimulationTick ?? 0;
+        if (tick - _vehiclePosesForgotten >= ForgetAfterTicks)
+        {
+            _vehiclePoses.Forget(tick - ForgetAfterTicks);
+            _vehiclePosesForgotten = tick;
+        }
+
+        return _vehiclePoses.Present(placement, tick, position, orientation, tickFraction, tick);
     }
 }

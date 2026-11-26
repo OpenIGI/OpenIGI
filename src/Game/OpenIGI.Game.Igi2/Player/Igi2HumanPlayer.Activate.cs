@@ -64,6 +64,16 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Gets the posture a timed action was started from, which it returns to, <c>tActivateContext.ePrevStance</c>.</summary>
     public Igi2HumanPose PreviousStance { get; private set; }
 
+    // The sphere whatever the player can activate must meet: the length of its root bone's translation plus its model's radius.
+    private float ActivateRadius
+    {
+        get
+        {
+            Vector3f r = RootTranslation;
+            return (Fpu.Sqrt((((Fpu)r.X * r.X) + ((Fpu)r.Y * r.Y)) + ((Fpu)r.Z * r.Z)) + ModelRadius).F;
+        }
+    }
+
     /// <summary>
     /// Looks for something to activate, <c>Human_UpdateActivate</c> (<c>igi2 0x500D10</c>), once a tick in the update after the
     /// death check.
@@ -86,9 +96,7 @@ public sealed partial class Igi2HumanPlayer
             {
                 Activator = this,
             };
-            Vector3f r = RootTranslation;
-            float radius = (Fpu.Sqrt((((Fpu)r.X * r.X) + ((Fpu)r.Y * r.Y)) + ((Fpu)r.Z * r.Z)) + ModelRadius).F;
-            foreach (IIgi2Activatable candidate in Surroundings.FindActivatables(Position, radius))
+            foreach (IIgi2Activatable candidate in Surroundings.FindActivatables(Position, ActivateRadius))
             {
                 candidate.EvaluateActivate(context);
             }
@@ -133,8 +141,9 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>
     /// Starts activating, <c>HumanPlayer_InitActivate</c> (<c>igi2 0x4A06A0</c>): a switch is pressed at once and the activation
-    /// ends there; an unlocked door is opened or closed, on the tick the activate key goes down, and the activation ends. What
-    /// else a human activates is not ported; retail leaves an activation of an unknown kind running.
+    /// ends there; an unlocked door is opened or closed, on the tick the activate key goes down, and the activation ends. Every kind
+    /// the campaign's objects answer is handled below; the one left, a multiplayer <c>PlaceExplosiveTBA</c> (kind 12), no
+    /// single-player level places, and retail leaves an activation of an unknown kind running.
     /// </summary>
     /// <remarks>
     /// A locked door that can be picked starts the player picking it (<see cref="Igi2PlayerState.ActivateDoor"/>); one that

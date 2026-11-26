@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
@@ -21,7 +22,7 @@ public sealed class MatchHudTests
             new ScoreboardLine(2, "Kim", TeamRoster.Bad, 0, 1, 2, false, Entity: 12),
         ]);
 
-    private static MatchState Live(ModeReport report) => new(GameModes.SearchAndDestroy, MatchPhase.Live, 3, -1, 90, string.Empty, report);
+    private static MatchState Live(ModeReport report) => new(MatchModes.SearchAndDestroy, MatchPhase.Live, 3, -1, 90, string.Empty, report);
 
     [Fact]
     public void A_report_reads_back_as_it_was_written()
@@ -212,7 +213,7 @@ public sealed class MatchHudTests
     [Fact]
     public void A_decided_round_says_who_won_it_and_why_from_each_side()
     {
-        MatchState over = new(GameModes.SearchAndDestroy, MatchPhase.RoundOver, 3, TeamRoster.Bad, 5, "Conspiracy", new ModeReport { Attackers = TeamRoster.Good, Reason = RoundEnd.Defused });
+        MatchState over = new(MatchModes.SearchAndDestroy, MatchPhase.RoundOver, 3, TeamRoster.Bad, 5, "Conspiracy", new ModeReport { Attackers = TeamRoster.Good, Reason = RoundEnd.Defused });
 
         ResultCard won = MatchHud.Of(over, 0, Board(), localEntity: 11)!.Result!;
         ResultCard lost = MatchHud.Of(over, 0, Board(), localEntity: 10)!.Result!;
@@ -224,7 +225,7 @@ public sealed class MatchHudTests
     [Fact]
     public void A_free_for_all_shows_the_players_place_and_the_one_to_beat()
     {
-        MatchState state = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 300, string.Empty, new ModeReport { Target = 30 });
+        MatchState state = new(MatchModes.FreeForAll, MatchPhase.Live, 1, -1, 300, string.Empty, new ModeReport { Target = 30 });
 
         MatchHud hud = MatchHud.Of(state, 0, Board(), localEntity: 11)!;
 
@@ -235,6 +236,26 @@ public sealed class MatchHudTests
     [Fact]
     public void Co_op_has_no_match_hud()
     {
-        Assert.Null(MatchHud.Of(new MatchState(GameModes.Coop, MatchPhase.Live, 1, -1, null), 0, Board(), 10));
+        Assert.Null(MatchHud.Of(new MatchState(MatchModes.Coop, MatchPhase.Live, 1, -1, null), 0, Board(), 10));
+    }
+
+    [Fact]
+    public void A_players_own_match_is_summed_up_by_kills_then_fewest_deaths_the_first_its_most_valuable()
+    {
+        ScoreboardLine[] lines =
+        [
+            new(0, "Ana", 0, 0, 14, 6, true),
+            new(1, "Bo", 1, 0, 14, 9, true),
+            new(2, "Cy", 1, 0, 3, 2, true),
+        ];
+        MatchSummary first = MatchSummary.Of(lines[0], lines);
+        Assert.Equal(1, first.Place);
+        Assert.True(first.Best);
+        Assert.Equal("2.33", first.Ratio);
+        Assert.Equal(2, MatchSummary.Of(lines[1], lines).Place);
+        MatchSummary last = MatchSummary.Of(lines[2], lines);
+        Assert.Equal(3, last.Place);
+        Assert.False(last.Best);
+        Assert.Equal("5.00", MatchSummary.Of(new ScoreboardLine(3, "Dee", 0, 0, 5, 0, true), lines).Ratio);
     }
 }

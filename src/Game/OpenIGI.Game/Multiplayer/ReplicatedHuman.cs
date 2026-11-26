@@ -37,6 +37,22 @@ public enum ReplicatedHumanCondition : byte
     UpperBodyOnce = 128,
 }
 
+/// <summary>The entity ids a session's snapshots give their humans, the same for every title.</summary>
+public static class ReplicatedEntity
+{
+    /// <summary>The entity id of the level's own player, a listen server's host.</summary>
+    public const int Host = 0;
+
+    /// <summary>The entity id the level's soldiers are numbered past: a soldier's own id (each title's) plus this.</summary>
+    /// <remarks>Players are their slot plus one, far below it.</remarks>
+    public const int SoldierBase = 100000;
+
+    /// <summary>Gets whether an entity is one of the level's soldiers, not a player.</summary>
+    /// <param name="entity">The entity.</param>
+    /// <returns><see langword="true"/> for a soldier: a soldier's own id is below <see cref="SoldierBase"/> too.</returns>
+    public static bool IsSoldier(int entity) => entity >= SoldierBase && entity < SoldierBase * 2;
+}
+
 /// <summary>One human as a snapshot carries it: everything a client needs to draw another player and hit-test it.</summary>
 /// <remarks>
 /// <para>
@@ -71,6 +87,8 @@ public enum ReplicatedHumanCondition : byte
 /// The lift it rides, its index in the snapshot's lifts plus one, or 0: a client draws it on its own copy of that car, which
 /// stands ahead of the moment the human is drawn at.
 /// </param>
+/// <param name="Lean">Modern aim's lean with the weapon up, hundredths, minus a hundred (full left) to a hundred (full right).</param>
+/// <param name="Aim">How far its weapon is up on its sights, hundredths, eased.</param>
 public readonly record struct ReplicatedHuman(
     int Id,
     Int3 Position,
@@ -87,7 +105,9 @@ public readonly record struct ReplicatedHuman(
     byte ActionSequence = 0,
     ushort ClipTime = 0,
     ushort Source = 0,
-    byte Platform = 0);
+    byte Platform = 0,
+    sbyte Lean = 0,
+    byte Aim = 0);
 
 /// <summary>A point in whole world units.</summary>
 /// <param name="X">X.</param>

@@ -13,6 +13,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The remaster's own mission ranks, which a mission's own ranks.json in a mod or the overrides replaces. -->
+    <EmbeddedResource Include="Resources\ranks.igi1.json" LogicalName="OpenIGI.Game.Igi1.ranks.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Emits the [ScriptParam] binders for this title's task classes. Build-time only: nothing of it ships. -->
     <ProjectReference Include="..\..\Core\OpenIGI.Generators\OpenIGI.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

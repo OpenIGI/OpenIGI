@@ -19,6 +19,11 @@ public readonly record struct Igi2AttachedPart(string Model, Vector3f Position, 
 /// parent · bone · relative).
 /// </para>
 /// <para>
+/// One on no bone (<c>-1</c>) hangs on the body itself, at its relative placement in the body's frame
+/// (<c>BoneDynCubeObj_AttachHandler</c> leaves the bone out, and <c>ModelObj_UpdateAttachment</c> then places it under the parent
+/// alone): the door and hinges a laser cut drops, which their own key tracks move.
+/// </para>
+/// <para>
 /// One named <c>weapon</c> draws the weapon in hand's <c>Fixed Model</c>, as <c>WeaponMagicObj_GetModelName</c> (<c>0x4733B0</c>)
 /// finds it through the human that owns the body, and nothing when nothing is held; any other draws the model it names.
 /// </para>
@@ -52,7 +57,14 @@ public static class Igi2AttachedParts
             }
 
             (int bone, Vector3f position, Matrix3f orientation) = Resolve(clip, i, time);
-            if ((uint)bone >= (uint)pose.BoneCount)
+            if (bone < 0)
+            {
+                // On no bone it hangs on the body itself (BoneDynCubeObj_AttachHandler leaves the bone out): the door a cut drops.
+                yield return new Igi2AttachedPart(model, position, orientation);
+                continue;
+            }
+
+            if (bone >= pose.BoneCount)
             {
                 continue;
             }
@@ -180,6 +192,64 @@ public static class Igi2AttachedParts
             }
         }
 
+        if (attached.Keys.Count > 0 && Keyed(attached.Keys, time) is { } keyed)
+        {
+            (position, orientation) = keyed;
+        }
+
         return (bone, position, orientation);
+    }
+
+    /// <summary>
+    /// Where an attach object's own key track holds it at a time, <c>rigidmagicobj.c RigidMagicObj_InterpolateHandler</c>, which the
+    /// controller runs after its step for each attach object the clip keys (<c>AnimController_InterpolateHandler</c>), so the keys
+    /// override a re-link's placement while the re-link's bone stands.
+    /// </summary>
+    /// <param name="keys">The track.</param>
+    /// <param name="time">The clip's time.</param>
+    /// <returns>
+    /// The last key's placement once the track has run out; otherwise the keys either side, the orientations slerped and the positions
+    /// lerped by how far between them the time is. <see langword="null"/> before the first key, which the original never meets.
+    /// </returns>
+    private static (Vector3f Position, Matrix3f Orientation)? Keyed(IReadOnlyList<Igi2AttachKey> keys, int time)
+    {
+        int last = -1;
+        for (int i = 0; i < keys.Count && keys[i].Time <= time; i++)
+        {
+            last = i;
+        }
+
+        if (last < 0)
+        {
+            return null;
+        }
+
+        Igi2AttachKey from = keys[last];
+        if (last == keys.Count - 1)
+        {
+            return (from.Translation, KeyOrientation(from.Rotation));
+        }
+
+        Igi2AttachKey to = keys[last + 1];
+        float t = (float)((time - from.Time) / (double)(to.Time - from.Time));
+        Quaternion32 q = Igi2ClipSampler.Slerp(from.Rotation, to.Rotation, t);
+        Vector3f position = new(
+            ((((Fpu)to.Translation.X - from.Translation.X) * t) + from.Translation.X).F,
+            ((((Fpu)to.Translation.Y - from.Translation.Y) * t) + from.Translation.Y).F,
+            ((((Fpu)to.Translation.Z - from.Translation.Z) * t) + from.Translation.Z).F);
+        return (position, KeyOrientation(q));
+    }
+
+    /// <summary>A key's quaternion as the relative orientation the handler writes, row by row, each doubled product summed at 24 bits.</summary>
+    private static Matrix3f KeyOrientation(Quaternion32 q)
+    {
+        Fpu x = q.X, y = q.Y, z = q.Z, w = q.W;
+        Fpu xx = (x * x) + (x * x), xy = (y * x) + (y * x), xz = (z * x) + (z * x), xw = (w * x) + (w * x);
+        Fpu yy = (y * y) + (y * y), yz = (z * y) + (z * y), yw = (w * y) + (w * y);
+        Fpu zz = (z * z) + (z * z), zw = (w * z) + (w * z);
+        return new Matrix3f(
+            (((Fpu)1f - yy) - zz).F, (xy - zw).F, (yw + xz).F,
+            (zw + xy).F, (((Fpu)1f - xx) - zz).F, (yz - xw).F,
+            (xz - yw).F, (yz + xw).F, (((Fpu)1f - xx) - yy).F);
     }
 }

@@ -26,6 +26,34 @@ public abstract partial class Igi2Human
         UpdatePlatformPosition(forcePosition: true, forceOrientation: false);
     }
 
+    /// <summary>
+    /// Moves the body by an offset in the world wherever it stands -- a co-op client's own player put right by its server -- the
+    /// place it keeps on what it rides moved with it. Not retail.
+    /// </summary>
+    /// <param name="offset">How far, in world units.</param>
+    /// <remarks>
+    /// A body on a ladder or a wire is placed from where it stands in the ladder's frame each tick (<see cref="FollowAttachment"/>),
+    /// and one on a moving platform from where it stands on the platform (<see cref="UpdatePlatformMovement"/>): moved in the
+    /// world alone, it was put back on the next tick, and the server put it right again on every snapshot while it climbed or
+    /// rode.
+    /// </remarks>
+    public void Shift(Vector3d offset)
+    {
+        Position += offset;
+        if (AttachParent is { } parent)
+        {
+            // The world's offset turned into the frame of what it rides (the frame's transpose), as FollowAttachment turns it back.
+            IReadOnlyList<float> a = parent.AttachOrientation;
+            double x = (a[0] * offset.X) + (a[3] * offset.Y) + (a[6] * offset.Z);
+            double y = (a[1] * offset.X) + (a[4] * offset.Y) + (a[7] * offset.Z);
+            double z = (a[2] * offset.X) + (a[5] * offset.Y) + (a[8] * offset.Z);
+            AttachPosition += new Vector3d(x, y, z);
+            return;
+        }
+
+        UpdatePlatformPosition(forcePosition: true, forceOrientation: false);
+    }
+
     /// <summary>Lets go of the ground and puts the body at a spot, as a script moves a human (<c>Human_SetGroundTask</c> with none, then <c>Human_PopPosition</c>).</summary>
     /// <param name="position">Where the body stands.</param>
     public void PopPositionDroppingGround(Vector3d position)

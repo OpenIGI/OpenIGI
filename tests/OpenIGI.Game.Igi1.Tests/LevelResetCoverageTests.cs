@@ -37,6 +37,7 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionState.VehiclePhysics)] = "data",
         [nameof(MissionState.Terrain)] = "data",
         [nameof(MissionState.Ground)] = "data",
+        [nameof(MissionState.SectorCull)] = "data: the level's buildings and rooms, decided afresh for every view",
         [nameof(MissionState.LevelRoot)] = "data: an arena keeps every task (pickups keep theirs when taken)",
         [nameof(MissionWorld.AiConfig)] = "data",
         [nameof(MissionWorld.AnimationTriggers)] = "data",
@@ -68,6 +69,7 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionWorld.VehicleMissiles)] = "cleared by Igi1Gameplay.ResetToLevelStart",
         [nameof(MissionWorld.ViewTakeover)] = "cleared by Igi1Gameplay.ResetToLevelStart, with each player's ControlTaken",
         [nameof(MissionWorld.OfferedPrompt)] = "asked for again on every tick the player updates",
+        [nameof(MissionWorld.SceneClock)] = "a single-player mission's time, put back when its level starts (Igi1MissionSystems); a round scores none",
 
         // Held still in an arena, so a round finds them as the last did.
         [nameof(MissionWorld.Cutscenes)] = "held in an arena (CutsceneRuntime.Held)",

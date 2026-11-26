@@ -21,7 +21,7 @@ public static class CombatEffectCVars
     /// what every modern shooter draws anyway.
     /// </para>
     /// </remarks>
-    public static readonly NumericCVar<float> MuzzleFlash = Presets.Define(
+    public static readonly NumericCVar<float> MuzzleFlash = Experience.Define(
         CVar.Float(
             "r_muzzle_flash",
             1f,
@@ -30,9 +30,7 @@ public static class CombatEffectCVars
             CVarOptions.Archive,
             "Muzzle flash brightness. 1 is the original's, 0 removes it."),
         vanilla: "1",
-        enhanced: "0.45",
-        high: "0.45",
-        ultra: "0.45");
+        enhanced: "0.45");
 
     /// <summary>Whether the original's own impact effects are drawn.</summary>
     /// <remarks>
@@ -60,7 +58,7 @@ public static class CombatEffectCVars
     /// brown plume, a body a brief red mist. One is the authored look, two doubles the particle counts,
     /// and vanilla pins zero so a vanilla run shows the original's effects and nothing else.
     /// </remarks>
-    public static readonly NumericCVar<float> ImpactParticles = Presets.Define(
+    public static readonly NumericCVar<float> ImpactParticles = Experience.Define(
         CVar.Float(
             "r_impact_particles",
             1f,
@@ -69,9 +67,7 @@ public static class CombatEffectCVars
             CVarOptions.Archive,
             "Particle bursts where rounds land: sparks, dust and debris by surface. 0 turns them off."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether the marks rounds leave on the world are drawn.</summary>
     /// <remarks>
@@ -94,9 +90,13 @@ public static class CombatEffectCVars
     /// <remarks>
     /// <para>
     /// The bomb always goes off with the LAW rocket's fire, smoke and report, which is what the original would have drawn
-    /// for an explosion of that size. Above nought the remaster's blast is laid over it: <b>1</b> adds the blast light,
-    /// the shockwave, the shake, the dust ring, the embers and the props and walls it shatters for the round's last
-    /// seconds; <b>2</b> adds the raymarched fireball and smoke column and the pall it leaves in the fog.
+    /// for an explosion of that size. Above nought the remaster's blast is laid over it: <b>1</b> adds a third of its fire and
+    /// smoke, the blast light, the shake and the props and walls it shatters for the round's last seconds; <b>2</b> all of its
+    /// fire and smoke and the after-blast that sweeps over the picture as its front passes.
+    /// </para>
+    /// <para>
+    /// The vanilla preset has it all too: the original had no bomb to draw, so there is no look of its own to keep, and the
+    /// after-blast is drawn over the original's own path as well as through the remaster's resolve.
     /// </para>
     /// <para>Presentation only: what the bomb kills and breaks for good is the same at every setting.</para>
     /// </remarks>
@@ -107,8 +107,8 @@ public static class CombatEffectCVars
             0,
             2,
             CVarOptions.Archive,
-            "The search and destroy bomb's blast: 0 the original's rocket fire, 1 adds light, shockwave, shake and debris, 2 the volumetric fireball."),
-        vanilla: "0",
+            "The search and destroy bomb's blast: 0 the original's rocket fire, 1 adds fire, smoke, light, shake and debris, 2 all the fire and smoke and the after-blast sweeping over the picture."),
+        vanilla: "2",
         enhanced: "1",
         high: "2",
         ultra: "2");
@@ -126,11 +126,12 @@ public static class CombatEffectCVars
             1f,
             CVarOptions.Archive,
             "How hard the bomb's blast shakes the view, 0 to 1. The original's own explosion shake is unaffected."),
-        vanilla: "0",
+        vanilla: "1",
         enhanced: "1",
         high: "1",
         ultra: "1");
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

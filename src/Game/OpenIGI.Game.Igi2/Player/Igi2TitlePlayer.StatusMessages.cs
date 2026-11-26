@@ -17,15 +17,40 @@ public sealed partial class Igi2TitlePlayer
     /// Shown by the level flow's clock in a level of I.G.I. 2's own; by the player's where it stands in another game's level,
     /// whose tick also runs the screen it prints on.
     /// </remarks>
-    public void ShowStatusMessage(string key, string sprite = "", string sound = "")
+    public void ShowStatusMessage(string key, string sprite = "", string sound = "") => Say(key, localized: true, sprite, sound);
+
+    /// <summary>Says a line to the player as it is written, not looked up in the language: the remaster's own words.</summary>
+    /// <param name="text">The line.</param>
+    public void ShowStatusText(string text) => Say(text, localized: false, string.Empty, string.Empty);
+
+    /// <summary>
+    /// Says how a save or a load went, as <c>Game_SaveToSlot</c> and <c>Game_LoadFromSlot</c> do (<c>StatusMessage_New</c> with
+    /// <c>Saving complete</c>, <c>Loading complete</c> and their failures, looked up in the language); the remaster's own line as
+    /// it is written.
+    /// </summary>
+    /// <param name="report">How it went.</param>
+    public void TellSaveReport(SaveReport report)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
+        string line = SaveReports.Line(report);
+        if (SaveReports.IsRetailLine(report))
+        {
+            ShowStatusMessage(line);
+        }
+        else
+        {
+            ShowStatusText(line);
+        }
+    }
+
+    private void Say(string text, bool localized, string sprite, string sound)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(text);
         Igi2StatusMessageTask message = new()
         {
-            Text = key,
+            Text = text,
             Sprite = sprite,
             Sound = sound,
-            IsLocalized = true,
+            IsLocalized = localized,
             IsForceSend = true,
             IsSendOnce = true,
             Strings = Strings,

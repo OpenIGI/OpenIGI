@@ -5,8 +5,15 @@
          game's menus and HUD and by the launcher. It draws only through OpenIGI.UI, so it never knows
          whether a sprite batch or a Skia canvas is underneath. -->
     <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <!-- The official servers' stats as the master gives them, which the leaderboard's parts draw. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Releases\OpenIGI.Releases.csproj" />
     <ProjectReference Include="..\..\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\OpenIGI.UI\OpenIGI.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The kit's icons, baked from assets/ui-icons by tools/OpenIGI.Tools.IconAtlas (KitIconAtlas reads it). -->
+    <EmbeddedResource Include="ui-icons.bin" LogicalName="OpenIGI.UI.Kit.ui-icons.bin" />
   </ItemGroup>
 
 </Project>

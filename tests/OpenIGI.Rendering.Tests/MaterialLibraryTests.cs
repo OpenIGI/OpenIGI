@@ -116,6 +116,38 @@ public sealed class MaterialLibraryTests : IDisposable
         Assert.Equal(SurfaceMaterial.Default, library.For("216_01_1_argb8888"));
     }
 
+    /// <summary>
+    /// The shipped library names I.G.I. 2's glazing as glass, so it is drawn as a pane rather than cut at half alpha, and leaves
+    /// out what only looks like it.
+    /// </summary>
+    [Fact]
+    public void TheShippedLibraryNamesIgi2Glazing()
+    {
+        string? directory = AppContext.BaseDirectory;
+        string? path = null;
+        while (directory is not null && path is null)
+        {
+            string candidate = Path.Combine(directory, "apps", "OpenIGI.Composition", "Assets", "materials.json");
+            path = File.Exists(candidate) ? candidate : null;
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        Assert.NotNull(path);
+        MaterialLibrary library = MaterialLibrary.Load(path);
+        foreach (string glass in (string[])["631_12_1_argb8888", "600_09_1_argb8888", "436_14_1argb8888", "glass_argb8888", "412_06_1_argb8888 "])
+        {
+            Assert.True(library.For(glass).Glass, glass);
+            Assert.True(library.For(glass).GlassStains, glass);
+        }
+
+        // Project I.G.I.'s panes paint a reflection, which the reflection pass supplies: glass, and no stains.
+        Assert.True(library.For("418_05_1_argb8888").Glass);
+        Assert.False(library.For("418_05_1_argb8888").GlassStains);
+
+        Assert.False(library.For("230_42_1_argb8888").Glass);
+        Assert.False(library.For("600_09_1").Glass);
+    }
+
     [Fact]
     public void AMissingFileIsNotAnError()
     {

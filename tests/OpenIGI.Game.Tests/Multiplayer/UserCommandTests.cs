@@ -124,34 +124,120 @@ public sealed class UserCommandTests
         Assert.Equal(0, queue.Missed);
     }
 
+    /// <summary>
+    /// A command is run on the tick it is found waiting, and two that came together both are, as Source runs a player's
+    /// (<c>CBasePlayer::PhysicsSimulate</c>); a tick with none runs nothing rather than repeat the last. Given one a tick, two
+    /// that came together left one queued for the rest of the session, and every command after ran a tick late for each.
+    /// </summary>
     [Fact]
-    public void Queue_WaitsForItsBufferAndRunsNothingWhenDryRatherThanRepeat()
+    public void Queue_RunsWhatHasArrivedAndNothingWhenDryRatherThanRepeat()
     {
-        UserCommandBuffer queue = new(Channels) { TargetDepth = 2 };
+        UserCommandBuffer queue = new(Channels);
         float[] frame = new float[Channels];
         queue.Push(Command(1, look: 0.5f, fire: 1));
-        Assert.Equal(0, queue.Due());
-
-        queue.Push(Command(2, look: 0.6f));
-        Assert.Equal(1, queue.Due());
-        Assert.True(queue.TryTake(frame));
         Assert.Equal(1, queue.Due());
         Assert.True(queue.TryTake(frame));
 
-        // Dry: nothing to run, and the client's next command is run when it comes, not skipped over.
+        // Dry: nothing to run, and the client's next commands are run when they come, both of them.
         Assert.Equal(0, queue.Due());
         Assert.Equal(1, queue.Missed);
+        queue.Push(Command(2, look: 0.6f));
         queue.Push(Command(3, look: 0.7f));
-        queue.Push(Command(4, look: 0.8f));
-        Assert.Equal(1, queue.Due());
+        Assert.Equal(2, queue.Due());
+        Assert.True(queue.TryTake(frame));
         Assert.True(queue.TryTake(frame));
         Assert.Equal(3, queue.LastTakenTick);
+        Assert.Equal(0, queue.Buffered);
+    }
+
+    /// <summary>
+    /// A line that brings its commands unevenly -- none this tick, two the next -- has the newest held back a tick, so the ticks
+    /// it brings none still have one to run and the player moves evenly for those watching. Once the line is steady for a while
+    /// the hold is let go, and nothing stays queued.
+    /// </summary>
+    [Fact]
+    public void Queue_HoldsOneBackWhileTheLineIsUnevenAndLetsItGoWhenItSteadies()
+    {
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        int Run(int arriving)
+        {
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            int ran = 0;
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+                ran++;
+            }
+
+            return ran;
+        }
+
+        // Steady: one arrives, one runs, none waits.
+        for (int tick = 0; tick < 120; tick++)
+        {
+            Assert.Equal(1, Run(1));
+        }
+
+        Assert.Equal(0, queue.Held);
+
+        // Uneven: none, then two, over and over. Soon one is held back and every tick runs one.
+        for (int tick = 0; tick < 200; tick++)
+        {
+            Run(tick % 2 == 0 ? 0 : 2);
+        }
+
+        Assert.Equal(1, queue.Held);
+        long dry = queue.Missed;
+        for (int tick = 0; tick < 100; tick++)
+        {
+            Run(tick % 2 == 0 ? 0 : 2);
+        }
+
+        Assert.Equal(dry, queue.Missed);
+
+        // Steady again: after a while the hold is let go and the queue runs empty.
+        for (int tick = 0; tick < 400; tick++)
+        {
+            Run(1);
+        }
+
+        Assert.Equal(0, queue.Held);
+        Assert.Equal(0, queue.Buffered);
+    }
+
+    /// <summary>A stall is no uneven line: a client that sends nothing for a second and then everything has nothing held back for it after.</summary>
+    [Fact]
+    public void Queue_HoldsNothingBackForAStall()
+    {
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        for (int tick = 0; tick < 400; tick++)
+        {
+            int arriving = tick % 100 == 99 ? 31 : tick % 100 >= 69 ? 0 : 1;
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+                // The loop's condition does the work.
+            }
+        }
+
+        Assert.Equal(0, queue.Held);
     }
 
     [Fact]
-    public void Queue_CatchesUpTwoATickWhenTheClientRunsAhead()
+    public void Queue_CatchesUpOnWhatItSavedWhenTheClientRunsAhead()
     {
-        UserCommandBuffer queue = new(Channels) { TargetDepth = 1, MaxDepth = 3 };
+        UserCommandBuffer queue = new(Channels) { MaxDepth = 3 };
 
         // Two ticks with nothing to run: the client's line was held up, and it saved the runs it missed.
         queue.Due();
@@ -161,13 +247,14 @@ public sealed class UserCommandTests
             queue.Push(Command(tick));
         }
 
-        Assert.Equal(2, queue.Due());
+        // Three runs saved -- the two dry ticks' and this one's -- and five waiting: all three are given.
+        Assert.Equal(3, queue.Due());
     }
 
     [Fact]
     public void Queue_DropsARepeatOfACommandAlreadyRun()
     {
-        UserCommandBuffer queue = new(Channels) { TargetDepth = 1 };
+        UserCommandBuffer queue = new(Channels);
         float[] frame = new float[Channels];
         queue.Push(Command(20, look: 1f));
         queue.Due();

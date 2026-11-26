@@ -350,7 +350,7 @@ public sealed partial class Igi2HumanAi
             return 0.0;
         }
 
-        float gamma = (float)Math.Atan2(numerator / denominator, 1.0);
+        float gamma = (float)SimMath.Atan2(numerator / denominator, 1.0);
         if (denominator < 0.0)
         {
             gamma = (float)(numerator <= 0.0 ? gamma - 3.1415927410125732 : gamma + 3.1415927410125732);

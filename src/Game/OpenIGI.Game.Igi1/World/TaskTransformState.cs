@@ -57,6 +57,9 @@ internal sealed class TaskTransformState(Vector3d position, Matrix3f orientation
         if (exchange.IsReading)
         {
             DynamicRevision++;
+
+            // Not stepped in the tick the level is read on: what rides it takes its pose as the level placed it this tick.
+            LastSimulationOrder = int.MinValue;
             SavedBodyMotion = hasBody ? motion : null;
             if (!hasBody)
             {

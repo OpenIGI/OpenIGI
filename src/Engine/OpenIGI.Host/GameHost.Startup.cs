@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
@@ -64,10 +64,13 @@ public sealed partial class GameHost
         // the command already there.
         _lamps.RegisterCommands(state.Console.System);
         RegisterCoopTalk(state.Console.System);
+        RegisterNetProbe(state.Console.System);
         RegisterMpMapShot(state.Console.System);
+        RegisterMapCommands(state.Console.System);
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
+        RegisterThermalCommands(state.Console.System);
         RegisterDemoCommands(state.Console.System);
         RegisterInviteCommand(state.Console.System);
         RegisterPartyCommands(state.Console.System);
@@ -88,6 +91,7 @@ public sealed partial class GameHost
             useSavedSettings: !_options.Lockstep,
             _options.FirstRunPreset,
             _options.LockedPreset);
+        HoldTitleGraphicsPreset();
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.
         _contentLayers.Report(_overrideScan);
@@ -267,7 +271,7 @@ public sealed partial class GameHost
         // What the screen-space GI keeps from one frame to the next.
         state.ScreenGi = new();
 
-        _mission.ShotRandom = new(20000101);
+        _mission.ShotRandom = new(Game.World.MissionState.ShotRandomSeed);
         _scene = null;
         _world = null;
         _terrain = null;
@@ -499,7 +503,9 @@ public sealed partial class GameHost
             // The design's four faces — Barlow, Barlow Condensed in two weights, JetBrains Mono — the same
             // set the launcher draws with, uploaded once and shared by every page of the shell.
             state.ShellTypography = UiFontLibrary.Typography(_device);
-            UiTheme shellTheme = state.ShellTypography.CreateTheme();
+            OpenIGI.UI.Drawing.IconAtlas? icons = UiFontLibrary.Icons(_device);
+            OpenIGI.UI.Kit.KitIcons.Baked = icons;
+            UiTheme shellTheme = state.ShellTypography.CreateTheme(icons);
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
             _shellType = state.ShellTypography;
@@ -552,13 +558,7 @@ public sealed partial class GameHost
                     // bar either way — so the shell is told it is no longer over a mission it was paused on.
                     // Deferred where a sequence covers the load: the menu keeps drawing under the departure
                     // and is put away on the frame the load actually runs.
-                    void LeaveTheMenu()
-                    {
-                        state.Shell?.ClosePauseMenu();
-                        _menuFlow.MenuMode = false;
-                        _menuFlow.PauseMenu = false;
-                        ApplyGameplayMotionBlur();
-                    }
+                    void LeaveTheMenu() => LeaveMenuForMission(state);
 
                     // The menu has been drawing this very level for as long as the player has been
                     // reading the briefing, built on a worker and complete. When it is the mission they
@@ -573,7 +573,7 @@ public sealed partial class GameHost
                     // have them.
                     bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var sessionMode }
                         && Game.Multiplayer.Modes.ArenaLevel.IsVersus(sessionMode);
-                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep && !arena)
+                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && (!_options.Lockstep || PromotesBackdropUnderLockstep) && !arena)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
 
@@ -731,6 +731,8 @@ public sealed partial class GameHost
                     {
                         HostConfiguration.Save(_configuration, _logger);
                     }
+
+                    ProfileSaved();
                 },
                 captureThumbnail: (out captureWidth, out captureHeight) =>
                 {
@@ -761,13 +763,13 @@ public sealed partial class GameHost
                     .. Configuration.DefaultBinds.Listed.Select(listed => new CommandKey(
                         listed.Label,
                         listed.Statement,
-                        DevTools.BindKeyNames.TryParse(Configuration.DefaultBinds.KeyOf(state.Console.System.Binds, listed.Statement), out Input.KeyCode bound)
+                        Input.BindKeyNames.TryParse(Configuration.DefaultBinds.KeyOf(state.Console.System.Binds, listed.Statement), out Input.KeyCode bound)
                             ? bound
                             : Input.KeyCode.None)),
                 ],
                 bindCommandKey: (statement, key) =>
                 {
-                    if (DevTools.BindKeyNames.NameOf(key) is { Length: > 0 } name)
+                    if (Input.BindKeyNames.NameOf(key) is { Length: > 0 } name)
                     {
                         Configuration.DefaultBinds.Rebind(state.Console.System, statement, name);
                     }
@@ -776,7 +778,12 @@ public sealed partial class GameHost
                 playedMods: () => _titleRuntime.Mods,
                 coop: _coop,
                 party: _coop is null ? null : new PartyPanel(this),
-                missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(_device)).Get(_titleRuntime.Title.Id, mission),
+                account: AccountPanelFor(),
+                maps: OperatingSystem.IsBrowser() ? null : new ShellMaps(this),
+                missionPicture: mission => (_missionPictures ??= new Menu.MissionPictures(MenuPictures)).Get(_titleRuntime.Title.Id, mission),
+                bestScore: BestScore,
+                leaderboard: LeaderboardSourceFor(),
+                replays: new ShellReplays(this, state),
                 touchScreen: () => _window.Input.Touch.InUse,
                 editTouchLayout: () =>
                 {
@@ -804,7 +811,19 @@ public sealed partial class GameHost
                 _logger.Warning("Menu", $"-shelltab '{openOn}' is not a section; opening on the main menu.");
             }
 
-            if (_options.StartMission > 0)
+            if (_options.PlayReplayPath is { } replayPath)
+            {
+                // Straight into a replay, its mission brought up as it was recorded.
+                ResumeConditions();
+                StartReplayFrom(replayPath, race: false);
+            }
+            else if (_options.RacePath is { } racePath)
+            {
+                // Straight into a race against a replay's ghost, its mission brought up as the run was played.
+                ResumeConditions();
+                StartReplayFrom(racePath, race: true);
+            }
+            else if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.
                 // Once its files can be read: on the desktop that is now, in a browser it is when the page

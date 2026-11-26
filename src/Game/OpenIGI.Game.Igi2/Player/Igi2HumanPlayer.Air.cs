@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -21,6 +22,17 @@ public sealed partial class Igi2HumanPlayer
     // State 36 -- InitStateJump 0x4ABA60, RunStateJump 0x4ABCB0, ExitStateJump 0x4ABC70.
     private void EnterJump()
     {
+        // On Project I.G.I.'s body the jump is the body's, already in the air: the state only plays it.
+        if (StandsOnIgi1Feet)
+        {
+            Animation.PlayState(
+                Pose == Igi2HumanPose.Crouching ? Igi2PlayerState.CrouchJumpAnimation : Igi2PlayerState.Jump, 0, StateBlendSeconds);
+            AimJumpPrecision(Pose == Igi2HumanPose.Crouching);
+            Surroundings.PlaySound(PlayerBody.JumpSoundName);
+            Locomotion.Current = (_, _) => RunJump();
+            return;
+        }
+
         // There is no jumping off a lift: the jump ends before it starts.
         if (Surroundings.IsOnElevator)
         {
@@ -34,7 +46,7 @@ public sealed partial class Igi2HumanPlayer
         Surroundings.PlaySound("jump_1");
 
         Vector3f carried = AccumulatedSpeed;
-        Speed = new Vector3f(carried.X, carried.Y, ((Fpu)General.UpwardJumpSpeed + carried.Z).F);
+        Speed = new Vector3f(carried.X, carried.Y, ((Fpu)(General.UpwardJumpSpeed * JumpScale) + carried.Z).F);
         Signal &= ~Igi2PlayerSignal.Grounded;
         LeaveGround();
         GroundTolerance = 0f;
@@ -189,6 +201,12 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     private void ControlInAir()
     {
+        // Project I.G.I.'s body steers and drops itself, and lands itself in the tick it meets the ground (MoveOnIgi1Feet).
+        if (StandsOnIgi1Feet)
+        {
+            return;
+        }
+
         Fpu vertical = (Fpu)Speed.Z - GravityPerTick;
 
         float control = General.InAirControlSpeed;
@@ -263,8 +281,14 @@ public sealed partial class Igi2HumanPlayer
         }
 
         // Units per tick to metres per second.
-        Fpu metresPerSecond = impact * (1f / Igi2HumanPlayerGeneral.UnitsPerMetre) * Igi2HumanPlayerGeneral.TicksPerSecond;
+        LandAt(impact * (1f / Igi2HumanPlayerGeneral.UnitsPerMetre) * Igi2HumanPlayerGeneral.TicksPerSecond);
+    }
 
+    /// <summary>A landing at a speed: the view kick it gives, the damage past the safe speed, and the noise the AI hears.</summary>
+    /// <param name="metresPerSecond">How fast the player met the ground.</param>
+    /// <param name="viewKick">The dip another game's body measured for it, or <see langword="null"/> for the sequel's own.</param>
+    private void LandAt(Fpu metresPerSecond, float? viewKick = null)
+    {
         Fpu kick = (Fpu)0.125f * metresPerSecond;
         if (kick.Value < 0.0)
         {
@@ -275,7 +299,7 @@ public sealed partial class Igi2HumanPlayer
             kick = 1f;
         }
 
-        View.ImpactOffset = (kick * -1024.0).F;
+        View.ImpactOffset = viewKick ?? (kick * -1024.0).F;
         View.ImpactAngle = 0f;
 
         Fpu excess = metresPerSecond - SafeLandingSpeed;

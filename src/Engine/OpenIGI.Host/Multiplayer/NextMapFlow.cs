@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 
 namespace OpenIGI.Host.Multiplayer;
@@ -51,7 +52,7 @@ public sealed class NextMapFlow(HostedSession session, Func<IReadOnlyList<MapCho
         ArgumentNullException.ThrowIfNull(random);
         string NameOf(int id) => missions.FirstOrDefault(m => m.Id == id).Name ?? string.Empty;
         List<MapChoice> choices = [new MapChoice(mission, mode, NameOf(mission), Again: true)];
-        if (missions.Count < 2 || !GameModes.IsVersus(mode))
+        if (missions.Count < 2 || !MatchModes.IsVersus(mode))
         {
             return choices;
         }
@@ -74,5 +75,5 @@ public sealed class NextMapFlow(HostedSession session, Func<IReadOnlyList<MapCho
     }
 
     // The modes a listen host's vote moves between.
-    private static readonly string[] VersusModes = [GameModes.TeamDeathmatch, GameModes.FreeForAll, GameModes.Elimination, GameModes.SearchAndDestroy];
+    private static readonly string[] VersusModes = [MatchModes.TeamDeathmatch, MatchModes.FreeForAll, MatchModes.Elimination, MatchModes.SearchAndDestroy];
 }

@@ -8,6 +8,8 @@ public sealed partial class GameHost
     /// <summary>Reads the developer keys: captures, overrides, the debug view and the view toggle.</summary>
     private void HandleDeveloperKeys(FrameLoopState state)
     {
+        HandleAdsTuningKeys();
+
         // The camera is advanced on every pass of the loop, not only on the passes that render. The
         // pump clears the mouse's motion accumulator, and the loop pumps several times per rendered
         // frame — so consuming it only on a render threw most of the mouse movement away and made the
@@ -59,7 +61,8 @@ public sealed partial class GameHost
         // F1 swaps between flying and walking. The player takes the camera's position when it is
         // switched on, so the swap happens where you were looking. Not in a multiplayer session, host or joiner: flying is
         // a cheat there like any other (and the key says "Go, go, go!" to the others instead).
-        if (TickObserver is null && _window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && TitlePlayer is not null)
+        // Nor under a replay being watched: walking stops the player's ticks, and the free camera there is the viewer's own.
+        if (TickObserver is null && !Watching && _window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && TitlePlayer is not null)
         {
             ToggleTitlePlayer();
         }

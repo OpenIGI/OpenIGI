@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
 using OpenIGI.Net.Rooms;
@@ -11,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
+public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionMissionScore, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -28,7 +29,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     private readonly string _titleId;
     private readonly IOpenIgiLogger _logger;
     private readonly OpenIGI.Net.Identity.IPlayerIdentity? _identity;
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly SessionClock _clock = new();
     private IReplicatedClientWorld? _world;
     private NetClient? _netClient;
     private ClientSession? _session;
@@ -71,12 +72,24 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     {
         _identity = identity;
         _reopen = reopen;
+
+        // The soldiers are the server's: their deaths by this player's hand are counted as the server tells of them.
+        _combat.CountsSoldierKills = true;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _server = server;
         _request = request ?? throw new ArgumentNullException(nameof(request));
         _titleId = titleId ?? throw new ArgumentNullException(nameof(titleId));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// Sets what tells the session's time, in seconds, in the wall clock's place: a run stepped frame by frame keeps its frames'
+    /// time, as the line it is given does, so a round trip measures what the line was told to take.
+    /// </summary>
+    public Func<double>? TimeSource { set => _clock.Source = value; }
+
+    /// <summary>Gets the name this client asked to play under.</summary>
+    public string PlayerName => _request.PlayerName;
 
     /// <inheritdoc/>
     public string? RoomCode => Room?.Code;
@@ -93,6 +106,9 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
         Game.Multiplayer.Modes.PlayerSides.Revivable(Mode) && _session is { EntityId: { } self, Latest: { } latest } && latest.TryGet(self, out ReplicatedHuman own) && (own.Flags & ReplicatedHumanCondition.Alive) == 0
             ? own.Health / 255f
             : null;
+
+    /// <inheritdoc/>
+    public float OwnShield => _session is { EntityId: { } self } session ? (float)session.ShieldLeft(self, _clock.Elapsed.TotalSeconds) : 0f;
 
     /// <summary>Gets the room joined through, when the session is one.</summary>
     public RoomTransport? Room => _transport as RoomTransport;
@@ -118,6 +134,9 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
 
     /// <inheritdoc/>
     public int? LocalEntity => _session?.EntityId;
+
+    /// <inheritdoc/>
+    public Game.Scoring.SquadScore? TakeMissionScore() => _session?.TakeMissionScore();
 
     /// <inheritdoc/>
     public string Title => _session?.Map is { Length: > 0 } map ? $"{Where}  ·  {HostedSession.MapName(map)}" : Where;
@@ -194,9 +213,12 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
             $"{(session.SnapshotBytesReceived - _snapshotBytesAt) / seconds / 1024:F1} KiB/s unreadable {session.DroppedSnapshots - _droppedSnapshotsAt} | " +
             $"newest snapshot {age} ticks old, commands ahead {ahead}, server queue {session.CommandLead}, packets held {(session.CommandPacketsHeld - _heldAt) / seconds:F1}/s | " +
             $"corrections {session.Reconciler.Corrections - _correctionsAt} last error {session.Reconciler.LastError:F0} | " +
+            $"drawn {session.Clock?.AppliedInterpolationDelay * 1000:F0} ms behind, carried past the newest snapshot {session.Remote.Extrapolations - _extrapolationsAt} of {session.Remote.Samples - _samplesAt} | " +
             $"{(connection is null ? "-" : NetDiagnostics.Route(_transport, connection.RemoteAddress))}"));
 
         _diagnosedAt = now;
+        _extrapolationsAt = session.Remote.Extrapolations;
+        _samplesAt = session.Remote.Samples;
         _ticksSinceDiagnosed = 0;
         _pumpsSinceDiagnosed = 0;
         _partsAt = session.SnapshotPartsReceived;
@@ -331,6 +353,17 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     // A map to load again because the files came after it was loaded, until taken.
     private string? _reloadAfterSync;
 
+    // Whether the server's shared files went in after the game's tables were read, until taken.
+    private bool _tablesAfterSync;
+
+    /// <inheritdoc/>
+    public bool TakeTablesReload()
+    {
+        bool reload = _tablesAfterSync;
+        _tablesAfterSync = false;
+        return reload;
+    }
+
     // Whether a level has been up here, while there was no session yet.
     private bool _levelSeen;
 
@@ -447,7 +480,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     private string? _levelMode;
 
     /// <inheritdoc/>
-    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+    public IReadOnlyList<Game.Multiplayer.Modes.KillFeedEntry> KillFeed => _session?.Feed.Entries(_clock.Elapsed.TotalSeconds, LocalEntity ?? -1) ?? [];
 
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchBanner? Banner =>
@@ -458,9 +491,11 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     {
         bool before = FilesReady;
         SyncBeforeJoin(_clock.Elapsed.TotalSeconds);
-        if (!before && _synced && _levelSeen && Files is { } files && files.TakeChanges().Changed && files.Map is { } map)
+        // The command line's level came up before the files were in (the menu's waits for them, and reads the tables itself):
+        // loaded again from the server's, the tables a game reads once read again first when the shared ones went in.
+        if (!before && _synced && _levelSeen && Files is { } files && files.Map is { } map && files.TakeChanges() is { Changed: true } changes)
         {
-            // The command line's level came up before the files were in: loaded again, from the server's.
+            _tablesAfterSync = changes.Shared;
             _reloadAfterSync = map;
         }
 
@@ -500,7 +535,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
             ? Game.Multiplayer.Modes.Spectating.Pick(
                 session.Scoreboard,
                 own,
-                Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+                MatchModes.HasTeams(Mode),
                 entity => latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
                     ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
                     : null,
@@ -548,6 +583,10 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     private double _graphCorrections;
     private long _graphSnapshotsAt;
     private long _graphCorrectionsAt;
+
+    // The interpolator's counts as last told in the log.
+    private long _extrapolationsAt;
+    private long _samplesAt;
 
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view)
@@ -670,7 +709,7 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
         }
 
         _disposed = true;
-        _syncNet?.Disconnect("client closed", 0);
+        EndFetch();
         Files?.Clear();
         if (_netClient is { } client)
         {

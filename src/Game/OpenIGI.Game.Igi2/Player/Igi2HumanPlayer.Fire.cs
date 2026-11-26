@@ -79,6 +79,10 @@ public sealed partial class Igi2HumanPlayer
     {
         Matrix3f v = View.Orientation;
         float[] o = [v.M11, v.M12, v.M13, v.M21, v.M22, v.M23, v.M31, v.M32, v.M33];
+
+        // Over the shoulder the crosshair is the camera's, not the eye's: the frame is turned onto what it is over first, and the
+        // scatter opens about that. Not retail; nothing is turned in first person.
+        ConvergeOnCrosshair(o);
         if (!addInaccuracy || PerfectShotTimer >= PerfectShotTicks)
         {
             return new Igi2FireFrame(View.Position, o);
@@ -108,10 +112,13 @@ public sealed partial class Igi2HumanPlayer
     /// children).
     /// </summary>
     /// <returns>The number.</returns>
-    /// <remarks>Seen from behind, or with the camera elsewhere, the weapon is the one on the body (<see cref="Igi2Human.BodyWeaponObjectCount"/>).</remarks>
+    /// <remarks>
+    /// Seen from behind, or with the camera elsewhere, the weapon is the one on the body (<see cref="Igi2Human.BodyWeaponObjectCount"/>);
+    /// so it is while the remaster's camera watches the body over the shoulder (<see cref="IsOverShoulder"/>).
+    /// </remarks>
     public override int WeaponObjectCount()
     {
-        if (IsThirdPerson || CameraMode != 1)
+        if (IsThirdPerson || IsOverShoulder || CameraMode != 1)
         {
             return BodyWeaponObjectCount();
         }
@@ -145,6 +152,11 @@ public sealed partial class Igi2HumanPlayer
         float gamma = firing.GammaKickback;
         CrossHairDamping = firing.CrossHairDamping;
         ActualWeaponPrecision = ((((Fpu)alpha + gamma) * KickbackSpread) + ActualWeaponPrecision).F;
+        if (IsRecoilless)
+        {
+            return;
+        }
+
         View.PitchOffset = (((Fpu)alpha * DegreesToRadians) + View.PitchOffset).F;
         View.YawOffset = (((Fpu)gamma * DegreesToRadians) + View.YawOffset).F;
         View.OffsetDamping = firing.KickbackDamping;
@@ -217,7 +229,7 @@ public sealed partial class Igi2HumanPlayer
             else if (inventory.Status == Igi2WeaponStatus.Empty)
             {
                 IsFirstFire = false;
-                if (IsUnlimitedAmmo)
+                if (IsUnlimitedAmmo || ReloadsOnEmpty(inventory))
                 {
                     firing.Reload();
                     SendHandleWeaponAiEvent();

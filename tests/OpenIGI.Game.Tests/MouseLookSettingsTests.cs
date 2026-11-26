@@ -47,6 +47,18 @@ public sealed class MouseLookSettingsTests
     }
 
     [Fact]
+    public void ATypedTurnDistanceIsTheSliderPositionThatTakesIt()
+    {
+        double centimetres = MouseLookSettings.FromSensitivity(0.4f, invertPitch: false).TurnDistanceCentimetres();
+        Assert.Equal(0.4f, MouseLookSettings.SensitivityForTurnDistance(centimetres)!.Value, 4);
+
+        // Further than the bottom of the slider turns, or nearer than its top, is held to that end; nothing is no distance.
+        Assert.Equal(0f, MouseLookSettings.SensitivityForTurnDistance(100000.0)!.Value, 6);
+        Assert.Equal(1f, MouseLookSettings.SensitivityForTurnDistance(0.01)!.Value, 6);
+        Assert.Null(MouseLookSettings.SensitivityForTurnDistance(0.0));
+    }
+
+    [Fact]
     public void EqualSliderStepsAreEqualRatios()
     {
         // Geometric, not linear: a linear slider spends most of its travel on rates nobody can aim with

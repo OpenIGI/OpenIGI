@@ -286,6 +286,44 @@ public sealed partial class MissionDocument
         return new QscCall(DeclareFunction, arguments);
     }
 
+    /// <summary>
+    /// Where a task stands in the level the document loads as: each step the index under the level (a root task's place among the
+    /// document's root tasks, which <c>Task_New</c> appends to the level in order) or under its parent, with the type found there.
+    /// </summary>
+    /// <param name="task">A task of this document.</param>
+    /// <returns>The steps, from the level down.</returns>
+    /// <exception cref="ArgumentException">The task is not in this document.</exception>
+    public IReadOnlyList<(int Index, string Type)> LevelPath(MissionTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        List<(int, string)> path = [];
+        MissionTask at = task;
+        while (at.Parent is { } parent)
+        {
+            path.Add((parent.Children.IndexOf(at), at.TypeName));
+            at = parent;
+        }
+
+        int statement = Locate(at).Index;
+        path.Add((Statements.Take(statement).Count(static s => s is MissionTaskStatement), at.TypeName));
+        path.Reverse();
+        return path;
+    }
+
+    /// <summary>
+    /// Compiles a task's own <c>Task_New</c> call, without its children: what a running level is given the task's values with, read
+    /// by the game exactly as a load of the document reads them.
+    /// </summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The compiled script.</returns>
+    public byte[] CompileTaskValues(MissionTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        QscCall call = WriteTask(task);
+        QscCall alone = new(call.Name, [.. call.Arguments.Take(call.Arguments.Count - task.Children.Count)]);
+        return QscCompiler.Compile(new QscScript([new QscExpressionStatement(alone)], Version));
+    }
+
     private static QscCall WriteTask(MissionTask task)
     {
         List<QscExpression> arguments = [task.IdExpression, new QscStringLiteral(task.TypeName), new QscStringLiteral(task.Label)];

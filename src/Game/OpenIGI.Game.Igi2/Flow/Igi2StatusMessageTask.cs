@@ -28,7 +28,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// clock restarts each time its duration is out, as retail's does.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2StatusMessageTask : Igi2Task
+public sealed partial class Igi2StatusMessageTask : Igi2Task, World.IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StatusMessage";
@@ -144,7 +144,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
-    /// <summary>Gets or sets where the listener is, which its sound plays at.</summary>
+    /// <summary>Gets or sets where the listener is: its sound is said there, flat, and a set of sounds follows it.</summary>
     public Func<Vector3d>? Listener { get; set; }
 
     /// <summary>Gets or sets the level's task with an id, a human standing for its task; what <see cref="MorphTaskIds"/> name.</summary>
@@ -184,7 +184,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;
-        StatusMessageStep step = Step(_flow?.Tick ?? 0, () =>
+        StatusMessageStep step = Step(_flow?.Tick ?? 0, level.MirrorsTaskState ? SentByServer : () =>
         {
             _send ??= Igi2LevelExpressions.Create(SendScript, Name, level.Natives);
             return !_send.IsEmpty && level.Evaluate(_send) != 0.0;
@@ -198,6 +198,35 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
             level.RunChildren(this);
         }
     }
+
+    // On a co-op client: whether the server sent the line since this client last showed it. Its own send script weighed this
+    // client's world alone, and the lines shown on the two screens differed. A line the server had sent before this client
+    // joined is not shown again; one whose isSendt a script set back is shown again when the server sends it anew.
+    private bool SentByServer()
+    {
+        if (!_replicaPrimed)
+        {
+            _replicaPrimed = true;
+            _replicaShown = _isSent != 0;
+        }
+
+        if (_isSent == 0)
+        {
+            _replicaShown = false;
+            return false;
+        }
+
+        if (_replicaShown)
+        {
+            return false;
+        }
+
+        _replicaShown = true;
+        return true;
+    }
+
+    private bool _replicaPrimed;
+    private bool _replicaShown;
 
     /// <summary>A tick of the line itself, <c>StatusMessage_RunHandler</c>'s own part, on whichever clock it is shown by.</summary>
     /// <param name="now">The tick it is shown at: the level flow's, or the player's own where there is no level flow.</param>
@@ -385,8 +414,9 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
             return;
         }
 
-        Vector3d at = Listener?.Invoke() ?? Position;
-        if (sounds.New(Sound, at, Listener) is { } sound)
+        // Said at the microphone (StatusMessage_PlaySound sets it relative to it): heard flat, however the camera moves.
+        Func<Vector3d> microphone = Listener ?? (() => Position);
+        if (sounds.AtMicrophone(Sound, microphone) is { } sound)
         {
             _sound = sound;
 
@@ -429,6 +459,21 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     {
         _sound?.Delete();
         _sound = null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>StatusMessage_RemoveHandler</c>: its sound is deleted and its line taken off the screen, so a line
+    /// whose part of a cutscene its container has closed does not hang on over the next.
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        KillSound();
+        if (_slot != -1)
+        {
+            Screen?.Remove(_slot);
+            _slot = -1;
+        }
     }
 }
 

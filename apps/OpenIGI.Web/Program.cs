@@ -79,7 +79,14 @@ public static partial class Program
         {
             LockedPreset = GraphicsPreset.Vanilla,
         };
+        // The page says which game it put in place (-title, from its game switch); there is nothing to probe.
         IGameTitleRuntime runtime = TitleCatalog.Default;
+        if (options.Title is { } requested)
+        {
+            runtime = TitleCatalog.TryResolve(requested, out IGameTitleRuntime? chosen)
+                ? chosen
+                : throw new ArgumentException($"'{requested}' is not a game this build runs. -title {TitleCatalog.KnownTitleIds}");
+        }
 
         VirtualFileSystem fileSystem = new(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(GameRoot));
@@ -125,6 +132,9 @@ public static partial class Program
         _session = RoomSessions.Start(session, runtime.Title.Id, options.StartMission, Version(), new BrowserRtcPeerFactory(), logger);
         _game.TickObserver = _session as IHostTickObserver;
         _game.RoomPeers = new BrowserRtcPeerFactory();
+        _game.OpenLink = WebLinks.Open;
+        _game.OpenTitleElsewhere = WebLinks.OpenGame;
+        _game.DiscordInstance = session.Instance;
         _game.Start();
     }
 
@@ -150,6 +160,11 @@ public static partial class Program
         _session = null;
         return false;
     }
+
+    /// <summary>Whether the game is in a multiplayer session, or on its way into a room: one the page goes on stepping while its tab is hidden.</summary>
+    /// <returns><see langword="true"/> while it is.</returns>
+    [JSExport]
+    public static bool InSession() => _game?.InSession == true;
 
     private static string Version() =>
         typeof(Program).Assembly

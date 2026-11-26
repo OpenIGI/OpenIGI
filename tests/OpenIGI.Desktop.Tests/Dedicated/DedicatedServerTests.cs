@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using OpenIGI.Host.Dedicated;
 using OpenIGI.Host.Multiplayer;
 using Xunit;
@@ -203,7 +204,7 @@ public sealed class DedicatedServerTests
 
         public RotationEntry? NextMap() => null;
 
-        public bool UseMode(string mode) => Game.Multiplayer.Modes.GameModes.All.Contains(mode);
+        public bool UseMode(string mode) => MatchModes.All.Contains(mode);
 
         public void Quit() => QuitAsked = true;
     }

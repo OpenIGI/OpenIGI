@@ -19,7 +19,8 @@ public sealed partial class Igi2ViewModelRenderer
     /// <remarks>
     /// <c>Explosion0_FireBallEnterHandler</c> is Project I.G.I.'s routine: the dome turned to face the eye, its size over 2048
     /// across, its depth growing over its life, its texture's animation stepped once through. The fragments are models of the
-    /// level, drawn with the rest (<see cref="ExplosionPieceModels"/>).
+    /// level, drawn with the rest (<see cref="ExplosionPieceModels"/>). The texture's frames are the model's own slots, as its
+    /// <c>TXAN</c> chunk animates them.
     /// </remarks>
     public void DrawExplosions(IExplosionScene explosions, in Camera3D camera, in Matrix4f projection, float blend)
     {
@@ -50,18 +51,19 @@ public sealed partial class Igi2ViewModelRenderer
             return;
         }
 
-        MeshSubset? textured = geometry.Subsets.FirstOrDefault(static subset => subset.IndexCount > 0 && subset.HasMaterial);
-        if (textured is not { } subset
-            || !_table!.TryResolveTexture(ExplosionFireBall.Model, subset.MaterialSlot, out string? first)
-            || first is null)
+        int slot = RetailExplosionEffects.FireBallSlot(model);
+        TextureHandle[] frames = RetailExplosionEffects.AnimationFrames(
+            model,
+            slot,
+            frameSlot => _table!.TryResolveTexture(ExplosionFireBall.Model, frameSlot, out string? name)
+                ? _textures!.Resolve(Igi2ModelTable.TextureResourceName(name))
+                : TextureHandle.None);
+        if (frames.Length == 0)
         {
             return;
         }
 
-        TextureHandle[] frames = RetailExplosionEffects.AnimationFrames(
-            first,
-            name => _textures!.Resolve(Igi2ModelTable.TextureResourceName(name)));
-        _ = explosions.UseFireBall(geometry, frames, RetailExplosionEffects.BlendOf(model));
+        _ = explosions.UseFireBall(geometry, frames, RetailExplosionEffects.BlendOf(model), slot);
         _logger.Information(LogCategory, $"FireBall '{ExplosionFireBall.Model}': {frames.Length} frame(s).");
     }
 

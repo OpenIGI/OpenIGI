@@ -13,126 +13,79 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Project I.G.I. in the browser, on a computer or a phone, with nothing to install.">
+  <meta name="description" content="Project I.G.I. and I.G.I. 2 in the browser or on the desktop: the original campaigns, online co-op and multiplayer, and a season leaderboard.">
   <title>OpenIGI</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0c0b'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='none' stroke='%23ecebe6' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23ecebe6'/%3E%3C/svg%3E">
   <link rel="preload" href="landing/bg.webp" as="image" type="image/webp">
   <link rel="preload" href="landing/archivo.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="landing/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="landing/site.css">
   <style>
-    /* Both variable fonts, served with the page (SIL Open Font License; see landing/OFL-*.txt). */
-    @font-face {
-      font-family: "Archivo";
-      src: url("landing/archivo.woff2") format("woff2");
-      font-weight: 400 800;
-      font-stretch: 62% 125%;
-      font-display: swap;
-    }
-    @font-face {
-      font-family: "JetBrains Mono";
-      src: url("landing/jetbrains-mono.woff2") format("woff2");
-      font-weight: 400 500;
-      font-display: swap;
-    }
-
-    :root {
-      --bg: #0b0c0b;
-      --text: #ecebe6;
-      --soft: #c9c7c0;
-      --note: #d6d4cd;
-      --muted: #b4b2ab;
-      --dim: #a3a19a;
-      --faint: #8a8882;
-      --ok: #7fc28c;
-      --error: #e0735f;
-      --sans: "Archivo", system-ui, sans-serif;
-      --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
-    }
-
-    * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; }
-    body { background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+    html, body { height: 100%; }
 
     /* The game takes the whole page once it has booted. */
     #stage { position: fixed; inset: 0; }
     #view { display: block; width: 100%; height: 100%; outline: none; background: #000; touch-action: none; }
     #view[hidden] { display: none; }
 
-    /* Everything before the game, and after it: a screenshot from the desktop build, darkened towards
-       the corner the text sits in and along the top and bottom edges. */
-    #landing {
-      position: fixed;
-      inset: 0;
-      overflow-y: auto;
-      font-family: var(--sans);
+    /* Everything before the game, and after it: a page of its own that scrolls over the stage. */
+    #landing { position: fixed; inset: 0; overflow-x: hidden; overflow-y: auto; background: var(--bg); scroll-behavior: smooth; }
+    #landing[hidden] { display: none; }
+
+    /* The hero: a screenshot from the desktop build, darkened towards the corner the text sits in and down to the page. */
+    .hero {
+      position: relative;
+      min-height: calc(100svh - 61px);
+      display: flex;
+      align-items: flex-end;
+      padding: clamp(40px, 7vw, 88px) 0 clamp(36px, 5vw, 64px);
       background:
-        radial-gradient(90% 80% at 0% 100%, rgba(11, 12, 11, 0.8) 0%, rgba(11, 12, 11, 0.45) 40%, rgba(11, 12, 11, 0) 75%),
-        linear-gradient(to bottom, rgba(11, 12, 11, 0.4) 0%, rgba(11, 12, 11, 0) 18%, rgba(11, 12, 11, 0) 80%, rgba(11, 12, 11, 0.6) 100%),
+        radial-gradient(90% 80% at 0% 100%, rgba(11, 12, 11, 0.85) 0%, rgba(11, 12, 11, 0.5) 40%, rgba(11, 12, 11, 0) 75%),
+        linear-gradient(to bottom, rgba(11, 12, 11, 0.35) 0%, rgba(11, 12, 11, 0) 20%, rgba(11, 12, 11, 0.2) 70%, var(--bg) 100%),
         url("landing/bg.webp") center / cover no-repeat,
         radial-gradient(120% 90% at 85% 10%, #2a2f27 0%, #141613 45%, #0b0c0b 80%);
     }
-    #landing[hidden] { display: none; }
-    #landing { overflow-x: hidden; }
+    .hero .wrap { display: flex; flex-direction: column; gap: 30px; }
 
-    .page {
-      min-height: 100%;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      /* One column no wider than the screen: a long line wraps rather than widening the page past it. */
-      grid-template-columns: minmax(0, 1fr);
-      gap: 40px;
-      padding: clamp(20px, 3vw, 40px);
-    }
-
-    .mono { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; }
-
-    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-    header .name { font-weight: 500; }
-    .gpu { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-    .gpu::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-    .gpu[data-state="ok"]::before { background: var(--ok); }
-    .gpu[data-state="no"]::before { background: var(--error); }
-
-    .content { align-self: end; display: flex; flex-direction: column; gap: 28px; }
-
-    .intro { display: flex; flex-direction: column; gap: 18px; max-width: 640px; }
-    .intro .mono { color: var(--muted); }
-    h1 {
-      margin: 0;
-      font-size: clamp(44px, 5.6vw, 80px);
-      line-height: 0.95;
-      font-weight: 700;
-      font-stretch: 80%;
-      letter-spacing: -0.015em;
-    }
-    .lead { margin: 0; font-size: 17px; line-height: 1.55; color: var(--soft); text-wrap: pretty; }
+    .intro { display: flex; flex-direction: column; gap: 18px; max-width: 720px; }
+    .intro .mono { color: var(--muted); display: flex; align-items: center; gap: 10px; }
+    .intro .mono .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(127, 194, 140, 0.18); }
+    h1 { margin: 0; font-size: clamp(48px, 7vw, 96px); line-height: 0.92; font-weight: 700; font-stretch: 78%; letter-spacing: -0.02em; }
+    .lead { margin: 0; font-size: 18px; line-height: 1.55; color: var(--soft); text-wrap: pretty; max-width: 620px; }
 
     /* The two ways to play, side by side and of equal weight; one above the other on a narrow screen. */
-    .paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; max-width: 980px; }
+    .paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
     .path {
       display: flex;
       flex-direction: column;
       gap: 18px;
-      padding: 24px;
+      padding: 26px;
       border: 1px solid rgba(236, 235, 230, 0.14);
-      border-radius: 14px;
-      background: rgba(11, 12, 11, 0.62);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
+      border-radius: var(--radius);
+      background: rgba(11, 12, 11, 0.66);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      scroll-margin-top: 80px;
     }
     .path-head { display: flex; flex-direction: column; gap: 6px; }
     .path-head .kicker { color: var(--ok); }
     .path-head .platforms { color: var(--faint); font-size: 10.5px; }
-    h2 { margin: 0; font-size: 30px; line-height: 1.05; font-weight: 700; font-stretch: 85%; }
+    .path h2 { margin: 0; font-size: 30px; line-height: 1.05; font-weight: 700; font-stretch: 85%; }
     .points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; color: var(--note); font-size: 14.5px; line-height: 1.5; }
     .points li { position: relative; padding-left: 18px; }
     .points li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 8px; height: 1px; background: var(--muted); }
     .path .action { margin-top: auto; }
-    .play { text-decoration: none; }
+
+    /* Which game the browser card plays: two halves of one pill, the chosen one filled. */
+    .games { display: inline-flex; align-self: flex-start; padding: 3px; border: 1px solid rgba(236, 235, 230, 0.18); border-radius: 999px; }
+    .games button { appearance: none; padding: 7px 14px; border: none; border-radius: 999px; background: transparent; color: var(--muted); font: 600 13px/1.2 var(--sans); cursor: pointer; }
+    .games button:hover { color: var(--text); }
+    .games button[aria-pressed="true"] { background: rgba(236, 235, 230, 0.16); color: var(--text); }
+    .games button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+    .games button:disabled { cursor: default; }
 
     .action { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
     .action[hidden] { display: none; }
-
     .play {
       appearance: none;
       display: flex;
@@ -144,6 +97,7 @@
       background: var(--text);
       color: var(--bg);
       font: 600 16px/1.2 var(--sans);
+      text-decoration: none;
       cursor: pointer;
       transition: gap 0.2s ease, background-color 0.2s ease;
     }
@@ -154,18 +108,7 @@
     .status { font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--faint); }
     .status[data-tone="ok"] { color: var(--ok); }
     .status[data-tone="error"] { color: var(--error); }
-
-    .change {
-      appearance: none;
-      padding: 0;
-      border: none;
-      background: none;
-      color: var(--muted);
-      font: 12px/1.6 var(--mono);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      cursor: pointer;
-    }
+    .change { appearance: none; padding: 0; border: none; background: none; color: var(--muted); font: 12px/1.6 var(--mono); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .change:hover { color: var(--text); }
     .change[hidden] { display: none; }
     .others { display: flex; flex-wrap: wrap; gap: 4px 18px; }
@@ -180,52 +123,35 @@
 
     .install { display: flex; flex-direction: column; gap: 6px; width: 100%; color: var(--muted); font: 11.5px/1.6 var(--mono); }
     .install > .label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--note); }
-    .command {
-      padding: 8px 10px;
-      border: 1px solid rgba(236, 235, 230, 0.12);
-      border-radius: 6px;
-      background: rgba(0, 0, 0, 0.35);
-      color: var(--text);
-      font: inherit;
-      user-select: all;
-      overflow-wrap: anywhere;
-    }
-    .install button {
-      flex: none;
-      padding: 0 6px;
-      border: 1px solid rgba(236, 235, 230, 0.2);
-      border-radius: 4px;
-      background: transparent;
-      color: var(--muted);
-      font: inherit;
-      cursor: pointer;
-    }
+    .command { padding: 8px 10px; border: 1px solid rgba(236, 235, 230, 0.12); border-radius: 6px; background: rgba(0, 0, 0, 0.35); color: var(--text); font: inherit; user-select: all; overflow-wrap: anywhere; }
+    .install button { flex: none; padding: 0 6px; border: 1px solid rgba(236, 235, 230, 0.2); border-radius: 4px; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
     .install button:hover { color: var(--text); border-color: rgba(236, 235, 230, 0.4); }
 
-    .header-right { display: flex; align-items: center; gap: 14px; min-width: 0; }
-    /* On a phone the browser's state is the dot alone: its words would push the header past the screen. */
-    @media (max-width: 520px) { .gpu { font-size: 0; letter-spacing: 0; gap: 0; } }
-    .social { display: inline-flex; width: 18px; height: 18px; color: var(--muted); transition: color 0.15s ease; }
-    .social:hover { color: var(--text); }
-    .social svg { width: 100%; height: 100%; }
+    /* Live now: the counts in a row of glass, a pulse beside the heading. */
+    .live-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--line); }
+    .live-figures .figure { padding: 26px 24px; background: var(--panel-solid); }
+    .live-figures .figure:first-child b { color: var(--ok); }
+    .pulse { display: inline-flex; align-items: center; gap: 8px; }
+    .pulse::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: beat 2s ease-in-out infinite; }
+    @keyframes beat { 0%, 100% { box-shadow: 0 0 0 0 rgba(127, 194, 140, 0.45); } 50% { box-shadow: 0 0 0 6px rgba(127, 194, 140, 0); } }
 
-    /* The community row: two slim cards of the paths' glass, the server's live count and faces on Discord's. */
-    .community { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; max-width: 980px; }
-    .link-card {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 14px 16px;
-      border: 1px solid rgba(236, 235, 230, 0.14);
-      border-radius: 14px;
-      background: rgba(11, 12, 11, 0.62);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      color: var(--text);
-      text-decoration: none;
-      transition: border-color 0.15s ease, background-color 0.15s ease;
-    }
-    .link-card:hover { border-color: rgba(236, 235, 230, 0.32); background: rgba(20, 22, 20, 0.7); }
+    #top-ranks { margin-top: 14px; }
+    #live-sessions { margin-top: 16px; }
+    .top-links { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+    @media (max-width: 720px) { .top-links { align-items: flex-start; } }
+
+    /* What it is: a grid of what it does. */
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+    .feature { display: flex; flex-direction: column; gap: 10px; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(14, 16, 14, 0.6); }
+    .feature .icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+    .feature .icon svg { width: 22px; height: 22px; }
+    .feature h3 { margin: 4px 0 0; font-size: 20px; font-weight: 700; font-stretch: 88%; }
+    .feature p { margin: 0; color: var(--soft); font-size: 14.5px; line-height: 1.55; }
+
+    /* Where the people are: two slim cards of the paths' glass, the server's live count and faces on Discord's. */
+    .community { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+    .link-card { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px solid rgba(236, 235, 230, 0.14); border-radius: var(--radius); background: rgba(14, 16, 14, 0.66); color: var(--text); text-decoration: none; transition: border-color 0.15s ease, background-color 0.15s ease; }
+    .link-card:hover { border-color: rgba(236, 235, 230, 0.32); background: rgba(20, 22, 20, 0.8); }
     .badge { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: rgba(236, 235, 230, 0.08); color: var(--text); }
     .badge svg { width: 22px; height: 22px; }
     .badge.discord { background: rgba(88, 101, 242, 0.22); color: #c9cdfb; }
@@ -243,17 +169,6 @@
     .link-card:hover .link-go { color: var(--text); }
     @media (max-width: 480px) { .avatars { display: none; } }
 
-    footer {
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 8px 24px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(236, 235, 230, 0.12);
-      color: var(--faint);
-      font: 11px/1.6 var(--mono);
-    }
-
     @media (prefers-reduced-motion: reduce) {
       .play, .progress > div { transition: none; }
       .progress.indeterminate > div { animation: none; width: 100%; opacity: 0.4; }
@@ -266,22 +181,34 @@
   </div>
 
   <div id="landing">
-    <div class="page">
-      <header class="mono">
-        <span class="name">OpenIGI</span>
-        <span class="header-right">
+    <nav class="nav" aria-label="Site">
+      <div class="wrap">
+        <a class="brand" href="/" aria-label="OpenIGI home">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="16" cy="16" r="2.8" fill="currentColor"/><path d="M16 1v7M16 24v7M1 16h7M24 16h7" stroke="currentColor" stroke-width="2.4"/></svg>
+          <span>OpenIGI</span>
+        </a>
+        <span class="nav-links">
+          <a href="#play-now">Play</a>
+          <a href="/servers/">Servers</a>
+          <a href="/leaderboard/">Leaderboard</a>
+          <a class="wide" href="#desktop">Download</a>
+          <a class="wide" href="#about">About</a>
+        </span>
+        <span class="nav-right mono">
           <a class="social" href="https://github.com/OpenIGI/OpenIGI" target="_blank" rel="noopener" aria-label="OpenIGI on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5Z"/></svg></a>
           <a class="social" data-discord-link href="https://discord.gg/35E72ascqg" target="_blank" rel="noopener" aria-label="OpenIGI on Discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18.2 18.2 0 0 0-5.6 0L8.6 3a19.6 19.6 0 0 0-4.9 1.5C.6 9.1-.3 13.7.1 18.2a19.8 19.8 0 0 0 6 3l1.3-2.1a12.8 12.8 0 0 1-2-1l.5-.4a14.1 14.1 0 0 0 12.2 0l.5.4a12.8 12.8 0 0 1-2 1l1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.7-13.8ZM8.3 15.5c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></a>
           <span class="gpu" id="gpu" data-state="checking">Checking…</span>
         </span>
-      </header>
+      </div>
+    </nav>
 
-      <div class="content">
-        <section class="intro">
-          <span class="mono">An independent reimplementation</span>
-          <h1>Project I.G.I.</h1>
-          <p class="lead">Two ways to play: straight away in the browser, on a computer or a phone, or with the desktop build, which has the whole remaster.</p>
-        </section>
+    <section class="hero" id="play-now">
+      <div class="wrap">
+        <div class="intro">
+          <span class="mono"><span class="live-dot" aria-hidden="true"></span>An independent reimplementation · free</span>
+          <h1 id="game-name">Project I.G.I.</h1>
+          <p class="lead">The original campaigns, online co-op and multiplayer with a season leaderboard. Play straight away in the browser, on a computer or a phone, or get the desktop launcher for the whole remaster.</p>
+        </div>
 
         <div class="paths">
           <!-- In the browser. -->
@@ -291,8 +218,12 @@
               <h2 id="browser-title">In the browser</h2>
               <span class="mono platforms">Chrome, Edge, Safari · computers and phones</span>
             </div>
+            <div class="games" id="games" role="group" aria-label="Game">
+              <button type="button" data-game="igi1" aria-pressed="true">Project I.G.I.</button>
+              <button type="button" data-game="igi2" aria-pressed="false">I.G.I. 2</button>
+            </div>
             <ul class="points">
-              <li>Nothing to install: the game's files download once and are kept for the next visit.</li>
+              <li id="files-point">Nothing to install: the game's files download once and are kept for the next visit.</li>
               <li>Touch controls on phones and tablets.</li>
               <li>The original's look, the vanilla graphics preset.</li>
             </ul>
@@ -305,6 +236,7 @@
                 <button class="change" id="change" type="button" hidden>Choose another folder</button>
                 <button class="change" id="own" type="button" hidden>Play from my own game folder</button>
                 <button class="change" id="clear" type="button" hidden>Delete the downloaded files</button>
+                <a class="change" id="elsewhere" target="_blank" rel="noopener" hidden>Open in the browser to choose the folder</a>
               </span>
             </div>
 
@@ -316,7 +248,7 @@
           </section>
 
           <!-- The desktop build. -->
-          <section class="path" aria-labelledby="desktop-title">
+          <section class="path" id="desktop" aria-labelledby="desktop-title">
             <div class="path-head">
               <span class="mono kicker">Full remaster</span>
               <h2 id="desktop-title">Desktop launcher</h2>
@@ -342,8 +274,98 @@
             </div>
           </section>
         </div>
+      </div>
+    </section>
 
-        <!-- Where the people are: the server's own live numbers, drawn in the page's look. -->
+    <!-- Who is playing now: filled by landing/home.js, left out when the master can't say. -->
+    <section class="section" id="live" aria-labelledby="live-title" hidden>
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <span class="mono pulse">Live now</span>
+            <h2 id="live-title">On the servers right now</h2>
+            <p>Dedicated servers run around the clock, and friends' rooms open from inside the game: no ports, just a code. Join one in your browser or the desktop game.</p>
+          </div>
+          <a class="section-link" href="/servers/">See every server →</a>
+        </div>
+        <div class="live-figures" id="live-figures"></div>
+        <div class="sessions" id="live-sessions"></div>
+      </div>
+    </section>
+
+    <!-- The season's best: filled by landing/home.js. -->
+    <section class="section" id="top" aria-labelledby="top-title" hidden>
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <span class="mono" id="top-season">This season</span>
+            <h2 id="top-title">Top operatives</h2>
+            <p>Each game has its own board. Every match on an official server counts: kills, assists, objectives and wins. Sign in with Discord on the game's Profile page to be on it.</p>
+          </div>
+          <div class="top-links">
+            <span id="top-game"></span>
+            <a class="section-link" id="top-link" href="/leaderboard/">See the full leaderboard →</a>
+          </div>
+        </div>
+        <div class="podium" id="top-podium"></div>
+        <div class="ranks" id="top-ranks"></div>
+      </div>
+    </section>
+
+    <!-- What it is. -->
+    <section class="section" id="about" aria-labelledby="about-title">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <span class="mono">What's in it</span>
+            <h2 id="about-title">Both games, rebuilt to play today</h2>
+            <p>An independent reimplementation that reads your copy of the original's files and plays them on a modern engine.</p>
+          </div>
+        </div>
+        <div class="features">
+          <div class="feature">
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M3 7h18v10H3zM8 7v10M16 7v10"/></svg></span>
+            <h3>Two campaigns</h3>
+            <p>Project I.G.I. and I.G.I. 2, mission for mission, the guards and the alarms as the originals had them.</p>
+          </div>
+          <div class="feature">
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="9" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" d="M2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5"/></svg></span>
+            <h3>Co-op and multiplayer</h3>
+            <p>The campaign with friends, or team deathmatch, search &amp; destroy and more on dedicated servers.</p>
+          </div>
+          <div class="feature">
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M6 21h12M9 21v-4h6v4M8 4h8v5a4 4 0 0 1-8 0zM8 6H4v2a3 3 0 0 0 4 3M16 6h4v2a3 3 0 0 1-4 3"/></svg></span>
+            <h3>Season leaderboard</h3>
+            <p>Every official match is counted: climb the board each month, earn medals, and keep your all-time record.</p>
+          </div>
+          <div class="feature">
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg></span>
+            <h3>A real remaster</h3>
+            <p>Ray-traced lighting, upscaling and HD textures on the desktop, with the original's look a setting away.</p>
+          </div>
+          <div class="feature">
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path stroke="currentColor" stroke-width="2" d="M11 18h2"/></svg></span>
+            <h3>Plays anywhere</h3>
+            <p>In a browser tab on a computer or a phone, with touch controls, or on Windows, macOS and Linux.</p>
+          </div>
+          <div class="feature">
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M8 6l-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/></svg></span>
+            <h3>Open and moddable</h3>
+            <p>The source is open, and mods, maps and texture packs install from the launcher with a click.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Where the people are: the server's own live numbers, drawn in the page's look. -->
+    <section class="section" aria-labelledby="community-title">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <span class="mono">Community</span>
+            <h2 id="community-title">Join the operatives</h2>
+          </div>
+        </div>
         <div class="community">
           <a class="link-card" id="discord" data-discord-link href="https://discord.gg/35E72ascqg" target="_blank" rel="noopener">
             <span class="badge discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18.2 18.2 0 0 0-5.6 0L8.6 3a19.6 19.6 0 0 0-4.9 1.5C.6 9.1-.3 13.7.1 18.2a19.8 19.8 0 0 0 6 3l1.3-2.1a12.8 12.8 0 0 1-2-1l.5-.4a14.1 14.1 0 0 0 12.2 0l.5.4a12.8 12.8 0 0 1-2 1l1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.7-13.8ZM8.3 15.5c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></span>
@@ -364,16 +386,20 @@
           </a>
         </div>
       </div>
+    </section>
 
-      <footer>
+    <footer class="site-footer">
+      <div class="wrap">
         <span>An independent reimplementation, not affiliated with the game's publishers.</span>
         <span>Background: a screenshot from the desktop build.</span>
-      </footer>
-    </div>
+        <span><a href="/servers/">Servers</a> · <a href="/leaderboard/">Leaderboard</a> · <a href="/privacy/">Privacy</a> · <a href="/code-signing/">Code signing</a></span>
+      </div>
+    </footer>
   </div>
 
   <!-- Filled in by the publish: where the fingerprinted runtime scripts under _framework are. -->
   <script type="importmap"></script>
   <script type="module" src="main.js"></script>
+  <script type="module" src="landing/home.js"></script>
 </body>
 </html>

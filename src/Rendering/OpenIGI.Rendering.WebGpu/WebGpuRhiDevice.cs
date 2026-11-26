@@ -230,7 +230,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         fixed (WGPUCommandBuffer* first = handles)
         {
-            Wgpu.wgpuQueueSubmit(_context.Queue, (nuint)handles.Length, first);
+            WebGpuHotCalls.wgpuQueueSubmit(_context.Queue.Handle, (nuint)handles.Length, first);
         }
     }
 
@@ -249,7 +249,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         using WebGpuString name = new(label);
 
         WGPUCommandEncoderDescriptor native = new() { label = name.View };
-        WGPUCommandEncoder handle = Wgpu.wgpuDeviceCreateCommandEncoder(_context.Device, &native);
+        WGPUCommandEncoder handle = new(WebGpuHotCalls.wgpuDeviceCreateCommandEncoder(_context.Device.Handle, &native));
 
         return handle.IsValid
             ? new WebGpuCommandEncoder(this, handle, label)

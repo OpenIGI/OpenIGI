@@ -3,6 +3,7 @@
   <PropertyGroup>
     <!-- A console application: a dedicated server is run from a terminal or a service manager, never double-clicked. -->
     <OutputType>Exe</OutputType>
+    <AssemblyTitle>OpenIGI Dedicated Server</AssemblyTitle>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

@@ -56,8 +56,9 @@ internal static class Igi2FlowSystems
         b.Sectors = Igi2SectorGraph.Build(Igi2WorldScene.Build(b.Root, models), models, b.Magic);
         Igi2SectorLocator locator = new(player.CollisionWorld, b.Sectors);
         b.SectorLocator = locator;
+        // The camera: a cutscene's while one runs, else the player's eyes -- another game's player's, standing in.
         b.Listener = new Audio.Igi2CameraListener(
-            () => level.CutsceneView?.Position ?? player.Human.View.Position,
+            () => level.CutsceneView?.Position ?? player.ActingStandIn?.EyePosition ?? player.Human.View.Position,
             locator,
             () => level.Ticks);
         foreach (Audio.Igi2AmbientAreaTask area in b.Root.Descendants().OfType<Audio.Igi2AmbientAreaTask>())
@@ -131,11 +132,13 @@ internal static class Igi2FlowSystems
         Igi2TitlePlayer player = b.Player;
         Igi2Strings strings = new(b.Request.World.Resources);
         player.Strings = strings;
+        // A line is said at the microphone and follows it (StatusMessage_PlaySound: SoundSys_SetRelativeToMicrophone).
+        Audio.Igi2CameraListener? microphone = b.Listener;
         foreach (Igi2StatusMessageTask message in b.Root.Descendants().OfType<Igi2StatusMessageTask>())
         {
             message.Strings = strings;
             message.Screen = player.StatusMessages;
-            message.Listener = () => player.Human.View.Position;
+            message.Listener = () => microphone?.Position ?? player.Human.View.Position;
             message.TaskById = id => b.PlacedById.GetValueOrDefault(id);
             message.InitText();
         }

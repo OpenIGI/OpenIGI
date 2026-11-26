@@ -53,18 +53,25 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         IReadOnlyList<int> ammoCount,
         bool isThrowShort = true)
     {
-        Weapons.Igi2WeaponTables? tables = Owner switch
+        if (Pickups is not { } pickups)
+        {
+            return;
+        }
+
+        Weapons.Igi2WeaponTables? held = Owner switch
         {
             Soldiers.Igi2HumanSoldier soldier => soldier.Weapon.Inventory?.Tables,
             Igi2HumanPlayer player => player.Weapon.Inventory?.Tables,
             _ => null,
         };
-        if (Pickups is not { } pickups || tables is null)
+        if ((held ?? pickups.Tables) is not { } tables)
         {
             return;
         }
 
-        float radius = weaponType.FixedModel.Length > 0 && Models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
+        // The weapon's fixed model sizes the throw as a placed pickup's does; the list resolves it when these surroundings do not.
+        Func<string, Formats.World.MefModel?>? models = Models ?? pickups.Models;
+        float radius = weaponType.FixedModel.Length > 0 && models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
         pickups.Add(OpenIGI.Game.Igi2.Pickups.Igi2GunPickup.Thrown(weaponType, tables, position, orientation, throwGamma, isMoving: true, isThrowShort, ammoInClip, ammoCount, radius));
     }
 
@@ -184,7 +191,33 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         AiEvents = AiEvents,
         Activatables = Activatables,
         ById = ById,
+        Grounds = Grounds,
     };
+
+    /// <summary>
+    /// Makes the surroundings of a race's ghost: the level's collision and the things it may stand at, to read; its own silent
+    /// sounds; and nothing else -- no AI to hear it, no pickups, no water, no particles, no detection.
+    /// </summary>
+    /// <param name="silent">The ghost's own sounds, which play nothing.</param>
+    /// <returns>Its surroundings; its owner is set once it is made.</returns>
+    public Igi2LevelSurroundings ForGhost(Igi2Sounds silent) => new(World, silent)
+    {
+        IsRemote = true,
+        Models = Models,
+        Materials = Materials,
+        Activatables = Activatables,
+        ById = ById,
+        Grounds = Grounds,
+    };
+
+    /// <summary>Gets or sets the level's grounds by task, which a save names a body's footing by.</summary>
+    public Igi2LevelGrounds? Grounds { get; set; }
+
+    /// <inheritdoc/>
+    public Engine.Tasks.GameTask? GroundTaskOf(IWorldCollider? ground) => Grounds?.TaskOf(ground);
+
+    /// <inheritdoc/>
+    public IWorldCollider? GroundOf(Engine.Tasks.GameTask? task) => Grounds?.GroundOf(task);
 
     /// <summary>Gets or sets the level's things by task id, which a soldier's activation names.</summary>
     public IReadOnlyDictionary<int, Interaction.IIgi2Activatable>? ById { get; set; }
@@ -193,19 +226,37 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         ById is { } byId && byId.TryGetValue(id, out Interaction.IIgi2Activatable? thing) ? thing : null;
 
     /// <inheritdoc/>
-    /// <remarks>Each thing's sphere against the player's: the two meet when their centres are no further apart than their radii added.</remarks>
+    /// <remarks>
+    /// <para>Each thing's sphere against the player's: the two meet when their centres are no further apart than their radii added.</para>
+    /// <para>
+    /// Only what is in the world. <c>Human_UpdateActivate</c> sends the evaluate event through the world's stationary tree
+    /// (<c>World_TriggerQTaskEventSphereSpecificTree</c>), which holds only objects registered in it, and a conditional container's
+    /// remove handler takes its children out. The level keeps every thing it can activate here from the start, so a thing under a
+    /// shut container is passed over -- and a human out of the world, as its remove handler takes it off the trees. The last
+    /// mission keeps two rocket ignition buttons at one spot, the game's (under "Launch Button - Game") and the outro's (under
+    /// "Launch Button - CutScene", always active); the shut one answered the player's press, and the launch never went.
+    /// </para>
+    /// </remarks>
     public IEnumerable<Interaction.IIgi2Activatable> FindActivatables(Vector3d centre, float radius)
     {
         foreach (Interaction.IIgi2Activatable candidate in Activatables)
         {
             Vector3d d = candidate.Centre - centre;
             double reach = radius + candidate.Radius;
-            if ((d.X * d.X) + (d.Y * d.Y) + (d.Z * d.Z) <= reach * reach)
+            if ((d.X * d.X) + (d.Y * d.Y) + (d.Z * d.Z) <= reach * reach && IsInWorld(candidate))
             {
                 yield return candidate;
             }
         }
     }
+
+    // A thing of the level under a running container, or a human its container has not taken out.
+    private static bool IsInWorld(Interaction.IIgi2Activatable candidate) => candidate switch
+    {
+        Igi2Human human => human.IsActive,
+        Engine.Tasks.GameTask task => OpenIGI.Game.World.ConditionalContainerGate.IsTaskActive(task),
+        _ => true,
+    };
 
     private sealed class SilentSound : IIgi2SoundInstance
     {

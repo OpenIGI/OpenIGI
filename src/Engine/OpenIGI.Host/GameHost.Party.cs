@@ -154,7 +154,7 @@ public sealed partial class GameHost
         _ => null,
     };
 
-    private string PartyName() => _configuration.Active?.Name is { Length: > 0 } name ? name : "Jones";
+    private string PartyName() => PlayerName();
 
     private void LeaveParty()
     {

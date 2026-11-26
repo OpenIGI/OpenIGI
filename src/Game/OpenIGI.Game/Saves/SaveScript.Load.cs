@@ -344,6 +344,35 @@ public static partial class SaveScript
         }
     }
 
+    /// <summary>Writes a state as a save writes it, for <see cref="ReadState"/> to put on another of its kind.</summary>
+    /// <param name="write">What writes the state.</param>
+    /// <returns>Its arguments, as a save script's statement carries them.</returns>
+    /// <remarks>A copy in memory, by the save's own codec: what one player carries handed to another, a level's state to a client.</remarks>
+    public static string WriteState(Action<StateWriter> write)
+    {
+        ArgumentNullException.ThrowIfNull(write);
+        StateWriter writer = new();
+        write(writer);
+        return writer.Arguments;
+    }
+
+    /// <summary>Reads a state <see cref="WriteState"/> wrote.</summary>
+    /// <param name="arguments">The arguments it wrote.</param>
+    /// <param name="read">What reads the state.</param>
+    /// <returns><see langword="false"/> when the arguments cannot be read.</returns>
+    public static bool ReadState(string arguments, Action<StateReader> read)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        ArgumentNullException.ThrowIfNull(read);
+        if (!TextArguments.TryParse($"State({arguments.TrimStart(',', ' ')})", out _, out TextArguments? call))
+        {
+            return false;
+        }
+
+        read(new StateReader(call, 0));
+        return true;
+    }
+
     /// <summary>A compiled save's call.</summary>
     private sealed class CompiledArguments(QvmCallContext call) : ISaveArguments
     {

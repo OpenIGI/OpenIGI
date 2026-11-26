@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
@@ -25,7 +26,86 @@ internal static class Igi2NetworkHumanFactory
         int team)
     {
         Igi2LevelSurroundings surroundings = shared.ForRemotePlayer();
-        Formats.World.MefModel? body = kit.Models(model);
+        (Igi2HumanPlayer human, Igi2PlayerWeapons? weapons) = Body(kit, surroundings, model, position, gamma, team);
+        kit.World.AddBody(human.Collider!);
+        human.Pickups = level.Human.Pickups;
+
+        // The documents, key cards and disks are the level's, for every player to collect: without them the server never let a
+        // client's player take one (the client hid it, the objective waiting on it never moved). And the level's clock.
+        human.GenericPickups = level.Human.GenericPickups;
+        human.LevelTick = level.Human.LevelTick;
+        human.AnimTriggers = level.Human.AnimTriggers;
+        human.WhizzbyClock = level.Human.WhizzbyClock;
+        human.DeadBodySounds = level.Human.DeadBodySounds;
+        human.WeaponCycle = kit.Tuning?.WeaponCycle ?? [];
+        if (weapons is not null)
+        {
+            // Its casings fly from the gun in its body's hands, as a soldier's do.
+            Igi2PlayerWeapons arms = weapons;
+            weapons.Effects = new Igi2LevelWeaponEffects(kit.Sounds, () => human.View.Position, level.Ai, casing =>
+            {
+                if (level.Casings is { } casings && human.Model is { } dress && arms.Inventory.Current?.WeaponType.FixedModel is { } gun)
+                {
+                    Igi2TitlePlayer.EjectFrom(
+                        casings, casing, ViewModel.Igi2BodyFrame.Build(human, human.PresentedPose(), dress.Name, gun, 0), gun, human.TotalSpeed);
+                }
+            });
+            if (level.Weapons is { } own)
+            {
+                weapons.ImpactEffects = own.ImpactEffects;
+                weapons.World = own.World;
+                weapons.Grenades = own.Grenades;
+            }
+        }
+
+        // A client on Project I.G.I.'s movement is moved here as there: on a body of its own, over the level's same world.
+        if (level.Human.Igi1Feet is { } feet)
+        {
+            human.Igi1Feet = new Igi1FootMotion(feet.World, human);
+        }
+
+        human.UpdateViewBody(updateAnimation: false);
+        return new Igi2NetworkHuman(human, weapons, kit.World);
+    }
+
+    /// <summary>
+    /// Makes a race's ghost: a body made as another player's is, posed as a client's copy of one is
+    /// (<see cref="Igi2NetworkHuman.PuppetTarget"/>), but part of nothing in the level -- not in its collision, heard by nobody (its
+    /// sounds its own and silent), seen by no AI, picking up nothing. What it reads of the level, the ladders and timed actions it
+    /// poses against, it only reads.
+    /// </summary>
+    /// <param name="level">The level's own player, whose clock and triggers it keeps time by.</param>
+    /// <param name="kit">What a body is made of.</param>
+    /// <param name="shared">The level's own player's surroundings, of which it shares only what it reads.</param>
+    /// <param name="model">The model its body wears.</param>
+    /// <param name="position">Where it first stands.</param>
+    /// <param name="gamma">Which way it first faces.</param>
+    /// <returns>The ghost.</returns>
+    public static Igi2NetworkHuman MakeGhost(
+        Igi2TitlePlayer level, Igi2PlayerSpawnKit kit, Igi2LevelSurroundings shared, string model, Vector3d position, float gamma)
+    {
+        Igi2Sounds silent = new(kit.Sounds.Definitions, audio: null);
+        Igi2LevelSurroundings surroundings = shared.ForGhost(silent);
+        (Igi2HumanPlayer human, Igi2PlayerWeapons? weapons) = Body(kit, surroundings, model, position, gamma, level.Human.Team);
+        human.LevelTick = level.Human.LevelTick;
+        human.AnimTriggers = level.Human.AnimTriggers;
+        human.WeaponCycle = kit.Tuning?.WeaponCycle ?? [];
+        if (weapons is not null)
+        {
+            // Its shots flash on its gun, heard by nobody.
+            weapons.Effects = new Igi2LevelWeaponEffects(silent, () => human.View.Position);
+        }
+
+        human.UpdateViewBody(updateAnimation: false);
+        return new Igi2NetworkHuman(human, weapons, kit.World);
+    }
+
+    // Another player's body, as the level's own is made: dressed, armed as a soldier is, created, and its collider made -- whether
+    // the level's collision is to hold it is the caller's to say.
+    private static (Igi2HumanPlayer Human, Igi2PlayerWeapons? Weapons) Body(
+        Igi2PlayerSpawnKit kit, Igi2LevelSurroundings surroundings, string model, Vector3d position, float gamma, int team)
+    {
+        Formats.World.MefModel? body = kit.Looks(model);
         Igi2BoneHierarchy? rig = body?.BoneHierarchy;
 
         Igi2PlayerWeapons? weapons = null;
@@ -46,6 +126,10 @@ internal static class Igi2NetworkHumanFactory
             Gamma = gamma,
             IdealGamma = gamma,
             Team = team,
+
+            // Nobody looks through its eyes: its weapon is the one on its body (Human_GetWeaponObjectHandler's body branch),
+            // which is where its shots flash. Left in first person it had no view clip, so no weapon object, and no flash.
+            IsThirdPerson = true,
         };
         surroundings.Owner = human;
         animation.TriggerTarget = human.BodyTriggers;
@@ -60,12 +144,6 @@ internal static class Igi2NetworkHumanFactory
 
         human.Model = Igi2BodyModel.From(model, body);
         human.Collider = new Igi2BoneCollider(human, human);
-        kit.World.AddBody(human.Collider);
-        human.Pickups = level.Human.Pickups;
-        human.AnimTriggers = level.Human.AnimTriggers;
-        human.WhizzbyClock = level.Human.WhizzbyClock;
-        human.DeadBodySounds = level.Human.DeadBodySounds;
-        human.WeaponCycle = kit.Tuning?.WeaponCycle ?? [];
         if (body is not null)
         {
             human.ModelRadius = body.NativeMarkerBound;
@@ -75,18 +153,6 @@ internal static class Igi2NetworkHumanFactory
             }
         }
 
-        if (weapons is not null)
-        {
-            weapons.Effects = new Igi2LevelWeaponEffects(kit.Sounds, () => human.View.Position, level.Ai);
-            if (level.Weapons is { } own)
-            {
-                weapons.ImpactEffects = own.ImpactEffects;
-                weapons.World = own.World;
-                weapons.Grenades = own.Grenades;
-            }
-        }
-
-        human.UpdateViewBody(updateAnimation: false);
-        return new Igi2NetworkHuman(human, weapons, kit.World);
+        return (human, weapons);
     }
 }

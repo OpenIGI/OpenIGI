@@ -19,7 +19,10 @@ namespace OpenIGI.Core.Configuration.Presets;
 public sealed class GraphicsPresetRegistry
 {
     private readonly Dictionary<ICVar, string?[]> _managed = [];
+    private readonly HashSet<ICVar> _interface = [];
+    private GraphicsPreset _look = GraphicsPreset.Custom;
     private bool _applying;
+    private Dictionary<ICVar, string>? _heldOver;
 
     /// <summary>Occurs after <see cref="Current"/> changes.</summary>
     public event EventHandler<GraphicsPreset>? PresetChanged;
@@ -30,6 +33,24 @@ public sealed class GraphicsPresetRegistry
     /// <summary>Gets the preset the settings currently correspond to.</summary>
     public GraphicsPreset Current { get; private set; } = GraphicsPreset.Custom;
 
+    /// <summary>Gets the preset the picture is: what a look that is the original's or the remaster's asks.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not <see cref="Current"/>, which reads Custom the moment any managed variable leaves the preset -- the interface's
+    /// included. A player on Vanilla who turned the remastered heads-up display on lost every look that asked for
+    /// Vanilla with it: the forest's blended leaves and fog, the sky turned to its sun, the lens flares, the original's
+    /// texture storage. The interface (<see cref="DefineInterface"/>) draws over the picture and is left out here.
+    /// </para>
+    /// <para>
+    /// A build that ships a single picture (<see cref="LockedPreset"/>, the browser's Vanilla) is that picture whatever
+    /// the console has done since.
+    /// </para>
+    /// </remarks>
+    public GraphicsPreset Look => LockedPreset ?? HeldPreset ?? _look;
+
+    /// <summary>Gets whether the picture is the original's (<see cref="Look"/> is <see cref="GraphicsPreset.Vanilla"/>).</summary>
+    public bool IsVanillaLook => Look == GraphicsPreset.Vanilla;
+
     /// <summary>Gets the one preset that may be applied, or <see langword="null"/> when any may be.</summary>
     /// <remarks>
     /// Set by <see cref="Lock"/>, for a build that ships a single picture -- the browser build is held on
@@ -39,6 +60,22 @@ public sealed class GraphicsPresetRegistry
     /// locked exactly as it can otherwise.
     /// </remarks>
     public GraphicsPreset? LockedPreset { get; private set; }
+
+    /// <summary>Gets the one preset the game being played offers for now, or <see langword="null"/> when it offers them all.</summary>
+    /// <remarks>
+    /// <para>
+    /// Set by <see cref="Hold"/>, for a game whose look under the remastered presets is not ready yet -- I.G.I. 2's lighting
+    /// is still being tuned. Unlike <see cref="LockedPreset"/> it is the game's, not the build's: switching to a game that
+    /// offers every preset puts back the player's own picture.
+    /// </para>
+    /// <para>
+    /// It holds the picture only. The interface's variables (<see cref="DefineInterface"/>) stay as the player has them, and
+    /// what the player had chosen for the picture is kept aside: put back by <see cref="Hold"/> with nothing, and what the
+    /// settings file writes in its place (<see cref="PlayerValue"/>), so a game quit while held starts again as the player
+    /// left it.
+    /// </para>
+    /// </remarks>
+    public GraphicsPreset? HeldPreset { get; private set; }
 
     /// <summary>Gets the variables this registry manages.</summary>
     public IReadOnlyCollection<ICVar> Managed => _managed.Keys;
@@ -62,6 +99,23 @@ public sealed class GraphicsPresetRegistry
             variable.Changed += OnManagedVariableChanged;
         }
 
+        return variable;
+    }
+
+    /// <summary>Declares what the four presets set an interface variable to: one drawn over the picture, not part of it.</summary>
+    /// <param name="variable">The variable to manage.</param>
+    /// <param name="vanilla">The value under <see cref="GraphicsPreset.Vanilla"/>.</param>
+    /// <param name="enhanced">The value under <see cref="GraphicsPreset.Enhanced"/>.</param>
+    /// <param name="high">The value under <see cref="GraphicsPreset.High"/>.</param>
+    /// <param name="ultra">The value under <see cref="GraphicsPreset.Ultra"/>.</param>
+    /// <returns><paramref name="variable"/>.</returns>
+    /// <remarks>Counted for <see cref="Current"/> like any other, and left out of <see cref="Look"/>.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="variable"/> is <see langword="null"/>.</exception>
+    public TVar DefineInterface<TVar>(TVar variable, string? vanilla, string? enhanced, string? high, string? ultra)
+        where TVar : ICVar
+    {
+        Define(variable, vanilla, enhanced, high, ultra);
+        _interface.Add(variable);
         return variable;
     }
 
@@ -167,10 +221,79 @@ public sealed class GraphicsPresetRegistry
     public void Restore(GraphicsPresetSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        SetQuietly(snapshot.Values.Select(static entry => KeyValuePair.Create(entry.Variable, entry.Value)));
+        SetCurrent(snapshot.Preset);
+    }
+
+    /// <summary>Whether a preset may be applied under the current lock.</summary>
+    /// <param name="preset">The preset in question.</param>
+    /// <returns><see langword="true"/> when nothing is locked or <paramref name="preset"/> is the locked one.</returns>
+    public bool IsAllowed(GraphicsPreset preset) =>
+        (LockedPreset is not { } locked || locked == preset) && (HeldPreset is not { } held || held == preset);
+
+    /// <summary>Holds the picture on a preset for the game being played, or lets it go back to the player's.</summary>
+    /// <param name="preset">The one preset the game offers, or <see langword="null"/> for every one.</param>
+    /// <remarks>
+    /// <para>
+    /// Holding records the player's picture -- every managed variable but the interface's -- and applies the preset's
+    /// picture over it. Letting go puts the record back, and the preset is read again. Holding the preset already held does
+    /// nothing, and holding another lets the first go before taking the second, so the record is always the player's own.
+    /// </para>
+    /// <para>
+    /// A build locked to one preset (<see cref="LockedPreset"/>) is already held: nothing is done. The player's changes to
+    /// the picture's variables while held last until it is let go; they are not the player's own picture.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="preset"/> is <see cref="GraphicsPreset.Custom"/>.</exception>
+    public void Hold(GraphicsPreset? preset)
+    {
+        if (preset == GraphicsPreset.Custom)
+        {
+            throw new ArgumentOutOfRangeException(nameof(preset), preset, "Custom is a reading, not a preset to hold.");
+        }
+
+        if (preset == HeldPreset || LockedPreset is not null)
+        {
+            return;
+        }
+
+        if (_heldOver is { } player)
+        {
+            _heldOver = null;
+            HeldPreset = null;
+            SetQuietly(player);
+            Detect();
+        }
+
+        if (preset is not { } held)
+        {
+            return;
+        }
+
+        _heldOver = _managed.Keys.Where(variable => !_interface.Contains(variable)).ToDictionary(static v => v, static v => v.ValueText);
+        HeldPreset = held;
+        SetQuietly(_managed
+            .Where(entry => !_interface.Contains(entry.Key) && entry.Value[(int)held] is not null)
+            .Select(entry => KeyValuePair.Create(entry.Key, entry.Value[(int)held]!)));
+        Detect();
+    }
+
+    /// <summary>What the player had a variable at under the held preset, for the settings file to write in place of the held value.</summary>
+    /// <param name="variable">The variable.</param>
+    /// <returns>The player's value, or <see langword="null"/> where nothing is held or the hold does not cover the variable.</returns>
+    public string? PlayerValue(ICVar variable)
+    {
+        ArgumentNullException.ThrowIfNull(variable);
+        return _heldOver is { } player && player.TryGetValue(variable, out string? value) ? value : null;
+    }
+
+    // Sets variables as a preset does: the registry does not read each change as the player taking over.
+    private void SetQuietly(IEnumerable<KeyValuePair<ICVar, string>> values)
+    {
         _applying = true;
         try
         {
-            foreach ((ICVar variable, string value) in snapshot.Values)
+            foreach ((ICVar variable, string value) in values)
             {
                 variable.TrySetText(value, out _);
             }
@@ -179,14 +302,7 @@ public sealed class GraphicsPresetRegistry
         {
             _applying = false;
         }
-
-        SetCurrent(snapshot.Preset);
     }
-
-    /// <summary>Whether a preset may be applied under the current lock.</summary>
-    /// <param name="preset">The preset in question.</param>
-    /// <returns><see langword="true"/> when nothing is locked or <paramref name="preset"/> is the locked one.</returns>
-    public bool IsAllowed(GraphicsPreset preset) => LockedPreset is not { } locked || locked == preset;
 
     /// <summary>Works out which preset, if any, the current settings correspond to.</summary>
     /// <returns>The matching preset, or <see cref="GraphicsPreset.Custom"/>.</returns>
@@ -210,7 +326,11 @@ public sealed class GraphicsPresetRegistry
     public GraphicsPreset Recognise(Func<ICVar, string, bool> holds)
     {
         ArgumentNullException.ThrowIfNull(holds);
+        return Recognise(holds, pictureOnly: false);
+    }
 
+    private GraphicsPreset Recognise(Func<ICVar, string, bool> holds, bool pictureOnly)
+    {
         for (int index = 0; index < 4; index++)
         {
             bool matches = true;
@@ -220,6 +340,11 @@ public sealed class GraphicsPresetRegistry
                 // MatchesText rather than a comparison against ValueText: a float renders as its own
                 // shortest round trip, so a preset declaring 0.70 would never be recognised again once
                 // it had been applied and read back as 0.7.
+                if (pictureOnly && _interface.Contains(variable))
+                {
+                    continue;
+                }
+
                 if (values[index] is { } expected && !holds(variable, expected))
                 {
                     matches = false;
@@ -273,6 +398,8 @@ public sealed class GraphicsPresetRegistry
 
     private void SetCurrent(GraphicsPreset preset)
     {
+        // Every path that settles Current comes through here, so the picture's preset is read again with it.
+        _look = Recognise(static (variable, expected) => variable.MatchesText(expected), pictureOnly: true);
         if (Current == preset)
         {
             return;

@@ -34,11 +34,16 @@ internal sealed class PlayerShotResolver
     /// <summary>Initializes the resolver for one player.</summary>
     /// <param name="body">The body whose walls and feet the rounds and grenades read.</param>
     /// <param name="random">The player's random stream, which the ballistics draw from.</param>
-    internal PlayerShotResolver(PlayerBody body, IgiRandom random)
+    /// <param name="tally">The player's tally, which counts the rounds it fires.</param>
+    internal PlayerShotResolver(PlayerBody body, IgiRandom random, ShotTally tally)
     {
         _body = body;
         _random = random;
+        _tally = tally;
     }
+
+    // What the player's rounds have done, and how many it has fired: what its mission's accuracy is reckoned from.
+    private readonly ShotTally _tally;
 
     /// <summary>Gets or sets the level's placed objects, which the rounds march through.</summary>
     internal ObjectCollisionIndex? Walls { get; set; }
@@ -379,8 +384,11 @@ internal sealed class PlayerShotResolver
                 ? GrenadeExplosionType.Flashbang
                 : GrenadeExplosionType.Normal;
 
-            // 0x462E50 replaces the thrower's velocity with the cook's speed along the view's forward axis.
-            double throwSpeed = PlayerWeapons.ThrowSpeedUnitsPerTick(thrownWeapon.MuzzleVelocity, weapons.ThrowChargeTicks);
+            // 0x462E50 replaces the thrower's velocity with the cook's speed along the view's forward axis. A grenade gone
+            // off in hand (a manual cook held too long) never leaves it.
+            double throwSpeed = weapons.ThrowExplodedInHand
+                ? 0.0
+                : PlayerWeapons.ThrowSpeedUnitsPerTick(thrownWeapon.MuzzleVelocity, weapons.ThrowChargeTicks);
             Vector3f throwVelocity = new(
                 (float)(throwSpeed * forward.X),
                 (float)(throwSpeed * forward.Y),
@@ -411,6 +419,7 @@ internal sealed class PlayerShotResolver
                     shot.Origin,
                     throwVelocity,
                     explosion,
+                    fuseTicks: weapons.ThrowExplodedInHand ? 0 : weapons.ThrowFuseTicks,
                     radiusMetres: radius,
                     falloffMetres: falloff,
                     damageFactor: damage,
@@ -459,6 +468,13 @@ internal sealed class PlayerShotResolver
             }
 
             return;
+        }
+
+        // A gun's rounds count towards the mission's accuracy, each pellet of a shotgun's as a round, as its hits are counted;
+        // a knife's strike is not a round.
+        if (category != WeaponCategory.Knife)
+        {
+            _tally.Fired(weapons.Shots.Count);
         }
 
         WeaponType? held = weapons.InHand?.Weapon;
@@ -925,8 +941,8 @@ internal sealed class PlayerShotResolver
     /// </remarks>
     internal static Vector3d KnifeBladeDirection(Vector3f forward, Vector3f right, float angle)
     {
-        double c = Math.Cos(angle);
-        double s = Math.Sin(angle);
+        double c = SimMath.Cos(angle);
+        double s = SimMath.Sin(angle);
         return new Vector3d(
             (c * forward.X) - (s * right.X),
             (c * forward.Y) - (s * right.Y),

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Presentation;
 
 namespace OpenIGI.Host;
@@ -30,7 +31,7 @@ public sealed partial class GameHost
 
     private void DrawBombs(in Camera3D eye, in Matrix4f projection)
     {
-        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy }
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: MatchModes.SearchAndDestroy }
             || (TickObserver as ISessionScoreboard)?.ModeReport is not { } report
             || (report.BombAt ?? (report.BombFlies ? null : report.DroppedAt)) is not { } at)
         {
@@ -45,7 +46,7 @@ public sealed partial class GameHost
     // The session's mode points over the lit scene, after the tracers: a lettered ring on the ground and a low wall of light.
     private void DrawModePoints(in Camera3D eye, in Matrix4f projection)
     {
-        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy, Layout: { } layout })
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: MatchModes.SearchAndDestroy, Layout: { } layout })
         {
             return;
         }

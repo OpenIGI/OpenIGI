@@ -7,6 +7,7 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Player.Aim;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
@@ -133,7 +134,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         _wallBlocks = new PlayerWallBlockLog(logger ?? NullLogger.Instance, _body);
         _firstPerson = new PlayerFirstPersonView(_body);
         _pickups = new PlayerPickups(_body);
-        _shots = new PlayerShotResolver(_body, _random);
+        _shots = new PlayerShotResolver(_body, _random, Shots);
         _interaction = new PlayerInteractionDriver(this, _body, _input, _random, _shots);
         _ladder = new PlayerLadderController(_body);
         _footsteps = new PlayerFootsteps(_body);
@@ -148,7 +149,11 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public PlayerBody Body => _body;
 
     /// <summary>Gets the input frame the last tick ran on: on a co-op client, the command sent up for it.</summary>
-    public PlayerInputFrame LastFrame => _input.Current;
+    /// <remarks>
+    /// As the controls gave it, before modern aim took the alternate-fire button for the sights: a server that runs it takes the
+    /// button again by its own rules, as a replay does.
+    /// </remarks>
+    public PlayerInputFrame LastFrame => _lastRawFrame;
 
     /// <summary>Gets the heading the last tick ran with, before anything in it turned the body.</summary>
     /// <remarks>
@@ -218,6 +223,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public void ResetOptics()
     {
         _optics.Reset();
+        ResetAds();
         _firstPerson.ResetZoom();
     }
 
@@ -320,14 +326,18 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     }
 
     /// <summary>
-    /// Gets the pitch the view is actually drawn at — the look, plus the recoil sitting on top of it.
+    /// Gets the pitch the view is actually drawn at — the look, plus the recoil sitting on top of it, plus whatever a blast
+    /// has thrown it up by.
     /// </summary>
     /// <remarks>
     /// <c>0x464800</c> writes <c>view+288 = view+296 + view+292</c>: the accumulated recoil is
     /// <b>added</b> to the mouse-driven pitch rather than folded into it, which is what lets it decay
-    /// back to where you were aiming instead of leaving the view permanently raised.
+    /// back to where you were aiming instead of leaving the view permanently raised. A blast's throw rides the same way.
     /// </remarks>
-    public float AimPitch => _body.Pitch + (_weapons?.RecoilPitch ?? 0f);
+    public float AimPitch => _body.Pitch + (_weapons?.RecoilPitch ?? 0f) + _firstPerson.BlastKickPitch;
+
+    /// <inheritdoc cref="PlayerFirstPersonView.InstallBlastKick"/>
+    public void InstallBlastKick(float pitchRadians) => _firstPerson.InstallBlastKick(pitchRadians);
 
     /// <summary>Gets whether the weapon in hand, or the gun the player is on, fired on the last tick.</summary>
     public bool FiredThisTick => MountedStationaryGun is { } mounted
@@ -340,9 +350,6 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// prevents the rifle's ordinary automatic sound from replacing the launch report.
     /// </remarks>
     public bool M203LaunchedThisTick => _weapons is not null && _weapons.M203Shots.Count > 0;
-
-    /// <summary>Gets whether a grenade throw is being charged — the hand cooking it.</summary>
-    public bool IsChargingThrow => _weapons?.IsChargingThrow ?? false;
 
     /// <summary>Gets the serial of the last round fired.</summary>
     public int ShotSequence => _weapons?.ShotSequence ?? 0;
@@ -459,7 +466,8 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public void AcknowledgePose() => PoseChanged = false;
 
     // Binds the rig to the body; see PlayerFirstPersonView.Sync.
-    private void SyncView() => _firstPerson.Sync(AimPitch, _weapons);
+    private void SyncView() =>
+        _firstPerson.Sync(AimPitch, _weapons, _firstPerson.IsLeaning ? PlayerWorldTraces.Eye(_walls, TerrainTrace) : null);
 
     /// <summary>Gets whether the cursor should be held while the view is being turned.</summary>
     public bool IsCapturingMouse => _firstPerson.IsCapturingMouse;
@@ -538,6 +546,12 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     public bool IsMapComputerOpen => _mapComputerOpen;
 
     /// <summary>
+    /// Gets the page whose key -- the objectives' or the log's -- went down on this tick's input, or none: the page the computer
+    /// opens on when that key took the weapon machine into its state, or turns to while it is up.
+    /// </summary>
+    public OpenIGI.Game.Computer.ComputerPageKind AskedComputerPage => OpenIGI.Game.Computer.ComputerPageKeys.Asked(_input);
+
+    /// <summary>
     /// Enters or leaves the map-computer state without letting the normal movement tick consume the
     /// opening key. Retail weapon state 11 immediately installs human locomotion state 45
     /// (<c>0x40FDA0</c>), whose declared weapon action is the crouched hold pose.
@@ -568,7 +582,12 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
             // as held, the key has to be let go before it can open the computer; one already let go is no worse off.
             PlayerInputFrame keyHeld = _input.Current;
             keyHeld[(int)PlayerInputSlot.MapComputer] = 1f;
+            foreach ((PlayerAction _, PlayerInputSlot pageSlot, OpenIGI.Game.Computer.ComputerPageKind _) in OpenIGI.Game.Computer.ComputerPageKeys.All)
+            {
+                keyHeld[(int)pageSlot] = 1f;
+            }
             _input.Accept(keyHeld);
+            _lastRawFrame = keyHeld;
         }
 
         _locomotion.Animator?.Enter(open ? 45 : HumanLocomotionStates.Idle);
@@ -612,8 +631,8 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// <summary>Gets where the player is standing, in the game's world units, for the debug overlay.</summary>
     public Vector3d PositionUnits => _body.Position;
 
-    /// <summary>Gets the eye position, in world units.</summary>
-    public Vector3d EyeUnits => _body.Eye;
+    /// <summary>Gets the eye position, in world units: the body's, moved by any lean.</summary>
+    public Vector3d EyeUnits => _body.Eye + _firstPerson.LeanOffsetUnits;
 
     /// <summary>Gets which way the body faces, in radians.</summary>
     public float Yaw => _body.Yaw;
@@ -882,12 +901,12 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
     /// Advances only the presentation while the map computer is open. The player remains grounded and
     /// motionless, but the first-person rig keeps advancing exactly as the retail state-45 handler does.
     /// </summary>
-    /// <param name="input">
-    /// The input, whose map key closes the computer as state 45's run does (<c>0x40E3C0</c>); or <see langword="null"/> for an
-    /// empty frame, where the host closes it.
+    /// <param name="frame">
+    /// The tick's input frame, whose map key closes the computer as state 45's run does (<c>0x40E3C0</c>); or
+    /// <see langword="null"/> for an empty frame, where the host closes it.
     /// </param>
     /// <returns><see langword="true"/> when the map key went down this tick.</returns>
-    public bool TickMapComputer(InputState? input = null)
+    public bool TickMapComputer(PlayerInputFrame? frame = null)
     {
         if (!_mapComputerOpen)
         {
@@ -899,8 +918,9 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
 
         // Map controls are consumed by ComputerMap, not HumanPlayer, and the weapon machine waits out state 11 whatever is
         // held. Without the host's input the frame is empty, which keeps the machine's clock.
-        _input.Accept(input is null ? default : PlayerInputSampler.SampleFrame(input, InputProfile));
-        bool close = input is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
+        _input.Accept(frame ?? default);
+        _lastRawFrame = _input.Current;
+        bool close = frame is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
         _locomotion.Animator?.Enter(45);
         TickWeapons();
         _firstPerson.Rig?.Tick();
@@ -994,7 +1014,19 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         BoneAttachment? HeldWeapon,
         BoneAttachment? Magazine,
         BoneAttachment? MovingPart) SmoothedRig(float alpha) =>
-        _firstPerson.SmoothedRig(AimPitch, alpha);
+        _firstPerson.SmoothedRig(AimPitch, alpha, RigAim.None);
+
+    /// <summary>The rig for a frame between two ticks, with modern aim's sights and the frame's motion laid over it.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <param name="motion">The frame's view-model motion (<see cref="ViewModelMotion"/>), or the identity for none.</param>
+    /// <returns>As <see cref="SmoothedRig(float)"/>.</returns>
+    public (
+        Vector3d OriginUnits,
+        Matrix3f Orientation,
+        BoneAttachment? HeldWeapon,
+        BoneAttachment? Magazine,
+        BoneAttachment? MovingPart) SmoothedRig(float alpha, RigOffset motion) =>
+        _firstPerson.SmoothedRig(AimPitch, alpha, AimRig(alpha, motion));
 
     /// <inheritdoc cref="PlayerLadderController.DecideStep"/>
     public LadderStepResult DecideLadderStep(bool up, bool down, bool slide) =>
@@ -1058,6 +1090,7 @@ public sealed partial class PlayerCamera : IPlayerInteractionHost, IWeaponWheelP
         if (view is not null)
         {
             _optics.Tick(_weapons, view, _input);
+            ApplyAdsOptics(view);
         }
 
         if (_weapons is null || view is null)

@@ -40,7 +40,7 @@ public sealed class Igi2SmokeRandom
 /// drawn turn speed, for its life and its fade over its intensity, in ticks.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SmokeTask : Igi2Task, Interaction.IIgi2Carried
+public sealed partial class Igi2SmokeTask : Igi2Task, Interaction.IIgi2Carried, IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Smoke";
@@ -160,6 +160,14 @@ public sealed partial class Igi2SmokeTask : Igi2Task, Interaction.IIgi2Carried
 
     /// <summary>Gets the particle system, once made.</summary>
     public Particle2DSystem? System => _system;
+
+    /// <inheritdoc/>
+    /// <remarks><c>Smoke_RemoveHandler</c>: its particle system leaves the world with it, its particles held where they were.</remarks>
+    public void RemoveFromWorld() => _system?.IsInWorld = false;
+
+    /// <inheritdoc/>
+    /// <remarks><c>Smoke_RegisterHandler</c>: its particle system is back.</remarks>
+    public void PutInWorld() => _system?.IsInWorld = true;
 
     /// <summary>Gets or sets the particle module its system is made in.</summary>
     public Igi2Particles? Particles { get; set; }

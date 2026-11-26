@@ -27,6 +27,30 @@ public static class RemasteredHudPresentation
     public static bool UsesRemasteredTitleOptics =>
         UsesRemasteredOptics(OpenIGI.Rendering.HudCVars.TacticalComputer.Value, OpenIGI.Presentation.Text.UiFontLibrary.TypographyAvailable);
 
+    /// <summary>Gets or sets whether the device can draw the scene offscreen, where the sensor's pass runs; the host sets it from its device.</summary>
+    /// <remarks>
+    /// Not whether the preset draws offscreen: the host draws the scene offscreen for the sensor while it is up whatever the
+    /// preset asks (<c>GameHost.ThermalNeedsScene</c>), so the original's preset sees through the remastered sensor too. Only a
+    /// device that cannot capture the scene at all leaves the original's infrared view.
+    /// </remarks>
+    public static bool SceneCaptureAvailable { get; set; } = true;
+
+    /// <summary>Whether a title's thermal optics are seen through the remastered sensor: the setting, a device that can draw the scene offscreen for its pass, and faces for its eyepiece.</summary>
+    /// <param name="thermalRemastered">Whether the remastered thermal view is chosen.</param>
+    /// <param name="sceneCapture">Whether the device can draw the scene offscreen, where the sensor's pass runs.</param>
+    /// <param name="eyepieceReady">Whether the eyepiece's faces can load.</param>
+    /// <returns>Whether the remastered sensor is used; otherwise the original's infrared view is drawn.</returns>
+    public static bool UsesRemasteredThermal(bool thermalRemastered, bool sceneCapture, bool eyepieceReady) =>
+        thermalRemastered && sceneCapture && eyepieceReady;
+
+    /// <summary>Whether a title's thermal optics are seen through the remastered sensor, as the settings and the device stand now.</summary>
+    /// <remarks>Read by the host, which runs the sensor, and by the title's display, which then leaves its retail frame out.</remarks>
+    public static bool UsesRemasteredTitleThermal =>
+        UsesRemasteredThermal(
+            OpenIGI.Rendering.HudCVars.ThermalRemastered.Value,
+            SceneCaptureAvailable,
+            OpenIGI.Presentation.Text.UiFontLibrary.TypographyAvailable);
+
     /// <summary>Whether the retail weapon layer owns the current binocular presentation.</summary>
     /// <remarks>
     /// The tactical optics switch is independent of the ordinary remastered HUD switch. When the
@@ -79,12 +103,7 @@ public static class RemasteredHudPresentation
     }
 
     /// <summary>Chooses the health colour with deliberately broad warning bands.</summary>
-    public static Bgra32 HealthColour(float fraction) => Math.Clamp(fraction, 0f, 1f) switch
-    {
-        > 0.55f => UiPalette.Success,
-        > 0.28f => UiPalette.Accent,
-        _ => UiPalette.Danger,
-    };
+    public static Bgra32 HealthColour(float fraction) => UiPalette.Health(fraction);
 
     /// <summary>Returns the first objective the player can still complete.</summary>
     public static MissionObjective? PrimaryObjective(IEnumerable<MissionObjective> objectives)

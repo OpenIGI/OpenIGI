@@ -34,8 +34,12 @@ public sealed class Igi2MissionSaves : MissionSaves
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked.</remarks>
-    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed;
+    /// <remarks>
+    /// <c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked. Nor while another game's humans stand in the
+    /// level that keep nothing of themselves in its save (<see cref="OpenIGI.Game.World.LevelJoiners.HasUnsavedGuests"/>): a
+    /// save without them would bring back a level they no longer fit.
+    /// </remarks>
+    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed && !_level.HostsUnsavedGuests;
 
     /// <summary>Gets where the slots are kept, with the load list and the carry-overs that are this game's own.</summary>
     public new Igi2SaveSlots SlotStore => _slots;
@@ -52,6 +56,30 @@ public sealed class Igi2MissionSaves : MissionSaves
     {
         get => _level.Pickups;
         set => _level.Pickups = value;
+    }
+
+    /// <summary>
+    /// Gets or sets what the player's host lets go of once a save is read: the look it gathered from the mouse since the last tick,
+    /// a heading and pitch turned from where the player faced before the load. Not retail, whose look has no such gathering.
+    /// </summary>
+    public Action? Loaded
+    {
+        get => _level.Loaded;
+        set => _level.Loaded = value;
+    }
+
+    /// <summary>Gets or sets what tells the player how a save or a load went (<see cref="SaveReport"/>), or nothing.</summary>
+    public Action<SaveReport>? Reported
+    {
+        get => _level.Reported;
+        set => _level.Reported = value;
+    }
+
+    /// <summary>Gets or sets the level's sounds, every one of which a load deletes before it reads its save.</summary>
+    public Audio.Igi2Sounds? Sounds
+    {
+        get => _level.Sounds;
+        set => _level.Sounds = value;
     }
 
     /// <summary>Gets or sets the screen's messages and the computer's log, which a load clears before it reads its save.</summary>
@@ -119,7 +147,19 @@ public sealed class Igi2MissionSaves : MissionSaves
 
         public Igi2StatusMessageScreen? StatusMessages { get; set; }
 
+        public Audio.Igi2Sounds? Sounds { get; set; }
+
+        public Action? Loaded { get; set; }
+
+        public Action<SaveReport>? Reported { get; set; }
+
+        public void Report(SaveReport report) => Reported?.Invoke(report);
+
+        public void AfterLoad() => Loaded?.Invoke();
+
         public GameTask Root => level.Root;
+
+        public bool HostsUnsavedGuests => level.Joined.HasUnsavedGuests;
 
         public int MissionTime => player.MissionTime;
 
@@ -136,16 +176,20 @@ public sealed class Igi2MissionSaves : MissionSaves
         }
 
         // Its tasks, its dropped weapons, its mines and its glass.
-        public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines());
+        public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines(), level.Joined.SaveSections);
 
-        // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds;
-        // the messages on the screen and the computer's log go too. Its missile smoke, level sounds and bullet holes are the
-        // picture's and the mixer's here, which follow the level as it is read back.
+        // Game_LoadFromSlot: every sound the level made is deleted (Game_KillSoundTasks), each owner making again what it should
+        // play -- a sound generator what its save had playing as it is read, an ambient area its bed as it runs; every mine and
+        // every pickup in the level is deleted, and the load makes again each the save holds; the messages on the screen and the
+        // computer's log go too; and the grenades, missiles and explosions in flight, which their DeSerializeDone handlers
+        // delete, since a save keeps none.
         public void BeforeLoad()
         {
+            Sounds?.DeleteAll();
             Mines()?.DeleteAll();
             StatusMessages?.ClearForLoad();
             Pickups?.DeleteAll();
+            level.Dynamic?.DeleteForLoad();
         }
     }
 }

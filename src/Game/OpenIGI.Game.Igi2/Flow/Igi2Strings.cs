@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Resources;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -45,9 +46,14 @@ public sealed class Igi2Strings(ResourceRegistry resources, string? language = n
     public bool TryGet(string key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? text)
     {
         ArgumentNullException.ThrowIfNull(key);
-        // Only what is loaded is looked in (Resource_IsLoadedInternal): a key is never read from a loose file.
+        // Only what is loaded is looked in (Resource_IsLoadedInternal): a key is never read from a loose file. Not retail: an
+        // installation without the chosen language has English mounted in its place (GameHost.MountLanguage), so English is
+        // asked after it.
+        string chosen = language ?? LanguageCVars.Directory;
         if (_resources.TryGetEntry("GLOBAL:" + key, out ResourceEntry? entry)
-            || _resources.TryGetEntry("LOCAL:" + (language ?? LanguageCVars.Directory) + "/" + key, out entry))
+            || _resources.TryGetEntry("LOCAL:" + chosen + "/" + key, out entry)
+            || (!string.Equals(chosen, MenuStringTable.DefaultLanguageDirectory, StringComparison.OrdinalIgnoreCase)
+                && _resources.TryGetEntry("LOCAL:" + MenuStringTable.DefaultLanguageDirectory + "/" + key, out entry)))
         {
             ReadOnlySpan<byte> bytes = entry.Data.Span;
             int end = bytes.IndexOf((byte)0);

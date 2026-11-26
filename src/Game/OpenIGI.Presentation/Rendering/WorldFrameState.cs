@@ -226,6 +226,14 @@ internal sealed class WorldFrameState
                 continue;
             }
 
+            // Not there yet: an object with only a destroyed model, before it is destroyed -- or, for a switch, before it wears it.
+            if (authored.IsHiddenUntilDestroyed && !_transforms.IsBroken(authored) && _transforms.VariantOf(authored) < 0)
+            {
+                NoteGone(wasSkipped, wasModel, wasPosition);
+                entry.Skip = true;
+                continue;
+            }
+
             entry.Skip = false;
             entry.EyeCulled = false;
             entry.IsRotor = authored.IsRotor;

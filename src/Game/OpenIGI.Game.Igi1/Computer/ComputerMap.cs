@@ -163,7 +163,7 @@ public sealed partial class ComputerMap : IComputerScreen
     }
 
     // RotX(-π/2)'s second column, (0, cos, sin), as Matrix_SetRotX leaves it in floats.
-    private static readonly (float X, float Y, float Z) TiltColumn = (0f, (float)Math.Cos(-1.5707964f), (float)Math.Sin(-1.5707964f));
+    private static readonly (float X, float Y, float Z) TiltColumn = (0f, (float)SimMath.Cos(-1.5707964f), (float)SimMath.Sin(-1.5707964f));
 
     /// <summary>
     /// Gets the camera's axes, by rows: the tilt turned a further quarter about X (<c>0x4B34F0</c>), so its columns are the
@@ -181,7 +181,7 @@ public sealed partial class ComputerMap : IComputerScreen
     }
 
     // The x87's tangent of a float angle, stored to a float.
-    private static float Tan(float angle) => (float)Math.Tan(angle);
+    private static float Tan(float angle) => (float)SimMath.Tan(angle);
 
     private void Button(int id, float x, float y, string sprite)
     {
@@ -305,7 +305,7 @@ public sealed partial class ComputerMap : IComputerScreen
             }
         }
 
-        X87 f = Math.Pow(FieldOfView, PanPower);
+        X87 f = SimMath.Pow(FieldOfView, PanPower);
         Vector3d at = _computer.MapPosition;
         _computer.MapPosition = new Vector3d((f * dx).F + at.X, (f * dy).Value + at.Y, at.Z);
     }

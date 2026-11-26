@@ -205,7 +205,8 @@ public static class SettingsFile
     /// <param name="console">The console whose registry, aliases and bindings are rendered.</param>
     /// <param name="presets">
     /// The graphics presets, or <see langword="null"/> where none is locked. Under a lock, a variable the locked preset sets is
-    /// recorded when it differs from the preset's value rather than from its own default.
+    /// recorded when it differs from the preset's value rather than from its own default; under a game's hold, a picture
+    /// variable is recorded as the player had it.
     /// </param>
     /// <returns>The file's contents.</returns>
     /// <remarks>Exposed so tests and the <c>dump_settings</c> command can inspect it without writing a file.</remarks>
@@ -224,6 +225,24 @@ public static class SettingsFile
         List<ICVar> modified = presets?.LockedPreset is null
             ? [.. console.Variables.Modified(CVarOptions.Archive)]
             : [.. console.Variables.Modified(CVarOptions.Archive, presets.LockedValue)];
+
+        // A game holding the picture on one preset (GraphicsPresetRegistry.HeldPreset) writes the player's own picture in
+        // its place: what it held is the game's, and the next start puts it back over the player's again.
+        Func<ICVar, string> valueOf = static variable => variable.ValueText;
+        if (presets?.HeldPreset is not null)
+        {
+            valueOf = variable => presets.PlayerValue(variable) ?? variable.ValueText;
+            HashSet<ICVar> changed = [.. modified];
+            modified =
+            [
+                .. console.Variables.All
+                    .Where(variable => (variable.Flags & CVarOptions.Archive) == CVarOptions.Archive
+                        && (presets.PlayerValue(variable) is { } player
+                            ? !string.Equals(player, variable.DefaultText, StringComparison.OrdinalIgnoreCase)
+                            : changed.Contains(variable)))
+                    .OrderBy(static variable => variable.Name, StringComparer.OrdinalIgnoreCase),
+            ];
+        }
         List<KeyValuePair<string, string>> kept =
             [.. Ordered(console.KeptSettings).Where(entry => !console.Variables.TryGet(entry.Key, out _))];
         if (modified.Count > 0 || kept.Count > 0)
@@ -233,7 +252,7 @@ public static class SettingsFile
             {
                 builder.Append(variable.Name)
                     .Append(' ')
-                    .AppendLine(CommandTokenizer.Quote(variable.ValueText));
+                    .AppendLine(CommandTokenizer.Quote(valueOf(variable)));
             }
 
             // A switched-off mod's settings, as they were read.

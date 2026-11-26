@@ -109,6 +109,12 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public bool FaceGroupBlending { get; set; }
 
+    /// <summary>
+    /// The alpha a glass subset's texel needs to reach the opaque world: all but solid, so a glazing texture's frame lands in the
+    /// G-buffer and its pane, however smudged, is left whole to the glass pass.
+    /// </summary>
+    public const byte GlassFrameAlphaReference = 250;
+
     /// <summary>Gets how many sub-meshes the last <see cref="Draw"/> submitted.</summary>
     public int LastDrawCount { get; private set; }
 
@@ -311,8 +317,6 @@ public sealed partial class WorldRenderer : IWorldPresenter
         bool faceGroups = FaceGroupBlending && !rotorsOnly && !glassOnly;
         byte appliedReference = IGraphicsDevice.DefaultAlphaReference;
 
-        // Interior sectors and meshes without authored normals have no reliable outward facing.
-        // Choose culling per mesh below, including when an archived r_world_cull enables it.
         bool cullBackFaces = GeometryCVars.WorldCull.Value != 0;
         CullMode appliedCull = CullMode.None;
         _device.SetCullMode(appliedCull);
@@ -423,7 +427,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     continue;
                 }
 
-                if (level > 0 && lod.Level(displayed, level) is { } lower && _subsets.ResolveLevel(lower) is { } lowerModel)
+                // Asked with the placement as authored: here it differs from the displayed one only in where it stands, which
+                // the draw takes from the entry, and the levels are kept per placement. A moving object asked as displayed was
+                // a new placement every frame -- its chain and resolved model built again and kept, without end.
+                if (level > 0 && lod.Level(scene.Placements[index], level) is { } lower && _subsets.ResolveLevel(lower) is { } lowerModel)
                 {
                     displayed = lower;
                     model = lowerModel;
@@ -545,9 +552,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
             // Every model wound to the original's front is culled, rooms included, as the original culls every model in every
             // look (CCW: Direct3DRender_SetLitState 0x49D480, Direct3DRender_SetUnlitState 0x49D810). A building's shell and its
             // room share the plane of each door and window from opposite sides; drawn two-sided, the two fight over every pixel of
-            // it. Only a mesh without normals, which nothing could wind, stays two-sided.
-            bool culled = cullBackFaces && model.CanCull;
-            CullMode cull = culled ? CullMode.CounterClockwise : CullMode.None;
+            // it. I.G.I. 2's lightmapped geometry, which stores no normals, is wound and culled the same.
+            CullMode cull = cullBackFaces ? CullMode.CounterClockwise : CullMode.None;
             if (cull != appliedCull)
             {
                 _device.SetCullMode(cull);
@@ -592,19 +598,28 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     continue;
                 }
 
-                if (faceGroups)
-                {
-                    byte reference = subset.Blend switch
+                byte reference = faceGroups
+                    ? subset.Blend switch
                     {
-                        SubsetBlend.Opaque => 0,
-                        SubsetBlend.AlphaTested => 65,
-                        _ => 2,
-                    };
-                    if (reference != appliedReference)
-                    {
-                        _device.SetAlphaReference(reference);
-                        appliedReference = reference;
+                        SubsetBlend.Opaque => (byte)0,
+                        SubsetBlend.AlphaTested => (byte)65,
+                        _ => (byte)2,
                     }
+                    : IGraphicsDevice.DefaultAlphaReference;
+
+                // A pane's texture drawn into the opaque world keeps only its SOLID texels, the frame: everything the glass
+                // pass draws as translucency stays out of the G-buffer. At the ordinary half cut a pane whose smudges run
+                // above half alpha -- I.G.I. 2's dirty windows, alpha 64 to 160 throughout and no frame at all -- left its
+                // dirt there as solid grey blots on clear air, under the pane the glass pass then laid over them.
+                if (subset.Material.Glass && !glassOnly && !rotorsOnly && !blendedOnly)
+                {
+                    reference = GlassFrameAlphaReference;
+                }
+
+                if (reference != appliedReference)
+                {
+                    _device.SetAlphaReference(reference);
+                    appliedReference = reference;
                 }
 
                 // A rotor is the smear of a blade whatever its texture is listed as: the original blends every copy of it
@@ -638,7 +653,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     // world's as M * v (the model view above is built that way, so its COLUMNS are the
                     // model's axes in the world), and the inverse is its transpose: dotting the world
                     // vector against each column, which is what the engine's row-vector Transform does.
-                    Vector3f sun = !baked && shading.Sun is { } sunlight
+                    // A model that stored no normals is lit by the ambient alone, as the original's zero normals left it.
+                    Vector3f sun = !baked && !model.Geometry.HasDerivedNormals && shading.Sun is { } sunlight
                         ? orientation.Transform(sunlight.Direction)
                         : Vector3f.Zero;
                     if (sun != appliedSun)

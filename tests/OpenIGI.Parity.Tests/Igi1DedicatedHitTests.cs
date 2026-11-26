@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Input;
@@ -17,7 +18,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     [RequiresGameDataFact]
     public void Players_on_a_dedicated_server_hurt_each_other_on_every_map_and_mode_it_is_moved_to()
     {
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.17, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.17, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         IReadOnlyList<int> arenas = [.. trio.ServerGame.ArenaMissionList.Select(m => m.Id)];
         output.WriteLine($"arenas: {string.Join(", ", arenas)}");
@@ -48,7 +49,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
         Check("m1 tdm");
         Restart(trio, "map 1 tdm");
         Check("m1 tdm restarted");
-        foreach ((int mission, string mode) in new[] { (2, GameModes.TeamDeathmatch), (3, GameModes.SearchAndDestroy), (1, GameModes.FreeForAll), (2, GameModes.Elimination), (4, GameModes.TeamDeathmatch) })
+        foreach ((int mission, string mode) in new[] { (2, MatchModes.TeamDeathmatch), (3, MatchModes.SearchAndDestroy), (1, MatchModes.FreeForAll), (2, MatchModes.Elimination), (4, MatchModes.TeamDeathmatch) })
         {
             if (!arenas.Contains(mission))
             {
@@ -67,7 +68,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     {
         // The head stands forward of the look over the gun. Turned by the yaw rather than the gamma it is drawn with, the
         // body rounds were scored on was the drawn one mirrored: met in the trunk, never in the head the shooter aimed at.
-        using Igi1DedicatedTrio trio = new(GameModes.SearchAndDestroy, 1, 0.10, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.SearchAndDestroy, 1, 0.10, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         Settle(trio);
         Igi1DedicatedTrio.Player target = trio.Players[1];
@@ -113,7 +114,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     public void Players_on_a_dedicated_server_cannot_walk_through_each_other()
     {
         // 0x462BA0: a human's move that would end within 0.55 m of another living one, and nearer it, is refused.
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.10, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         Settle(trio);
         Igi1DedicatedTrio.Player walker = trio.Players[0];
@@ -156,7 +157,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     {
         // A tester stood at another's back, as near as the bodies allow, and stabbed: at some angles nothing was met. The
         // stabber's own body was told by a 1 m square about the blade's start, which on a diagonal held the other's body too.
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.10, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         Igi1DedicatedTrio.Player stabber = trio.Players[0];
         Igi1DedicatedTrio.Player stabbed = trio.Players[1];
@@ -236,7 +237,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     {
         // A tester saw another's pistol shot repeat on its body: the server holds the torso on the shot's clip until the gun
         // is ready, and the other game looped every torso clip it was sent.
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.10, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         Settle(trio);
         Igi1DedicatedTrio.Player shooter = trio.Players[0];
@@ -287,7 +288,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     {
         // The crosshair's marks and the hit sounds read the player's own tally, which only the soldiers counted into: a hit on
         // a player, settled by the server, marked nothing in either display.
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.10, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         Settle(trio);
         Igi1DedicatedTrio.Player shooter = trio.Players[0];
@@ -327,7 +328,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     [RequiresGameDataFact]
     public void The_server_console_lists_the_players_and_puts_one_in_front_of_another_where_its_own_game_follows()
     {
-        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.17, 0.10);
+        using Igi1DedicatedTrio trio = new(MatchModes.TeamDeathmatch, 1, 0.17, 0.10);
         Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
         trio.RunUntil(() => false, 30 * 2);
 

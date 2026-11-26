@@ -19,6 +19,9 @@ public sealed partial class Igi2TitlePlayer
 
     /// <inheritdoc/>
     public ShotTally? PlayerShots => Human.Shots;
+
+    /// <inheritdoc/>
+    public string PlayerWeapon => Weapons?.Inventory.Current?.WeaponType.WeaponId ?? string.Empty;
     private long _shotsFired;
     private int _bulletsSeen = -1;
 
@@ -86,24 +89,56 @@ public sealed partial class Igi2TitlePlayer
         Vector3d eye = Human.View.Position;
         Matrix3f view = Human.View.Orientation;
         Vector3f forward = new(view.M12, view.M22, view.M32);
-        _aimTrace.Starts[0] = eye;
-        _aimTrace.Ends[0] = new Vector3d(eye.X + (forward.X * AimReachUnits), eye.Y + (forward.Y * AimReachUnits), eye.Z + (forward.Z * AimReachUnits));
-        _aimTrace.Includes = owner => !ReferenceEquals(owner, Human);
-        WorldIntersection hit = _aimTrace.Intersections[0];
-        hit.IsHit = false;
-        hit.HitObject = null;
-        CollisionWorld.TraceLines(_aimTrace, Igi2CollisionWorld.EveryTypeGroup | Igi2CollisionWorld.HumanGroup | Igi2CollisionWorld.TerrainGroup);
-        if (!hit.IsHit)
+        Vector3d end = new(eye.X + (forward.X * AimReachUnits), eye.Y + (forward.Y * AimReachUnits), eye.Z + (forward.Z * AimReachUnits));
+
+        // Three hundred metres of line meets most of a level's objects, the trees and the ground, and this is asked every frame
+        // drawn. Most frames no enemy is anywhere near the line, and then the answer is no whatever it strikes first.
+        if (!EnemyNearLine(eye, end))
         {
             return false;
         }
 
-        object? struck = hit.HitObject?.Handler ?? hit.HitObject?.Owner;
-        return struck switch
+        _aimTrace.Starts[0] = eye;
+        _aimTrace.Ends[0] = end;
+        _aimTrace.Includes = _aimIncludes ??= owner => !ReferenceEquals(owner, Human);
+        WorldIntersection hit = _aimTrace.Intersections[0];
+        hit.IsHit = false;
+        hit.HitObject = null;
+        CollisionWorld.TraceLines(_aimTrace, Igi2CollisionWorld.EveryTypeGroup | Igi2CollisionWorld.HumanGroup | Igi2CollisionWorld.TerrainGroup);
+        return hit.IsHit && IsLivingEnemy(hit.HitObject?.Handler ?? hit.HitObject?.Owner);
+    }
+
+    private Func<object, bool>? _aimIncludes;
+
+    // Whether something the crosshair could call an enemy is struck by this line: a living soldier of another side.
+    private bool IsLivingEnemy(object? struck) => struck switch
+    {
+        Igi2HumanSoldier { IsDead: false } soldier => soldier.Team != Human.Team,
+        HumanTask { IsDead: false } other => other.Team != Human.Team,
+        _ => false,
+    };
+
+    // Whether the line can reach a living enemy at all. A boned body is struck only through its sphere (Igi2BoneTrace tests the
+    // same sphere first), so a line meeting no enemy's sphere meets no enemy; any other collider -- the other game's guests --
+    // has no such bound to ask, and is left to the full trace.
+    private bool EnemyNearLine(Vector3d start, Vector3d end)
+    {
+        Igi2CollisionWorld world = CollisionWorld;
+        if (world.OtherColliders.Count > 0)
         {
-            Igi2HumanSoldier { IsDead: false } soldier => soldier.Team != Human.Team,
-            HumanTask { IsDead: false } other => other.Team != Human.Team,
-            _ => false,
-        };
+            return true;
+        }
+
+        IReadOnlyList<Igi2BoneCollider> bodies = world.Bodies;
+        for (int i = 0; i < bodies.Count; i++)
+        {
+            Igi2BoneCollider body = bodies[i];
+            if (IsLivingEnemy(body.Owner) && Igi2BoneTrace.SphereMeets(body.Body, start, end))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

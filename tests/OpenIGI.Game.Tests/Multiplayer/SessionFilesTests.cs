@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
 using Xunit;
@@ -17,6 +18,11 @@ public sealed class SessionFilesTests : IDisposable
     private const ulong Protocol = 0x46494C4553594E43UL;
     private const string Objects = "missions/location0/level1/objects.qvm";
     private const string Weapons = "weapons/weapons.qvm";
+
+    /// <summary>Project I.G.I.'s rules, with mission n's folder <c>missions/location0/level&lt;n&gt;</c> as its table names it.</summary>
+    internal static readonly GameplayFileRules Igi1 = new(
+        Igi1GameplayFiles.Layout,
+        static map => int.TryParse(map, System.Globalization.CultureInfo.InvariantCulture, out int n) ? [$"missions/location0/level{n}", "missions/location0/common"] : null);
 
     private readonly string _cache = Path.Combine(Path.GetTempPath(), $"openigi-files-{Guid.NewGuid():N}");
 
@@ -44,7 +50,7 @@ public sealed class SessionFilesTests : IDisposable
     [InlineData("menusystem/menusystem.res", false)]
     [InlineData("igi.exe", false)]
     public void Only_the_files_a_level_plays_from_are_compared(string path, bool gameplay) =>
-        Assert.Equal(gameplay, GameplayFiles.IsGameplay("igi1", path));
+        Assert.Equal(gameplay, Igi1.IsGameplay(path));
 
     [Theory]
     [InlineData("../igi.exe")]
@@ -90,7 +96,7 @@ public sealed class SessionFilesTests : IDisposable
             [Weapons] = Bytes("LOOP weapons"),
         };
 
-        SessionFileList list = GameplayFiles.Build("1", server);
+        SessionFileList list = Igi1.Build("1", server);
 
         Assert.Equal([Objects, Weapons], list.Files.Select(f => f.Path).Order(StringComparer.Ordinal));
     }
@@ -112,6 +118,7 @@ public sealed class SessionFilesTests : IDisposable
                 sync.Accept(list, session.WantFiles);
             }
 
+            sync.TakeTables(session.TakeFileTables(), session.WantChunks);
             sync.Take(session.TakeFilePieces());
         });
 
@@ -165,7 +172,7 @@ public sealed class SessionFilesTests : IDisposable
         SessionFile listed = new(Objects, disguised.Length, SHA256.HashData(disguised));
         sync.Accept(new SessionFileList("1", [listed]), (_, _) => { });
 
-        sync.Take([new FilePiece("1", 0, 0, disguised)]);
+        sync.Take([new FilePiece("1", 0, 0, false, disguised)]);
 
         Assert.Contains("different kind", sync.Failure, StringComparison.Ordinal);
         Assert.Empty(sync.Pins);
@@ -178,11 +185,123 @@ public sealed class SessionFilesTests : IDisposable
         SessionFileSync sync = new(new MemorySource { [Objects] = Bytes("LOOP mine") }, _cache);
         sync.Accept(new SessionFileList("1", [File(Objects, "LOOP listed")]), (_, _) => { });
 
-        sync.Take([new FilePiece("1", 0, 0, Bytes("LOOP sentxx"))]);
+        sync.Take([new FilePiece("1", 0, 0, false, Bytes("LOOP sentxx"))]);
 
         Assert.Contains("didn't arrive whole", sync.Failure, StringComparison.Ordinal);
         Assert.Empty(sync.Pins);
     }
+
+    [Fact]
+    public void A_large_file_differing_in_one_place_fetches_only_the_pieces_around_it()
+    {
+        // An archive of a hundred "meshes"; the server's has one changed and one inserted in the middle.
+        Random random = new(7);
+        List<byte[]> meshes = [.. Enumerable.Range(0, 100).Select(_ => { byte[] m = new byte[12_000]; random.NextBytes(m); return m; })];
+        byte[] mine = Archive(meshes);
+        byte[] changed = new byte[12_000];
+        random.NextBytes(changed);
+        byte[] inserted = new byte[5_000];
+        random.NextBytes(inserted);
+        List<byte[]> theirMeshes = [.. meshes];
+        theirMeshes[30] = changed;
+        theirMeshes.Insert(70, inserted);
+        byte[] theirs = Archive(theirMeshes);
+
+        const string models = "missions/location0/level1/models/level1.res";
+        MemorySource server = new() { [models] = theirs };
+        MemorySource client = new() { [models] = mine };
+        using Room room = new(server);
+        SessionFileSync sync = new(client, _cache);
+        ClientSession session = room.Sync();
+        room.Run(4, () =>
+        {
+            if (session.TakeFileList() is { } list)
+            {
+                sync.Accept(list, session.WantFiles);
+            }
+
+            sync.TakeTables(session.TakeFileTables(), session.WantChunks);
+            sync.Take(session.TakeFilePieces());
+        });
+
+        Assert.True(sync.Settled, sync.Failure);
+        Assert.Equal(theirs, System.IO.File.ReadAllBytes(sync.Pins[models]));
+
+        // The two changes and the pieces they straddle, not the 1.2 MB archive: under a tenth of it on the line.
+        Assert.True(room.Server.FileBytesSent < theirs.Length / 10, $"{room.Server.FileBytesSent} bytes sent for a {theirs.Length}-byte file");
+        Assert.True(sync.BytesReused > theirs.Length * 8 / 10, $"{sync.BytesReused} bytes reused");
+    }
+
+    [Fact]
+    public void A_file_the_client_lacks_wholly_comes_deflated()
+    {
+        const string graph = "missions/location0/level1/graphs/graph1.dat";
+        byte[] theirs = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("GRPH node 1 2 3 4 link 5 6;", 8_000)));
+        MemorySource server = new() { [graph] = theirs };
+        MemorySource client = new() { [graph] = Bytes("GRPH an old graph of another shape") };
+        using Room room = new(server);
+        SessionFileSync sync = new(client, _cache);
+        ClientSession session = room.Sync();
+        room.Run(4, () =>
+        {
+            if (session.TakeFileList() is { } list)
+            {
+                sync.Accept(list, session.WantFiles);
+            }
+
+            sync.TakeTables(session.TakeFileTables(), session.WantChunks);
+            sync.Take(session.TakeFilePieces());
+        });
+
+        Assert.True(sync.Settled, sync.Failure);
+        Assert.Equal(theirs, System.IO.File.ReadAllBytes(sync.Pins[graph]));
+        Assert.True(room.Server.FileBytesSent < theirs.Length / 5, $"{room.Server.FileBytesSent} bytes sent for {theirs.Length}");
+    }
+
+    [Fact]
+    public void A_table_that_does_not_add_up_to_the_file_is_refused()
+    {
+        const string models = "missions/location0/level1/models/level1.res";
+        byte[] mine = new byte[100_000];
+        mine[0] = (byte)'I';
+        SessionFileSync sync = new(new MemorySource { [models] = mine }, _cache);
+        SessionFile listed = new(models, 200_000, new byte[32]);
+        sync.Accept(new SessionFileList("1", [listed]), (_, _) => { });
+
+        sync.TakeTables([new FileChunkTable("1", 0, [new ContentChunk(ContentChunks.MaxLength, 1)])], _ => Assert.Fail("nothing may be asked for"));
+
+        Assert.Contains("doesn't add up", sync.Failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_piece_that_inflates_past_its_length_is_refused()
+    {
+        byte[] bomb = ChunkCodec.Pack(new byte[ContentChunks.MaxLength]).Data;
+
+        Assert.Null(ChunkCodec.Unpack(true, bomb, 100));
+        Assert.Null(ChunkCodec.Unpack(true, [1, 2, 3, 4, 5], 100));
+        Assert.Equal(new byte[ContentChunks.MaxLength], ChunkCodec.Unpack(true, bomb, ContentChunks.MaxLength));
+    }
+
+    [Fact]
+    public void Pieces_are_cut_by_content_so_an_insertion_moves_them_rather_than_changing_them()
+    {
+        Random random = new(3);
+        byte[] data = new byte[400_000];
+        random.NextBytes(data);
+        byte[] shifted = [.. data[..150_000], .. new byte[] { 1, 2, 3, 4, 5, 6, 7 }, .. data[150_000..]];
+
+        IReadOnlyList<ContentChunk> before = ContentChunks.Cut(data);
+        IReadOnlyList<ContentChunk> after = ContentChunks.Cut(shifted);
+
+        Assert.Equal(before, ContentChunks.Cut(data));
+        Assert.All(before, c => Assert.InRange(c.Length, 1, ContentChunks.MaxLength));
+        Assert.Equal(data.Length, before.Sum(c => c.Length));
+        Assert.True(after.Except(before).Count() <= 2, $"{after.Except(before).Count()} pieces changed");
+    }
+
+    // Meshes one after another, as an archive holds them.
+    private static byte[] Archive(IEnumerable<byte[]> meshes) => [.. "ILFF"u8.ToArray(), .. meshes.SelectMany(static m => m)];
 
     [Fact]
     public void A_file_kept_from_before_is_not_fetched_again()
@@ -191,7 +310,7 @@ public sealed class SessionFilesTests : IDisposable
         SessionFile listed = File(Objects, "LOOP theirs");
         SessionFileSync first = new(client, _cache);
         first.Accept(new SessionFileList("1", [listed]), (_, _) => { });
-        first.Take([new FilePiece("1", 0, 0, Bytes("LOOP theirs"))]);
+        first.Take([new FilePiece("1", 0, 0, false, Bytes("LOOP theirs"))]);
         Assert.True(first.Settled);
 
         SessionFileSync again = new(client, _cache);
@@ -208,7 +327,7 @@ public sealed class SessionFilesTests : IDisposable
     /// <summary>An installation in memory.</summary>
     private sealed class MemorySource : Dictionary<string, byte[]>, ISessionFileSource
     {
-        public string TitleId => "igi1";
+        public GameplayFileRules Rules => Igi1;
 
         public IEnumerable<string> ListFiles(string directory) => Keys.Where(k => k.StartsWith(directory + "/", StringComparison.Ordinal));
 

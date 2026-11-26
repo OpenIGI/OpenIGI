@@ -156,11 +156,11 @@ public sealed class InteractionPromptPresentationTests
         => Assert.Equal(expected, InteractionPromptPresentation.BadgeLabel(bound));
 
     [Fact]
-    public void TheDefaultProfileBindsUseToE()
+    public void TheDefaultProfileBindsUseToF()
     {
         string? bound = PlayerProfileInputBindings.BoundKeyName(profile: null, "Activate");
 
-        Assert.Equal("E", InteractionPromptPresentation.BadgeLabel(bound));
+        Assert.Equal("F", InteractionPromptPresentation.BadgeLabel(bound));
         Assert.Null(PlayerProfileInputBindings.BoundKeyName(profile: null, "NotAnAction"));
     }
 

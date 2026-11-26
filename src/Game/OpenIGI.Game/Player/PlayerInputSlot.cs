@@ -183,6 +183,30 @@ public enum PlayerInputSlot
     /// <summary>Action bit <c>0x80000000</c> — <see cref="PlayerAction.DropWeapon"/>.</summary>
     /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
     DropWeapon = 39,
+
+    /// <summary><see cref="PlayerAction.Underbarrel"/>: the first of the remaster's slots past the original's forty.</summary>
+    /// <remarks>Not retail: the original's frame ends at slot 39, and nothing it samples, records or replays reaches here.</remarks>
+    Underbarrel = 40,
+
+    /// <summary><see cref="PlayerAction.LeanLeft"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    LeanLeft = 41,
+
+    /// <summary><see cref="PlayerAction.LeanRight"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    LeanRight = 42,
+
+    /// <summary><see cref="PlayerAction.Mount"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    Mount = 43,
+
+    /// <summary><see cref="PlayerAction.ComputerObjectives"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    ComputerObjectives = 44,
+
+    /// <summary><see cref="PlayerAction.ComputerLog"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Underbarrel"/>.</remarks>
+    ComputerLog = 45,
 }
 
 /// <summary>The join between an input slot and the action its bit binds.</summary>
@@ -236,6 +260,12 @@ public static class PlayerInputBindings
         (PlayerInputSlot.Scoreboard, PlayerAction.Scoreboard),
         (PlayerInputSlot.BuyMenu, PlayerAction.BuyMenu),
         (PlayerInputSlot.DropWeapon, PlayerAction.DropWeapon),
+        (PlayerInputSlot.Underbarrel, PlayerAction.Underbarrel),
+        (PlayerInputSlot.LeanLeft, PlayerAction.LeanLeft),
+        (PlayerInputSlot.LeanRight, PlayerAction.LeanRight),
+        (PlayerInputSlot.Mount, PlayerAction.Mount),
+        (PlayerInputSlot.ComputerObjectives, PlayerAction.ComputerObjectives),
+        (PlayerInputSlot.ComputerLog, PlayerAction.ComputerLog),
     ];
 
     /// <summary>Gets the action name used by the persisted retail configuration.</summary>

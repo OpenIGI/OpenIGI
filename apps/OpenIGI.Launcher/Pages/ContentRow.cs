@@ -21,7 +21,7 @@ internal sealed class ContentRow : Grid, IReorderItem
     private readonly bool _ordered;
     private readonly ContentPageKind _kind;
     private bool _confirming;
-    private readonly Func<string, BackdropPicture?> _pictures;
+    private readonly Func<string, UiPicture?> _pictures;
     private readonly ReorderHandle? _handle;
     private readonly Thumbnail _thumbnail;
     private readonly PackInfo _info;
@@ -36,7 +36,7 @@ internal sealed class ContentRow : Grid, IReorderItem
     private bool _working;
     private float _lift;
 
-    public ContentRow(UiTheme theme, LauncherModel model, string id, bool ordered, Func<string, BackdropPicture?> pictures, ContentPageKind kind)
+    public ContentRow(UiTheme theme, LauncherModel model, string id, bool ordered, Func<string, UiPicture?> pictures, ContentPageKind kind)
     {
         _theme = theme;
         _model = model;

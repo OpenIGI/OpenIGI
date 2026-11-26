@@ -141,8 +141,8 @@ public sealed class Igi2WaterWaveField
             float radians = wave.Angle * MathF.PI / 180f;
 
             trains[i] = new Igi2WaterWaveTrain(
-                MathF.Sin(radians),
-                MathF.Cos(radians),
+                SimMathF.Sin(radians),
+                SimMathF.Cos(radians),
                 MathF.Tau / (wave.Frequency * (float)WorldScene.UnitsPerMetre),
                 wave.Amplitude * (float)WorldScene.UnitsPerMetre,
                 wave.Speed);
@@ -178,7 +178,7 @@ public sealed class Igi2WaterWaveField
             Igi2WaterWaveTrain train = _trains[i];
             float along = (x * train.DirectionX) + (y * train.DirectionY) + Phase;
             float angle = (along * train.SpatialFrequency) + ((float)seconds * train.Speed);
-            height += MathF.Sin(angle) * train.AmplitudeUnits * attenuation;
+            height += SimMathF.Sin(angle) * train.AmplitudeUnits * attenuation;
         }
 
         return height;
@@ -210,14 +210,27 @@ public sealed class Igi2WaterWaveField
     /// <c>(-s·dzEast, -s·dzNorth, s²)</c> normalised — the cross product of the two tangents. The
     /// third component being positive is one more confirmation that Z is up.
     /// </remarks>
-    public Vector3f NormalAt(float x, float y, double seconds, float radius = 0f)
+    public Vector3f NormalAt(float x, float y, double seconds, float radius = 0f) =>
+        IsFlat ? Vector3f.UnitZ : NormalAt(x, y, seconds, radius, HeightAt(x, y, seconds, radius));
+
+    /// <summary>Gets the surface normal at a point whose height the caller has already taken.</summary>
+    /// <param name="x">How far east of the sheet's centre, in engine units.</param>
+    /// <param name="y">How far north of it.</param>
+    /// <param name="seconds">The wave clock.</param>
+    /// <param name="radius">How far the point is from the centre.</param>
+    /// <param name="here">The point's <see cref="HeightAt"/> for the same clock and radius.</param>
+    /// <returns>The unit normal, pointing up out of the water.</returns>
+    /// <remarks>
+    /// The same forward difference as <see cref="NormalAt(float, float, double, float)"/>, which a vertex that has just
+    /// sampled its height would otherwise make sum its sines a second time for.
+    /// </remarks>
+    public Vector3f NormalAt(float x, float y, double seconds, float radius, float here)
     {
         if (IsFlat)
         {
             return Vector3f.UnitZ;
         }
 
-        float here = HeightAt(x, y, seconds, radius);
         float east = HeightAt(x + SampleStep, y, seconds, radius) - here;
         float north = HeightAt(x, y + SampleStep, seconds, radius) - here;
 

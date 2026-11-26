@@ -15,9 +15,6 @@ internal unsafe class D3D12PassState
 {
     private const int MaxGroups = 8;
 
-
-    internal static long ProbeRoots, ProbeApplies, ProbeTableSets, ProbePushes, ProbePushWords, ProbeBinds, ProbeBindSkips, ProbeDraws, ProbePipelines;
-
     private readonly (D3D12RhiBindGroup? Group, uint[] Offsets)[] _groups = new (D3D12RhiBindGroup?, uint[])[MaxGroups];
     private readonly byte[] _push = new byte[256];
     private int _pushEnd;

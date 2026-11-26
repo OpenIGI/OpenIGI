@@ -9,12 +9,22 @@
 // when the room browsers join it through is open and hosted from the same address as its heartbeat. The rest the
 // browser checks for itself, with the info query it sends every listed server.
 
-import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
+import { handleRooms, isCode as isRoomCode, netOf, readGeo } from "./rooms.js";
 import { handleParties } from "./parties.js";
+import { handleMaps } from "./maps.js";
+import { handleAccounts, isAccountsPath } from "./accounts.js";
+import { handleStats, isStatsPath, officialName } from "./stats.js";
+import { handleRuns, isRunsAdminPath, isRunsPath } from "./runs.js";
+import { isAdmin } from "./signed.js";
+import { cleanName } from "./names.js";
 
 export { Room } from "./rooms.js";
 export { Party } from "./parties.js";
 export { Relays } from "./relays.js";
+export { Maps } from "./maps.js";
+export { Accounts } from "./accounts.js";
+export { Stats } from "./stats.js";
+export { Runs } from "./runs.js";
 
 const ENTRY_TTL_MS = 90_000;
 
@@ -79,8 +89,39 @@ async function route(request, env, ctx) {
       }
     }
 
+    // A heartbeat signed by a registered server's key (stats.js) lists the server as official. The list takes the word
+    // from here alone: whatever a heartbeat says of it itself is dropped.
+    if (url.pathname === "/v1/servers/heartbeat" && request.method === "POST") {
+      const body = new Uint8Array(await request.arrayBuffer());
+      const headers = new Headers(request.headers);
+      headers.delete(OFFICIAL_HEADER);
+      const official = await officialName(request, url, body, env);
+      if (official) headers.set(OFFICIAL_HEADER, encodeURIComponent(official));
+      return cors(await list.fetch(new Request(request.url, { method: "POST", headers, body })));
+    }
+
     if (url.pathname.startsWith("/v1/admin/")) {
       return cors(await admin(request, env, url));
+    }
+
+    // Community maps: published, listed, downloaded, rated and reported (maps.js).
+    if (url.pathname === "/v1/maps" || url.pathname.startsWith("/v1/maps/")) {
+      return cors(await handleMaps(request, env));
+    }
+
+    // Match results from the servers whose matches count, and what they add up to: records and leaderboards (stats.js).
+    if (isStatsPath(url.pathname)) {
+      return cors(await handleStats(request, env));
+    }
+
+    // Single-player runs: submitted, checked by the game itself, and the mission boards they make (runs.js).
+    if (isRunsPath(url.pathname)) {
+      return cors(await handleRuns(request, env));
+    }
+
+    // Accounts: a player's keys linked to their Discord account, and the profiles that come of it (accounts.js).
+    if (isAccountsPath(url.pathname)) {
+      return cors(await handleAccounts(request, env));
     }
 
     if (url.pathname === "/v1/parties" || url.pathname.startsWith("/v1/parties/")) {
@@ -97,6 +138,15 @@ async function route(request, env, ctx) {
       return cors(json({ error: "not found" }, 404));
     }
 
+    // The stats asked from an owner's address (OWNER_IPS, a secret: addresses apart by commas) list every room, private
+    // ones too. Never kept at the edge, where the next asker would be handed them.
+    if (request.method === "GET" && url.pathname === "/v1/stats" && isOwner(request, env)) {
+      const answer = await list.fetch("https://list/stats/owner");
+      const own = new Response(answer.body, answer);
+      own.headers.set("cache-control", "private, no-store");
+      return cors(own);
+    }
+
     const seconds = request.method === "GET" ? EDGE_SECONDS[url.pathname] : undefined;
     if (seconds) {
       return cors(await kept(request, env, ctx, seconds, () => list.fetch(request)));
@@ -105,11 +155,19 @@ async function route(request, env, ctx) {
     return cors(await list.fetch(request));
 }
 
+// Whether a request comes from one of the owner's addresses. CF-Connecting-IP is Cloudflare's word for it, and nothing
+// but Cloudflare's edge reaches the master, so a visitor cannot say it for itself.
+export function isOwner(request, env) {
+  const ip = (request.headers.get("CF-Connecting-IP") ?? "").trim().toLowerCase();
+  return ip.length > 0 && String(env.OWNER_IPS ?? "").split(",").some((own) => own.trim().toLowerCase() === ip);
+}
+
 // A GET answered from this location's cache while it is fresh, and otherwise asked and kept. NO_EDGE_CACHE=1 (the tests'
-// env file) asks every time, so a test sees a change at once.
+// env file, and the self-hosted master, which has no edge) skips that cache: the self-hosted one keeps its answers in its
+// own memory instead (MEMO_CACHE=1, remembered), and a test asks every time, so it sees a change at once.
 async function kept(request, env, ctx, seconds, ask) {
   if (env.NO_EDGE_CACHE === "1") {
-    return ask();
+    return env.MEMO_CACHE === "1" ? remembered(request.url, seconds, ask) : ask();
   }
 
   const cache = caches.default;
@@ -128,6 +186,49 @@ async function kept(request, env, ctx, seconds, ask) {
   keep.headers.set("cache-control", `public, max-age=${seconds}`);
   ctx.waitUntil(cache.put(key, keep.clone()));
   return keep;
+}
+
+// The answers a self-hosted master keeps in its own memory, by address: the one process every request comes to is the cache,
+// with nothing between to run (a separate store would be one more hop to the same machine). While an answer is fresh every
+// asker is handed it; once it is stale, the first asker fetches it again and every asker that comes meanwhile waits for that
+// one fetch rather than making its own, so a page full of visitors costs the list one request every few seconds.
+const memo = new Map();
+const MEMO_LIMIT = 64;
+
+/** An answer kept in memory for some seconds, asked once however many want it at the same moment. */
+export async function remembered(key, seconds, ask, now = () => Date.now()) {
+  const entry = memo.get(key);
+  if (entry?.kept && entry.until > now()) return reply(entry.kept, seconds);
+  if (entry?.pending) return reply(await entry.pending, seconds);
+
+  const pending = (async () => {
+    const answer = await ask();
+    return { status: answer.status, type: answer.headers.get("content-type") ?? "application/json", body: await answer.text() };
+  })();
+  if (memo.size >= MEMO_LIMIT && !memo.has(key)) memo.clear();
+  memo.set(key, { ...entry, pending });
+  try {
+    const got = await pending;
+    if (got.status === 200) memo.set(key, { kept: got, until: now() + seconds * 1000 });
+    else memo.delete(key);
+    return reply(got, seconds);
+  } catch (error) {
+    memo.delete(key);
+    throw error;
+  }
+}
+
+/** Forgets every kept answer: for the tests, between cases. */
+export function forgetRemembered() {
+  memo.clear();
+}
+
+// A kept answer as a response of its own: a fresh one marked for the browser (and Cloudflare in front) to keep as long.
+function reply(got, seconds) {
+  return new Response(got.body, {
+    status: got.status,
+    headers: { "content-type": got.type, "cache-control": got.status === 200 ? `public, max-age=${seconds}` : "no-store" },
+  });
 }
 
 // What a throw becomes. Out of Durable Object requests (the free plan's daily allowance, back at 00:00 UTC) or an object
@@ -205,22 +306,34 @@ function geoOf(request, env) {
   });
 }
 
-// The relay list's admin routes, for us alone: a bearer token checked against the Worker secret ADMIN_TOKEN, and no
-// routes at all where it isn't set.
+// The admin routes, for us alone: a bearer token checked against the secret ADMIN_TOKEN, and no routes at all where it
+// isn't set. The relay list's, and the stats' list of the servers whose matches count.
 async function admin(request, env, url) {
-  if (!env.ADMIN_TOKEN || !url.pathname.startsWith("/v1/admin/relays")) {
+  const relayRoute = url.pathname.startsWith("/v1/admin/relays");
+  const statsRoute = url.pathname.startsWith("/v1/admin/stats-servers");
+  const runsRoute = isRunsAdminPath(url.pathname);
+  if (!env.ADMIN_TOKEN || (!relayRoute && !statsRoute && !runsRoute)) {
     return json({ error: "not found" }, 404);
   }
 
-  const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const digest = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-  if (!crypto.subtle.timingSafeEqual(await digest(given), await digest(env.ADMIN_TOKEN))) {
+  if (!(await isAdmin(request, env))) {
     return json({ error: "unauthorised" }, 401);
+  }
+
+  if (statsRoute) {
+    return handleStats(request, env);
+  }
+
+  if (runsRoute) {
+    return handleRuns(request, env);
   }
 
   const path = url.pathname.slice("/v1".length);
   return relays(env).fetch(new Request(`https://relays${path}`, { method: request.method, body: request.body, headers: request.headers }));
 }
+
+// The header the Worker tells the list a heartbeat's server is official by: its registered name, URI-encoded.
+const OFFICIAL_HEADER = "x-openigi-official";
 
 export class ServerList {
   constructor(state, env) {
@@ -255,11 +368,15 @@ export class ServerList {
       // A dedicated server's own room is the server, listed once.
       const servedRooms = new Set(servers.map((s) => s.room).filter(Boolean));
       const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view) && !servedRooms.has(r.view.room)).map((r) => r.view);
-      return json({ servers: [...servers, ...rooms] });
+      // Names are their hosts' own typing, and the list is on the website as well as in every game: a slur is masked (names.js).
+      return json({ servers: [...servers, ...rooms].map((entry) => ({ ...entry, name: cleanName(entry.name) })) });
     }
 
     // How busy things are, as counts only: never a private room's code or anyone's address.
-    if (request.method === "GET" && url.pathname === "/v1/stats") {
+    // /stats/owner is the Worker's own asking for an owner's address (OWNER_IPS), never routed from outside: the rooms
+    // listed too.
+    const owner = url.pathname === "/stats/owner";
+    if (request.method === "GET" && (url.pathname === "/v1/stats" || owner)) {
       // The relays' health from the relay list; the counts stand without it if it can't answer.
       let status = [];
       try {
@@ -268,7 +385,7 @@ export class ServerList {
         // Counts only.
       }
 
-      return json(stats(this.servers, this.rooms, status));
+      return json(stats(this.servers, this.rooms, status, owner));
     }
 
     // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers and /v1/stats are).
@@ -328,6 +445,10 @@ export class ServerList {
         return json({ error: entry }, 400);
       }
 
+      // Its registered name, when the Worker found its heartbeat signed by a registered server's key.
+      const official = request.headers.get(OFFICIAL_HEADER);
+      entry.official = official ? decodeURIComponent(official) : null;
+
       // A room is claimed only from the address that hosts it: nobody lists another's room as their server.
       const claimed = entry.room === null ? undefined : this.rooms.get(entry.room);
       if (claimed && claimed.ip !== ip) {
@@ -348,7 +469,7 @@ export class ServerList {
         entry.savedAt = before.savedAt;
       }
 
-      return json({ listed: true, address: ip, port: entry.port, ttl: ENTRY_TTL_MS / 1000, verified: this.verified(entry) });
+      return json({ listed: true, address: ip, port: entry.port, ttl: ENTRY_TTL_MS / 1000, verified: this.verified(entry), official: entry.official !== null });
     }
 
     if (request.method === "POST" && url.pathname === "/v1/servers/shutdown") {
@@ -393,7 +514,7 @@ export class ServerList {
 
 // Whether an entry differs from the one before in anything but its time and its player count: worth writing again.
 function changed(before, after) {
-  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "maxPlayers", "passworded", "region", "room"]) {
+  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "net", "maxPlayers", "passworded", "region", "room", "official"]) {
     if (before[field] !== after[field]) {
       return true;
     }
@@ -447,6 +568,7 @@ function validate(body, ip, now) {
     map: body.map,
     mode: body.mode,
     version: body.version,
+    net: netOf(body.net),
     players: Math.min(players, maxPlayers),
     maxPlayers,
     passworded: body.passworded === true,
@@ -461,10 +583,13 @@ function validate(body, ip, now) {
 // master chose, not what ICE ended up using, which only the players' games know.
 // A dedicated server's own room is the server: counted under servers (as the list shows it once), though its relay still
 // counts it. The servers are listed too, as the server browser lists them, by name -- never an address, port or room code.
-export function stats(servers, rooms, relayStatus = []) {
+//
+// For the owner (`rooms.list`, asked for with `detailed`) each hosted room is listed as well, private ones included, by
+// name, map and mode -- still never its code or its host's address, so the list lets nobody in.
+export function stats(servers, rooms, relayStatus = [], detailed = false) {
   const tally = () => ({ open: 0, playing: 0, players: 0 });
   const out = {
-    rooms: { public: tally(), private: tally(), waiting: 0 },
+    rooms: { public: tally(), private: tally(), waiting: 0, ...(detailed ? { list: [] } : {}) },
     servers: { open: 0, playing: 0, players: 0, list: [] },
     byTitle: {},
     relays: {},
@@ -501,7 +626,22 @@ export function stats(servers, rooms, relayStatus = []) {
     if (players > 1) {
       kind.playing++;
     }
+
+    out.rooms.list?.push({
+      name: r.view.name,
+      title: r.view.title,
+      version: r.view.version,
+      mode: r.view.mode,
+      map: r.view.map,
+      players,
+      maxPlayers: r.view.maxPlayers,
+      public: r.public,
+      passworded: r.view.passworded,
+      relay: r.relay,
+    });
   }
+
+  out.rooms.list?.sort((a, b) => b.players - a.players || String(a.name).localeCompare(String(b.name)));
 
   for (const s of servers.values()) {
     const title = (out.byTitle[s.title] ??= { rooms: 0, servers: 0, players: 0 });
@@ -532,8 +672,8 @@ export function stats(servers, rooms, relayStatus = []) {
 }
 
 function publicView(s, verified) {
-  const { lastSeen, savedAt, ...rest } = s;
-  return { ...rest, verified, age: Math.round((Date.now() - lastSeen) / 1000) };
+  const { lastSeen, savedAt, official, ...rest } = s;
+  return { ...rest, verified, official: Boolean(official), age: Math.round((Date.now() - lastSeen) / 1000) };
 }
 
 function countFrom(servers, ip) {
@@ -554,8 +694,8 @@ function json(value, status = 200) {
 function cors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
-  headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  headers.set("access-control-allow-headers", "content-type, x-openigi-token");
+  headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
+  headers.set("access-control-allow-headers", "content-type, x-openigi-token, x-openigi-key, x-openigi-signature, x-openigi-time");
   headers.set("access-control-max-age", "86400");
   return new Response(response.body, { status: response.status, headers });
 }

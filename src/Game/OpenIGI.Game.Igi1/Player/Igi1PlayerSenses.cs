@@ -67,6 +67,9 @@ internal sealed class Igi1PlayerSenses(Func<PlayerCamera?> rig, Igi1PlayerLife l
             surroundings.SoundRandom.NextSingle());
 
     /// <inheritdoc/>
+    public void ViewKick(float pitchRadians) => rig()?.InstallBlastKick(pitchRadians);
+
+    /// <inheritdoc/>
     public void FlashCentre() => life.DamageFlash.Hit(Vector3f.Zero, surroundings.SoundRandom.NextSingle());
 
     /// <inheritdoc/>

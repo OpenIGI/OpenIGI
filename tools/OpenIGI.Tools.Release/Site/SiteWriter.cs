@@ -81,8 +81,26 @@ internal static class SiteWriter
             }
         }
 
-        // Invite links (/join/CODE, /party/CODE) land on the page the host serves for a path it has no file for.
+        // Invite links (/join/CODE, /party/CODE) and players' pages (/u/ID) land on the page the host serves for a path it has no file for.
         Text(output, "404.html", JoinPage.Html);
+
+        // The site's look and the standings' drawing, over the browser build's copies: the same files, maybe newer.
+        foreach ((string path, string resource) in SiteChrome.Files)
+        {
+            Text(output, path, SiteChrome.Read(resource));
+        }
+
+        // The sessions being played online, each with the ways in, read from the master as the page opens and while it is looked at.
+        Text(output, "servers/index.html", ServersPage.Html);
+
+        // The official servers' leaderboard and each player's record, read from the master as the page opens.
+        Text(output, "leaderboard/index.html", LeaderboardPage.Html);
+
+        // What signing in with Discord keeps, and how to have it removed.
+        Text(output, "privacy/index.html", PrivacyPage.Html);
+
+        // Who signs the Windows downloads and how, as SignPath Foundation requires of the projects it signs for.
+        Text(output, "code-signing/index.html", CodeSigningPage.Html);
         Text(output, "healthz", $"ok {releases.Count} release(s) {content.Count} content version(s)\n");
     }
 

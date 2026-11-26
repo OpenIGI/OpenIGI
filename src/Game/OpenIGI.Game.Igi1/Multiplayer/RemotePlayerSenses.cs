@@ -88,6 +88,9 @@ internal sealed class RemotePlayerSenses(Func<int> entity, Func<long> commandTic
             case SenseKind.Sound:
                 senses.Sound(sense.Text);
                 break;
+            case SenseKind.ViewKick:
+                senses.ViewKick(sense.A);
+                break;
         }
     }
 
@@ -112,6 +115,9 @@ internal sealed class RemotePlayerSenses(Func<int> entity, Func<long> commandTic
 
     /// <inheritdoc/>
     public void FlashCentre() => Record(SenseKind.FlashCentre);
+
+    /// <inheritdoc/>
+    public void ViewKick(float pitchRadians) => _pending.Add(new ReplicatedSense(entity(), (byte)SenseKind.ViewKick, A: pitchRadians));
 
     /// <inheritdoc/>
     public void Sound(string definition) => _pending.Add(new ReplicatedSense(entity(), (byte)SenseKind.Sound, Text: definition));
@@ -146,5 +152,6 @@ internal sealed class RemotePlayerSenses(Func<int> entity, Func<long> commandTic
         FlashCentre,
         Sound,
         Shove,
+        ViewKick,
     }
 }

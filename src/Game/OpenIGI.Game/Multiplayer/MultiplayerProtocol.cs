@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;
@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Multiplayer;
 public static class MultiplayerProtocol
 {
     /// <summary>The protocol version; raised whenever any message changes shape.</summary>
-    public const int Version = 21;
+    public const int Version = 35;
 
     /// <summary>A fingerprint of what a game plays with beyond the game itself: its title and the mods that change play.</summary>
     /// <param name="titleId">The game's id.</param>
@@ -50,8 +50,18 @@ public static class MultiplayerProtocol
 /// Whether it comes only for the server's files, before it joins: sent the list of the map's and given what differs, and
 /// nothing else -- no player, no snapshots -- until it leaves.
 /// </param>
+/// <param name="Avatar">The player's Discord avatar, as a <see cref="DiscordAvatar"/> reference; empty for none.</param>
 public sealed record JoinRequest(
-    string PlayerName, string Version, string Password, string Content = "", string Skin = "", int UpdateRate = 0, int Rate = 0, bool Watch = false, bool Sync = false)
+    string PlayerName,
+    string Version,
+    string Password,
+    string Content = "",
+    string Skin = "",
+    int UpdateRate = 0,
+    int Rate = 0,
+    bool Watch = false,
+    bool Sync = false,
+    string Avatar = "")
 {
     /// <summary>The longest player name kept.</summary>
     public const int MaxNameBytes = 32;
@@ -71,6 +81,7 @@ public sealed record JoinRequest(
         writer.WriteRanged(Math.Clamp(Rate / 1024, 0, 4095), 0, 4095);
         writer.WriteBool(Watch);
         writer.WriteBool(Sync);
+        writer.WriteString(Avatar, DiscordAvatar.MaxReferenceBytes);
         return writer.ToArray();
     }
 
@@ -92,6 +103,10 @@ public sealed record JoinRequest(
             Watch = reader.ReadBool(),
             Sync = reader.ReadBool(),
         };
+
+        // Only a reference that names a Discord avatar is kept: every other player downloads what it names.
+        string avatar = reader.ReadString(DiscordAvatar.MaxReferenceBytes);
+        request = request with { Avatar = DiscordAvatar.Url(avatar) is null ? string.Empty : avatar };
         return reader.IsOverflowed ? null : request;
     }
 }

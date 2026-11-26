@@ -473,7 +473,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                 }
 
                 Vector3d feet = player.Body.Position;
-                Vector3d from = new(feet.X + (Math.Sin(player.Body.Yaw) * 4096.0), feet.Y + (Math.Cos(player.Body.Yaw) * 4096.0), feet.Z);
+                Vector3d from = new(feet.X + (SimMath.Sin(player.Body.Yaw) * 4096.0), feet.Y + (SimMath.Cos(player.Body.Yaw) * 4096.0), feet.Z);
                 kill(from);
                 string report = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"death_test: killed at feet ({feet.X:F0}, {feet.Y:F0}, {feet.Z:F0}).");
                 context.Print(report);

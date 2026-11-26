@@ -16,24 +16,20 @@ public sealed partial class Igi1ReplicatedWorld
 
     // Each player's health as last seen, to tell how much a hit took; each shooter's soldier hits and kills as last counted.
     private readonly Dictionary<int, float> _healthSeen = [];
-    private readonly Dictionary<ShotTally, (int Hits, int Kills)> _tallied = new(ReferenceEqualityComparer.Instance);
+    private readonly ShotTallyWatch _tallied = new();
 
     /// <inheritdoc/>
     public IReadOnlyList<CombatNote> TakeCombat()
     {
         foreach ((int entity, PlayerCamera rig) in Rigs())
         {
-            ShotTally tally = rig.Shots;
             // The soldiers alone: the players' hits on one another are told of where they land, and a listen host's own tally
             // counts those too.
-            (int hits, int kills) = _tallied.GetValueOrDefault(tally, (tally.SoldierHits, tally.SoldierKills));
-            if (tally.SoldierHits > hits || tally.SoldierKills > kills)
+            if (_tallied.Take(rig.Shots) is { } news)
             {
-                bool killed = tally.SoldierKills > kills;
-                _combat.Add(new CombatNote(entity, -1, 0f, killed, killed ? tally.LastKillHead : tally.LastHitHead, rig.Body.Position));
+                _combat.Add(new CombatNote(
+                    entity, -1, 0f, news.Killed, news.Head, rig.Body.Position, rig.Weapons?.InHand?.Weapon.ScriptId ?? string.Empty));
             }
-
-            _tallied[tally] = (tally.SoldierHits, tally.SoldierKills);
         }
 
         if (_combat.Count == 0)
@@ -52,8 +48,10 @@ public sealed partial class Igi1ReplicatedWorld
         float now = hurt.Health.RemainingFraction;
         float before = _healthSeen.TryGetValue(victim, out float seen) && seen >= now ? seen : 1f;
         _healthSeen[victim] = now;
-        Vector3d from = attacker is { } shooter && RigOf(shooter) is { } rig ? rig.Body.Position : hurt.Rig?.Body.Position ?? default;
-        _combat.Add(new CombatNote(attacker ?? -1, victim, Math.Clamp(before - now, 0f, 1f), hurt.Health.IsDead, head, from));
+        PlayerCamera? shooterRig = attacker is { } shooter ? RigOf(shooter) : null;
+        Vector3d from = shooterRig?.Body.Position ?? hurt.Rig?.Body.Position ?? default;
+        _combat.Add(new CombatNote(
+            attacker ?? -1, victim, Math.Clamp(before - now, 0f, 1f), hurt.Health.IsDead, head, from, shooterRig?.Weapons?.InHand?.Weapon.ScriptId ?? string.Empty));
     }
 
     // Every player of the session by entity, with its rig.

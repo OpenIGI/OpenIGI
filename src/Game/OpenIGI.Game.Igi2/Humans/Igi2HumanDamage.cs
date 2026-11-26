@@ -18,6 +18,12 @@ public sealed class Igi2HumanDamage
     /// <summary>Gets or sets the zone the last damage landed on, <c>eDamagePart</c>.</summary>
     public Igi2DamagePart LastPart { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether damage is taken at all: off under the infinite-health cheat. <b>Not retail.</b></summary>
+    public bool IsUnharmed { get; set; }
+
+    /// <summary>Gets or sets what damage is divided by as it is taken: the health cheat's scale, one unchanged. <b>Not retail.</b></summary>
+    public float Toughness { get; set; } = 1f;
+
     /// <summary>Gets a value indicating whether the damage has reached the limit.</summary>
     public bool IsFatal => Damage >= MaxDamage;
 
@@ -58,6 +64,16 @@ public sealed class Igi2HumanDamage
     /// <param name="amount">The damage.</param>
     public void Add(Igi2DamagePart part, float amount)
     {
+        if (IsUnharmed)
+        {
+            return;
+        }
+
+        if (Toughness != 1f && Toughness > 0f)
+        {
+            amount /= Toughness;
+        }
+
         _parts[(int)part] = ((Fpu)amount + _parts[(int)part]).F;
         Damage = ((Fpu)amount + Damage).F;
     }

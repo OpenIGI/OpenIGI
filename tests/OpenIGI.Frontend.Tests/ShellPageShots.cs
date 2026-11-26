@@ -3,6 +3,7 @@ using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend.Screens;
+using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Input;
 using OpenIGI.UI;
@@ -42,10 +43,30 @@ public sealed class ShellPageShots
         ("07-settings-audio", static context => new SettingsScreen(context) { StartCategory = "audio" }, false),
         ("08-settings-controls", static context => new SettingsScreen(context) { StartCategory = "controls" }, false),
         ("09-settings-gameplay", static context => new SettingsScreen(context) { StartCategory = "gameplay" }, false),
+        ("09-settings-gameplay-open", static context => new SettingsScreen(context) { StartCategory = "gameplay" }, false),
+        ("09-settings-interface", static context => new SettingsScreen(context) { StartCategory = "interface" }, false),
+        ("09-settings-interface-open", static context => new SettingsScreen(context) { StartCategory = "interface" }, false),
+        ("07-settings-audio-open", static context => new SettingsScreen(context) { StartCategory = "audio" }, false),
         ("10-profile", static context => new ProfilesScreen(context), false),
+        ("10-profile-waiting", static context => new ProfilesScreen(context), false),
+        ("10-profile-signed-in", static context => new ProfilesScreen(context), false),
         ("11-extras", static context => new ExtrasScreen(context), false),
         ("12-pause", static context => new PauseScreen(context), true),
+        ("13-maps", static context => new MapsScreen(context), false),
+        ("14-replays", static context => new ReplaysScreen(context, new FakeReplays(), new MissionInfo(9, 9, "Missile Trainyard", string.Empty, "mission9.spr")), false),
     ];
+
+    // The account each profile page is drawn with: signed out, waiting on Discord, or signed in.
+    private static FakeAccount AccountFor(string page) => page switch
+    {
+        _ when page.EndsWith("signed-in", StringComparison.Ordinal) => new FakeAccount().SignedInAs("Sh"),
+        _ when page.EndsWith("waiting", StringComparison.Ordinal) => new FakeAccount
+        {
+            Status = AccountStatus.WaitingForBrowser,
+            SignInUrl = "https://master.openigi.com/v1/auth/discord/start?code=NSTG5TWS",
+        },
+        _ => new FakeAccount(),
+    };
 
     [Fact]
     public void Draw_every_page()
@@ -64,8 +85,10 @@ public sealed class ShellPageShots
         Directory.CreateDirectory(folder);
         using IgiTypography typography = IgiTypography.Load(MultiplayerScreenshots.LoadFont);
         using SkiaImageStore images = new();
+        using OpenIGI.UI.Drawing.IconAtlas? icons = KitIconAtlas.Load(images);
+        KitIcons.Baked = icons;
         using SkiaFontCache fonts = new();
-        Dictionary<int, MissionPicture?> pictures = [];
+        Dictionary<int, UiPicture?> pictures = [];
 
         foreach ((int width, int height, float density) in Sizes)
         {
@@ -81,6 +104,10 @@ public sealed class ShellPageShots
                     Coop = new MultiplayerScreenshots.FakeRooms { Listing = MultiplayerScreenshots.Games() },
                     Party = new MultiplayerScreenshots.FakeParty { Party = MultiplayerScreenshots.Squad() },
                     Pictures = mission => MultiplayerScreenshots.Picture(images, pictures, mission),
+                    Maps = new FakeMaps(),
+                    Replays = new FakeReplays(),
+                    Account = AccountFor(name),
+                    Scores = SampleScore,
                 };
                 GameConfig config = GameConfig.CreateDefault();
                 if (config.Active is { } active)
@@ -90,7 +117,7 @@ public sealed class ShellPageShots
 
                 host.Profile = config.Active;
                 var context = new ShellContext(
-                    typography.CreateTheme(),
+                    typography.CreateTheme(icons),
                     host,
                     new ScreenStack { PointerSuppressed = true },
                     GameProfileResolver.BuildCatalogue(GameTitle.Igi1, "C:\\Games\\IGI", null, null),
@@ -104,6 +131,7 @@ public sealed class ShellPageShots
                     InGame = inGame,
                 };
                 var shell = new Shell(context);
+                OpenPanels(context.Cvars, name.EndsWith("-open", StringComparison.Ordinal));
                 context.Stack.Reset(create(context), animate: false);
 
                 var layout = new LayoutContext(width, height, userScale: OpenIGI.Core.Graphics.UiScale.MenuBoost(width, height, density));
@@ -150,7 +178,45 @@ public sealed class ShellPageShots
     {
         OpenIGI.Rendering.Generated.CVarRegistrations.RegisterAll();
         OpenIGI.Game.Generated.CVarRegistrations.RegisterAll();
+        OpenIGI.Audio.Generated.CVarRegistrations.RegisterAll();
         return CVarRegistry.Default;
+    }
+
+    // An "-open" page is drawn with every Advanced panel open and the settings that rows follow turned on, so the rows
+    // they hide are drawn too; every other page with them as a fresh install has them.
+    private static void OpenPanels(CVarRegistry cvars, bool open)
+    {
+        string expanded = open
+            ? string.Join(',', SettingsMenus.Pages.SelectMany(page => page.Panels.Select(panel => $"{page.Page}/{panel.Title}")))
+            : string.Empty;
+        Set("ui_settings_expanded", expanded);
+        Set("g_ragdoll", open ? "1" : "0");
+        Set("g_modern_aim", open ? "1" : "0");
+        Set("g_cheats_enabled", open ? "1" : "0");
+
+        void Set(string name, string value)
+        {
+            if (cvars.TryGet(name, out ICVar? cvar) && cvar is not null)
+            {
+                cvar.TrySetText(value, out _);
+            }
+        }
+    }
+
+    // A best for each mission played up to the ninth: ranks of every kind before it, and the ninth begun but not yet completed.
+    private static OpenIGI.Game.Scoring.MissionScoreCard? SampleScore(int missionId)
+    {
+        if (missionId > 9)
+        {
+            return null;
+        }
+
+        var requirements = OpenIGI.Game.Scoring.MissionRankRequirements.FromRows(
+            [1500f, 5f, 3f, 20f, 10f], [900f, 2f, 1f, 50f, 25f], [600f, 0f, 0f, 80f, 40f]);
+        OpenIGI.Game.Scoring.MissionScore score = missionId == 9
+            ? OpenIGI.Game.Scoring.MissionScore.Fresh(missionId, 1)
+            : new OpenIGI.Game.Scoring.MissionScore((uint)(30 * (400 + (missionId * 90))), missionId % 3, 95 - (missionId * 5), 120, (uint)(60 - (missionId * 4))) { Difficulty = 1, MissionId = missionId };
+        return OpenIGI.Game.Scoring.MissionScoreCardBuilder.Build(requirements, score, OpenIGI.Game.Scoring.MissionScoreWords.InEnglish);
     }
 
     // The game's fourteen, as the campaign page lists them.
@@ -162,5 +228,54 @@ public sealed class ShellPageShots
             "Re-Supply", "Missile Trainyard", "Defend Priboi", "Eagle's Nest I", "Eagle's Nest II", "Nuclear Infiltration", "Finding the Bomb",
         ];
         return [.. names.Select(static (name, index) => new MissionInfo(index + 1, index + 1, name, "Get in unseen, find what was taken, and get out again.", $"mission{index + 1}.spr"))];
+    }
+
+    /// <summary>A mission's kept runs, for the replays page's picture: the best of each rules, a failure, one of another build.</summary>
+    internal sealed class FakeReplays : IShellReplays
+    {
+        private static readonly DateTimeOffset Night = new(2026, 11, 24, 21, 40, 0, TimeSpan.Zero);
+
+        public IReadOnlyList<ShellReplay> KeptOf(int missionId) =>
+        [
+            new("a", Night, "Hard", "Classic", "Completed", 512.4, Best: true, string.Empty, CanRace: true),
+            new("b", Night.AddMinutes(-26), "Hard", "Classic", "Failed", 188.0, Best: false, string.Empty, CanRace: true),
+            new("c", Night.AddDays(-1), "Hard", "Classic", "Completed", 574.9, Best: false, string.Empty, CanRace: true),
+            new("d", Night.AddDays(-2), "Normal", "Modern", "Completed", 431.2, Best: true, string.Empty, CanRace: true),
+            new("e", Night.AddDays(-9), "Easy", "Unranked", "Left", 62.5, Best: false, "Another build"),
+        ];
+
+        public string? Watch(string id) => null;
+
+        public string? Race(string id) => null;
+
+        public ShellRecord? RecordOf(int missionId, int difficulty) => new("0123456789abcdef0123456789abcdef", "Kestrel", 304.1, "Classic", 316.9, 5, 312);
+    }
+
+    /// <summary>A handful of community maps, one installed and one with a newer version out, for the Maps page's picture.</summary>
+    private sealed class FakeMaps : IShellMaps
+    {
+        public IReadOnlyList<ShellMap> Maps() =>
+        [
+            new("night-raid", "Night Raid", "The trainyard by night: the train is in, the guards are tired, and the warhead is in the office.", "Kestrel", 3, 4.6, 41, 1280, 2_025_116, 3, Online: true),
+            new("sam-sweep", "SAM Sweep", "Every launcher on the ridge, before the convoy comes through at dawn.", "Volkov", 2, 4.1, 17, 640, 5_400_000, 1, Online: true),
+            new("airbase-silent", "Silent Airbase", "No alarms. Not one. The hangar codes are with the duty officer.", "Ana", 1, 3.8, 9, 312, 3_100_000, null, Online: true),
+            new("border-run", "Border Run", "Two guard posts, one road, no night vision.", "Teo", 1, 0, 0, 44, 1_900_000, null, Online: true),
+        ];
+
+        public Task<string?> RefreshAsync() => Task.FromResult<string?>(null);
+
+        public Task<string?> InstallAsync(string id) => Task.FromResult<string?>(null);
+
+        public void Play(string id, int difficulty)
+        {
+        }
+
+        public void Remove(string id)
+        {
+        }
+
+        public Task<string?> RateAsync(string id, int stars) => Task.FromResult<string?>(null);
+
+        public Task<string?> ReportAsync(string id, string reason) => Task.FromResult<string?>(null);
     }
 }

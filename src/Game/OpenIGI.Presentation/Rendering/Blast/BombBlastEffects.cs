@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
@@ -18,13 +19,22 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 /// </para>
 /// <para>
 /// <see cref="CombatEffectCVars.BlastQuality"/> decides how much: nought is the original's rocket fire alone and this does
-/// nothing; one adds the light, the shockwave, the shake, the ground and the debris; two the volumetric fireball.
+/// nothing; one adds the fire and smoke (a third of it), the light, the shake and the debris; two all of the fire and smoke
+/// and the after-blast drawn over the picture as the front sweeps out.
 /// </para>
 /// </remarks>
 public sealed class BombBlastEffects
 {
     // The brightest the blast's light is at its flash, against a level lamp's one.
     private const float PeakLightIntensity = 90f;
+
+    // The after-blast: when it starts to fade, how much dust it leaves over the picture at most, and how many reads a streak takes.
+    private const float AfterBlastFadeFrom = 3f;
+    private const float AfterBlastHaze = 0.2f;
+    private const int AfterBlastTaps = 16;
+
+    // Where above the bomb its front is measured from, metres: the air just above it, as the server measures it.
+    private const float BombAirMetres = 0.4f;
 
     private readonly List<BombBlast> _blasts = [];
     private readonly TraumaShake _shake = new();
@@ -40,8 +50,8 @@ public sealed class BombBlastEffects
 
     /// <summary>Gets how much of the blast is drawn: <see cref="CombatEffectCVars.BlastQuality"/>.</summary>
     /// <remarks>
-    /// The browser and phones run the light tier whatever the preset says: the raymarched fireball is a full-screen march a
-    /// mobile GPU cannot spare in the frame it matters most, and a quarter of the pieces is what their CPUs can step.
+    /// The browser and phones run the light tier whatever the preset says: the after-blast is a full-screen pass a mobile GPU
+    /// cannot spare in the frame it matters most, and a third of the sprites and a quarter of the pieces is what they can step.
     /// </remarks>
     public static int Quality => IsLightPlatform
         ? Math.Min(CombatEffectCVars.BlastQuality.Value, 1)
@@ -75,12 +85,12 @@ public sealed class BombBlastEffects
             float distance = (float)(ear - blast.CentreMetres).Length;
             float trauma = blast.TraumaAt(distance);
 
-            // The view thrown up and a little aside, the side drawn from the blast's seed so every machine agrees.
+            // The boom: a short jolt as its sound arrives, the view nudged up and a little aside -- the side drawn from the
+            // blast's seed so every machine agrees. The hard shake is the front's, a second and more later, which the server
+            // gives each player it reaches; this only rumbles with it, for anybody it does not, a camera or the dead.
             float side = (blast.Seed & 1) == 0 ? 1f : -1f;
-            _shake.Add(trauma, BombBlast.ArrivalSeconds(distance), kickPitch: 0.07f, kickYaw: 0.03f * side);
-
-            // The ground's rumble keeps coming for a moment after the front has passed.
-            _shake.Add(trauma * 0.35f, BombBlast.ArrivalSeconds(distance) + 0.45f);
+            _shake.Add(trauma * 0.3f, BombBlast.ArrivalSeconds(distance), kickPitch: 0.025f, kickYaw: 0.01f * side);
+            _shake.Add(trauma * 0.45f, (float)BombWave.ArrivalSeconds(distance));
         }
 
         Started?.Invoke(blast);
@@ -120,9 +130,9 @@ public sealed class BombBlastEffects
     /// <param name="blend">How far the frame is between the last tick and the next.</param>
     /// <returns>The concussion; none far from every blast.</returns>
     /// <remarks>
-    /// The flash is seen at once; the stun comes with the shock front, at the speed of sound, holds for most of a second and
-    /// lifts over the next few -- the picture drained of colour, closed in at the edges and split, the sound muffled under a
-    /// ringing.
+    /// The flash is seen at once; the stun comes with the front (<see cref="BombWave"/>), held a second and then swelling out,
+    /// holds for most of a second and lifts over the next few -- the picture drained of colour, closed in at the edges and
+    /// split, the sound muffled under a ringing.
     /// </remarks>
     public BlastConcussion Concussion(Vector3d eyeMetres, float blend)
     {
@@ -143,12 +153,49 @@ public sealed class BombBlastEffects
             float seen = MathF.Max(near, 0.25f * (1f - BombBlast.Smooth(blast.RadiusMetres * 3f, blast.RadiusMetres * 12f, distance)));
             flash = MathF.Max(flash, seen * BombBlast.Smooth(0f, 0.02f, age) * MathF.Exp(-age / 0.09f));
 
-            float arrives = BombBlast.ArrivalSeconds(distance);
+            float arrives = (float)BombWave.ArrivalSeconds(distance);
             float held = BombBlast.Smooth(arrives, arrives + 0.06f, age) * (1f - BombBlast.Smooth(arrives + 0.7f, arrives + 4.5f, age));
             stun = MathF.Max(stun, near * held);
         }
 
         return new BlastConcussion(Math.Clamp(flash, 0f, 1f), Math.Clamp(stun, 0f, 1f));
+    }
+
+    /// <summary>The newest blast's after-blast as this frame draws it: its front sweeping out over the world.</summary>
+    /// <param name="eye">The frame's eye.</param>
+    /// <param name="blend">How far the frame is between the last tick and the next.</param>
+    /// <returns>The after-blast; none while the front is held, once it has run out, or below the full quality.</returns>
+    /// <remarks>
+    /// On the front's own clock (<see cref="BombWave"/>), the one the server hits each player on: set out a second after the
+    /// boom, drawn for the ten seconds it runs and fading out over the last seven of them. Measured from the air just above
+    /// the bomb, as the server measures it.
+    /// </remarks>
+    public BombAfterBlastSettings AfterBlast(in Camera3D eye, float blend)
+    {
+        if (Quality < 2 || _blasts.Count == 0)
+        {
+            return default;
+        }
+
+        BombBlast blast = _blasts[^1];
+        float age = blast.Age(blend);
+        float running = age - (float)BombWave.HoldSeconds;
+        if (running <= 0f || running > BombWave.MostSeconds)
+        {
+            return default;
+        }
+
+        float fade = 1f - BombBlast.Smooth(AfterBlastFadeFrom, (float)BombWave.MostSeconds, running);
+        Vector3f relative = new(
+            (float)(blast.CentreMetres.X - eye.Position.X),
+            (float)(blast.CentreMetres.Y - eye.Position.Y),
+            (float)(blast.CentreMetres.Z + BombAirMetres - eye.Position.Z));
+        return new BombAfterBlastSettings(
+            eye.Orientation.Transposed().Transform(relative),
+            (float)BombWave.FrontMetres(age),
+            fade,
+            AfterBlastHaze * fade,
+            AfterBlastTaps);
     }
 
     /// <summary>Writes the blasts' light as local lights for the deferred pass, in view space.</summary>

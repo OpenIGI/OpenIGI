@@ -27,7 +27,8 @@ public sealed class CommandTrustTests
             }
         }
 
-        Assert.InRange(ran, Ticks - queue.TargetDepth, Ticks + queue.MaxCredit);
+        // One a tick and what it had saved, less the ticks a backlog it could not pay off was dropped on.
+        Assert.InRange(ran, Ticks - (Ticks / queue.StaleBacklogTicks), Ticks + queue.MaxCredit);
         Assert.True(queue.Throttled > 0);
     }
 
@@ -62,6 +63,37 @@ public sealed class CommandTrustTests
         Assert.Equal(next - 1 - queue.Buffered, ran);
     }
 
+    /// <summary>
+    /// A client that stalled for a second and then sent the thirty commands it ran has every one of them run: a page taking in
+    /// a new part of a level stalls that long. The credit once paid for a third of a second, the rest were dropped as run, and
+    /// the server's copy of a player on a ladder hung steps below where its client had climbed to.
+    /// </summary>
+    [Fact]
+    public void A_client_that_stalled_for_a_second_has_every_command_it_sent_run()
+    {
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        int ran = 0;
+        for (int tick = 0; tick < 200; tick++)
+        {
+            int arriving = tick == 100 ? 31 : tick is >= 70 and < 100 ? 0 : 1;
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+                ran++;
+            }
+        }
+
+        Assert.Equal(0, queue.Dropped);
+        Assert.True(queue.Buffered <= queue.MaxDepth, $"still {queue.Buffered} queued");
+        Assert.Equal(next - 1 - queue.Buffered, ran);
+    }
+
     [Fact]
     public void A_client_that_stalled_and_sent_two_seconds_at_once_is_not_run_that_late_ever_after()
     {
@@ -89,10 +121,39 @@ public sealed class CommandTrustTests
         Assert.Equal(next - 1 - queue.Buffered, queue.LastTakenTick);
     }
 
+    /// <summary>
+    /// A client that ran its own clock ahead for a few seconds -- the ticks a hitch while the level loaded owed it, run at once --
+    /// and then went on one a tick has the surplus dropped, not run a few commands late for the rest of the session. Measured on
+    /// the I.G.I. 2 server: a client that sent 50 a second for two seconds after loading had 4 to 10 commands waiting from then on.
+    /// </summary>
+    [Fact]
+    public void A_client_that_ran_ahead_after_loading_is_not_run_late_ever_after()
+    {
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        for (int tick = 0; tick < 400; tick++)
+        {
+            int arriving = tick is >= 20 and < 80 ? (tick % 3 == 0 ? 1 : 2) : 1;
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+                // The loop's condition does the work.
+            }
+        }
+
+        Assert.True(queue.Dropped > 0, "nothing was dropped");
+        Assert.True(queue.Buffered <= queue.Held + 1, $"still {queue.Buffered} queued, {queue.Held} held back");
+    }
+
     [Fact]
     public void A_value_that_is_no_number_never_reaches_the_player()
     {
-        UserCommandBuffer queue = new(Channels) { TargetDepth = 1 };
+        UserCommandBuffer queue = new(Channels);
         float[] channels = new float[Channels];
         channels[0] = float.NaN;
         channels[1] = float.PositiveInfinity;

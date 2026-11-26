@@ -34,7 +34,8 @@ public sealed partial class ServerSession
         Welcome(slot, WatcherEntity);
     }
 
-    // The welcome: the client's entity, the tick rate, the map, the level's epoch and the mode.
+    // The welcome: the client's entity, the tick rate, the map, the level's epoch, the mode, and whether the server plays with
+    // modern aim -- which every player then plays by, as it changes where rounds go and how fast a body moves.
     private void Welcome(int slot, int entity)
     {
         _writer.Reset();
@@ -44,6 +45,7 @@ public sealed partial class ServerSession
         _writer.WriteString(Map, 64);
         _writer.WriteBits(_epoch, 8);
         _writer.WriteString(Mode.Id, 16);
+        _writer.WriteBits(Player.Aim.ModernAimCVars.Enabled.Value ? 1u : 0u, 1);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
 
         // And the files the map plays from: a client that synced before it joined finds them its own already.

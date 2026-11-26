@@ -307,7 +307,7 @@ internal sealed class PlayerInteractionDriver
                 _host.OnTaskActivated(interaction.Task.Id);
                 break;
             case InteractionAction.OpenDoor:
-                interaction.Door?.Toggle();
+                interaction.ToggleDoor(_body.Position);
                 _host.OnAiNoise(AiEvent.Door);
                 _host.OnTaskActivated(interaction.Task.Id);
                 break;
@@ -434,7 +434,7 @@ internal sealed class PlayerInteractionDriver
         _pendingWireSound = null;
         _body.BeginLadderTraversal();
         _body.Position = hung;
-        _body.Yaw = (float)Math.Atan2(_wireDirection.X, _wireDirection.Y);
+        _body.Yaw = (float)SimMath.Atan2(_wireDirection.X, _wireDirection.Y);
         _interactionFacing = -_body.Yaw;
         _activeInteraction = wire;
         _interactionTick = 0;
@@ -568,7 +568,7 @@ internal sealed class PlayerInteractionDriver
 
     // Wire_IsSloped (0x43F8A0): the cable's pitch over two degrees makes it a zip-line.
     private static bool IsSloped(Vector3d segment) =>
-        Math.Abs(segment.Normalized().Z) > Math.Sin(0.034906585);
+        Math.Abs(segment.Normalized().Z) > SimMath.Sin(0.034906585);
 
     /// <summary>Gets whether the player hangs from a level wire, hand over hand.</summary>
     internal bool IsOnLevelWire =>
@@ -665,9 +665,9 @@ internal sealed class PlayerInteractionDriver
     internal void FaceAlongGun(AiStationaryGun gun)
     {
         Matrix3f m = gun.GunOrientation;
-        _body.Yaw = MathF.Atan2(m.M12, m.M22);
+        _body.Yaw = SimMathF.Atan2(m.M12, m.M22);
         _body.Pitch = Math.Clamp(
-            MathF.Asin(Math.Clamp(m.M32, -1f, 1f)),
+            SimMathF.Asin(Math.Clamp(m.M32, -1f, 1f)),
             -PlayerBody.PitchLimit,
             PlayerBody.PitchLimit);
     }
@@ -684,8 +684,8 @@ internal sealed class PlayerInteractionDriver
                 _completedActionState = LocomotionState;
             }
 
-            interaction.CompleteUse();
-            if (interaction.Door is not null)
+            interaction.CompleteUse(_body.Position);
+            if (interaction.Door is not null || interaction.Hosted is { IsPickable: true } or { IsLocked: true })
             {
                 // A finished pick unlocks and toggles the door, and posts the same noise (0x40C160).
                 _host.OnAiNoise(AiEvent.Door);

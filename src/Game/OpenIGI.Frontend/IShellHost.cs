@@ -1,3 +1,4 @@
+using OpenIGI.UI.Kit;
 ﻿using OpenIGI.Rendering;
 
 namespace OpenIGI.Frontend;
@@ -120,10 +121,30 @@ public interface IShellHost
     /// <summary>Gets parties (friends who follow their leader from game to game), where this build can play them; <see langword="null"/> where it can't.</summary>
     IPartyPanel? Party => null;
 
+    /// <summary>Gets the player's online account, where this build can reach the OpenIGI servers; <see langword="null"/> where it can't.</summary>
+    IAccountPanel? Account => null;
+
+    /// <summary>Gets the official servers' leaderboards, where this build can reach the OpenIGI servers; <see langword="null"/> where it can't.</summary>
+    OpenIGI.UI.Kit.Leaderboards.ILeaderboardSource? Leaderboard => null;
+
+    /// <summary>Gets community maps, where this build can fetch and play them; <see langword="null"/> where it can't.</summary>
+    IShellMaps? Maps => null;
+
+    /// <summary>Gets the player's own replays, where this build keeps them; <see langword="null"/> where it doesn't.</summary>
+    IShellReplays? Replays => null;
+
     /// <summary>A mission's picture, taken beforehand: what a page shows of a map whose level is not behind the menu.</summary>
     /// <param name="missionId">The mission.</param>
     /// <returns>The picture, or <see langword="null"/> where the host has none of it.</returns>
-    MissionPicture? MissionPicture(int missionId) => null;
+    UiPicture? MissionPicture(int missionId) => null;
+
+    /// <summary>
+    /// The best the active profile has done in a mission of the running game, as its score card: what retail's Select Mission
+    /// screen shows beside the list (<c>MenuStatsScreen</c>).
+    /// </summary>
+    /// <param name="missionId">The mission.</param>
+    /// <returns>The card, or <see langword="null"/> where the mission has never been played or is not ranked.</returns>
+    OpenIGI.Game.Scoring.MissionScoreCard? BestScore(int missionId) => null;
 
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;

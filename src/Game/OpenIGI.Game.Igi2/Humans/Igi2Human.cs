@@ -100,6 +100,26 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2Morph
     /// <summary>Gets or sets a value indicating whether the human takes part, <c>isActive</c>: a soldier's script switches it; the player always does.</summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Raised as the human is taken out of the world or put back (<see cref="SetInWorld"/>), with whether it is now in.</summary>
+    public event Action<Igi2Human, bool>? InWorldChanged;
+
+    /// <summary>
+    /// Takes the human out of the world or puts it back, <c>Human_RemoveDynCubeObjHandler</c> and <c>Human_RegisterDynCubeObjHandler</c>
+    /// (human.c): its in-world byte (<see cref="IsActive"/>), its body among the world's objects (no longer drawn, traced against or
+    /// collided with), and its place on the humans' list, which areas, detection and blasts walk.
+    /// </summary>
+    /// <param name="inWorld">Whether it is in the world.</param>
+    public void SetInWorld(bool inWorld)
+    {
+        if (IsActive == inWorld)
+        {
+            return;
+        }
+
+        IsActive = inWorld;
+        InWorldChanged?.Invoke(this, inWorld);
+    }
+
     /// <summary>
     /// Gets or sets how many times a squad first spotted this human, <c>Human.nSpotted</c> (<c>Human+0x1E0</c>): only the player's
     /// counts up; scripts read it as <c>&lt;name&gt;.nSpotted</c>.
@@ -115,6 +135,9 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2Morph
 
     /// <summary>Gets or sets the speed the body carries from the ground into the air, <c>Human_s.tAccumulatedSpeed</c>.</summary>
     public Vector3f AccumulatedSpeed { get; set; }
+
+    /// <summary>Gets or sets what the body's own steps across the ground are scaled by: the speed cheat's, one unchanged. <b>Not retail.</b></summary>
+    public float MoveScale { get; set; } = 1f;
 
     /// <summary>Gets or sets the speed an impact gave the body, <c>Human_s.tImpactSpeed</c>.</summary>
     public Vector3f ImpactSpeed { get; set; }

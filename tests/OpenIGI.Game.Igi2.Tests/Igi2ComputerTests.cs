@@ -1,5 +1,6 @@
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Game.Scoring;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -29,30 +30,23 @@ public sealed class Igi2ComputerTests
         Assert.Equal([7, 7], Igi2ComputerHilightTask.ExtractTaskIds("07"));
     }
 
-    /// <summary>
-    /// The highest rank whose every requirement is met is earned: within its time, spotted no more than allowed, healthy enough and
-    /// accurate enough; loads are not weighed, and a mission that took no time earns none.
-    /// </summary>
+    /// <summary>The level's fifteen parameters are the three ranks' requirements, Bodyguard first, which the shared rules weigh.</summary>
     [Fact]
-    public void The_rank_is_the_highest_whose_requirements_are_met()
+    public void The_score_settings_parameters_are_the_ranks_requirements()
     {
-        Igi2MissionScoreSettingsTask settings = new();
-        float[][] rows = [[900f, 5f, 3f, 20f, 10f], [600f, 2f, 1f, 50f, 30f], [300f, 0f, 0f, 80f, 60f]];
-        for (int rank = 0; rank < 3; rank++)
+        Igi2MissionScoreSettingsTask settings = new()
         {
-            for (int item = 0; item < 5; item++)
-            {
-                settings.Required[rank, item] = rows[rank][item];
-            }
-        }
+            TimeBodyguard = 900f, SpottedBodyguard = 5f, LoadsBodyguard = 3f, HealthBodyguard = 20f, AccuracyBodyguard = 10f,
+            TimeSecretAgent = 600f, SpottedSecretAgent = 2f, LoadsSecretAgent = 1f, HealthSecretAgent = 50f, AccuracySecretAgent = 30f,
+            TimeOperative = 300f, SpottedOperative = 0f, LoadsOperative = 0f, HealthOperative = 80f, AccuracyOperative = 60f,
+        };
 
-        Assert.Equal(2, settings.GetRank(new Igi2MissionScore(30 * 250, 0, 90, 100, 70)));
-        Assert.Equal(1, settings.GetRank(new Igi2MissionScore(30 * 250, 1, 90, 100, 70)));
-        Assert.Equal(0, settings.GetRank(new Igi2MissionScore(30 * 800, 4, 25, 0, 0)));
-        Assert.Equal(-1, settings.GetRank(new Igi2MissionScore(30 * 950, 0, 100, 0, 0)));
-        Assert.Equal(-1, settings.GetRank(new Igi2MissionScore(0, 0, 100, 0, 0)));
-        Assert.Equal("Rank6", Igi2MissionScoreSettingsTask.RankName(2, 1));
-        Assert.Equal("Unranked", Igi2MissionScoreSettingsTask.RankName(-1, 2));
+        MissionRankRequirements requirements = settings.Requirements;
+        Assert.Equal(900f, requirements[0, MissionRankItem.Time]);
+        Assert.Equal(1f, requirements[1, MissionRankItem.Loads]);
+        Assert.Equal(60f, requirements[2, MissionRankItem.Accuracy]);
+        Assert.Equal(2, requirements.GetRank(new MissionScore(30 * 250, 0, 90, 100, 70)));
+        Assert.Equal(1, requirements.GetRank(new MissionScore(30 * 250, 1, 90, 100, 70)));
     }
 
     /// <summary>Mission 1's objectives load into the class, each with its text and its expressions.</summary>
@@ -66,5 +60,24 @@ public sealed class Igi2ComputerTests
         Assert.Single(m.Tree.OfType<Igi2DefineComputerLimitTask>());
         Assert.NotEmpty(m.Tree.OfType<Igi2ComputerHilightTask>());
         Assert.Single(m.Tree.OfType<Igi2MissionScoreSettingsTask>());
+    }
+
+    /// <summary>
+    /// The rocket base's objectives done in more than one place have each place as a target: the two fuel pipes (one through
+    /// its counter), the gantry's three levels and the bunker's doors; one done in one place has none, and is marked at its link.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_rocket_bases_objectives_have_every_place_they_are_done_at()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(location: "location3", levelName: "LEVEL6");
+        m.Step();
+        Igi2DefineComputerObjectiveTask objectives = Assert.Single(m.Tree.OfType<Igi2DefineComputerObjectiveTask>());
+        int[] Open(int row) => [.. objectives.Objectives[row].OpenTargets.Select(task => task.Id).Order()];
+
+        Assert.Equal([2615, 2616], Open(0));
+        Assert.Empty(Open(1));
+        Assert.False(objectives.Objectives[1].HasTargets);
+        Assert.Equal([1400, 1401, 1403], Open(2));
+        Assert.Contains(4062, Open(3));
     }
 }

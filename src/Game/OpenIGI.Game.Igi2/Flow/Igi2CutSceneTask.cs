@@ -20,9 +20,9 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// <para>
 /// Its camera for the tick (<c>CutScene_InterpolateCamera</c>, <c>0x438F10</c>) is its four cameras about the time, the one on
 /// and its neighbours (a camera that is not smoothed to the next stands in for the one after it): every value interpolated
-/// between them, its frame from the angles; a camera looking at a target turned to it; letterboxed by its fades; and shaken by
-/// the shake's random stream. It is what the level shows while the cutscene runs. Its filters are its presentation's, and a
-/// camera's link (<c>EditCamera_TransformRelativeToLinkQTask</c>, <c>0x5815E0</c>), which no mission 1 camera uses, is not ported.
+/// between them, its frame from the angles; carried with its link (<c>EditCamera_TransformRelativeToLinkQTask</c>,
+/// <c>0x5815E0</c>); a camera looking at a target turned to it; letterboxed by its fades; and shaken by the shake's random
+/// stream. It is what the level shows while the cutscene runs. Its filters are its presentation's.
 /// </para>
 /// <para>
 /// It is made as though it ran last (<c>CutScene_CreateHandler</c>, <c>0x43A0E0</c>): one running from its first tick does not
@@ -158,7 +158,12 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
         }
 
         level.RunChildren(this);
-        _isRun = _run!.IsEmpty ? (byte)1 : (byte)LevelExpression.Truncate(level.Evaluate(_run));
+        // A co-op client's scenes run when the server's do (isRun mirrored): decided here, a scene a partner set off played on
+        // the host alone, and the host stood frozen in it while the client played on.
+        if (!level.MirrorsTaskState)
+        {
+            _isRun = _run!.IsEmpty ? (byte)1 : (byte)LevelExpression.Truncate(level.Evaluate(_run));
+        }
         if (IsRun)
         {
             level.MarkCutsceneRunning();

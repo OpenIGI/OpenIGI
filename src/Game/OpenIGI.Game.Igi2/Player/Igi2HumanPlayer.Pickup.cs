@@ -18,7 +18,29 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
     public IReadOnlyList<Pickups.Igi2GenericPickupTask> GenericPickups { get; set; } = [];
 
     /// <summary>Gets or sets the level's pickups, or <see langword="null"/> for a level with none.</summary>
-    public Igi2PickupList? Pickups { get; set; }
+    /// <remarks>
+    /// The level's surroundings are given them too: a weapon the player drops or swaps away joins the level's list as
+    /// <c>GunPickup_New</c> makes it under <c>Level_ptDynamicQTask</c>. Without them the throw found no list, made nothing, and the
+    /// weapon was still taken from the inventory.
+    /// </remarks>
+    public Igi2PickupList? Pickups
+    {
+        get => _pickups;
+        set
+        {
+            _pickups = value;
+            if (Surroundings is Igi2LevelSurroundings level)
+            {
+                level.Pickups = value;
+            }
+        }
+    }
+
+    private Igi2PickupList? _pickups;
+
+    /// <summary>Gets or sets what the player may carry of its primary weapons, which decides what a weapon picked up is swapped for.</summary>
+    /// <remarks>Set before each tick from the setting, or from a co-op client's command on the server; the original's by default.</remarks>
+    public Igi2Loadout Loadout { get; set; }
 
     /// <inheritdoc/>
     Igi2Inventory? IIgi2PickupTaker.Inventory => Weapon.Inventory;
@@ -92,12 +114,13 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
     /// <remarks>
     /// <para>
     /// Not when dead, and no weapon while one is being changed or the binoculars are up. A weapon is taken outright when it
-    /// is one already carried, which only adds its rounds, or when nothing of its category is: within reach, in sight, and
-    /// not refused for carrying all its rounds already (<see cref="Igi2GunPickup.Offer"/>).
+    /// is one already carried, which only adds its rounds, or when nothing of its slot is: within reach, in sight, and
+    /// not refused for carrying all its rounds already (<see cref="Igi2GunPickup.Offer"/>). A slot is the weapon's category,
+    /// or under a tactical loadout its kind of primary weapon (<see cref="Igi2CarrySlot"/>).
     /// </para>
     /// <para>
-    /// A weapon of a category carried in another weapon is only offered: within reach, with nothing to activate in view, the action
-    /// menu offers to swap it for each weapon of its category carried (<c>HumanPlayer_RegisterWeaponPickupActionItem</c>,
+    /// A weapon of a slot carried in another weapon is only offered: within reach, with nothing to activate in view, the action
+    /// menu offers to swap it for each weapon of its slot carried (<c>HumanPlayer_RegisterWeaponPickupActionItem</c>,
     /// <c>0x49F810</c>). When the activate key goes down with that swap first on the menu, the weapon is taken and the one carried
     /// thrown down in its place, with its carried ammunition unless the two share it; the walk over the list ends there. Taking
     /// the one in hand asks for a change to the one taken.
@@ -129,12 +152,12 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
             bool isAutoPickup = false;
             bool isSwap = false;
             Igi2Inventory? inventory = Weapon.Inventory;
-            int category = pickup.WeaponType.WeaponCategory;
-            Igi2WeaponItem? carried = inventory?.NextInCategory(category, null);
+            Igi2CarrySlot slot = Igi2CarrySlot.Of(pickup.WeaponType, Loadout);
+            Igi2WeaponItem? carried = inventory?.NextInSlot(slot, Loadout, null);
             if (Channels.WasPressed(Igi2HumanChannel.Activate))
             {
                 // The swap first on the action menu, if it is one of this pickup's, is taken.
-                for (; carried is not null; carried = inventory!.NextInCategory(category, carried.WeaponType))
+                for (; carried is not null; carried = inventory!.NextInSlot(slot, Loadout, carried.WeaponType))
                 {
                     if (ActionMenu.IsFirst(pickup, carried.WeaponType))
                     {
@@ -160,7 +183,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
             {
                 if (offered && EvaluateTarget is null && inventory is not null)
                 {
-                    for (Igi2WeaponItem? other = carried; other is not null; other = inventory.NextInCategory(category, other.WeaponType))
+                    for (Igi2WeaponItem? other = carried; other is not null; other = inventory.NextInSlot(slot, Loadout, other.WeaponType))
                     {
                         RegisterWeaponSwap(pickup, other.WeaponType);
                     }

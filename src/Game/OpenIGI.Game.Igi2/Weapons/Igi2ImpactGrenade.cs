@@ -106,6 +106,12 @@ public sealed class Igi2ImpactGrenade : IDynamicTask
             "smoke1.spr", false, 0, default, new Vector3f(127f, 127f, 127f), 614.4f, 614.4f, 819200f, 0x1000008, 0, 0.1f, 0f, 20, null);
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether it is a co-op client's copy of another machine's: it flies, but where it would go
+    /// off it is simply spent, the server's blast being shown in its stead.
+    /// </summary>
+    public bool IsReplica { get; init; }
+
     /// <summary>Gets its tags.</summary>
     public Igi2ImpactGrenadeParameters Parameters { get; }
 
@@ -117,6 +123,10 @@ public sealed class Igi2ImpactGrenade : IDynamicTask
 
     /// <summary>Gets its speed, units a tick.</summary>
     public Vector3f Speed => _speed;
+
+    /// <inheritdoc/>
+    /// <remarks><c>Grenade_DeSerializeDoneHandler</c> deletes it.</remarks>
+    public bool DeleteForLoad() => true;
 
     /// <inheritdoc/>
     public bool Run()
@@ -131,6 +141,11 @@ public sealed class Igi2ImpactGrenade : IDynamicTask
         _path.Includes = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(_shooter, _shooter, 1f));
         _collision.TraceLines(_path, uint.MaxValue);
         WorldIntersection hit = _path.Intersections[0];
+        if (hit.IsHit && IsReplica)
+        {
+            return false;
+        }
+
         if (hit.IsHit)
         {
             float reach = ((Fpu)Parameters.Radius * 2048.0).F;

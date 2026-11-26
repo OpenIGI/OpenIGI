@@ -21,6 +21,23 @@ public sealed class HudCrosshairTests
         Assert.Equal(0.03f, state.Spread, 4);
     }
 
+    /// <summary>
+    /// A timed action hides the sight but not the tally: the frames between carry the real counts, and the sight coming back marks
+    /// no kill of before. I.G.I. 2's display left those frames' aim empty, counts at nought, and the last kill flashed again.
+    /// </summary>
+    [Fact]
+    public void Hiding_the_sight_for_an_action_marks_no_old_kill_when_it_returns()
+    {
+        HudCrosshairState state = new();
+        state.Update(Aim(shots: 12, hits: 3, kills: 1), 0f, 0f);
+        state.Update(Aim(shots: 12, hits: 3, kills: 1), 5f, 5f);
+        state.Update(new PlayerAimFeedback(CrosshairShape.None, 0f, false, 12, 3, 1, false, false), 6f, 1f);
+        state.Update(Aim(shots: 12, hits: 3, kills: 1), 9f, 3f);
+
+        Assert.False(state.KillShowing);
+        Assert.False(state.HitShowing);
+    }
+
     [Fact]
     public void A_round_opens_it_and_it_settles_back()
     {

@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
@@ -54,6 +55,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     private readonly Dictionary<int, Igi1NetworkPlayer> _others = [];
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
     private readonly Dictionary<int, ReplicatedHuman> _shown = [];
+
+    // Whether the server plays with modern aim, which the client's own player then plays by.
+    private bool _serverModernAim;
 
     // This client's own entity, as the server's snapshots name it.
     private int _ownEntity = -1;
@@ -136,23 +140,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             bool alive = (h.Flags & ReplicatedHumanCondition.Alive) != 0;
             bool fired = _shotsDrawn.TryGetValue(h.Id, out byte drawn) && drawn != h.Shots;
             _shotsDrawn[h.Id] = h.Shots;
-            OpenIGI.Game.Weapons.WeaponType? gun =
-                h.Weapon - 1 == Igi1BombWeapon.Id ? Igi1BombWeapon.Type
-                : h.Weapon > 0 && _game.PlayerSetup?.Weapons is { } roster && roster.TryGet(h.Weapon - 1, out OpenIGI.Game.Weapons.WeaponType held)
-                    ? held
-                    : null;
-            bodies.Add(new Ai.PartnerBody(
-                h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(h.Action - 1, (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
-                gun,
-                h.Shots,
-                fired,
-                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? Igi1ReplicatedWorld.UnpackClipTime(h.ClipTime) : null,
-                Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
-                !alive,
-                alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
-                PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model,
-                (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0));
+            OpenIGI.Game.Weapons.WeaponType? gun = Igi1ReplicatedWorld.HeldWeapon(h.Weapon, _game.PlayerSetup?.Weapons);
+            bodies.Add(Ai.PartnerBody.FromReplicated(h.Id, h, gun, fired) with
+            {
+                Name = Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
+                Revive = alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
+                Model = PlayerSkins.Igi1.Of(_skins.GetValueOrDefault(h.Id)).Model,
+                CarriesBomb = (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0,
+                Health = alive ? h.Health / 255f : null,
+                Shielded = alive && _shielded(h.Id),
+            });
         }
 
         return bodies;
@@ -231,9 +228,24 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             if (_game.World.Player is { } player)
             {
                 Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels, player.FrameAim, player.Weapons?.ChosenWeaponId ?? -1);
+                Igi1Command.PackPreferences(_channels, player.ModernAim, player.Weapons?.GrenadeCook ?? GrenadeCook.Original);
             }
 
             return _channels;
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Modern aim changes where rounds go and how fast a body walks, so the client's own player plays with it exactly when the
+    /// server does; the player's own settings -- toggle, brace, zoom, look speed -- stay its own, and go up with each command.
+    /// </remarks>
+    public void ApplyServerRules(bool modernAim)
+    {
+        _serverModernAim = modernAim;
+        if (_game.World.Player is { } player)
+        {
+            player.ModernAimSource ??= () => Game.Player.Aim.ModernAimOptions.Current with { Enabled = _serverModernAim };
         }
     }
 
@@ -461,26 +473,32 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// <inheritdoc/>
     public void Skin(int entity, string skin) => _skins[entity] = skin;
 
+    // Whether spawn protection shields a player, by its entity, as the session last said.
+    private Func<int, bool> _shielded = static _ => false;
+
+    /// <inheritdoc/>
+    public void Shielded(Func<int, bool> shielded) => _shielded = shielded ?? throw new ArgumentNullException(nameof(shielded));
+
     /// <inheritdoc/>
     public void Sides(string mode, Func<int, int?> teamOf, int? ownTeam)
     {
         (_mode, _teamOf, _ownTeam) = (mode, teamOf, ownTeam);
 
         // A versus match shows no scene, and a joiner's own copy of the level must not say the intro's lines either.
-        if (Game.Multiplayer.Modes.GameModes.IsVersus(mode) && _game.World.Cutscenes is { Held: false } scenes)
+        if (MatchModes.IsVersus(mode) && _game.World.Cutscenes is { Held: false } scenes)
         {
             scenes.Held = true;
         }
 
         // Nor any of the level's own pickups, as on the server: none to draw, none to walk over.
-        if (Game.Multiplayer.Modes.GameModes.IsVersus(mode))
+        if (MatchModes.IsVersus(mode))
         {
             _game.World.GunPickups?.LevelCleared = true;
             _game.World.GenericPickups?.LevelCleared = true;
         }
     }
 
-    private string _mode = Game.Multiplayer.Modes.GameModes.Coop;
+    private string _mode = MatchModes.Coop;
     private Func<int, int?> _teamOf = static _ => null;
     private int? _ownTeam;
 

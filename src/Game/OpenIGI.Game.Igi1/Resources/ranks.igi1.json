@@ -1,0 +1,40 @@
+// What each rank asks of Project I.G.I.'s missions. Not retail: the original ranks none; these are the remaster's, laid out as
+// I.G.I. 2's MissionScoreSettings lays a level's, and weighed by the same rules.
+//
+// "ranks" holds three values for each figure: Bodyguard, Secret Agent, IGI Operative.
+//   time      multiples of the mission's par time, in seconds: the most it may take
+//   spotted   the most times the player may be spotted
+//   loads     the most save games loaded: kept beside the score, never weighed
+//   health    the least health left, in per cent
+//   accuracy  the least share of rounds on target, in per cent
+// A figure whose first value is below nought is not weighed, as in I.G.I. 2.
+//
+// A mission takes its par from "missions", and may set any row of its own under "ranks". A file named ranks.json in a mission's
+// folder (missions/location0/level<N>/ranks.json), in a mod or the game's overrides, takes that mission's place here, in the
+// same shape as one of its entries: a mod's own mission is ranked by the one it ships.
+{
+  "format": 1,
+  "ranks": {
+    "time": [2.5, 1.5, 1.0],
+    "spotted": [5, 2, 0],
+    "loads": [3, 1, 0],
+    "health": [20, 50, 80],
+    "accuracy": [10, 25, 40]
+  },
+  "missions": {
+    "1": { "name": "Trainyard", "par": 600 },
+    "2": { "name": "SAM Base", "par": 600 },
+    "3": { "name": "Military Airbase", "par": 900 },
+    "4": { "name": "GOD", "par": 600, "ranks": { "spotted": [-1, -1, -1] } },
+    "5": { "name": "Radar Base", "par": 900 },
+    "6": { "name": "Get Priboi", "par": 900 },
+    "7": { "name": "Border Crossing", "par": 600 },
+    "8": { "name": "Re-supply", "par": 900 },
+    "9": { "name": "Missile Trainyard", "par": 600 },
+    "10": { "name": "Defend Priboi", "par": 900, "ranks": { "spotted": [-1, -1, -1] } },
+    "11": { "name": "Eagle's Nest I", "par": 900 },
+    "12": { "name": "Eagle's Nest II", "par": 900 },
+    "13": { "name": "Nuclear Infiltration", "par": 1200 },
+    "14": { "name": "Finding the bomb", "par": 900 }
+  }
+}

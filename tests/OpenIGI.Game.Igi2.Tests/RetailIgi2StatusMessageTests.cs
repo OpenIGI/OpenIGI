@@ -184,6 +184,25 @@ public sealed class RetailIgi2StatusMessageTests
         Assert.DoesNotContain(m.Screen.Slots, s => s.Message == line);
     }
 
+    /// <summary>
+    /// A language the installation lacks is read in English, as the host mounts English in its place: a key asked for under the
+    /// chosen language's name, and missing there, is looked up under English's before it stands as its own text.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_language_not_mounted_reads_in_english()
+    {
+        Engine.Vfs.VirtualFileSystem files = new();
+        files.RegisterDevice(new Engine.Vfs.LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
+        Engine.Resources.ResourceRegistry resources = new(files);
+        foreach (string archive in Igi2Strings.Archives("english"))
+        {
+            resources.Register(archive, files.ReadAllBytes(archive));
+        }
+
+        Igi2Strings strings = new(resources, "usa");
+        Assert.Equal(("Objective 2 Complete.", "Initiate rocket launch.", "NOT_A_KEY"), (strings.Get("OBJ_2_COMPLETE"), strings.Get("M36_OBJ5"), strings.Get("NOT_A_KEY")));
+    }
+
     private static double Read(RetailIgi2Mission1 m, string expression) =>
         m.Run.Evaluate(Igi2LevelExpressions.Create(expression, "test", m.Run.Natives));
 }

@@ -87,7 +87,7 @@ public static class EditorDraw
         ArgumentNullException.ThrowIfNull(text);
         Text.UiFont font = strong ? theme.StrongFont : theme.Font;
         float size = theme.TextSize;
-        string shown = Fit(font, text, size, box.Width);
+        string shown = font.Fit(text, size, box.Width);
         float y = MathF.Round(box.Y + ((box.Height - font.LineHeight(size)) * 0.5f));
         painter.DrawText(font, shown, new UiVec2(MathF.Round(box.X), y), size, color);
         return font.MeasureWidth(shown, size);
@@ -140,41 +140,5 @@ public static class EditorDraw
         UiVec2 at = new(MathF.Round(box.Center.X - (width * 0.5f)), MathF.Round(box.Center.Y - (height * 0.5f)));
         painter.DrawText(font, glyph, at, px, color ?? theme.Icon);
         return true;
-    }
-
-    /// <summary>Shortens text with a trailing ellipsis until it fits a width.</summary>
-    /// <param name="font">The font.</param>
-    /// <param name="text">The text.</param>
-    /// <param name="size">The size in pixels.</param>
-    /// <param name="width">The width available.</param>
-    /// <returns>The text, or a shortened copy ending in an ellipsis.</returns>
-    public static string Fit(Text.UiFont font, string text, float size, float width)
-    {
-        ArgumentNullException.ThrowIfNull(font);
-        ArgumentNullException.ThrowIfNull(text);
-        // Half a pixel of slack: boxes are sized from the same measurement, and rounding must not ellipsise them.
-        width += 0.5f;
-        if (font.MeasureWidth(text, size) <= width)
-        {
-            return text;
-        }
-
-        const string ellipsis = "…";
-        int low = 0;
-        int high = text.Length;
-        while (low < high)
-        {
-            int mid = (low + high + 1) / 2;
-            if (font.MeasureWidth(string.Concat(text.AsSpan(0, mid), ellipsis), size) <= width)
-            {
-                low = mid;
-            }
-            else
-            {
-                high = mid - 1;
-            }
-        }
-
-        return low == 0 ? string.Empty : string.Concat(text.AsSpan(0, low), ellipsis);
     }
 }

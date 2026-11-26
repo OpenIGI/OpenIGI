@@ -74,7 +74,21 @@ public readonly record struct Igi2Placement(
     IIgi2PlacementGeometry? Geometry = null,
     string DestroyedModel = "",
     string MountedOn = "",
-    IReadOnlyList<string>? Wears = null);
+    IReadOnlyList<string>? Wears = null)
+{
+    /// <summary>
+    /// Gets a value indicating whether it is excluded from clipping against portals: no room's interior object
+    /// (<c>EditRigidObj_UpdateInternalDataHandler</c> registers it with no sector object), so no room hides it.
+    /// </summary>
+    public bool IsExcludedFromPortalClipping { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the object has no model of its own and is placed on its <c>Destroyed model</c>,
+    /// drawn only once it is destroyed, and no solid meanwhile: <c>ExplodeObject_SetExploded</c> (<c>igi2 0x49D010</c>) dresses the
+    /// bare object in its destroyed model, and changes a solid only where the object had one.
+    /// </summary>
+    public bool IsHiddenUntilDestroyed { get; init; }
+}
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -174,13 +188,14 @@ public sealed class Igi2WorldScene
     /// so a waypoint naming a model the installation does not ship is created with none and draws
     /// nothing. 584 of the corpus's 713 name <c>ai-arrow</c>, which is that case — no file of that name
     /// exists anywhere in the retail data, and the level scripts are the only thing that mention it. The
-    /// other 94 name a real model and are drawn. Its <c>Orientation</c> is a <c>Real32x9</c>, which level
+    /// other 94 name a real model, but even those are in the world only when their <c>SplineObj</c>'s
+    /// <c>Display waypoints</c> is set (<see cref="IsHiddenWaypoint"/>). Its <c>Orientation</c> is a <c>Real32x9</c>, which level
     /// data stores as the same three Euler angles every other type's is.
     /// </description></item>
     /// <item><description>
-    /// <c>Lift</c> — the authored start. <c>Lift_SetPositionToFirstFloor</c> (<c>0x46DD50</c>) moves a
-    /// lift onto its first <c>Floor</c> child at load, which this does not do; the eight lifts in the
-    /// corpus stand where the editor left them until it does.
+    /// <c>Lift</c> — the authored start, which is where the scene reads it. <c>Lift_SetPositionToFirstFloor</c>
+    /// (<c>0x46DD50</c>) then moves a lift onto its first <c>Floor</c> at load; the lift's own task does that
+    /// (<see cref="Interaction.Igi2LiftTask"/>).
     /// </description></item>
     /// </list>
     /// <para>
@@ -422,6 +437,40 @@ public sealed class Igi2WorldScene
         return 0;
     }
 
+    /// <summary>The model name that stands for none, <c>"none"</c>.</summary>
+    public const string NoModel = "none";
+
+    /// <summary>
+    /// Whether a model name is the one that stands for none. The archives ship an editor marker of that name, but
+    /// <c>Game_CreateHandler</c> sets its levels of detail to nought (<c>MTP_GetLODVirModelExistsFn("none")-&gt;nLOD = 0</c>), so
+    /// whatever wears it is neither drawn nor met: a switch whose every model is <c>none</c> stands invisible about its keypad.
+    /// </summary>
+    /// <param name="model">The model name, compared exactly as <c>strcmp</c> does.</param>
+    /// <returns><see langword="true"/> for <see cref="NoModel"/>.</returns>
+    public static bool IsNoModel(string model) => string.Equals(model, NoModel, StringComparison.Ordinal);
+
+    /// <summary>The parameter an object says it is no room's with, left to the view whatever room it stands in.</summary>
+    public const string ExcludedFromPortalClippingParameter = "Excluded from clipping against portals";
+
+    /// <summary>The parameter a <c>SplineObj</c> says whether its waypoints are in the world with.</summary>
+    public const string DisplayWaypointsParameter = "Display waypoints";
+
+    /// <summary>
+    /// Whether a task is a spline's waypoint whose own model is out of the world: <c>SplineObjWaypoint_UpdateInternalDataHandler</c>
+    /// (splineobj.c) takes a waypoint out of the world unless its <c>SplineObj</c>'s <c>isDisplayWaypoints</c> is set. Its segment
+    /// is a model of the spline's and stays.
+    /// </summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> for a waypoint that is neither drawn nor collided with.</returns>
+    public static bool IsHiddenWaypoint(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return string.Equals(task.Type.Name, Igi2SplineObject.WaypointType, StringComparison.Ordinal)
+            && task.Parent is { } spline
+            && string.Equals(spline.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
+            && !(TryGetParameter(spline, DisplayWaypointsParameter, out object? raw) && raw is true or (byte)1 or 1);
+    }
+
     /// <summary>A parameter's value by name, from a placeholder or from a typed task that says it is placed.</summary>
     /// <param name="task">The task.</param>
     /// <param name="name">The parameter's name, as level data declares it.</param>
@@ -433,6 +482,10 @@ public sealed class Igi2WorldScene
     private static bool TryReadPlacement(GameTask task, out Igi2Placement placement)
     {
         placement = default;
+        if (IsHiddenWaypoint(task))
+        {
+            return false;
+        }
 
         Igi2PlacementBinding binding = Bindings.TryGetValue(task.Type.Name, out Igi2PlacementBinding bound)
             ? bound
@@ -446,11 +499,30 @@ public sealed class Igi2WorldScene
                 ? binding.AlternateModel
                 : binding.Model;
 
+        string destroyed = TryGetParameter(task, DestroyedModelParameter, out object? rawDestroyed)
+            && rawDestroyed is string destroyedName
+            && !string.IsNullOrWhiteSpace(destroyedName)
+            && !IsNoModel(destroyedName)
+                ? destroyedName
+                : string.Empty;
+
+        // An object with no model of its own and a destroyed one -- mission 14's bridge charges, a GenericTBA whose destroyed
+        // model is the placed brick -- draws nothing until it goes off, and then that model: ExplodeObject_SetExploded
+        // (igi2 0x49D010) sets it on the object the level made bare (ModelObj_SetLODVirModel). Placed on that model, hidden until
+        // then. Left out, the charge never drew at all.
+        bool hiddenUntilDestroyed = false;
         if (!TryGetParameter(task, modelParameter, out object? rawModel)
             || rawModel is not string model
-            || string.IsNullOrWhiteSpace(model))
+            || string.IsNullOrWhiteSpace(model)
+            || IsNoModel(model))
         {
-            return false;
+            if (destroyed.Length == 0)
+            {
+                return false;
+            }
+
+            model = destroyed;
+            hiddenUntilDestroyed = true;
         }
 
         // A wire is strung, not placed. Wire_UpdateInternalDataHandler (igi2 0x49B720) reads the two
@@ -519,12 +591,6 @@ public sealed class Igi2WorldScene
             mountedOrientation = new Vector3f(alpha, 0f, orientation.Z + gamma);
         }
 
-        string destroyed = TryGetParameter(task, DestroyedModelParameter, out object? rawDestroyed)
-            && rawDestroyed is string destroyedName
-            && !string.IsNullOrWhiteSpace(destroyedName)
-                ? destroyedName
-                : string.Empty;
-
         placement = new Igi2Placement(
             task.Id,
             task.Type.Name,
@@ -542,7 +608,12 @@ public sealed class Igi2WorldScene
             string.Equals(task.Type.Name, WorldScene.SwitchType, StringComparison.Ordinal)
                 ? [.. WorldScene.SwitchModelParameters.Select(name =>
                     TryGetParameter(task, name, out object? raw) && raw is string worn ? worn : string.Empty)]
-                : null);
+                : null)
+        {
+            IsExcludedFromPortalClipping = TryGetParameter(task, ExcludedFromPortalClippingParameter, out object? excluded)
+                && excluded is true or (byte)1 or 1,
+            IsHiddenUntilDestroyed = hiddenUntilDestroyed,
+        };
         return true;
     }
 }

@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Multiplayer.Modes;
 
 /// <summary>
@@ -7,8 +9,8 @@ namespace OpenIGI.Game.Multiplayer.Modes;
 /// <remarks>
 /// The bell is the classic one (damage = peak · e<sup>−d²/2σ²</sup>), its width set so the peak falls to one whole health
 /// at the mode's killing radius. Inside that, nobody lives in the open; a corner or a wall between adds to the effective
-/// distance (<see cref="BlastWaveField"/>) and so takes the player down the bell. Nothing is taken below one percent: like
-/// CS2's since July 2026, a far-off blast leaves no token scratch.
+/// distance (<see cref="BlastWaveField"/>) and so takes the player down the bell. Nothing is taken below one percent: a
+/// far-off blast leaves no token scratch.
 /// </remarks>
 public static class BombDamage
 {
@@ -25,8 +27,17 @@ public static class BombDamage
     public static float Share(double effectiveMetres, double lethalMetres)
     {
         double lethal = Math.Max(lethalMetres, 1.0);
-        double twoSigmaSquared = lethal * lethal / Math.Log(PeakShare);
-        double share = PeakShare * Math.Exp(-(effectiveMetres * effectiveMetres) / twoSigmaSquared);
+        double twoSigmaSquared = lethal * lethal / SimMath.Log(PeakShare);
+        double share = PeakShare * SimMath.Exp(-(effectiveMetres * effectiveMetres) / twoSigmaSquared);
         return share < LeastShare ? 0f : (float)share;
+    }
+
+    /// <summary>How far the bell reaches before it gives out at <see cref="LeastShare"/>.</summary>
+    /// <param name="lethalMetres">The killing radius in the open.</param>
+    /// <returns>The effective distance in metres past which the blast takes nothing.</returns>
+    public static double ReachMetres(double lethalMetres)
+    {
+        double lethal = Math.Max(lethalMetres, 1.0);
+        return lethal * Math.Sqrt(SimMath.Log(PeakShare / LeastShare) / SimMath.Log(PeakShare));
     }
 }

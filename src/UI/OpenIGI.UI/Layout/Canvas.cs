@@ -58,16 +58,40 @@ public class Canvas : UiElement
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
-        // A canvas takes the space offered; children are positioned relative to it rather than sizing it.
+        // A canvas takes the space offered; children are positioned relative to it rather than sizing it. Each is measured
+        // against the room its anchor gives it, so text that wraps wraps to the width it is placed in: a page beside a
+        // phone's rail is the screen less the rail, not the whole screen.
         foreach (UiElement child in Children)
         {
             if (child.Visibility != Visibility.Collapsed)
             {
-                child.Measure(context, available);
+                Anchor anchor = _anchors.TryGetValue(child, out Anchor a) ? a : Anchor.Fill;
+                child.Measure(context, Room(context, anchor, available));
             }
         }
 
         return available;
+    }
+
+    // The size an anchor spans of the space offered. An anchor that spans nothing along an axis (a point, which the child
+    // sizes for itself) and an axis offered without bound both measure against what is offered, as before.
+    private static UiVec2 Room(LayoutContext context, Anchor anchor, UiVec2 available)
+    {
+        Thickness margin = context.Px(anchor.Margin);
+        return new UiVec2(
+            Span(available.X, anchor.Min.X, anchor.Max.X, margin.Left + margin.Right),
+            Span(available.Y, anchor.Min.Y, anchor.Max.Y, margin.Top + margin.Bottom));
+
+        static float Span(float offered, float min, float max, float margins)
+        {
+            if (float.IsInfinity(offered) || max <= min)
+            {
+                return offered;
+            }
+
+            float span = ((max - min) * offered) - margins;
+            return span > 0f ? span : offered;
+        }
     }
 
     /// <inheritdoc/>

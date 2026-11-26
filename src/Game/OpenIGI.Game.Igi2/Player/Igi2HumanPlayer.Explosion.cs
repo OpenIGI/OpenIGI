@@ -35,6 +35,12 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
     /// </remarks>
     public void ExplosionHit(in Igi2ExplosionHit hit)
     {
+        if (Spares?.Invoke(hit.Owner) == true)
+        {
+            ShakeView(hit, PlayerShakeAngle);
+            return;
+        }
+
         Damage.LastPart = Igi2DamagePart.Chest;
         Vector3f root = RootTranslation;
         float radius = ((Fpu.Sqrt((((Fpu)root.X * root.X) + ((Fpu)root.Y * root.Y)) + ((Fpu)root.Z * root.Z)) + ModelRadius) * 0.33333334f).F;
@@ -49,6 +55,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
                 _ => damage,
             };
             Damage.Add(Igi2DamagePart.Chest, damage.F);
+            Struck?.Invoke(hit.Owner, Igi2DamagePart.Chest);
         }
 
         ShakeView(hit, PlayerShakeAngle);

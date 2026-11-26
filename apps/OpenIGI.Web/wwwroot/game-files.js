@@ -5,7 +5,9 @@
 // textures, a few dozen megabytes each -- which are read when the mission is chosen: the load gate
 // (WebLoadGate.cs) asks, and this starts reading and answers yes once they are all in place. The small
 // files of every mission are read up front because the game scans them all at start-up to learn what
-// the missions are.
+// the missions are. Hosted data says for itself what waits and for which folders (pack.py's "for"): an
+// I.G.I. 2 location's shared pack waits for the first of its missions, and the gameplay sounds for any.
+// Either game is read the same way; which one it is comes from the folder (judge) or the hosted index.
 
 /** A mission's file at or above this size waits until the mission is chosen. */
 const LARGE = 256 * 1024;
@@ -23,14 +25,35 @@ const key = path => path.toLowerCase();
 // directly inside the picked one are tried as well, "pc" first.
 
 /**
- * What proves a folder is a Project I.G.I. installation: the signature file and the asset folders of
- * GameTitle.Igi1 (src/Core/OpenIGI.Core/Titles/GameTitle.cs). Keep the two in step.
+ * What proves a folder is an installation of each game: the signature file and the asset folders of
+ * GameTitle.Igi1 and GameTitle.Igi2 (src/Core/OpenIGI.Core/Titles/GameTitle.cs). Keep the two in step.
+ * The sequel first: its folder has the first game's signature file as well.
  */
-const SIGNATURE_FILE = 'config.qvm';
 const ASSET_ROOTS = ['missions', 'common', 'language', 'menusystem'];
+const SIGNATURES = [
+  { title: 'igi2', file: 'igi2.exe' },
+  { title: 'igi1', file: 'config.qvm' },
+];
 
-/** The sequel's signature file (GameTitle.Igi2); its folder has everything above as well. */
-const SEQUEL_SIGNATURE_FILE = 'igi2.exe';
+/**
+ * The games, by id, as the page names them. hosted: whether the site serves the game's files; a game it does not is
+ * played only from the person's own installation.
+ */
+export const TITLES = {
+  igi1: { name: 'Project I.G.I.', hosted: true },
+  igi2: { name: 'I.G.I. 2: Covert Strike', hosted: false },
+};
+
+/**
+ * How each game's own folder is split into what is read up front and what waits, as tools/web-data/pack.py splits the
+ * hosted files -- keep the two in step. shared: files every mission waits for and the menu does not. locationPacks:
+ * whether a location's shared folder (missions/<location>/common) waits for the first of its missions, as I.G.I. 2's
+ * do; read up front, every location's would be in memory at once.
+ */
+const SPLITS = {
+  igi1: { shared: [], locationPacks: false },
+  igi2: { shared: ['common/sounds/sounds.res'], locationPacks: true },
+};
 
 /** A folder the game cannot be played from, with what to tell the person. */
 export class InstallationError extends Error {
@@ -52,9 +75,8 @@ export class InstallationError extends Error {
  * @returns {'igi1' | 'igi2' | null}
  */
 function judge(kinds) {
-  if (kinds.get(SEQUEL_SIGNATURE_FILE) === 'file') return 'igi2';
-  if (kinds.get(SIGNATURE_FILE) === 'file' && ASSET_ROOTS.every(name => kinds.get(name) === 'directory')) return 'igi1';
-  return null;
+  if (!ASSET_ROOTS.every(name => kinds.get(name) === 'directory')) return null;
+  return SIGNATURES.find(signature => kinds.get(signature.file) === 'file')?.title ?? null;
 }
 
 /** "pc" first, then the rest by name. */
@@ -68,19 +90,21 @@ function candidateOrder(a, b) {
  * @param {string} picked The picked folder's name, for the message.
  * @param {Array<{ name: string, kinds: () => Promise<Map<string, string>> }>} candidates
  *   The picked folder (named '') and then its sub-folders, each with a way to list its top level.
- * @returns {Promise<string>} The name of the one that is the installation: '' for the picked folder.
+ * @param {string} wanted The game the page is set to, which wins when the folder holds both.
+ * @returns {Promise<{ name: string, title: string }>} The one that is the installation ('' for the picked
+ *   folder) and which game it is.
  */
-async function locate(picked, candidates) {
-  let sequel = false;
+async function locate(picked, candidates, wanted) {
+  let other = null;
   for (const candidate of candidates) {
-    const verdict = judge(await candidate.kinds());
-    if (verdict === 'igi1') return candidate.name;
-    sequel ||= verdict === 'igi2';
+    const title = judge(await candidate.kinds());
+    if (title === wanted) return { name: candidate.name, title };
+    other ??= title && { name: candidate.name, title };
   }
+  if (other) return other;
 
-  throw new InstallationError(sequel
-    ? `/${picked} is I.G.I. 2: Covert Strike. Choose Project I.G.I.'s folder instead.`
-    : `No Project I.G.I. installation in /${picked}. Choose the folder with IGI.exe in it, usually pc.`);
+  const { name } = TITLES[wanted];
+  throw new InstallationError(`No ${name} installation in /${picked}. Choose the folder the game is installed in.`);
 }
 
 /**
@@ -88,9 +112,11 @@ async function locate(picked, candidates) {
  * gives them.
  * @param {string} picked The picked folder's name, for the message.
  * @param {Array<{ path: string }>} files
- * @returns {Promise<string>} The prefix to strip from every path: '' or 'pc/', for instance.
+ * @param {string} wanted The game the page is set to.
+ * @returns {Promise<{ prefix: string, title: string }>} The prefix to strip from every path ('' or 'pc/', for
+ *   instance) and which game it is.
  */
-async function locateInList(picked, files) {
+async function locateInList(picked, files, wanted) {
   // One pass over the list: the top level of the picked folder, and of each folder directly inside it.
   const top = new Map();
   const inside = new Map();
@@ -112,8 +138,8 @@ async function locateInList(picked, files) {
     candidates.push({ name, kinds: async () => inside.get(name) });
   }
 
-  const found = await locate(picked, candidates);
-  return found ? `${found}/` : '';
+  const { name, title } = await locate(picked, candidates, wanted);
+  return { prefix: name ? `${name}/` : '', title };
 }
 
 /** The files under a prefix, their paths made relative to it. */
@@ -141,8 +167,9 @@ const kindsOf = entries => new Map([...entries].map(([name, entry]) => [name, en
 /**
  * A folder the person picked (File System Access API).
  * @param {FileSystemDirectoryHandle} handle
+ * @param {string} wanted The game the page is set to; a folder of the other game is taken as that game.
  */
-export async function fromDirectory(handle) {
+export async function fromDirectory(handle, wanted) {
   // Only the top levels of the picked folder and of the folders directly inside it are listed to find
   // the installation; nothing is walked until it is found.
   const top = await entriesOf(handle);
@@ -152,11 +179,14 @@ export async function fromDirectory(handle) {
     candidates.push({ name: folder.name, kinds: async () => kindsOf(await entriesOf(folder)) });
   }
 
-  const found = await locate(handle.name, candidates);
+  const { name: found, title } = await locate(handle.name, candidates, wanted);
   const root = found ? await handle.getDirectoryHandle(found) : handle;
 
   return {
     name: found ? `${handle.name}/${found}` : handle.name,
+    title,
+    /** The person's own folder, whose files can be kept in the browser (keepCopy). */
+    own: true,
     /** The folder the person picked, which can be remembered for their next visit. */
     handle,
     async list() {
@@ -168,7 +198,8 @@ export async function fromDirectory(handle) {
             if (!prefix && IGNORED_FOLDERS.has(name.toLowerCase())) continue;
             await walk(entry, path);
           } else {
-            files.push({ path, size: (await entry.getFile()).size, entry });
+            const file = await entry.getFile();
+            files.push({ path, size: file.size, modified: file.lastModified, entry });
           }
         }
       };
@@ -190,7 +221,8 @@ export async function fromDirectory(handle) {
 
 const DATABASE = 'openigi';
 const STORE = 'folders';
-const GAME_FOLDER = 'game';
+/** Each game's folder is kept under its own key; the first game's under the key it has always had. */
+const folderKey = title => (title === 'igi1' ? 'game' : `game:${title}`);
 
 function database() {
   return new Promise((resolve, reject) => {
@@ -216,29 +248,38 @@ async function transact(mode, work) {
 }
 
 /** Keeps the folder a game was just played from, for the next visit. */
-export async function rememberFolder(handle) {
+export async function rememberFolder(title, handle) {
   try {
-    await transact('readwrite', store => store.put(handle, GAME_FOLDER));
+    await transact('readwrite', store => store.put(handle, folderKey(title)));
   } catch (error) {
     console.warn(`The game folder could not be remembered: ${error}`); // A private window, for one.
   }
 }
 
-/** The folder remembered from the last visit, or null. */
-export async function rememberedFolder() {
+/** The folder of a game remembered from the last visit, or null. */
+export async function rememberedFolder(title) {
   try {
-    return (await transact('readonly', store => store.get(GAME_FOLDER))) ?? null;
+    return (await transact('readonly', store => store.get(folderKey(title)))) ?? null;
   } catch {
     return null;
   }
 }
 
-/** Forgets the remembered folder. */
-export async function forgetFolder() {
+/** Forgets a game's remembered folder. */
+export async function forgetFolder(title) {
   try {
-    await transact('readwrite', store => store.delete(GAME_FOLDER));
+    await transact('readwrite', store => store.delete(folderKey(title)));
   } catch {
     // Nothing was remembered, or nothing can be.
+  }
+}
+
+/** Whether a remembered folder can be read without asking: the browser kept the permission, so no click is needed. */
+export async function readable(handle) {
+  try {
+    return (await handle.queryPermission({ mode: 'read' })) === 'granted';
+  } catch {
+    return false;
   }
 }
 
@@ -246,15 +287,16 @@ export async function forgetFolder() {
  * Opens a remembered folder again. Asks the browser for permission to read it when it does not hold it
  * still, so it must be called from a click.
  * @param {FileSystemDirectoryHandle} handle
+ * @param {string} wanted The game it was remembered for.
  */
-export async function reopen(handle) {
+export async function reopen(handle, wanted) {
   if ((await handle.queryPermission({ mode: 'read' })) !== 'granted'
     && (await handle.requestPermission({ mode: 'read' })) !== 'granted') {
     throw new InstallationError(`Permission to read /${handle.name} was not given. Press Play to be asked again.`, true);
   }
 
   try {
-    return await fromDirectory(handle);
+    return await fromDirectory(handle, wanted);
   } catch (error) {
     if (error.name === 'NotFoundError') throw new InstallationError(`/${handle.name} is no longer there. Choose the game folder again.`);
     throw error;
@@ -265,14 +307,17 @@ export async function reopen(handle) {
  * A folder picked through a plain file input (webkitdirectory), where the API above is missing. The
  * browser has listed every file under the picked folder by then; none of them is read here.
  * @param {FileList} list
+ * @param {string} wanted The game the page is set to.
  */
-export async function fromFileList(list) {
+export async function fromFileList(list, wanted) {
   const picked = list[0]?.webkitRelativePath.split('/')[0] ?? '';
-  const all = [...list].map(f => ({ path: f.webkitRelativePath.split('/').slice(1).join('/'), size: f.size, file: f }));
-  const prefix = await locateInList(picked, all);
+  const all = [...list].map(f => ({ path: f.webkitRelativePath.split('/').slice(1).join('/'), size: f.size, modified: f.lastModified, file: f }));
+  const { prefix, title } = await locateInList(picked, all, wanted);
   const files = rebase(all, prefix);
   return {
     name: prefix ? `${picked}/${prefix.slice(0, -1)}` : picked,
+    title,
+    own: true,
     async list() { return files; },
     async read(file) { return new Uint8Array(await file.file.arrayBuffer()); },
   };
@@ -282,16 +327,18 @@ export async function fromFileList(list) {
  * An installation served over HTTP beside a manifest.json of { path, size } entries: for development and
  * for automated runs, where nothing can click a folder picker.
  * @param {string} base The URL of the folder, ending in a slash.
+ * @param {string} wanted The game the page is set to.
  */
-export async function fromUrl(base) {
+export async function fromUrl(base, wanted) {
   const response = await fetch(`${base}manifest.json`);
   if (!response.ok) throw new InstallationError(`${base}manifest.json could not be fetched (${response.status}).`);
   const all = await response.json();
-  const prefix = await locateInList(base, all);
+  const { prefix, title } = await locateInList(base, all, wanted);
   const files = rebase(all, prefix);
   const at = base + prefix.split('/').filter(Boolean).map(part => `${encodeURIComponent(part)}/`).join('');
   return {
     name: at,
+    title,
     async list() { return files; },
     async read(file) {
       const reply = await fetch(at + file.path.split('/').map(encodeURIComponent).join('/'));
@@ -299,6 +346,171 @@ export async function fromUrl(base) {
       return new Uint8Array(await reply.arrayBuffer());
     },
   };
+}
+
+// --- The person's own files, kept in the browser -----------------------------------------------------------
+//
+// A remembered folder has to be opened again on every visit, and that is the browser's to allow: some forget the
+// folder or the permission between visits, and some (a phone's, or any without the folder API) never had a folder to
+// remember, only the files picked that once. So the files of a folder played from are copied into the page's Cache
+// Storage while the game is played -- the hosted files' way of being kept -- and the next visit plays from the copy,
+// asking for nothing. The copy is a game's own: kept under its id, replaced when another folder is chosen, and
+// deleted from the landing page.
+//
+// It is whole or it is not used: the list of what it holds is written last, once every file is in, and deleted
+// first whenever the copy is changed. A copy left part-way (the tab closed, the disk full) is picked up where it
+// stopped the next time the game is played from the folder.
+
+const KEPT_CACHE = 'openigi-kept';
+const KEPT_VERSION = 1;
+/** How many files are copied at once: enough to keep the disk busy, few enough to leave the game its frames. */
+const KEPT_COPIERS = 2;
+
+const keptBase = title => new URL(`/openigi-kept/${title}/`, location.origin).href;
+const keptList = title => new URL(`/openigi-kept/${title}.json`, location.origin).href;
+const keptUrl = (title, path) => keptBase(title) + path.split('/').map(encodeURIComponent).join('/');
+
+async function keptCache() {
+  try {
+    return globalThis.caches ? await caches.open(KEPT_CACHE) : null;
+  } catch {
+    return null; // No secure context, or a private window that keeps nothing.
+  }
+}
+
+/** The list a whole copy of a game's files holds -- { name, size, files } -- or null when there is no whole copy. */
+export async function keptCopy(title) {
+  try {
+    const hit = await (await keptCache())?.match(keptList(title));
+    const list = hit ? await hit.json() : null;
+    return list?.version === KEPT_VERSION && list.title === title && Array.isArray(list.files) ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Deletes a game's kept copy. */
+export async function forgetKept(title) {
+  try {
+    const cache = await keptCache();
+    if (!cache) return;
+    await cache.delete(keptList(title));
+    const base = keptBase(title);
+    for (const request of await cache.keys()) {
+      if (request.url.startsWith(base)) await cache.delete(request);
+    }
+  } catch {
+    // Nothing kept, or nothing can be.
+  }
+}
+
+/**
+ * The installation as kept in the browser. Throws an InstallationError when there is no whole copy -- the browser may
+ * have cleared some of it to make room -- after deleting what is left of it.
+ * @param {string} title The game.
+ */
+export async function fromKept(title) {
+  const list = await keptCopy(title);
+  const cache = await keptCache();
+  const base = keptBase(title);
+  const held = cache && list ? (await cache.keys()).filter(request => request.url.startsWith(base)).length : 0;
+  if (!list || held < list.files.length) {
+    await forgetKept(title);
+    throw new InstallationError(`The copy of ${TITLES[title].name} kept in this browser is gone. Choose the game folder again.`);
+  }
+
+  return {
+    name: list.name,
+    title,
+    kept: true,
+    async list() { return list.files.map(file => ({ ...file })); },
+    async read(file) {
+      const hit = await cache.match(keptUrl(title, file.path));
+      if (!hit) throw new Error(`${file.path} is missing from the copy kept in this browser`);
+      return new Uint8Array(await hit.arrayBuffer());
+    },
+  };
+}
+
+/** Whether a kept file is the one in the folder now: the same size and the same time of change. */
+const sameFile = (hit, file) =>
+  hit && hit.headers.get('X-Size') === String(file.size) && hit.headers.get('X-Modified') === String(file.modified ?? 0);
+
+/**
+ * Copies a folder's files into the browser, for the next visit to play from. Files kept already and unchanged are
+ * skipped, and files kept from another folder that this one lacks are deleted.
+ * @param {object} from The source being played: fromDirectory or fromFileList.
+ * @param {(done: number, total: number) => void} progress Bytes in the copy so far, of all of them.
+ * @returns {Promise<boolean>} Whether the copy is whole: false when the browser keeps nothing or has no room.
+ */
+export async function keepCopy(from, progress) {
+  const cache = await keptCache();
+  if (!cache) return false;
+  const { title } = from;
+  const files = (await from.list()).filter(wanted);
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+
+  // Not whole from here until every file is in.
+  await cache.delete(keptList(title));
+
+  const base = keptBase(title);
+  const wantedUrls = new Set(files.map(file => keptUrl(title, file.path)));
+  for (const request of await cache.keys()) {
+    if (request.url.startsWith(base) && !wantedUrls.has(request.url)) await cache.delete(request);
+  }
+
+  let done = 0;
+  const queue = [];
+  for (const file of files) {
+    if (sameFile(await cache.match(keptUrl(title, file.path)), file)) done += file.size;
+    else queue.push(file);
+  }
+  progress?.(done, total);
+
+  const needed = total - done;
+  if (needed > 0) {
+    navigator.storage?.persist?.().catch(() => {});
+    const { quota, usage } = (await Promise.resolve(navigator.storage?.estimate?.()).catch(() => null)) ?? {};
+    if (Number.isFinite(quota) && quota - (usage ?? 0) < needed * 1.1) {
+      console.warn(`The game's files were not kept in this browser: ${Math.ceil(needed / 1048576)} MB would not fit.`);
+      return false;
+    }
+  }
+
+  let stopped = null;
+  const copier = async () => {
+    for (let file = queue.shift(); file && !stopped; file = queue.shift()) {
+      try {
+        const bytes = await from.read(file);
+        await cache.put(keptUrl(title, file.path), new Response(bytes, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Size': String(file.size),
+            'X-Modified': String(file.modified ?? 0),
+          },
+        }));
+        done += file.size;
+        progress?.(done, total);
+      } catch (error) {
+        stopped = error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: KEPT_COPIERS }, copier));
+  if (stopped) {
+    console.warn(`The game's files were not all kept in this browser: ${stopped.message}`);
+    return false;
+  }
+
+  const list = {
+    version: KEPT_VERSION,
+    title,
+    name: from.name,
+    size: total,
+    files: files.map(({ path, size, modified }) => ({ path, size, modified })),
+  };
+  await cache.put(keptList(title), new Response(JSON.stringify(list), { headers: { 'Content-Type': 'application/json' } }));
+  return true;
 }
 
 // --- The hosted installation -------------------------------------------------------------------------------
@@ -422,10 +634,14 @@ export async function hostedStatus(base) {
   }
 }
 
-/** Deletes every downloaded bundle. */
-export async function clearHosted() {
+/** Deletes every bundle downloaded from one game's folder, leaving the other game's. */
+export async function clearHosted(base) {
   try {
-    await globalThis.caches?.delete(DATA_CACHE);
+    const cache = await dataCache();
+    if (!cache) return;
+    for (const request of await cache.keys()) {
+      if (request.url.startsWith(base)) await cache.delete(request);
+    }
   } catch {
     // Nothing kept, or nothing can be.
   }
@@ -442,19 +658,33 @@ export async function fromHosted(base) {
 
   const kept = new Map(); // Bundle name -> promise of its served bytes being in the cache (or in hand).
   const unpacked = new Map(); // Bundle name -> promise of its files' bytes, while files are left to read.
-  const left = new Map(); // Bundle name -> how many of its files are still to be read.
-  for (const file of index.files) left.set(file.bundle, (left.get(file.bundle) ?? 0) + 1);
+  const counts = new Map(); // Bundle name -> how many files it holds.
+  for (const file of index.files) counts.set(file.bundle, (counts.get(file.bundle) ?? 0) + 1);
+  const left = new Map(); // Bundle name -> how many of its files are still to be read this time.
 
   const source = {
     name: 'openigi.com',
     hosted: true,
+    title: index.title ?? 'igi1',
+
+    /**
+     * The folders each bundle's files wait for, as pack.py wrote them ("*" for any mission's), or null for an
+     * index older than that, whose split is the page's own (deferredTo).
+     */
+    waitsFor: Object.values(index.bundles).some(b => b.for)
+      ? Object.fromEntries(Object.entries(index.bundles).map(([name, b]) => [name, b.for ?? []]))
+      : null,
     /** Called as a bundle comes in: (bundle name, bytes so far, its size). */
     onDownload: null,
 
     async list() { return index.files; },
 
     async read(file) {
-      if (!unpacked.has(file.bundle)) unpacked.set(file.bundle, fetchBundle(file.bundle).then(gunzip));
+      // Unpacked once per reading of its files: again after a mission's files were let go (evict).
+      if (!unpacked.has(file.bundle)) {
+        unpacked.set(file.bundle, fetchBundle(file.bundle).then(gunzip));
+        left.set(file.bundle, counts.get(file.bundle));
+      }
       const bytes = await unpacked.get(file.bundle);
       const part = bytes.slice(file.offset, file.offset + file.size);
       // The last of a bundle's files read: its bytes are let go.
@@ -471,8 +701,12 @@ export async function fromHosted(base) {
     async prefetch() {
       const connection = navigator.connection;
       if (connection?.saveData || /(^|-)(2g|3g)$/.test(connection?.effectiveType ?? '')) return;
-      const order = name => Number(name.match(/(\d+)$/)?.[1] ?? 0);
-      const names = Object.keys(index.bundles).filter(name => name !== 'base').sort((a, b) => order(a) - order(b));
+      // What every mission needs first, then the missions in their order: by name with its numbers read as
+      // numbers, so level10 follows level9 and a location's shared pack ("...-common") comes before its levels.
+      const shared = name => (index.bundles[name].for?.includes('*') ? 0 : 1);
+      const names = Object.keys(index.bundles)
+        .filter(name => name !== 'base')
+        .sort((a, b) => shared(a) - shared(b) || a.localeCompare(b, 'en', { numeric: true }));
       for (const name of names) {
         try {
           await keep(name);
@@ -547,7 +781,23 @@ export async function fromHosted(base) {
 let fs = null;
 let root = '/game';
 let source = null;
-const missions = new Map();
+
+// What waits to be read: groups of files, each read whole when a folder that needs it is asked for. A group is
+// a mission folder's large files, or for hosted data a bundle. needs maps a folder (lower-cased) to the groups
+// it waits for; everyMission holds those every mission waits for.
+const groups = new Map(); // Name -> { files, state: 'waiting' | 'reading' | 'ready' | 'failed' }
+const needs = new Map(); // Folder -> Set of group names.
+const everyMission = new Set();
+
+/**
+ * How many of the folders last asked for keep their files in memory. The file system is the runtime's heap,
+ * which cannot grow past 4 GB, and an I.G.I. 2 level is up to a hundred megabytes: the files of a mission
+ * left a while ago are deleted, and read again (from the download cache, for hosted data) if it is chosen
+ * again. A mission asks for its own folder and its location's shared one, and a co-op game may borrow
+ * another level's pack, so this keeps three missions' worth.
+ */
+const RESIDENT_FOLDERS = 6;
+const recent = []; // Folders asked for, the latest first.
 
 function wanted(file) {
   const parts = file.path.split('/');
@@ -562,14 +812,37 @@ function missionFolders(files) {
     .map(f => key(f.path.slice(0, f.path.lastIndexOf('/')))));
 }
 
-/** The mission folder a large file waits for, or null for one read up front. */
-function deferredTo(file, folders) {
-  if (file.size < LARGE) return null;
-  for (let at = file.path.lastIndexOf('/'); at > 0; at = file.path.lastIndexOf('/', at - 1)) {
-    const folder = key(file.path.slice(0, at));
-    if (folders.has(folder)) return folder;
+/**
+ * The groups of a source that says nothing of its own about what waits (a folder, or an index older than pack.py's
+ * "for"): each file's group put on it as file.group, and the folders each group waits for -- pack.py's split, made here.
+ * @returns {Object<string, string[]>} Group name -> the folders that wait for it ("*" for any mission).
+ */
+function folderGroups(files, title) {
+  const split = SPLITS[title] ?? SPLITS.igi1;
+  const missions = missionFolders(files);
+  const packs = split.locationPacks
+    ? new Set([...missions].map(folder => `${folder.slice(0, folder.lastIndexOf('/'))}/common`))
+    : new Set();
+  const waitsFor = {};
+  for (const file of files) {
+    const path = key(file.path);
+    file.group = null;
+    if (split.shared.includes(path)) {
+      file.group = 'shared';
+      waitsFor.shared = ['*'];
+      continue;
+    }
+    if (file.size < LARGE) continue;
+    for (let at = path.lastIndexOf('/'); at > 0; at = path.lastIndexOf('/', at - 1)) {
+      const folder = path.slice(0, at);
+      if (missions.has(folder) || packs.has(folder)) {
+        file.group = folder;
+        waitsFor[folder] = [folder];
+        break;
+      }
+    }
   }
-  return null;
+  return waitsFor;
 }
 
 function write(file, bytes) {
@@ -601,43 +874,114 @@ async function readAll(files, progress) {
  * @param {string} at Where the game reads its installation.
  * @param {(done: number, total: number, path: string) => void} progress
  */
+function defer(group, file) {
+  if (!groups.has(group)) groups.set(group, { files: [], state: 'waiting' });
+  groups.get(group).files.push(file);
+}
+
+function need(folder, group) {
+  if (folder === '*') {
+    everyMission.add(group);
+    return;
+  }
+  if (!needs.has(key(folder))) needs.set(key(folder), new Set());
+  needs.get(key(folder)).add(group);
+}
+
+/**
+ * Reads the installation into the file system, all but what waits for a mission: the missions' large files,
+ * or for hosted data the bundles the index says wait.
+ * @param {object} from A source: fromHosted, fromDirectory, fromFileList or fromUrl.
+ * @param {object} fileSystem The runtime's Emscripten FS.
+ * @param {string} at Where the game reads its installation.
+ * @param {(done: number, total: number, path: string) => void} progress
+ */
 export async function load(from, fileSystem, at, progress) {
   source = from;
   fs = fileSystem;
   root = at;
 
   const files = (await source.list()).filter(wanted);
-  const folders = missionFolders(files);
+  // Hosted data names its groups (bundles) and what waits for them; anything else is split here the same way.
+  const waitsFor = source.waitsFor ?? folderGroups(files, source.title);
+  const groupOf = source.waitsFor ? file => file.bundle : file => file.group;
+  for (const [group, folders] of Object.entries(waitsFor)) folders.forEach(folder => need(folder, group));
   const now = [];
   for (const file of files) {
-    const mission = deferredTo(file, folders);
-    if (mission === null) {
-      now.push(file);
-      continue;
-    }
-
-    if (!missions.has(mission)) missions.set(mission, { files: [], state: 'waiting' });
-    missions.get(mission).files.push(file);
+    const group = groupOf(file);
+    if (group && waitsFor[group]?.length) defer(group, file);
+    else now.push(file);
   }
 
   await readAll(now, progress);
+  placeSignature();
   return { files: now.length, deferred: files.length - now.length };
 }
 
-/** Starts reading a mission's large files, if nothing has yet. */
-function fetchMission(mission) {
-  mission.state = 'reading';
-  readAll(mission.files).then(
-    () => { mission.state = 'ready'; },
-    error => { mission.state = 'failed'; console.error(`A mission's files could not be read: ${error}`); });
+/**
+ * The game's signature file, empty, where the source has none: the host takes a folder without it for no
+ * installation, and nothing reads it -- so the hosted data does not ship a three-megabyte executable.
+ */
+function placeSignature() {
+  const file = SIGNATURES.find(s => s.title === source.title)?.file;
+  if (!file) return;
+  const existing = fs.readdir(root).find(name => name.toLowerCase() === file);
+  if (!existing) fs.writeFile(`${root}/${file}`, new Uint8Array(0));
+}
+
+/** Starts reading a group's files, if nothing has yet. */
+function fetchGroup(group) {
+  group.state = 'reading';
+  readAll(group.files).then(
+    () => { group.state = 'ready'; },
+    error => { group.state = 'failed'; console.error(`A mission's files could not be read: ${error}`); });
+}
+
+/** Deletes the files of every group no folder kept in memory needs, so that they are read again when next asked for. */
+function evict() {
+  const kept = new Set(everyMission);
+  for (const folder of recent) needs.get(folder)?.forEach(name => kept.add(name));
+  for (const [name, group] of groups) {
+    if (kept.has(name) || group.state !== 'ready') continue;
+    for (const file of group.files) {
+      try {
+        fs.unlink(`${root}/${file.path}`);
+      } catch {
+        // Already gone.
+      }
+    }
+    group.state = 'waiting';
+    console.log(`Let go of ${name}'s files; they are read again if it is chosen again.`);
+  }
+}
+
+/** Notes a folder as the latest asked for; when that pushes one out of memory, its files go. */
+function touch(folder) {
+  if (recent[0] === folder) return;
+  const at = recent.indexOf(folder);
+  if (at >= 0) recent.splice(at, 1);
+  recent.unshift(folder);
+  if (recent.length > RESIDENT_FOLDERS) {
+    recent.length = RESIDENT_FOLDERS;
+    evict();
+  }
 }
 
 /** What the runtime imports, registered under 'openigi-files'. */
 export const imports = {
+  /** Whether everything a mission or location folder waits for is in place; asking starts reading it. */
   missionReady: directory => {
-    const mission = missions.get(key(directory));
-    if (!mission) return true;
-    if (mission.state === 'waiting') fetchMission(mission);
-    return mission.state === 'ready';
+    const folder = key(directory);
+    const names = [...(needs.get(folder) ?? []), ...everyMission];
+    if (names.length === 0) return true;
+    touch(folder);
+    let ready = true;
+    for (const name of names) {
+      const group = groups.get(name);
+      if (!group) continue;
+      if (group.state === 'waiting') fetchGroup(group);
+      ready &&= group.state === 'ready';
+    }
+    return ready;
   },
 };

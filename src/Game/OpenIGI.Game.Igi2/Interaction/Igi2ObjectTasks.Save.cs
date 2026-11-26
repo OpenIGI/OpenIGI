@@ -25,6 +25,7 @@ public sealed partial class Igi2SecurityCameraTask : ISavedState
     }
 
     /// <inheritdoc/>
+    /// <remarks><c>SCamera_DeSerializeHandler</c>: the lens wears the model its state names, whole or destroyed.</remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -35,12 +36,14 @@ public sealed partial class Igi2SecurityCameraTask : ISavedState
         _isLastDetection = reader.Bool() ? (byte)1 : (byte)0;
         _detectionTime = reader.Int();
         _isDestroyed = reader.Bool() ? (byte)1 : (byte)0;
+        WearLens(_lens, _isDestroyed != 0 ? CameraDestroyedModel : CameraModel);
     }
 
     /// <summary>
     /// The lens's save state, <c>SCameraLens_ptSerializeParameterList</c>: a model object's, then its tilt and turn, the turn it heads
     /// for, its delay and way round, its damage and limit, its side, how long it tracks, whether it explodes, and the timers and frame
-    /// of its overlay, which the presentation keeps and are written as nought.
+    /// of its overlay, which the presentation keeps and are written as nought. Read back (<c>SCameraLens_DeSerializeHandler</c>), its
+    /// sounds are deleted and what it had seen is forgotten.
     /// </summary>
     private sealed class LensState(Lens lens) : ISavedState
     {
@@ -82,6 +85,11 @@ public sealed partial class Igi2SecurityCameraTask : ISavedState
             reader.Bool();
             reader.Bool();
             reader.Int();
+            lens.MoveSound = Kill(lens.MoveSound);
+            lens.SearchSound = Kill(lens.SearchSound);
+            lens.DetectionSound = Kill(lens.DetectionSound);
+            lens.Detection?.Clear();
+            lens.Target = null;
         }
     }
 }
@@ -138,6 +146,20 @@ public sealed partial class Igi2CabinetTask : ISavedState
         _isLastInUse = reader.Bool() ? (byte)1 : (byte)0;
         _lastInUseTick = reader.Int();
         _isSearched = reader.Bool() ? (byte)1 : (byte)0;
+
+        // Cabinet_DeSerializeHandler: how far out the drawer is is not kept, so a drawer saved opening snaps out and one saved
+        // closing snaps in as it next runs.
+        if (_isOpening)
+        {
+            _isSnapOpen = true;
+            _isDrawerMoving = true;
+        }
+
+        if (_isClosing)
+        {
+            _isSnapClosed = true;
+            _isDrawerMoving = true;
+        }
     }
 }
 

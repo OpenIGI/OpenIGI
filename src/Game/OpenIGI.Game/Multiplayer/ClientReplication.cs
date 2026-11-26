@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 namespace OpenIGI.Game.Multiplayer;
 
 /// <summary>Each tick of a client: its own command sent up, and every other player shown where the snapshots put it.</summary>
@@ -66,13 +67,16 @@ public static class ClientReplication
             ReplicatedLift[]? serverLifts = newest.Lifts;
             Func<int, Core.Numerics.Vector3d?> serverPlatform = index =>
                 serverLifts is not null && (uint)index < (uint)serverLifts.Length ? serverLifts[index].Position.ToVector() : null;
-            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector(), serverPlatform) is { } correction)
+            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector(), serverPlatform, world.LocalHeightIsWorlds) is { } correction)
             {
                 world.MoveLocal(correction, (own.Flags & ReplicatedHumanCondition.OnGround) != 0);
             }
 
             world.ApplyOwn(own);
         }
+
+        // The server's rules the client's own player plays by, as the server's copy of it does.
+        world.ApplyServerRules(session.ServerModernAim);
 
         ReadOnlySpan<float> frame = world.LocalFrame;
         // The use key, or fire with the bomb in hand: what plants it.
@@ -99,8 +103,11 @@ public static class ClientReplication
 
             // The sides, which say whose names and revive marks this player is shown: the server's mode, the board's teams.
             int? ownTeam = session.EntityId is { } ownEntity ? TeamOf(board, ownEntity) : null;
-            world.Sides(session.MatchState?.Mode ?? Modes.GameModes.Coop, entity => TeamOf(board, entity), ownTeam);
+            world.Sides(session.MatchState?.Mode ?? MatchModes.Coop, entity => TeamOf(board, entity), ownTeam);
         }
+
+        // Who spawn protection shields, for the shielded look.
+        world.Shielded(entity => session.ShieldLeft(entity, now) > 0);
 
         // The server level's running state, taken each time a new one comes.
         if (session.TakeLevel() is { } level)
@@ -137,7 +144,10 @@ public static class ClientReplication
             }
 
             world.Show(shown);
+            NetProbe.Client?.WriteShown(now, moment, shown, world.Drawn(human.Id));
         }
+
+        NetProbe.Client?.WriteOwn(now, moment, world.LocalPosition, session.Reconciler.Corrections, session.Reconciler.LastError, session.LastRunCommandTick);
 
         foreach (int id in world.Shown.Where(id => !present.Contains(id)).ToArray())
         {

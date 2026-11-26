@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "release": what release.yml's "Sign the Windows files" step has signed.
+  This file is the source of truth; paste it into the OpenIGI project's artifact configuration (slug: release) in
+  SignPath after any change. The artifact is the flat folder release.yml uploads:
+
+    openigi-game-<v>-win-x64.exe, openigi-game-<v>-win-x64-dotnet.exe   (game releases)
+    openigi-launcher-<v>-win-x64.exe                                     (launcher releases)
+    openigi-server-<v>-win-x64.zip, openigi-server-<v>-win-arm64.zip     (game releases; the server folder zipped)
+
+  The single-file executables are signed whole: the bundle inside is read by offset, so the appended signature does
+  not disturb it. In a server zip, the server and OpenIGI's own assemblies are signed; third-party libraries keep
+  the signatures (or lack of them) their projects gave them.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file-set>
+      <include path="openigi-game-*.exe" min-matches="0" max-matches="unbounded" />
+      <include path="openigi-launcher-*.exe" min-matches="0" max-matches="unbounded" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+    <zip-file-set>
+      <include path="openigi-server-*-win-*.zip" min-matches="0" max-matches="unbounded" />
+      <for-each>
+        <pe-file-set>
+          <include path="*/OpenIGI.Server.exe" />
+          <include path="*/OpenIGI.*.dll" min-matches="0" max-matches="unbounded" />
+          <for-each>
+            <authenticode-sign />
+          </for-each>
+        </pe-file-set>
+      </for-each>
+    </zip-file-set>
+  </zip-file>
+</artifact-configuration>

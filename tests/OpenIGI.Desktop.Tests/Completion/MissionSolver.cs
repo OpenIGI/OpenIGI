@@ -11,6 +11,7 @@ using OpenIGI.Host;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.TestSupport;
 
 namespace OpenIGI.Desktop.Tests.Completion;
 
@@ -128,7 +129,7 @@ internal sealed partial class MissionSolver
     /// <param name="watch">Called after every tick.</param>
     public void Idle(int maxTicks, Action? watch = null)
     {
-        _input.Keyboard.SetKey(KeyCode.E, down: false);
+        _input.Keyboard.SetKey(DefaultControls.Use, down: false);
         for (int tick = 0; tick < maxTicks && Outcome is null && _host.Step(); tick++)
         {
             watch?.Invoke();

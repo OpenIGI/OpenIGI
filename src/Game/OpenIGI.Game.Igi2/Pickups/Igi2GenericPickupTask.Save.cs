@@ -16,16 +16,17 @@ public sealed partial class Igi2GenericPickupTask : ISavedState
     public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        Igi2ModelObjState.Write(writer, Position, EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z), _isPickedUp == 0);
+        Igi2ModelObjState.Write(writer, Position, EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z), IsInWorld);
         writer.Bool(_isPickedUp != 0);
         writer.Text(Model);
     }
 
     /// <inheritdoc/>
+    /// <remarks>Its in-world byte comes back with it: one collected, or held out by its container, stays out.</remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        Igi2ModelObjState.Read(reader);
+        IsInWorld = Igi2ModelObjState.Read(reader).IsInWorld;
         _isPickedUp = reader.Bool() ? (byte)1 : (byte)0;
         Model = reader.Text();
     }

@@ -58,8 +58,16 @@ public static class HudStatus
         x += gaugeWidth + context.Px(8f);
         if (model.Visibility is { } visibility)
         {
-            DrawVisibility(context, new UiRect(x, gaugeTop + context.Px(18f), meterWidth, gaugeHeight - context.Px(18f)), visibility, model.VisibilityAlert);
+            DrawVisibility(context, new UiRect(x, gaugeTop + context.Px(18f), meterWidth, gaugeHeight - context.Px(18f)), visibility, model.VisibilityAlert, model.IsSeen);
             x += meterWidth + context.Px(8f);
+            if (model.IsSeen)
+            {
+                // Seen: an open eye in the header's corner, level with the HP label.
+                float half = context.Px(8f);
+                float blink = 0.75f + (0.25f * context.Reactive.AlertPulse);
+                UiVec2 eye = new(panel.Right - pad - half, top + context.Px(6f));
+                HudPictograms.Eye(context.Painter, eye, half, MathF.Max(1f, context.Px(1.5f)), HudDrawContext.Fade(palette.Danger, blink));
+            }
         }
 
         if (stance)
@@ -120,7 +128,7 @@ public static class HudStatus
     }
 
     // The meter: a thin column in the title's ramp, with the warning level marked, pulsing once over it.
-    private static void DrawVisibility(HudDrawContext context, UiRect rect, float visibility, float alert)
+    private static void DrawVisibility(HudDrawContext context, UiRect rect, float visibility, float alert, bool seen)
     {
         HudPalette palette = context.Palette;
         float v = Math.Clamp(visibility, 0f, 1f);
@@ -142,33 +150,9 @@ public static class HudStatus
                 HudDrawContext.Fade(palette.Danger, pulse));
         }
 
-        context.Painter.DrawLabel(context.Fonts.Value, "VIS", new UiVec2(rect.X - context.Px(4f), rect.Y - context.Px(17f)), context.Px(12f), palette.Primary, 0.08f);
-
-        // Seen: not the colour alone -- an open eye and the word, so it reads whatever the eye makes of red.
-        if (v >= alert)
-        {
-            float blink = 0.75f + (0.25f * pulse);
-            UiVec2 eye = new(rect.X + (rect.Width * 0.5f), rect.Y - context.Px(30f));
-            DrawEye(context, eye, context.Px(9f), HudDrawContext.Fade(palette.Danger, blink));
-            context.Painter.DrawLabel(context.Fonts.Value, "SEEN", new UiVec2(eye.X + context.Px(12f), eye.Y - context.Px(8f)), context.Px(14f), HudDrawContext.Fade(palette.Danger, blink), 0.08f);
-        }
-    }
-
-    // An open eye: an almond outline round a pupil.
-    private static void DrawEye(HudDrawContext context, UiVec2 centre, float half, Bgra32 colour)
-    {
-        Span<UiVec2> almond = stackalloc UiVec2[12];
-        for (int i = 0; i < 6; i++)
-        {
-            float t = (float)i / 5;
-            float x = centre.X - half + (2f * half * t);
-            float lift = MathF.Sin(t * MathF.PI) * half * 0.55f;
-            almond[i] = new UiVec2(x, centre.Y - lift);
-            almond[11 - i] = new UiVec2(x, centre.Y + lift);
-        }
-
-        context.Painter.StrokePolygon(almond, MathF.Max(1.5f, context.Px(1.5f)), colour);
-        float r = half * 0.32f;
-        context.Painter.FillRect(new UiRect(centre.X - r, centre.Y - r, r * 2f, r * 2f), colour);
+        // Seen: not the colour alone -- the meter's label turns to the word, and an eye opens in the header.
+        string label = seen ? "SEEN" : "VIS";
+        Bgra32 ink = seen ? HudDrawContext.Fade(palette.Danger, 0.75f + (0.25f * pulse)) : palette.Primary;
+        context.Painter.DrawLabel(context.Fonts.Value, label, new UiVec2(rect.X - context.Px(4f), rect.Y - context.Px(17f)), context.Px(12f), ink, 0.08f);
     }
 }

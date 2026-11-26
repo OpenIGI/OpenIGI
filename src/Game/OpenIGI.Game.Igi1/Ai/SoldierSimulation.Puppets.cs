@@ -1,5 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -16,13 +18,16 @@ public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int
     /// <summary>Gets the heading an orientation turns a soldier to, the inverse of <see cref="Matrix3f.RotationZ"/>.</summary>
     /// <param name="orientation">The orientation.</param>
     /// <returns>The heading, radians.</returns>
-    public static float FacingOf(Matrix3f orientation) => MathF.Atan2(orientation.M21, orientation.M11);
+    public static float FacingOf(Matrix3f orientation) => SimMathF.Atan2(orientation.M21, orientation.M11);
 }
 
 /// <summary>A co-op client's soldiers, posed by the server's rather than run by their own minds.</summary>
 public sealed partial class SoldierSimulation
 {
     private readonly Dictionary<SoldierView, SoldierPuppet> _puppets = [];
+
+    // The soldiers another game's bodies stand and pose for now (Lend), with where each stands.
+    private readonly Dictionary<SoldierView, (Vector3d Position, Matrix3f Orientation)> _lent = [];
 
     // The puppets that fired since the last call to TakePuppetShots, for the mission to trace their rounds.
     private readonly List<(SoldierView View, OpenIGI.Game.Weapons.WeaponType? Weapon, float Facing, float Pitch)> _puppetShots = [];
@@ -63,6 +68,19 @@ public sealed partial class SoldierSimulation
     /// compensation of that client's round -- so a hit test meets them at the simulation's placement, not the frame's.
     /// </summary>
     public bool Rewound { get; set; }
+
+    /// <summary>Gets what is left of a soldier as a co-op server's snapshots carry it (<see cref="Game.Multiplayer.SoldierVitality"/>).</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>The byte: its health left as a share of its own, unless harm is kept off it or its head's one shot is.</returns>
+    public byte VitalityOf(SoldierView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        HumanHealth health = _context.HealthOf(view);
+        Igi1HumanAi? brain = Brains.GetValueOrDefault(view);
+        bool foreseeable = !health.Invulnerable && brain is not { IsInvulnerable: true } && brain is not { IsInstantDeathDisabled: true };
+        float remaining = view.IsDead ? 0f : Math.Max(0f, health.MaximumHealth - health.Damage);
+        return Game.Multiplayer.SoldierVitality.Encode(remaining, health.BaseMaximumHealth, foreseeable);
+    }
 
     /// <summary>Gets a soldier's runtime id, unique to each live soldier and the same on every machine playing the level.</summary>
     /// <param name="view">The soldier.</param>
@@ -119,9 +137,78 @@ public sealed partial class SoldierSimulation
         }
     }
 
-    // A puppeted soldier's tick: its pose taken from the server's, its rig stepped, its mind left alone.
+    /// <summary>
+    /// Stands a soldier where another game's body stands and in its pose (<see cref="SoldierView.BorrowPose"/>), its own mind not run
+    /// until it is given back (<see cref="EndLending"/>): the level's game moving it through a cutscene of its own.
+    /// </summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="position">Where the body stands, in world units.</param>
+    /// <param name="orientation">The way it faces.</param>
+    /// <param name="pose">Its pose on the soldier's own skeleton, in its own frame.</param>
+    /// <returns>Whether the soldier stands so; a dead one does not.</returns>
+    public bool Lend(SoldierView view, Vector3d position, Matrix3f orientation, BonePose pose)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(pose);
+        if (view.IsDead)
+        {
+            EndLending(view, view.Position, view.Orientation);
+            return false;
+        }
+
+        _lent[view] = (position, orientation);
+        view.PlaceAt(position, orientation);
+        view.BorrowPose(pose);
+        return true;
+    }
+
+    /// <summary>Gives a lent soldier back its own mind and pose, standing where the other game's body last stood.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="position">Where it stands, in world units.</param>
+    /// <param name="orientation">The way it faces.</param>
+    public void EndLending(SoldierView view, Vector3d position, Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (!_lent.Remove(view))
+        {
+            return;
+        }
+
+        view.BorrowPose(null);
+        if (!view.IsDead)
+        {
+            // Its mind goes on from there: the mind places the body each tick.
+            if (Brains.TryGetValue(view, out Igi1HumanAi? brain))
+            {
+                brain.StandAt(position, SoldierPuppet.FacingOf(orientation));
+            }
+
+            view.PlaceAt(position, orientation);
+        }
+    }
+
+    /// <summary>Gets whether another game's body stands and poses a soldier now (<see cref="Lend"/>).</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns><see langword="true"/> while it is lent.</returns>
+    public bool IsLent(SoldierView view) => _lent.ContainsKey(view);
+
+    // A puppeted soldier's tick: its pose taken from the server's, its rig stepped, its mind left alone. A lent one is stood where
+    // the other game's body is, its own clips stepped beneath the pose it borrows.
     private bool TickPuppet(SoldierView view)
     {
+        if (_lent.TryGetValue(view, out (Vector3d Position, Matrix3f Orientation) lent))
+        {
+            if (view.IsDead)
+            {
+                EndLending(view, view.Position, view.Orientation);
+                return false;
+            }
+
+            view.Tick();
+            view.PlaceAt(lent.Position, lent.Orientation);
+            return true;
+        }
+
         if (!_puppets.TryGetValue(view, out SoldierPuppet puppet))
         {
             return false;

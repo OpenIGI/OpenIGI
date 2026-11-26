@@ -40,18 +40,37 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
     public const string FirstPersonFallbackModel = "005_01_1";
 
     /// <inheritdoc/>
-    /// <remarks>config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.</remarks>
+    /// <remarks>
+    /// config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.
+    /// The keys are the shared layout's standard (PlayerProfile.TitleRowMoves brings an older profile over): crouch on the left
+    /// Ctrl and walk/run on the left Shift as in Project I.G.I., prone on Z, the stance steps on Insert and Delete, the thermal
+    /// goggles on N (night vision's key, clear of the co-op mark's T) and the inventory on I. The weapon categories' numpad
+    /// alternates are the original's, the number row being the shared actions'. A touch screen offers the goggles, going
+    /// prone and the title's own crouch as buttons of their own.
+    /// </remarks>
     public IReadOnlyList<TitleInputBinding> InputBindings { get; } =
     [
-        new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Z"), "Lower stance"),
-        new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DELETE"), "Lower stance (alternate)"),
-        new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Q"), "Raise stance"),
-        new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_INSERT"), "Raise stance (alternate)"),
-        new((ulong)Igi2PlayerAction.ToggleStandLie, new("Title_igi2_ToggleStandLie", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.PlayerProfile.UnboundKey), "Toggle stand/prone"),
-        new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_Crouch", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_SHIFT"), "Crouch", PlayerAction.Crouch),
+        new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DELETE"), "Lower stance"),
+        new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.PlayerProfile.UnboundKey), "Lower stance (alternate)"),
+        new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_INSERT"), "Raise stance"),
+        new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.PlayerProfile.UnboundKey), "Raise stance (alternate)"),
+        new((ulong)Igi2PlayerAction.ToggleStandLie, new("Title_igi2_ToggleStandLie", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Z"), "Toggle stand/prone", Touch: TitleTouchControl.Prone),
+        new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_Crouch", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_CTRL"), "Crouch", PlayerAction.Crouch, TitleTouchControl.Crouch),
         new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_CrouchAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_RIGHT_CTRL"), "Crouch (alternate)"),
-        new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRun", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_CAPITAL"), "Toggle walk/run", PlayerAction.ToggleWalkRun),
-        new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRunAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_END"), "Toggle walk/run (alternate)"),
+        new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRun", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_SHIFT"), "Toggle walk/run", PlayerAction.ToggleWalkRun),
+        new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRunAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_CAPITAL"), "Toggle walk/run (alternate)"),
+        new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_Thermal", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_N"), "Thermal goggles", Touch: TitleTouchControl.Thermal),
+        new((ulong)Igi2PlayerAction.Thermal, new("Title_igi2_ThermalAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_PAGEUP"), "Thermal goggles (alternate)"),
+        new((ulong)Igi2PlayerAction.Inventory, new("Title_igi2_Inventory", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_I"), "Show/hide inventory"),
+        new((ulong)Igi2PlayerAction.Inventory, new("Title_igi2_InventoryAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DIVIDE"), "Show/hide inventory (alternate)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory3, new("Title_igi2_WeaponCategory3Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD1"), "Main weapons (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory2, new("Title_igi2_WeaponCategory2Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD2"), "Pistols (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory1, new("Title_igi2_WeaponCategory1Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD3"), "Knife (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory4, new("Title_igi2_WeaponCategory4Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD4"), "Weapon category 4 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory5, new("Title_igi2_WeaponCategory5Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD5"), "Weapon category 5 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory6, new("Title_igi2_WeaponCategory6Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD6"), "Weapon category 6 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory7, new("Title_igi2_WeaponCategory7Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD7"), "Weapon category 7 (numpad)"),
+        new((ulong)Igi2PlayerAction.WeaponCategory9, new("Title_igi2_WeaponCategory9Alt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_NUMPAD9"), "Weapon category 9 (numpad)"),
     ];
 
     /// <inheritdoc/>
@@ -91,7 +110,8 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             player.Human.DeadBodySounds = deadBodySounds;
         }
 
-        player.SpawnKit = new Igi2PlayerSpawnKit(world, general, request.Difficulty, clips, models, tuning, sounds, request.Services);
+        player.SpawnKit = new Igi2PlayerSpawnKit(
+            world, general, request.Difficulty, clips, models, tuning, sounds, request.Services, Multiplayer.Igi2LookPacks.WithLooks(models, request.World.Resources));
         player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
         player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
 
@@ -259,12 +279,17 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             grenadeEffects.Humans = humans;
             grenadeEffects.Particles = particles;
         }
+        // Human_s.ptGroundQTaskRef as a save names it: the level's tasks, and its AI's graphs once they are made.
+        Collision.Igi2LevelGrounds? grounds = request.World.LevelRoot is { } groundsRoot
+            ? new Collision.Igi2LevelGrounds(groundsRoot, world, () => player.Ai?.Graphs)
+            : null;
         foreach (Igi2Human human in humans)
         {
             if (human.Surroundings is Igi2LevelSurroundings surroundings)
             {
                 surroundings.Humans = humans;
                 surroundings.Particles = particles;
+                surroundings.Grounds = grounds;
             }
         }
 
@@ -312,6 +337,9 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             Glass = player.Glass,
             Pickups = player.Human.Pickups,
             Mines = () => player.Mines,
+            Sounds = player.Sounds,
+            Loaded = player.ResetLook,
+            Reported = player.TellSaveReport,
             StatusMessages = player.StatusMessages,
             PlayedMods = request.Services.TryGet(out Engine.Titles.PlayedMods? played) ? played.Mods : [],
         };
@@ -429,7 +457,8 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             models,
             random,
             worn);
-        foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies)
+        // A double is readied as a body is (Igi2HumanSoldierTask.Double), but has no collider for the world to hold.
+        foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies.Concat(soldiers.Doubles))
         {
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
 
@@ -441,7 +470,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
                 {
                     if (casings is not null && shooter.Model is { } dress && arms.Inventory?.Current?.WeaponType.FixedModel is { } held)
                     {
-                        Igi2TitlePlayer.EjectFrom(casings, casing, Igi2BodyFrame.Build(shooter, shooter.BodyPose(), dress.Name, held, 0), held, shooter.TotalSpeed);
+                        Igi2TitlePlayer.EjectFrom(casings, casing, Igi2BodyFrame.Build(shooter, shooter.PresentedPose(), dress.Name, held, 0), held, shooter.TotalSpeed);
                     }
                 });
                 arms.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(services)) { Explosions = grenades?.Explosions };
@@ -470,7 +499,19 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
             }
             if (body.Collider is { } collider)
             {
+                // BoneDynCubeObj_RegisterHandler / its remove: the body is among the world's objects only while it is in the world.
                 world.AddBody(collider);
+                body.InWorldChanged += (_, inWorld) =>
+                {
+                    if (inWorld)
+                    {
+                        world.AddBody(collider);
+                    }
+                    else
+                    {
+                        world.RemoveBody(collider);
+                    }
+                };
             }
         }
 
@@ -548,7 +589,8 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         }
 
         Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
-        Igi2LevelBuild build = new(request, player, level, natives, functions, task, Models(request.World));
+        level.Joined.PlayerStandsIn = player.StoodFor is not null;
+        Igi2LevelBuild build = new(request, player, level, natives, functions, task, Models(request.World)) { Logger = request.World.Logger };
         if (systems is null)
         {
             systems = Igi2LevelSystems.Create();

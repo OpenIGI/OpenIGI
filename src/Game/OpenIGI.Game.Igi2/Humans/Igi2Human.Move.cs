@@ -23,7 +23,7 @@ public abstract partial class Igi2Human
     private const float SlideEase = 0.1f;
 
     /// <summary>What is left of an impact after a tick, <c>0x3F666666</c>.</summary>
-    private const float ImpactDecay = 0.9f;
+    protected const float ImpactDecay = 0.9f;
 
     /// <summary>
     /// A step along the ground, <c>Human_MoveOnGround</c> (<c>igi2 0x503570</c>): a speed forward, turned by a heading off the
@@ -89,6 +89,12 @@ public abstract partial class Igi2Human
 
     /// <summary>Gets where the body stands relative to the platform, <c>tGroundRelativePos</c>.</summary>
     public Vector3d GroundRelativePosition { get; private set; }
+
+    /// <summary>
+    /// Gets where the platform stood when the body was placed on it, <c>Human_s.tGroundOriginalPos</c>: kept, as the original keeps
+    /// it, for a save to write.
+    /// </summary>
+    public Vector3d GroundOriginalPosition { get; private set; }
 
     private readonly float[] _groundInverseOriginal = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
     private readonly float[] _groundRelativeOrientation = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
@@ -157,6 +163,11 @@ public abstract partial class Igi2Human
         if (!IsDisableDeltaTranslation)
         {
             Vector3f delta = DeltaTranslation;
+            if (MoveScale != 1f)
+            {
+                delta = new Vector3f(delta.X * MoveScale, delta.Y * MoveScale, delta.Z);
+            }
+
             x += delta.X;
             y = ((Fpu)y + delta.Y).F;
             z = ((Fpu)z + delta.Z).F;
@@ -230,6 +241,27 @@ public abstract partial class Igi2Human
             BoneCollisionDelta = default;
         }
 
+        Arrive(to, speed, forcePosition, forceOrientation);
+    }
+
+    /// <summary>
+    /// Puts the body where another game's mover took it this tick, as <see cref="Move"/> ends: the move's speed, its change, the
+    /// place on the platform and the speed through the world.
+    /// </summary>
+    /// <param name="from">Where the move started, after the platform carried it (<see cref="UpdatePlatformMovement"/>).</param>
+    /// <param name="to">Where the mover put the feet.</param>
+    /// <remarks>The mover found its own ground and walls; nothing of <see cref="Move"/>'s collision runs.</remarks>
+    public void ArriveFrom(Vector3d from, Vector3d to)
+    {
+        Vector3f speed = new((float)(to.X - from.X), (float)(to.Y - from.Y), (float)(to.Z - from.Z));
+        AccumulatedSpeed = speed;
+        BoneCollisionDelta = default;
+        Arrive(to, speed, forcePosition: true, forceOrientation: true);
+    }
+
+    // The end of a move, however it was made: the place, the speed and its change, the platform's note and the world speed.
+    private void Arrive(Vector3d to, Vector3f speed, bool forcePosition, bool forceOrientation)
+    {
         Position = to;
         Vector3f total = TotalSpeed;
         Acceleration = new Vector3f(((Fpu)speed.X - total.X).F, ((Fpu)speed.Y - total.Y).F, ((Fpu)speed.Z - total.Z).F);
@@ -261,13 +293,13 @@ public abstract partial class Igi2Human
             return;
         }
 
-        if (!IsGroundRigidObject || GroundCollider is not Igi2RigidObject platform)
+        if (!IsGroundRigidObject || Platform is not { } platform)
         {
             return;
         }
 
-        float[] p = platform.Orientation;
-        Vector3d platformPosition = platform.Position;
+        IReadOnlyList<float> p = platform.AttachOrientation;
+        Vector3d platformPosition = platform.AttachPosition;
         if (updateOrientation)
         {
             float[] r = _groundRelativeOrientation;
@@ -327,7 +359,7 @@ public abstract partial class Igi2Human
             return;
         }
 
-        if (GroundCollider is not Igi2RigidObject platform)
+        if (Platform is not { } platform)
         {
             if (GroundCollider is not null)
             {
@@ -337,8 +369,8 @@ public abstract partial class Igi2Human
             return;
         }
 
-        float[] p = platform.Orientation;
-        Vector3d platformPosition = platform.Position;
+        IReadOnlyList<float> p = platform.AttachOrientation;
+        Vector3d platformPosition = platform.AttachPosition;
         if (IsUpdatePlatformPos || forcePosition)
         {
             Vector3d here = Position;
@@ -347,6 +379,7 @@ public abstract partial class Igi2Human
                 ((Fpu)here.Y - platformPosition.Y).Value,
                 ((Fpu)here.Z - platformPosition.Z).Value);
             GroundPreviousPosition = platformPosition;
+            GroundOriginalPosition = platformPosition;
             GroundSpeed = default;
             float[] inverse = [p[0], p[3], p[6], p[1], p[4], p[7], p[2], p[5], p[8]];
             inverse.CopyTo(_groundInverseOriginal, 0);

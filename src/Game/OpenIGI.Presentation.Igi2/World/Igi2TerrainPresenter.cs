@@ -98,11 +98,17 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly bool _tessellates;
     private readonly Igi2EditableTerrain? _editable;
 
-    private readonly Dictionary<int, ushort> _remap = [];
+    private readonly Igi2VertexRemap _remap = new();
     private readonly List<Vertex3D> _vertices = [];
     private readonly List<ushort> _compact = [];
 
     private readonly List<(Tile Tile, Igi2TerrainTessellation Tessellation, Matrix4f ModelView)> _ready = [];
+
+    // The draws the last streamed frame issued, in order, which a frame tessellating to the same geometry issues again.
+    private readonly List<StreamedDraw> _streamedDraws = [];
+    private bool _streamedDrawsKnown;
+    private int _streamingTile;
+    private ChunkPass _streamingPass;
     private int _poolSlot;
     private int _poolUsed;
     private bool _disposed;
@@ -204,7 +210,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 tile.Centre,
                 CreateLightmap(device, tile),
                 tile.LightmapProjection(),
-                resolved));
+                resolved,
+                new Igi2TerrainStreamedGeometry()));
         }
 
         // The quadtree reads heights as it splits, every frame, so an edit shows on the next one; only its height bounds are
@@ -358,13 +365,9 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             frame.VerticalFieldOfView,
             frame.AspectRatio);
 
-        // Onto the pool the frames still in flight are not reading -- see ChunkPoolSlots.
-        _poolSlot = (_poolSlot + 1) % ChunkPoolSlots;
-        _poolUsed = 0;
-
-        int triangles = 0;
         int drawn = 0;
         int culled = 0;
+        bool unchanged = _streamedDrawsKnown;
 
         _ready.Clear();
         foreach (Tile tile in _tiles)
@@ -372,8 +375,53 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             Igi2TerrainTessellation tessellation = tile.Lod.TessellateFrame(view, _settings);
             drawn += tessellation.SquaresDrawn;
             culled += tessellation.SquaresCulled;
+            unchanged = unchanged && tile.Streamed.Matches(tessellation.Mesh);
             _ready.Add((tile, tessellation, frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity)));
         }
+
+        SquaresDrawn = drawn;
+        SquaresCulled = culled;
+
+        // The same ground as the last frame streamed: its chunks are still on the device, untouched, so they are drawn again
+        // from where the camera is now. The pool slot stays where it is -- nothing is written -- and the next frame that does
+        // stream moves on to a slot that was last read before this one's, so ChunkPoolSlots still holds.
+        if (unchanged)
+        {
+            ReplayStreamedDraws();
+        }
+        else
+        {
+            StreamGround();
+        }
+
+        _device.SetDepthState(DepthState.TestAndWrite);
+        _ready.Clear();
+    }
+
+    private void ReplayStreamedDraws()
+    {
+        ChunkPass? state = null;
+        foreach (StreamedDraw draw in _streamedDraws)
+        {
+            if (state != draw.Pass)
+            {
+                state = draw.Pass;
+                _device.SetDepthState(draw.Pass == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
+                _device.SetFogTarget(FogTargetOf(draw.Pass));
+            }
+
+            _device.DrawMesh(draw.Mesh, 0, draw.IndexCount, _ready[draw.Tile].ModelView, draw.Diffuse, draw.Detail, draw.Blend);
+        }
+    }
+
+    private void StreamGround()
+    {
+        // Onto the pool the frames still in flight are not reading -- see ChunkPoolSlots.
+        _poolSlot = (_poolSlot + 1) % ChunkPoolSlots;
+        _poolUsed = 0;
+        _streamedDraws.Clear();
+
+        int triangles = 0;
 
         // The original's three passes, in its order: every tile's bases, then every tile's overlays,
         // then every tile's lightmap. Globally rather than per tile -- an opaque base written after a
@@ -382,10 +430,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         for (int phase = 0; phase < 3; phase++)
         {
             ChunkPass which = (ChunkPass)phase;
+            _streamingPass = which;
             _device.SetDepthState(which == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
             _device.SetFogTarget(FogTargetOf(which));
-            foreach ((Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) in _ready)
+            for (int index = 0; index < _ready.Count; index++)
             {
+                (Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) = _ready[index];
+                _streamingTile = index;
                 if (which == ChunkPass.Lightmap)
                 {
                     if (tile.Lightmap.IsValid)
@@ -416,13 +467,25 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             }
         }
 
-        _device.SetDepthState(DepthState.TestAndWrite);
-        _ready.Clear();
+        foreach ((Tile tile, Igi2TerrainTessellation tessellation, _) in _ready)
+        {
+            tile.Streamed.Remember(tessellation.Mesh);
+        }
 
+        _streamedDrawsKnown = true;
         TriangleCount = triangles;
         ChunkCount = _poolUsed;
-        SquaresDrawn = drawn;
-        SquaresCulled = culled;
+    }
+
+    // An edit changes what the ground streams in ways the geometry copy may not see (a texture behind a material id), so
+    // every tile streams afresh.
+    private void ForgetStreamedDraws()
+    {
+        _streamedDrawsKnown = false;
+        foreach (Tile each in _tiles)
+        {
+            each.Streamed.Forget();
+        }
     }
 
     /// <inheritdoc/>
@@ -476,6 +539,14 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             _tiles[tile].Lod.Refresh(left, top, right, bottom);
         }
+
+        // A finer tile's edge stands on the heights of the tile it lies in, so every tile is tessellated again.
+        foreach (Tile each in _tiles)
+        {
+            each.Lod.ForgetFrame();
+        }
+
+        ForgetStreamedDraws();
     }
 
     // Paint changed a tile's material ids; the quadtree reads them as it splits, so only the set of materials it draws passes
@@ -486,19 +557,23 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             _tiles[tile].Lod.RefreshMaterials();
         }
+
+        ForgetStreamedDraws();
     }
 
     /// <summary>Uploads the full-detail lightmap pass: every triangle once, at the tile's projection.</summary>
     private void UploadLightmap(Igi2TerrainMesh mesh, Igi2TerrainTile tile, TextureHandle lightmap)
     {
         (float ScaleX, float ScaleY, float OffsetX, float OffsetY) projection = tile.LightmapProjection();
-        Dictionary<int, ushort> remap = [];
+        Igi2VertexRemap remap = new();
         List<Vertex3D> vertices = [];
         List<ushort> compact = [];
 
         // The terrain map's own pass, which the original issues for every face it did not discard --
         // materials or none. Walking the material passes instead dropped the faces no material covers.
         {
+            ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+            ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
             ReadOnlySpan<int> indices = mesh.GroundIndices.Span;
             for (int i = 0; i < indices.Length; i += 3)
             {
@@ -516,8 +591,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                     if (!remap.TryGetValue(index, out ushort mapped))
                     {
                         mapped = (ushort)vertices.Count;
-                        remap[index] = mapped;
-                        vertices.Add(BuildLightmapVertex(mesh, index, tile.Centre, projection));
+                        remap.Set(index, mapped);
+                        vertices.Add(BuildLightmapVertex(positions, normals, index, tile.Centre, projection));
                     }
 
                     compact.Add(mapped);
@@ -556,12 +631,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         return device.CreateTexture(new TextureDescription(width, height), pixels);
     }
 
-    private static Vertex3D Build(Igi2TerrainMesh mesh, Igi2TerrainPass pass, int index, Vector3d centre)
+    private static Vertex3D Build(ReadOnlySpan<Vector3d> positions, ReadOnlySpan<Vector3f> normals, Igi2TerrainPass pass, int index, Vector3d centre)
     {
-        Vector3d world = mesh.Positions[index];
+        Vector3d world = positions[index];
         (float U, float V) diffuseUv = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, world, pass.MappingStyle);
         (float U, float V) detailUv = Igi2TerrainMesh.TextureCoordinate(pass.DetailTextureScale, world, pass.MappingStyle);
-        Vector3f normal = mesh.Normals[index];
+        Vector3f normal = normals[index];
 
         // THE WEIGHT IS FOLDED INTO THE COLOUR, not left in the alpha for a blend factor to apply.
         //
@@ -614,19 +689,20 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
     /// <summary>Builds a vertex of the lightmap pass: the projection in place of the material's uv.</summary>
     private static Vertex3D BuildLightmapVertex(
-        Igi2TerrainMesh mesh,
+        ReadOnlySpan<Vector3d> positions,
+        ReadOnlySpan<Vector3f> normals,
         int index,
         Vector3d centre,
         (float ScaleX, float ScaleY, float OffsetX, float OffsetY) projection)
     {
-        Vector3d world = mesh.Positions[index];
+        Vector3d world = positions[index];
 
         return new Vertex3D(
             new Vector3f(
                 (float)((world.X - centre.X) / WorldScene.UnitsPerMetre),
                 (float)((world.Y - centre.Y) / WorldScene.UnitsPerMetre),
                 (float)((world.Z - centre.Z) / WorldScene.UnitsPerMetre)),
-            mesh.Normals[index],
+            normals[index],
             (float)((world.X * projection.ScaleX) + projection.OffsetX),
             (float)((world.Y * projection.ScaleY) + projection.OffsetY),
             0f,
@@ -651,6 +727,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _remap.Clear();
         _vertices.Clear();
         _compact.Clear();
+        ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+        ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
 
         for (int i = 0; i < indices.Length; i += 3)
         {
@@ -665,8 +743,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 if (!_remap.TryGetValue(index, out ushort mapped))
                 {
                     mapped = (ushort)_vertices.Count;
-                    _remap[index] = mapped;
-                    _vertices.Add(Build(mesh, pass, index, centre));
+                    _remap.Set(index, mapped);
+                    _vertices.Add(Build(positions, normals, pass, index, centre));
                 }
 
                 _compact.Add(mapped);
@@ -693,6 +771,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
         // As above: the bake covers every face the ground draws, not only those a material claimed.
         {
+            ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+            ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
             ReadOnlySpan<int> indices = mesh.GroundIndices.Span;
             for (int i = 0; i < indices.Length; i += 3)
             {
@@ -707,8 +787,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                     if (!_remap.TryGetValue(index, out ushort mapped))
                     {
                         mapped = (ushort)_vertices.Count;
-                        _remap[index] = mapped;
-                        _vertices.Add(BuildLightmapVertex(mesh, index, tile.Centre, tile.Projection));
+                        _remap.Set(index, mapped);
+                        _vertices.Add(BuildLightmapVertex(positions, normals, index, tile.Centre, tile.Projection));
                     }
 
                     _compact.Add(mapped);
@@ -751,6 +831,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             texture.Diffuse,
             texture.Detail,
             blend);
+        _streamedDraws.Add(new StreamedDraw(_streamingTile, _streamingPass, mesh, _compact.Count, texture.Diffuse, texture.Detail, blend));
 
         int triangles = _compact.Count / 3;
         _remap.Clear();
@@ -781,9 +862,11 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     {
         // Only the vertices this chunk's own triangles touch, compacted, so the alpha can carry this
         // material's weight and the indices stay 16-bit.
-        Dictionary<int, ushort> remap = [];
+        Igi2VertexRemap remap = new();
         List<Vertex3D> vertices = [];
         List<ushort> compact = [];
+        ReadOnlySpan<Vector3d> positions = mesh.PositionSpan;
+        ReadOnlySpan<Vector3f> normals = mesh.NormalSpan;
 
         for (int i = 0; i < indices.Length; i += 3)
         {
@@ -801,8 +884,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 if (!remap.TryGetValue(index, out ushort mapped))
                 {
                     mapped = (ushort)vertices.Count;
-                    remap[index] = mapped;
-                    vertices.Add(Build(mesh, pass, index, centre));
+                    remap.Set(index, mapped);
+                    vertices.Add(Build(positions, normals, pass, index, centre));
                 }
 
                 compact.Add(mapped);
@@ -865,5 +948,16 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         Vector3d Centre,
         TextureHandle Lightmap,
         (float ScaleX, float ScaleY, float OffsetX, float OffsetY) Projection,
-        Dictionary<int, (TextureHandle Diffuse, TextureHandle Detail)> Textures);
+        Dictionary<int, (TextureHandle Diffuse, TextureHandle Detail)> Textures,
+        Igi2TerrainStreamedGeometry Streamed);
+
+    // One chunk draw of a streamed frame: the tile whose model-view it takes, the pass whose depth and fog state it needs.
+    private readonly record struct StreamedDraw(
+        int Tile,
+        ChunkPass Pass,
+        MeshHandle Mesh,
+        int IndexCount,
+        TextureHandle Diffuse,
+        TextureHandle Detail,
+        BlendMode Blend);
 }

@@ -28,6 +28,9 @@ namespace OpenIGI.Host;
 /// </remarks>
 public sealed partial class GameHost
 {
+    // Crouch made a toggle where the player has it so (in_crouch_toggle).
+    private readonly HoldToggle _crouchToggle = new();
+
     private const double TitleUnitsPerMetre = WorldUnits.PerMetre;
 
     // What stood the player now standing: the title's own gameplay, or one the session's content provides in its stead.
@@ -39,12 +42,19 @@ public sealed partial class GameHost
     private TitlePlayerFeatures? _titleFeatures;
 
     private ITitlePlayer? TitlePlayer => _titleFeatures?.Player;
+
+    // What a session serves or follows: the mission itself where the mission is the level (I.G.I.), else the title's own
+    // player that runs its level behind it (I.G.I. 2). Handed the mission alone, an I.G.I. 2 joiner never found its level.
+    private object? ReplicatedTitle => _hosted is Game.Multiplayer.IReplicatedTitle ? _hosted : TitlePlayer as Game.Multiplayer.IReplicatedTitle;
     private readonly OpenIGI.Presentation.Cameras.TitlePlayerPresentation _titlePresentation = new();
     private float _titlePresentationBlend = 1f;
     private ITitleViewModelPresenter? _titleArms;
 
     // The same presenter, when it also draws what the player has lying in its level.
-    private ITitleWorldModelPresenter? TitleWorldModelPresenter => _titleArms as ITitleWorldModelPresenter;
+    // The level's own models where the arms are not their drawer too: another's arms, a mod's player standing in.
+    private ITitleWorldModelPresenter? _titleWorldModels;
+
+    private ITitleWorldModelPresenter? TitleWorldModelPresenter => _titleArms as ITitleWorldModelPresenter ?? _titleWorldModels;
     private ITitleHudPresenter? _titleHud;
     private float _titleMouseX;
     private float _titleMouseY;
@@ -53,6 +63,12 @@ public sealed partial class GameHost
     private float _titleWheel;
     private TitleRawKeys _titleScriptRaw;
     private PlayerAction _titleScriptHeld;
+
+    // A script's holds of the title's own controls, and both kinds of hold as the last tick saw them: a hold is pressed on the
+    // tick it starts, as a key going down is.
+    private ulong _titleScriptTitleHeld;
+    private PlayerAction _titleScriptHeldLast;
+    private ulong _titleScriptTitleHeldLast;
     private double _titleTickMilliseconds;
     private double _titleTickMaximumMilliseconds;
     private int _titleMeasuredTicks;
@@ -75,6 +91,8 @@ public sealed partial class GameHost
         _titleHud = null;
         _titleArms?.Dispose();
         _titleArms = null;
+        _titleWorldModels?.Dispose();
+        _titleWorldModels = null;
         _standingGameplay = null;
         TitlePlayerRequest request = new(
             new WorldBuildRequest(
@@ -125,6 +143,7 @@ public sealed partial class GameHost
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
         _titlePresentation.Reset(_titleFeatures);
+        ResetTitleOverShoulder();
         if (!missionsOwn)
         {
             _mission.ForgetPlayer();
@@ -155,7 +174,21 @@ public sealed partial class GameHost
             }
 
             // Lit as the world's unbaked objects are: the arms and the weapon carry no lightmap.
-            _titleArms?.Shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
+            ObjectShading shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
+            _titleArms?.Shading = shading;
+
+            // Arms that do not draw the level's own models -- another game's, standing in -- leave them to the level's game.
+            if (_titleArms is not ITitleWorldModelPresenter)
+            {
+                _titleWorldModels = _presentation.Presenters.Create<ViewModelPresentationRequest, ITitleWorldModelPresenter>(ViewModelRequest());
+                if (_titleWorldModels is not null && !_titleWorldModels.Load(loaded))
+                {
+                    _titleWorldModels.Dispose();
+                    _titleWorldModels = null;
+                }
+
+                _titleWorldModels?.Shading = shading;
+            }
         }
         ForgetTitleInput();
         _playerMode = !_options.StartFlying;
@@ -216,6 +249,12 @@ public sealed partial class GameHost
         }
     }
 
+    // The input the player's last tick was given, gathered or replayed: what the mission's computer reads in that tick.
+    private TitlePlayerInput _tickInput;
+
+    // The weapon the wheel picked since the last tick, for the next tick's input.
+    private int? _wheelPick;
+
     /// <summary>Runs the title's player for one tick, with the input gathered since the last.</summary>
     /// <returns><see langword="true"/> when the title has its own player, whether or not it ran this tick.</returns>
     private bool TickTitlePlayer()
@@ -241,9 +280,14 @@ public sealed partial class GameHost
         }
 
         held |= _titleScriptHeld;
+        PlayerAction scriptPressed = _titleScriptHeld & ~_titleScriptHeldLast;
+        ulong titleScriptPressed = _titleScriptTitleHeld & ~_titleScriptTitleHeldLast;
+        _titleScriptHeldLast = _titleScriptHeld;
+        _titleScriptTitleHeldLast = _titleScriptTitleHeld;
 
         // The weapon wheel holds the player still while it is open: nothing it was given goes through. So does the mission's
         // computer, while it serves this player.
+        PlayerAction heldForComputer = held;
         bool still = WheelHoldsInput || (_computerOpen && TitleUsesMissionComputer);
         if (still)
         {
@@ -253,29 +297,58 @@ public sealed partial class GameHost
 
         PlayerProfile? profile = _configuration.Active;
         PlayerAction replaced = Gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
+        ulong titleHeld = !still && Gameplay is { } sampled ? TitleInputBindings.Sample(profile, TitleInput, sampled.InputBindings, pressed: false) : 0;
+        if (!still)
+        {
+            titleHeld |= _titleScriptTitleHeld | _touchTitleHeld;
+        }
 
-        // The computer's key opens the mission's computer, not the title's own, where the mission's serves it.
+        // Crouch, held or toggled as the player has it: a shared action, or the title's own bit that stands for it.
+        ulong titleCrouch = Gameplay is { } crouching ? crouching.InputBindings.Where(static b => b.Replaces == PlayerAction.Crouch).Aggregate(0UL, static (mask, b) => mask | b.Mask) : 0;
+        bool crouch = _crouchToggle.Apply((held & PlayerAction.Crouch) != 0 || (titleHeld & titleCrouch) != 0, PlayerControlCVars.CrouchToggle.Value);
+        held = crouch ? held | PlayerAction.Crouch : held & ~PlayerAction.Crouch;
+        titleHeld = crouch ? titleHeld | titleCrouch : titleHeld & ~titleCrouch;
+
+        // The computer's keys open the mission's computer, not the title's own, where the mission's serves it.
         if (TitleUsesMissionComputer)
         {
-            replaced |= PlayerAction.MapComputer;
+            replaced |= PlayerAction.MapComputer | PlayerAction.ComputerObjectives | PlayerAction.ComputerLog;
         }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         // A mission that serves a session itself is observed around its own tick (GameHost.Mission), which this one is
         // inside: a session seen here as well would read and send twice a tick.
         IHostTickObserver? observer = _hosted is Game.Multiplayer.IReplicatedTitle ? null : TickObserver;
         observer?.BeforeTitleTick(player);
-        player.Tick(new TitlePlayerInput(
+        // Recorded for a play-test's replay, or replaced by the recording being played back.
+        TitlePlayerInput given = PlaytestInput(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
             held & ~replaced,
-            _titlePressed & ~replaced,
+            (_titlePressed | (still ? default : scriptPressed)) & ~replaced,
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
-            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, TitleInput, gameplay.InputBindings, pressed: false) : 0,
-            TitlePressed: _titleExtraPressed,
-            Raw: SampleRawKeys()));
+            TitleHeld: titleHeld,
+            TitlePressed: _titleExtraPressed | (still ? 0UL : titleScriptPressed),
+            Raw: SampleRawKeys(),
+            ViewBlend: _drawnTickBlend,
+            Aim: TickAim(player),
+            WheelPick: _wheelPick,
+            Computer: ComputerTickInput(heldForComputer)));
+        _wheelPick = null;
+        _tickInput = given;
+        RecordRunInput(given);
+
+        // The remaster's computer holds the player from the tick it is up for, as the input says -- not from the frame it opened on.
+        if (TacticalComputer is not null)
+        {
+            _mission.SetPlayerComputerOpen(given.Computer.Open);
+        }
+
+        // The blend the player saw the soldiers at, from the input as given (a replay's as recorded): what its rounds meet.
+        _soldiers?.ShotViewBlend = given.ViewBlend;
+        player.Tick(given);
         observer?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
@@ -285,6 +358,18 @@ public sealed partial class GameHost
         ForgetTitleInput();
         _titleWheel = 0f;
         return true;
+    }
+
+    /// <summary>
+    /// Where the crosshair pointed with the camera over the shoulder as the last frame drew it, from the player's eye as this tick
+    /// begins: the title's own over-the-shoulder camera, or Project I.G.I.'s viewpoint's. <see langword="null"/> at the eye.
+    /// </summary>
+    private Game.Player.TitleAim? TickAim(Game.Player.ITitlePlayer player)
+    {
+        (Core.Numerics.Vector3d OriginUnits, Core.Numerics.Vector3f Direction)? ray = player is Game.Player.ITitleOverShoulder
+            ? _titleOverShoulder.AimRay
+            : Viewpoint?.AimRay;
+        return ray is { } aim ? new Game.Player.TitleAim(aim.OriginUnits - player.EyePosition, aim.Direction) : null;
     }
 
     /// <summary>The fixed keys and buttons a title's own screens read, held now, and the wheel turned since the last tick.</summary>
@@ -318,12 +403,23 @@ public sealed partial class GameHost
     private void PresentTitleLook(bool smooth)
     {
         PlayerProfile? profile = _configuration.Active;
+
+        // Not while a recording plays back: its look is the tape's, given a tick at a time, with no mouse of the viewer's ahead of
+        // it -- the preview held the view on each tick's look, stepping thirty times a second. Without it the view is drawn
+        // between the last two ticks' looks, as smooth as the run was played.
         bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && !_session.FailedMenu;
+            && !_session.FailedMenu && !Replaying;
         if (!available && _titleFeatures?.Look is { } stopped) { stopped.ResetLook(); }
         _titlePresentation.SetLookPreview(available && _titleFeatures?.Look is { CanPreviewLook: true } look
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
                 profile?.InvertMouse ?? false)
+            : null);
+
+        // The orbit round the body, likewise: turned by the mouse waiting for the next tick, round the body as it is drawn. A
+        // recording's orbit turns a tick at a time, and is drawn between its ticks' eyes as the walking eye is.
+        _titlePresentation.SetOrbitPreview(available && _titleFeatures?.Orbit is { IsOrbiting: true } orbit
+            ? orbit.PreviewOrbit(_titlePresentationBlend, _titleMouseX, _titleMouseY,
+                profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity, profile?.InvertMouse ?? false)
             : null);
     }
 
@@ -332,12 +428,15 @@ public sealed partial class GameHost
     /// Escape held until the skip ring fills (<see cref="Services.CutsceneSkipHold"/>), then read as held until the cutscene
     /// ends, as retail's <c>LevelFlow_GetBreakCutSceneKey</c> reads the key's state. With cinematics off it is held, the same
     /// path the host's own intro skip takes: the level's scripts end every cutscene the way the key does.
-    /// <c>OPENIGI_BREAK_CUTSCENE=1</c> holds it too, for a lockstep run.
+    /// <c>OPENIGI_BREAK_CUTSCENE=1</c> holds it too, for a lockstep run. A co-op client never holds it: its host's skip ends the
+    /// scene for everyone, and a client that ended its own (cinematics off, or its own hold) played on while its host watched,
+    /// until the host's state took the scene back.
     /// </remarks>
     private bool TitleBreakKey() =>
-        !_options.PlayCutscenes
+        TickObserver is not Multiplayer.ISessionFollower
+        && (!PlaysCutscenes
         || _cutsceneSkip.Breaking
-        || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal);
+        || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal));
 
     /// <summary>Registers the console's hold on the title player's controls, for a capture to drive it without keys.</summary>
     /// <param name="console">The console to register with.</param>
@@ -401,10 +500,11 @@ public sealed partial class GameHost
 
         console.Commands.Add(
             "title_hold",
-            "Holds the title player's controls as if their keys were down: action names (Fire, Reload, MoveUp, ...), the fixed keys a title's screens read (Up, Enter, MouseLeft, WheelUp, ...) or none. Not in the original.",
+            "Holds the title player's controls as if their keys were down, pressed on the tick the hold starts: action names (Fire, Reload, MoveUp, ...), the title's own controls by their bound names (Title_igi2_Thermal, ...), the fixed keys a title's screens read (Up, Enter, MouseLeft, WheelUp, ...) or none. Not in the original.",
             context =>
             {
                 PlayerAction held = default;
+                ulong titleHeld = 0;
                 TitleRawKeys raw = TitleRawKeys.None;
                 for (int i = 0; i < context.Count; i++)
                 {
@@ -421,16 +521,21 @@ public sealed partial class GameHost
                     {
                         raw |= key;
                     }
+                    else if (Gameplay?.InputBindings.FirstOrDefault(b => string.Equals(b.Default.Action, context[i], StringComparison.OrdinalIgnoreCase)) is { Mask: not 0 } own)
+                    {
+                        titleHeld |= own.Mask;
+                    }
                     else
                     {
-                        context.Warn($"'{context[i]}' is neither a player action nor a fixed key.");
+                        context.Warn($"'{context[i]}' is neither a player action, a control of the title's nor a fixed key.");
                         return;
                     }
                 }
 
                 _titleScriptHeld = held;
+                _titleScriptTitleHeld = titleHeld;
                 _titleScriptRaw = raw;
-                context.Print($"Title player holds {held}, keys {raw}.");
+                context.Print($"Title player holds {held}, the title's own 0x{titleHeld:X}, keys {raw}.");
             },
             "<action ...|none>");
     }
@@ -439,12 +544,14 @@ public sealed partial class GameHost
     /// <param name="eye">The camera the frame is drawn from.</param>
     /// <remarks>
     /// Only while walking with nothing else holding the view: not in the free camera, a cutscene, the computer or a
-    /// camera entry. Depth is cleared first so a wall the eyes stand against cannot cut through the hands, and the
-    /// geometry is flagged first-person so the lighting neither meters nor bounces off it.
+    /// camera entry, nor while the camera is over the shoulder (<see cref="TitleShowsViewModel"/>). Depth is cleared first so a
+    /// wall the eyes stand against cannot cut through the hands, and the geometry is flagged first-person so the lighting neither
+    /// meters nor bounces off it.
     /// </remarks>
     private void DrawTitleFirstPerson(in Camera3D eye)
     {
         if (_titleFeatures?.FirstPerson is null || _titleArms is not { } arms
+            || !TitleShowsViewModel
             || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true
             || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {
@@ -501,15 +608,16 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>Draws the marks the title's player has lying on the ground, over the lit picture.</summary>
+    /// <summary>Draws the marks the title's player has laid on surfaces, over the lit picture.</summary>
     /// <param name="eye">The camera the frame is drawn from.</param>
     /// <param name="projection">The world's projection.</param>
     /// <remarks>They blend, so they follow the lit world as the water does; drawn into the G-buffer they would be opaque squares.</remarks>
-    private void DrawTitleGroundDecals(in Camera3D eye, in Matrix4f projection)
+    private void DrawTitleSurfaceMarks(in Camera3D eye, in Matrix4f projection)
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
-            models.DrawGroundDecals(owned.GroundDecals, eye, projection);
+            models.DrawSurfaceMarks(owned.SurfaceMarks, eye, projection);
+            models.DrawWorldPolygons(owned.WorldPolygons, eye, projection);
         }
     }
 

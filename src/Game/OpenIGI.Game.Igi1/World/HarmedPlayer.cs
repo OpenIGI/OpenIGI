@@ -75,6 +75,10 @@ public interface IPlayerSenses
     /// <summary>The red at all four corners, each its own draw.</summary>
     void FlashCorners();
 
+    /// <summary>The view thrown up, as a bomb's front throws it. <b>Not retail.</b></summary>
+    /// <param name="pitchRadians">How far, in radians.</param>
+    void ViewKick(float pitchRadians);
+
     /// <summary>The red over the whole screen, as a fall's.</summary>
     void FlashCentre();
 

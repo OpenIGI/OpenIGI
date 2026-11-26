@@ -40,7 +40,9 @@ public sealed class RetailIgi2NetworkHumanTests
         {
             float[] channels = new float[Igi2HumanChannels.Count];
             channels[(int)Igi2HumanChannel.MoveForwards] = 1f;
-            other.Commands.Push(new UserCommand(300 + i, channels));
+            float[] command = new float[Igi2Command.ChannelCount];
+            Igi2Command.Pack(channels, new Igi2CommandStart(other.Human.IdealGamma, other.Human.View.IdealPitch, false, false, false, Igi2PlayerMovement.Igi2, false, 0), new Igi2CommandEnd(other.Human.ChosenWeaponNumber, other.Human.IsWalk, other.Human.View.FieldOfView, other.Human.View.ObjectFieldOfView), command);
+            other.Commands.Push(new UserCommand(300 + i, command));
             level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
         }
         double moved = Math.Sqrt(Math.Pow(other.Human.Position.X - before.X, 2) + Math.Pow(other.Human.Position.Y - before.Y, 2));
@@ -50,6 +52,105 @@ public sealed class RetailIgi2NetworkHumanTests
         Assert.DoesNotContain(other.Human, level.Ai.Detection.Detectables);
         Assert.DoesNotContain(other.Human, level.Ai.Players);
         Assert.Empty(level.NetworkHumans);
+    }
+
+    /// <summary>
+    /// A player joining stands beside the host where the host can see it and with ground under its feet: it was stood two metres
+    /// along the world's first axis whatever lay there.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_joiner_stands_beside_the_host_in_sight_and_on_the_ground()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        for (int tick = 0; tick < 300; tick++)
+        {
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+
+        Igi2ReplicatedWorld world = new(level);
+        Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Vector3d host = level.Human.Position, joined = world.PlayerOf(0)!.Human.Position;
+        Vector3d up = new(0, 0, 4096);
+
+        Assert.False(level.CollisionWorld.Cast(host + up, joined + up, out _), $"the host cannot see the joiner at {joined} from {host}");
+        Assert.True(level.CollisionWorld.Cast(joined + up, joined - new Vector3d(0, 0, 8192), out _), $"no ground under the joiner at {joined}");
+    }
+
+    /// <summary>
+    /// A dedicated server's level player, whom nobody plays, is out of the level's world -- unseen, unhunted -- and the scripts
+    /// weigh it only until a player joins. The guards hunted it at the spawn.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dedicated_servers_level_player_is_out_of_the_world()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        Igi2ReplicatedWorld world = new(level) { IncludesHost = false };
+
+        // Counted by the areas until the first player is in: gone at once, it left an empty server's mission failing as it loaded.
+        Assert.False(level.Human.IsGone);
+        Assert.DoesNotContain(level.Human, level.Ai!.Detection!.Detectables);
+        Assert.DoesNotContain(level.Human, level.Ai.Players);
+        Assert.Contains(level.Human, level.ScriptPlayers!);
+
+        Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Assert.True(level.Human.IsGone);
+        Assert.DoesNotContain(level.Human, level.ScriptPlayers!);
+        Assert.Equal(world.PlayerOf(0)!.Human, level.Ai.Players.Primary);
+    }
+
+    /// <summary>
+    /// A dedicated server's mission 1 ends when a joined player rides the lift down the mine shaft: the shaft's area counts the
+    /// level's humans of the player's side (<c>CRITERIA_HUMAN0</c>), which held the level's own player and no other, and a server
+    /// whose level player nobody plays never saw anyone reach it -- the mission never completed and never moved on.
+    /// </summary>
+    /// <summary>
+    /// A dedicated server waiting for its first player keeps mission 1 going: its level player, which nobody plays, stands in for
+    /// the players to come in the areas as in the scripts. Left out of the areas, it was outside the mission's every area the
+    /// moment the level loaded, the mission failed, and the server sat on the failed page answering nobody.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void An_empty_dedicated_server_does_not_fail_mission_1_while_it_waits_for_its_first_player()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        _ = new Igi2ReplicatedWorld(level) { IncludesHost = false };
+        for (int tick = 0; tick < 900; tick++)
+        {
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+
+        Assert.NotEqual(TitleMissionOutcome.Failed, level.Outcome);
+    }
+
+    [RequiresTitleDataFact("igi2")]
+    public void A_dedicated_servers_mission_ends_when_a_joined_player_goes_down_the_mine_shaft()
+    {
+        Igi2TitlePlayer level = StandMission1();
+        Igi2ReplicatedWorld world = new(level) { IncludesHost = false };
+        Assert.NotNull(world.AddPlayer(0, "Anya"));
+        Igi2HumanPlayer joined = world.PlayerOf(0)!.Human;
+        for (int tick = 0; tick < 300; tick++)
+        {
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+
+        Flow.Igi2AreaActivateTask shaft = level.LevelTasks().OfType<Flow.Igi2AreaActivateTask>().Single(a => a.Id == 162);
+        Game.Flow.EditVariableTask lift = level.LevelTasks().OfType<Game.Flow.EditVariableTask>().Single(v => v.Id == 271);
+        Flow.Igi2StatusMessageTask done = level.LevelTasks().OfType<Flow.Igi2StatusMessageTask>().Single(s => s.Id == 354);
+
+        // The lift is down and the player stands in the shaft: the mission's last line is sent, and a second after it has been
+        // shown the level is complete.
+        lift.Value = 2;
+        bool counted = false;
+        for (int tick = 0; tick < 3000 && level.Outcome != TitleMissionOutcome.Completed; tick++)
+        {
+            joined.Position = shaft.Position;
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+            counted |= shaft.Active > 0;
+        }
+
+        Assert.True(counted, "the shaft never counted the joined player");
+        Assert.True(done.IsFinishedDisplay || done.IsDisplay, "the mission's last line was never sent");
+        Assert.Equal(TitleMissionOutcome.Completed, level.Outcome);
     }
 
     [RequiresTitleDataFact("igi2")]

@@ -22,8 +22,16 @@ namespace OpenIGI.Game.Igi2.Pickups;
 /// <c>GenericPickup_RunHandler</c>: picked up while still in the world, it sounds <c>pickup</c> and leaves the world, drawn no more.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2GenericPickupTask : Igi2Task, IIgi2PlacedTask, IIgi2Destructible
+public sealed partial class Igi2GenericPickupTask : Igi2Task, IIgi2PlacedTask, IIgi2Destructible, IIgi2WorldMember
 {
+    /// <inheritdoc/>
+    /// <remarks><c>GenericPickup_RemoveHandler</c>: out of the world and off the pickups' list, offered to no one.</remarks>
+    public void RemoveFromWorld() => IsInWorld = false;
+
+    /// <inheritdoc/>
+    /// <remarks><c>GenericPickup_RegisterHandler</c>: back, unless it was picked up.</remarks>
+    public void PutInWorld() => IsInWorld = _isPickedUp == 0;
+
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "GenericPickup";
 

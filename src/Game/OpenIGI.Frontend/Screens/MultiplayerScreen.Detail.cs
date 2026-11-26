@@ -1,3 +1,5 @@
+using OpenIGI.UI.Kit.Servers;
+using OpenIGI.UI.Kit;
 using System.Globalization;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -46,7 +48,7 @@ public sealed partial class MultiplayerScreen
         head.ColumnDefinitions.Add(GridLength.Star);
         head.ColumnDefinitions.Add(GridLength.Auto);
         var names = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6f };
-        names.AddChild(new Eyebrow(theme, line.Region.Length > 0 ? $"{line.Kind} · {line.Region}" : line.Kind) { TextSize = 14f });
+        names.AddChild(new Eyebrow(theme, line.Heading) { TextSize = 14f });
         names.AddChild(new Label(theme.Heading, room.Name, 30f, theme.Text) { Wrap = true });
         head.Add(names, 0, 0);
         bool favourite = room.Favourite;
@@ -54,7 +56,7 @@ public sealed partial class MultiplayerScreen
         var save = new Button(theme, favourite ? "SAVED" : "SAVE")
         {
             Accent = favourite ? ButtonAccent.Link : ButtonAccent.Text,
-            LeadingGlyph = Glyph(OpenIGI.UI.Kit.KitIcon.Star),
+            LeadingGlyph = KitIcons.Glyph(KitIcon.Star),
             GlyphSize = 18f,
             TextSize = ButtonText,
             Tracking = ButtonTracking,

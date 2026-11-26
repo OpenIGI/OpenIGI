@@ -1,3 +1,4 @@
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
@@ -50,13 +51,14 @@ public sealed class IgiTypography : IDisposable
 
     private readonly bool _ownsFonts;
 
-    private IgiTypography(UiFont body, UiFont heading, UiFont display, UiFont mono, UiFont bodyStrong, bool ownsFonts)
+    private IgiTypography(UiFont body, UiFont heading, UiFont display, UiFont mono, UiFont bodyStrong, UiFont monoFigures, bool ownsFonts)
     {
         Body = body;
         BodyStrong = bodyStrong;
         Heading = heading;
         Display = display;
         Mono = mono;
+        MonoFigures = monoFigures;
         _ownsFonts = ownsFonts;
     }
 
@@ -75,8 +77,11 @@ public sealed class IgiTypography : IDisposable
     /// <summary>Gets the request for the monospaced face.</summary>
     public static IgiFontRequest MonoRequest => new(MonoFile, 32f, FontAtlasKind.Coverage);
 
+    /// <summary>Gets the mono face again as a distance field, for figures set large: the coverage atlas blurs past its size.</summary>
+    public static IgiFontRequest MonoFiguresRequest => new(MonoFile, 64f, FontAtlasKind.SignedDistanceField);
+
     /// <summary>Gets every face the design asks for.</summary>
-    public static IReadOnlyList<IgiFontRequest> Requests { get; } = [BodyRequest, HeadingRequest, DisplayRequest, MonoRequest, BodyStrongRequest];
+    public static IReadOnlyList<IgiFontRequest> Requests { get; } = [BodyRequest, HeadingRequest, DisplayRequest, MonoRequest, BodyStrongRequest, MonoFiguresRequest];
 
     /// <summary>Gets the body face.</summary>
     public UiFont Body { get; }
@@ -93,6 +98,9 @@ public sealed class IgiTypography : IDisposable
     /// <summary>Gets the monospaced face.</summary>
     public UiFont Mono { get; }
 
+    /// <summary>Gets the mono face for figures set large (a distance field, sharp at any size).</summary>
+    public UiFont MonoFigures { get; }
+
     /// <summary>Loads the four faces through a caller's loader.</summary>
     /// <param name="load">Turns a request into a font; called once per face.</param>
     /// <returns>The typography, owning the fonts it loaded.</returns>
@@ -100,7 +108,7 @@ public sealed class IgiTypography : IDisposable
     public static IgiTypography Load(Func<IgiFontRequest, UiFont> load)
     {
         ArgumentNullException.ThrowIfNull(load);
-        return new IgiTypography(load(BodyRequest), load(HeadingRequest), load(DisplayRequest), load(MonoRequest), load(BodyStrongRequest), ownsFonts: true);
+        return new IgiTypography(load(BodyRequest), load(HeadingRequest), load(DisplayRequest), load(MonoRequest), load(BodyStrongRequest), load(MonoFiguresRequest), ownsFonts: true);
     }
 
     /// <summary>Wraps faces loaded elsewhere, which the typography does not dispose.</summary>
@@ -114,12 +122,13 @@ public sealed class IgiTypography : IDisposable
     {
         ArgumentNullException.ThrowIfNull(body);
         UiFont label = heading ?? body;
-        return new IgiTypography(body, label, display ?? label, mono ?? body, body, ownsFonts: false);
+        return new IgiTypography(body, label, display ?? label, mono ?? body, body, mono ?? body, ownsFonts: false);
     }
 
     /// <summary>Builds a theme over these faces with the design's palette and metrics.</summary>
+    /// <param name="icons">The interface's icons, made on the renderer's images (<see cref="KitIconAtlas.Load"/>); null for none.</param>
     /// <returns>The theme.</returns>
-    public UiTheme CreateTheme() => new(Body, Heading, Mono, Display, BodyStrong);
+    public UiTheme CreateTheme(IUiIcons? icons = null) => new(Body, Heading, Mono, Display, BodyStrong) { MonoFigures = MonoFigures, Icons = icons };
 
     /// <inheritdoc/>
     public void Dispose()
@@ -138,5 +147,6 @@ public sealed class IgiTypography : IDisposable
         Heading.Dispose();
         Display.Dispose();
         Mono.Dispose();
+        MonoFigures.Dispose();
     }
 }

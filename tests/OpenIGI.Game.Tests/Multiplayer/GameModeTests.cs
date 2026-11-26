@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Game.Multiplayer;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using Xunit;
 
@@ -27,6 +28,34 @@ public sealed class GameModeTests
         Assert.Equal(3, host.Match.Players[0].Kills);
         Assert.Equal(MatchPhase.Intermission, mode.Flow.Phase);
         Assert.Equal(0, mode.Flow.Winner);
+    }
+
+    [Fact]
+    public void A_player_put_back_at_a_spawn_is_shielded_for_the_spawn_protection_and_not_with_none()
+    {
+        Host host = new(teams: [0, 1]);
+        DeathmatchMode mode = new(TickRate, teams: true, new DeathmatchSettings { RespawnSeconds = 3, SpawnProtectSeconds = 2 });
+        mode.Start(host, 0);
+        host.Fake.ShieldsGiven.Clear();
+        mode.Tick(host, TickRate, [new WorldDeath(Victim: 11, Killer: 10)]);
+        mode.Tick(host, TickRate * 4, []);
+        Assert.Equal([(1, TickRate * 2)], host.Fake.ShieldsGiven);
+
+        Host bare = new(teams: [0, 1]);
+        DeathmatchMode unshielded = new(TickRate, teams: true, new DeathmatchSettings { RespawnSeconds = 3, SpawnProtectSeconds = 0 });
+        unshielded.Start(bare, 0);
+        unshielded.Tick(bare, TickRate, [new WorldDeath(Victim: 11, Killer: 10)]);
+        unshielded.Tick(bare, TickRate * 4, []);
+        Assert.Empty(bare.Fake.ShieldsGiven);
+    }
+
+    [Fact]
+    public void Shields_go_over_the_wire_as_they_were()
+    {
+        OpenIGI.Net.BitWriter writer = new();
+        ShieldState.Write(writer, [new ShieldState(0, 60), new ShieldState(7, 12)]);
+        OpenIGI.Net.BitReader reader = new(writer.AsSpan().ToArray());
+        Assert.Equal([new ShieldState(0, 60), new ShieldState(7, 12)], ShieldState.Read(ref reader));
     }
 
     [Fact]
@@ -120,7 +149,7 @@ public sealed class GameModeTests
     public void Co_op_keeps_the_dead_down_until_the_world_says_they_were_revived()
     {
         Host host = new(teams: [0, 0], holdsTheDead: true);
-        IGameMode mode = GameModes.For(GameModes.FreeForAll, host.World, TickRate);
+        IGameMode mode = GameModes.For(MatchModes.FreeForAll, host.World, TickRate);
         Assert.IsType<CoopMode>(mode);
         mode.Start(host, 0);
         mode.Tick(host, 1, [new WorldDeath(Victim: 11, Killer: -1)]);
@@ -164,22 +193,22 @@ public sealed class GameModeTests
         MatchFlow flow = new(TickRate);
         flow.Enter(MatchPhase.RoundOver, 100, 7.5, winner: 1);
         OpenIGI.Net.BitWriter writer = new();
-        flow.Write(writer, GameModes.TeamDeathmatch, 130);
+        flow.Write(writer, MatchModes.TeamDeathmatch, 130);
         OpenIGI.Net.BitReader reader = new(writer.AsSpan());
         MatchState read = MatchFlow.Read(ref reader);
-        Assert.Equal(new MatchState(GameModes.TeamDeathmatch, MatchPhase.RoundOver, 1, 1, 6.5), read);
+        Assert.Equal(new MatchState(MatchModes.TeamDeathmatch, MatchPhase.RoundOver, 1, 1, 6.5), read);
     }
 
     [Fact]
     public void Names_are_shown_over_team_mates_only_and_revive_marks_only_in_co_op()
     {
-        Assert.True(PlayerSides.ShowsName(GameModes.Coop, null, null));
-        Assert.True(PlayerSides.ShowsName(GameModes.TeamDeathmatch, 1, 1));
-        Assert.False(PlayerSides.ShowsName(GameModes.TeamDeathmatch, 1, 2));
-        Assert.False(PlayerSides.ShowsName(GameModes.TeamDeathmatch, null, 1));
-        Assert.False(PlayerSides.ShowsName(GameModes.FreeForAll, 1, 1));
-        Assert.True(PlayerSides.Revivable(GameModes.Coop));
-        Assert.False(PlayerSides.Revivable(GameModes.FreeForAll));
+        Assert.True(PlayerSides.ShowsName(MatchModes.Coop, null, null));
+        Assert.True(PlayerSides.ShowsName(MatchModes.TeamDeathmatch, 1, 1));
+        Assert.False(PlayerSides.ShowsName(MatchModes.TeamDeathmatch, 1, 2));
+        Assert.False(PlayerSides.ShowsName(MatchModes.TeamDeathmatch, null, 1));
+        Assert.False(PlayerSides.ShowsName(MatchModes.FreeForAll, 1, 1));
+        Assert.True(PlayerSides.Revivable(MatchModes.Coop));
+        Assert.False(PlayerSides.Revivable(MatchModes.FreeForAll));
     }
 
     [Fact]
@@ -195,10 +224,50 @@ public sealed class GameModeTests
         Assert.Equal("k6", Assert.Single(feed.Shown(6 + KillFeed.ShownSeconds - 0.5)).Killer);
 
         OpenIGI.Net.BitWriter writer = new();
-        KillNote note = new("Anya", TeamRoster.Good, "Joe", -1);
+        KillNote note = new("Anya", TeamRoster.Good, "Joe", -1, 3, 7, "WEAPON_ID_AK47", KillCause.Explosive, KillMarks.Headshot | KillMarks.TeamKill);
         note.Write(writer);
         OpenIGI.Net.BitReader reader = new(writer.AsSpan());
         Assert.Equal(note, KillNote.Read(ref reader));
+    }
+
+    [Fact]
+    public void A_players_own_rows_are_listed_longer_than_the_rest()
+    {
+        KillFeed feed = new();
+        feed.Add(new KillNote("Anya", 0, "Joe", 1, KillerEntity: 1, VictimEntity: 2), 0);
+        feed.Add(new KillNote("Bob", 0, "Cy", 1, KillerEntity: 3, VictimEntity: 4), 0);
+
+        double later = KillFeed.ShownSeconds + 1;
+        Assert.Equal("Anya", Assert.Single(feed.Entries(later, own: 1)).Note.Killer);
+        Assert.Empty(feed.Entries(later, own: 9));
+        Assert.Empty(feed.Entries(KillFeed.OwnShownSeconds + 0.1, own: 1));
+    }
+
+    [Fact]
+    public void A_kill_note_carries_the_weapon_and_how_it_struck_and_names_a_suicide_and_a_team_kill()
+    {
+        Match match = new(new MultiplayerRules());
+        MatchPlayer anya = match.Join(0, "Anya", TeamRoster.Good);
+        MatchPlayer joe = match.Join(1, "Joe", TeamRoster.Bad);
+        MatchPlayer kim = match.Join(2, "Kim", TeamRoster.Good);
+
+        KillNote headshot = KillNote.Of(new WorldDeath(11, 10, "WEAPON_ID_AK47", KillCause.Weapon, Headshot: true), joe, anya, teams: true);
+        Assert.Equal(("Anya", "Joe", "WEAPON_ID_AK47", KillCause.Weapon, KillMarks.Headshot), (headshot.Killer, headshot.Victim, headshot.Weapon, headshot.Cause, headshot.Marks));
+        Assert.Equal((10, 11), (headshot.KillerEntity, headshot.VictimEntity));
+
+        KillNote teamKill = KillNote.Of(new WorldDeath(12, 10, "WEAPON_ID_GRENADE", KillCause.Explosive), kim, anya, teams: true);
+        Assert.Equal(KillMarks.TeamKill, teamKill.Marks);
+        Assert.Equal(KillCause.Explosive, teamKill.Cause);
+
+        // In a free-for-all nobody is on anyone's side.
+        Assert.Equal(KillMarks.None, KillNote.Of(new WorldDeath(12, 10), kim, anya, teams: false).Marks);
+
+        // One's own grenade is nobody's kill, and no headshot.
+        KillNote own = KillNote.Of(new WorldDeath(10, -1, "WEAPON_ID_GRENADE", KillCause.Suicide), anya, null, teams: true);
+        Assert.Equal((false, KillCause.Suicide, -1), (own.HasKiller, own.Cause, own.KillerEntity));
+
+        KillNote guard = KillNote.OfGuard(anya, 10, "WEAPON_ID_MP5SD", head: true);
+        Assert.Equal((KillNote.GuardName, KillMarks.Guard | KillMarks.Headshot, -1), (guard.Victim, guard.Marks, guard.VictimEntity));
     }
 
     [Fact]
@@ -346,6 +415,7 @@ public sealed class GameModeTests
     {
         for (int i = 0; i < ticks; i++)
         {
+            host.Fake.Now = from + i;
             mode.Tick(host, from + i, []);
         }
 
@@ -412,12 +482,52 @@ public sealed class GameModeTests
         host.Using.Clear();
         tick = Run(mode, host, tick, (TickRate * 10) + 1);
         Assert.Single(host.Blasts);
-        Assert.Equal([0], host.Killed);
         Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
         Assert.Equal(SearchAndDestroyMode.Attackers, mode.Flow.Winner);
 
         // The blast's round is held the bomb's own pause (mp_bombendtime, 10 s by default), not the 1 s of any other end.
         Assert.InRange(mode.Flow.SecondsLeft(tick)!.Value, 9.5, 10);
+
+        // Its front is held a moment before it sets out, and only then reaches the attacker beside it.
+        Assert.Empty(host.Killed);
+        tick = Run(mode, host, tick, (int)(TickRate * 1.2));
+        Assert.Equal([0], host.Killed);
+    }
+
+    [Fact]
+    public void The_bomb_front_is_held_a_second_then_felt_by_each_player_as_it_reaches_them()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        host.Using.Add(0);
+        host.Positions[0] = new(102 * Metre, 0, 0);
+        long tick = Run(mode, host, 1, TickRate + 1);
+        Assert.Equal("A", mode.PlantedSite);
+
+        // The planter walks 45 m off the bomb; the defender stands 60 m off it: both hurt, neither killed.
+        host.Using.Clear();
+        host.Positions[0] = new(147 * Metre, 0, 0);
+        host.Positions[1] = new(42 * Metre, 0, 0);
+        long blown = tick;
+        while (!mode.Exploded)
+        {
+            blown = Run(mode, host, blown, 1);
+        }
+
+        blown--;
+        tick = Run(mode, host, blown + 1, TickRate * 3);
+        Assert.Equal(2, host.Fake.BlastHits.Count);
+        foreach ((int slot, float share, long at) in host.Fake.BlastHits)
+        {
+            OpenIGI.Core.Numerics.Vector3d bomb = mode.PlantedAt!.Value + new OpenIGI.Core.Numerics.Vector3d(0, 0, 0.4 * Metre);
+            OpenIGI.Core.Numerics.Vector3d chest = host.Positions[slot] + new OpenIGI.Core.Numerics.Vector3d(0, 0, 1.2 * Metre);
+            double straight = (chest - bomb).Length / Metre;
+            double seconds = (at - blown) / (double)TickRate;
+            Assert.InRange(seconds, BombWave.ArrivalSeconds(straight) - 0.001, BombWave.ArrivalSeconds(straight) + (1.0 / TickRate) + 0.001);
+            Assert.True(share > 0f && share < 1f, $"slot {slot} took {share}");
+        }
+
+        // Nobody was reached in the second the front is held.
+        Assert.All(host.Fake.BlastHits, h => Assert.True(h.Tick - blown >= TickRate));
     }
 
     [Fact]
@@ -469,12 +579,12 @@ public sealed class GameModeTests
     [Fact]
     public void The_banner_runs_its_clock_down_and_names_the_winner()
     {
-        MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);
+        MatchState live = new(MatchModes.FreeForAll, MatchPhase.Live, 1, -1, 90);
         Assert.Equal(new MatchBanner("FREE FOR ALL", "1:20", null), live.Banner(10));
-        MatchState over = new(GameModes.TeamDeathmatch, MatchPhase.Intermission, 1, 0, 15, MatchState.TeamName(0));
+        MatchState over = new(MatchModes.TeamDeathmatch, MatchPhase.Intermission, 1, 0, 15, MatchState.TeamName(0));
         Assert.Equal("IGI WINS", over.Banner(0)!.Headline);
         Assert.Equal("DRAW", (over with { Winner = -1 }).Banner(0)!.Headline);
-        Assert.Null(new MatchState(GameModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
+        Assert.Null(new MatchState(MatchModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
     }
 
     [Fact]
@@ -633,6 +743,8 @@ public sealed class GameModeTests
 
         public IReplicatedWorld World => _world;
 
+        public FakeWorld Fake => _world;
+
         public int TickRate => GameModeTests.TickRate;
 
         public IReadOnlyList<int> PlayerSlots { get; }
@@ -663,6 +775,10 @@ public sealed class GameModeTests
 
         public List<int> Killed { get; } = [];
 
+        public List<(int Slot, int Ticks)> ShieldsGiven { get; } = [];
+
+        public void Shield(int slot, int ticks) => ShieldsGiven.Add((slot, ticks));
+
         public HashSet<int> Using { get; } = [];
 
         public List<OpenIGI.Core.Numerics.Vector3d> Blasts { get; } = [];
@@ -690,6 +806,19 @@ public sealed class GameModeTests
         public OpenIGI.Core.Numerics.Vector3d? PositionOf(int slot) => Positions.TryGetValue(slot, out OpenIGI.Core.Numerics.Vector3d at) ? at : null;
 
         public void KillPlayer(int slot) => Killed.Add(slot);
+
+        public List<(int Slot, float Share, long Tick)> BlastHits { get; } = [];
+
+        public long Now { get; set; }
+
+        public void BlastPlayer(int slot, float healthShare, OpenIGI.Core.Numerics.Vector3d from)
+        {
+            BlastHits.Add((slot, healthShare, Now));
+            if (healthShare >= 1f)
+            {
+                KillPlayer(slot);
+            }
+        }
 
         public bool HoldsTheDead => Holds;
 

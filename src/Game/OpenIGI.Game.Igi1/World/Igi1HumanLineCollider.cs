@@ -54,24 +54,9 @@ public sealed class Igi1HumanLineCollider(HumanTask human, uint group, int mater
             Vector3d end = trace.Ends[i];
             Vector3d line = end - start;
             double length = line.Length;
-            bool leaving = Inside(start, feet);
-            HumanHit met;
-            if (!leaving)
+            if (!TryMeet(start, end, feet, Facing, out HumanHit met, out bool leaving))
             {
-                if (!HumanHitTest.TryCast(start, end, feet, Facing, pose: null, out met))
-                {
-                    continue;
-                }
-            }
-            else if (Inside(end, feet) || !HumanHitTest.TryCast(end, start, feet, Facing, pose: null, out met))
-            {
-                // A line that never leaves the body crosses none of its faces.
                 continue;
-            }
-            else
-            {
-                // Where the line comes out is where the same line run backwards goes in.
-                met = met with { Distance = length - met.Distance };
             }
 
             WorldIntersection hit = trace.Intersections[i];
@@ -108,6 +93,37 @@ public sealed class Igi1HumanLineCollider(HumanTask human, uint group, int mater
             sight.Transparency = 0f;
             sight.Material = material;
         }
+    }
+
+    /// <summary>
+    /// Where a line first crosses a body as its hit test (<see cref="HumanHitTest"/>) casts it, a round standing body: going in, or,
+    /// for a line that starts within it, coming out.
+    /// </summary>
+    /// <param name="start">Where the line starts.</param>
+    /// <param name="end">Where it ends.</param>
+    /// <param name="feet">Where the body stands.</param>
+    /// <param name="facing">Which way it faces, its local Y, which its zones turn with.</param>
+    /// <param name="met">Where the line crosses it, its distance along the line.</param>
+    /// <param name="leaving">Whether that is the way out of it.</param>
+    /// <returns>Whether the line crosses a face of the body.</returns>
+    public static bool TryMeet(Vector3d start, Vector3d end, Vector3d feet, Vector3f facing, out HumanHit met, out bool leaving)
+    {
+        leaving = Inside(start, feet);
+        if (!leaving)
+        {
+            return HumanHitTest.TryCast(start, end, feet, facing, pose: null, out met);
+        }
+
+        // A line that never leaves the body crosses none of its faces.
+        if (Inside(end, feet) || !HumanHitTest.TryCast(end, start, feet, facing, pose: null, out met))
+        {
+            met = default;
+            return false;
+        }
+
+        // Where the line comes out is where the same line run backwards goes in.
+        met = met with { Distance = (end - start).Length - met.Distance };
+        return true;
     }
 
     // Whether a point is within the stand-in's body, the cylinder HumanHitTest casts against.

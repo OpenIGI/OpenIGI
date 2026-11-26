@@ -82,8 +82,8 @@ public sealed class RetailInteractionInventoryTests
         WorldInteraction door = Assert.Single(interactions.Items, item => item.Task.Id == doorId);
         WorldInteraction doorSwitch = Assert.Single(interactions.Items, item => item.Task.Id == switchId);
 
-        Assert.Equal(expectedOpen, ReadString(door.Task, "Open door expression"));
-        Assert.Equal(expectedClose, ReadString(door.Task, "Close door expression"));
+        Assert.Equal(expectedOpen, ReadString((DeclaredTask)door.Task, "Open door expression"));
+        Assert.Equal(expectedClose, ReadString((DeclaredTask)door.Task, "Close door expression"));
         Assert.True(door.Door!.IsFullyClosed);
 
         doorSwitch.Press();
@@ -120,7 +120,7 @@ public sealed class RetailInteractionInventoryTests
 
         Assert.Equal(
             "this.nDoorOpenTicks > 10*GAME_FREQUENCY",
-            ReadString(door.Task, "Close door expression"));
+            ReadString((DeclaredTask)door.Task, "Close door expression"));
 
         door.Door!.CommandOpen();
         for (int tick = 0; tick <= 60; tick++)
@@ -162,7 +162,7 @@ public sealed class RetailInteractionInventoryTests
             .ToList();
         Assert.Equal([282, 284, 286], charges.Select(static item => item.Task.Id).Order());
         Assert.All(charges, static charge => Assert.False(Assert.IsType<bool>(
-            charge.Task.TryGetValue("Explodable", out object? explodable) ? explodable : null)));
+            ((DeclaredTask)charge.Task).TryGetValue("Explodable", out object? explodable) ? explodable : null)));
         Assert.All(charges, static charge => Assert.Equal(245, charge.ActivateAnimation));
         Assert.DoesNotContain(destructibles.Objects, item => charges.Any(charge => ReferenceEquals(charge.Task, item.Owner)));
 
@@ -443,7 +443,7 @@ public sealed class RetailInteractionInventoryTests
         WorldInteraction door = Assert.Single(
             interactions.Items,
             static item => item.Type == InteractionActivateType.Door
-                && item.Task.TryGetValue("Open door expression", out object? expression)
+                && ((DeclaredTask)item.Task).TryGetValue("Open door expression", out object? expression)
                 && string.Equals(expression as string, "Terminal_552.isHackedThisTick", StringComparison.Ordinal));
 
         interactions.Tick();
@@ -612,7 +612,7 @@ public sealed class RetailInteractionInventoryTests
                     _ => "Activate Time (s)",
                 };
                 Assert.Equal(
-                    Math.Max(1, (int)(ReadReal(interaction.Task, durationParameter, 4f) * 30f)),
+                    Math.Max(1, (int)(ReadReal((DeclaredTask)interaction.Task, durationParameter, 4f) * 30f)),
                     interaction.DurationTicks);
                 if (interaction.Type is InteractionActivateType.Terminal or InteractionActivateType.Generic)
                 {
@@ -695,7 +695,7 @@ public sealed class RetailInteractionInventoryTests
                     scene.Placements,
                     candidate => ReferenceEquals(candidate.Owner, wire.Task));
                 Assert.NotNull(placement.BentGeometry);
-                Assert.True(WireTransform.TryCreate(wire.Task, placement.Model, out WireTransform transform));
+                Assert.True(WireTransform.TryCreate((DeclaredTask)wire.Task, placement.Model, out WireTransform transform));
                 Assert.Equal(transform.PositionMetres, placement.Position);
                 Assert.Equal(transform.Orientation, placement.Orientation);
                 Assert.Equal(transform.CableStart, wire.Anchor);
@@ -748,7 +748,7 @@ public sealed class RetailInteractionInventoryTests
             foreach (WorldInteraction interaction in interactions.Items.Where(
                 static item => item.Type == InteractionActivateType.StationaryGun))
             {
-                DeclaredTask task = interaction.Task;
+                DeclaredTask task = (DeclaredTask)interaction.Task;
                 AiStationaryGun gun = Assert.IsType<AiStationaryGun>(interaction.StationaryGun);
                 Assert.Equal(task.Id, gun.TaskId);
                 Assert.Equal(ReadReal(task, "Max up angle", 25f), gun.MaximumAlphaDegrees);

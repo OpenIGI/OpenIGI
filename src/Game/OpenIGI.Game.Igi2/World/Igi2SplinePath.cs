@@ -277,10 +277,10 @@ public sealed class Igi2SplinePath
             return fromFar ? 1f : 0f;
         }
 
-        float angle = MathF.Acos(
+        float angle = SimMathF.Acos(
             Math.Clamp((opposite - squared - (length * length)) / (-2f * anchored * length), -1f, 1f));
-        float sine = MathF.Sin(angle);
-        float rest = MathF.PI - angle - MathF.Asin(Math.Clamp(sine / reach * anchored, -1f, 1f));
+        float sine = SimMathF.Sin(angle);
+        float rest = MathF.PI - angle - SimMathF.Asin(Math.Clamp(sine / reach * anchored, -1f, 1f));
         if (rest <= Degenerate || sine == 0f)
         {
             // Both ways round this reads from the first frame, because at a fraction of zero the distance
@@ -290,7 +290,7 @@ public sealed class Igi2SplinePath
             return spread == 0f ? (fromFar ? 1f : 0f) : (reach - near) / spread;
         }
 
-        float into = MathF.Sin(rest) * reach / sine / length;
+        float into = SimMathF.Sin(rest) * reach / sine / length;
         return fromFar ? 1f - into : into;
     }
 

@@ -34,7 +34,7 @@ internal static class LampPhysics
     /// </para>
     /// </remarks>
     internal static float Cooling(float seconds) =>
-        (0.82f * MathF.Exp(-seconds / 0.035f)) + (0.18f * MathF.Exp(-seconds / 0.16f));
+        (0.82f * SimMathF.Exp(-seconds / 0.035f)) + (0.18f * SimMathF.Exp(-seconds / 0.16f));
 
     /// <summary>How far into coming back on a lamp is, from nought to one.</summary>
     /// <remarks>
@@ -81,7 +81,7 @@ internal static class LampPhysics
 
         // The mercury warming, or the filament heating: fast at first and asymptotic, which is what both
         // of them actually do. Normalised so the curve reaches one rather than approaching it forever.
-        return Math.Clamp(1f - MathF.Exp(-t / (lamp.Character == LampCharacter.Discharge ? 0.3f : 0.19f)), 0f, 1f);
+        return Math.Clamp(1f - SimMathF.Exp(-t / (lamp.Character == LampCharacter.Discharge ? 0.3f : 0.19f)), 0f, 1f);
     }
 
     /// <summary>A tube on a glow starter coming on: preheat, flash, and as many goes as it takes.</summary>
@@ -146,8 +146,8 @@ internal static class LampPhysics
         float w = t - lamp.ArcAt;
 
         return lamp.Cold
-            ? Math.Clamp(lamp.ColdStart + ((1f - lamp.ColdStart) * (1f - MathF.Exp(-w / lamp.Ramp))), 0f, 1f)
-            : Math.Clamp(1f - MathF.Exp(-w / 0.19f), 0f, 1f);
+            ? Math.Clamp(lamp.ColdStart + ((1f - lamp.ColdStart) * (1f - SimMathF.Exp(-w / lamp.Ramp))), 0f, 1f)
+            : Math.Clamp(1f - SimMathF.Exp(-w / 0.19f), 0f, 1f);
     }
 
     /// <summary>A discharge lantern coming on: the ignitor's crackle, a dim arc, and a long climb.</summary>
@@ -204,7 +204,7 @@ internal static class LampPhysics
 
         float w = t - lamp.ArcAt;
 
-        return Math.Clamp(0.06f + (0.94f * (1f - MathF.Exp(-w / lamp.Ramp))), 0f, 1f);
+        return Math.Clamp(0.06f + (0.94f * (1f - SimMathF.Exp(-w / lamp.Ramp))), 0f, 1f);
     }
 
     /// <summary>What colour a lamp coming on gives out, before it is giving out its own.</summary>
@@ -365,10 +365,10 @@ internal static class LampPhysics
             // Lit, but not well. A slow wobble a few per cent deep, at a rate low enough to be seen
             // rather than aliased into a shimmer by whatever the frame rate happens to be.
             LampBrokenPhase.Run => lamp.BrokenPeak
-                * (1f - (0.07f * (0.5f + (0.5f * MathF.Sin(t * lamp.BrokenRate))))),
+                * (1f - (0.07f * (0.5f + (0.5f * SimMathF.Sin(t * lamp.BrokenRate))))),
 
             // The cathodes glowing with no arc across them: dim, orange in a real tube, and unsteady.
-            LampBrokenPhase.Glow => 0.06f + (0.05f * (0.5f + (0.5f * MathF.Sin(t * lamp.BrokenRate)))),
+            LampBrokenPhase.Glow => 0.06f + (0.05f * (0.5f + (0.5f * SimMathF.Sin(t * lamp.BrokenRate)))),
 
             _ => 0f,
         };

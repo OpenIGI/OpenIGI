@@ -5,6 +5,7 @@ using OpenIGI.Launcher.Pages;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.UI;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Screens;
@@ -63,8 +64,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly ScreenStack _stack = new() { PointerSuppressed = true };
     private readonly LauncherLog _log = LauncherLog.Start();
     private readonly LauncherModel _model;
+
+    // Where launchers started after this one hand over what they were opened with (an openigi:// link), or null.
+    private readonly Services.SingleInstance? _instance;
     private readonly SkiaImageStore _images = new();
-    private readonly Dictionary<string, BackdropPicture?> _pictures = new(StringComparer.Ordinal);
+    private IconAtlas? _icons;
+    private readonly Dictionary<string, UiPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
     private readonly DesktopNotifier _notifier;
 
@@ -110,11 +115,14 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     }
 
     /// <param name="args">The command line: an <c>openigi://</c> invite link, when an invite page opened the launcher.</param>
-    public LauncherApp(string[] args)
+    /// <param name="instance">What later launchers hand over to this one, or <see langword="null"/>.</param>
+    public LauncherApp(string[] args, Services.SingleInstance? instance = null)
     {
+        _instance = instance;
         _model = new LauncherModel(_log);
         Services.InviteLinks.Register(_log.Logger);
         _model.TakeInvite(Services.InviteLinks.FromCommandLine(args ?? []));
+
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 
@@ -364,13 +372,13 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public Task<string?> PickFolder(string title, string? initial) =>
         FolderPicker.PickAsync(title, initial, _window.Native?.Win32?.Hwnd ?? 0);
 
-    public BackdropPicture? Picture(string path)
+    public UiPicture? Picture(string path)
     {
         // A pack's picture is named by its content, so a path decoded once is that picture for good.
-        if (!_pictures.TryGetValue(path, out BackdropPicture? picture))
+        if (!_pictures.TryGetValue(path, out UiPicture? picture))
         {
             SkiaSharp.SKImage? image = File.Exists(path) ? SkiaSharp.SKImage.FromEncodedData(path) : null;
-            picture = image is null ? null : new BackdropPicture(_images.Add(image), image.Width / (float)image.Height);
+            picture = image is null ? null : new UiPicture(_images.Add(image), image.Width, image.Height);
             _pictures[path] = picture;
         }
 
@@ -388,6 +396,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _model.Dispose();
         _typography?.Dispose();
         _fonts.Dispose();
+        _icons?.Dispose();
         _images.Dispose();
         _inputContext?.Dispose();
         _window.Dispose();
@@ -411,10 +420,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             ?? throw StartupFailure("Skia could not create a GPU context on the window.");
 
         _typography = LauncherFonts.Load();
-        (UiTheme theme, UiTheme rows) = CreateThemes(_typography);
+        _icons ??= KitIconAtlas.Load(_images);
+        KitIcons.Baked = _icons;
+        (UiTheme theme, UiTheme rows) = CreateThemes(_typography, _icons);
         _theme = theme;
 
-        BackdropPicture? picture = LauncherBackdrop.LoadPicture(_images);
+        UiPicture? picture = LauncherBackdrop.LoadPicture(_images);
         _screen = new LauncherScreen(theme, rows, _model, this, picture);
         _stack.Push(_screen, animate: true);
 
@@ -521,6 +532,17 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     private void OnUpdate(double elapsed)
     {
+        // A link a later launcher handed over: its game started into the session, and this launcher brought back to the front.
+        if (_instance?.Take() is { } line)
+        {
+            if (Services.InviteLinks.Read(line) is { } invite)
+            {
+                _model.TakeInvite(invite);
+            }
+
+            ShowFromTray();
+        }
+
         if (_screen is null)
         {
             return;
@@ -564,11 +586,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     /// <summary>The launcher's two themes: the page's, and the settings rows' taller, ruled kind with a larger caption.</summary>
     /// <param name="typography">The loaded faces.</param>
+    /// <param name="icons">The kit's icons, made on the launcher's images; null for none.</param>
     /// <returns>The page theme and the row theme.</returns>
-    internal static (UiTheme Page, UiTheme Rows) CreateThemes(IgiTypography typography)
+    internal static (UiTheme Page, UiTheme Rows) CreateThemes(IgiTypography typography, IUiIcons? icons = null)
     {
-        UiTheme page = typography.CreateTheme();
-        UiTheme rows = typography.CreateTheme();
+        UiTheme page = typography.CreateTheme(icons);
+        UiTheme rows = typography.CreateTheme(icons);
         rows.RowHeight = 54f;
         rows.RowDividers = true;
         rows.BodyTextSize = 18f;

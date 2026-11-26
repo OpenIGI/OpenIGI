@@ -28,6 +28,9 @@ public sealed partial class RecordingGraphicsDevice
     public bool VSyncEnabled { get; set; }
 
     /// <inheritdoc/>
+    public bool DisplayEncodes => false;
+
+    /// <inheritdoc/>
     public void SetMode(in DisplayMode mode) => CurrentMode = mode;
 
     /// <inheritdoc/>

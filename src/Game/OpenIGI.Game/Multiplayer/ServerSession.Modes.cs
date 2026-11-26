@@ -117,15 +117,18 @@ public sealed partial class ServerSession
     public KillFeed Feed { get; } = new();
 
     /// <inheritdoc/>
-    void IModeHost.Announce(int victim, int killer)
+    void IModeHost.Announce(WorldDeath death, int victim, int killer)
     {
         MatchPlayer? by = killer < 0 ? null : Match.Players.GetValueOrDefault(killer);
         MatchPlayer? dead = Match.Players.GetValueOrDefault(victim);
-        KillNote note = new(
-            by is null || killer == victim ? string.Empty : by.Name,
-            by?.Team ?? -1,
-            dead?.Name ?? string.Empty,
-            dead?.Team ?? -1);
+        AnnounceKill(KillNote.Of(death, dead, by, Mode.IsTeamMode));
+    }
+
+    /// <summary>Lists a kill in the host's own feed and every client's, as the session lists a counted death.</summary>
+    /// <param name="note">The kill.</param>
+    /// <remarks>What the modes' deaths go through; a development command uses it to show the feed's every kind of row.</remarks>
+    public void AnnounceKill(KillNote note)
+    {
         Feed.Add(note, _now);
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.KillNote, 8);
@@ -155,6 +158,27 @@ public sealed partial class ServerSession
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    // Who the clients were last told is shielded, by entity.
+    private readonly HashSet<int> _shieldsTold = [];
+
+    // Every client told, on the reliable line, when who spawn protection shields changes: with the ticks each has left, so its
+    // own read-out runs down; and an empty list when the last one ends.
+    private void TellShields()
+    {
+        IReadOnlyList<ShieldState> shields = _world.Shields;
+        if (shields.Count == _shieldsTold.Count && shields.All(s => _shieldsTold.Contains(s.Entity)))
+        {
+            return;
+        }
+
+        _shieldsTold.Clear();
+        _shieldsTold.UnionWith(shields.Select(static s => s.Entity));
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Shields, 8);
+        ShieldState.Write(_writer, shields);
+        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+    }
+
     private readonly List<CombatNote> _hostCombat = [];
 
     /// <summary>Takes the hits the listen server's own player scored or took since the last call, for its HUD.</summary>
@@ -171,13 +195,32 @@ public sealed partial class ServerSession
         return notes;
     }
 
-    // Each hit to the two in it -- the shooter and the one hit -- and to no one else: what a player learns of a fight is its own.
-    private void TellCombat()
+    // Each hit between two players into the match, towards the assists a death credits.
+    private void CountDamage(IReadOnlyList<CombatNote> notes)
     {
-        foreach (CombatNote note in _world.TakeCombat())
+        foreach (CombatNote note in notes)
+        {
+            if (note.Attacker >= 0 && note.Victim >= 0)
+            {
+                Match.Damaged(SlotOf(note.Victim), SlotOf(note.Attacker), note.Damage);
+            }
+        }
+    }
+
+    // Each hit to the two in it -- the shooter and the one hit -- and to no one else: what a player learns of a fight is its own.
+    private void TellCombat(IReadOnlyList<CombatNote> notes)
+    {
+        foreach (CombatNote note in notes)
         {
             int shooter = note.Attacker >= 0 ? SlotOf(note.Attacker) : -1;
             int victim = note.Victim >= 0 ? SlotOf(note.Victim) : -1;
+
+            // Co-op: a player's kill of one of the level's soldiers goes in everyone's feed.
+            if (note is { Killed: true, Victim: < 0 } && Mode is CoopMode && Match.Players.GetValueOrDefault(shooter) is { } killer)
+            {
+                AnnounceKill(KillNote.OfGuard(killer, note.Attacker, note.Weapon, note.Head));
+            }
+
             foreach (int slot in shooter == victim ? [shooter] : (int[])[shooter, victim])
             {
                 if (slot == HostSlot)

@@ -54,7 +54,8 @@ jobs:
   publish:
     name: publish ${{ inputs.tag || github.ref_name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Up to three hours of it can be SignPath waiting for a maintainer to approve the signing request.
+    timeout-minutes: 300
     container:
       image: ghcr.io/openigi/ci:latest
       credentials:
@@ -146,6 +147,78 @@ jobs:
             done
           fi
 
+      # The Windows downloads are Authenticode-signed through SignPath Foundation (free code signing for open source,
+      # https://openigi.com/code-signing/), so Windows names a publisher instead of SmartScreen's "unknown app". Before the
+      # manifest, which records each file's hash: the launcher checks what it installs against those. Off until the
+      # SIGNPATH_ORGANIZATION_ID variable and the SIGNPATH_API_TOKEN secret are set; a release then ships unsigned, as before.
+      # SignPath holds the request until a maintainer approves it, so the job waits up to three hours for that.
+      - name: Gather the Windows files to sign
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: |
+          rm -rf artifacts/signing artifacts/signed
+          mkdir -p artifacts/signing
+          shopt -s nullglob
+          # What tools/release/signpath/release.xml signs: every .exe download, and the server inside its Windows zips.
+          for f in artifacts/release/*.exe artifacts/server/*-win-*.zip; do cp "$f" artifacts/signing/; done
+          ls -l artifacts/signing
+
+      - name: Upload the unsigned Windows files
+        id: unsigned
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows-${{ steps.tag.outputs.version }}
+          path: artifacts/signing/
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Sign the Windows files
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'openigi' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: release
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 10800
+          output-artifact-directory: artifacts/signed
+
+      - name: Check the signatures
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: |
+          command -v osslsigncode > /dev/null \
+            || { apt-get update -qq && apt-get install -y -qq --no-install-recommends osslsigncode > /dev/null; }
+          shopt -s nullglob
+          # Every file sent must come back, and every program in it must carry a signature; a release never goes out
+          # with a mix of signed and unsigned downloads.
+          signed() {
+            osslsigncode extract-signature -in "$1" -out "$RUNNER_TEMP/sig.der" > /dev/null 2>&1 \
+              || { echo "::error::$1 is not signed"; return 1; }
+            rm -f "$RUNNER_TEMP/sig.der"
+            # The chain check depends on the image's CA bundle, so it is reported, not enforced.
+            osslsigncode verify -in "$1" -CAfile /etc/ssl/certs/ca-certificates.crt 2>&1 \
+              | grep -E "Subject:|Signature verification|Timestamp" | head -6 || true
+          }
+          failed=0
+          for f in artifacts/signing/*; do
+            name=$(basename "$f")
+            [ -f "artifacts/signed/$name" ] || { echo "::error::SignPath did not return $name"; failed=1; continue; }
+            case "$name" in
+              *.exe) signed "artifacts/signed/$name" || failed=1 ;;
+              *.zip)
+                rm -rf "$RUNNER_TEMP/zip" && mkdir -p "$RUNNER_TEMP/zip"
+                unzip -q "artifacts/signed/$name" -d "$RUNNER_TEMP/zip"
+                for exe in "$RUNNER_TEMP"/zip/*/OpenIGI.Server.exe; do signed "$exe" || failed=1; done ;;
+            esac
+          done
+          [ "$failed" = 0 ] || exit 1
+          # The signed files take the unsigned ones' places, under the same names.
+          for f in artifacts/signed/*.exe; do cp "$f" artifacts/release/; done
+          for f in artifacts/signed/*.zip; do cp "$f" artifacts/server/; done
+
       - name: Write the manifest
         run: |
           dotnet run --project tools/OpenIGI.Tools.Release --configuration Release -- manifest \
@@ -159,6 +232,7 @@ jobs:
           VERSION: ${{ steps.tag.outputs.version }}
           CHANNEL: ${{ steps.tag.outputs.channel }}
           PRODUCT: ${{ steps.tag.outputs.product }}
+          SIGNED: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
         run: |
           v="$VERSION"
           repo="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
@@ -175,7 +249,7 @@ jobs:
               echo
               echo "| Windows | Linux | macOS (Apple silicon) |"
               echo "|---|---|---|"
-              echo "| [openigi-launcher-$v-win-x64.exe]($dl/openigi-launcher-$v-win-x64.exe) | [openigi-launcher-$v-linux-x64]($dl/openigi-launcher-$v-linux-x64) | [openigi-launcher-$v-osx-arm64.tar.gz]($dl/openigi-launcher-$v-osx-arm64.tar.gz) |"
+              echo "| [openigi-launcher-$v-win-x64.exe]($dl/openigi-launcher-$v-win-x64.exe) | [openigi-launcher-$v-linux-x64]($dl/openigi-launcher-$v-linux-x64) | [openigi-launcher-$v-osx-arm64.dmg]($dl/openigi-launcher-$v-osx-arm64.dmg) or [.tar.gz]($dl/openigi-launcher-$v-osx-arm64.tar.gz) |"
             else
               echo "The easiest way to play is the **OpenIGI Launcher** ([openigi.com](https://openigi.com) or its [releases]($repo/releases)), which installs this build for you$( [ "$CHANNEL" = beta ] && echo ' once its update channel is set to Beta')."
               echo "To run the game yourself, each build comes in two flavours:"
@@ -194,7 +268,10 @@ jobs:
             echo
             echo "Windows and Linux builds are a single executable (on Linux, \`chmod +x\` it first). macOS builds are an app in a tarball."
             echo "On macOS and Linux, the launcher installs with one command: \`curl -fsSL https://openigi.com/install.sh | bash\`."
-            echo "The macOS builds are not notarized, so macOS reports an app downloaded with a browser as \"damaged\"; clear that with \`xattr -dr com.apple.quarantine \"/Applications/OpenIGI Launcher.app\"\` (or the app's path)."
+            if [ "$SIGNED" = true ]; then
+              echo "The Windows builds are signed by SignPath Foundation, which provides OpenIGI with free code signing ([policy](https://openigi.com/code-signing/))."
+            fi
+            echo "The macOS builds are not notarized (that takes a paid Apple developer account), so macOS stops an app downloaded with a browser: the install command above avoids that, or allow it once under System Settings > Privacy & Security > Open Anyway. If macOS calls it \"damaged\", clear the download's quarantine with \`xattr -dr com.apple.quarantine \"/Applications/OpenIGI Launcher.app\"\` (or the app's path)."
             echo "OpenIGI needs your own copy of Project I.G.I.; it ships none of the game's data. Verify a download with \`sha256sum -c SHA256SUMS\`."
             if [ "$PRODUCT" = game ]; then
               echo
@@ -304,6 +381,67 @@ jobs:
           tags: |
             ghcr.io/openigi/server:${{ needs.publish.outputs.version }}
             ${{ needs.publish.outputs.channel == 'stable' && 'ghcr.io/openigi/server:latest' || 'ghcr.io/openigi/server:beta' }}
+
+  # The macOS apps are ad-hoc signed on Linux (rcodesign, tools/release/package.sh); this checks those signatures on a
+  # real Mac, where Apple silicon refuses to start anything whose signature does not hold. For a launcher release it also
+  # makes the disk image a Mac user expects to download (the app beside an Applications shortcut), uploaded beside the
+  # tarball the launcher's own updates use.
+  macos:
+    needs: publish
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          sparse-checkout: tools/release
+
+      - name: Check the signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p dl apps
+          gh release download "$TAG" --pattern "*-osx-arm64*.tar.gz" --dir dl
+          for archive in dl/*.tar.gz; do
+            dest="apps/$(basename "$archive" .tar.gz)"
+            mkdir -p "$dest" && tar -C "$dest" -xzf "$archive"
+            for app in "$dest"/*.app; do
+              echo "== $(basename "$archive"): $(basename "$app")"
+              # The code (every library and the executable) is what Apple silicon checks at launch, and must hold.
+              codesign --verify --deep --strict --ignore-resources --verbose=2 "$app"
+              # rcodesign's seal leaves out the files beside the executable, which only Gatekeeper minds, on a
+              # quarantined copy: the launcher and install.sh never quarantine, and the disk image is re-signed below.
+              codesign --verify --deep --strict "$app" >/dev/null 2>&1 \
+                || echo "::warning::$(basename "$archive"): the bundle's seal leaves files out (Gatekeeper would reject a quarantined copy)"
+              codesign --display --verbose=2 "$app" 2>&1 | grep -E "Identifier|Signature|Format" || true
+              # Without notarization Gatekeeper rejects it; recorded so a change in that is noticed.
+              spctl --assess --type execute --verbose "$app" 2>&1 || true
+            done
+          done
+
+      - name: Make the disk image
+        if: needs.publish.outputs.product == 'launcher'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          name="openigi-launcher-$VERSION-osx-arm64"
+          mkdir -p dmg
+          # ditto keeps the bundle's symlinks and attributes. A disk image is downloaded through a browser and so
+          # quarantined, and Gatekeeper wants every file sealed, which only Apple's codesign does: re-signed here.
+          ditto "apps/$name/OpenIGI Launcher.app" "dmg/OpenIGI Launcher.app"
+          tools/release/sign-macos.sh "dmg/OpenIGI Launcher.app"
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "OpenIGI Launcher" -srcfolder dmg -fs HFS+ -format UDZO -ov "$name.dmg"
+          codesign --verify --deep --strict "dmg/OpenIGI Launcher.app"
+          shasum -a 256 "$name.dmg"
+          gh release upload "$TAG" "$name.dmg" --clobber
 
   # The site lists what is now on GitHub: the feeds, and for a game release its browser build.
   site:

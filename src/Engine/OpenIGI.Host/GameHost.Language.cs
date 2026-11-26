@@ -57,6 +57,21 @@ public sealed partial class GameHost
         _menuStrings!.LanguageDirectory = language;
     }
 
+    /// <summary>Mounts the language the saved settings chose, where the title's archives were mounted before they were read.</summary>
+    /// <remarks>
+    /// The title's archives are mounted before the settings load, in the default language, and the change the load makes is
+    /// not heard: nothing watches the setting yet. A player who had chosen another language read the menus in English, and
+    /// I.G.I. 2, which asks for its in-game text under the chosen language's name (<c>LOCAL:usa/OBJ_2_COMPLETE</c>), showed
+    /// every objective, message and subtitle as its bare key.
+    /// </remarks>
+    private void MountSavedLanguage()
+    {
+        if (_menuStrings is not null && !string.Equals(_menuStrings.LanguageDirectory, LanguageCVars.Directory, StringComparison.Ordinal))
+        {
+            MountLanguage();
+        }
+    }
+
     /// <summary>Puts the session's language archives into a registry in place of any other language's.</summary>
     /// <param name="registry">The registry.</param>
     private void MountLanguage(ResourceRegistry registry)

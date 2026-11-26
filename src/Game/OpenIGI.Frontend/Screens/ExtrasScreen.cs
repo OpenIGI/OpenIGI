@@ -50,6 +50,9 @@ public sealed class ExtrasScreen : ShellScreen
     {
     }
 
+    /// <summary>Gets a value indicating whether the page is the campaign's end, opened as its last mission is completed.</summary>
+    public bool CampaignComplete { get; init; }
+
     /// <inheritdoc/>
     protected override ShellTab Tab => ShellTab.Extras;
 
@@ -67,6 +70,13 @@ public sealed class ExtrasScreen : ShellScreen
         var inset = new Thickness(compact ? 16f : 20f, 6f);
 
         var credits = Group(theme, "Credits", compact);
+        if (CampaignComplete)
+        {
+            string game = Context.Games.FirstOrDefault(g => g.Id == Context.ActiveTitleId)?.DisplayName ?? "the campaign";
+            credits.Content.AddChild(new Label(theme.Heading, "Campaign complete", compact ? 22f : 34f, theme.Accent) { Margin = new Thickness(inset.Left, 0f, inset.Right, 6f) });
+            credits.Content.AddChild(new Label(theme.Body, $"Every mission of {game} is done. Thank you for playing.", text, theme.TextSecondary) { Wrap = true, Margin = new Thickness(inset.Left, 0f, inset.Right, compact ? 12f : 22f) });
+        }
+
         credits.Content.AddChild(new Label(theme.Heading, "OpenIGI is a clean-room reimplementation of Project I.G.I.", compact ? 22f : 34f, theme.Text) { Wrap = true, Margin = new Thickness(inset.Left, 0f, inset.Right, compact ? 10f : 18f) });
         var facts = new Grid { ColumnSpacing = 32f, RowSpacing = 18f, Margin = new Thickness(inset.Left, 0f, inset.Right, 18f) };
         int across = compact ? 1 : 2;
@@ -172,7 +182,7 @@ public sealed class ExtrasScreen : ShellScreen
         page.Add(
             compact
                 ? new SectionTitle(theme, string.Empty, "Extras") { TitleSize = 24f, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0f, 10f, 0f, 4f) }
-                : new SectionTitle(theme, "Archive", "Extras") { HorizontalAlignment = HorizontalAlignment.Left },
+                : new SectionTitle(theme, CampaignComplete ? "Campaign complete" : "Archive", "Extras") { HorizontalAlignment = HorizontalAlignment.Left },
             0,
             0);
         page.Add(scroll, 1, 0);

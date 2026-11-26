@@ -54,7 +54,9 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(1, inventory.TotalBulletsFired);
         Assert.Equal(["0:mp5_loop:loop"], effects.Sounds);
         Assert.Equal([39, 15, 23], effects.Events.Select(static e => e.Event));
-        Assert.Equal(15, player.IgnoreLightEffectOnVisibilityTimer);
+        // Fifteen set by the shot in the update, one already counted down by the human's own tick at the end of the same
+        // delayed half (Human_RunHandler): the hold is gone fifteen ticks after the shot, as retail's is.
+        Assert.Equal(14, player.IgnoreLightEffectOnVisibilityTimer);
         Assert.Equal(1, player.MissionShots);
         Assert.Single(effects.Flashes);
         Igi2CasingEjection casing = Assert.Single(effects.Casings);
@@ -507,6 +509,38 @@ public sealed class RetailIgi2FiringTests
     }
 
     /// <summary>
+    /// The SOCOM's dot shows only while switched on (<c>Weapon_StatusDisplayHandler</c>): its type has one, and then a line from
+    /// where it fires runs 409600 units along the aim and the dot lies where it meets the world, added to the picture.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_socoms_laser_dot_lies_where_its_aim_meets_the_world()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        Assert.True(inventory.EnableWeaponType("WEAPON_ID_SOCOM", addAmmo: true));
+        Igi2WeaponItem socom = inventory.FindWeapon("WEAPON_ID_SOCOM")!;
+        Assert.True(inventory.Activate(socom));
+        Assert.True(socom.WeaponType.LaserDot);
+        StrikeOnCall world = new(Mission1.Value.Session.Require<Igi2GameMaterials>(), strikeOn: 1, material: 11);
+        weapons.World = world;
+        Igi2LaserDot dot = new();
+        socom.IsLaserDotOn = false;
+        Assert.Null(dot.Place(weapons.Firing));
+        Assert.Empty(world.Calls);
+
+        socom.IsLaserDotOn = true;
+        TitleSurfaceMark mark = Assert.IsType<TitleSurfaceMark>(dot.Place(weapons.Firing));
+
+        (Vector3d start, Vector3d end) = Assert.Single(world.Calls);
+        Assert.Equal(player.View.Position, start);
+        Assert.InRange(Vector3d.Distance(start, end), Igi2LaserDot.Range - 0.01, Igi2LaserDot.Range + 0.01);
+        Assert.Equal(new Vector3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2), mark.Position);
+        Assert.EndsWith(Igi2LaserDot.Texture, mark.Texture, StringComparison.Ordinal);
+        Assert.True(mark.IsAdditive);
+        Assert.Equal(Igi2LaserDot.HalfSize, mark.HalfSize);
+    }
+
+    /// <summary>
     /// The drop key on a weapon its type lets be dropped in a single-player game puts it away for another: the AI hears it handled,
     /// it lands as a pickup, not thrown short, with its load, and is carried no more.
     /// </summary>
@@ -541,6 +575,38 @@ public sealed class RetailIgi2FiringTests
         player.Update();
         player.RunDelayed();
         player.Ticks++;
+    }
+
+    /// <summary>
+    /// A firefight's worth of rounds -- 96 in a few ticks, from two guards -- fits a snapshot's first part, and a client reads
+    /// each written once: the log once took a few kilobytes and sent every snapshot reliably, once a second.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_firefights_rounds_fit_the_snapshot_and_each_is_read_once()
+    {
+        (_, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2WeaponTables tables = weapons.Inventory.Tables;
+        Igi2WeaponTypeTask gun = weapons.Inventory.Current!.WeaponType;
+        Multiplayer.Igi2FiredLog log = new();
+        for (int i = 0; i < 96; i++)
+        {
+            float[] aim = Game.EngineEuler.Rotation(0.01f * i, 0f, 0.02f * i);
+            log.Note(i / 16, 100000 + (i % 2), new Igi2LaunchNote(
+                new Igi2ProjectileLaunch(1, new Vector3d(100000 + i, -250000, 4096), aim, default, 400f, 260f, 0, gun, null), 0));
+        }
+
+        byte[] written = log.Capture(6, tables)!;
+        Assert.True(written.Length <= Multiplayer.Igi2FiredLog.Budget, $"{written.Length} bytes");
+
+        Multiplayer.Igi2FiredLog client = new();
+        client.Replay(null, null, tables, static _ => null);
+        int read = 0;
+        client.Replay(written, null, tables, _ => { read++; return null; });
+        Assert.True(read >= 16, $"only {read} of the 96 rounds were written");
+
+        int again = 0;
+        client.Replay(written, null, tables, _ => { again++; return null; });
+        Assert.Equal(0, again);
     }
 
     private static (Igi2HumanPlayer Player, Igi2PlayerWeapons Weapons, RecordingEffects Effects) ArmedPlayer()

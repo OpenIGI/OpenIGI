@@ -72,6 +72,16 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
     /// </remarks>
     internal Func<ConditionalContainerTask, bool?>? ConditionResolver { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether an editor's preview lets the container in whatever its condition says, as the level's story would by
+    /// the time a scene inside it plays. Not retail: the original has no editor.
+    /// </summary>
+    public bool IsForcedOpen { get; set; }
+
+    /// <summary>What the container's condition says now: open when forced or when nothing decides it.</summary>
+    /// <returns>Whether it runs; null where the condition leaves it as it is.</returns>
+    internal bool? ResolveCondition() => IsForcedOpen || ConditionResolver is null ? true : ConditionResolver(this);
+
     /// <summary>Gets a value indicating whether the container runs — the original's <c>isRun</c> byte.</summary>
     /// <remarks>
     /// Before its first tick a container Project I.G.I.'s gate prepared settles here, through
@@ -87,7 +97,7 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
                 return latched != 0;
             }
 
-            if (ConditionResolver is null)
+            if (ConditionResolver is null && !IsForcedOpen)
             {
                 return true;
             }
@@ -100,7 +110,7 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
             _resolving = true;
             try
             {
-                _isRun = ConditionResolver(this) == true ? (byte)1 : (byte)0;
+                _isRun = ResolveCondition() == true ? (byte)1 : (byte)0;
             }
             finally
             {
@@ -148,7 +158,11 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
         }
 
         bool wasRun = _isRun is { } before && before != 0;
-        if (rules.Condition(this) is { } holds)
+
+        // A co-op client's level keeps the server's isRun, mirrored with the level's variables: decided here it followed this
+        // client's own world -- its players alone, its own soldiers' state -- and a container a partner opened stayed shut.
+        // What follows from it, the children in or out and the start and stop scripts, still happens here.
+        if (!level.MirrorsTaskState && rules.Condition(this) is { } holds)
         {
             _isRun = holds ? (byte)1 : (byte)0;
         }
@@ -191,7 +205,7 @@ public partial class ConditionalContainerTask : TickedTask, Saves.IExchangedStat
     public bool Refresh(out bool started)
     {
         bool before = _isRun is { } latched && latched != 0;
-        bool after = ConditionResolver is null ? true : ConditionResolver(this) ?? before;
+        bool after = ResolveCondition() ?? before;
         _isRun = after ? (byte)1 : (byte)0;
         started = !before && after;
         return before != after;

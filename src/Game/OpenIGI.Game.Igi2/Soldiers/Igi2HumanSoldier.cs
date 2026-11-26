@@ -313,7 +313,15 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         RunHuman();
         Animation.AutoStep();
         TouchPose();
-        Mind?.Run(this);
+        if (Puppet is { } pose)
+        {
+            RunPuppet(pose);
+        }
+        else
+        {
+            Mind?.Run(this);
+        }
+
         Weapon.RunDelayed();
         // weapon.c Weapon_RunDelayedHandler runs the GunShot child after firing; gunshot.c GunShot_RunHandler.
         Weapon.Firing?.RunGunShot();
@@ -334,6 +342,13 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// </remarks>
     public void UpdateSector()
     {
+        // A co-op client's puppet: its mind's footing never moves, so its room is the one it is posed in.
+        if (Puppet is not null)
+        {
+            Sector = PuppetSector();
+            return;
+        }
+
         if (Mind is not Ai.Runtime.Igi2HumanAi { Graph: { } graph } mind)
         {
             Sector = null;

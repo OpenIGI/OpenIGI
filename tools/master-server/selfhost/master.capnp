@@ -4,7 +4,8 @@
 #   workerd serve selfhost/master.capnp --directory-path storage=<dir>
 #
 # The Durable Objects (the server list, the rooms, the parties, the relays) keep their storage in <dir>. The secrets
-# come from the environment: TURN_SECRET, ADMIN_TOKEN and RELAY_KEY, as `wrangler secret put` gives them on Cloudflare.
+# come from the environment: TURN_SECRET, ADMIN_TOKEN and RELAY_KEY, as `wrangler secret put` gives them on Cloudflare,
+# and for signing in with Discord DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET and ACCOUNT_KEY (32 random bytes, base64).
 # Cloudflare's cron (the relays probed every minute) is openigi-master-probe.timer here, through the admin route.
 
 using Workerd = import "/workerd/workerd.capnp";
@@ -26,6 +27,14 @@ const master :Workerd.Worker = (
     (name = "parties.js", esModule = embed "../src/parties.js"),
     (name = "relays.js", esModule = embed "../src/relays.js"),
     (name = "stun.js", esModule = embed "../src/stun.js"),
+    (name = "maps.js", esModule = embed "../src/maps.js"),
+    (name = "signed.js", esModule = embed "../src/signed.js"),
+    (name = "accounts.js", esModule = embed "../src/accounts.js"),
+    (name = "stats.js", esModule = embed "../src/stats.js"),
+    (name = "runs.js", esModule = embed "../src/runs.js"),
+    (name = "blobs.js", esModule = embed "../src/blobs.js"),
+    (name = "medals.js", esModule = embed "../src/medals.js"),
+    (name = "names.js", esModule = embed "../src/names.js"),
   ],
   compatibilityDate = "2026-10-01",
   globalOutbound = "internet",
@@ -35,6 +44,10 @@ const master :Workerd.Worker = (
     (className = "Room", uniqueKey = "openigi-master-Room", enableSql = true),
     (className = "Party", uniqueKey = "openigi-master-Party", enableSql = true),
     (className = "Relays", uniqueKey = "openigi-master-Relays", enableSql = true),
+    (className = "Maps", uniqueKey = "openigi-master-Maps", enableSql = true),
+    (className = "Accounts", uniqueKey = "openigi-master-Accounts", enableSql = true),
+    (className = "Stats", uniqueKey = "openigi-master-Stats", enableSql = true),
+    (className = "Runs", uniqueKey = "openigi-master-Runs", enableSql = true),
   ],
   durableObjectStorage = (localDisk = "storage"),
 
@@ -43,6 +56,14 @@ const master :Workerd.Worker = (
     (name = "ROOMS", durableObjectNamespace = "Room"),
     (name = "PARTIES", durableObjectNamespace = "Party"),
     (name = "RELAYS", durableObjectNamespace = "Relays"),
+    # The community maps, every version's package kept in its storage.
+    (name = "MAPS", durableObjectNamespace = "Maps"),
+    # Player accounts: Discord users and the keys they linked (accounts.js).
+    (name = "ACCOUNTS", durableObjectNamespace = "Accounts"),
+    # Match results from the listed servers, and the records and boards they add up to (stats.js).
+    (name = "STATS", durableObjectNamespace = "Stats"),
+    # Single-player runs, their replays and the mission boards (runs.js).
+    (name = "RUNS", durableObjectNamespace = "Runs"),
 
     (name = "TURN_HOST", text = "turn.openigi.com"),
     (name = "TURN_REGION", text = "Europe"),
@@ -50,10 +71,19 @@ const master :Workerd.Worker = (
     (name = "TURN_LON", text = "8.7"),
     # No edge here to keep anything at, and no allowance to spare it for.
     (name = "NO_EDGE_CACHE", text = "1"),
+    # No edge here: the list and the counts are kept in the process's own memory a few seconds instead (index.js remembered).
+    (name = "MEMO_CACHE", text = "1"),
 
     (name = "TURN_SECRET", fromEnvironment = "TURN_SECRET"),
     (name = "ADMIN_TOKEN", fromEnvironment = "ADMIN_TOKEN"),
     (name = "RELAY_KEY", fromEnvironment = "RELAY_KEY"),
+    # The addresses /v1/stats lists every room for, private ones too, apart by commas; unset, nobody's.
+    (name = "OWNER_IPS", fromEnvironment = "OWNER_IPS"),
+    # Signing in with Discord (accounts.js); ACCOUNT_KEY seals the refresh tokens kept for Linked Roles.
+    (name = "DISCORD_CLIENT_ID", fromEnvironment = "DISCORD_CLIENT_ID"),
+    (name = "DISCORD_CLIENT_SECRET", fromEnvironment = "DISCORD_CLIENT_SECRET"),
+    (name = "ACCOUNT_KEY", fromEnvironment = "ACCOUNT_KEY"),
+    (name = "PUBLIC_URL", text = "https://master.openigi.com"),
     # Only a test sets these (the built-in relay on another port, where a request says it is).
     (name = "TURN_PORT", fromEnvironment = "TURN_PORT"),
     (name = "TURN_TLS_PORT", fromEnvironment = "TURN_TLS_PORT"),

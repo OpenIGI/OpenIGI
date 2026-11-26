@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// what fires, shows and sounds is the fire type's handler and the <see cref="Effects"/>.
 /// </para>
 /// </remarks>
-public sealed class Igi2WeaponFiring
+public sealed partial class Igi2WeaponFiring
 {
     /// <summary>The fire sound's slot, the one the holder's death stops (<c>aptSoundSlotQTaskRef[0]</c>).</summary>
     public const int FireSoundSlot = 0;
@@ -147,6 +147,7 @@ public sealed class Igi2WeaponFiring
     public void CreateProjectile(in Igi2ProjectileLaunch launch, GameTask fireTypeParameters)
     {
         ArgumentNullException.ThrowIfNull(fireTypeParameters);
+        NoteLaunch(launch, fireTypeParameters);
         if (launch.ProjectileTaskType == _taskTypes.GunShot)
         {
             GunShot.CreateProjectile(launch, Igi2GunShotParameters.Of(fireTypeParameters));
@@ -540,6 +541,12 @@ public sealed class Igi2WeaponFiring
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether a shot spends nothing, its load and what is carried kept as they were: the
+    /// player's infinite-ammunition cheat. <b>Not retail.</b>
+    /// </summary>
+    public bool KeepsLoaded { get; set; }
+
     /// <summary>Clears the kick once the holder has taken it.</summary>
     public void TakeKickback() => IsKickback = false;
 
@@ -595,7 +602,7 @@ public sealed class Igi2WeaponFiring
         Igi2FireRequest request = Request(item, fireType, message.HeldTime, Position(message.Position), message.Direction, parameters);
         Igi2FireResult result = handler.Fire(request);
         int fired = result.BulletsFired;
-        _inventory.TotalBulletsFired += fired;
+        _inventory.CountFired(fired);
         if (fired != 0 || result.Delay != 0)
         {
             _inventory.Delay = result.Delay;
@@ -603,13 +610,17 @@ public sealed class Igi2WeaponFiring
             {
                 if (carried is not null)
                 {
-                    carried.Spend(fired);
+                    if (!KeepsLoaded)
+                    {
+                        carried.Spend(fired);
+                    }
+
                     CountShots(fireType, fired);
                 }
             }
             else
             {
-                int left = item.Loaded(fireType) - fired;
+                int left = KeepsLoaded ? item.Loaded(fireType) : item.Loaded(fireType) - fired;
                 item.SetLoaded(fireType, left <= 0 ? 0 : left);
                 trigger.RoundsFired += fired;
                 CountShots(fireType, fired);
@@ -656,14 +667,14 @@ public sealed class Igi2WeaponFiring
             if (weaponType.IsForceReload(fireType))
             {
                 Igi2FireTypeRounds rounds = _inventory.FireTypeRounds(_inventory.Current, fireType);
-                if (rounds.AmmoType is { } ammoType)
+                if (rounds.AmmoType is { } ammoType && !KeepsLoaded)
                 {
                     _inventory.FindAmmo(ammoType.AmmoId)?.Spend(fired);
                 }
             }
             else
             {
-                int left = item.Loaded(fireType) - fired - fired;
+                int left = KeepsLoaded ? item.Loaded(fireType) : item.Loaded(fireType) - fired - fired;
                 item.SetLoaded(fireType, left <= 0 ? 0 : left);
                 _fireTypes[fireType].RoundsFired += fired;
             }

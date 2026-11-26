@@ -369,6 +369,7 @@ internal sealed class PlayerBodyRenderer(
         }
 
         view.LookAlong(pose.AimPitch);
+        view.LeanAlong(pose.LeanRoll, pose.Aim);
         view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
 
         // The mesh is uploaded from the model's REST geometry and holds no pose until something puts one
@@ -891,6 +892,65 @@ internal sealed class PlayerBodyRenderer(
         _device.SetMaterialOverride(SurfaceMaterial.Default);
 
         _device.ClearPoseInterpolation();
+    }
+
+    /// <summary>Draws the body, as it was posed this frame, into the silhouette highlight as one of a group.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="highlight">The group it is highlighted as.</param>
+    /// <param name="ranges">A list to gather the body's index ranges in, reused.</param>
+    public void DrawSilhouette(in Camera3D camera, SilhouetteGroup highlight, List<MeshDrawRange> ranges)
+    {
+        if (PoseForOverlay(camera, ranges, out SoldierMember? member, out Matrix4f modelView))
+        {
+            _device.DrawSilhouette(member.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), modelView, highlight);
+            _device.ClearPoseInterpolation();
+        }
+    }
+
+    /// <summary>Hands the body, as it was posed this frame, to the picture as a race's ghost.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="look">How the ghost looks this frame.</param>
+    /// <param name="ranges">A list to gather the body's index ranges in, reused.</param>
+    public void DrawGhost(in Camera3D camera, in GhostLook look, List<MeshDrawRange> ranges)
+    {
+        if (PoseForOverlay(camera, ranges, out SoldierMember? member, out Matrix4f modelView))
+        {
+            _device.DrawGhost(member.Mesh, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ranges), modelView, look);
+            _device.ClearPoseInterpolation();
+        }
+    }
+
+    // The body as it was posed this frame, for a pass laid over the picture: its index ranges gathered, its skin flushed, its
+    // pose blend set on the device (the caller clears it after drawing) and its transform into view space. False with no body.
+    private bool PoseForOverlay(in Camera3D camera, List<MeshDrawRange> ranges, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SoldierMember? posed, out Matrix4f modelView)
+    {
+        ArgumentNullException.ThrowIfNull(ranges);
+        posed = null;
+        modelView = default;
+        if (_member is not { HasFrameState: true } member || _group is not { } group)
+        {
+            return false;
+        }
+
+        ranges.Clear();
+        foreach (MeshSubset subset in group.Geometry.Subsets)
+        {
+            if (subset.IndexCount > 0)
+            {
+                ranges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+            }
+        }
+
+        if (ranges.Count == 0)
+        {
+            return false;
+        }
+
+        SoldierSkinning.Flush(_device, member, group.Geometry, group.Body.Model);
+        _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
+        posed = member;
+        modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
+        return true;
     }
 
     /// <summary>Puts the body into the traced world without drawing any of it.</summary>

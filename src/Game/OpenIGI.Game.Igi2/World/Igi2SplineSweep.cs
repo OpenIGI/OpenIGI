@@ -264,10 +264,10 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
     /// </remarks>
     public static (float Beta, float Gamma) DirectionAngles(Vector3f direction)
     {
-        float gamma = direction.X == 0f ? 0f : MathF.Atan2(direction.Y, direction.X);
+        float gamma = direction.X == 0f ? 0f : SimMathF.Atan2(direction.Y, direction.X);
         float length = MathF.Sqrt(
             (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        float beta = length == 0f ? 0f : -MathF.Asin(direction.Z / length);
+        float beta = length == 0f ? 0f : -SimMathF.Asin(direction.Z / length);
         return (beta, gamma);
     }
 
@@ -283,8 +283,8 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
     {
         float horizontal = MathF.Sqrt((orientation.M21 * orientation.M21) + (orientation.M11 * orientation.M11));
         float roll = horizontal <= 0.0001f
-            ? MathF.Atan2(-orientation.M23, orientation.M22)
-            : MathF.Atan2(orientation.M32, orientation.M33);
+            ? SimMathF.Atan2(-orientation.M23, orientation.M22)
+            : SimMathF.Atan2(orientation.M32, orientation.M33);
         return roll < 0f ? roll + MathF.Tau : roll;
     }
 
@@ -314,8 +314,8 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
             BuildBent(source, vertices, low, high);
         }
 
-        // A model with no normals of its own stays two-sided once bent: a tunnel is such a model, seen from inside, and bent
-        // without this it was drawn to the rock outside it and not to the train within.
+        // Bent, it keeps its source's winding, turned over to the original's front as every model is: a tunnel, which stores no
+        // normals, faces the train within it and not the rock outside.
         return new MeshGeometry(vertices, [.. source.Indices], source.Subsets) { HasDerivedNormals = source.HasDerivedNormals };
     }
 

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Input;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit.Widgets;
@@ -16,10 +17,11 @@ namespace OpenIGI.Frontend.Screens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Categories are grouped by CVar name prefix — <c>r_</c> is graphics/display, <c>snd_</c> audio,
-/// <c>g_</c>/<c>ui_</c> gameplay — and, inside a category, by the next word of the name, so
-/// <c>g_ragdoll_force</c> and <c>g_ragdoll_gravity</c> share a Ragdoll panel. Controls are the
-/// <see cref="CVarBinding"/> rows. On Audio and Gameplay a change previews the instant it is made; on
+/// Every category but Mods is written out as panels (<see cref="GraphicsMenu"/>, <see cref="DisplayMenu"/>,
+/// <see cref="AudioMenu"/>, <see cref="GameplayMenu"/>, <see cref="InterfaceMenu"/>): a panel's finer rows wait behind an
+/// Advanced expander at its foot, and a row that means nothing without another setting appears only while that is on
+/// (<see cref="SettingsPanelBuilder"/>). Controls are the <see cref="CVarBinding"/> rows. On Audio, Gameplay and
+/// Interface a change previews the instant it is made; on
 /// Graphics and Display it waits in a <see cref="SettingsDraft"/> until Apply (F), as every game's options
 /// do -- a graphics API or a resolution is not something to change on the way past it. A display mode
 /// that was applied has to be kept within <see cref="SettingsApplyFlow.KeepSeconds"/> or it is put back, and leaving with
@@ -39,10 +41,10 @@ public sealed class SettingsScreen : ShellScreen
     /// <summary>The design-unit width a column wants before another one is worth having.</summary>
     private const float ColumnWidth = 480f;
 
-    /// <summary>The most rows one panel holds before a long group continues in another.</summary>
-    private const int MaxRowsPerPanel = 12;
-
     private readonly Dictionary<Control, ICVar> _boundCvars = [];
+
+    // Each band's control, with the band's heading, which the panel explaining the row in focus names it by.
+    private readonly Dictionary<Control, string> _bandTitles = [];
     private readonly List<UiElement> _tabPanels = [];
     private readonly List<List<ICVar>> _tabCvars = [];
     private KeyBindingRow? _armingBindingRow;
@@ -123,6 +125,7 @@ public sealed class SettingsScreen : ShellScreen
     {
         ReleaseBindings();
         _boundCvars.Clear();
+        _bandTitles.Clear();
         _tabPanels.Clear();
         _tabRows.Clear();
         _tabCvars.Clear();
@@ -148,14 +151,15 @@ public sealed class SettingsScreen : ShellScreen
         // The controls have no panel beside them -- a binding needs no explaining -- and so a third column.
         _controlsColumns = compact ? 1 : Math.Clamp((int)(across / ColumnWidth), 1, MaxColumns + 1);
 
-        // Five categories, and a sixth only for the mods' own: the console reaches every variable by name, which is
+        // Six categories, and a seventh only for the mods' own: the console reaches every variable by name, which is
         // what an advanced interface should be. A build locked to one preset has no Graphics category at all.
         List<(string Title, Func<List<SettingsGroup>> Build)> categories =
         [
             ("Display", () => DisplaySettingsTab.Build(_rows, theme)),
-            ("Audio", () => CvarGroupBuilder.CvarGroups(_rows, theme, CvarGroupBuilder.NamesWithPrefix(Context.Cvars, "snd_"), "Audio")),
+            ("Audio", () => SettingsPanelBuilder.Build(_rows, theme, "Audio", AudioMenu.Panels)),
             ("Controls", () => ControlsSettingsTab.Build(Context, _rows, theme, out _resetBindings)),
-            ("Gameplay", () => GameplaySettingsTab.Build(_rows, theme)),
+            ("Gameplay", () => [ExperienceBand.Build(_rows, theme), .. SettingsPanelBuilder.Build(_rows, theme, "Gameplay", GameplayMenu.Panels)]),
+            ("Interface", () => [ExperienceBand.Build(_rows, theme), .. SettingsPanelBuilder.Build(_rows, theme, "Interface", InterfaceMenu.Panels)]),
         ];
 
         if (Context.Presets.LockedPreset is null)
@@ -198,7 +202,7 @@ public sealed class SettingsScreen : ShellScreen
             var reset = new Button(theme, "Reset")
             {
                 Accent = ButtonAccent.Text,
-                LeadingGlyph = static (painter, centre, size, ink) => OpenIGI.UI.Kit.KitIcons.Draw(painter, OpenIGI.UI.Kit.KitIcon.History, centre, size, ink),
+                LeadingGlyph = KitIcons.Glyph(KitIcon.History),
                 GlyphSize = 16f,
                 TextSize = 16f,
                 Tracking = 0.12f,
@@ -456,9 +460,16 @@ public sealed class SettingsScreen : ShellScreen
             && Focus?.Focused is Control focused
             && _activeTab >= 0 && _activeTab < _tabRows.Count)
         {
+            // Past the rows that are not on screen: an Advanced panel's closed rows, and those whose setting is off.
             List<Control> rows = _tabRows[_activeTab];
             int index = rows.IndexOf(focused);
-            int next = index + (direction == NavDirection.Down ? 1 : -1);
+            int step = direction == NavDirection.Down ? 1 : -1;
+            int next = index + step;
+            while (index >= 0 && next >= 0 && next < rows.Count && rows[next].Visibility != Visibility.Visible)
+            {
+                next += step;
+            }
+
             if (index >= 0 && next >= 0 && next < rows.Count)
             {
                 Focus.Focus(rows[next]);
@@ -535,9 +546,10 @@ public sealed class SettingsScreen : ShellScreen
             Slider slider => slider.Label,
             OptionCycler cycler => cycler.Caption,
             Dropdown dropdown => dropdown.Label,
-            TabStrip strip when !ReferenceEquals(strip, _tabs) => "Quality preset",
+            TabStrip strip when _bandTitles.TryGetValue(strip, out string? band) => band,
             KeyBindingRow binding => binding.Action,
             ActionRow action => action.Caption,
+            ExpanderRow expander => expander.Caption,
             Button button => button.Text,
             _ => string.Empty,
         };
@@ -559,14 +571,39 @@ public sealed class SettingsScreen : ShellScreen
     }
 
     // What a row chooses between, and which it holds: for the panel beside the rows to list. Nothing for a row that
-    // chooses between nothing, or between more than a panel should list.
+    // chooses between nothing, or between more than a panel should list. A reading that cannot be chosen -- Custom -- is
+    // listed only while it is the one held.
     private static (IReadOnlyList<string> Options, int Current) Choices(Control? control) => control switch
     {
         OptionCycler { Options.Count: > 1 and <= 8 } cycler => (cycler.Options, cycler.SelectedIndex),
-        Dropdown { Options.Count: > 1 and <= 8 } dropdown => (dropdown.Options, dropdown.SelectedIndex),
-        TabStrip { Tabs.Count: > 1 and <= 8 } strip when !ReferenceEquals(strip, null) => (strip.Tabs, strip.SelectedIndex),
+        Dropdown { Options.Count: > 1 and <= 8 } dropdown => Offered(dropdown.Options, dropdown.SelectedIndex, dropdown.Offered),
+        TabStrip { Tabs.Count: > 1 and <= 8 } strip => Offered(
+            strip.Tabs, strip.SelectedIndex, i => i == strip.SelectedIndex || strip.TabEnabled is null || strip.TabEnabled(i)),
         _ => ([], -1),
     };
+
+    // The options a row offers, and where the one held stands among them.
+    private static (IReadOnlyList<string> Options, int Current) Offered(IReadOnlyList<string> options, int selected, Func<int, bool> offered)
+    {
+        var shown = new List<string>(options.Count);
+        int current = -1;
+        for (int i = 0; i < options.Count; i++)
+        {
+            if (!offered(i))
+            {
+                continue;
+            }
+
+            if (i == selected)
+            {
+                current = shown.Count;
+            }
+
+            shown.Add(options[i]);
+        }
+
+        return (shown, current);
+    }
 
     // When a change to the row takes hold, and what the setting started as.
     private List<(string Text, OpenIGI.Core.Graphics.Bgra32 Ink)> Tags(Control? control, ICVar? variable)
@@ -650,8 +687,7 @@ public sealed class SettingsScreen : ShellScreen
 
     /// <summary>Deals a category's groups into columns of glass panels and returns the scrolling page holding them.</summary>
     /// <remarks>
-    /// A group longer than a panel should be continues in the next one under the same heading, and each
-    /// panel goes to whichever column is shortest so far, so the columns end near the same height. The focus
+    /// Each panel goes to whichever column is shortest so far, so the columns end near the same height. The focus
     /// walk registered here runs down each column and then on to the next.
     /// </remarks>
     private ScrollView BuildColumns(UiTheme theme, List<SettingsGroup> groups, int tab)
@@ -662,14 +698,18 @@ public sealed class SettingsScreen : ShellScreen
         {
             if (group.Banner is not null)
             {
+                foreach (Control control in group.Rows)
+                {
+                    _bandTitles[control] = group.Title;
+                }
+
                 bands.Add(group);
                 continue;
             }
 
-            for (int start = 0; start < group.Rows.Count; start += MaxRowsPerPanel)
-            {
-                panels.Add(new SettingsGroup(group.Title, group.Rows.GetRange(start, Math.Min(MaxRowsPerPanel, group.Rows.Count - start))));
-            }
+            // Whole, always: a long group cut in two read as two panels of the same name, and the groups are written to a
+            // length a panel can hold.
+            panels.Add(group);
         }
 
         int most = tab == _controlsTab ? _controlsColumns : _columns;
@@ -700,7 +740,7 @@ public sealed class SettingsScreen : ShellScreen
             }
 
             stacks[shortest].AddChild(Panel(theme, panel, compact));
-            heights[shortest] += panel.Rows.Count + 2;
+            heights[shortest] += panel.Rows.Count(static row => row.Visibility == Visibility.Visible) + 2;
             columnRows[shortest].AddRange(panel.Rows);
         }
 

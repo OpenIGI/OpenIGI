@@ -27,4 +27,13 @@ public sealed record Igi1GuestPlayerStart(HumanPlayerTask Task, ObjectCollisionI
 
     /// <summary>Gets the level's material row for a human, which a line going into the player enters.</summary>
     public int HumanMaterial { get; init; }
+
+    /// <summary>
+    /// Gets the ground it walks on where that is more than the level's own: water that holds it up, say (<see cref="FloatingGround"/>).
+    /// <see langword="null"/> for the level's ground as it is.
+    /// </summary>
+    public IGroundHeightField? Ground { get; init; }
+
+    /// <summary>Gets what its rounds' damage is multiplied by as it strikes what the level holds.</summary>
+    public float DamageToHost { get; init; } = 1f;
 }

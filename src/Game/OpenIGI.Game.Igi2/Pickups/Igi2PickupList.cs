@@ -94,11 +94,23 @@ public sealed class Igi2PickupList
         return false;
     }
 
+    /// <summary>
+    /// Gets or sets whether the list is a co-op client's, whose guns thrown down are the server's to lay: what this level throws
+    /// down itself -- a guard's copy dying, its own player's swap -- is not laid, and only the server's guns are
+    /// (<see cref="Igi2GunPickup.IsReplica"/>).
+    /// </summary>
+    public bool IsReplica { get; set; }
+
     /// <summary>Puts a pickup made at run time on the list, as <c>GunPickup_CreateHandler</c> (<c>igi2 0x46A729</c>) registers it.</summary>
     /// <param name="pickup">The pickup.</param>
     public void Add(Igi2GunPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
+        if (IsReplica && !pickup.IsReplica)
+        {
+            return;
+        }
+
         _items.Add(pickup);
         if (Dynamic is { } dynamic)
         {

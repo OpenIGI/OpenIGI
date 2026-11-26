@@ -90,6 +90,216 @@ public sealed class Igi2WorldEffectTests
         Assert.Contains(m.Tree.OfType<Igi2EditBoneObjTask>(), static f => f.Clips.Count > 0 && f.Model.Length > 0);
     }
 
+    /// <summary>
+    /// A figure's controllers step themselves, as every new <c>AnimController</c> does (<c>AnimController_CreateHandler</c>): its clip plays,
+    /// and as one ends the next of its list plays (<c>EditBoneObj_RunHandler</c>); a save read back starts its list again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_figure_plays_its_clips_in_turn()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        (List<Game.World.LoadedPack> packs, Engine.Resources.ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
+        Animation.Igi2AnimationLibrary clips = Animation.Igi2AnimationLibrary.Load(packs, resources);
+        Igi2EditBoneObjTask? figure = null;
+        foreach (Igi2EditBoneObjTask candidate in m.Tree.OfType<Igi2EditBoneObjTask>())
+        {
+            if (candidate.Clips.Count < 2 || candidate.Clips[0] == candidate.Clips[1]
+                || m.Level.ModelFor(candidate.Model)?.BoneHierarchy is not { } rig
+                || candidate.Clips.Take(2).Any(c => clips.Find(rig, c) is null))
+            {
+                continue;
+            }
+
+            figure = candidate;
+            break;
+        }
+
+        Assert.NotNull(figure);
+        figure.Prepare(clips, m.Level.ModelFor, figure.Model, new Core.Numerics.IgiRandom());
+        Formats.Animation.Igi2AnimationClip first = figure.Clip!;
+        Assert.Equal(figure.Clips[0], first.Name);
+
+        figure.Run(m.Run);
+        Assert.True(figure.ClipTime > 0, "The figure's clip did not move.");
+
+        int ticks = 0;
+        while (ReferenceEquals(figure.Clip, first) && ticks++ < 100_000)
+        {
+            figure.Run(m.Run);
+        }
+
+        Assert.Equal(figure.Clips[1], figure.Clip!.Name);
+
+        // EditBoneObj_DeSerializeDoneHandler: once a save is read, the figure's list plays again from its first clip.
+        ((Game.Saves.ISavedState)figure).LoadDone();
+        Assert.Equal(figure.Clips[0], figure.Clip!.Name);
+        Assert.Equal(0, figure.ClipTime);
+    }
+
+    /// <summary>A spline's waypoint is in the world only while its spline displays its waypoints (<c>SplineObjWaypoint_UpdateInternalDataHandler</c>).</summary>
+    [Fact]
+    public void A_waypoint_is_drawn_only_when_its_spline_displays_waypoints()
+    {
+        foreach (bool display in (bool[])[false, true])
+        {
+            Engine.Tasks.TaskTypeRegistry types = new();
+            Engine.Tasks.TaskTree tree = new(types);
+            Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+            Igi2SplineObjTask spline = (Igi2SplineObjTask)tree.New(root, types.Register<Igi2SplineObjTask>(Igi2SplineObjTask.TypeName));
+            spline.DisplayWaypoints = display;
+            Igi2SplineObjWaypointTask waypoint = (Igi2SplineObjWaypointTask)tree.New(spline, types.Register<Igi2SplineObjWaypointTask>(Igi2SplineObjWaypointTask.TypeName));
+            waypoint.WaypointModel = "400_01_1";
+
+            Igi2WorldScene scene = Igi2WorldScene.Build(root);
+            Assert.Equal(display, scene.Placements.Any(static p => p.TypeName == Igi2SplineObjWaypointTask.TypeName));
+        }
+    }
+
+    /// <summary>An object excluded from clipping against portals says so on its placement, and only it.</summary>
+    [Fact]
+    public void An_object_excluded_from_portal_clipping_says_so()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        Engine.Tasks.TaskType rigid = types.Register<Interaction.Igi2EditRigidObjTask>(Interaction.Igi2EditRigidObjTask.TypeName);
+        Interaction.Igi2EditRigidObjTask excluded = (Interaction.Igi2EditRigidObjTask)tree.New(root, rigid);
+        excluded.Model = "400_01_1";
+        excluded.IsExcludedFromPortalClipping = true;
+        Interaction.Igi2EditRigidObjTask room = (Interaction.Igi2EditRigidObjTask)tree.New(root, rigid);
+        room.Model = "400_02_1";
+
+        Igi2WorldScene scene = Igi2WorldScene.Build(root);
+        Assert.True(scene.Placements.Single(static p => p.Model == "400_01_1").IsExcludedFromPortalClipping);
+        Assert.False(scene.Placements.Single(static p => p.Model == "400_02_1").IsExcludedFromPortalClipping);
+    }
+
+    /// <summary>
+    /// A container whose condition fails takes a document out of the world and off the pickups' list; once it runs again the document
+    /// comes back, unless it was taken (<c>GenericPickup_RemoveHandler</c>, <c>GenericPickup_RegisterHandler</c>). A container inside it
+    /// goes with it and comes back only while it runs itself.
+    /// </summary>
+    [Fact]
+    public void A_containers_children_leave_the_world_and_come_back_with_it()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        Engine.Tasks.TaskType conditional = types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
+        Engine.Tasks.TaskType pickups = types.Register<Pickups.Igi2GenericPickupTask>(Pickups.Igi2GenericPickupTask.TypeName);
+        Flow.Igi2ConditionalContainerTask outer = (Flow.Igi2ConditionalContainerTask)tree.New(root, conditional);
+        Pickups.Igi2GenericPickupTask document = (Pickups.Igi2GenericPickupTask)tree.New(outer, pickups);
+        Flow.Igi2ConditionalContainerTask inner = (Flow.Igi2ConditionalContainerTask)tree.New(outer, conditional);
+        Pickups.Igi2GenericPickupTask key = (Pickups.Igi2GenericPickupTask)tree.New(inner, pickups);
+
+        Flow.Igi2LevelRun.RemoveFromWorld(outer);
+        Assert.False(document.IsInWorld);
+        Assert.False(key.IsInWorld);
+        Assert.False(inner.IsActive);
+
+        // The inner container does not run (its run byte is nought until its condition holds), so what it holds stays out.
+        Flow.Igi2LevelRun.PutInWorld(outer);
+        Assert.True(document.IsInWorld);
+        Assert.False(inner.IsActive);
+        Assert.False(key.IsInWorld);
+    }
+
+    /// <summary>
+    /// The container a level keeps its player under takes the player out of the world while a cutscene plays -- the player's remove
+    /// handler deletes the computer and clears the in-world byte -- and puts it back after (<c>Human_RegisterDynCubeObjHandler</c>).
+    /// Before, the player stayed in, and one caught working the balloon winch as location1/level3's outro began stood frozen beside
+    /// the scene's own David Jones.
+    /// </summary>
+    [Fact]
+    public void A_shut_container_takes_the_player_out_of_the_world()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        Engine.Tasks.TaskType conditional = types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
+        Engine.Tasks.TaskType players = types.Register<Player.Igi2HumanPlayerTask>("HumanPlayer");
+        Flow.Igi2ConditionalContainerTask container = (Flow.Igi2ConditionalContainerTask)tree.New(root, conditional);
+        Player.Igi2HumanPlayerTask task = (Player.Igi2HumanPlayerTask)tree.New(container, players);
+        (Player.Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.Player();
+        player.Computer = new Computer.Igi2Computer();
+        player.Computer.Open();
+        task.Human = player;
+
+        Flow.Igi2LevelRun.RemoveFromWorld(container);
+        Assert.False(player.IsActive);
+        Assert.False(player.Computer.IsOpen);
+
+        Flow.Igi2LevelRun.PutInWorld(container);
+        Assert.True(player.IsActive);
+    }
+
+    /// <summary>
+    /// A countdown is shown from the run its start expression holds until it runs out; taken out of the world its display goes, and the
+    /// next run while it counts puts it back (<c>MissionTimer_RunHandler</c>, <c>MissionTimer_RemoveHandler</c>).
+    /// </summary>
+    [Fact]
+    public void A_countdown_is_shown_while_it_counts_and_in_the_world()
+    {
+        Flow.Igi2MissionTimerTask timer = new() { StartExpression = "1", TimeInSeconds = 0.1f };
+        timer.Prepare();
+        Flow.Igi2LevelRun level = Level();
+        Assert.False(timer.IsShown);
+
+        timer.Run(level);
+        Assert.True(timer.IsShown);
+        Assert.Equal("00 : 00", timer.DisplayText);
+
+        timer.RemoveFromWorld();
+        Assert.False(timer.IsShown);
+        timer.Run(level);
+        Assert.True(timer.IsShown);
+
+        for (int tick = 0; tick < 10; tick++)
+        {
+            timer.Run(level);
+        }
+
+        Assert.Equal(Flow.Igi2MissionTimerStatus.Finished, timer.Status);
+        Assert.False(timer.IsShown);
+    }
+
+    /// <summary>An overlay up when its holder leaves the world comes down, and the infrared view with it (<c>OverlayHolder_RemoveHandler</c>).</summary>
+    [Fact]
+    public void An_overlay_comes_down_as_its_holder_leaves_the_world()
+    {
+        Flow.Igi2ScreenOverlay screen = new();
+        Flow.Igi2OverlayHolderTask holder = new() { VisibleExpression = "1", InfraredExpression = "1", OverlayType = 1, Screen = screen };
+        holder.Run(Level());
+        Assert.Equal(Flow.Igi2OverlayType.Zoom, screen.Overlay);
+        Assert.True(screen.IsInfrared);
+
+        holder.RemoveFromWorld();
+        Assert.Null(screen.Overlay);
+        Assert.False(screen.IsInfrared);
+    }
+
+    /// <summary>
+    /// A flock's birds are drawn as their <c>PolyListDynCubeObj</c> draws them: four triangles a bird, flat, both sides, tested against the
+    /// world's depth and written into none.
+    /// </summary>
+    [Fact]
+    public void A_flocks_birds_are_drawn_flat_and_double_sided()
+    {
+        World.Igi2BirdFlockTask flock = new() { Individuals = 10 };
+        flock.Prepare(new World.Igi2FlockRandom());
+        flock.Run(RainLevel());
+
+        Rendering.Headless.RecordingGraphicsDevice device = new();
+        using Presentation.Rendering.FlatPolygonDrawer drawer = new(device);
+        drawer.Draw([new Game.Player.TitleWorldPolygons(flock.Position, flock.Wings())], default, Core.Numerics.Matrix4f.Identity);
+
+        Rendering.Headless.RecordingGraphicsDevice.MeshDrawCall draw = Assert.Single(device.MeshDraws);
+        Assert.Equal(10 * 4, draw.TriangleCount);
+        Assert.Equal(Rendering.BlendMode.Opaque, draw.Blend);
+        Assert.Equal(Rendering.DepthState.TestOnly, draw.DepthState);
+        Assert.Equal(Rendering.CullMode.None, draw.CullMode);
+    }
+
     /// <summary>A building's lightmap info hands it its indoors ambient light as the level loads.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_buildings_lightmap_info_sets_its_inside_ambient()

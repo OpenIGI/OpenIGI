@@ -65,8 +65,8 @@ internal sealed class PlayerWallBlockLog
         }
 
         // Forward is the body's own facing, (sin, cos) — the way the walk carries it (PlayerBody.FacingBasis).
-        double fx = Math.Sin(_body.Yaw);
-        double fy = Math.Cos(_body.Yaw);
+        double fx = SimMath.Sin(_body.Yaw);
+        double fy = SimMath.Cos(_body.Yaw);
 
         string label = string.Empty;
         WorldRayHit nearest = default;

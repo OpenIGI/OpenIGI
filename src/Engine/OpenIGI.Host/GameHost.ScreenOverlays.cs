@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -154,7 +155,9 @@ public sealed partial class GameHost
             UiScale.Resolve(
                 _options.UiScale != UiScale.Automatic ? _options.UiScale : HudCVars.RetailHudScale.Value,
                 _window.Width,
-                _window.Height));
+                _window.Height),
+            _inspectorEye,
+            _inspectorTangent);
     }
 
     /// <summary>The mission's status messages, for a title's player standing in it in the mission's own player's stead.</summary>
@@ -177,6 +180,9 @@ public sealed partial class GameHost
 
     private readonly List<StatusMessageDisplay> _guestMessages = [];
 
+    // The other players' names and fallen marks a title running its own level tells of; the soldier renderer's are the rest.
+    private Game.Multiplayer.ICoopMarks? CoopMarks => TitlePlayer as Game.Multiplayer.ICoopMarks;
+
     /// <summary>Draws what the mods lay over the player's view, after the game's HUD and status and before a cut-scene's framing.</summary>
     /// <param name="state">The frame loop's state, whose sprite batch they draw into.</param>
     /// <param name="view">The frame's view, whose eye and projection place their markers.</param>
@@ -195,6 +201,28 @@ public sealed partial class GameHost
         foreach (IHudOverlay overlay in _hudOverlays)
         {
             overlay.Draw(frame);
+        }
+
+        state.Batch.End();
+    }
+
+    /// <summary>The player's brightness over a world drawn straight into the back buffer, which no resolve exposes.</summary>
+    /// <remarks>Drawn where the resolve would have run, so it reaches the world and not the interface; see <see cref="DirectBrightness"/>.</remarks>
+    private void DrawDirectBrightness(FrameLoopState state)
+    {
+        Span<OpenIGI.Core.Graphics.Bgra32> fills = stackalloc OpenIGI.Core.Graphics.Bgra32[DirectBrightness.MaximumFills];
+        int count = DirectBrightness.Fills(ExposureCVars.Exposure.Value, _device.DisplayEncodes, fills);
+        if (count == 0)
+        {
+            return;
+        }
+
+        _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+        state.Batch.Begin();
+        var screen = new RectF(0f, 0f, SafeWindowWidth, SafeWindowHeight);
+        foreach (OpenIGI.Core.Graphics.Bgra32 fill in fills[..count])
+        {
+            state.Batch.FillRect(screen, fill, BlendMode.Modulate2X);
         }
 
         state.Batch.End();
@@ -238,6 +266,10 @@ public sealed partial class GameHost
             _device.ResolveScene(postProcess);
             EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
         }
+        else
+        {
+            DrawDirectBrightness(state);
+        }
 
         _device.BeginStageTiming(RenderStage.UserInterface);
 
@@ -252,6 +284,7 @@ public sealed partial class GameHost
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             titleHud.ShowMissionMessages(GuestMissionMessages());
+            titleHud.ShowView(_inspectorEye, _inspectorTangent);
             titleHud.Draw(state.Batch, titleHudPlayer, _window.Width, _window.Height, _options.UiScale);
             state.Batch.End();
         }
@@ -259,6 +292,7 @@ public sealed partial class GameHost
         MissionHudFrame hudFrame = HudFrame(remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
         _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
         DrawRemasteredBinoculars(state, view, binocularRangeMetres);
+        DrawRemasteredThermal(state);
 
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
         DrawModHudOverlays(state, view);
@@ -384,36 +418,43 @@ public sealed partial class GameHost
                 _scoreboardUp ? ScoreboardHand(board) : null,
                 session.Relayed,
                 session.Mode,
-                besideVote: voteBesideBoard);
+                besideVote: voteBesideBoard,
+                avatarOf: BoardAvatar);
             state.Batch.End();
         }
 
-        // The fallen teammates, each marked where it lies with the same prompt anything usable gets: its ring is the revival.
-        if (_remasteredHud is { IsReady: true } reviveHud && _soldiers?.ReviveMarkers() is { Count: > 0 } fallen)
+        // A completed mission's rank screen, over the level it stands still.
+        DrawScoreScreen(state);
+
+        // The fallen teammates, each marked where it lies: a cross in a disc, its ring the revival; and a fall told as it happens.
+        IReadOnlyList<Game.Ai.ReviveMarker> fallen = [.. _soldiers?.ReviveMarkers() ?? [], .. CoopMarks?.ReviveMarkers() ?? []];
+        UpdateDownedAlerts(fallen);
+        if (_remasteredHud is { IsReady: true } reviveHud && (fallen.Count > 0 || _downAlerts.Count > 0))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             foreach (Game.Ai.ReviveMarker mark in fallen)
             {
-                reviveHud.DrawInteractionPrompt(
-                    state.Batch,
-                    new InteractionPromptView(
-                        mark.AnchorMetres,
-                        1f,
-                        1f,
-                        "+",
-                        $"Revive {mark.Name}",
-                        mark.Progress > 0f
-                            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Reviving {mark.Progress * 100f:0}%, stay close")
-                            : "Stand beside them for 5 seconds",
-                        mark.Progress),
-                    eye,
-                    horizontalTangent,
-                    aspectRatio,
-                    SafeWindowWidth,
-                    SafeWindowHeight);
+                reviveHud.DrawReviveMarker(state.Batch, mark, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             }
 
+            int line = 0;
+            foreach ((string name, double metres, float opacity) in DownedAlertsShown(eye.Position))
+            {
+                reviveHud.DrawDownedAlert(state.Batch, line++, name, metres, opacity, SafeWindowWidth, SafeWindowHeight);
+            }
+
+            state.Batch.End();
+        }
+
+        // This player's spawn protection while it lasts: the bar a share of what it began with.
+        float shieldLeft = (TickObserver as ISessionScoreboard)?.OwnShield ?? 0f;
+        _shieldTotal = shieldLeft <= 0f ? 0f : Math.Max(_shieldTotal, shieldLeft);
+        if (shieldLeft > 0f && _remasteredHud is { IsReady: true } shieldHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            shieldHud.DrawShield(state.Batch, shieldLeft, _shieldTotal, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 
@@ -440,7 +481,9 @@ public sealed partial class GameHost
             if (shown is Game.Multiplayer.Modes.MatchHud hud)
             {
                 string useKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.Activate)) ?? "E";
-                matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
+                // A menu up over play takes the line under the crosshair's place: what could be done there waits until it shuts.
+                bool menuUp = _teamMenuUp || _buyMenuUp;
+                matchHud.DrawMatchHud(state.Batch, menuUp ? hud with { Hint = null } : hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
                 if (hud.MapVote is { } vote)
                 {
                     matchHud.DrawMapVote(
@@ -474,7 +517,7 @@ public sealed partial class GameHost
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            spectateHud.DrawSpectating(state.Batch, watched, SafeWindowWidth, SafeWindowHeight);
+            spectateHud.DrawSpectating(state.Batch, watched, KillFeedShown(), SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 
@@ -497,12 +540,12 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // The kills of late, down the top right corner.
-        if (TickObserver is ISessionScoreboard { KillFeed: { Count: > 0 } kills } && _remasteredHud is { IsReady: true } feedHud)
+        // The kills of late, down the top right corner, and the player's own announced.
+        if (HudCVars.KillFeed.Value && KillFeedShown() is { } feed && _remasteredHud is { IsReady: true } feedHud)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            feedHud.DrawKillFeed(state.Batch, kills, SafeWindowWidth, SafeWindowHeight);
+            feedHud.DrawKillFeed(state.Batch, feed, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 
@@ -521,13 +564,21 @@ public sealed partial class GameHost
         }
 
         // The other players' names over their heads, on the same eye and lens as the marker.
-        if (_remasteredHud is { IsReady: true } tagHud && _soldiers?.NameTags() is { Count: > 0 } tags)
+        IReadOnlyList<Game.Ai.WorldNameTag> tags = [.. _soldiers?.NameTags() ?? [], .. CoopMarks?.NameTags() ?? []];
+        if (_remasteredHud is { IsReady: true } tagHud && tags.Count > 0)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             tagHud.DrawNameTags(state.Batch, tags, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
+
+        // A developer's look at the session's overlays, with made-up players.
+        DrawOverlayPreview(state, eye, horizontalTangent, aspectRatio);
+
+        // A replay watched: its transport bar, over all of it; a race: its timer and splits.
+        DrawReplayBar(state);
+        DrawRaceHud(state, eye, horizontalTangent, aspectRatio);
 
         // In play the mission's messages are the remastered display's, each title's in its own look (Igi1HudOverlay and the
         // title's own display); the cards below stand in only for a cutscene's subtitles where the original's face is missing.
@@ -574,7 +625,7 @@ public sealed partial class GameHost
     // found from anywhere: held on the screen's edge when out of view, with their distance.
     private IReadOnlyList<HudMark> ModePointMarks(IReadOnlyList<HudMark> marks)
     {
-        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy, Layout: { } layout })
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: MatchModes.SearchAndDestroy, Layout: { } layout })
         {
             return marks;
         }

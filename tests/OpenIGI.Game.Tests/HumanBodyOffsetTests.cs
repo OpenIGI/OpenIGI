@@ -62,36 +62,38 @@ public sealed class HumanBodyOffsetTests
     }
 
     [Fact]
-    public void HoldingBothStrafeKeysCancelsRatherThanPickingOne()
+    public void HoldingBothStrafeKeysStepsOutAndBackRatherThanPickingOne()
     {
-        Assert.Equal(-Range, HumanBodyOffset.SidewaysTarget(true, false, Range));
-        Assert.Equal(Range, HumanBodyOffset.SidewaysTarget(false, true, Range));
-        Assert.Equal(0f, HumanBodyOffset.SidewaysTarget(true, true, Range));
-        Assert.Equal(0f, HumanBodyOffset.SidewaysTarget(false, false, Range));
+        const float Rate = 100f;
+        Assert.Equal(-Rate, HumanBodyOffset.Sideways(0f, true, false, Range, Rate));
+        Assert.Equal(Rate, HumanBodyOffset.Sideways(0f, false, true, Range, Rate));
+        Assert.Equal(0f, HumanBodyOffset.Sideways(0f, true, true, Range, Rate));
+        Assert.Equal(Range, HumanBodyOffset.Sideways(Range, true, true, Range, Rate));
+        Assert.Equal(Range - Rate, HumanBodyOffset.Sideways(Range, false, false, Range, Rate));
     }
 
     [Fact]
-    public void TheForwardOffsetOnlyExistsWhileCrouched()
+    public void TheRaiseOnlyExistsWhileCrouched()
     {
         // The whole second block sits behind the crouch byte at Human+829.
-        Assert.Equal(Range, HumanBodyOffset.ForwardTarget(forward: true, crouching: true, Range));
-        Assert.Equal(0f, HumanBodyOffset.ForwardTarget(forward: true, crouching: false, Range));
-        Assert.Equal(0f, HumanBodyOffset.ForwardTarget(forward: false, crouching: true, Range));
+        Assert.Equal(Range, HumanBodyOffset.UpTarget(forward: true, crouching: true, Range));
+        Assert.Equal(0f, HumanBodyOffset.UpTarget(forward: true, crouching: false, Range));
+        Assert.Equal(0f, HumanBodyOffset.UpTarget(forward: false, crouching: true, Range));
     }
 
     [RequiresGameDataFact]
-    public void StandingLeavesTheForwardOffsetWhereItWasInsteadOfEasingItBack()
+    public void StandingLeavesTheRaiseWhereItWasInsteadOfEasingItBack()
     {
         // A consequence of that gate rather than a separate rule, and worth pinning because it is the
         // kind of thing a tidier implementation would "fix": stand up mid-lean and the forward offset
         // stops where it is. Only the sideways one keeps moving.
         HumanPlayerParameters parameters = RetailPlayerParameters.Value;
 
-        HumanBodyOffsets offset = new(Sideways: 100f, Forward: 500f);
+        HumanBodyOffsets offset = new(Sideways: 100f, Up: 500f);
         HumanBodyOffsets after = HumanBodyOffset.Advance(
             offset, left: false, right: false, forward: true, crouching: false, parameters);
 
-        Assert.Equal(500f, after.Forward);
+        Assert.Equal(500f, after.Up);
         Assert.True(after.Sideways < 100f, "the sideways offset should still be easing back to zero");
     }
 
@@ -101,11 +103,11 @@ public sealed class HumanBodyOffsetTests
         HumanPlayerParameters parameters = RetailPlayerParameters.Value;
 
         // 0.85 m each way, and 0.25 s truncated to 7 ticks rather than rounded to 8.
-        Assert.Equal(3481.6f, parameters.Distance4, 2);
-        Assert.Equal(3481.6f, parameters.Distance5, 2);
-        Assert.Equal(7, parameters.Duration6Ticks);
+        Assert.Equal(3481.6f, parameters.LeanSideUnits, 2);
+        Assert.Equal(3481.6f, parameters.LeanUpUnits, 2);
+        Assert.Equal(7, parameters.LeanTicks);
 
         // Which makes the sideways lean about 12 cm a tick.
-        Assert.Equal(0.121, HumanBodyOffset.Rate(parameters.Distance4, parameters.Duration6Ticks) / 4096.0, 0.002);
+        Assert.Equal(0.121, HumanBodyOffset.Rate(parameters.LeanSideUnits, parameters.LeanTicks) / 4096.0, 0.002);
     }
 }

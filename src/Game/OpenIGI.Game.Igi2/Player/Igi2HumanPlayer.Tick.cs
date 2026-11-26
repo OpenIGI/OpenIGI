@@ -85,7 +85,7 @@ public sealed partial class Igi2HumanPlayer
     /// </item>
     /// </list>
     /// <para>
-    /// Not ported yet: the action menu's pickups. The degraded-copy slowdown is inert: its factor is one.
+    /// The pickups offer themselves to the action menu from <see cref="Pickup"/>. The degraded-copy slowdown is inert: its factor is one.
     /// </para>
     /// </remarks>
     public void Update()
@@ -112,7 +112,8 @@ public sealed partial class Igi2HumanPlayer
 
         SoundWater();
         IsWeaponDisplay = !IsSwimming;
-        if (GroundCollider is not null && GroundIntersection.Normal.Z < SteepGround)
+        // Project I.G.I.'s body meets steep ground with its own wall sweep and slide, so the keys stay its to read.
+        if (GroundCollider is not null && GroundIntersection.Normal.Z < SteepGround && !StandsOnIgi1Feet)
         {
             Channels[Igi2HumanChannel.MoveForwards] = 0f;
             Channels[Igi2HumanChannel.MoveBackwards] = 0f;
@@ -219,7 +220,6 @@ public sealed partial class Igi2HumanPlayer
         }
 
         View.DampenOffsets();
-        MaintainCough();
     }
 
     /// <summary>How deep the water is, and what it allows.</summary>
@@ -269,6 +269,9 @@ public sealed partial class Igi2HumanPlayer
         // game's ladder, which looks for none, nothing is underfoot.
         if (AttachParent is not null)
         {
+            // Carried, the player is I.G.I. 2's to move: Project I.G.I.'s body, if it stood on one, is seated afresh on its
+            // footing when it is let go -- off a ladder's top, the roof the ladder reaches.
+            Igi1Feet?.Unseat();
             if (AttachParent is Interaction.IIgi2Ladder { KeepsFooting: false })
             {
                 Signal &= ~Igi2PlayerSignal.Grounded;
@@ -284,6 +287,13 @@ public sealed partial class Igi2HumanPlayer
             return;
         }
 
+        if (StandsOnIgi1Feet)
+        {
+            MoveOnIgi1Feet(Igi1Feet!);
+            return;
+        }
+
+        Igi1Feet?.Unseat();
         if ((Signal & Igi2PlayerSignal.Grounded) == 0 || IsDead)
         {
             GroundMovementSpeed = default;

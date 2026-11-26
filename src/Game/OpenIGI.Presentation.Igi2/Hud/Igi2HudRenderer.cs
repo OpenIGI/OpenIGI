@@ -24,11 +24,18 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
     /// <inheritdoc/>
     public void ShowMissionMessages(IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> messages) => _missionMessages = messages ?? [];
 
+    // The camera the frame was drawn from, when the host gave it: see ShowView.
+    private (OpenIGI.Core.Graphics.Camera3D Eye, float TanX)? _view;
+
+    /// <inheritdoc/>
+    public void ShowView(OpenIGI.Core.Graphics.Camera3D eye, float horizontalTangent) => _view = (eye, horizontalTangent);
+
     /// <inheritdoc/>
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (player is not Igi2TitlePlayer title || screenWidth <= 0 || screenHeight <= 0) { return; }
+        _weaponTables = title.Inventory?.Tables ?? _weaponTables;
         // The status art by the interface scale every title's is drawn at (UiScale), for the display I.G.I. 2's was laid out at:
         // retail places it in the display's own pixels, so it lays out here in the pixels of a display that many times smaller.
         // World-space sights and view flashes stay in pixels.
@@ -46,12 +53,19 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         DrawCutsceneFraming(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawZoomOverlay(batch, title, width, height); }
         // The remastered display in place of the status display, inventory, action row and messages, where it is chosen. Neither
-        // through the remastered binoculars, whose view is the optics' alone, as Project I.G.I.'s is.
+        // through the remastered binoculars or thermal goggles, whose view is the optics' alone, as Project I.G.I.'s is.
         bool remastered = RemasteredChosen;
-        bool optics = title.IsBinocularsOpen && RemasteredHudPresentation.UsesRemasteredTitleOptics;
+        bool optics = (title.IsBinocularsOpen && RemasteredHudPresentation.UsesRemasteredTitleOptics)
+            || (title.IsThermalGoggles && RemasteredHudPresentation.UsesRemasteredTitleThermal);
         if (remastered && !optics)
         {
             DrawRemastered(batch, title, screenWidth, screenHeight, requestedScale);
+
+            // A cutscene's subtitle in the original's face and place, whichever display is chosen.
+            if (title.IsCutscenePlaying)
+            {
+                DrawCutsceneLine(batch, title, width, height);
+            }
         }
         else if (!optics)
         {
@@ -63,6 +77,9 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
                 DrawInteraction(batch, title.Human, width, height);
             }
         }
+
+        // The countdowns are tasks of the game screen of their own, drawn over it whatever else it shows.
+        DrawMissionTimers(batch, title, screenWidth, screenHeight);
 
         // The remastered crosshair stands in for the original's sight where it is chosen; scopes keep their own.
         if (!(remastered && HudCVars.Crosshair.Value))

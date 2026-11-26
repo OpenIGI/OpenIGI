@@ -257,8 +257,8 @@ public static class SoldierDeathFall
     /// </remarks>
     public static Vector3d RotateAboutZ(Vector3d v, float radians)
     {
-        float sin = MathF.Sin(radians);
-        float cos = MathF.Cos(radians);
+        float sin = SimMathF.Sin(radians);
+        float cos = SimMathF.Cos(radians);
         return new Vector3d((cos * v.X) - (sin * v.Y), (sin * v.X) + (cos * v.Y), v.Z);
     }
 

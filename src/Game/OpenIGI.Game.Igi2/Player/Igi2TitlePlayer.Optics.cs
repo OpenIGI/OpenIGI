@@ -20,7 +20,27 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
     private long _contactsTick = -1;
 
     /// <inheritdoc/>
-    public bool IsBinocularsOpen => !IsCutscenePlaying && !Human.IsDead && ZoomOverlay == BinocularOverlayType;
+    /// <remarks>
+    /// Not while the view is infrared: the binoculars' overlay then draws the thermal goggles' frame alone, with no range, compass
+    /// or marks (<c>BinocularOverlay_Draw</c>).
+    /// </remarks>
+    public bool IsBinocularsOpen => !IsCutscenePlaying && !Human.IsDead && ZoomOverlay == BinocularOverlayType && !Human.IsInfraEnabled;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>isDrawInfra</c>: the binoculars' overlay up while the player sees in infrared -- the thermal goggles raised
+    /// (<c>BinocularOverlay_Draw</c>) -- a scope that sees in infrared up (<c>SniperOverlay_CreateHandler</c>), or an overlay the
+    /// scripts put up whose infrared expression holds (<c>OverlayHolder_RunHandler</c>). Never in a cutscene, which turns it off
+    /// (<c>CutScene</c>), nor for a dead player.
+    /// </remarks>
+    public bool IsInfraredView => ActingStandIn is not null
+        ? !IsCutscenePlaying && StandIn is not { IsDead: true } && (ScreenOverlay?.IsInfrared == true || _standInThermal)
+        : !IsCutscenePlaying && !Human.IsDead
+            && (ScreenOverlay?.IsInfrared == true || IsInfraredScope || (Human.IsInfraEnabled && ZoomOverlay == BinocularOverlayType));
+
+    /// <inheritdoc/>
+    /// <remarks>The infrared view with no thermal scope up: the goggles raised, or an infrared overlay the scripts put up.</remarks>
+    public bool IsThermalGoggles => IsInfraredView && !IsInfraredScope;
 
     /// <inheritdoc/>
     /// <remarks>The bearing of the view's forward across the ground, as the retail compass reads it (<c>BinocularOverlay_DrawCompass</c>).</remarks>
@@ -45,7 +65,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
     /// <inheritdoc/>
     /// <remarks>
     /// Each held slot: seen this tick at full strength, fading over the slot's keeping once lost; hostile, or one of the
-    /// player's side, or out of the fight once dead. Built once a tick.
+    /// player's side, or out of the fight once dead. Built once a tick. A slot whose line to the head was blocked when last
+    /// registered is left out, as <c>BinocularOverlay_TrackMovement</c> draws no box for an occluded slot: the binoculars pick
+    /// out the people they can see, not the ones behind a wall or inside a building.
     /// </remarks>
     public IReadOnlyList<TitleBinocularContact> BinocularContacts
     {
@@ -66,7 +88,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerOptics
             long now = BinocularClock;
             for (int slot = 0; slot < _marks.Length; slot++)
             {
-                if (_marks[slot] is not { } mark)
+                if (_marks[slot] is not { IsOccluded: false } mark)
                 {
                     continue;
                 }

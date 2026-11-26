@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
@@ -222,7 +223,7 @@ public sealed class TerrainSmoothField
 
         double length = Math.Sqrt((slopeX * slopeX) + (slopeY * slopeY) + 1.0);
         normal = (-slopeX / length, -slopeY / length, 1.0 / length);
-        return (limit * Math.Tanh(delta / limit), weight);
+        return (limit * SimMath.Tanh(delta / limit), weight);
     }
 
     /// <summary>Evaluates the smooth surface's height and slope at a point.</summary>

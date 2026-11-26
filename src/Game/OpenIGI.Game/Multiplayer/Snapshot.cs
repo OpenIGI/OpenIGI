@@ -31,6 +31,14 @@ namespace OpenIGI.Game.Multiplayer;
 /// </param>
 /// <param name="ImpactSequence">The number of the first of <paramref name="Impacts"/> among all its client was ever sent.</param>
 /// <param name="SenseSequence">The number of the first of <paramref name="Senses"/> among all its client was ever sent.</param>
+/// <param name="Fired">
+/// What the level's bodies fired lately -- rounds, grenades, rockets -- as the world writes it, for each client to fire the same
+/// from its own copies of them, harmless; or <see langword="null"/> where it sends none.
+/// </param>
+/// <param name="Vehicles">
+/// The level's vehicles and guns -- its cars, trains, turrets and mounted guns -- as the world writes them, for each client to
+/// stand its copies where the server's are; or <see langword="null"/> where it sends none.
+/// </param>
 public sealed record Snapshot(
     long Tick,
     ReplicatedHuman[] Humans,
@@ -43,7 +51,9 @@ public sealed record Snapshot(
     ReplicatedProjectile[]? Projectiles = null,
     byte[]? Tasks = null,
     uint ImpactSequence = 0,
-    uint SenseSequence = 0)
+    uint SenseSequence = 0,
+    byte[]? Fired = null,
+    byte[]? Vehicles = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -94,7 +104,7 @@ public sealed record Snapshot(
 /// </remarks>
 public static class SnapshotCodec
 {
-    private const int FieldCount = 15;
+    private const int FieldCount = 16;
 
     // A level's doors, eight to a byte: the largest of the original's levels has some hundreds.
     private const int MaxDoorBytes = 512;
@@ -104,6 +114,12 @@ public static class SnapshotCodec
 
     // The level's tasks' state: a few bits each, and a plant's place.
     private const int MaxTaskBytes = 4096;
+
+    // What was fired over the last few ticks: a launch is some twenty bytes.
+    private const int MaxFiredBytes = 4096;
+
+    // The level's vehicles and guns: a car some thirty bytes.
+    private const int MaxVehicleBytes = 4096;
     private const uint AllFields = (1u << FieldCount) - 1;
 
     /// <summary>Writes a snapshot.</summary>
@@ -140,7 +156,7 @@ public static class SnapshotCodec
             uint mask = AllFields;
             if (known)
             {
-                mask = Changed(before, human);
+                mask = ReplicatedHumanDelta.Changed(before, human);
                 writer.WriteBool(mask != 0);
                 if (mask != 0)
                 {
@@ -148,7 +164,7 @@ public static class SnapshotCodec
                 }
             }
 
-            WriteFields(writer, mask, before, human);
+            ReplicatedHumanDelta.Write(writer, mask, before, human);
         }
 
         // The rest of the world -- doors, lifts, cameras, wrecks, projectiles, tasks: one bit for all of it while it stands as
@@ -250,6 +266,8 @@ public static class SnapshotCodec
         if (!worldSame)
         {
             WriteBlob(writer, snapshot.Tasks, baseline is null ? null : baseline.Tasks ?? [], MaxTaskBytes);
+            WriteBlob(writer, snapshot.Fired, baseline is null ? null : baseline.Fired ?? [], MaxFiredBytes);
+            WriteBlob(writer, snapshot.Vehicles, baseline is null ? null : baseline.Vehicles ?? [], MaxVehicleBytes);
         }
 
         // The rounds that landed: events, not state, so written whole and never against the baseline.
@@ -333,7 +351,7 @@ public static class SnapshotCodec
                 mask = reader.ReadBool() ? reader.ReadBits(FieldCount) : 0;
             }
 
-            humans[i] = ReadFields(ref reader, mask, before with { Id = id });
+            humans[i] = ReplicatedHumanDelta.Read(ref reader, mask, before with { Id = id });
             if (reader.IsOverflowed)
             {
                 return false;
@@ -452,6 +470,18 @@ public static class SnapshotCodec
             return false;
         }
 
+        byte[]? fired = baseline?.Fired;
+        if (!worldSame && !ReadBlob(ref reader, baseline, baseline?.Fired, MaxFiredBytes, out fired))
+        {
+            return false;
+        }
+
+        byte[]? vehicles = baseline?.Vehicles;
+        if (!worldSame && !ReadBlob(ref reader, baseline, baseline?.Vehicles, MaxVehicleBytes, out vehicles))
+        {
+            return false;
+        }
+
         uint impactCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
         uint impactSequence = impactCount == 0 ? 0 : reader.ReadBits(32);
         if (reader.IsOverflowed || impactCount > ReplicatedImpact.MaxPerSnapshot)
@@ -483,7 +513,7 @@ public static class SnapshotCodec
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks, impactSequence, senseSequence);
+        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks, impactSequence, senseSequence, fired, vehicles);
         return true;
     }
 
@@ -493,7 +523,9 @@ public static class SnapshotCodec
         && (a.Cameras ?? []).AsSpan().SequenceEqual(b.Cameras ?? [])
         && (a.Wrecks ?? []).AsSpan().SequenceEqual(b.Wrecks ?? [])
         && (a.Projectiles ?? []).AsSpan().SequenceEqual(b.Projectiles ?? [])
-        && (a.Tasks ?? []).AsSpan().SequenceEqual(b.Tasks ?? []);
+        && (a.Tasks ?? []).AsSpan().SequenceEqual(b.Tasks ?? [])
+        && (a.Fired ?? []).AsSpan().SequenceEqual(b.Fired ?? [])
+        && (a.Vehicles ?? []).AsSpan().SequenceEqual(b.Vehicles ?? []);
 
     // A blob of the world's: one bit when it is as the baseline had it, else its bytes.
     private static void WriteBlob(BitWriter writer, byte[]? blob, byte[]? baseline, int maxBytes)
@@ -533,96 +565,5 @@ public static class SnapshotCodec
         }
 
         return true;
-    }
-
-    private static uint Changed(in ReplicatedHuman a, in ReplicatedHuman b)
-    {
-        uint mask = 0;
-        if (a.Position != b.Position) { mask |= 1u << 0; }
-        if (!Same(a.Velocity, b.Velocity)) { mask |= 1u << 1; }
-        if (a.Yaw != b.Yaw) { mask |= 1u << 2; }
-        if (a.Pitch != b.Pitch) { mask |= 1u << 3; }
-        if (a.State != b.State) { mask |= 1u << 4; }
-        if (a.Action != b.Action) { mask |= 1u << 5; }
-        if (a.Weapon != b.Weapon) { mask |= 1u << 6; }
-        if (a.Health != b.Health) { mask |= 1u << 7; }
-        if (a.Team != b.Team) { mask |= 1u << 8; }
-        if (a.Flags != b.Flags) { mask |= 1u << 9; }
-        if (a.Shots != b.Shots) { mask |= 1u << 10; }
-        if (a.ActionSequence != b.ActionSequence) { mask |= 1u << 11; }
-        if (a.ClipTime != b.ClipTime) { mask |= 1u << 12; }
-        if (a.Source != b.Source) { mask |= 1u << 13; }
-        if (a.Platform != b.Platform) { mask |= 1u << 14; }
-        return mask;
-    }
-
-    private static bool Same(Vector3f a, Vector3f b) =>
-        BitConverter.SingleToUInt32Bits(a.X) == BitConverter.SingleToUInt32Bits(b.X)
-        && BitConverter.SingleToUInt32Bits(a.Y) == BitConverter.SingleToUInt32Bits(b.Y)
-        && BitConverter.SingleToUInt32Bits(a.Z) == BitConverter.SingleToUInt32Bits(b.Z);
-
-    private static void WriteFields(BitWriter writer, uint mask, in ReplicatedHuman before, in ReplicatedHuman human)
-    {
-        if ((mask & (1u << 0)) != 0)
-        {
-            writer.WriteVarInt(unchecked(human.Position.X - before.Position.X));
-            writer.WriteVarInt(unchecked(human.Position.Y - before.Position.Y));
-            writer.WriteVarInt(unchecked(human.Position.Z - before.Position.Z));
-        }
-
-        if ((mask & (1u << 1)) != 0)
-        {
-            writer.WriteSingle(human.Velocity.X);
-            writer.WriteSingle(human.Velocity.Y);
-            writer.WriteSingle(human.Velocity.Z);
-        }
-
-        if ((mask & (1u << 2)) != 0) { writer.WriteBits(human.Yaw, 16); }
-        if ((mask & (1u << 3)) != 0) { writer.WriteBits(human.Pitch, 16); }
-        if ((mask & (1u << 4)) != 0) { writer.WriteVarUInt(human.State); }
-        if ((mask & (1u << 5)) != 0) { writer.WriteVarUInt(human.Action); }
-        if ((mask & (1u << 6)) != 0) { writer.WriteVarUInt(human.Weapon); }
-        if ((mask & (1u << 7)) != 0) { writer.WriteBits(human.Health, 8); }
-        if ((mask & (1u << 8)) != 0) { writer.WriteBits(human.Team, 8); }
-        if ((mask & (1u << 9)) != 0) { writer.WriteBits((uint)human.Flags, 8); }
-        if ((mask & (1u << 10)) != 0) { writer.WriteBits(human.Shots, 8); }
-        if ((mask & (1u << 11)) != 0) { writer.WriteBits(human.ActionSequence, 8); }
-        if ((mask & (1u << 12)) != 0) { writer.WriteBits(human.ClipTime, 16); }
-        if ((mask & (1u << 13)) != 0) { writer.WriteVarUInt(human.Source); }
-        if ((mask & (1u << 14)) != 0) { writer.WriteBits(human.Platform, 8); }
-    }
-
-    private static ReplicatedHuman ReadFields(ref BitReader reader, uint mask, ReplicatedHuman human)
-    {
-        if ((mask & (1u << 0)) != 0)
-        {
-            human = human with
-            {
-                Position = new Int3(
-                    unchecked(human.Position.X + reader.ReadVarInt()),
-                    unchecked(human.Position.Y + reader.ReadVarInt()),
-                    unchecked(human.Position.Z + reader.ReadVarInt())),
-            };
-        }
-
-        if ((mask & (1u << 1)) != 0)
-        {
-            human = human with { Velocity = new Vector3f(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()) };
-        }
-
-        if ((mask & (1u << 2)) != 0) { human = human with { Yaw = (ushort)reader.ReadBits(16) }; }
-        if ((mask & (1u << 3)) != 0) { human = human with { Pitch = (ushort)reader.ReadBits(16) }; }
-        if ((mask & (1u << 4)) != 0) { human = human with { State = (ushort)reader.ReadVarUInt() }; }
-        if ((mask & (1u << 5)) != 0) { human = human with { Action = (ushort)reader.ReadVarUInt() }; }
-        if ((mask & (1u << 6)) != 0) { human = human with { Weapon = (ushort)reader.ReadVarUInt() }; }
-        if ((mask & (1u << 7)) != 0) { human = human with { Health = (byte)reader.ReadBits(8) }; }
-        if ((mask & (1u << 8)) != 0) { human = human with { Team = (byte)reader.ReadBits(8) }; }
-        if ((mask & (1u << 9)) != 0) { human = human with { Flags = (ReplicatedHumanCondition)reader.ReadBits(8) }; }
-        if ((mask & (1u << 10)) != 0) { human = human with { Shots = (byte)reader.ReadBits(8) }; }
-        if ((mask & (1u << 11)) != 0) { human = human with { ActionSequence = (byte)reader.ReadBits(8) }; }
-        if ((mask & (1u << 12)) != 0) { human = human with { ClipTime = (ushort)reader.ReadBits(16) }; }
-        if ((mask & (1u << 13)) != 0) { human = human with { Source = (ushort)reader.ReadVarUInt() }; }
-        if ((mask & (1u << 14)) != 0) { human = human with { Platform = (byte)reader.ReadBits(8) }; }
-        return human;
     }
 }

@@ -32,7 +32,7 @@ public sealed class RetailIgi2TerrainColliderTests
             Assert.Equal("terrain", hit.HitObject?.Owner);
 
             Vector3d origin = surface.Origin;
-            Assert.True(Igi2TerrainVertex.TrySample(surface.Tiles, ((Fpu)at.X - origin.X).F, ((Fpu)at.Y - origin.Y).F, out Igi2TerrainSample sample));
+            Assert.True(Igi2TerrainVertex.TrySample(surface.TileSpan, ((Fpu)at.X - origin.X).F, ((Fpu)at.Y - origin.Y).F, out Igi2TerrainSample sample));
             double height = ((Fpu)sample.RelativeZ + origin.Z).Value;
             Assert.Equal(new Vector3d(at.X, at.Y, height), hit.Position);
             Assert.Equal(((Fpu)(at.Z + 4096.0) - height).Value, hit.Distance);
@@ -135,7 +135,7 @@ public sealed class RetailIgi2TerrainColliderTests
     {
         float relativeX = (float)(tile.SampleX(x) + (fraction * tile.TexelWidth) - surface.Origin.X);
         float relativeY = (float)(tile.SampleY(y) + (fraction * tile.TexelHeight) - surface.Origin.Y);
-        Assert.True(Igi2TerrainVertex.TrySample(surface.Tiles, relativeX, relativeY, out Igi2TerrainSample sample));
+        Assert.True(Igi2TerrainVertex.TrySample(surface.TileSpan, relativeX, relativeY, out Igi2TerrainSample sample));
         return sample;
     }
 

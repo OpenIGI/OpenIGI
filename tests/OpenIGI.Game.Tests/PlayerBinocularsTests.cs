@@ -38,6 +38,41 @@ public sealed class PlayerBinocularsTests
         Assert.True(weapons.ConsumeBinocularToggle());
     }
 
+    /// <summary>
+    /// The next or previous weapon key, with the binoculars raised by their key, goes back to what was in hand before them, as
+    /// retail's cycler does (0x40F760 takes and clears savedWeapon first): from the knife, the knife, not on to the Glock (#69).
+    /// </summary>
+    [Theory]
+    [InlineData(PlayerInputSlot.NextWeapon)]
+    [InlineData(PlayerInputSlot.PreviousWeapon)]
+    public void A_weapon_key_puts_the_binoculars_away_for_the_weapon_held_before_them(PlayerInputSlot key)
+    {
+        PlayerWeapons weapons = new([20, 1, 30]);
+        weapons.Carry(Knife);
+        weapons.Carry(Glock);
+        weapons.Carry(Binoculars);
+        Equip(weapons);
+        Assert.Equal(Knife.WeaponId, weapons.InHand?.Weapon.WeaponId);
+
+        PlayerInputState input = new();
+        Press(weapons, input, PlayerInputSlot.Binoculars);
+        Assert.Equal(Binoculars.WeaponId, weapons.InHand?.Weapon.WeaponId);
+        Assert.True(weapons.ConsumeBinocularToggle());
+
+        Tick(weapons, input, Frame(key));
+        Assert.True(weapons.BinocularCloseQueued);
+        for (int i = 0; i < 4 * HumanViewSway.TicksToTravel && (weapons.State != HumanWeaponState.Ready || weapons.InHand?.Weapon.WeaponId == Binoculars.WeaponId); i++)
+        {
+            Tick(weapons, input, Frame());
+        }
+
+        Assert.Equal(Knife.WeaponId, weapons.InHand?.Weapon.WeaponId);
+
+        // Back from them, the key cycles as it always does.
+        Press(weapons, input, PlayerInputSlot.NextWeapon);
+        Assert.Equal(Glock.WeaponId, weapons.InHand?.Weapon.WeaponId);
+    }
+
     [Fact]
     public void BinocularsIgnoreFireReloadAndPeekActions()
     {

@@ -256,6 +256,11 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             Effects.AiEvent(request.AiEvent, request.AiEventFlags, request.Position, request.AiEventRange);
         }
 
+        if (!_replaying)
+        {
+            Started?.Invoke(request);
+        }
+
         return explosion;
     }
 
@@ -407,7 +412,12 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             : 60;
         if (r.FireballCount != 0)
         {
-            Dynamic.Add(new ExplosionSmoke(Random, at, (reach * 0.8999999761581421).F, smokeLife));
+            // Explosion0_SmokeRunHandler's two puffs go into the level's particles (Explosion0_AddSmoke); with no puffs made
+            // the smoke ran its clock and drew nothing.
+            Dynamic.Add(new ExplosionSmoke(Random, at, (reach * 0.8999999761581421).F, smokeLife)
+            {
+                Emit = Particles is { } particles ? puff => ExplosionSmoke.EmitInto(particles.Module, puff) : null,
+            });
         }
 
         if (r.FragmentCount != 0)
@@ -499,7 +509,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     private Vector3f RandomUnitVectorInCone(Vector3f axis, float cone)
     {
         Fpu turn = Draw() * 6.283185307179589;
-        Fpu tilt = new Fpu(Math.Tan(cone)) * Draw();
+        Fpu tilt = new Fpu(SimMath.Tan(cone)) * Draw();
         float sx = (Fpu.Sin(turn) * tilt).F;
         Fpu cy = tilt * Fpu.Cos(turn);
         Fpu norm = (Fpu)1.0 / Fpu.Sqrt((((Fpu)sx * sx) + (cy * cy)) + 1.0);

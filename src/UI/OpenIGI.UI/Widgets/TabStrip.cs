@@ -68,6 +68,9 @@ public class TabStrip : Control
     /// <remarks>Off for a strip that sits on a panel of its own, where the block and the captions are enough.</remarks>
     public bool ShowTray { get; set; } = true;
 
+    /// <summary>Gets or sets a value indicating whether the tray is edged in the accent: the switch a page's sections hang from.</summary>
+    public bool Accented { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the segments share the whole width given, each the same.</summary>
     /// <remarks>On a narrow page the strip is the page's width, and five segments a thumb wide beat five as wide as their words.</remarks>
     public bool Stretch { get; set; }
@@ -90,6 +93,14 @@ public class TabStrip : Control
 
     /// <summary>Gets the tab captions.</summary>
     public IReadOnlyList<string> Tabs => _tabs;
+
+    /// <summary>
+    /// Gets or sets which tabs can be chosen, by index, or <see langword="null"/> for all of them. A tab that cannot is a
+    /// reading -- shown, dimmed, while something else is chosen, and passed over by the keys and the pointer.
+    /// </summary>
+    public Func<int, bool>? TabEnabled { get; set; }
+
+    private bool CanChoose(int index) => TabEnabled is null || TabEnabled(index);
 
     /// <summary>Gets or sets the selected tab index.</summary>
     public int SelectedIndex
@@ -140,22 +151,35 @@ public class TabStrip : Control
     {
         switch (direction)
         {
-            case NavDirection.Left when _selected > 0:
-                SelectedIndex = _selected - 1;
-                return true;
-            case NavDirection.Right when _selected < _tabs.Count - 1:
-                SelectedIndex = _selected + 1;
-                return true;
+            case NavDirection.Left:
+                return Step(-1);
+            case NavDirection.Right:
+                return Step(1);
             default:
                 return false;
         }
+    }
+
+    // To the next tab that can be chosen that way, if there is one.
+    private bool Step(int direction)
+    {
+        for (int i = _selected + direction; i >= 0 && i < _tabs.Count; i += direction)
+        {
+            if (CanChoose(i))
+            {
+                SelectedIndex = i;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>
     public override void ActivateAt(UiVec2 point)
     {
         int index = IndexAt(point);
-        if (index >= 0)
+        if (index >= 0 && CanChoose(index))
         {
             SelectedIndex = index;
         }
@@ -256,7 +280,7 @@ public class TabStrip : Control
         if (ShowTray)
         {
             painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(Theme.Large ? (byte)140 : (byte)153), appear));
-            Bgra32 edge = Theme.Large ? UiPalette.White(0.28f) : Theme.Border;
+            Bgra32 edge = Accented ? Theme.Accent : Theme.Large ? UiPalette.White(0.28f) : Theme.Border;
             painter.StrokeRect(Bounds, context.Px(Theme.Large && focus > 0.5f ? 2f : 1f), UiPalette.Fade(Interpolate.Lerp(edge, Theme.Large ? Theme.AccentHover : UiPalette.AccentAt(0.45f), focus), appear));
         }
 
@@ -277,7 +301,9 @@ public class TabStrip : Control
             // follows the amber across rather than flipping when the selection lands.
             float overlap = MathF.Max(0f, MathF.Min(rect.Right, _indicator.Value + _indicatorWidth.Value) - MathF.Max(rect.X, _indicator.Value));
             float covered = rect.Width <= 0f ? 0f : Math.Clamp(overlap / rect.Width, 0f, 1f);
-            Bgra32 rest = _hovered == i ? Theme.TextBright : Theme.Large ? Theme.TextSecondary : UiPalette.TextTertiary;
+            Bgra32 rest = !CanChoose(i) ? Theme.TextDisabled
+                : _hovered == i ? Theme.TextBright
+                : Theme.Large ? Theme.TextSecondary : UiPalette.TextTertiary;
             Bgra32 color = Interpolate.Lerp(rest, Theme.OnAccent, covered);
 
             string caption = Upper(_tabs[i]);

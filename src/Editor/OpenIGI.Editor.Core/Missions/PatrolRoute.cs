@@ -56,7 +56,7 @@ public sealed record PatrolWaypoint(int Node, bool Run, IReadOnlyList<PatrolActi
 /// <para>
 /// The route keeps the layout the level wrote, so a shipped patrol reads and writes back as the same commands: what is done
 /// before the first waypoint (<see cref="Start"/>), and the loop mark and the stop as actions where the level put them. A new route is a plain list, as most of level 1's are. A soldier runs its patrol from its own AI
-/// script, <c>AIAction_Patrol(&lt;PatrolPath id&gt;, 0, AIACTIONFLAG_NONE)</c> on its idle event (<see cref="SoldierScripts"/>).
+/// script, <c>AIAction_Patrol(&lt;PatrolPath id&gt;, 0, AIACTIONFLAG_NONE)</c> on its idle event (the engine's <c>AiGuardScript</c>).
 /// </para>
 /// </remarks>
 /// <param name="Waypoints">The stops, in order.</param>
@@ -187,46 +187,4 @@ public sealed record PatrolRoute(IReadOnlyList<PatrolWaypoint> Waypoints)
         command.FindParameter("Command Parameter") is { } p && p.TryGetNumbers(out double[] operand) ? (int)operand[0] : 0);
 
     private static string Text(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
-}
-
-/// <summary>
-/// The AI scripts a soldier runs, as the shipped levels write them for every soldier (<c>MISSION:AI/&lt;HumanAI id&gt;</c>):
-/// the original loads no other, so a soldier without one does nothing at all.
-/// </summary>
-public static class SoldierScripts
-{
-    /// <summary>A guard's: everything to the game's default handling, standing where it was put when idle (level 1's 2226).</summary>
-    public const string Guard = """
-        if (AIFunction_GetCurrentEventType() == AIEVENT_CREATE)
-        {
-        	AIFunction_DefaultHandler();
-        }
-        else if (AIFunction_GetCurrentEventType() == AIEVENT_IDLE)
-        {
-        }
-        else if (AIFunction_GetCurrentEventType() == AIEVENT_ALARMON)
-        {
-        }
-        else if (AIFunction_GetCurrentEventType() == AIEVENT_COMBAT)
-        {
-        	AIFunction_DefaultHandler();
-        }
-        else
-        {
-        	AIFunction_DefaultHandler();
-        }
-        """;
-
-    /// <summary>A patrolling soldier's: a guard's, walking its patrol when idle (level 1's 2203).</summary>
-    /// <param name="patrolPathId">The id of the soldier's <c>PatrolPath</c> task.</param>
-    /// <returns>The script's text.</returns>
-    public static string Patroller(int patrolPathId) => Guard.ReplaceLineEndings("\n").Replace(
-        "AIEVENT_IDLE)\n{\n}",
-        string.Create(CultureInfo.InvariantCulture, $"AIEVENT_IDLE)\n{{\n\tAIAction_Patrol({patrolPathId}, 0, AIACTIONFLAG_NONE);\n}}"),
-        StringComparison.Ordinal);
-
-    /// <summary>Compiles a script's text into the image the game loads.</summary>
-    /// <param name="text">The script.</param>
-    /// <returns>The <c>.qvm</c> bytes.</returns>
-    public static byte[] Compile(string text) => QscCompiler.Compile(QscParser.ParseScript(text, Scripting.Qvm.QvmProgram.IgiVersion));
 }

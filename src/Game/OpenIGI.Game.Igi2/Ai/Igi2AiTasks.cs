@@ -22,10 +22,18 @@ namespace OpenIGI.Game.Igi2.Ai;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget,
-    IHumanAiEventTarget, IHostedHuman
+    IHumanAiEventTarget, IHostedHuman, IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
+
+    /// <inheritdoc/>
+    /// <remarks><c>Human_RemoveDynCubeObjHandler</c>: the body leaves the world.</remarks>
+    public void RemoveFromWorld() => Body?.SetInWorld(false);
+
+    /// <inheritdoc/>
+    /// <remarks><c>Human_RegisterDynCubeObjHandler</c>: the body is back in the world.</remarks>
+    public void PutInWorld() => Body?.SetInWorld(true);
 
     /// <summary>Gets or sets where the soldier stands.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -57,6 +65,13 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IW
 
     /// <summary>Gets or sets the soldier's body, or <see langword="null"/> before the level's gameplay made one.</summary>
     public Igi2HumanSoldier? Body { get; set; }
+
+    /// <summary>
+    /// Gets or sets the body the level keeps for the soldier while another game's stands for it (<see cref="Driver"/>), which the
+    /// level runs only where it directs the soldier itself -- its cutscenes, its movers -- and the other game's soldier then follows (<see cref="Soldiers.Igi2SoldierDoubles"/>): never drawn,
+    /// met by nothing, and no human of the level's lists; <see langword="null"/> for one of the level's own.
+    /// </summary>
+    public Igi2HumanSoldier? Double { get; set; }
 
     /// <inheritdoc/>
     /// <remarks>A claimed soldier is given no body (<see cref="Soldiers.Igi2Soldiers.Spawn"/>): the other game's stands for it.</remarks>
@@ -219,10 +234,33 @@ public sealed partial class Igi2HumanAiTask : Igi2Task
 /// sixty to calm down, two metres between soldiers and thirty to run to an alarm. Its formation distance is held to [0, 10]
 /// and its script is <c>MISSION:AI/Squad_&lt;id&gt;.qsc</c> (<c>AISquad_UpdateInternalDataHandler</c>, <c>0x4990E0</c>).
 /// </remarks>
-public sealed partial class Igi2AiSquadTask : Igi2Task
+public sealed partial class Igi2AiSquadTask : Igi2Task, IIgi2WorldMember
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AISquad";
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>AISquad_RemoveQTaskHandler</c>: off the squads' list, which other squads' sightings and spreading out walk. Its soldiers,
+    /// its children, leave the world through it.
+    /// </remarks>
+    public void RemoveFromWorld()
+    {
+        if (Squad is { } squad)
+        {
+            squad.World.Squads.Remove(squad);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>AISquad_RegisterQTaskHandler</c>: back on the end of the squads' list, once.</remarks>
+    public void PutInWorld()
+    {
+        if (Squad is { } squad && !squad.World.Squads.Contains(squad))
+        {
+            squad.World.Squads.Add(squad);
+        }
+    }
 
     /// <summary>Gets or sets the distance between the squad's soldiers, in metres.</summary>
     [ScriptParam(ScriptParamType.Real32, "Formation Distance")]

@@ -236,6 +236,9 @@ public sealed class MissionWorld : MissionState, IInspectableMission
     /// <remarks>It runs whatever the mission's own player is doing: dead, in a cut-scene or at the computer.</remarks>
     public long PlayerTicks { get; set; }
 
+    /// <summary>Gets how many of <see cref="PlayerTicks"/> the mission's cutscenes held: the mission's time is the rest.</summary>
+    public Scoring.CutsceneClock SceneClock { get; } = new();
+
     /// <summary>Gets or sets a value indicating whether this mission is a co-op client's, whose player's death the server decides.</summary>
     /// <remarks>Its level never sees the player dead: the session respawns it, and the server's level decides the mission.</remarks>
     public bool CoopClient { get; set; }
@@ -329,7 +332,7 @@ public sealed class MissionWorld : MissionState, IInspectableMission
             {
                 return true;
             }
-            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+            Vector3f facing = new(-SimMathF.Sin(player.Body.Yaw), SimMathF.Cos(player.Body.Yaw), 0f);
             return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
         }
         MissileWorldTraceCast? walls = Trace is { } trace

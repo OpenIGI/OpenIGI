@@ -270,10 +270,10 @@ public static class GunShotImpactEffects
         Vector3f u = (Vector3f.Cross(helper, axis)).ReciprocalNormalizedOr(Vector3f.UnitZ);
         Vector3f w = (Vector3f.Cross(axis, u)).ReciprocalNormalizedOr(Vector3f.UnitZ);
 
-        float rollSin = MathF.Sin(roll);
-        float rollCos = MathF.Cos(roll);
-        float pitchSin = MathF.Sin(pitch);
-        float pitchCos = MathF.Cos(pitch);
+        float rollSin = SimMathF.Sin(roll);
+        float rollCos = SimMathF.Cos(roll);
+        float pitchSin = SimMathF.Sin(pitch);
+        float pitchCos = SimMathF.Cos(pitch);
 
         Vector3f launch = (new Vector3f(
             (axis.X * pitchCos) + (pitchSin * ((rollSin * u.X) - (rollCos * w.X))),

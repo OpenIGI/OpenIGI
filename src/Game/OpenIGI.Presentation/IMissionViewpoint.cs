@@ -17,6 +17,10 @@ namespace OpenIGI.Presentation;
 /// <param name="Paused">Whether the game is paused, which holds the over-the-shoulder move where it is.</param>
 /// <param name="NowMilliseconds">The loop's clock, which the over-the-shoulder move is timed on.</param>
 /// <param name="Walls">What the over-the-shoulder camera keeps out of, or <see langword="null"/> when the level has nothing yet.</param>
+/// <param name="TitleEyeLead">
+/// How far, in metres, the current tick's eye stands ahead of <paramref name="TitleEye"/>, which is drawn between the last two
+/// ticks; nought when the frame is not smoothed or the title brings no player.
+/// </param>
 public readonly record struct ViewpointFrame(
     bool PlayerMode,
     bool Smooth,
@@ -26,7 +30,8 @@ public readonly record struct ViewpointFrame(
     bool ThirdPersonAllowed,
     bool Paused,
     int NowMilliseconds,
-    WorldWalls.Blocked? Walls);
+    WorldWalls.Blocked? Walls,
+    Vector3d TitleEyeLead = default);
 
 /// <summary>
 /// A title's own player's viewpoint: the eye it looks through, and the cameras that take it -- the one that watches the body
@@ -39,6 +44,12 @@ public interface IMissionViewpoint
 
     /// <summary>Gets a value indicating whether the dead player is watched from the camera over the body.</summary>
     bool IsDeathViewActive { get; }
+
+    /// <summary>
+    /// Gets the ray the player's crosshair sits on with the camera over the shoulder, in world units, which the host hands the
+    /// player's next tick as its input; <see langword="null"/> while the camera is at the eye.
+    /// </summary>
+    (Vector3d OriginUnits, Vector3f Direction)? AimRay => null;
 
     /// <summary>Gets a value indicating whether the orbit around a climbing or interacting body has the view.</summary>
     bool IsInteractionViewActive { get; }
@@ -57,6 +68,13 @@ public interface IMissionViewpoint
 
     /// <summary>Gets a value indicating whether the camera is anywhere other than exactly at the player's eye.</summary>
     bool IsThirdPersonEngaged { get; }
+
+    /// <summary>
+    /// Gets how far, in metres, the current tick's eye stood ahead of the eye <see cref="ComposeEye"/> last composed, which is
+    /// drawn between the last two ticks: what the ear is moved on by, so it hears from where the game placed its sounds.
+    /// </summary>
+    /// <remarks>Nought for an eye that is not smoothed between ticks, or that moves per frame on its own.</remarks>
+    Vector3d EarLead => default;
 
     /// <summary>Gets a value indicating whether the title has a player of its own in the level.</summary>
     bool HasPlayer { get; }

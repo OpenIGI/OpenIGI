@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
@@ -191,6 +192,70 @@ public sealed class RetailIgi2SectorVisibilityTests
         Assert.All(nodes.Select(static n => n.Sector).OfType<Igi2Sector>(), static s => Assert.False(s.IsShell));
     }
 
+    /// <summary>
+    /// <c>SectorObject_TraverseSector</c> walks the portals of the level a building is drawn at: mission 1's small blockhouse
+    /// (<c>434_26_1</c>) is a closed box without portals from its second level on, which stands for its room too, so drawn at it
+    /// the building leads into nothing -- nor at <c>-1</c>, beyond its cutoff, where it is not walked at all.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_building_drawn_at_a_level_without_portals_reaches_none_of_its_rooms()
+    {
+        Setup m = Mission1.Value;
+        Igi2SectorObject hut = m.Graph.Objects.First(static o => o.Shell.Model == "434_26_1" && o.Rooms.Count == 1);
+        Igi2Sector room = hut.Rooms[0];
+        Assert.NotEmpty(hut.Shell.PortalsAt(0).Portals);
+        Assert.Empty(hut.Shell.PortalsAt(1).Portals);
+
+        // Thirty metres out from the doorway, on whichever side it is seen from, looking at it.
+        MefPortalSet portals = hut.Shell.Portals;
+        MefPortal door = portals.Portals[0];
+        Vector3d centre = default;
+        for (int v = 0; v < door.VertexCount; v++)
+        {
+            centre += World(hut.Shell, portals.Vertices[door.FirstVertex + v]);
+        }
+
+        centre = (centre / door.VertexCount) + hut.Shell.Position;
+        Vector3d normal = World(hut.Shell, portals.NormalOf(door).Normalized());
+        Camera3D? seen = null;
+        foreach (double side in new[] { 1.0, -1.0 })
+        {
+            Camera3D eye = Looking(centre + (normal * (side * 30.0 * WorldScene.UnitsPerMetre)), centre);
+            Igi2SectorVisibility finest = m.Visibility();
+            finest.Decide(eye, Projection());
+            if (finest.IsVisible(m.KeyOf(room)))
+            {
+                seen = eye;
+            }
+        }
+
+        Assert.NotNull(seen);
+        Igi2VisibilityKey shellKey = m.KeyOf(hut.Shell);
+        foreach (int level in new[] { 1, -1 })
+        {
+            Igi2SectorVisibility coarse = m.Visibility();
+            coarse.Decide(seen.Value, Projection(), index => index == hut.Shell.Index ? level : 0);
+            Assert.False(coarse.IsVisible(m.KeyOf(room)));
+        }
+
+        // The same from the renderer's pick, asked of the placement that draws the shell.
+        Igi2SectorVisibility picked = m.Visibility();
+        Camera3D metres = new(seen.Value.Position / WorldScene.UnitsPerMetre, seen.Value.Orientation);
+        picked.BeginView(metres, 1f, 0.75f, placement => ReferenceEquals(placement.VisibilityKey, shellKey) ? 1 : 0);
+        Assert.False(picked.IsVisible(m.KeyOf(room)));
+        picked.BeginView(metres, 1f, 0.75f, static _ => 0);
+        Assert.True(picked.IsVisible(m.KeyOf(room)));
+    }
+
+    private static Vector3d World(Igi2Sector sector, Vector3f v)
+    {
+        Matrix3f o = sector.Orientation;
+        return new Vector3d(
+            (o.M11 * v.X) + (o.M12 * v.Y) + (o.M13 * v.Z),
+            (o.M21 * v.X) + (o.M22 * v.Y) + (o.M23 * v.Z),
+            (o.M31 * v.X) + (o.M32 * v.Y) + (o.M33 * v.Z));
+    }
+
     private static SectorScreenProjection Projection() =>
         SectorScreenProjection.FromViewport(new SectorScreenRect(0f, 0f, 640f, 480f), 1f);
 
@@ -208,7 +273,7 @@ public sealed class RetailIgi2SectorVisibilityTests
         public Igi2Sector OfficeRoom => Graph.Objects.Single(static o => o.Shell.LevelId == OfficeLevelId).Rooms[0];
 
         public Igi2SectorVisibility Visibility(Func<int, int, bool>? isPortalOpen = null) =>
-            new(Graph, Locator, Igi2SectorVisibility.KeysOf(Scene), isPortalOpen);
+            new(Graph, Locator, Igi2SectorVisibility.KeysOf(Scene), isPortalOpen, Scene.Placements);
 
         public Igi2VisibilityKey KeyOf(Igi2Sector sector)
         {

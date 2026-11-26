@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Multiplayer;
 /// are kept in <see cref="SentCommands"/>, which prediction runs again over a correction from the server.
 /// </para>
 /// </remarks>
-public sealed class ClientSession
+public sealed partial class ClientSession
 {
     private const int KeptCommands = 64;
 
@@ -65,6 +65,9 @@ public sealed class ClientSession
     /// <summary>Gets the mode the server plays, once welcomed, or <see langword="null"/>.</summary>
     public string? ServerMode { get; private set; }
 
+    /// <summary>Gets whether the server plays with modern aim (<c>g_modern_aim</c>), once welcomed: every player then does.</summary>
+    public bool ServerModernAim { get; private set; }
+
     /// <summary>Has the map loaded again, as the server's Travel to it does: for a level brought up under the wrong mode.</summary>
     public void ReloadMap()
     {
@@ -86,6 +89,9 @@ public sealed class ClientSession
 
     /// <summary>Gets whether a level the server is going on to is loaded or loading here, waiting for the server to begin it.</summary>
     public bool WaitingForServer => _going is not null;
+
+    /// <summary>Gets the map the server said it is going on to, until it begins it, or <see langword="null"/>.</summary>
+    public string? GoingTo => _going;
 
     /// <summary>Gets whether the server has begun a level this client has still to load, its snapshots not for the one here.</summary>
     /// <remarks>
@@ -250,6 +256,7 @@ public sealed class ClientSession
     // The server's newest list of files, and the pieces of files that came, until taken.
     private SessionFileList? _fileList;
     private readonly List<FilePiece> _filePieces = [];
+    private readonly List<FileChunkTable> _fileTables = [];
 
     /// <summary>Takes the list of files the server last sent, if one came since the last call.</summary>
     /// <returns>The list, or <see langword="null"/>.</returns>
@@ -267,6 +274,25 @@ public sealed class ClientSession
         FilePiece[] pieces = [.. _filePieces];
         _filePieces.Clear();
         return pieces;
+    }
+
+    /// <summary>Takes the tables of files that came since the last call.</summary>
+    /// <returns>The tables, in the order they came.</returns>
+    public IReadOnlyList<FileChunkTable> TakeFileTables()
+    {
+        FileChunkTable[] tables = [.. _fileTables];
+        _fileTables.Clear();
+        return tables;
+    }
+
+    /// <summary>Asks the server for pieces of a file whose table it sent.</summary>
+    /// <param name="ask">The pieces.</param>
+    public void WantChunks(ChunkWant ask)
+    {
+        ArgumentNullException.ThrowIfNull(ask);
+        _writer.Reset();
+        ask.Write(_writer);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
     /// <summary>Asks the server for files of a list it sent.</summary>
@@ -288,7 +314,7 @@ public sealed class ClientSession
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
-    /// <summary>Marks a place for every player.</summary>
+    /// <summary>Marks a place for the player's team, or every player where the mode plays no teams: the server decides who sees it.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position)
     {
@@ -413,8 +439,20 @@ public sealed class ClientSession
     /// <param name="now">The current time in seconds.</param>
     public void Poll(double now) => _net.Update(now);
 
+    // Each shielded player's entity, and when its shield runs out on this clock.
+    private readonly Dictionary<int, double> _shields = [];
+
+    /// <summary>Gets how long a player's spawn protection has left, in seconds; nought when it has none.</summary>
+    /// <param name="entity">The player's entity.</param>
+    /// <param name="now">The clock, as <see cref="Receive"/> is given it.</param>
+    /// <returns>The seconds.</returns>
+    public double ShieldLeft(int entity, double now) => _shields.TryGetValue(entity, out double until) ? Math.Max(0, until - now) : 0;
+
     /// <summary>Gets or sets the server tick, to a fraction, the others were last drawn at: what a shot made now was aimed at.</summary>
     public double? DrawnTick { get; set; }
+
+    /// <summary>Gets the line's round trip to the server, in seconds; nought before there is a line.</summary>
+    public double RoundTripTime => _net.Connection?.Statistics.RoundTripTime ?? 0;
 
     /// <summary>Gets or sets where every message the server delivers is kept, for a demo; <see langword="null"/> keeps none.</summary>
     public DemoRecording? Recording { get; set; }
@@ -539,7 +577,13 @@ public sealed class ClientSession
         _writer.WriteBits((uint)_newestReceived, 32);
         _writer.WriteBits((uint)(_newestReceived >> 32), 32);
         _codec.Write(_writer, _sent.ToArray().AsSpan(first), _newestReceived);
-        _net.Send(NetChannel.Sequenced, _writer.AsSpan());
+
+        // Unordered, not sequenced as they once went: a sequenced channel throws away a packet a newer one overtook, and a
+        // client that ran several ticks in one frame (a slow page, a hitch) sent as many packets in one instant, which arrive
+        // in any order. All but the newest and the few commands it repeated were thrown away then, and the server never ran
+        // them: its copy of a player on a ladder hung steps below a client that had already climbed off. The server's queue
+        // keeps each command once and in order whatever order they come in.
+        _net.Send(NetChannel.Unreliable, _writer.AsSpan());
         _lastSentTick = tick;
         return tick;
     }
@@ -668,7 +712,7 @@ public sealed class ClientSession
         }
 
         Snapshot first = gathered[0]!;
-        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses, first.Lifts, first.Cameras, first.Wrecks, first.Projectiles, first.Tasks, first.ImpactSequence, first.SenseSequence);
+        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses, first.Lifts, first.Cameras, first.Wrecks, first.Projectiles, first.Tasks, first.ImpactSequence, first.SenseSequence, first.Fired, first.Vehicles);
     }
 
     private void Read(byte[] data, double now)
@@ -696,6 +740,7 @@ public sealed class ClientSession
                 Map = reader.ReadString(64);
                 Epoch = (byte)reader.ReadBits(8);
                 ServerMode = reader.ReadString(16);
+                ServerModernAim = reader.ReadBits(1) != 0;
                 ForgetEvents();
                 Clock = new TickClockSync(Math.Max(1, TickRate));
                 break;
@@ -779,14 +824,17 @@ public sealed class ClientSession
             case SessionMessage.Files when SessionFileList.Read(ref reader) is { } list:
                 _fileList = list;
                 break;
-            case SessionMessage.FilePart:
-                string pieceMap = reader.ReadString(64);
-                int pieceIndex = (int)reader.ReadVarUInt();
-                long pieceOffset = reader.ReadVarUInt();
-                byte[] pieceData = reader.ReadBytes(ServerSession.FilePieceSize);
-                if (!reader.IsOverflowed && _filePieces.Count < 4096)
+            case SessionMessage.FilePart when FilePiece.Read(ref reader) is { } filePiece:
+                if (_filePieces.Count < 4096)
                 {
-                    _filePieces.Add(new FilePiece(pieceMap, pieceIndex, pieceOffset, pieceData));
+                    _filePieces.Add(filePiece);
+                }
+
+                break;
+            case SessionMessage.FileChunks when FileChunkTable.Read(ref reader) is { } table:
+                if (_fileTables.Count < SessionFileList.MaxFiles)
+                {
+                    _fileTables.Add(table);
                 }
 
                 break;
@@ -798,6 +846,15 @@ public sealed class ClientSession
                 }
 
                 break;
+            case SessionMessage.Shields when ShieldState.Read(ref reader) is { } shields:
+                // Who spawn protection shields now, each until its ticks run out -- or until the next word, which ends it sooner.
+                _shields.Clear();
+                foreach (ShieldState shield in shields)
+                {
+                    _shields[shield.Entity] = now + (shield.TicksLeft / (double)Math.Max(1, TickRate));
+                }
+
+                break;
             case SessionMessage.KillNote:
                 Modes.KillNote note = Modes.KillNote.Read(ref reader);
                 if (!reader.IsOverflowed)
@@ -805,6 +862,9 @@ public sealed class ClientSession
                     Feed.Add(note, now);
                 }
 
+                break;
+            case SessionMessage.MissionScore when SquadScoreMessage.Read(ref reader) is { } squad:
+                MissionScore = squad;
                 break;
             case SessionMessage.MapVote:
                 Modes.NextMapVote? vote = Modes.NextMapVote.Read(ref reader);

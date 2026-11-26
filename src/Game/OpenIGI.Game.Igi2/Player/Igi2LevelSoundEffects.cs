@@ -158,6 +158,15 @@ internal sealed class Igi2LevelWeaponEffects(
     }
 
     /// <inheritdoc/>
+    public void StopSound(int slot)
+    {
+        if (_slots.Remove(slot, out Igi2Sound? playing))
+        {
+            playing.Delete();
+        }
+    }
+
+    /// <inheritdoc/>
     public void StopAllSounds()
     {
         foreach (Igi2Sound playing in _slots.Values)

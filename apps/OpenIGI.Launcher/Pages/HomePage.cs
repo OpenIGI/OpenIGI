@@ -23,7 +23,7 @@ internal sealed class HomePage
     private readonly PatchNotesCard _notes;
     private readonly ContentCard _content;
 
-    public HomePage(UiTheme theme, LauncherModel model, Func<string, BackdropPicture?> pictures, Action openSettings, Action openContent)
+    public HomePage(UiTheme theme, LauncherModel model, Func<string, UiPicture?> pictures, Action openSettings, Action openContent)
     {
         _theme = theme;
         _model = model;
@@ -356,7 +356,7 @@ internal sealed class HomePage
     }
 
     /// <summary>The optional-content summary: how many packs are in, with a strip of their tiles.</summary>
-    private sealed class ContentCard(UiTheme theme, Func<string, BackdropPicture?> pictures) : Control(theme)
+    private sealed class ContentCard(UiTheme theme, Func<string, UiPicture?> pictures) : Control(theme)
     {
         public LauncherGame? Game { get; set; }
 

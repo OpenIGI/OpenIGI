@@ -339,7 +339,6 @@ public sealed partial class ImpactParticleRenderer : IDisposable
             }
         }
 
-        TickBlastTrails();
     }
 
     /// <summary>Draws every particle: the dust haze first, the sparks' light over it.</summary>
@@ -532,7 +531,6 @@ public sealed partial class ImpactParticleRenderer : IDisposable
     public void Clear()
     {
         _count = 0;
-        _blastTrails.Clear();
     }
 
     /// <inheritdoc/>

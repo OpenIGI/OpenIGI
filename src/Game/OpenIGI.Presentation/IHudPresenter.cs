@@ -37,6 +37,16 @@ public interface ITitleHudPresenter : IDisposable
     void ShowMissionMessages(IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> messages)
     {
     }
+
+    /// <summary>
+    /// Gives the display the camera the frame was drawn from, between ticks, so what it marks in the world is placed where the
+    /// picture shows it. Set before each <see cref="Draw"/>.
+    /// </summary>
+    /// <param name="eye">The frame's camera, in metres.</param>
+    /// <param name="horizontalTangent">The tangent of half the width the frame was projected through.</param>
+    void ShowView(Camera3D eye, float horizontalTangent)
+    {
+    }
 }
 
 /// <summary>Draws a title's heads-up display, in the shape the original drew it.</summary>
@@ -204,6 +214,9 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="mode">The mode played, a <see cref="Game.Multiplayer.Modes.GameModes"/> id; empty for co-op.</param>
     /// <param name="besideVote">Whether it shares the screen with the vote for the next map, on its left, its rows fitted to the
     /// room under the match's card; otherwise it stands alone in the middle.</param>
+    /// <param name="avatarOf">Each player's picture by its line's <see cref="Game.Multiplayer.DiscordAvatar"/> reference -- their
+    /// Discord avatar, where they signed in and it has come down -- drawn on their row in place of their initial;
+    /// <see langword="null"/> for initials only.</param>
     void DrawScoreboard(
         SpriteBatch batch,
         Game.Multiplayer.Scoreboard board,
@@ -215,7 +228,8 @@ public interface IRemasteredHudPresenter : IDisposable
         ScoreboardControls? controls = null,
         bool relayed = false,
         string mode = "",
-        bool besideVote = false)
+        bool besideVote = false,
+        Func<string, UI.Kit.UiPicture?>? avatarOf = null)
     {
     }
 
@@ -238,6 +252,20 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     void DrawMatchBanner(SpriteBatch batch, Game.Multiplayer.Modes.MatchBanner banner, string? warning, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>
+    /// Draws a completed mission's rank screen: what was achieved beside what the next rank asks, the rank earned, and in a co-op
+    /// mission every player's result.
+    /// </summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="card">What to show.</param>
+    /// <param name="prompt">What its foot says: the key that goes on, and a co-op squad's countdown.</param>
+    /// <param name="opacity">How far it has faded in, nought to one.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawMissionScore(SpriteBatch batch, Game.Scoring.MissionScoreCard card, MissionScorePrompt prompt, float opacity, int screenWidth, int screenHeight)
     {
     }
 
@@ -294,6 +322,47 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <summary>Gets where the last team menu drew each choice's card, by its index in <see cref="Game.Multiplayer.Modes.TeamPick.Choices"/>.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> TeamMenuCards => [];
 
+    /// <summary>Draws a race against a ghost: how far ahead of it or behind it the player is, and the splits so far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="race">What it shows.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawRace(SpriteBatch batch, Hud.RaceHud race, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the mark over a race's ghost once it is far off: where it is, through walls, and how far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="marker">Where the ghost stands, and how much of it is there.</param>
+    /// <param name="eye">Where the world is seen from, for projecting the anchor.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawRaceGhostMarker(
+        SpriteBatch batch,
+        Hud.RaceGhostMarker marker,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the replay viewer's transport bar at the foot of the screen: what is watched, the run as a track, the keys.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="bar">What it shows.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawReplayBar(SpriteBatch batch, Hud.ReplayBar bar, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Gets where the last transport bar drew its track, in pixels, with room above and below for the pointer: what a click
+    /// seeks along. Empty before one is drawn.</summary>
+    (float X, float Y, float Width, float Height) ReplayTrack => default;
+
     /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
 
@@ -318,9 +387,11 @@ public interface IRemasteredHudPresenter : IDisposable
     /// the kill cam's moment, named in red with how far off it stood.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="watched">The watched player.</param>
+    /// <param name="feed">The kill feed, whose newest kill of the player shows the killer's weapon and how it struck; or <see langword="null"/>.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawSpectating(SpriteBatch batch, Game.Multiplayer.Modes.SpectateTarget watched, int screenWidth, int screenHeight)
+    void DrawSpectating(
+        SpriteBatch batch, Game.Multiplayer.Modes.SpectateTarget watched, Hud.Remastered.KillFeedView? feed, int screenWidth, int screenHeight)
     {
     }
 
@@ -361,12 +432,15 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
-    /// <summary>Draws the kills of late down the top right corner, each killer and victim in its team's colour.</summary>
+    /// <summary>
+    /// Draws the kills of late down the top right corner -- killer, weapon, how it struck, victim, each side in its colour as
+    /// the player sees the sides -- and the player's own newest kill announced low in the middle.
+    /// </summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="kills">The kills, oldest first.</param>
+    /// <param name="feed">The feed as the player sees it.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawKillFeed(SpriteBatch batch, IReadOnlyList<Game.Multiplayer.Modes.KillNote> kills, int screenWidth, int screenHeight)
+    void DrawKillFeed(SpriteBatch batch, Hud.Remastered.KillFeedView feed, int screenWidth, int screenHeight)
     {
     }
 
@@ -408,6 +482,47 @@ public interface IRemasteredHudPresenter : IDisposable
         string? warning,
         IReadOnlyList<string> talking,
         IReadOnlyList<HudMark> marks,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the player's own spawn protection while it lasts, under the crosshair.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="left">The seconds it has left.</param>
+    /// <param name="total">The seconds it lasts in all.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawShield(SpriteBatch batch, float left, float total, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the line telling that a teammate has gone down, at the top of the screen.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="index">Its place among the lines up now, 0 the newest.</param>
+    /// <param name="name">Who went down.</param>
+    /// <param name="distanceMetres">How far they are.</param>
+    /// <param name="opacity">How much of it is left to see.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawDownedAlert(SpriteBatch batch, int index, string name, double distanceMetres, float opacity, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the marker over a fallen teammate in co-op: where they lie, who they are, how far their revival has run.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="marker">The teammate, and where they lie.</param>
+    /// <param name="eye">Where the world is seen from, for projecting the anchor.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawReviveMarker(
+        SpriteBatch batch,
+        Game.Ai.ReviveMarker marker,
         in Camera3D eye,
         float horizontalTangent,
         float aspectRatio,

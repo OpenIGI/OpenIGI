@@ -23,7 +23,7 @@ public sealed partial class Igi2HudRenderer
 
     private void DrawLensflares(SpriteBatch batch, Igi2TitlePlayer title, int screenWidth, int screenHeight)
     {
-        if (GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla || title.GameConfig?.Gfx.LensFlares == false)
+        if (!GraphicsPresetRegistry.Default.IsVanillaLook || title.GameConfig?.Gfx.LensFlares == false)
         {
             return;
         }

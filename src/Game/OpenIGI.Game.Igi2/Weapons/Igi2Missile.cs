@@ -32,6 +32,12 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// </remarks>
 public sealed class Igi2Missile : IDynamicTask
 {
+    /// <summary>
+    /// Gets or sets a value indicating whether it is a co-op client's copy of another machine's: it flies, but where it would go
+    /// off it is simply spent, the server's blast being shown in its stead.
+    /// </summary>
+    public bool IsReplica { get; init; }
+
     /// <summary>The gravity a missile falls by, a tick squared.</summary>
     public const float Gravity = 44.600887298583984f;
 
@@ -183,6 +189,15 @@ public sealed class Igi2Missile : IDynamicTask
     }
 
     /// <inheritdoc/>
+    /// <remarks><c>Missile_DeSerializeDoneHandler</c>: its sound goes with it, as a missile's deleted in flight does.</remarks>
+    public bool DeleteForLoad()
+    {
+        FlightSound?.Delete();
+        FlightSound = null;
+        return true;
+    }
+
+    /// <inheritdoc/>
     public bool Run()
     {
         bool flying = Fly();
@@ -205,6 +220,11 @@ public sealed class Igi2Missile : IDynamicTask
         }
 
         Move();
+        if (Body.ContactCount != 0 && IsReplica)
+        {
+            return false;
+        }
+
         if (Body.ContactCount != 0)
         {
             Vector3d at = Body.Position;

@@ -45,6 +45,92 @@ public sealed class ControlsTabShellTests : ShellTestHarness
         }
     }
 
+    /// <summary>The keys only a multiplayer session answers to have a panel of their own, and no other panel has them.</summary>
+    [Fact]
+    public void Controls_tab_keeps_the_multiplayer_only_keys_in_their_own_panel()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3; // Controls
+            Pump(shell, 0.1f);
+
+            OpenIGI.UI.Kit.Widgets.GlassPanel multiplayer = screen.Root.Descendants().OfType<OpenIGI.UI.Kit.Widgets.GlassPanel>()
+                .Single(panel => panel.Descendants().OfType<OpenIGI.UI.Kit.Widgets.GroupHeader>().Any(header => header.Title == "MULTIPLAYER"));
+            string[] actions = [.. multiplayer.Descendants().OfType<KeyBindingRow>().Select(row => row.Action)];
+
+            Assert.Contains("Scoreboard", actions);
+            Assert.Contains("Buy menu", actions);
+            Assert.DoesNotContain("Drop weapon", actions); // I.G.I. 2 drops in single player too, so it sits with the weapon keys
+            Assert.DoesNotContain("Fire", actions);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Co-op voice has a panel of its own, with the key held to talk; and a match's keys kept as settings -- the team menu's --
+    /// sit with the other multiplayer keys and write the key's bind name when rebound.
+    /// </summary>
+    [Fact]
+    public void Controls_tab_offers_voice_and_the_match_keys_kept_as_settings()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var cvars = new OpenIGI.Core.Configuration.CVarRegistry();
+            OpenIGI.Core.Configuration.CVar.Int("coop_voice", 1, 0, 2, OpenIGI.Core.Configuration.CVarOptions.Archive, "Voice.", cvars);
+            OpenIGI.Core.Configuration.CVar.Int("coop_voice_volume", 100, 0, 200, OpenIGI.Core.Configuration.CVarOptions.Archive, "Volume.", cvars);
+            OpenIGI.Core.Configuration.CVar.Text("coop_voice_key", "k", OpenIGI.Core.Configuration.CVarOptions.Archive, "Talk key.", cvars);
+            OpenIGI.Core.Configuration.StringCVar team = OpenIGI.Core.Configuration.CVar.Text(
+                "mp_team_key", "m", OpenIGI.Core.Configuration.CVarOptions.Archive, "Team key.", cvars);
+
+            (Shell shell, _) = BuildShell(dir, cvars: cvars);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3; // Controls
+            Pump(shell, 0.1f);
+
+            OpenIGI.UI.Kit.Widgets.GlassPanel Panel(string title) => screen.Root.Descendants().OfType<OpenIGI.UI.Kit.Widgets.GlassPanel>()
+                .Single(panel => panel.Descendants().OfType<OpenIGI.UI.Kit.Widgets.GroupHeader>().Any(header => header.Title == title));
+
+            OpenIGI.UI.Kit.Widgets.GlassPanel voice = Panel("VOICE");
+            Assert.Contains(voice.Descendants().OfType<Dropdown>(), row => row.Label == "Voice Chat");
+            KeyBindingRow talk = voice.Descendants().OfType<KeyBindingRow>().Single();
+            Assert.Equal("Push to talk", talk.Action);
+            Assert.Equal(KeyCode.K, talk.BoundKey);
+
+            KeyBindingRow teamRow = Panel("MULTIPLAYER").Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "Team menu");
+            teamRow.Activate();
+            Assert.True(teamRow.TryCaptureKey(KeyCode.N));
+            Assert.Equal("n", team.Value);
+            Assert.Equal(KeyCode.N, teamRow.BoundKey);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public void Controls_tab_swaps_conflicting_assignments_and_refreshes_both_rows()
     {
@@ -117,7 +203,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
             crouch.Activate();
             Assert.True(crouch.TryCaptureKey(KeyCode.RightControl));
-            Assert.Equal("KEY_RIGHT_CTRL", host.Profile!.Bindings.Single(b => b.Action == "Crouch").Key);
+            Assert.Equal("KEY_LEFT_CTRL", host.Profile!.Bindings.Single(b => b.Action == "Crouch").Key);
             Assert.Equal("KEY_LEFT_SHIFT", host.Profile.Bindings.Single(b => b.Action == "ToggleWalkRun").Key);
             walk.Activate();
             Assert.True(walk.TryCaptureKey(KeyCode.RightControl));
@@ -126,7 +212,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
             Find<Button>(screen, b => b.Text == "RESET BINDINGS")!.Activate();
             Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
             Assert.Equal(KeyCode.CapsLock, walk.BoundKey);
-            Assert.Equal("KEY_RIGHT_CTRL", host.Profile.Bindings.Single(b => b.Action == "Crouch").Key);
+            Assert.Equal("KEY_LEFT_CTRL", host.Profile.Bindings.Single(b => b.Action == "Crouch").Key);
         }
         finally
         {
@@ -223,7 +309,7 @@ public sealed class ControlsTabShellTests : ShellTestHarness
                 .Single(row => row.Action == "Jump").BoundKey);
             Assert.Equal(KeyCode.C, screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Map computer").BoundKey);
-            Assert.Equal(KeyCode.E, screen.Root.Descendants().OfType<KeyBindingRow>()
+            Assert.Equal(KeyCode.F, screen.Root.Descendants().OfType<KeyBindingRow>()
                 .Single(row => row.Action == "Activate").BoundKey);
         }
         finally

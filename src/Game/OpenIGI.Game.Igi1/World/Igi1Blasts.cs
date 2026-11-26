@@ -72,10 +72,30 @@ public sealed partial class Igi1Blasts(
         ResolveGrenadeDetonations(rig);
         foreach (MissileDetonation blast in rig.Missiles.Detonations)
         {
-            ResolveMissileDetonation(blast);
+            ResolveMissileDetonation(blast, rig);
         }
 
         ResolveM203Detonations(rig);
+    }
+
+    // The script ids a player's blasts are credited under: the grenade, the mine, the launcher's rocket and the rifle whose
+    // under-barrel launcher fired.
+    private const string GrenadeScriptId = "WEAPON_ID_GRENADE";
+    private const string MineScriptId = "WEAPON_ID_PROXIMITYMINE";
+    private const string RocketScriptId = "WEAPON_ID_RPG18";
+
+    // The script id of the carried weapon a rocket came from, by its weapon id; the launcher's when it is not carried now.
+    private static string LauncherOf(PlayerCamera rig, int weaponId)
+    {
+        foreach (CarriedWeapon carried in rig.Weapons?.Carried ?? [])
+        {
+            if (carried.Weapon.WeaponId == weaponId)
+            {
+                return carried.Weapon.ScriptId;
+            }
+        }
+
+        return RocketScriptId;
     }
 
     private void ResolveGrenadeDetonations(PlayerCamera rig)
@@ -93,15 +113,16 @@ public sealed partial class Igi1Blasts(
             // again would have a guard react twice to one retail blast.
             GrenadeDetonation frag = blast;
             ShowFrag(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor,
-                () => Explode(frag.Position, frag.RadiusUnits, frag.FalloffUnits, frag.DamageFactor, WeaponCategory.Grenade));
+                () => Explode(frag.Position, frag.RadiusUnits, frag.FalloffUnits, frag.DamageFactor, WeaponCategory.Grenade, credit: rig.Shots, weapon: GrenadeScriptId));
             Record(ReplicatedBlastKind.Grenade, blast.Position, default, blast.RadiusUnits, blast.FalloffUnits);
         }
 
+        // A mine is its layer's, whoever walks into it.
         foreach (PlacedMine mine in rig.Grenades.MineBlasts)
         {
             Vector3d at = mine.BlastPoint;
             float radius = mine.ExplosionRadiusUnits;
-            ShowMine(at, radius, () => Explode(at, radius, 0f, 1f, WeaponCategory.ProximityMine));
+            ShowMine(at, radius, () => Explode(at, radius, 0f, 1f, WeaponCategory.ProximityMine, credit: rig.Shots, weapon: MineScriptId));
             Record(ReplicatedBlastKind.Mine, at, default, radius, 0f);
         }
     }
@@ -116,17 +137,17 @@ public sealed partial class Igi1Blasts(
 
         foreach (MissileDetonation blast in mission.Player.Missiles.Detonations)
         {
-            ResolveMissileDetonation(blast);
+            ResolveMissileDetonation(blast, mission.Player);
         }
 
         // A vehicle's rockets fly on every game's own copy of the level, so they are nobody's to send.
         foreach (MissileDetonation blast in mission.VehicleMissiles.Detonations)
         {
-            ResolveMissileDetonation(blast, record: false);
+            ResolveMissileDetonation(blast, firedBy: null, record: false);
         }
     }
 
-    private void ResolveMissileDetonation(MissileDetonation blast, bool record = true)
+    private void ResolveMissileDetonation(MissileDetonation blast, PlayerCamera? firedBy, bool record = true)
     {
         // The missile's own impact (0x428390, at 0x42854D) sets off an Explosion0 with explo_03_l -- the launcher's
         // rocket and a vehicle's alike, since both are the same Missile task.
@@ -139,7 +160,9 @@ public sealed partial class Igi1Blasts(
             blast.FalloffUnits,
             blast.DamageFactor,
             WeaponCategory.Grenade,
-            sourceWeaponId: blast.SourceWeaponId));
+            sourceWeaponId: blast.SourceWeaponId,
+            credit: firedBy?.Shots,
+            weapon: firedBy is null ? null : LauncherOf(firedBy, blast.SourceWeaponId)));
         if (record)
         {
             Record(ReplicatedBlastKind.Missile, blast.Position, default, MissileExplosion.RadiusUnits, MissileExplosion.FalloffUnits);
@@ -157,6 +180,8 @@ public sealed partial class Igi1Blasts(
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
     /// <param name="source">The destructible that went off, which its own blast does not set off again.</param>
     /// <param name="sourceWeaponId">The weapon whose round it was, which decides what may blow a car up.</param>
+    /// <param name="credit">The player who threw, laid or fired it, for a session's kill credit; <see langword="null"/> for the level's.</param>
+    /// <param name="weapon">That player's weapon's script id, or <see langword="null"/>.</param>
     /// <remarks>
     /// The destructibles go before the speakers so a barrel-to-barrel chain is resolved in the same tick as the blast that
     /// started it.
@@ -168,9 +193,11 @@ public sealed partial class Igi1Blasts(
         float damageFactor,
         WeaponCategory killedBy,
         DestructibleObject? source = null,
-        int sourceWeaponId = 0)
+        int sourceWeaponId = 0,
+        ShotTally? credit = null,
+        string? weapon = null)
     {
-        Explosion0(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, killedBy), source, sourceWeaponId);
+        Explosion0(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, killedBy, Credit: credit, Weapon: weapon), source, sourceWeaponId);
     }
 
     /// <summary>The unbroken panes near a point, by their place in the level's destructibles.</summary>
@@ -312,8 +339,7 @@ public sealed partial class Igi1Blasts(
         foreach (Multiplayer.Igi1NetworkPlayer partner in blast.SparesPlayers ? [] : mission.NetworkPlayers)
         {
             Multiplayer.Igi1NetworkPlayer member = partner;
-            members.Add((long.MaxValue, members.Count, () => BlastPlayer(
-                member, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy)));
+            members.Add((long.MaxValue, members.Count, () => BlastPlayer(member, blast)));
         }
 
         if (mission.Destructibles is { } registry)
@@ -397,19 +423,21 @@ public sealed partial class Igi1Blasts(
         }
         else
         {
-            BlastPlayer(harm.Own, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
+            BlastPlayer(harm.Own, blast);
         }
     }
 
-    /// <summary>A blast's share of a player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death.</summary>
+    /// <summary>
+    /// A blast's share of a player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death --
+    /// credited to whoever set it off.
+    /// </summary>
     /// <param name="target">The player: the mission's own, or a co-op partner.</param>
-    /// <param name="position">The blast's centre, in units.</param>
-    /// <param name="radiusUnits">The full-damage radius, in units.</param>
-    /// <param name="falloffUnits">The falloff beyond it, in units.</param>
-    /// <param name="damageFactor">The blast's damage.</param>
-    /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
-    public void BlastPlayer(IHarmedPlayer target, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy) =>
-        harm.BlastPlayer(target, position, radiusUnits, falloffUnits, damageFactor, killedBy);
+    /// <param name="blast">The blast.</param>
+    public void BlastPlayer(IHarmedPlayer target, Igi1ExplosionHit blast)
+    {
+        ArgumentNullException.ThrowIfNull(blast);
+        harm.BlastPlayer(target, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy, blast.Credit, blast.Weapon);
+    }
 
     /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
     public void ResolveM203Detonations()
@@ -429,7 +457,7 @@ public sealed partial class Igi1Blasts(
             // reached its own detonation path.
             M203Detonation round = blast;
             ShowM203(blast.Position, blast.Normal, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor,
-                () => Explode(round.Position, round.RadiusUnits, round.FalloffUnits, round.DamageFactor, WeaponCategory.Gun));
+                () => Explode(round.Position, round.RadiusUnits, round.FalloffUnits, round.DamageFactor, WeaponCategory.Gun, credit: rig.Shots, weapon: PlayerWeapons.M16A2WeaponScriptId));
             Record(ReplicatedBlastKind.M203, blast.Position, blast.Normal, blast.RadiusUnits, blast.FalloffUnits);
         }
     }

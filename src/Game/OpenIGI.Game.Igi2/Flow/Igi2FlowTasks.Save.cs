@@ -54,9 +54,11 @@ public sealed partial class Igi2MissionTimerTask : ISavedState
     }
 
     /// <inheritdoc/>
+    /// <remarks><c>MissionTimer_DeSerializeHandler</c>: its display is deleted, to be made again as it next runs counting.</remarks>
     public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        RemoveFromWorld();
         TicksLeft = reader.Int();
         Status = (Igi2MissionTimerStatus)reader.Int();
     }

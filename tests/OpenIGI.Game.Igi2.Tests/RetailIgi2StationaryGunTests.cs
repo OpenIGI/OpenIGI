@@ -45,6 +45,41 @@ public sealed class RetailIgi2StationaryGunTests
     /// within its limits, the fire key fires its weapon; pressed afresh, the activate key lets it go and the view is the player's own.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
+    public void A_co_op_clients_copy_of_a_gun_its_own_player_works_turns_at_once()
+    {
+        (Igi2Level level, Igi2Session session, Igi2StationaryGunTask gun) = Gun();
+        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), Igi2Gameplay.TerrainOwner);
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(level);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
+        Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
+        Formats.World.MefModel body = level.ModelFor(point.Model)!;
+        Igi2PlayerTuning tuning = session.Require<Igi2PlayerTuning>();
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(session.Session.Services, level.Root, tuning, clips)!;
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, tuning.General, gun.ActivatePosition(out _), 0f, AiDifficulty.Easy, clips, body.BoneHierarchy, weapons);
+        player.Human.ModelRadius = body.NativeMarkerBound;
+        player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
+        Flow.Igi2LevelRun run = Bare();
+
+        // A client's copy, held to the server's aim; then its own player works it.
+        gun.Hold(new Igi2GunAim(0f, 0f, 0));
+        player.Human.ScriptActivate(gun);
+        player.Tick(RetailIgi2Mission1.Idle);
+        gun.Run(run);
+        Assert.Same(player.Human, gun.Operator);
+
+        for (int tick = 0; tick < 30; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle with { MouseX = 1f });
+            gun.Run(run);
+
+            // The server's word, a round trip behind, does not pull it back while the player works it.
+            gun.Hold(new Igi2GunAim(0f, 0f, 0));
+        }
+
+        Assert.NotEqual(0f, gun.Turn);
+    }
+
+    [RequiresTitleDataFact("igi2")]
     public void The_player_works_a_gun()
     {
         (Igi2Level level, Igi2Session session, Igi2StationaryGunTask gun) = Gun();
@@ -181,6 +216,90 @@ public sealed class RetailIgi2StationaryGunTests
 
         public AiDetectionInfo DetectionInfo() =>
             new(AiDetectableKind.Human, at, at, at, 0, IsAlive: true, IsActive: true);
+    }
+
+    /// <summary>
+    /// Zaleb's Stronghold (<c>location2/level5</c>) opens with the player locked onto the door gun of the helicopter a spline guide
+    /// flies (<c>HumanPlayer_Activate(4021), HumanPlayer_LockActivate(TRUE)</c>). The gun is held to the helicopter
+    /// (<c>StationaryGun_UpdateAttachmentHandler</c>): as it flies and turns, the holder, the barrel's mount and the gunner go with it,
+    /// and the locked activate key does not let the gunner off.
+    /// </summary>
+    /// <remarks>Held to nothing, the gun stayed where the level placed it while the helicopter flew off with the player.</remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_helicopters_door_gun_rides_it_and_carries_its_gunner()
+    {
+        Igi2Level level = Igi2Level.Find("location2", "level5");
+        Igi2Session session = Igi2Session.Start();
+        Interaction.Igi2EditRigidObjTask helicopter = All(level.Root).OfType<Interaction.Igi2EditRigidObjTask>().Single(static t => t.Id == 151);
+        Igi2StationaryGunTask gun = helicopter.Children.OfType<Igi2StationaryGunTask>().Single();
+        Assert.Equal(4021, gun.Id);
+
+        // As the build does it: the carrier holds what is beneath it, then the gun is armed.
+        World.Igi2Attachment.AttachChildren(helicopter, helicopter);
+        gun.Prepare(session.Require<Igi2HumanWeapons>(), level.ModelFor);
+        Assert.NotNull(gun.BarrelModel);
+
+        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), Igi2Gameplay.TerrainOwner);
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(level);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
+        Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
+        Formats.World.MefModel body = level.ModelFor(point.Model)!;
+        Igi2PlayerTuning tuning = session.Require<Igi2PlayerTuning>();
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(session.Session.Services, level.Root, tuning, clips)!;
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, tuning.General, gun.ActivatePosition(out _), 0f, AiDifficulty.Easy, clips, body.BoneHierarchy, weapons);
+        player.Human.ModelRadius = body.NativeMarkerBound;
+        player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
+        Flow.Igi2LevelRun run = Bare();
+
+        player.Human.ScriptActivate(gun);
+        player.Human.LockActivate(1);
+        player.Tick(RetailIgi2Mission1.Idle);
+        gun.Run(run);
+        Assert.Same(gun, player.Human.AttachParent);
+
+        Vector3d heliWas = helicopter.CurrentPosition;
+        float[] heliFrame = [.. helicopter.CurrentOrientation];
+        Vector3d mount = Local(heliFrame, Offset(gun.Mount, heliWas));
+        Vector3d place = Local(heliFrame, Offset(gun.CurrentPosition, heliWas));
+        Vector3d gunner = Local(heliFrame, Offset(player.Human.Position, heliWas));
+        Vector3d gunWas = gun.CurrentPosition;
+
+        // Flown 100 m on and 20 m up, without turning: the gun, its mount and its gunner go as far.
+        Vector3d flown = new(heliWas.X + 409600.0, heliWas.Y, heliWas.Z + 81920.0);
+        helicopter.Ride(flown, heliFrame, tick: 1);
+        AssertNear(place, Local(heliFrame, Offset(gun.CurrentPosition, flown)));
+        AssertNear(mount, Local(heliFrame, Offset(gun.Mount, flown)));
+        AssertNear(gunWas, gun.LastPosition);
+
+        // The locked activate key, pressed, does not let the gunner off; carried, the gunner stands where it stood on the gun.
+        player.Tick(RetailIgi2Mission1.Idle with { Held = PlayerAction.Activate });
+        gun.Run(run);
+        Assert.Same(gun, player.Human.AttachParent);
+        Assert.True(gun.IsActivated);
+        Assert.True(player.Human.View.IsOverride);
+        AssertNear(gunner, Local(heliFrame, Offset(player.Human.Position, flown)));
+
+        // Turned a quarter round where it hovers: the gun and its mount sit where they sat against it.
+        float[] turned = World.Igi2Pose.RotateGamma(heliFrame, MathF.PI / 2f);
+        helicopter.Ride(flown, turned, tick: 2);
+        AssertNear(place, Local(turned, Offset(gun.CurrentPosition, flown)));
+        AssertNear(mount, Local(turned, Offset(gun.Mount, flown)));
+        GC.KeepAlive(session);
+    }
+
+    private static Vector3d Offset(Vector3d of, Vector3d from) => new(of.X - from.X, of.Y - from.Y, of.Z - from.Z);
+
+    // An offset in the world, in a frame's own axes, as ModelObj_CalcRelativePosAndOrientation takes it.
+    private static Vector3d Local(float[] f, Vector3d d) => new(
+        (f[0] * d.X) + (f[3] * d.Y) + (f[6] * d.Z),
+        (f[1] * d.X) + (f[4] * d.Y) + (f[7] * d.Z),
+        (f[2] * d.X) + (f[5] * d.Y) + (f[8] * d.Z));
+
+    private static void AssertNear(Vector3d expected, Vector3d actual)
+    {
+        Assert.Equal(expected.X, actual.X, 2.0);
+        Assert.Equal(expected.Y, actual.Y, 2.0);
+        Assert.Equal(expected.Z, actual.Z, 2.0);
     }
 
     private static (Igi2Level Level, Igi2Session Session, Igi2StationaryGunTask Gun) Gun()

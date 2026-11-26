@@ -82,8 +82,8 @@ public sealed class SmokePlumeEmitter<TFpu>
             float reach = ((TFpu)Draw(random) * radius * 4096.0).F;
             TFpu spin = (((TFpu)Draw(random) * ((TFpu)maxRotation - minRotation)) + minRotation) * 0.03333333507180214;
             Vector3d at = new(
-                ((TFpu)Math.Cos(angle) * reach + centre.X).Value,
-                ((TFpu)Math.Sin(angle) * reach + centre.Y).Value,
+                ((TFpu)SimMath.Cos(angle) * reach + centre.X).Value,
+                ((TFpu)SimMath.Sin(angle) * reach + centre.Y).Value,
                 centre.Z);
             system.AddConeParticle(
                 at,

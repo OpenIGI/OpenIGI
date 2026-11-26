@@ -65,7 +65,7 @@ public sealed partial class Igi1MissionTick
 
         countdown.Value = GunShotBallistics.TracerInterval;
 
-        Vector3d aim = new(Math.Sin(yaw) * Math.Cos(pitch), Math.Cos(yaw) * Math.Cos(pitch), Math.Sin(pitch));
+        Vector3d aim = new(SimMath.Sin(yaw) * SimMath.Cos(pitch), SimMath.Cos(yaw) * SimMath.Cos(pitch), SimMath.Sin(pitch));
         Vector3d eye = feet + new Vector3d(0, 0, PlayerBody.StandingEyeHeight);
         Vector3d end = eye + (aim * PartnerShotReach);
         if (mission.Player?.GrenadeWalls is { } walls && walls(eye, end, out WorldRayHit hit))

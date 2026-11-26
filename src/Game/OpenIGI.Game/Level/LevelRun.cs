@@ -58,6 +58,18 @@ public abstract class LevelRun
     public bool IsReplica { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the tasks' own running state is mirrored from another machine too: whether a
+    /// container runs, how many stand in an area, whether a scene plays, an alarm sounds or a message was sent -- so those
+    /// tasks keep what the mirror wrote rather than work it out, and only do what follows from it.
+    /// </summary>
+    /// <remarks>
+    /// A replica (<see cref="IsReplica"/>) whose server sends it only the counters, verdicts and messages -- I.G.I.'s, which
+    /// mirrors no task's state -- works the rest out itself as ever: kept, its containers would never open, the one its player
+    /// stands under among them, and its player would never tick. Not retail.
+    /// </remarks>
+    public bool MirrorsTaskState { get; set; }
+
+    /// <summary>
     /// Gets a value indicating whether this run has the level's variables to evaluate a slot against. A task whose work is an
     /// expression does nothing under one that has not.
     /// </summary>

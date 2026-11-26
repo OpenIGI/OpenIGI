@@ -72,7 +72,14 @@ public sealed partial class Igi2GeneratorTask : Igi2ExplodeObjectTask
         bool? expression = _on.IsEmpty ? null : unchecked((byte)LevelExpression.Truncate(level.Evaluate(_on))) != 0;
         _power.Step(Explosive.IsExploded, expression, UseBackupTimer, BackupSeconds);
 
-        // The run sound is held only once one was made: a name nothing defines is asked for again each tick.
+        // The run sound is held only once one was made: a name nothing defines is asked for again each tick, and so is one a load
+        // deleted (Game_KillSoundTasks), as the original's reference to a deleted task reads as none.
+        if (_run is { IsDeleted: true })
+        {
+            _run = null;
+            _power.IsRunSoundHeld = false;
+        }
+
         GeneratorSounds change = _power.SettleSounds(wasOn, RunSound.Length > 0);
         if (change.HasFlag(GeneratorSounds.StartRun))
         {

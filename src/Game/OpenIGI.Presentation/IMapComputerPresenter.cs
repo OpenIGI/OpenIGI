@@ -142,6 +142,13 @@ public interface ITacticalComputerPresenter : IDisposable
     /// <param name="playerUnits">Where the player is, in engine units.</param>
     void Open(Vector3d playerUnits);
 
+    /// <summary>Gets the page the display shows.</summary>
+    OpenIGI.Game.Computer.ComputerPageKind ShownPage { get; }
+
+    /// <summary>Turns the display to a page, as its tab does; a map the level does not give stays on what it shows.</summary>
+    /// <param name="page">The page.</param>
+    void ShowPage(OpenIGI.Game.Computer.ComputerPageKind page);
+
     /// <summary>Advances the display for one frame.</summary>
     /// <param name="input">What the player is pressing.</param>
     /// <param name="elapsedSeconds">Real wall-clock seconds since the previous frame.</param>

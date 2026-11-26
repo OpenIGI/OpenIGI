@@ -35,10 +35,10 @@ public sealed class ControlsMenuTests
         Harness menu = Open();
         ControlsMenuTask list = menu.List;
 
-        // MoveLeft is A and Activate is E in a fresh profile; give MoveLeft E.
+        // MoveLeft is A and Activate is F in a fresh profile; give MoveLeft F.
         Assert.Equal("KEY_A", list.KeyOf(0)?.Name);
         int activate = Row("Activate");
-        Assert.Equal("KEY_E", list.KeyOf(activate)?.Name);
+        Assert.Equal("KEY_F", list.KeyOf(activate)?.Name);
 
         Click(menu, 0);
         Assert.Equal(0, list.CapturingRow);
@@ -46,20 +46,20 @@ public sealed class ControlsMenuTests
         Assert.Equal(ControlsMenuTask.Prompt, list.KeyTextOf(0));
         Assert.Contains(ControlsMenuTask.ChooseSoundName, menu.Host.Sounds);
 
-        menu.Host.HeldKeys.Add(0x12);
+        menu.Host.HeldKeys.Add(0x21);
         Tick(menu);
         menu.Host.HeldKeys.Clear();
 
         Assert.False(list.IsCapturing);
         Assert.Equal(MenuManagerState.Active, menu.Manager.Navigator.State);
-        Assert.Equal("KEY_E", list.KeyOf(0)?.Name);
+        Assert.Equal("KEY_F", list.KeyOf(0)?.Name);
         Assert.Equal("KEY_A", list.KeyOf(activate)?.Name);
         Assert.Matches("^menu_k0[1-7]$", menu.Host.Sounds[^1]);
 
         // Committing the screen writes the rows to the profile.
         list.SaveData();
         PlayerProfile profile = menu.Config.Active!;
-        Assert.Contains(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_E"), profile.Bindings);
+        Assert.Contains(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_F"), profile.Bindings);
         Assert.Contains(new InputBinding("Activate", InputBindingKeyNames.KeyboardDevice, "KEY_A"), profile.Bindings);
     }
 

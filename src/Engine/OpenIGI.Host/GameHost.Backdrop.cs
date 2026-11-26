@@ -21,6 +21,12 @@ public sealed partial class GameHost
     /// <summary>Applies or clears the backdrop's lite profile to match <see cref="BackdropLite"/>. Cheap; call freely.</summary>
     private void UpdateBackdropProfile() => _menuBackdrop.UpdateProfile(missionActive: _session.Mission is not null);
 
+    /// <summary>Gets or sets the menu's frame -entrycam presses Play no sooner than: a player's time reading it, for a test.</summary>
+    internal long EntryCamNotBeforeFrame { get; set; }
+
+    /// <summary>Gets or sets whether Play promotes the backdrop under -lockstep too, as it does a player's: for a test of that route.</summary>
+    internal bool PromotesBackdropUnderLockstep { get; set; }
+
     /// <summary>Arms, cycles and swaps the level behind the menu.</summary>
     private void UpdateMenuBackdrop(FrameLoopState state)
     {
@@ -58,7 +64,8 @@ public sealed partial class GameHost
         // rather than only for the backdrop is what keeps the measurement honest.
         if (state.EntryCamPending && _menuFlow.OverShowcase && _menuBackdrop.Preview is { } entryBackdrop
             && entryBackdrop.MissionId == _options.EntryCamMission
-            && _arming is { IsArmed: true })
+            && _arming is { IsArmed: true }
+            && _loop.Clock.FrameCount >= EntryCamNotBeforeFrame)
         {
             // -entrytime: the time chosen first, as the dropdown chooses it, and Play a second later
             // over the backdrop that choice re-lit.

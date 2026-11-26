@@ -453,10 +453,10 @@ public abstract class RetailRigidBody
     /// <summary>A rotation about Z -- <c>0x4B3BE0</c>: <c>{c, −s, 0, s, c, 0, 0, 0, 1}</c> from <c>fsin</c>/<c>fcos</c>.</summary>
     protected static void RotZ(Span<float> r, float angle)
     {
-        float s = X87.ToFloat(Math.Sin(angle));
-        float c = X87.ToFloat(Math.Cos(angle));
+        float s = X87.ToFloat(SimMath.Sin(angle));
+        float c = X87.ToFloat(SimMath.Cos(angle));
         r[0] = c;
-        r[1] = X87.ToFloat(-Math.Sin(angle));
+        r[1] = X87.ToFloat(-SimMath.Sin(angle));
         r[2] = 0.0f;
         r[3] = s;
         r[4] = c;

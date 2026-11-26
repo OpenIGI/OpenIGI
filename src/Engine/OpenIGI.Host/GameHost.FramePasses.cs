@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Time;
 using OpenIGI.Frontend;
@@ -36,7 +36,7 @@ public sealed partial class GameHost
 
         if (state.ShellHost is not null && state.ShellTypography is not null && state.Saves is not null)
         {
-            state.Shell = new Shell(BuildShellContext(state.ShellHost, state.ShellTypography.CreateTheme(), state.Saves));
+            state.Shell = new Shell(BuildShellContext(state.ShellHost, state.ShellTypography.CreateTheme(OpenIGI.Presentation.Text.UiFontLibrary.Icons(_device)), state.Saves));
             state.Shell.OpenOn("campaign");
         }
 
@@ -102,12 +102,15 @@ public sealed partial class GameHost
         ApplyTouchControls();
         _coop?.Update();
         UpdateParty();
+        UpdateAccount();
+        UpdatePresence();
         FollowSession(state);
 
-        // Typing wanted -- a text box with the focus, or a co-op line -- for a touch screen to raise its keyboard.
+        // Typing wanted -- a text box with the focus, a number being typed into a slider, or a co-op line -- for a
+        // touch screen to raise its keyboard.
         _window.SetTextEntry(
             _chatEntry is not null
-            || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.TextBox));
+            || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.ITextEntry { IsTakingText: true }));
         TellPlatformAboutChat();
         UpdateLookPreview();
 
@@ -179,10 +182,15 @@ public sealed partial class GameHost
         state.Console.Update(_window.Input, Math.Clamp((consoleNow - state.LastConsoleMilliseconds) / 1000f, 0f, 0.25f));
         state.LastConsoleMilliseconds = consoleNow;
 
+        // The interface drawn for the player's colour vision, as the settings have it this frame.
+        OpenIGI.UI.Widgets.UiPalette.Vision = (OpenIGI.UI.Widgets.ColourVision)Rendering.HudCVars.ColourVision.Value;
+
         // A co-op line being typed takes the keyboard next, the same way.
         UpdateNextMap();
         UpdateBombSounds();
+        UpdateBombFrontSound();
         UpdateBuySounds();
+        UpdateNetProbe();
         if (!state.Console.IsOpen)
         {
             UpdateCoopVoice();
@@ -405,6 +413,12 @@ public sealed partial class GameHost
     /// <summary>Lets Escape, held, skip a cutscene, or bring the pause menu up over the level.</summary>
     private void HandleEscape(FrameLoopState state)
     {
+        // A completed mission's rank screen takes Escape, and every key, to go on.
+        if (UpdateScoreScreen(state))
+        {
+            return;
+        }
+
         UpdateCutsceneSkip(state);
 
         // Escape brings the shell up over the level as a pause menu. It goes AFTER the shell's own
@@ -415,14 +429,18 @@ public sealed partial class GameHost
         // It also goes BEFORE the handheld computer below, which owns Escape while it is open: closing
         // the computer clears the flag, so a check placed after it would see a closed computer and a
         // still-pressed Escape and pause the game in the same breath.
+        //
+        // A replay being watched is not the player's game: its scenes and its level's own say over the menu are the run's, and a
+        // replay held at its end -- in the closing scene, the menus the level shut -- left no way out of it. Escape always works.
         if (!_menuFlow.MenuMode
             && !state.Console.IsOpen
             && !_computerOpen
             && !_touchEditor.IsOpen
             && !_session.FailedMenu
-            && _mission.Scenes?.IsPlaying != true
-            && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
-            && _mission.MenusEnabled
+            && _session.Score is null
+            && (Watching || (_mission.Scenes?.IsPlaying != true
+                && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
+                && _mission.MenusEnabled))
             && state.Shell is not null
             && _session.Mission is not null
             && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
@@ -658,6 +676,20 @@ public sealed partial class GameHost
             state.FlightFrame++;
         }
 
+        // The stills asked for along the way (-shotat), each named for its frame beside the last one's path.
+        if (_options.ShotFrames.Count > 0
+            && _options.ScreenshotPath is { } shotPath
+            && _options.ShotFrames.Contains(_loop.Clock.FrameCount))
+        {
+            Bgra32[] shot = new Bgra32[_window.Width * _window.Height];
+            _device.CaptureFrame(_window.Width, _window.Height, shot);
+            string named = Path.Combine(
+                Path.GetDirectoryName(shotPath) ?? string.Empty,
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Path.GetFileNameWithoutExtension(shotPath)}.f{_loop.Clock.FrameCount:000000}{Path.GetExtension(shotPath)}"));
+            BitmapWriter.Write(named, _window.Width, _window.Height, shot);
+            _logger.Information("Desktop", $"Wrote frame {_loop.Clock.FrameCount} to {named}.");
+        }
+
         // Authored-scene capture: write numbered stills of the requested scene every 90 logic ticks
         // (3 s) up to the still budget. Test-only; driven by environment variables.
         // A chained intro resets its scene-local clock. Do not carry the previous scene's next
@@ -691,6 +723,8 @@ public sealed partial class GameHost
 
         AdvanceRendererSwitch();
         AdvanceMapShot(state);
+        AdvanceOverheadGathering();
+        AdvanceMaps(state);
 
         if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
         {

@@ -52,10 +52,19 @@ public sealed class CampaignScreen : ShellScreen
 
     private CampaignHeader? _header;
     private MissionHero? _hero;
+    private MissionBestPanel? _best;
+    private ActionRow? _replaysRow;
+
+    // The mission's record on the boards, to race or watch, and the row that offers it.
+    private ActionRow? _recordRow;
+    private ShellRecord? _record;
     private PrimaryAction? _play;
     private OptionCycler? _difficulty;
     private int _selected = -1;
     private int _shown;
+
+    // The mission the page opens on, by its id: the one a page opened from it was of; else the one the profile is up to.
+    private readonly int? _opensOn;
 
     /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -63,6 +72,12 @@ public sealed class CampaignScreen : ShellScreen
         : base(context)
     {
     }
+
+    /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class, open on one mission.</summary>
+    /// <param name="context">The shared shell context.</param>
+    /// <param name="missionId">The mission it opens on.</param>
+    public CampaignScreen(ShellContext context, int missionId)
+        : base(context) => _opensOn = missionId;
 
     /// <summary>Gets the index of the mission the list currently has selected.</summary>
     public int SelectedMission => Math.Max(0, _selected);
@@ -98,10 +113,12 @@ public sealed class CampaignScreen : ShellScreen
             };
         }
 
-        // The first time the page opens it lands on the mission the profile is up to, not on the first.
+        // The first time the page opens it lands on the mission it was opened on, else on the one the profile is up to, not on
+        // the first.
         if (_selected < 0)
         {
-            _selected = Math.Clamp(Frontier(), 0, _missions.Count - 1);
+            int opensOn = _opensOn is { } id ? _missions.FindIndex(m => m.Id == id) : -1;
+            _selected = Math.Clamp(opensOn >= 0 ? opensOn : Frontier(), 0, _missions.Count - 1);
             _shown = _selected;
         }
 
@@ -149,6 +166,7 @@ public sealed class CampaignScreen : ShellScreen
     protected override void OnUpdate(float elapsedSeconds)
     {
         _reveal.Update(elapsedSeconds);
+        ShowRecord();
 
         // Selection follows focus, so one press of down changes the briefing and the level behind it. The
         // rows are focusable in their own right, which covers the pointer, the keyboard and the pad alike.
@@ -222,6 +240,9 @@ public sealed class CampaignScreen : ShellScreen
         return panel;
     }
 
+    // The player's replays, where the game being played offers its runs (GameTitle.RunsHeld): none to watch or race elsewhere.
+    private IShellReplays? Replays => OpenIGI.Core.Titles.GameTitle.RunsOffered(Context.ActiveTitleId) ? Context.Host.Replays : null;
+
     private StackPanel BuildDetail(UiTheme theme)
     {
         bool compact = Size == ShellSize.Compact;
@@ -235,6 +256,37 @@ public sealed class CampaignScreen : ShellScreen
 
         _hero = new MissionHero(theme, _reveal, Size);
         column.AddChild(_hero);
+
+        // The mission's best, as retail's Select Mission screen shows the stats of the mission its list has chosen.
+        _best = new MissionBestPanel(theme, Size) { MaxWidth = wide ? 760f : 640f, HorizontalAlignment = HorizontalAlignment.Left };
+        column.AddChild(_best);
+
+        // The runs of it kept, to watch: under its best, once there is one.
+        if (Replays is { } replays)
+        {
+            _replaysRow = new ActionRow(theme, "Your replays", "Watch")
+            {
+                MaxWidth = wide ? 760f : 640f,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                FieldWidth = compact ? 80f : 110f,
+            };
+            // A page of its own, in this one's place as every page goes: pushed over it, this page was drawn on under it.
+            _replaysRow.Activated += _ => Context.Stack.Reset(new ReplaysScreen(Context, replays, _missions[Math.Clamp(_shown, 0, _missions.Count - 1)]));
+            column.AddChild(_replaysRow);
+
+            // The fastest run on the mission's board, at the difficulty chosen and the rules played by now: raced or watched.
+            // Its holder and rules under the caption, its time in the field: the buttons in the replays row's order above it.
+            _recordRow = new ActionRow(theme, "Record", "Watch")
+            {
+                MaxWidth = wide ? 760f : 640f,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                FieldWidth = compact ? 80f : 110f,
+                MoreActions = [new RowAction("Race", _ => PlayRecord(race: true))],
+                Visibility = Visibility.Collapsed,
+            };
+            _recordRow.Activated += _ => PlayRecord(race: false);
+            column.AddChild(_recordRow);
+        }
 
         // How the mission is played, chosen right where it is started. Seeded from the context rather than a fresh
         // default, so a player three missions into a night run is shown the run they are on.
@@ -338,21 +390,41 @@ public sealed class CampaignScreen : ShellScreen
     // How far the profile is along the game's campaign; a mod's campaign keeps no progress, and starts at its first.
     private int Frontier()
     {
-        if (!IsGameCampaign)
+        return IsGameCampaign ? MissionsDone(_missions) : 0;
+    }
+
+    // The record of the mission shown at the difficulty chosen, once the boards have answered; the row hidden while there is none.
+    private void ShowRecord()
+    {
+        if (_recordRow is null || Replays is not { } replays || _missions.Count == 0)
         {
-            return 0;
+            return;
         }
 
-        int activeMission = Context.Config.Active?.ActiveMission ?? MissionRegistry.FirstMissionId;
-        for (int i = 0; i < _missions.Count; i++)
+        MissionInfo mission = _missions[Math.Clamp(_shown, 0, _missions.Count - 1)];
+        ShellRecord? record = replays.RecordOf(mission.Id, _difficulty?.SelectedIndex ?? 1);
+        if (record == _record)
         {
-            if (_missions[i].Id == activeMission)
-            {
-                return i;
-            }
+            return;
         }
 
-        return 0;
+        _record = record;
+        _recordRow.Visibility = record is null ? Visibility.Collapsed : Visibility.Visible;
+        if (record is not null)
+        {
+            TimeSpan time = TimeSpan.FromSeconds(record.Seconds);
+            _recordRow.Hint = $"{record.Name} · {record.Rules} rules";
+            _recordRow.Value = string.Create(CultureInfo.InvariantCulture, $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds / 100}");
+        }
+    }
+
+    // Leaves the menu for the record's run, raced or watched, once its replay has come down.
+    private void PlayRecord(bool race)
+    {
+        if (_record is { } record)
+        {
+            Replays?.PlayRecord(record.Run, race);
+        }
     }
 
     private void Refresh()
@@ -370,7 +442,10 @@ public sealed class CampaignScreen : ShellScreen
 
         for (int i = 0; i < _cards.Count && i < _missions.Count; i++)
         {
-            _cards[i].Tag = StatusOf(i, frontier, playable);
+            // A completed mission that earned a rank is tagged with it.
+            _cards[i].Tag = i < frontier && Context.Host.BestScore(_missions[i].Id) is { Rank: >= 0 } best
+                ? best.RankName.ToUpperInvariant()
+                : StatusOf(i, frontier, playable);
             _cards[i].TagColor = i < frontier ? Context.Theme.TextSecondary
                 : i <= playable ? Context.Theme.Accent : Context.Theme.TextMuted;
             _cards[i].Mark = i < frontier ? ListCardMark.Done : i <= playable ? ListCardMark.Open : ListCardMark.Locked;
@@ -386,6 +461,21 @@ public sealed class CampaignScreen : ShellScreen
             StatusOf(shown, frontier, playable),
             mission.Name,
             mission.Description);
+        _best?.Show(Context.Host.BestScore(mission.Id));
+        if (_replaysRow is not null && Replays is { } kept)
+        {
+            IReadOnlyList<ShellReplay> keptRuns = kept.KeptOf(mission.Id);
+            _replaysRow.Visibility = keptRuns.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _replaysRow.Value = string.Create(CultureInfo.InvariantCulture, $"{keptRuns.Count} kept");
+
+            // The fastest completed run to race, the one at the difficulty chosen where there is one.
+            string chosen = _difficulty is { } picked ? Difficulties[picked.SelectedIndex] : string.Empty;
+            ShellReplay? best = keptRuns.FirstOrDefault(r => r is { Best: true, CanRace: true } && string.Equals(r.Difficulty, chosen, StringComparison.OrdinalIgnoreCase))
+                ?? keptRuns.FirstOrDefault(static r => r is { Best: true, CanRace: true });
+            _replaysRow.MoreActions = best is null ? [] : [new RowAction("Race best", _ => kept.Race(best.Id))];
+        }
+
+        ShowRecord();
 
         if (_play is not null)
         {

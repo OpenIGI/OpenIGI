@@ -19,14 +19,15 @@ namespace OpenIGI.Game.Config;
 /// and <c>config.qvm</c> — which is the save file — is keyed by name, not by offset.
 /// </para>
 /// </remarks>
-public sealed class PlayerProfile
+public sealed partial class PlayerProfile
 {
     /// <summary>The number of key bindings a profile carries.</summary>
     /// <remarks>
     /// The <see cref="RetailBindingCount"/> the original writes, plus the remaster's flashlight, weapon wheel, multiplayer
-    /// scoreboard, buy menu and weapon drop — the five actions the original does not have.
+    /// scoreboard, buy menu and weapon drop, modern aim's underbarrel, two leans and mount, and the computer's objectives and
+    /// log keys — the eleven actions the original does not have.
     /// </remarks>
-    public const int BindingCount = RetailBindingCount + 5;
+    public const int BindingCount = RetailBindingCount + 11;
 
     /// <summary>The number of key bindings the original's profile carries.</summary>
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
@@ -41,10 +42,12 @@ public sealed class PlayerProfile
 
     /// <summary>The bindings a fresh profile starts with.</summary>
     /// <remarks>
-    /// The port keeps the retail action set on a layout a hand on WASD and one on the mouse can reach: the sight (alternate
-    /// fire) on the right mouse button, the weapons on the wheel, leaning out on the left Alt and the zoom beside the digits.
-    /// They must live in the model rather than the Controls screen: a profile created before that page is opened
-    /// still has to serialize to a complete configuration and provide usable input to the game.
+    /// The port keeps the retail action set on the layout shooters with a lean have settled on, every key within reach of a hand
+    /// on WASD: the sight (alternate fire) on the right mouse button, the weapons on the wheel, reload on R, use on F, the
+    /// leans on Q and E, crouch on the left Ctrl, the flashlight on L, the original's peek on the left Alt and the zoom beside
+    /// the digits. They must live in the model rather than the Controls screen: a profile created before that page is opened
+    /// still has to serialize to a complete configuration and provide usable input to the game. <see cref="AdoptCurrentLayout"/>
+    /// brings a profile still on an older layout's keys onto these.
     /// </remarks>
     public static IReadOnlyList<InputBinding> DefaultBindings { get; } =
     [
@@ -53,9 +56,9 @@ public sealed class PlayerProfile
         new("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"),
         new("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_S"),
         new("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"),
-        new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RETURN"),
-        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
-        new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_CTRL"),
+        new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_R"),
+        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"),
+        new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_CTRL"),
         new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
         new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_WHEEL_DOWN"),
         new("PrevWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_WHEEL_UP"),
@@ -75,11 +78,20 @@ public sealed class PlayerProfile
         new("WeaponCategory7", "INPUTPORT_DEVICE_KEYBOARD", "KEY_7"),
         new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
         new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
-        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"),
+        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_L"),
         new("WeaponWheel", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_3"),
         new(ScoreboardAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_TAB"),
         new(BuyMenuAction, "INPUTPORT_DEVICE_KEYBOARD", "KEY_G"),
         new(nameof(Player.PlayerAction.DropWeapon), "INPUTPORT_DEVICE_KEYBOARD", "KEY_X"),
+        new(nameof(Player.PlayerAction.Underbarrel), "INPUTPORT_DEVICE_KEYBOARD", "KEY_V"),
+        new(nameof(Player.PlayerAction.LeanLeft), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Q"),
+        new(nameof(Player.PlayerAction.LeanRight), "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
+        new(nameof(Player.PlayerAction.Mount), "INPUTPORT_DEVICE_KEYBOARD", "KEY_Z"),
+
+        // The computer's pages: objectives on O, as I.G.I. 2's own config.qvm binds them; the log on J, for journal, since L
+        // (I.G.I. 2's) is the flashlight's.
+        new(nameof(Player.PlayerAction.ComputerObjectives), "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
+        new(nameof(Player.PlayerAction.ComputerLog), "INPUTPORT_DEVICE_KEYBOARD", "KEY_J"),
     ];
 
     /// <summary>What a fresh profile's bindings were before <see cref="GameConfig.CurrentControlsVersion"/> two, where they differ from today's.</summary>
@@ -156,9 +168,43 @@ public sealed class PlayerProfile
     /// <remarks>Field <c>+0</c>, and the second argument of <c>Config_CreateNewPlayerProfile</c>.</remarks>
     public int Difficulty { get; set; } = 1;
 
-    /// <summary>The mission the player has reached.</summary>
-    /// <remarks><c>GOActiveMission</c> in the save file; read by <c>Config_PlayerGetActiveMission</c>.</remarks>
+    /// <summary>The title whose progress <see cref="ActiveMission"/> is: Project I.G.I.'s, as the original's record keeps it.</summary>
+    public const string RetailTitle = "igi1";
+
+    // The furthest mission reached in each other game: one profile plays every game in the build.
+    private readonly Dictionary<string, int> _titleMissions = new(StringComparer.Ordinal);
+
+    /// <summary>The mission the player has reached in Project I.G.I.</summary>
+    /// <remarks>
+    /// <c>GOActiveMission</c> in the save file; read by <c>Config_PlayerGetActiveMission</c>. Another game's is
+    /// <see cref="MissionOf"/>: the original's one number would have each game unlock the other's missions by their ids.
+    /// </remarks>
     public int ActiveMission { get; set; } = 1;
+
+    /// <summary>Gets the games with progress of their own, besides <see cref="RetailTitle"/>, and the mission reached in each.</summary>
+    public IReadOnlyDictionary<string, int> TitleMissions => _titleMissions;
+
+    /// <summary>Gets the mission reached in a game.</summary>
+    /// <param name="titleId">The game, by title id.</param>
+    /// <returns>The mission's id; 0 for a game not yet played, which starts at its first mission.</returns>
+    public int MissionOf(string titleId) =>
+        titleId == RetailTitle ? ActiveMission : _titleMissions.GetValueOrDefault(titleId);
+
+    /// <summary>Sets the mission reached in a game.</summary>
+    /// <param name="titleId">The game, by title id.</param>
+    /// <param name="missionId">The mission's id.</param>
+    public void SetMission(string titleId, int missionId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(titleId);
+        if (titleId == RetailTitle)
+        {
+            ActiveMission = missionId;
+        }
+        else
+        {
+            _titleMissions[titleId] = missionId;
+        }
+    }
 
     /// <summary>Whether the mouse's vertical axis is inverted.</summary>
     /// <remarks>
@@ -354,9 +400,8 @@ public sealed class PlayerProfile
                 continue;
             }
 
-            bool taken = Bindings.Exists(existing =>
-                string.Equals(existing.Device, binding.Device, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(existing.Key, binding.Key, StringComparison.OrdinalIgnoreCase));
+            // A title's own row is live only while that title plays, so it takes nothing from a shared action.
+            bool taken = Bindings.Exists(existing => !IsTitleRow(existing) && SameControl(existing, binding));
             Bindings.Add(taken ? binding with { Key = UnboundKey } : binding);
         }
     }
@@ -526,6 +571,18 @@ public sealed class PlayerProfile
         };
 
         copy.Bindings.AddRange(Bindings);
+        foreach ((string title, int mission) in _titleMissions)
+        {
+            copy._titleMissions[title] = mission;
+        }
+
+        // The finales with the progress they finish: a copy standing at the last mission would read it as still to do.
+        foreach ((string title, int mission) in _finales)
+        {
+            copy._finales[title] = mission;
+        }
+
+        // Not the mission records: they are the player's own, and a clone is a new player's start.
         return copy;
     }
 
@@ -665,6 +722,7 @@ public static class InputBindingKeyNames
             "KEY_NUMPAD7" => KeyCode.Numpad7,
             "KEY_NUMPAD8" => KeyCode.Numpad8,
             "KEY_NUMPAD9" => KeyCode.Numpad9,
+            "KEY_DIVIDE" => KeyCode.NumpadDivide,
             "KEY_0" => KeyCode.D0,
             "KEY_1" => KeyCode.D1,
             "KEY_2" => KeyCode.D2,
@@ -709,6 +767,7 @@ public static class InputBindingKeyNames
         KeyCode.Numpad7 => "KEY_NUMPAD7",
         KeyCode.Numpad8 => "KEY_NUMPAD8",
         KeyCode.Numpad9 => "KEY_NUMPAD9",
+        KeyCode.NumpadDivide => "KEY_DIVIDE",
         KeyCode.D0 => "KEY_0",
         KeyCode.D1 => "KEY_1",
         KeyCode.D2 => "KEY_2",
@@ -838,9 +897,11 @@ public static class PlayerProfileInputBindings
 
         key = KeyCode.None;
         button = null;
+        // Indexed: every action is asked every frame, and the interface's enumerator was boxed each time.
         IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
-        foreach (InputBinding binding in bindings)
+        for (int i = 0; i < bindings.Count; i++)
         {
+            InputBinding binding = bindings[i];
             if (!string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -893,9 +954,11 @@ public static class PlayerProfileInputBindings
         ArgumentNullException.ThrowIfNull(input);
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
 
+        // Indexed: every action is asked every frame, and the interface's enumerator was boxed each time.
         IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
-        foreach (InputBinding binding in bindings)
+        for (int i = 0; i < bindings.Count; i++)
         {
+            InputBinding binding = bindings[i];
             if (!string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
             {
                 continue;

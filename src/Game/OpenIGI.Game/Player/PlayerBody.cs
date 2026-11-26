@@ -11,6 +11,10 @@ namespace OpenIGI.Game.Player;
 /// <param name="Run">Whether the latched walk/run toggle selects running.</param>
 /// <param name="Crouch">Whether the crouch modifier is held.</param>
 /// <param name="Jump">Whether jump was pressed this tick — the rising edge, not the level.</param>
+/// <param name="Lean">
+/// Whether the weapon machine holds its lean (weapon state 5), which forces the body into state 44 and holds it there; the move
+/// keys then slide the eye rather than the body.
+/// </param>
 public readonly record struct PlayerCommand(
     float Forward,
     float Strafe,
@@ -18,7 +22,8 @@ public readonly record struct PlayerCommand(
     float PitchDelta,
     bool Run,
     bool Crouch,
-    bool Jump);
+    bool Jump,
+    bool Lean = false);
 
 /// <summary>
 /// A player standing in the world: root-motion movement, gravity, and the terrain under its feet.
@@ -189,13 +194,25 @@ public sealed partial class PlayerBody
     /// </remarks>
     public double JumpHorizontalSpeed =>
         (Parameters?.JumpHorizontalSpeed ?? 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour)
-        * Cheats.SpeedMultiplier;
+        * Cheats.SpeedMultiplier
+        * LoadSpeedScale;
 
     /// <summary>Gets the factor the animation's delta translation is scaled by.</summary>
     /// <remarks><see cref="HumanPlayerParameters.DeltaTranslationScale"/> — argument 0, 1.75 in retail.</remarks>
     public float DeltaTranslationScale =>
         (Parameters?.DeltaTranslationScale ?? HumanMotion.DefaultDeltaTranslationScale)
-        * Cheats.SpeedMultiplier;
+        * Cheats.SpeedMultiplier
+        * AimSpeedScale
+        * LoadSpeedScale;
+
+    /// <summary>Gets or sets what aiming down the sights makes of the walk: one, the original's, unless modern aim has the sights up.</summary>
+    public float AimSpeedScale { get; set; } = 1f;
+
+    /// <summary>
+    /// Gets or sets what the weight carried makes of the walk and the jump's carry: one, the original's, which has no weight. <b>Not
+    /// retail</b>: another game's body standing on this one, which slows its player by what it carries, sets it.
+    /// </summary>
+    public float LoadSpeedScale { get; set; } = 1f;
 
     /// <summary>How far the pitch may travel from level, in radians.</summary>
     public const float PitchLimit = 1.5533431f;
@@ -646,12 +663,16 @@ public sealed partial class PlayerBody
         ArgumentNullException.ThrowIfNull(animator);
 
         int state = animator.State;
-        int next = HumanBodyStateMachine.Next(state, InputWord(command), command.Jump);
+        int next = HumanBodyStateMachine.Next(state, InputWord(command), command.Jump, command.Lean);
         _jumpEntered = false;
         if (next != state || !animator.HasStarted)
         {
-            animator.Play(next, HumanBodyStateMachine.BlendFor(next, state), HumanBodyStateMachine.KeepsPhase(next, state));
-            IsCrouched = HumanBodyStateMachine.Crouches(next);
+            animator.Play(
+                next,
+                HumanBodyStateMachine.SlotFor(next, IsCrouched),
+                HumanBodyStateMachine.BlendFor(next, state),
+                HumanBodyStateMachine.KeepsPhase(next, state));
+            IsCrouched = HumanBodyStateMachine.KeepsCrouch(next) ? IsCrouched : HumanBodyStateMachine.Crouches(next);
             if (next == HumanBodyStateMachine.Jump)
             {
                 animator.SetSpeed(HumanBodyStateMachine.JumpClipSpeed);
@@ -779,8 +800,8 @@ public sealed partial class PlayerBody
     /// </remarks>
     private static Matrix3f FacingBasis(float yaw)
     {
-        float cos = MathF.Cos(yaw);
-        float sin = MathF.Sin(yaw);
+        float cos = SimMathF.Cos(yaw);
+        float sin = SimMathF.Sin(yaw);
 
         return Matrix3f.FromRows(
             new Vector3f(cos, sin, 0f),

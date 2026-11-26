@@ -36,7 +36,7 @@ public sealed partial class SoldierRenderer
 
         _previewSpot = (feet, facing);
         _previewGun = gun?.GunModel is { Length: > 0 } gunModel ? _armoury.HeldWeaponFor(mission, gunModel) : null;
-        (LoadedMission lookMission, string look) = ResolveLook(mission, model, OpenIGI.Game.Multiplayer.PlayerSkins.Default.Model);
+        (LoadedMission lookMission, string look) = ResolveLook(mission, model, OpenIGI.Game.Multiplayer.PlayerSkins.Igi1.Default.Model);
         if (_preview is null || _previewModel != look)
         {
             ReleasePreview();

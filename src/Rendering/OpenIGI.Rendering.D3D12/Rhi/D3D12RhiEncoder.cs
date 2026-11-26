@@ -337,7 +337,12 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
         }
 
         D3D12Check.Ok(_list->Close(), "ID3D12GraphicsCommandList::Close");
-        D3D12RhiCommandBuffer buffer = new(_list, _allocator, label.Length > 0 ? label : Label, [.. _written], _tracker.HandOffs());
+        // Into lists the device recycles once the buffer has run: one buffer per pass, every frame.
+        List<D3D12RhiBuffer> written = _device.RentWrittenList();
+        written.AddRange(_written);
+        List<Sync.D3D12LayoutHandOff> handOffs = _device.RentHandOffList();
+        _tracker.HandOffs(handOffs);
+        D3D12RhiCommandBuffer buffer = new(_list, _allocator, label.Length > 0 ? label : Label, written, handOffs);
         D3D12BarrierTracker.Return(_tracker);
         _tracker = null!;
         _list = null;

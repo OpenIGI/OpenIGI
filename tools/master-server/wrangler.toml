@@ -41,6 +41,26 @@ class_name = "Party"
 name = "RELAYS"
 class_name = "Relays"
 
+# The community maps (maps.js): every version's package kept in its storage.
+[[durable_objects.bindings]]
+name = "MAPS"
+class_name = "Maps"
+
+# Player accounts (accounts.js): Discord users and the installations' keys they linked.
+[[durable_objects.bindings]]
+name = "ACCOUNTS"
+class_name = "Accounts"
+
+# Match results from the listed servers, and the records and boards they add up to (stats.js).
+[[durable_objects.bindings]]
+name = "STATS"
+class_name = "Stats"
+
+# Single-player runs, their replays and the mission boards (runs.js).
+[[durable_objects.bindings]]
+name = "RUNS"
+class_name = "Runs"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
@@ -52,3 +72,19 @@ new_sqlite_classes = ["Relays"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["Party"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["Maps"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["Accounts"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["Stats"]
+
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = ["Runs"]

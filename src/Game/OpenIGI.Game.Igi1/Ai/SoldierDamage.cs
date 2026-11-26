@@ -160,6 +160,12 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// brain is told, so it steps the body every tick from then on instead of freezing it.
     /// </para>
     /// </remarks>
+    /// <param name="view">The soldier.</param>
+    /// <param name="hit">Where the killing hit struck.</param>
+    /// <param name="origin">Where its line started.</param>
+    /// <param name="end">Where its line ended.</param>
+    /// <param name="category">The killing weapon's kind.</param>
+    /// <param name="mode">How the death is chosen.</param>
     public void Die(
         SoldierView view,
         HumanHit hit,
@@ -177,7 +183,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         // The heading the body has now. The authored one (the spawn's gamma) snapped every soldier that died back
         // to the way it was placed.
-        float facing = brain?.Facing ?? MathF.Atan2(orientation.M21, orientation.M11);
+        float facing = brain?.Facing ?? SimMathF.Atan2(orientation.M21, orientation.M11);
         float livingFacing = facing;
 
         int animation;
@@ -223,6 +229,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         WeaponType? droppedWeapon = dying is null || (LetGoOfGun.Count > 0 && LetGoOfGun.Contains(view))
             ? null
             : WeaponForDrop(dying.CarriedWeaponType, dying.WeaponType);
+
         Vector3d dropPosition = view.Position;
         Matrix3f dropRotation = view.Orientation;
         if (droppedWeapon is not null && dying is not null)
@@ -407,11 +414,20 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             }
 
             // A co-op client's soldier is the server's: the round it fired is traced there, and whatever it does to the
-            // soldier comes back in the snapshots. Here it shows its blood and counts as a hit, and takes no health -- a
-            // soldier killed only here would lie dead while the server went on posing it alive and firing.
+            // soldier comes back in the snapshots. Here it shows its blood, counts as a hit and is cried out at, as it
+            // strikes, and takes no health -- a soldier killed only here would lie dead while the server went on posing it
+            // alive and firing. Its flinch and its fall are the server's word alone, as Source's are: this copy plays the
+            // server's clip but not at its frame, so the zone a round strikes here is not always the zone it strikes there,
+            // and a fall foreseen from it was now and then one the server never bore out -- the soldier fell, lay while the
+            // server's moved on, and got up somewhere else.
             if (_context.PuppetsOnly)
             {
                 round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
+                if (round.FromPlayer && !struckView.IsDead)
+                {
+                    ReportHitSound(struckView);
+                }
+
                 return;
             }
 

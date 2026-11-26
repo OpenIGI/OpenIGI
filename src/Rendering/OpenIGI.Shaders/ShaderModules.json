@@ -612,8 +612,32 @@
       "source": "World/TerrainArena.slang"
     },
     {
-      "id": "BlastVolume",
-      "source": "World/BlastVolume.slang"
+      "id": "Infrared",
+      "source": "World/Infrared.slang"
+    },
+    {
+      "id": "ThermalMask",
+      "source": "World/ThermalMask.slang"
+    },
+    {
+      "id": "Thermal",
+      "source": "Post/Thermal.slang"
+    },
+    {
+      "id": "GhostMask",
+      "source": "World/GhostMask.slang"
+    },
+    {
+      "id": "Ghost",
+      "source": "Post/Ghost.slang"
+    },
+    {
+      "id": "BombAfterBlast",
+      "source": "Post/BombAfterBlast.slang"
+    },
+    {
+      "id": "ScreenPicture",
+      "source": "Post/ScreenPicture.slang"
     }
   ]
 }

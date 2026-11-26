@@ -222,9 +222,11 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     }
 
     /// <inheritdoc/>
-    public void StopSoundSlot()
-    {
-    }
+    /// <remarks>
+    /// <c>Human_UpdateDie</c> deletes the sound of the weapon's first slot, the fire sound's: a full-automatic loop stops with
+    /// the body that fired it, with no tail.
+    /// </remarks>
+    public void StopSoundSlot() => _firing.Effects.StopSound(Igi2WeaponFiring.FireSoundSlot);
 
     /// <inheritdoc/>
     public void ClearOverlay() => _firing.SetOverlayStatus(Igi2WeaponOverlayStatus.None);

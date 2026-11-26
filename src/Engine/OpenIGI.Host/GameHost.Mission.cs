@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
@@ -27,6 +27,9 @@ public sealed partial class GameHost
     /// <summary>Gets whether the mission-failed page is up: what a versus test checks never opens.</summary>
     internal bool ShowsMissionFailed => _session.FailedMenu;
 
+    // How many levels have been loaded, for the editor to know whether what it saved is in the level that is up.
+    private int _levelLoads;
+
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -39,6 +42,13 @@ public sealed partial class GameHost
         if (TickObserver is Multiplayer.ISessionHold hosting)
         {
             hosting.AnnounceGoing(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            // And the mission after it, whose files a player's copy may differ in: fetched while this one is played, so going on
+            // to it waits for nothing.
+            if (_missions.TryGet(chosen.NextMissionId, out MissionDescriptor? next) && next is not null)
+            {
+                hosting.Foresee(next.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
         }
 
         // The hold starts before anything blocks, and so does the panel. Everything below this line
@@ -49,9 +59,14 @@ public sealed partial class GameHost
         BeginMissionWarmUp(chosen);
         PresentLoadingFrame();
 
-        ReleasePlayedMission();
+        // A community map being played stays laid over the game for its own mission started again; and a race goes on over its
+        // own mission started again.
+        _missionStarting = id;
+        ReleasePlayedMission(keepMap: true);
+        _missionStarting = null;
 
         _logger.Information("Mission", $"Starting {chosen}.");
+        _levelLoads++;
         LevelTask levelRoot = (LevelTask)_loop.Tasks.New(_loop.Tasks.Root, _loop.Types.Get(EngineTaskTypes.Level));
         _session.Begin(chosen, levelRoot);
 
@@ -211,7 +226,7 @@ public sealed partial class GameHost
 
         // The walk the mission ticks its level with; a game whose level runs itself behind its player leaves it unused.
         LevelUpdateWalker walker = new(levelRoot);
-        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
+        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission) { Logger = _logger };
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
         if (_title.Services.TryGet(out LevelSystemEdits? edits))
         {
@@ -220,6 +235,12 @@ public sealed partial class GameHost
         }
 
         systems.BuildAll(build);
+
+        // The profile's record of the mission, kept from its first play as retail's load keeps it.
+        _outcome.MissionBegun();
+
+        // And its run, recorded from the level's first tick.
+        ArmMissionReplay(id);
     }
 
     /// <summary>Makes the mission systems, in the order a mission is brought up: the host's, and the game's set among them.</summary>
@@ -260,7 +281,9 @@ public sealed partial class GameHost
     /// Faithfully the ACTIVE PLAYER PROFILE's (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the
     /// player picked in the menu reaches the AI; -difficulty still overrides, for testing one without editing a profile.
     /// </remarks>
-    private AiDifficulty EffectiveDifficulty() => _options.Difficulty
+    private AiDifficulty EffectiveDifficulty() => PlaybackDifficulty
+        ?? RaceDifficulty
+        ?? _options.Difficulty
         ?? (AiDifficulty)Math.Clamp(
             _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
             (int)AiDifficulty.Easy,
@@ -345,22 +368,26 @@ public sealed partial class GameHost
                     _hud.Dispose();
                     _hud = null;
                 }
+            }
 
-                _remasteredHud?.Dispose();
-                _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
-                if (_remasteredHud is not null && !_remasteredHud.Load())
-                {
-                    _remasteredHud.Dispose();
-                    _remasteredHud = null;
-                }
+            // The remastered display and the session's overlays on it, for every title: I.G.I. 2 declares no loadout, and made
+            // only beside one it never drew a scoreboard, a teammate's name or a fallen teammate's mark.
+            _remasteredHud?.Dispose();
+            _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
+            if (_remasteredHud is not null && !_remasteredHud.Load())
+            {
+                _remasteredHud.Dispose();
+                _remasteredHud = null;
+            }
 
-                _debugOverlay?.Dispose();
-                _debugOverlay = new DebugOverlayRenderer(_device, _logger);
-                if (!_debugOverlay.Load())
-                {
-                    _debugOverlay.Dispose();
-                    _debugOverlay = null;
-                }
+            // The F12 panel is the host's own tool, not part of a loadout: loaded for every title. I.G.I. 2 arms its player
+            // itself and declares no loadout here, and with the panel loaded only above it F12 toggled nothing in the sequel.
+            _debugOverlay?.Dispose();
+            _debugOverlay = new DebugOverlayRenderer(_device, _logger);
+            if (!_debugOverlay.Load())
+            {
+                _debugOverlay.Dispose();
+                _debugOverlay = null;
             }
 
             // The weapons lying in the level and what flies in it are the title's to draw, with its own models.
@@ -385,7 +412,7 @@ public sealed partial class GameHost
                     // player's own, which it is seen in climbing or fallen as the others see it.
                     bodies.BorrowLevel = level => Borrow(loaded, _resources, level);
                     string? look = TickObserver is Multiplayer.ISessionLook { OwnSkin.Length: > 0 } session
-                        ? Game.Multiplayer.PlayerSkins.Of(session.OwnSkin).Model
+                        ? Game.Multiplayer.PlayerSkins.Igi1.Of(session.OwnSkin).Model
                         : null;
                     bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma, look);
                 }
@@ -475,6 +502,10 @@ public sealed partial class GameHost
         MountLanguage(_resources);
         // The backdrop showed every section the level streams in by area; the mission starts as a cold load does.
         preview.BeforePlay?.Invoke();
+
+        // A level loaded, as a cold load counts one: its ticks are counted from nought, not on from the menu's that ran over the
+        // backdrop, so a run recorded from the menu begins on its first tick, and a replay or race begun from it on its own.
+        _levelLoads++;
         _session.Begin(chosen, preview.LevelRoot);
 
         // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the
@@ -506,9 +537,16 @@ public sealed partial class GameHost
         return true;
     }
 
-    private void ReleasePlayedMission()
+    /// <param name="keepMap">Whether a community map being played stays laid over the game: a mission starting, not the game left.</param>
+    private void ReleasePlayedMission(bool keepMap = false)
     {
+        PlaybackLevelReleased();
+        RaceLevelReleased();
         ReleaseTaskPresenters();
+        if (!keepMap)
+        {
+            LeaveMap(rescan: true);
+        }
 
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
@@ -571,6 +609,11 @@ public sealed partial class GameHost
         _soldiers?.Dispose();
         DisposeModePoints();
         _menuBackdrop.ReleaseSoldiers();
+
+        // The backdrop's renderer, scene and collision index were just released with the level, so the preview they came
+        // from can no longer be promoted. Left standing, a mission started for the same id took it for a level still up:
+        // a co-op joiner whose tables were read again for the host's files promoted a gutted backdrop and stopped the game.
+        _menuBackdrop.Clear();
         _heldWeapon?.Dispose();
         WorldView?.ReleaseLevel();
         _hud?.Dispose();
@@ -580,6 +623,7 @@ public sealed partial class GameHost
         _modelGlows?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
+        _titleWorldModels?.Dispose();
         _sky = null;
         _rain?.Dispose();
         _rain = null;
@@ -599,6 +643,7 @@ public sealed partial class GameHost
         _arms = null;
         _titleFeatures = null;
         _titleArms = null;
+        _titleWorldModels = null;
         _playerMode = false;
         _scene = null;
         _mission.Terrain = null;

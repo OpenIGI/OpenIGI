@@ -31,6 +31,26 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     /// <summary>Gets the level's <c>Radio</c> tasks.</summary>
     public IReadOnlyList<RadioRuntime> Radios => _radios;
 
+    /// <summary>
+    /// The interactions of another game's level, each standing for a thing that level keeps (<see cref="WorldInteraction.Hosted"/>):
+    /// what Project I.G.I.'s player activates where it stands in that level.
+    /// </summary>
+    /// <param name="hosted">The interactions, in the order the level holds their things.</param>
+    /// <returns>The registry, which nothing walks: whoever runs the level ticks it (<see cref="Tick"/>).</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hosted"/> is <see langword="null"/>.</exception>
+    public static WorldInteractionRegistry OfHosted(IEnumerable<WorldInteraction> hosted)
+    {
+        ArgumentNullException.ThrowIfNull(hosted);
+        WorldInteractionRegistry registry = new();
+        foreach (WorldInteraction item in hosted)
+        {
+            item.Clock = () => registry.Now;
+            registry._items.Add(item);
+        }
+
+        return registry;
+    }
+
     public static WorldInteractionRegistry Build(
         GameTask root,
         LoadedMission mission,
@@ -420,15 +440,15 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch, out double resolvedAngle)
     {
         Vector3d look = new(
-            Math.Sin(yaw) * Math.Cos(pitch),
-            Math.Cos(yaw) * Math.Cos(pitch),
-            Math.Sin(pitch));
+            SimMath.Sin(yaw) * SimMath.Cos(pitch),
+            SimMath.Cos(yaw) * SimMath.Cos(pitch),
+            SimMath.Sin(pitch));
         WorldInteraction? best = null;
         double bestAngle = double.MaxValue;
 
         foreach (WorldInteraction item in _items)
         {
-            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye))
+            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye, look))
             {
                 continue;
             }
@@ -464,8 +484,8 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         // quarter-pi): the angle in the forward/up plane (0x4148F0) and the one in the forward/side plane (0x414950).
         bool IsInChargeView(Vector3d delta)
         {
-            Vector3d side = new(Math.Cos(yaw), -Math.Sin(yaw), 0.0);
-            Vector3d up = new(-Math.Sin(yaw) * Math.Sin(pitch), -Math.Cos(yaw) * Math.Sin(pitch), Math.Cos(pitch));
+            Vector3d side = new(SimMath.Cos(yaw), -SimMath.Sin(yaw), 0.0);
+            Vector3d up = new(-SimMath.Sin(yaw) * SimMath.Sin(pitch), -SimMath.Cos(yaw) * SimMath.Sin(pitch), SimMath.Cos(pitch));
             double ahead = Vector3d.Dot(delta, look);
             if (!(ahead > 0.0))
             {
@@ -473,8 +493,8 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
             }
 
             const double Limit = MathF.PI / 4f;
-            return Math.Abs(Math.Atan2(Vector3d.Dot(delta, up), ahead)) < Limit
-                && Math.Abs(Math.Atan2(Vector3d.Dot(delta, side), ahead)) < Limit;
+            return Math.Abs(SimMath.Atan2(Vector3d.Dot(delta, up), ahead)) < Limit
+                && Math.Abs(SimMath.Atan2(Vector3d.Dot(delta, side), ahead)) < Limit;
         }
 
         void Consider(WorldInteraction item, Vector3d point, double radius)
@@ -492,7 +512,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
                 return;
             }
 
-            double angle = Math.Acos(Math.Clamp(cosine, -1.0, 1.0));
+            double angle = SimMath.Acos(Math.Clamp(cosine, -1.0, 1.0));
             if (angle < bestAngle)
             {
                 bestAngle = angle;

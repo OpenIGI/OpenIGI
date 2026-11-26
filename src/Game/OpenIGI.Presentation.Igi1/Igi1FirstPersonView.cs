@@ -5,6 +5,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Player.Aim;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
@@ -24,6 +25,10 @@ internal sealed class Igi1FirstPersonView(
 
     // What draws the charge in the planter's hand, made the first time one plants.
     private BombRenderer? _charges;
+
+    // Modern aim's motion over the weapon -- the lag, the lean, the swing to the eye, the kick -- stepped once a drawn frame.
+    private readonly ViewModelMotion _motion = new();
+    private long _lastFrame;
 
     /// <inheritdoc/>
     public FirstPersonResult Draw(in Camera3D eye, in FirstPersonFrame frame)
@@ -126,8 +131,10 @@ internal sealed class Igi1FirstPersonView(
             // take them too: left at the body's eye it stays put while the view drops into it. With Smooth Motion off the
             // rig is drawn at the newest tick (blend 1) from the same eye the camera uses, the original's 7.5% extra drop with it.
             bool displaced = !frame.Smooth && mission.Player.IsViewDisplaced;
-            float rigBlend = displaced ? 1f : frame.TickBlend;
-            if ((frame.Smooth || displaced) && mission.Player.HasViewTickPair)
+            bool modernAim = mission.Player.ModernAim.Enabled;
+            float rigBlend = frame.Smooth ? frame.TickBlend : 1f;
+            RigOffset motion = Motion(mission.Player, eye, rigBlend, modernAim);
+            if ((frame.Smooth || displaced || modernAim) && mission.Player.HasViewTickPair)
             {
                 (
                     Vector3d smoothedOrigin,
@@ -135,7 +142,7 @@ internal sealed class Igi1FirstPersonView(
                     BoneAttachment? smoothedWeapon,
                     BoneAttachment? smoothedMagazine,
                     BoneAttachment? smoothedMovingPart) =
-                    mission.Player.SmoothedRig(rigBlend);
+                    modernAim ? mission.Player.SmoothedRig(rigBlend, motion) : mission.Player.SmoothedRig(rigBlend);
                 rigOriginUnits = smoothedOrigin;
                 rigOrientation = smoothedOrientation;
                 weaponAttachment = smoothedWeapon ?? weaponAttachment;
@@ -169,6 +176,12 @@ internal sealed class Igi1FirstPersonView(
             if (frame.LoadedForWeapon is { } missionForWeapon && frame.Held is { } heldToFollow)
             {
                 FollowHeldWeapon(heldToFollow, missionForWeapon);
+            }
+
+            // Through the sights the flame is drawn a third of its size, so it does not hide what the round is aimed at.
+            if (frame.Held is World.HeldWeaponRenderer flame)
+            {
+                flame.FlameScale = modernAim ? 1f - (0.65f * AimDownSights.Shape(mission.Player.Ads.Smoothed(rigBlend))) : 1f;
             }
 
             if (mission.Player.Weapons?.HideFirstPersonWeapon != true
@@ -218,6 +231,33 @@ internal sealed class Igi1FirstPersonView(
                 rig.Position.Z + part.Position.Z + shift.Z);
             _charges.DrawModel(part.Model, new BoneAttachment(at, part.Orientation), eye, projection);
         }
+    }
+
+    // Steps modern aim's motion through this drawn frame from the look it is drawn with; puts it to rest with modern aim off.
+    private RigOffset Motion(PlayerCamera player, in Camera3D eye, float blend, bool modernAim)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        float seconds = _lastFrame == 0 ? 0f : (float)System.Diagnostics.Stopwatch.GetElapsedTime(_lastFrame, now).TotalSeconds;
+        _lastFrame = now;
+        if (!modernAim)
+        {
+            _motion.Reset();
+            return RigOffset.Identity;
+        }
+
+        Vector3d forward = eye.Orientation.Transform(new Vector3d(0d, 0d, 1d));
+        float yaw = (float)Math.Atan2(forward.X, forward.Y);
+        float pitch = (float)Math.Asin(Math.Clamp(forward.Z, -1d, 1d));
+        return _motion.Advance(new ViewModelMotionFrame(
+            seconds,
+            yaw,
+            pitch,
+            player.StrafeInput,
+            player.ShotSequence,
+            player.Ads.Profile,
+            AimDownSights.Shape(player.Ads.Smoothed(blend)),
+            player.Mount.IsMounted,
+            player.Mount.Sequence));
     }
 
     // What one frame draws from: the player and the solids its binoculars range on.

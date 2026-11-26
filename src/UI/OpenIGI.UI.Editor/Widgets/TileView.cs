@@ -377,12 +377,12 @@ public sealed class TileView<T> : EditorElement
 
         float line = Theme.SmallFont.LineHeight(Theme.SmallTextSize);
         float textWidth = tile.Width - Theme.Px(6f);
-        string name = EditorDraw.Fit(Theme.SmallFont, _source.Label(item), Theme.SmallTextSize, textWidth);
+        string name = Theme.SmallFont.Fit(_source.Label(item), Theme.SmallTextSize, textWidth);
         float nameWidth = Theme.SmallFont.MeasureWidth(name, Theme.SmallTextSize);
         painter.DrawText(Theme.SmallFont, name, new UiVec2(MathF.Round(tile.Center.X - (nameWidth * 0.5f)), MathF.Round(picture.Bottom + Theme.Px(3f))), Theme.SmallTextSize, Theme.Text);
         if (_source.Detail?.Invoke(item) is { Length: > 0 } detail)
         {
-            string shown = EditorDraw.Fit(Theme.SmallFont, detail, Theme.SmallTextSize, textWidth);
+            string shown = Theme.SmallFont.Fit(detail, Theme.SmallTextSize, textWidth);
             float detailWidth = Theme.SmallFont.MeasureWidth(shown, Theme.SmallTextSize);
             painter.DrawText(Theme.SmallFont, shown, new UiVec2(MathF.Round(tile.Center.X - (detailWidth * 0.5f)), MathF.Round(picture.Bottom + Theme.Px(3f) + line)), Theme.SmallTextSize, Theme.TextDisabled);
         }

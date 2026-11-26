@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Core.Configuration;
 
 namespace OpenIGI.Game;
 
@@ -12,37 +13,42 @@ namespace OpenIGI.Game;
 /// here appear in the menu, the console and <c>settings.cfg</c> without any of the three being told.
 /// </para>
 /// <para>
-/// <b>Nothing declared here may change what the simulation does, with one named exception.</b> These
-/// gate presentation only — what is drawn, not what is recorded — so the determinism contract and the
-/// vanilla regression gate both stand whatever they are set to. Anything that would alter observable game
-/// logic belongs with the faithfulness work instead. The exception is <see cref="RealisticDrops"/>.
+/// Most of these only change what is drawn or heard. Those that change how the level plays -- the movement, the loadout, the
+/// grenade's cook, the drops, the bodies kept -- are flagged <see cref="CVarOptions.Simulation"/>: a replay records them
+/// with its inputs and plays the level again under the same values, and a ranked run's rules are the values they take.
+/// <c>SimulationCVarTests</c> holds every one the simulation reads to that flag.
 /// </para>
 /// </remarks>
 [CVarContainer]
 public static class GameplayCVars
 {
-    /// <summary>Which named profile the gameplay-presentation settings correspond to.</summary>
+    /// <summary>Which experience to put the game in: the original's, or the remaster's.</summary>
     /// <remarks>
-    /// Setting this writes the profile's values over the variables it names, which is how <c>-vanilla</c>
-    /// reaches the gameplay layer: the flag emits <c>g_preset vanilla</c> as a start-up statement,
-    /// exactly as it emits <c>gfx_preset vanilla</c> and <c>snd_preset vanilla</c>.
+    /// Setting this writes the experience's values over every variable <see cref="ExperiencePresetRegistry"/> manages --
+    /// the HUD, the markers and optics, and the gameplay additions -- which is how <c>-vanilla</c> reaches them: the flag
+    /// emits <c>g_preset vanilla</c> as a start-up statement, as it emits <c>gfx_preset vanilla</c> and <c>snd_preset
+    /// vanilla</c>. Not saved: what the player chose is the values themselves, which are, and a saved experience read
+    /// back at start-up would write over any of them changed since.
     /// </remarks>
-    public static readonly EnumCVar<GameplayProfile> Preset = CVar.Choice(
+    public static readonly EnumCVar<ExperiencePreset> Preset = CVar.Choice(
         "g_preset",
-        GameplayProfile.Enhanced,
-        CVarOptions.Archive,
-        "Gameplay presentation profile: vanilla restores the original's canned death animations.");
+        ExperiencePreset.Enhanced,
+        CVarOptions.None,
+        "Experience: vanilla puts the HUD, markers, optics and gameplay additions as the original game had them; enhanced as the remaster's.");
 
     /// <summary>Whether Project I.G.I. offers save games, which the original never had.</summary>
     /// <remarks>
     /// On: the pause menu's Save Game and Load Game, and the quick save and quick load keys, kept by I.G.I. 2's rules. Off, the
     /// mission is played through as the original has it. I.G.I. 2's save games are its own and do not read this.
     /// </remarks>
-    public static readonly BoolCVar Igi1Saves = CVar.Bool(
-        "g_igi1_saves",
-        true,
-        CVarOptions.Archive,
-        "Offer save games in Project I.G.I., which the original never had. Off plays a mission through in one go.");
+    public static readonly BoolCVar Igi1Saves = Experience.Define(
+        CVar.Bool(
+            "g_igi1_saves",
+            true,
+            CVarOptions.Archive,
+            "Offer save games in Project I.G.I., which the original never had. Off plays a mission through in one go."),
+        vanilla: "0",
+        enhanced: "1");
 
     /// <summary>Whether the dead are simulated rather than playing a canned death animation.</summary>
     /// <remarks>
@@ -58,12 +64,20 @@ public static class GameplayCVars
     /// Off by default, and no profile turns it on: the canned deaths are the game as shipped, and the
     /// simulation is something a player asks for.
     /// </para>
+    /// <para>
+    /// Not a setting of the level's (<see cref="CVarOptions.Simulation"/>): rounds pass the dead by, a corpse goes when the level's
+    /// own view of it says so, and dropped guns and blasts meet the same world either way -- so this and its tuning below only
+    /// change how a death is drawn, and a ranked run may have them however the player likes.
+    /// </para>
     /// </remarks>
-    public static readonly BoolCVar Ragdoll = CVar.Bool(
-        "g_ragdoll",
-        false,
-        CVarOptions.Archive,
-        "Simulate the dead instead of playing the original's canned death animations.");
+    public static readonly BoolCVar Ragdoll = Experience.Define(
+        CVar.Bool(
+            "g_ragdoll",
+            false,
+            CVarOptions.Archive,
+            "Simulate the dead instead of playing the original's canned death animations."),
+        vanilla: "0",
+        enhanced: null);
 
     /// <summary>Whether a dropped weapon falls as a real rigid body or the way the original drops it.</summary>
     /// <remarks>
@@ -82,16 +96,14 @@ public static class GameplayCVars
     /// above. It is safe because the Vanilla preset forces it off, and the regression gate runs Vanilla.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar RealisticDrops = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar RealisticDrops = Experience.Define(
         CVar.Bool(
             "g_realistic_drops",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Dropped weapons fall as real rigid bodies. Off drops them the way the original does."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>Whether I.G.I. 2's player's ground speed turns with him, or drifts on as retail's does.</summary>
     /// <remarks>
@@ -100,16 +112,105 @@ public static class GameplayCVars
     /// I.G.I.'s player's does. A third exception to the rule above: where the player goes is game logic. The Vanilla preset
     /// forces it off, as with <see cref="RealisticDrops"/>.
     /// </remarks>
-    public static readonly BoolCVar SteadyTurns = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar SteadyTurns = Experience.Define(
         CVar.Bool(
             "g_steady_turns",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "I.G.I. 2's player keeps moving the way he faces as he turns. Off drifts sideways after a turn, as the original does."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
+
+    /// <summary>Whose movement and look I.G.I. 2's player has: the game's own, or Project I.G.I.'s.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Igi2PlayerMovement.Igi1"/> stands I.G.I. 2's player on Project I.G.I.'s own body
+    /// (<see cref="Player.PlayerBody"/>): its walk, run, strafe, crouch, jump and fall, played from the walk carried with the
+    /// code (<see cref="Player.HumanLocomotionRootMotion"/>), so it needs nothing of that game's installed; and its look is
+    /// Project I.G.I.'s one-to-one mouse. What it carries, how it aims and what hurts it stay I.G.I. 2's.
+    /// </para>
+    /// <para>
+    /// Another exception to the rule above: where the player goes is game logic. The Vanilla preset forces I.G.I. 2's own, as
+    /// with <see cref="SteadyTurns"/>, and a co-op client's player is moved by its command's choice on the server.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<Igi2PlayerMovement> Igi2Movement = Experience.Define(
+        CVar.Choice(
+            "g_igi2_movement",
+            Igi2PlayerMovement.Igi2,
+            CVarOptions.Archive | CVarOptions.Simulation,
+            "Whose movement I.G.I. 2's player has: igi2, the game's own, or igi1, Project I.G.I.'s walk, jump and one-to-one mouse look.").ReadIn(Core.Titles.GameTitle.Igi2.Id),
+        vanilla: "igi2",
+        enhanced: null);
+
+    /// <summary>Whether the weapons I.G.I. 2's player carries slow Project I.G.I.'s walk, as they slow the sequel's own.</summary>
+    /// <remarks>
+    /// The original I.G.I. 2 takes the weapon in hand in full and every other carried half off the player's speed, to half at
+    /// most (<c>Weapon_GetSummedMovementSlowDown</c>); Project I.G.I. has no weight. On, the same share comes off the first
+    /// game's walk and its jump's carry. Read only while <see cref="Igi2Movement"/> is <see cref="Igi2PlayerMovement.Igi1"/>.
+    /// </remarks>
+    public static readonly BoolCVar Igi2Igi1Weight = CVar.Bool(
+        "g_igi2_igi1_weight",
+        false,
+        CVarOptions.Archive | CVarOptions.Simulation,
+        "On Project I.G.I.'s movement, the weapons I.G.I. 2's player carries slow it as they slow the sequel's own.").ReadIn(Core.Titles.GameTitle.Igi2.Id);
+
+    /// <summary>What I.G.I. 2's player may carry of its primary weapons: one, as the original has it, or one of each kind.</summary>
+    /// <remarks>
+    /// <para>
+    /// The original carries one weapon of each category, and every rifle, sniper rifle, shotgun, machine gun, submachine gun and
+    /// launcher is the primary category, so taking a launcher costs the rifle. <see cref="Game.Igi2Loadout.Tactical"/> splits the
+    /// primary category by the sight each weapon is defined with: the submachine guns, the launchers and the rest, one of each.
+    /// The weight of every gun carried still slows the player as the original's does.
+    /// </para>
+    /// <para>
+    /// Another exception to the rule above: what the player carries is game logic. The Vanilla preset forces the original's, as
+    /// with <see cref="SteadyTurns"/>, and a co-op client's player is held to its command's choice on the server.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<Igi2Loadout> Igi2Loadout = Experience.Define(
+        CVar.Choice(
+            "g_igi2_loadout",
+            Game.Igi2Loadout.Tactical,
+            CVarOptions.Archive | CVarOptions.Simulation,
+            "What I.G.I. 2's player carries: original, one primary weapon; or tactical, a long gun, a submachine gun and a launcher.").ReadIn(Core.Titles.GameTitle.Igi2.Id),
+        vanilla: "original",
+        enhanced: "tactical");
+
+    /// <summary>When the player's grenades start to burn in hand, in both games: as each shipped, or only when the player cooks them.</summary>
+    /// <remarks>
+    /// <para>
+    /// Project I.G.I. never burns a grenade's fuse in the hand: it starts as the grenade leaves, however long the throw was held.
+    /// I.G.I. 2 pulls the pin as the throw winds up, so a throw held too long goes off in hand. <see cref="Game.GrenadeCook.Manual"/>
+    /// does neither: the fire key only winds the throw up, and the reload key pressed while it is held pulls the pin
+    /// (<see cref="Player.GrenadeCookLatch"/>). The fuse then burns in hand, is what the grenade flies with when let go, and
+    /// at nothing goes off where it is.
+    /// </para>
+    /// <para>
+    /// Another exception to the rule above: when a grenade goes off is game logic. The Vanilla preset forces each game's own, as
+    /// with <see cref="SteadyTurns"/>, and a co-op client's player is held to its command's choice on the server.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<GrenadeCook> GrenadeCook = Experience.Define(
+        CVar.Choice(
+            "g_grenade_cook",
+            Game.GrenadeCook.Manual,
+            CVarOptions.Archive | CVarOptions.Simulation,
+            "When grenades cook: original, as each game shipped; or manual, fire only winds the throw up and the reload key pulls the pin."),
+        vanilla: "original",
+        enhanced: "manual");
+
+    /// <summary>A movement to compare against the chosen one, stepped by a key while playing and never saved.</summary>
+    /// <remarks>
+    /// <see cref="Igi2MovementCompare.Off"/> plays what <see cref="Igi2Movement"/> says; any other value stands in for it for the
+    /// session. Not archived, so the default key that steps it (<c>DefaultBinds</c>) writes
+    /// nothing a next launch starts on.
+    /// </remarks>
+    public static readonly EnumCVar<Igi2MovementCompare> Igi2MovementCompare = CVar.Choice(
+        "g_igi2_movement_compare",
+        Game.Igi2MovementCompare.Off,
+        CVarOptions.None | CVarOptions.Simulation,
+        "Stand in for I.G.I. 2's movement this session, to compare the two: off, igi2 or igi1.").ReadIn(Core.Titles.GameTitle.Igi2.Id);
 
     /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
     /// <remarks>
@@ -127,16 +228,14 @@ public static class GameplayCVars
     /// it off, as with <see cref="RealisticDrops"/>.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar BodiesStay = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar BodiesStay = Experience.Define(
         CVar.Bool(
             "g_bodies_stay",
             true,
-            CVarOptions.Archive,
+            CVarOptions.Archive | CVarOptions.Simulation,
             "Dead soldiers stay where they fell. Off takes a body away once it is out of sight, as the original does."),
         vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1");
 
     /// <summary>How hard a round throws a body it kills.</summary>
     /// <remarks>
@@ -338,27 +437,16 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "How long the camera takes to travel between the first- and third-person views, in seconds.");
 
-    /// <summary>Wires the profile variable to the values it stands for.</summary>
+    /// <summary>Wires the experience variable to the values it stands for.</summary>
     /// <remarks>
-    /// A static constructor rather than a registry, the same way <c>AudioCVars</c> does it and for the
-    /// same reason: the preset registry lives in the renderer, which this layer does not drive. The
-    /// profile is not recomputed when one of its variables is changed by hand — it says what was asked
-    /// for, and a player who then turns one thing off is not silently switched to "custom" mid-session.
+    /// The variable is not recomputed when one of its values is changed by hand -- it says what was asked for. Which
+    /// experience the values add up to is <see cref="ExperiencePresetRegistry.Detect"/>'s, as the settings page reads it.
     /// </remarks>
     static GameplayCVars() => Preset.Changed += (_, _) => Apply(Preset.Value);
 
-    /// <summary>Writes a profile's values over the variables it names.</summary>
-    /// <param name="profile">The profile to apply. <see cref="GameplayProfile.Custom"/> changes nothing.</param>
-    public static void Apply(GameplayProfile profile)
-    {
-        switch (profile)
-        {
-            case GameplayProfile.Vanilla:
-                Ragdoll.Value = false;
-                break;
+    /// <summary>Writes an experience's values over the variables it names.</summary>
+    /// <param name="preset">The experience to apply. <see cref="ExperiencePreset.Custom"/> changes nothing.</param>
+    public static void Apply(ExperiencePreset preset) => Experience.Apply(preset);
 
-            default:
-                break;
-        }
-    }
+    private static ExperiencePresetRegistry Experience => ExperiencePresetRegistry.Default;
 }

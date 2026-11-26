@@ -19,7 +19,9 @@ public abstract partial class Igi2Human
     /// <param name="to">Where it ends; its X and Y go back to the start when a human blocks it.</param>
     /// <param name="speed">Receives the move as made: end minus start, after every collision has had its say.</param>
     /// <remarks>
-    /// Every human registered in the world (<c>Human_ptQTaskList</c>) is looked at, the dead and the mover itself excepted. One
+    /// Every human on the humans' list (<c>Human_ptQTaskList</c>) is looked at, the dead, the mover itself and those out of the world
+    /// excepted: the handler reads each one's in-world byte (<see cref="IsActive"/>), which its remove handler clears, so a soldier
+    /// waiting under a shut container, or a player a cutscene took out, blocks nobody. One
     /// within 1.8 metres in height and 0.75 metres across that the move brings nearer than it started blocks it; each one that
     /// does is told (<see cref="OnBlockedByHuman"/>). The speed is taken whether or not anything blocked, so the ground the
     /// body was set onto shows in it.
@@ -28,7 +30,7 @@ public abstract partial class Igi2Human
     {
         foreach (Igi2Human other in Surroundings.Humans)
         {
-            if (other.IsDead || ReferenceEquals(other, this))
+            if (!other.IsActive || other.IsDead || ReferenceEquals(other, this))
             {
                 continue;
             }

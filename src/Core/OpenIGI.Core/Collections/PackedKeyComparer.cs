@@ -28,11 +28,16 @@ public sealed class PackedKeyComparer : IEqualityComparer<long>
     public bool Equals(long x, long y) => x == y;
 
     /// <inheritdoc/>
-    public int GetHashCode(long obj)
+    public int GetHashCode(long obj) => unchecked((int)Mix(obj));
+
+    /// <summary>SplitMix64's finalizer over a packed key: every input bit reaches every output bit.</summary>
+    /// <param name="key">The packed key.</param>
+    /// <returns>The mixed 64 bits.</returns>
+    public static ulong Mix(long key)
     {
-        ulong z = unchecked((ulong)obj + 0x9E3779B97F4A7C15UL);
+        ulong z = unchecked((ulong)key + 0x9E3779B97F4A7C15UL);
         z = unchecked((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL);
         z = unchecked((z ^ (z >> 27)) * 0x94D049BB133111EBUL);
-        return unchecked((int)(z ^ (z >> 31)));
+        return z ^ (z >> 31);
     }
 }

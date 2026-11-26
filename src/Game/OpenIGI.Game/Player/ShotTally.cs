@@ -20,6 +20,9 @@ public sealed class ShotTally
     /// <summary>Gets how many of <see cref="Kills"/> were soldiers.</summary>
     public int SoldierKills { get; private set; }
 
+    /// <summary>Gets how many rounds the player has fired from its guns: what its accuracy is reckoned against.</summary>
+    public int RoundsFired { get; private set; }
+
     /// <summary>Gets a value indicating whether the last hit was to the head.</summary>
     public bool LastHitHead { get; private set; }
 
@@ -33,6 +36,24 @@ public sealed class ShotTally
         SoldierHits++;
         Hits++;
         LastHitHead = head;
+    }
+
+    /// <summary>Counts rounds the player's gun let go.</summary>
+    /// <param name="rounds">How many.</param>
+    public void Fired(int rounds) => RoundsFired += Math.Max(0, rounds);
+
+    /// <summary>
+    /// Puts back what a save game kept of a single player's mission: the rounds fired, and the hits and kills on its soldiers,
+    /// which are then all of its hits and kills.
+    /// </summary>
+    /// <param name="roundsFired">The rounds fired.</param>
+    /// <param name="soldierHits">The hits on soldiers.</param>
+    /// <param name="soldierKills">The soldiers killed.</param>
+    public void Restore(int roundsFired, int soldierHits, int soldierKills)
+    {
+        RoundsFired = Math.Max(0, roundsFired);
+        Hits = SoldierHits = Math.Max(0, soldierHits);
+        Kills = SoldierKills = Math.Max(0, soldierKills);
     }
 
     /// <summary>Counts a hit on another player of the session, as the server told of it.</summary>
@@ -66,4 +87,7 @@ public interface IShotTallySource
 {
     /// <summary>Gets the player's tally, or <see langword="null"/> while there is no player.</summary>
     ShotTally? PlayerShots { get; }
+
+    /// <summary>Gets the key of the weapon in the player's hands, as the kill feed draws it, or empty.</summary>
+    string PlayerWeapon => string.Empty;
 }

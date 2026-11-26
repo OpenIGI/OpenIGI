@@ -272,22 +272,32 @@ public sealed class RetailIgi2TerrainPresenterTests
                     $"The ground drew with {draw.Blend}."));
             Assert.Equal(CullMode.Clockwise, device.CullMode);
 
-            // A chunk is written by the host straight into a buffer the GPU may still be reading, so
-            // every frame draws from its own pool and only the ChunkPoolSlots'th frame after one may
-            // reuse its chunks -- see Igi2TerrainPresenter.ChunkPoolSlots. The pools therefore fill for
-            // as many frames as there are slots and the ring closes: nothing is allocated after that,
-            // and every frame issues the same draws from the same camera.
+            // The same camera tessellates to the same ground, so a repeated frame draws the chunks it
+            // already streamed -- the same meshes, the same ranges -- and creates nothing.
             int perFrameDraws = device.MeshDraws.Count;
             int perFrameMeshes = device.Meshes.Count;
+            RecordingGraphicsDevice.MeshDrawCall[] first = [.. device.MeshDraws];
 
+            presenter.Draw(frame);
+            Assert.Equal(perFrameMeshes, device.Meshes.Count);
+            Assert.Equal(first, device.MeshDraws.Skip(perFrameDraws));
+
+            // A chunk is written by the host straight into a buffer the GPU may still be reading, so a
+            // frame that streams draws from its own pool and only the ChunkPoolSlots'th streaming frame
+            // after one may reuse its chunks -- see Igi2TerrainPresenter.ChunkPoolSlots. Cameras that
+            // tessellate differently therefore fill the pools for as many frames as there are slots, and
+            // the ring closes: nothing is allocated after that.
             for (int f = 1; f <= Igi2TerrainPresenter.ChunkPoolSlots; f++)
             {
-                presenter.Draw(frame);
-                Assert.Equal(perFrameDraws * (f + 1), device.MeshDraws.Count);
-                Assert.Equal(
-                    perFrameMeshes * Math.Min(f + 1, Igi2TerrainPresenter.ChunkPoolSlots),
-                    device.Meshes.Count);
+                presenter.Draw(Raised(frame, 50.0 * f));
+                Assert.True(
+                    device.Meshes.Count <= perFrameMeshes * Igi2TerrainPresenter.ChunkPoolSlots * 2,
+                    $"{device.Meshes.Count} meshes after {f} moved frame(s).");
             }
+
+            int ringClosed = device.Meshes.Count;
+            presenter.Draw(Raised(frame, 50.0));
+            Assert.True(device.Meshes.Count <= ringClosed * 2);
         }
 
         Assert.Equal(22, levels);
@@ -301,6 +311,10 @@ public sealed class RetailIgi2TerrainPresenterTests
         Assert.Equal(283_311L, triangles);
         Assert.Equal(58_342, squares);
     }
+
+    /// <summary>The same frame from an eye the given number of metres higher.</summary>
+    private static TerrainFrame Raised(TerrainFrame frame, double metres) =>
+        frame with { Camera = new Camera3D(frame.Camera.Position + new Vector3d(0.0, 0.0, metres), frame.Camera.Orientation) };
 
     /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>
     /// <remarks>

@@ -18,8 +18,28 @@ public sealed class Igi2WeaponItem
     /// <summary>Gets the weapon type's number, the value of its <c>WEAPON_ID_*</c> constant.</summary>
     public int Number { get; }
 
+    private bool _isActive;
+
     /// <summary>Gets a value indicating whether the human carries this weapon.</summary>
-    public bool IsActive { get; internal set; }
+    /// <remarks>Carried or let go any other way than the all-weapons cheat, it is the player's own again (<see cref="IsCheatGranted"/>).</remarks>
+    public bool IsActive
+    {
+        get => _isActive;
+        internal set
+        {
+            _isActive = value;
+            IsCheatGranted = false;
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether only the all-weapons cheat carries it (<see cref="Igi2Inventory.EnableEveryWeapon"/>).
+    /// <b>Not retail.</b> Slung, such a weapon weighs nothing (<see cref="Igi2Inventory.SummedMovementSlowDown"/>).
+    /// </summary>
+    public bool IsCheatGranted { get; private set; }
+
+    /// <summary>Marks it carried by the all-weapons cheat alone.</summary>
+    internal void GrantByCheat() => IsCheatGranted = true;
 
     /// <summary>Gets the fire mode in use, <c>iActiveFireMode</c> (<c>WeaponTypeItem+0x18</c>); the first until a fire mode key changes it.</summary>
     public int ActiveFireMode { get; internal set; }
@@ -163,16 +183,46 @@ public sealed class Igi2Inventory : ISavedState
     /// <summary>Gets or sets the bullets fired since the weapon was put in hand, <c>nTotalBulletsFired</c>.</summary>
     public int TotalBulletsFired { get; set; }
 
+    /// <summary>
+    /// Gets the bullets fired from this inventory in all, counted on through every change of weapon: what a co-op server sends
+    /// of a body's shots, a change being a shot to show. <see cref="TotalBulletsFired"/> starts again at each weapon put in hand,
+    /// and every switch read as a shot on the others' screens.
+    /// </summary>
+    public int ShotSequence { get; private set; }
+
+    /// <summary>Counts bullets fired from the weapon in hand, in both counts.</summary>
+    /// <param name="bullets">How many.</param>
+    public void CountFired(int bullets)
+    {
+        TotalBulletsFired += bullets;
+        ShotSequence = unchecked(ShotSequence + bullets);
+    }
+
     /// <summary>Finds a weapon by its number, the value of its <c>WEAPON_ID_*</c> constant (<c>WeaponType_GetWeaponTypeFromID</c>, <c>igi2 0x436710</c>).</summary>
     /// <param name="number">The number.</param>
     /// <returns>The item, or <see langword="null"/> for a number no weapon has.</returns>
     public Igi2WeaponItem? WeaponByNumber(int number) => (uint)number < (uint)_weapons.Length ? _weapons[number] : null;
+
+    /// <summary>Gets the weapon in hand as a snapshot names it: its number plus one, nought for none (<see cref="WeaponByNumber"/>).</summary>
+    public ushort HeldForSnapshot => Current is { } held ? (ushort)Math.Clamp(held.Number + 1, 0, ushort.MaxValue) : (ushort)0;
 
     /// <summary>Finds a weapon by the name of its constant.</summary>
     /// <param name="weaponId">The name, <c>WEAPON_ID_*</c>.</param>
     /// <returns>The item, or <see langword="null"/>.</returns>
     public Igi2WeaponItem? FindWeapon(string weaponId) =>
         Array.Find(_weapons, w => string.Equals(w.WeaponType.WeaponId, weaponId, StringComparison.Ordinal));
+
+    /// <summary>The weapon a player with no primary weapon is taken to hold, <c>WEAPON_ID_KNIFE</c>.</summary>
+    public const string KnifeId = "WEAPON_ID_KNIFE";
+
+    /// <summary>
+    /// The primary weapon, <c>HumanPlayer_GetPrimaryWeaponType</c>: the first weapon carried in the primary category, in the
+    /// inventory's order; with none, the knife.
+    /// </summary>
+    /// <returns>The weapon type, or <see langword="null"/> when there is no knife either.</returns>
+    public Igi2WeaponTypeTask? PrimaryWeapon() =>
+        (Array.Find(_weapons, static w => w.IsActive && w.WeaponType.WeaponCategory == Igi2WeaponCategory.Primary)
+            ?? FindWeapon(KnifeId))?.WeaponType;
 
     /// <summary>Finds an ammunition by the name of its constant.</summary>
     /// <param name="ammoId">The name, <c>AMMO_ID_*</c>.</param>
@@ -214,13 +264,26 @@ public sealed class Igi2Inventory : ISavedState
     /// which never do (categories 12 and 11).
     /// </para>
     /// </remarks>
-    public bool EnableWeaponType(string weaponId, bool addAmmo)
-    {
-        if (FindWeapon(weaponId) is not { } item)
-        {
-            return false;
-        }
+    public bool EnableWeaponType(string weaponId, bool addAmmo) => FindWeapon(weaponId) is { } item && Enable(item, addAmmo);
 
+    /// <summary>
+    /// Carries every weapon the session knows that a player can hold, each with a load's worth of rounds: the all-weapons
+    /// cheat. <b>Not retail.</b> The C4 is left out (no single-player mission hands it out) and so is what has no category.
+    /// </summary>
+    public void EnableEveryWeapon()
+    {
+        foreach (Igi2WeaponItem item in _weapons)
+        {
+            if (!item.IsActive && item.WeaponType.WeaponCategory is not (0 or Igi2WeaponCategory.C4))
+            {
+                Enable(item, addAmmo: true);
+                item.GrantByCheat();
+            }
+        }
+    }
+
+    private bool Enable(Igi2WeaponItem item, bool addAmmo)
+    {
         bool added = !item.IsActive;
         item.IsActive = true;
         if (added)
@@ -365,7 +428,12 @@ public sealed class Igi2Inventory : ISavedState
     public void AddAmmo(string ammoId, int rounds) => FindAmmo(ammoId)?.Add(rounds);
 
     /// <summary>Gets how much the carried weapons slow their carrier (<c>Weapon_GetSummedMovementSlowDown</c>, <c>igi2 0x51F550</c>).</summary>
-    /// <remarks>Each carried weapon's <c>Movement Speed Modifier</c>, the one in hand in full and the rest by half.</remarks>
+    /// <remarks>
+    /// Each carried weapon's <c>Movement Speed Modifier</c>, the one in hand in full and the rest by half. <b>Not retail:</b> one
+    /// only the all-weapons cheat carries (<see cref="Igi2WeaponItem.IsCheatGranted"/>) weighs nothing slung -- the whole roster
+    /// put the player at the half speed the slow-down stops at -- and its full weight in hand, so the player moves as its own
+    /// kit and the gun it holds say.
+    /// </remarks>
     public float SummedMovementSlowDown
     {
         get
@@ -373,7 +441,7 @@ public sealed class Igi2Inventory : ISavedState
             Fpu sum = 0.0;
             foreach (Igi2WeaponItem item in _weapons)
             {
-                if (item.IsActive)
+                if (item.IsActive && (!item.IsCheatGranted || ReferenceEquals(item, Current)))
                 {
                     sum = ReferenceEquals(item, Current)
                         ? sum + item.WeaponType.MovementSpeedModifier
@@ -441,7 +509,16 @@ public sealed class Igi2Inventory : ISavedState
     /// <param name="category">The <c>WEAPONCATEGORY_*</c> value.</param>
     /// <param name="after">The weapon to start after, or <see langword="null"/> to start from the first.</param>
     /// <returns>The weapon, or <see langword="null"/> when none follows.</returns>
-    public Igi2WeaponItem? NextInCategory(int category, Igi2WeaponTypeTask? after)
+    public Igi2WeaponItem? NextInCategory(int category, Igi2WeaponTypeTask? after) =>
+        NextInSlot(new Igi2CarrySlot(category, Igi2PrimaryRole.None), Igi2Loadout.Original, after);
+
+    /// <summary>Finds the next carried weapon of a carry slot after a given one, without wrapping.</summary>
+    /// <param name="slot">The slot.</param>
+    /// <param name="loadout">What the player may carry, which decides each weapon's slot.</param>
+    /// <param name="after">The weapon to start after, or <see langword="null"/> to start from the first.</param>
+    /// <returns>The weapon, or <see langword="null"/> when none follows.</returns>
+    /// <remarks>Under <see cref="Igi2Loadout.Original"/> a slot is its category, and this is <see cref="NextInCategory"/>.</remarks>
+    public Igi2WeaponItem? NextInSlot(Igi2CarrySlot slot, Igi2Loadout loadout, Igi2WeaponTypeTask? after)
     {
         foreach (Igi2WeaponItem item in _weapons)
         {
@@ -455,7 +532,7 @@ public sealed class Igi2Inventory : ISavedState
                 continue;
             }
 
-            if (item.IsActive && item.WeaponType.WeaponCategory == category)
+            if (item.IsActive && Igi2CarrySlot.Of(item.WeaponType, loadout) == slot)
             {
                 return item;
             }
@@ -464,17 +541,58 @@ public sealed class Igi2Inventory : ISavedState
         return null;
     }
 
+    /// <summary>Gets whether a weapon other than the one given is carried that fires a fire type's ammunition.</summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
+    /// <returns><see langword="true"/> when another carried weapon fires it in either of its fire types.</returns>
+    public bool IsAmmoFiredByAnother(Igi2WeaponItem item, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (item.WeaponType.AmmoInfo(slot, _tables).AmmoType is not { } ammoType)
+        {
+            return false;
+        }
+
+        foreach (Igi2WeaponItem other in _weapons)
+        {
+            if (!other.IsActive || ReferenceEquals(other, item))
+            {
+                continue;
+            }
+
+            for (int otherSlot = 0; otherSlot < Igi2WeaponTypeTask.FireTypeSlots; otherSlot++)
+            {
+                if (ReferenceEquals(other.WeaponType.AmmoInfo(otherSlot, _tables).AmmoType, ammoType))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Stops carrying a weapon, emptying it and, when asked, its ammunition too (<c>Weapon_DisableWeaponType</c>, <c>igi2 0x51F060</c>).</summary>
     /// <param name="item">The weapon.</param>
     /// <param name="removeCarriedAmmo">Whether the carried rounds of its fire types' ammunition go too.</param>
-    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo)
+    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo) => Disable(item, removeCarriedAmmo, keepAmmoFiredByAnother: false);
+
+    /// <summary>Stops carrying a weapon, emptying it and, when asked, its ammunition too, unless another weapon carried fires it.</summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="removeCarriedAmmo">Whether the carried rounds of its fire types' ammunition go too.</param>
+    /// <param name="keepAmmoFiredByAnother">
+    /// Whether an ammunition another carried weapon fires stays (<see cref="IsAmmoFiredByAnother"/>): <b>not retail</b>, which
+    /// carries one weapon of each category and empties it regardless.
+    /// </param>
+    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo, bool keepAmmoFiredByAnother)
     {
         ArgumentNullException.ThrowIfNull(item);
         item.IsActive = false;
         for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
         {
             item.SetLoaded(slot, 0);
-            if (removeCarriedAmmo && item.WeaponType.AmmoInfo(slot, _tables).AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried)
+            if (removeCarriedAmmo && !(keepAmmoFiredByAnother && IsAmmoFiredByAnother(item, slot))
+                && item.WeaponType.AmmoInfo(slot, _tables).AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried)
             {
                 carried.Empty();
             }
@@ -667,8 +785,14 @@ internal static class Igi2WeaponCategory
     /// <summary><c>WEAPONCATEGORY_SMOKEGRENADE</c>.</summary>
     public const int SmokeGrenade = 7;
 
+    /// <summary><c>WEAPONCATEGORY_PRIMARY</c>.</summary>
+    public const int Primary = 3;
+
     /// <summary><c>WEAPONCATEGORY_MEDIPACK</c>.</summary>
     public const int Medipack = 8;
+
+    /// <summary><c>WEAPONCATEGORY_C4</c>.</summary>
+    public const int C4 = 9;
 
     /// <summary>
     /// Gets whether a category is carried as rounds of itself, with no load to fill: the thrown weapons, the mine and the

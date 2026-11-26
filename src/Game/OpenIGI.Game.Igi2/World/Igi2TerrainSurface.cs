@@ -511,10 +511,13 @@ public readonly record struct Igi2TerrainTile(
             return null;
         }
 
+        // By reference: a tile is a large struct holding references, and the quadtree asks this of every vertex along a join.
+        ReadOnlySpan<Igi2TerrainTile> hosts = Core.Collections.ReadOnlyListSpans.AsReadOnlySpan(Hosts);
+
         // The last declared first, as the original's own search for the map a point belongs to goes.
-        for (int i = Hosts.Count - 1; i >= 0; i--)
+        for (int i = hosts.Length - 1; i >= 0; i--)
         {
-            Igi2TerrainTile host = Hosts[i];
+            ref readonly Igi2TerrainTile host = ref hosts[i];
             if (!host.Extent.Touches(x, y, x, y))
             {
                 continue;
@@ -689,7 +692,7 @@ public sealed class Igi2TerrainSurface
         Igi2DiscardBox[] discardBoxes,
         TerrainTask? terrain)
     {
-        Tiles = tiles;
+        _tiles = [.. tiles];
         Materials = materials;
         Discards = discards;
         DiscardBoxes = discardBoxes;
@@ -708,8 +711,17 @@ public sealed class Igi2TerrainSurface
     /// <summary>Gets the discard boxes as the ground query tests them, relative to <see cref="Origin"/>.</summary>
     public Igi2DiscardBox[] DiscardBoxes { get; }
 
+    private readonly Igi2TerrainTile[] _tiles;
+
     /// <summary>Gets the level's tiles, in the order it declared them.</summary>
-    public IReadOnlyList<Igi2TerrainTile> Tiles { get; }
+    public IReadOnlyList<Igi2TerrainTile> Tiles => _tiles;
+
+    /// <summary>Gets the level's tiles as a span, for a query that reads them for every point it samples.</summary>
+    /// <remarks>
+    /// Read by reference, in place: a tile is a large struct, and one read through <see cref="IReadOnlyList{T}"/> is both a copy and
+    /// an interface call the browser's ahead-of-time compiler leaves to its interpreter.
+    /// </remarks>
+    public ReadOnlySpan<Igi2TerrainTile> TileSpan => _tiles;
 
     /// <summary>Gets the level's terrain materials, keyed by the id a material map's samples carry.</summary>
     /// <remarks>
@@ -745,18 +757,19 @@ public sealed class Igi2TerrainSurface
     /// </remarks>
     public double? WaterGroundAt(double x, double y)
     {
-        if (Tiles.Count == 0)
+        ReadOnlySpan<Igi2TerrainTile> tiles = _tiles;
+        if (tiles.Length == 0)
         {
             return null;
         }
 
-        int index = Tiles.Count - 1;
-        while (index > 0 && !Tiles[index].CoversPoint(x, y))
+        int index = tiles.Length - 1;
+        while (index > 0 && !tiles[index].CoversPoint(x, y))
         {
             index--;
         }
 
-        Igi2TerrainTile tile = Tiles[index];
+        ref readonly Igi2TerrainTile tile = ref tiles[index];
         double column = Math.Clamp(tile.ColumnAt(x), 0.0, tile.Width - 1);
         double row = Math.Clamp(tile.RowAt(y), 0.0, tile.Height - 1);
         int left = (int)column, top = (int)row;

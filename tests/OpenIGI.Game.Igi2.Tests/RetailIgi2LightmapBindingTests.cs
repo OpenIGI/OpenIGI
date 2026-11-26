@@ -1,4 +1,4 @@
-using OpenIGI.Formats;
+﻿using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
@@ -222,6 +222,80 @@ public sealed class RetailIgi2LightmapBindingTests
         }
 
         Assert.True(decoded > 500, $"Only {decoded} lightmaps were decoded.");
+    }
+
+    /// <summary>A drawn part is bound the bake made for its own mesh, and the original's loader would take it.</summary>
+    /// <remarks>
+    /// <para>
+    /// The model index in a lightmap's name is a running count over the object's tree, and the count runs in
+    /// <c>RigidDynCubeObj_EnumerateLightmapVirModelsHandler</c>'s order: the node's own model, its magic container,
+    /// its sector container, its task children. So a building counts its rooms after all its other parts --
+    /// <c>SectorObject_CreateAttachObjects</c> moves each sector into the sector container -- and a security
+    /// camera counts its lens last. Counting the attach points in file order instead bound 400_51_1, the
+    /// dormitory room of location 1 level 1, to a bake of another model's size, and the stretched page drew the
+    /// room's floor and ceiling past white. Hundreds of parts in every level were bound that way.
+    /// </para>
+    /// <para>
+    /// <c>LightmapInfo_CreateLightmapList</c> takes a file only when it records the mesh's version, is newer than
+    /// the mesh and holds as many pages; <see cref="ObjectLightmap.IsBakeOf"/> is that rule, and what it turns
+    /// down is drawn white, as the original draws it. All five it turns down are the data's, not the count's: four
+    /// parts of building 4038 in location 2 level 3 whose meshes were exported again the day after the bake with
+    /// no lightmap pages at all, and 3786_0000_1 in location 3 level 1, whose mesh postdates its bake by three months.
+    /// </para>
+    /// <para>
+    /// The loader never compares the pages' sizes, so the 32 files it takes at a size other than the mesh's --
+    /// 200_01_1 at model index zero in location 3 level 3 among them, which no ordering can reach -- are drawn at
+    /// their own, as the port draws them.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_drawn_part_is_bound_the_bake_of_its_own_mesh()
+    {
+        Igi2MagicObjTypes magic = Igi2Session.Start().Session.Services.Require<Igi2MagicObjTypes>();
+        int bound = 0;
+        int refused = 0;
+        int resized = 0;
+
+        foreach (Igi2Level level in Levels())
+        {
+            Dictionary<string, IresEntry> entries = new(StringComparer.OrdinalIgnoreCase);
+            foreach (IresEntry entry in level.LightmapArchive.Entries)
+            {
+                entries[Path.GetFileName(entry.Name)] = entry;
+            }
+
+            foreach (Game.World.WorldPlacement placement in Igi2LevelScene.Build(level, magic).Built.Scene.Placements)
+            {
+                if (placement.LightmapEntry.Length == 0 || !entries.TryGetValue(placement.LightmapEntry, out IresEntry? entry))
+                {
+                    continue;
+                }
+
+                bound++;
+                ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data, AssetFormatProfile.Igi2);
+                if (!lightmap.IsBakeOf(placement.Model))
+                {
+                    refused++;
+                    continue;
+                }
+
+                // Taken, but not at the mesh's sizes.
+                IReadOnlyList<MefLightmapPage> pages = placement.Model.LightmapPages;
+                for (int i = 0; i < pages.Count; i++)
+                {
+                    if (lightmap.Images[i].Width != pages[i].Width || lightmap.Images[i].Height != pages[i].Height)
+                    {
+                        resized++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // With mission 24's fuel pump switch, placed on its destroyed model and bound that model's bake (0352e).
+        Assert.Equal(12_241, bound);
+        Assert.Equal(5, refused);
+        Assert.Equal(32, resized);
     }
 
     private static Igi2Placement Place(int taskId) => new(taskId, "probe", "probe", default, default, 0);

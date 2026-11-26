@@ -11,6 +11,25 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>How fast the posture's precision settles each tick, <c>0x3F333333</c>.</summary>
     private const float PrecisionSettling = 0.7f;
 
+    /// <summary>Gets what the weapons carried leave of the player's speed: one less their summed slow-down, at most a half off.</summary>
+    /// <remarks>
+    /// Rounded once, as the original stores it; the jump wait's half of it is exact. <b>Not retail:</b> one, whatever is carried or
+    /// held, while the all-weapons cheat is on (<see cref="IsWeightless"/>).
+    /// </remarks>
+    public float CarriedSpeedScale
+    {
+        get
+        {
+            if (IsWeightless)
+            {
+                return 1f;
+            }
+
+            float slowDown = Weapon.SummedMovementSlowDown;
+            return ((Fpu)1.0 - (slowDown < MaxMovementSlowDown ? slowDown : MaxMovementSlowDown)).F;
+        }
+    }
+
     /// <summary>Gets the precision the posture has settled to, <c>vActualModifiedPrecision</c>.</summary>
     public float ActualModifiedPrecision { get; private set; }
 
@@ -68,9 +87,8 @@ public sealed partial class Igi2HumanPlayer
     public void RunDelayed()
     {
         HandleBreathViewOffset();
-        float slowDown = Weapon.SummedMovementSlowDown;
-        Fpu scale = (Fpu)1.0 - (slowDown < MaxMovementSlowDown ? slowDown : MaxMovementSlowDown);
-        MovementSpeedScale = JumpWaitTimer != 0 ? (scale * 0.5).F : scale.F;
+        float scale = CarriedSpeedScale;
+        MovementSpeedScale = JumpWaitTimer != 0 ? ((Fpu)scale * 0.5).F : scale;
 
         ActualModifiedPrecision = ((((Fpu)IdealModifiedPrecision - ActualModifiedPrecision) * PrecisionSettling) + ActualModifiedPrecision).F;
         ActualWeaponPrecision = ((((Fpu)IdealWeaponPrecision - ActualWeaponPrecision) * CrossHairDamping) + ActualWeaponPrecision).F;
@@ -100,8 +118,10 @@ public sealed partial class Igi2HumanPlayer
 
         ActionMenu.Update();
 
-        // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490):
-        // the controllers that step themselves step, before the next tick's input runs the update.
+        // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490): the
+        // human's own part first -- a shot's hold on the visibility factor runs down, the mission clock counts and the cough
+        // is kept -- then the controllers that step themselves step, before the next tick's input runs the update.
+        RunHuman();
         Animation.AutoStep();
         TouchPose();
 

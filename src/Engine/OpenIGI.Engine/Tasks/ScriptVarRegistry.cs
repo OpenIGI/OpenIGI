@@ -21,6 +21,8 @@ namespace OpenIGI.Engine.Tasks;
 public sealed class ScriptVarRegistry
 {
     private readonly NativeRegistry _symbols;
+    // Each task's bound names: an index over the bindings, which two loads may fill in another order.
+    [Core.Simulation.DerivedState]
     private readonly Dictionary<GameTask, List<string>> _byTask = [];
 
     /// <summary>Initializes a new instance of the <see cref="ScriptVarRegistry"/> class.</summary>

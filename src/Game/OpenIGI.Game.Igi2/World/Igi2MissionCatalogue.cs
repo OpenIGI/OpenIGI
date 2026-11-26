@@ -82,11 +82,19 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
     /// <inheritdoc/>
     public int Count => _missions.Count;
 
+    /// <summary>The native <c>missions/igi2.qvm</c> lists the campaign with, one mission id a call.</summary>
+    public const string DefineMissionListItemNative = "DefineMissionListItem";
+
+    /// <summary>The loose scripts beside the mission directories that the second walk runs.</summary>
+    public const string ListScriptPattern = "*.qvm";
+
+    // Mission_tMissionList: the ids the list scripts named, in the order they named them.
+    private readonly List<int> _listed = [];
+
     /// <summary>Gets the missions of the single-player campaign, in the order the scan found them.</summary>
     /// <remarks>
-    /// By mode rather than by a chain, because there is no chain: the first game names the mission that
-    /// follows each one and I.G.I. 2 does not. Ordering a campaign is therefore a separate question, and
-    /// this only says which missions are in one.
+    /// By mode, which says which missions are campaign missions; the order they are played in is the mission list's
+    /// (<see cref="InProgressionOrder"/>).
     /// </remarks>
     public IEnumerable<MissionDescriptor> Campaign =>
         _missions.Where(static m => string.Equals(m.GameMode, SinglePlayerMode, StringComparison.Ordinal));
@@ -99,6 +107,7 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
         // no companion constant to register: the first game's MISSION_NEXT_MISSION_UNDEFINED exists for
         // an argument this title does not have.
         natives.RegisterFunction(MissionRegistry.DefineMissionNative, Define);
+        natives.RegisterFunction(DefineMissionListItemNative, DefineListItem, argumentCount: 1);
     }
 
     /// <inheritdoc/>
@@ -110,7 +119,10 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
 
         _missions.Clear();
         _byId.Clear();
+        _listed.Clear();
 
+        // Mission_Open walks the root twice: every mission directory's script first, then the loose scripts beside them, which
+        // list the campaign by id -- so every mission a list names is defined by the time it is named.
         int scripts = ScriptTableLoader.WalkAndRun(
             fileSystem,
             resources,
@@ -118,52 +130,49 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
             MissionRegistry.MissionRoot,
             MissionRegistry.MissionScriptName,
             _logger);
+        int lists = ScriptTableLoader.RunInDirectory(fileSystem, resources, natives, MissionRegistry.MissionRoot, ListScriptPattern, _logger);
+        ChainProgression();
 
         _logger.Information(
             LogCategory,
-            $"Registered {Count} mission(s) from {scripts} script(s); {Campaign.Count()} in the campaign.");
+            $"Registered {Count} mission(s) from {scripts} script(s); {Campaign.Count()} in the campaign, {_listed.Count} listed by {lists} script(s).");
         return Count;
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <para>
-    /// The campaign's missions by ascending id, then everything else the same way. Ascending id is the
-    /// campaign's own grouping rather than an arbitrary sort: a mission's id is its location and its
-    /// level read together — <c>location1/level1</c> is 11 and <c>location2/LEVEL2</c> is 22 — so
-    /// ascending id walks the locations in turn and the levels within each.
-    /// </para>
-    /// <para>
-    /// <b>The mode filter is what makes it work.</b> The shipped multiplayer maps take ids 1, 5 and 100,
-    /// which are below and above the campaign's 11 to 36; sorting every mission by id together would put
-    /// two deathmatch maps ahead of the first mission of the game.
-    /// </para>
-    /// <para>
-    /// It is still a listing order and not a progression. Nothing in this title's <c>DefineMission</c>
-    /// says which mission follows which, so a real campaign flow has to come from the front end.
-    /// </para>
+    /// The campaign as it is played, then every mission it does not reach by ascending id -- a campaign mission no list names,
+    /// then the multiplayer maps. The shipped maps take ids 1, 5 and 100, below and above the campaign's 11 to 36, which is why
+    /// they come after it rather than among it.
     /// </remarks>
     public IEnumerable<MissionDescriptor> InCampaignOrder()
     {
-        foreach (MissionDescriptor mission in Campaign.OrderBy(static m => m.Id))
-        {
-            yield return mission;
-        }
-
-        foreach (MissionDescriptor mission in _missions
-            .Where(static m => !string.Equals(m.GameMode, SinglePlayerMode, StringComparison.Ordinal))
-            .OrderBy(static m => m.Id))
-        {
-            yield return mission;
-        }
+        List<MissionDescriptor> played = [.. InProgressionOrder()];
+        HashSet<int> listed = [.. played.Select(static m => m.Id)];
+        return played
+            .Concat(Campaign.Where(m => !listed.Contains(m.Id)).OrderBy(static m => m.Id))
+            .Concat(_missions.Where(static m => !string.Equals(m.GameMode, SinglePlayerMode, StringComparison.Ordinal)).OrderBy(static m => m.Id));
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The campaign by ascending id, and nothing else — a multiplayer map is not part of a progression.
-    /// This title asserts no order of its own, so the id's own structure is what supplies one.
+    /// <para>
+    /// The mission list, <c>Mission_tMissionList</c>: the ids <c>missions/igi2.qvm</c> names through <c>DefineMissionListItem</c>,
+    /// in its order (11 to 17, 21 to 26, 31 to 36). <c>Game_RunHandler</c> takes a finished mission's next node of it, and the
+    /// front end's mission choice and the profile's progress read it too.
+    /// </para>
+    /// <para>
+    /// Not the order the missions are defined in: that is the directory walk's, and the retail install spells some level
+    /// directories in capitals (<c>location1/LEVEL5</c> beside <c>location1/level1</c>), so an ordinal walk defined 15, 16, 17
+    /// and then 11 -- and a finished mission led to whichever was defined after it.
+    /// </para>
+    /// <para>
+    /// <b>Not retail:</b> a data set with no list (a test's, or a mod's that ships none) plays its campaign missions by ascending
+    /// id, which is the shipped list's own order.
+    /// </para>
     /// </remarks>
-    public IEnumerable<MissionDescriptor> InProgressionOrder() => Campaign.OrderBy(static m => m.Id);
+    public IEnumerable<MissionDescriptor> InProgressionOrder() =>
+        _listed.Count > 0 ? _listed.Select(id => _byId[id]) : Campaign.OrderBy(static m => m.Id);
 
     /// <inheritdoc/>
     public bool TryGet(int id, [NotNullWhen(true)] out MissionDescriptor? descriptor) =>
@@ -202,8 +211,8 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
             call.GetString(6),
             call.GetString(7),
 
-            // No mission names the one that follows it; the campaign's order is the order the missions are defined in, as
-            // Game_RunHandler takes the next node of Mission_tMissionList, and is filled in as the next one is defined.
+            // No mission names the one that follows it: Game_RunHandler takes the next node of the mission list, which the
+            // scan fills in once the list is read (ChainProgression).
             MissionDescriptor.NextMissionUndefined,
             missionDirectory,
             commonDirectory,
@@ -229,15 +238,35 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
             throw new EngineFatalException($"Mission ID {descriptor.Id} not unique");
         }
 
-        if (string.Equals(descriptor.GameMode, SinglePlayerMode, StringComparison.Ordinal)
-            && _missions.FindLastIndex(static m => string.Equals(m.GameMode, SinglePlayerMode, StringComparison.Ordinal)) is var last and >= 0)
-        {
-            MissionDescriptor previous = _missions[last] with { NextMissionId = descriptor.Id };
-            _missions[last] = previous;
-            _byId[previous.Id] = previous;
-        }
-
         _missions.Add(descriptor);
         return QvmValue.FromInt32(1);
+    }
+
+    // DefineMissionListItem: the mission of that id goes on the end of the list; an id no mission was defined under is passed over.
+    private QvmValue DefineListItem(QvmCallContext call)
+    {
+        int id = call.GetInt32(0);
+        if (_byId.ContainsKey(id))
+        {
+            _listed.Add(id);
+        }
+        else
+        {
+            _logger.Warning(LogCategory, $"The mission list names mission {id}, which no mission script defines.");
+        }
+
+        return QvmValue.FromInt32(1);
+    }
+
+    // Each mission of the progression leads to the one after it, the last to none: the next node Game_RunHandler takes.
+    private void ChainProgression()
+    {
+        List<int> order = [.. InProgressionOrder().Select(static m => m.Id)];
+        for (int i = 0; i + 1 < order.Count; i++)
+        {
+            MissionDescriptor linked = _byId[order[i]] with { NextMissionId = order[i + 1] };
+            _byId[linked.Id] = linked;
+            _missions[_missions.FindIndex(m => m.Id == linked.Id)] = linked;
+        }
     }
 }

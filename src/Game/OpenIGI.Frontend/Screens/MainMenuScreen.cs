@@ -1,8 +1,11 @@
 using System.Globalization;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Input;
+using OpenIGI.Releases.Accounts;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -22,6 +25,7 @@ namespace OpenIGI.Frontend.Screens;
 public sealed class MainMenuScreen : ShellScreen
 {
     private PrimaryAction? _continue;
+    private string _teaserMade = string.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="MainMenuScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -38,7 +42,9 @@ public sealed class MainMenuScreen : ShellScreen
     public override float BackdropBlur => 0f;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("Q E", "Sections"), new("Enter", "Select")];
+    protected override IReadOnlyList<KeyHint> Hints => Context.Host.Leaderboard is null
+        ? [new("Q E", "Sections"), new("Enter", "Select")]
+        : [new("Q E", "Sections"), new("L", "Leaderboard"), new("Enter", "Select")];
 
     /// <inheritdoc/>
     protected override string FooterNote => BuildStamp.Version.Length > 0 ? $"OpenIGI {BuildStamp.Version}" : "OpenIGI";
@@ -63,14 +69,17 @@ public sealed class MainMenuScreen : ShellScreen
 
         // The mission the profile is up to in the game's own campaign; with no missions found, the ways in alone.
         (int done, int total) = CampaignProgress();
-        MissionInfo? mission = Context.Missions.Where(static m => m.Campaign is null).Skip(done).FirstOrDefault();
+        MissionInfo? mission = CampaignMission(done);
+        bool finished = total > 0 && done >= total;
         _continue = null;
         if (mission is not null)
         {
             bool fresh = done == 0;
             column.AddChild(new Hero(theme, Size)
             {
-                Eyebrow = string.Create(CultureInfo.InvariantCulture, $"{(fresh ? "START" : "CONTINUE")} CAMPAIGN · MISSION {done + 1} OF {total}"),
+                Eyebrow = finished
+                    ? string.Create(CultureInfo.InvariantCulture, $"CAMPAIGN COMPLETE · ALL {total} MISSIONS")
+                    : string.Create(CultureInfo.InvariantCulture, $"{(fresh ? "START" : "CONTINUE")} CAMPAIGN · MISSION {done + 1} OF {total}"),
                 Title = mission.Name,
                 Briefing = mission.Description,
                 Difficulty = DifficultyName(),
@@ -78,7 +87,7 @@ public sealed class MainMenuScreen : ShellScreen
                 Total = total,
             });
 
-            _continue = new PrimaryAction(theme, fresh ? "Start" : "Continue")
+            _continue = new PrimaryAction(theme, fresh ? "Start" : finished ? "Play again" : "Continue")
             {
                 Key = keys && !compact ? "Enter" : string.Empty,
                 Width = Size switch { ShellSize.Wide => 460f, ShellSize.Medium => 420f, _ => 300f },
@@ -134,10 +143,70 @@ public sealed class MainMenuScreen : ShellScreen
         else
         {
             page.Add(column, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(SideMargin, 0f, SideMargin, 64f)));
+            if (Size == ShellSize.Wide && mission is not null && Context.Host.Leaderboard is { } boards)
+            {
+                // The boards at a glance, at the page's bottom right: the player's place, and their best on this mission.
+                int difficulty = Context.Config.Active?.Difficulty ?? 1;
+                ShellRecord? record = Context.Host.Replays?.RecordOf(mission.Id, difficulty);
+                Leaderboard? board = boards.Feed.Period == LeaderboardSeasons.Current ? boards.Feed.Board : null;
+                _teaserMade = TeaserMakeup(board, record);
+                var teaser = new LeaderboardTeaser(
+                    theme,
+                    board,
+                    mission.Name,
+                    DifficultyName(),
+                    record,
+                    () => GoTo(ShellTab.Leaderboard),
+                    record is null ? null : () => Context.Host.Replays?.PlayRecord(record.Run, race: true));
+                page.Add(teaser, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(SideMargin, 0f, SideMargin, 64f)));
+            }
         }
 
         return page;
     }
+
+    /// <inheritdoc/>
+    /// <remarks>The boards are read while the landing page is up, and the page laid out again as they come.</remarks>
+    protected override void OnUpdate(float elapsedSeconds)
+    {
+        if (Size != ShellSize.Wide || Context.InGame || Context.Host.Leaderboard is not { } boards)
+        {
+            return;
+        }
+
+        boards.Feed.ShowTitle(Context.ActiveTitleId);
+        boards.Feed.Update(watching: true);
+        int difficulty = Context.Config.Active?.Difficulty ?? 1;
+        MissionInfo? mission = CampaignMission(CampaignProgress().Done);
+        ShellRecord? record = mission is null ? null : Context.Host.Replays?.RecordOf(mission.Id, difficulty);
+        Leaderboard? board = boards.Feed.Period == LeaderboardSeasons.Current ? boards.Feed.Board : null;
+        if (TeaserMakeup(board, record) != _teaserMade)
+        {
+            Invalidate();
+        }
+    }
+
+    // The mission the landing page offers: the one the profile is up to, or the last once the campaign is finished.
+    private MissionInfo? CampaignMission(int done) =>
+        Context.Missions.Where(static m => m.Campaign is null).Skip(done).FirstOrDefault()
+        ?? (done > 0 ? Context.Missions.LastOrDefault(static m => m.Campaign is null) : null);
+
+    /// <inheritdoc/>
+    protected override bool HandleInput(UiNavigation nav, InputState input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        if (Context.Host.Leaderboard is not null && input.Keyboard.WasPressed(KeyCode.L))
+        {
+            GoTo(ShellTab.Leaderboard);
+            return false;
+        }
+
+        return base.HandleInput(nav, input);
+    }
+
+    // What the teaser was made from: it is made again when this changes.
+    private static string TeaserMakeup(Leaderboard? board, ShellRecord? record) =>
+        $"{board?.You?.Rank}|{board?.You?.Was}|{board?.Players}|{record?.Run}|{record?.YourSeconds}|{record?.YourPlace}";
 
     /// <inheritdoc/>
     /// <remarks>
@@ -184,14 +253,24 @@ public sealed class MainMenuScreen : ShellScreen
         string? last = Context.Host.Coop?.LastPlayed;
         string profiles = Context.Config.Profiles.Count == 1 ? "1 operative" : string.Create(CultureInfo.InvariantCulture, $"{Context.Config.Profiles.Count} operatives");
         (int done, int total) = CampaignProgress();
-        (KitIcon Icon, string Title, string Detail, ShellTab Tab)[] ways =
+        List<(KitIcon Icon, string Title, string Detail, ShellTab Tab)> ways =
         [
             (KitIcon.Globe, "Multiplayer", last is null ? "Browse servers or host a game" : compact ? "Reconnect" : $"Reconnect to {last}", ShellTab.Coop),
             (KitIcon.Sliders, "Settings", compact ? "Graphics, audio" : "Graphics, controls, audio", ShellTab.Settings),
             compact
-                ? (KitIcon.Person, Context.Config.Active?.Name ?? "Profile", $"{DifficultyName()} · {done}/{total}", ShellTab.Profile)
-                : (KitIcon.Person, "Profile", $"{Context.Config.Active?.Name ?? "No profile"} · {DifficultyName()} · {profiles}", ShellTab.Profile),
+                ? (KitIcon.Person, PlayerName, $"{DifficultyName()} · {done}/{total}", ShellTab.Profile)
+                : (KitIcon.Person, "Profile", $"{PlayerName} · {DifficultyName()} · {profiles}", ShellTab.Profile),
         ];
+
+        // Where there is room, and the servers can be reached: the boards, one press away.
+        if (!compact && Context.Host.Leaderboard is not null)
+        {
+            int days = LeaderboardSeasons.DaysLeft(DateTimeOffset.UtcNow);
+            string boardLine = Context.Host.Leaderboard.Feed is { Period: LeaderboardSeasons.Current, Board.You: { } own }
+                ? string.Create(CultureInfo.InvariantCulture, $"#{own.Rank:N0} · season ends in {days} {(days == 1 ? "day" : "days")}")
+                : "The best on the official servers";
+            ways.Insert(1, (KitIcon.Leaderboard, "Leaderboard", boardLine, ShellTab.Leaderboard));
+        }
 
         foreach ((KitIcon icon, string title, string detail, ShellTab tab) in ways)
         {

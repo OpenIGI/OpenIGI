@@ -22,14 +22,11 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, IIgi1PlayerSurroundings
 {
     private readonly Igi1PlayerRules _rules = new(surroundings);
 
-    /// <summary>
-    /// Gets or sets what is told of a round a player took: the player, who is credited with it (none for a guard's), and
-    /// whether it struck the neck, the one zone that counts as a headshot.
-    /// </summary>
-    public Action<IHarmedPlayer, ShotTally?, bool>? RoundTaken
+    /// <summary>Gets or sets what is told of harm a player took: the player, and who is credited with it, with what, and how.</summary>
+    public Action<IHarmedPlayer, PlayerHarmNote>? HarmTaken
     {
-        get => _rules.RoundTaken;
-        set => _rules.RoundTaken = value;
+        get => _rules.HarmTaken;
+        set => _rules.HarmTaken = value;
     }
 
     /// <summary>Gets the mission's own player as the handlers hurt it.</summary>
@@ -50,10 +47,20 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, IIgi1PlayerSurroundings
     /// <param name="falloffUnits">The falloff beyond it, in units.</param>
     /// <param name="damageFactor">The blast's damage.</param>
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
-    public void BlastPlayer(IHarmedPlayer target, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy) =>
+    /// <param name="credit">The player who threw or fired what went off, or <see langword="null"/> for the level's.</param>
+    /// <param name="weapon">That player's weapon's script id, or <see langword="null"/>.</param>
+    public void BlastPlayer(
+        IHarmedPlayer target,
+        Vector3d position,
+        float radiusUnits,
+        float falloffUnits,
+        float damageFactor,
+        WeaponCategory killedBy,
+        ShotTally? credit = null,
+        string? weapon = null) =>
         _rules.Blast(
             target, position, radiusUnits, falloffUnits, damageFactor, killedBy,
-            mission.Soldiers?.PlayerHumanRadius ?? (float)HumanSeparation.RadiusInUnits);
+            mission.Soldiers?.PlayerHumanRadius ?? (float)HumanSeparation.RadiusInUnits, credit, weapon);
 
     /// <summary>Applies a close-combat blow to the mission's own player (<c>0x412CE0</c>).</summary>
     /// <param name="attacker">The attacker's position, which decides front or back.</param>

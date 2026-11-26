@@ -24,8 +24,8 @@ namespace OpenIGI.Launcher.Pages;
 /// <para>
 /// The search runs off the frame (<see cref="GameInstalls"/>): Steam's libraries, GOG's installs and the usual
 /// folders. What it finds is offered to pick from; Browse and a typed path are always there too, and a folder
-/// counts only when the game's own signature file is in it. I.G.I. 2 is asked for alongside and is optional: only mods
-/// that read its data need it, and Settings keeps the same folder. Either step can be left: Skip and Later finish the
+/// counts only when the game's own signature file is in it. I.G.I. 2 is asked for alongside, for a player who owns it
+/// too; it can be left empty, and Settings keeps the same folder. Either step can be left: Skip and Later finish the
 /// guide without changing anything a player has not chosen, and Back (Escape) steps back or skips.
 /// </para>
 /// </remarks>
@@ -174,7 +174,7 @@ internal sealed class OnboardingScreen : Screen
 
         _sequelRow = new TextRow(
             _rowTheme,
-            "I.G.I. 2 folder (optional)",
+            "I.G.I. 2 folder",
             string.Empty,
             "Choose the folder holding " + GameTitle.Igi2.SignatureFile,
             browse: current => _window.PickFolder($"Choose the folder holding {GameTitle.Igi2.SignatureFile}", current));
@@ -204,7 +204,7 @@ internal sealed class OnboardingScreen : Screen
         step.AddChild(_verdict);
         step.AddChild(new Paragraph(
             _theme.Body,
-            "Have I.G.I. 2 too? Some mods use its soldiers and data. It is optional, and you can add it later in Settings.",
+            "Have I.G.I. 2 too? Point to its folder to play it as well, or add it later in Settings.",
             15f,
             _theme.TextMuted));
         step.AddChild(_sequelRow);

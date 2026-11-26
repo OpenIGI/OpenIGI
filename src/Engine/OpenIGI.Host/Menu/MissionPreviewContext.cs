@@ -105,6 +105,10 @@ namespace OpenIGI.Host.Menu;
 /// Which game the backdrop belongs to, as <c>GameTitle.Id</c> gives it. It names the mission's fixture
 /// file, and the two titles number their missions independently over ranges that overlap.
 /// </param>
+/// <param name="Arrival">
+/// What says whether a folder fetched only when wanted is in place, given to the backdrop's own file system: a backdrop is
+/// promoted into the played mission, whose co-op looks may be borrowed from another location's pack.
+/// </param>
 public sealed record MissionPreviewContext(
     ITimeSource TimeSource,
     IFlowHost Host,
@@ -122,4 +126,5 @@ public sealed record MissionPreviewContext(
     ITitleWorldBuilder WorldBuilder,
     bool ComputeSupported,
     string TitleId = EmissiveLightProposer.DefaultTitleId,
-    bool BlockCompressionSupported = false);
+    bool BlockCompressionSupported = false,
+    OpenIGI.Engine.Vfs.IFolderArrival? Arrival = null);

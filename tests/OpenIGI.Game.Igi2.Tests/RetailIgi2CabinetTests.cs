@@ -78,6 +78,31 @@ public sealed class RetailIgi2CabinetTests
         Assert.False(player.Human.IsActivating);
     }
 
+    /// <summary>
+    /// A cabinet saved with its drawer coming out, read back once the drawer has gone in again: the drawer is out at once as it next
+    /// runs, as <c>Cabinet_DeSerializeHandler</c> snaps it, how far out it was being no part of the save.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_drawer_saved_coming_out_is_out_once_the_save_is_read()
+    {
+        Igi2Level level = Igi2Level.Find("location3", "level4");
+        Igi2MagicObjTypes magic = Igi2Session.Start().Session.Services.Require<Igi2MagicObjTypes>();
+        Igi2CabinetTask cabinet = All(level.Root).OfType<Igi2CabinetTask>().First();
+        cabinet.Models = level.ModelFor;
+        cabinet.Prepare(magic);
+        Flow.Igi2LevelRun run = new(level.Root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
+        cabinet.OpenDrawer();
+        string saved = Game.Saves.SaveScript.WriteState(cabinet.WriteState);
+        cabinet.CloseDrawer();
+        cabinet.Run(run);
+        Assert.Equal(0f, cabinet.DrawerOffset);
+
+        Assert.True(Game.Saves.SaveScript.ReadState(saved, cabinet.ReadState));
+        cabinet.Run(run);
+
+        Assert.Equal(Igi2CabinetTask.DrawerTravel, cabinet.DrawerOffset);
+    }
+
     private static IEnumerable<GameTask> All(GameTask task)
     {
         yield return task;

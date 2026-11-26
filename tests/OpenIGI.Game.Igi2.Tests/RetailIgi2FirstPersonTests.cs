@@ -171,6 +171,50 @@ public sealed class RetailIgi2FirstPersonTests
         Assert.Null(new Igi2FirstPersonFrame().Build(player, weapons.Inventory.Current?.WeaponType.FixedModel, 3));
     }
 
+    /// <summary>
+    /// The AK-47's first-person reload carries the gun's handle, <c>107_02_1</c>, on its own key track: keyed at 12480 and 12800 it
+    /// stands halfway between the two keys at 12640, as <c>RigidMagicObj_InterpolateHandler</c> lerps it, so it is pulled back
+    /// and let go rather than standing still on the hand.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_reloads_own_parts_move_by_their_keys()
+    {
+        Igi2AnimationClip clip = ReloadAk47();
+        Igi2AttachKey from = clip.AttachObjects[2].Keys.Single(static k => k.Time == 12480);
+        Igi2AttachKey to = clip.AttachObjects[2].Keys.Single(static k => k.Time == 12800);
+
+        Assert.Equal("107_02_1", clip.AttachObjects[2].Name);
+        Assert.True(Igi2AttachedParts.TryFind(clip, 12480, "107_02_1", out _, out Vector3f atFirst, out _));
+        Assert.True(Igi2AttachedParts.TryFind(clip, 12640, "107_02_1", out _, out Vector3f between, out _));
+        AssertNear(from.Translation, atFirst);
+        AssertNear((from.Translation + to.Translation) * 0.5f, between, 0.01f);
+        Assert.True(Math.Abs(from.Translation.X - to.Translation.X) > 100f, "The handle must travel between the two keys.");
+    }
+
+    /// <summary>
+    /// The AK-47's model carries its handle and magazine as attach points of the reload clip's own names; made under a clip that
+    /// carries them, the gun makes neither (<c>WeaponMagicObj_GetModelName</c>'s disabled list), so the moving ones are the only ones.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_gun_leaves_off_the_parts_its_reload_carries()
+    {
+        Igi2ModelAttachments attachments = new(Mission1.Value.Level.ModelFor, Mission1.Value.Session.Require<Igi2MagicObjTypes>());
+        TitleViewModelPart gun = new("107_01_1", null, default, Matrix3f.Identity);
+        string[] carried = [.. ReloadAk47().AttachObjects.Select(static a => a.Name)];
+
+        string[] whole = [.. attachments.Expand(gun).Select(static p => p.Model)];
+        string[] reloading = [.. attachments.Expand(gun, carried).Select(static p => p.Model)];
+
+        Assert.Contains("107_02_1", whole);
+        Assert.Contains("107_03_1", whole);
+        Assert.DoesNotContain("107_02_1", reloading);
+        Assert.DoesNotContain("107_03_1", reloading);
+        Assert.Equal("107_01_1", reloading[0]);
+    }
+
+    private static Igi2AnimationClip ReloadAk47() =>
+        Mission1.Value.Library.Find(Mission1.Value.Level.ModelFor("arms1_1")!.BoneHierarchy!, "reload_ak47_1st")!;
+
     private static TitleFirstPersonView Frame(Igi2HumanPlayer player, Igi2PlayerWeapons weapons, long tick) =>
         new Igi2FirstPersonFrame().Build(player, weapons.Inventory.Current?.WeaponType.FixedModel, tick,
             new Igi2ModelAttachments(Mission1.Value.Level.ModelFor, Mission1.Value.Session.Require<Igi2MagicObjTypes>()))!;

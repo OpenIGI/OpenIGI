@@ -32,8 +32,12 @@ public enum Igi2MissionTimerStatus
 /// thirty, centred at half the screen's width and nine tenths of its height.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2MissionTimerTask : Igi2Task
+public sealed partial class Igi2MissionTimerTask : Igi2Task, World.IIgi2WorldMember
 {
+    // Whether its display task is on the game screen, ptDrawTaskRef: made as it starts and on each run while it counts,
+    // deleted as it runs out or leaves the world.
+    private bool _isDisplayed;
+
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "MissionTimer";
 
@@ -67,8 +71,15 @@ public sealed partial class Igi2MissionTimerTask : Igi2Task
     /// <summary>Gets the ticks it has left, <c>nTicksLeft</c>.</summary>
     public int TicksLeft { get; private set; }
 
-    /// <summary>Gets a value indicating whether its display is on the screen.</summary>
-    public bool IsShown => Status == Igi2MissionTimerStatus.Running;
+    /// <summary>
+    /// Gets a value indicating whether its display is on the screen (<c>MissionTimerDrawTask</c>): while it counts, from the run it
+    /// starts on; a container taking it out of the world takes the display down until it runs again.
+    /// </summary>
+    public bool IsShown => _isDisplayed && Status == Igi2MissionTimerStatus.Running;
+
+    /// <inheritdoc/>
+    /// <remarks><c>MissionTimer_RemoveHandler</c>: its display is deleted.</remarks>
+    public void RemoveFromWorld() => _isDisplayed = false;
 
     /// <summary>Gets the text its display shows.</summary>
     public string DisplayText => string.Create(
@@ -106,6 +117,9 @@ public sealed partial class Igi2MissionTimerTask : Igi2Task
 
                 break;
         }
+
+        // MissionTimer_RunHandler: counting, its display is (made again if need be) on the screen; run out, it is deleted.
+        _isDisplayed = Status == Igi2MissionTimerStatus.Running;
     }
 
     /// <summary>Sets its ticks from its seconds, <c>MissionTimer_UpdateInternalDataHandler</c>.</summary>

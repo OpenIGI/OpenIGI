@@ -5,8 +5,7 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 
 /// <summary>
 /// One bomb going off, as the remastered blast draws it: where, how big, and how far into its few seconds it is -- with the
-/// curves every part of the blast reads its strength from, so the light, the shockwave, the fireball and the shake all agree
-/// on one timeline.
+/// curves its light, its concussion and its shake read their strength from, so they agree on one timeline.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -14,10 +13,10 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 /// frame's fraction of one, so a <c>-lockstep</c> capture of a blast is the same picture every time.
 /// </para>
 /// <para>
-/// The shapes are taken from footage of large charges rather than from any game: a flash that peaks within a frame or two
-/// and is mostly gone in a third of a second; a fireball that reaches most of its size in about a tenth of a second and
-/// then grows slowly while it rises and cools from white through orange to a dull red; a shock front leaving faster than
-/// sound and slowing to it; and a dark column that climbs for seconds after the fire has gone out.
+/// The shapes are taken from footage of large charges: a flash that peaks within a frame or two and is mostly gone in a third
+/// of a second, and a fireball that reaches most of its size in about a tenth of a second and then grows slowly while it rises
+/// and cools from white through orange to a dull red. What it throws is <see cref="BombBlastParticles"/>'s; the front that
+/// sweeps out after it is <see cref="Game.Multiplayer.Modes.BombWave"/>'s, which the after-blast pass draws.
 /// </para>
 /// </remarks>
 public sealed class BombBlast
@@ -114,42 +113,11 @@ public sealed class BombBlast
     /// <returns>The reach.</returns>
     public float LightReachMetres(float age) => RadiusMetres * Interpolate.Lerp(4.5f, 2.2f, Smooth(0f, 1.5f, age));
 
-    /// <summary>Where its visible shock front is, in metres from its centre.</summary>
-    /// <param name="age">Its age, in seconds.</param>
-    /// <returns>The front's radius.</returns>
-    /// <remarks>
-    /// Slower than sound, deliberately: a front at the speed of sound crosses the screen in a frame or two and is never
-    /// seen. This is the ring of refracted air that every slow-motion recording of a charge shows, at a speed the eye can
-    /// follow; the sound and the shake still arrive at the speed of sound.
-    /// </remarks>
-    public float ShockRadiusMetres(float age) => RadiusMetres * 5.5f * (1f - MathF.Exp(-age / 0.32f));
-
-    /// <summary>How strongly the shock front bends the picture behind it.</summary>
-    /// <param name="age">Its age, in seconds.</param>
-    /// <returns>Its strength, one when it leaves, nought when it is gone.</returns>
-    public static float ShockStrength(float age) => age < 0f ? 0f : Smooth(0f, 0.02f, age) * (1f - Smooth(0.15f, 0.9f, age));
-
     /// <summary>The fireball's radius: most of its size in a tenth of a second, then slow growth as it rises.</summary>
     /// <param name="age">Its age, in seconds.</param>
     /// <returns>The radius, in metres.</returns>
     public float FireballRadiusMetres(float age) =>
         RadiusMetres * ((0.6f * (1f - MathF.Exp(-age / 0.08f))) + (0.22f * Smooth(0.1f, 3f, age)));
-
-    /// <summary>How hot the fireball still is, which picks its colour and how much light it gives.</summary>
-    /// <param name="age">Its age, in seconds.</param>
-    /// <returns>One at the flash, nought when only smoke is left.</returns>
-    /// <remarks>It burns for a second and a half and glows in its own smoke for about as long again.</remarks>
-    public static float FireballHeat(float age) => 1f - Smooth(0.15f, 3.0f, age);
-
-    /// <summary>How high the top of the smoke column has climbed above the centre, in metres.</summary>
-    /// <param name="age">Its age, in seconds.</param>
-    /// <returns>The height.</returns>
-    public float ColumnHeightMetres(float age) => RadiusMetres * (0.35f + (1.25f * Smooth(0.1f, 6f, age)));
-
-    /// <summary>How dense the smoke is, which fades as the round's close runs out.</summary>
-    /// <param name="age">Its age, in seconds.</param>
-    /// <returns>One at its thickest.</returns>
-    public static float SmokeDensity(float age) => Smooth(0.05f, 0.6f, age) * (1f - Smooth(9f, LifeSeconds, age));
 
     /// <summary>How much of a concussion somebody standing at a distance takes: how hard it stuns, rings and whites out.</summary>
     /// <param name="distanceMetres">How far from the centre they stand.</param>

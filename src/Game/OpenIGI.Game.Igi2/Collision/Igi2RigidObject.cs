@@ -155,6 +155,9 @@ public sealed class Igi2RigidObject : IWorldCollider, OpenIGI.Game.World.IAttach
     /// <remarks>The placed task, for one whose events a struck solid passes on, as an <c>ExplodeObject</c>'s weapon hits.</remarks>
     public object? Handler { get; set; }
 
+    /// <summary>Gets the collision mesh levels it wears, by <c>iMesh</c>.</summary>
+    public IReadOnlyList<Igi2CollisionMesh?> Meshes => _meshes;
+
     /// <summary>Wears another model's collision, as an object swapping its model does (<c>ModelObj_SetLODVirModel</c>).</summary>
     /// <param name="meshes">The new model's collision mesh levels, by <c>iMesh</c>.</param>
     /// <param name="radius">The new model's radius.</param>

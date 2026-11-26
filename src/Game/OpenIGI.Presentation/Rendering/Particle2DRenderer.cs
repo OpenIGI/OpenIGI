@@ -116,7 +116,7 @@ public sealed class Particle2DRenderer : IDisposable
         Vector3d eye = camera.Position;
         foreach (Particle2DSystem system in systems)
         {
-            if (system.IsDeleted || system.Count == 0 || Sprite(system.Look.Sprite) is not { Texture.IsValid: true } strip)
+            if (system.IsDeleted || !system.IsInWorld || system.Count == 0 || Sprite(system.Look.Sprite) is not { Texture.IsValid: true } strip)
             {
                 continue;
             }

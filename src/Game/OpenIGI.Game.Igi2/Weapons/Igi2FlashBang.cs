@@ -31,6 +31,10 @@ public sealed class Igi2FlashBang(Igi2ExplosionWorld world, Vector3d position) :
     }
 
     /// <inheritdoc/>
+    /// <remarks>A grenade and what it leaves are deleted (<c>Grenade_DeSerializeDoneHandler</c>).</remarks>
+    public bool DeleteForLoad() => true;
+
+    /// <inheritdoc/>
     public bool Run()
     {
         // flashbang.c FlashBang_RunHandler: three low-word draws per particle, speed then intensity then spin.

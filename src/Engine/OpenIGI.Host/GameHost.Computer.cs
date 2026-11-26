@@ -175,6 +175,20 @@ public sealed partial class GameHost
     private bool ComputerKeyPressed() =>
         PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(PlayerAction.MapComputer));
 
+    /// <summary>The page whose key went down this frame -- the objectives' or the log's -- by the profile's bindings, or none.</summary>
+    private OpenIGI.Game.Computer.ComputerPageKind ComputerPageKeyPressed()
+    {
+        foreach ((PlayerAction action, PlayerInputSlot _, OpenIGI.Game.Computer.ComputerPageKind page) in OpenIGI.Game.Computer.ComputerPageKeys.All)
+        {
+            if (PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            {
+                return page;
+            }
+        }
+
+        return OpenIGI.Game.Computer.ComputerPageKind.None;
+    }
+
     /// <summary>The player the computer serves: where it stands, in engine units, and the eye the computer climbs from.</summary>
     /// <param name="BodyUnits">Where it stands.</param>
     /// <param name="Camera">Its eye.</param>
@@ -207,6 +221,11 @@ public sealed partial class GameHost
             }
 
             bool toggleComputer = ComputerKeyPressed() || automaticOpen;
+
+            // The objectives' and the log's keys open the computer on their page, turn an open one to it, and close one
+            // already showing it, as I.G.I. 2's do.
+            OpenIGI.Game.Computer.ComputerPageKind pageKey = ComputerPageKeyPressed();
+            bool pageAsked = pageKey != OpenIGI.Game.Computer.ComputerPageKind.None;
             // The save page closes the display itself once its upload is done or a download is under way.
             bool quit = _computerQuit && TacticalComputer is not null;
             bool closeComputer = _computerOpen && TacticalComputer is not null && (quit || _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape));
@@ -247,11 +266,11 @@ public sealed partial class GameHost
                 // Not during a cinematic: the view is the cutscene's or the entry camera's, not the player's to leave, and
                 // the original takes no map key while one plays.
                 bool cinematic = _entry.IsCameraActive || _mission.Scenes?.IsPlaying == true;
-                if (!_computerOpen && toggleComputer && !cinematic)
+                if (!_computerOpen && (toggleComputer || pageAsked) && !cinematic)
                 {
                     _computerOpen = true;
                     tacticalComputer.Open(subject.BodyUnits);
-                    _mission.SetPlayerComputerOpen(true);
+                    tacticalComputer.ShowPage(pageKey);
                     _computerFlight.BeginOpen(
                         eye,
                         gameplayFieldOfView,
@@ -263,7 +282,11 @@ public sealed partial class GameHost
                     _window.CursorVisible = false;
                     _window.CursorLocked = false;
                 }
-                else if (_computerOpen && (toggleComputer || closeComputer) && _computerFlight.CanClose)
+                else if (_computerOpen && pageAsked && !toggleComputer && !closeComputer && tacticalComputer.ShownPage != pageKey)
+                {
+                    tacticalComputer.ShowPage(pageKey);
+                }
+                else if (_computerOpen && (toggleComputer || closeComputer || pageAsked) && _computerFlight.CanClose)
                 {
                     _computerFlight.BeginClose(
                         vantage,
@@ -298,7 +321,6 @@ public sealed partial class GameHost
                     {
                         _computerOpen = false;
                         _computerFlight.Reset();
-                        _mission.SetPlayerComputerOpen(false);
                     }
 
                     _window.Input.Captured = true;
@@ -363,6 +385,7 @@ public sealed partial class GameHost
     private int _computerButtons;
     private int _computerWheel;
     private bool _computerMapKey;
+    private OpenIGI.Game.Computer.ComputerPageKind _computerPageKey;
     private long _computerOpenedFrame = -1;
 
     private void GatherComputerInput()
@@ -382,7 +405,31 @@ public sealed partial class GameHost
 
         _computerWheel += Math.Sign(mouse.WheelDelta);
         // Not the press that opened it, which the same frame can read again once the tick has opened it.
-        _computerMapKey |= _computerOpen && _loop.Clock.FrameCount != _computerOpenedFrame && ComputerKeyPressed();
+        bool afterOpening = _computerOpen && _loop.Clock.FrameCount != _computerOpenedFrame;
+        _computerMapKey |= afterOpening && ComputerKeyPressed();
+        if (afterOpening && _computerPageKey == OpenIGI.Game.Computer.ComputerPageKind.None)
+        {
+            _computerPageKey = ComputerPageKeyPressed();
+        }
+    }
+
+    /// <summary>
+    /// The computer's part of this tick's input: whether it holds the player, what the mouse and keys did since the last tick
+    /// while it was up, the actions held, and the display its screens are laid out across. Gathered once a tick, here, so the
+    /// tick -- and a replay of it -- reads the computer from its input, never the window.
+    /// </summary>
+    /// <param name="held">The actions held this tick, before the open computer keeps them from the player.</param>
+    private Game.Player.TitleComputerInput ComputerTickInput(Game.Player.PlayerAction held)
+    {
+        (int width, int height) = ComputerDisplaySize;
+        if (!_computerOpen)
+        {
+            // Nothing the mouse did with the computer down is the computer's: it opens on a clean slate.
+            _ = TakeComputerInput();
+            return new Game.Player.TitleComputerInput(false, default, held, width, height);
+        }
+
+        return new Game.Player.TitleComputerInput(true, TakeComputerInput(), held, width, height);
     }
 
     /// <summary>Hands the computer the mouse since the last tick and starts gathering the next.</summary>
@@ -401,8 +448,12 @@ public sealed partial class GameHost
         }
 
         // The save page's own closing reaches the mission's computer as the map key does.
-        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey || _computerQuit);
+        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey || _computerQuit)
+        {
+            PageKey = _computerPageKey,
+        };
         _computerMapKey = false;
+        _computerPageKey = OpenIGI.Game.Computer.ComputerPageKind.None;
         _computerQuit = false;
         _computerCountsX = 0f;
         _computerCountsY = 0f;
@@ -415,6 +466,7 @@ public sealed partial class GameHost
     {
         _computerOpen = open;
         _computerMapKey = false;
+        _computerPageKey = OpenIGI.Game.Computer.ComputerPageKind.None;
         _computerQuit = false;
         if (open)
         {
@@ -425,6 +477,19 @@ public sealed partial class GameHost
         // away is the frame's to say, where the view's own lock is decided.
         _window.CursorVisible = false;
         _computerWheel = 0;
+    }
+
+    /// <summary>
+    /// The level put back to a moment: the view and the pointer follow the mission's computer as it was then. The computer is the
+    /// level's, put back with it; the view is the host's, which hears of the computer only as it opens or closes.
+    /// </summary>
+    private void ComputerAsRestored()
+    {
+        bool open = TitlePlayer?.IsComputerOpen == true;
+        if (UsesMissionComputer && open != _computerOpen)
+        {
+            MissionComputerChanged(open);
+        }
     }
 
     /// <summary>Gets a value indicating whether the title's own computer is in use rather than the tactical one.</summary>

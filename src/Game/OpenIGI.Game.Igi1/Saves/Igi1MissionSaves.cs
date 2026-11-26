@@ -92,6 +92,7 @@ public sealed class Igi1SaveStates : ISaveStates
     {
         ArgumentNullException.ThrowIfNull(world);
         yield return Igi1PlayerSave.Section(world);
+        yield return Igi1MissionScoreSave.Section(world);
         yield return Igi1LevelSave.Section(world);
         if (world.Objectives is { } objectives)
         {
@@ -225,6 +226,16 @@ public sealed class Igi1MissionSaves : MissionSaves
             if (!IsFresh)
             {
                 makeReady?.Invoke();
+            }
+        }
+
+        // Said as a line on the screen, as I.G.I. 2 says it. A save that will not read onto the level that is up is read again
+        // onto the mission brought up afresh, so only a failure there is the load's.
+        public void Report(SaveReport report)
+        {
+            if (report != SaveReport.LoadFailed || IsFresh)
+            {
+                world.Objectives?.ShowTransientMessage(SaveReports.Line(report));
             }
         }
 

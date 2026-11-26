@@ -206,6 +206,54 @@ public sealed class Igi2TrainTests
         }
     }
 
+    /// <summary>
+    /// A train saved where it stood, driven on and then loaded back, stands where it was saved and stood there as the tick began:
+    /// <c>Train_UpdateInternalDataAfterLoadHandler</c>'s move takes its last place from the place the load read. Where it had run
+    /// to before the load is not its last place, or a train waiting at its platform is drawn swept in from there every tick.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_loaded_train_stands_where_it_was_saved()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level2");
+        Igi2AnimTask animation = All(level.Root).OfType<Igi2AnimTask>().Single(t => t.Id == 4039);
+        Igi2TrainTask train = All(level.Root).OfType<Igi2TrainTask>().Single(t => t.Id == animation.TargetId);
+        GameTask rails = All(level.Root).Single(t => t.Id == train.RailroadId);
+        train.Prepare(level.ModelFor, Igi2SplineObject.Read(rails).Path);
+        Vector3d[] saved = [.. train.Rake.Select(static car => car.CurrentPosition)];
+        string[] states = [.. train.Rake.Select(static car =>
+        {
+            Game.Saves.StateWriter writer = new();
+            car.WriteState(writer);
+            return writer.Arguments;
+        })];
+
+        animation.Begin();
+        animation.RunExpression = string.Empty;
+        Igi2LevelRun run = new(level.Root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
+        for (int tick = 0; tick < 300; tick++)
+        {
+            animation.Run(run);
+        }
+
+        Assert.NotEqual(saved[0], train.CurrentPosition);
+        for (int i = 0; i < train.Rake.Count; i++)
+        {
+            Assert.True(Game.Saves.SaveScript.ReadState(states[i], train.Rake[i].ReadState));
+        }
+
+        for (int i = 0; i < train.Rake.Count; i++)
+        {
+            Igi2TrainTask car = train.Rake[i];
+            Assert.True((car.CurrentPosition - saved[i]).Length < 1.0, $"car {i} stands {car.CurrentPosition}, saved at {saved[i]}");
+            // The rail's place is walked again from the saved distance, which may land a float step off the place read back.
+            Assert.True((car.CurrentPosition - car.LastPosition).Length < 1.0, $"car {i} was last at {car.LastPosition}, stands {car.CurrentPosition}");
+            for (int k = 0; k < 9; k++)
+            {
+                Assert.Equal(car.CurrentOrientation[k], car.LastOrientation[k], 1e-5f);
+            }
+        }
+    }
+
     private static IEnumerable<GameTask> All(GameTask task)
     {
         yield return task;

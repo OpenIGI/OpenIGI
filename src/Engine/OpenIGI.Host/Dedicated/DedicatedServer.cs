@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Multiplayer;
 
@@ -97,6 +98,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         _nextMap.Tick();
 
         Greet();
+        Reporter?.Tick(now);
         if (_heartbeat is not null && _beat is not null)
         {
             _heartbeat.Tick(now, _beat);
@@ -113,6 +115,19 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     public IReadOnlyList<string> Where() => _session.Where();
 
     /// <inheritdoc/>
+    /// <remarks><c>trace on|off|mark</c> writes the server's trace beside its settings; the rest is the session's.</remarks>
+    public IReadOnlyList<string> Debug(IReadOnlyList<string> words)
+    {
+        if (words.Count > 0 && words[0].Equals("trace", StringComparison.OrdinalIgnoreCase))
+        {
+            string directory = Path.GetDirectoryName(Core.Configuration.SettingsPaths.GetSettingsPath()) ?? Core.Configuration.SettingsPaths.PortableDirectory;
+            return [Game.Multiplayer.NetProbe.Command(server: true, [.. words.Skip(1)], directory, _session.Session?.LastSnapshot?.Tick ?? 0)];
+        }
+
+        return _session.Session?.Debug(words) ?? ["No match is being played."];
+    }
+
+    /// <inheritdoc/>
     public string Teleport(string who, string before, double metres)
     {
         string answer = _session.Teleport(who, before, metres);
@@ -125,7 +140,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     {
         if (mode is not null && !_session.UseMode(mode))
         {
-            return $"'{mode}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}.";
+            return $"'{mode}' is not a mode: {string.Join(", ", MatchModes.All)}.";
         }
 
         if (!_goToMission(mission))
@@ -143,9 +158,12 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     /// <summary>Gets which missions' maps can be played as arenas (laid out for multiplayer); every one when unset.</summary>
     public Func<int, bool>? Arenas { get; init; }
 
+    /// <summary>Gets what reports each decided match to the master, or <see langword="null"/> for a server that reports none.</summary>
+    public MatchReporter? Reporter { get; init; }
+
     // The missions a mode can be played on: every one for co-op, the laid-out ones for a versus mode.
     private IReadOnlyList<(int Id, string Name)> MissionsFor(string mode) =>
-        GameModes.IsVersus(mode) && Arenas is { } arenas ? [.. Missions.Where(m => arenas(m.Id))] : Missions;
+        MatchModes.IsVersus(mode) && Arenas is { } arenas ? [.. Missions.Where(m => arenas(m.Id))] : Missions;
 
     // What a decided match offers: the next few of the rotation and this map again; without a rotation, the maps around this one.
     private IReadOnlyList<MapChoice> Offer()
@@ -159,7 +177,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         string NameOf(int number) => Missions.FirstOrDefault(m => m.Id == number).Name ?? string.Empty;
         List<MapChoice> choices = [.. Enumerable.Range(1, Math.Min(NextMapVote.MostChoices - 1, _config.Rotation.Count - 1))
             .Select(step => _config.Rotation[(_rotationAt + step) % _config.Rotation.Count])
-            .Where(r => !GameModes.IsVersus(r.Mode.Length > 0 ? r.Mode : _session.Mode) || Arenas?.Invoke(r.Mission) != false)
+            .Where(r => !MatchModes.IsVersus(r.Mode.Length > 0 ? r.Mode : _session.Mode) || Arenas?.Invoke(r.Mission) != false)
             .Select(r => new MapChoice(r.Mission, r.Mode.Length > 0 ? r.Mode : _session.Mode, NameOf(r.Mission)))];
         choices.Insert(0, new MapChoice(mission, _session.Mode, NameOf(mission), Again: true));
         return choices;

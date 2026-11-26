@@ -85,6 +85,20 @@ public interface IReplicatedWorld
     /// <returns><see langword="false"/> when the world can't be played so: its mode stays its own.</returns>
     bool TryPlayVersus(bool teams) => false;
 
+    /// <summary>
+    /// Gets how a player has played the mission, for its rank: their own counts -- times spotted, health, rounds, hits and kills --
+    /// which the squad's score stands against the squad's clock (<see cref="Scoring.SquadScore.Of"/>).
+    /// </summary>
+    /// <param name="slot">The player's slot, the host's own (<see cref="ServerSession.HostSlot"/>) among them.</param>
+    /// <returns>The score, or <see langword="null"/> when the player isn't in the world (or the world keeps none).</returns>
+    Scoring.MissionScore? ScoreOf(int slot) => null;
+
+    /// <summary>
+    /// Gets the times the squad as a whole was spotted, where the world counts sightings so rather than player by player;
+    /// <see langword="null"/> to add up each player's (<see cref="Scoring.SquadScore.Of"/>).
+    /// </summary>
+    int? SquadTimesSpotted => null;
+
     /// <summary>Gets where a player stands, or <see langword="null"/> when it isn't in the world (or the world doesn't say).</summary>
     /// <param name="slot">The player's slot.</param>
     /// <returns>Its feet, in world units.</returns>
@@ -181,6 +195,25 @@ public interface IReplicatedWorld
     string? Teleport(int slot, int toSlot, double metres) => "this game can't move its players";
 
     /// <summary>
+    /// Puts a player a few metres from one of the level's soldiers, facing it: a debugging tool's (<see cref="NetProbe"/>).
+    /// <b>Temporary.</b>
+    /// </summary>
+    /// <param name="slot">The player moved.</param>
+    /// <param name="soldier">The soldier's entity (<see cref="ReplicatedEntity.IsSoldier"/>).</param>
+    /// <param name="metres">How far from it.</param>
+    /// <returns>Why it could not be, or <see langword="null"/>.</returns>
+    string? TeleportBeforeSoldier(int slot, int soldier, double metres) => "this game can't move its players to its soldiers";
+
+    /// <summary>
+    /// Harms one of the level's soldiers by a share of its own health, as a round of the server's own would: a debugging tool's
+    /// (<see cref="NetProbe"/>). A share of one or more kills it. <b>Temporary.</b>
+    /// </summary>
+    /// <param name="soldier">The soldier's entity.</param>
+    /// <param name="share">The share of its health taken.</param>
+    /// <returns>Why it could not be, or <see langword="null"/>.</returns>
+    string? HarmSoldier(int soldier, float share) => "this game can't harm its soldiers from the console";
+
+    /// <summary>
     /// Says a match begins -- the first on the map, or one played again on it -- just before its players are put back: each is
     /// armed from nothing at that spawn, as at a first one, rather than keeping what it carried through the last.
     /// </summary>
@@ -202,9 +235,12 @@ public interface IReplicatedWorld
     /// <summary>Gets the level's collision, which a bomb's blast wave is spread through; none where the game has none.</summary>
     Game.World.WorldRayCast? Collision => null;
 
-    /// <summary>A bomb's blast wave reaching a player: a share of its health taken, and the flash, the shake and the death.</summary>
+    /// <summary>
+    /// A bomb's blast wave reaching a player: a share of its health taken and the death, or for one left standing the shake,
+    /// the view thrown up and the shove away from the bomb (<see cref="Modes.BombWave"/>).
+    /// </summary>
     /// <param name="slot">The player.</param>
-    /// <param name="healthShare">How much of a whole health it takes; one or more kills.</param>
+    /// <param name="healthShare">How much of a whole health it takes; one or more kills, nought takes nothing but is still felt.</param>
     /// <param name="from">Where the blast was, in world units.</param>
     void BlastPlayer(int slot, float healthShare, Core.Numerics.Vector3d from)
     {
@@ -269,6 +305,16 @@ public interface IReplicatedWorld
     /// <param name="slot">The client's slot.</param>
     void Respawn(int slot);
 
+    /// <summary>Makes a living player unable to be hurt for a while -- spawn protection -- ending early the moment it fires.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="ticks">For how long, in ticks.</param>
+    void Shield(int slot, int ticks)
+    {
+    }
+
+    /// <summary>Gets the players shielded now (<see cref="Shield"/>), by entity, with the ticks each has left.</summary>
+    IReadOnlyList<ShieldState> Shields => [];
+
     /// <summary>Records the level as it stands, as what <see cref="ResetToLevelStart"/> puts back: as the session takes it up.</summary>
     void MarkLevelStart()
     {
@@ -308,7 +354,12 @@ public interface IReplicatedWorld
 /// <summary>A player killed in the level.</summary>
 /// <param name="Victim">The entity id of the player killed.</param>
 /// <param name="Killer">The entity id of its killer, or -1 when nobody killed it.</param>
-public readonly record struct WorldDeath(int Victim, int Killer);
+/// <param name="Weapon">The title's key for the weapon that killed (an I.G.I. script id), or empty.</param>
+/// <param name="Cause">What killed.</param>
+/// <param name="Headshot">Whether the killing round struck the head.</param>
+/// <param name="Backstab">Whether it was a blade in an unaware back.</param>
+public readonly record struct WorldDeath(
+    int Victim, int Killer, string Weapon = "", Modes.KillCause Cause = Modes.KillCause.Weapon, bool Headshot = false, bool Backstab = false);
 
 /// <summary>A title's player that can host a session: it hands the session the level as an <see cref="IReplicatedWorld"/>.</summary>
 public interface IReplicatedTitle
@@ -343,6 +394,12 @@ public interface IReplicatedClientWorld
     {
     }
 
+    /// <summary>Puts the server's rules on the client's own player, so it plays as the server's copy of it does.</summary>
+    /// <param name="modernAim">Whether the server plays with modern aim (<see cref="ClientSession.ServerModernAim"/>).</param>
+    void ApplyServerRules(bool modernAim)
+    {
+    }
+
     /// <summary>Puts the server's kit on the client's own player, after the server re-armed its copy (a respawn).</summary>
     /// <param name="kit">Each weapon's script id and the rounds of its ammunition.</param>
     /// <param name="fresh">Whether the server armed its copy from nothing, a respawn after a death.</param>
@@ -368,6 +425,19 @@ public interface IReplicatedClientWorld
     {
     }
 
+    /// <summary>Gets where this client's game draws one of the others it shows, for a debugging trace (<see cref="NetProbe"/>).</summary>
+    /// <param name="id">The human's entity.</param>
+    /// <returns>Where it stands and what it does; <see langword="null"/> when the title does not say.</returns>
+    ProbeDrawn? Drawn(int id) => null;
+
+    /// <summary>
+    /// Turns this client's own player to look at the chest of one of the others it shows, for a debugging tool to shoot with
+    /// (<see cref="NetProbe"/>). <b>Temporary.</b>
+    /// </summary>
+    /// <param name="id">The human's entity.</param>
+    /// <returns>Whether the title turned it.</returns>
+    bool AimAt(int id) => false;
+
     /// <summary>Gets the entity ids of the other players shown.</summary>
     IReadOnlyCollection<int> Shown { get; }
 
@@ -384,6 +454,12 @@ public interface IReplicatedClientWorld
     /// <param name="teamOf">A player's team by its entity, or <see langword="null"/> when it isn't known.</param>
     /// <param name="ownTeam">This player's team, or <see langword="null"/> when it isn't known.</param>
     void Sides(string mode, Func<int, int?> teamOf, int? ownTeam)
+    {
+    }
+
+    /// <summary>Takes who spawn protection shields now, by entity, so a shielded player is drawn so.</summary>
+    /// <param name="shielded">Whether a player is shielded, by its entity.</param>
+    void Shielded(Func<int, bool> shielded)
     {
     }
 
@@ -433,6 +509,12 @@ public interface IReplicatedClientWorld
 
     /// <summary>Gets whether the client's own player holds the mode's bomb in hand, or <see langword="null"/> where the title never holds one.</summary>
     bool? HoldsBomb => null;
+
+    /// <summary>
+    /// Gets whether the height the client's own player stands at now is the world's to set and not its commands': afloat on
+    /// water that swells by the level's clock, say. No error in it is the prediction's, and none is put right.
+    /// </summary>
+    bool LocalHeightIsWorlds => false;
 
     /// <summary>Gets the platform -- a lift -- the client's own player stands on now, and where this client's car stands.</summary>
     /// <remarks>
@@ -537,8 +619,70 @@ public enum SessionMessage : byte
     /// <summary>Client to server, reliable: the files of a list it was sent that it lacks, by place in the list.</summary>
     FileWant = 23,
 
-    /// <summary>Server to client, reliable: a piece of a file asked for.</summary>
+    /// <summary>Server to client, reliable: a piece of a file asked for (<see cref="FilePiece"/>), deflated where that is smaller.</summary>
     FilePart = 24,
+
+    /// <summary>
+    /// Server to client, reliable: the players spawn protection shields now (<see cref="ShieldState"/>), sent whenever who is
+    /// shielded changes. A client that does not know it passes it by.
+    /// </summary>
+    Shields = 25,
+
+    /// <summary>
+    /// Server to client, reliable: the pieces a file asked for is cut into (<see cref="FileChunkTable"/>), so the client asks for
+    /// only those its own copy lacks. A file no longer than one piece is sent whole instead.
+    /// </summary>
+    FileChunks = 26,
+
+    /// <summary>Client to server, reliable: the pieces of a file it lacks, by place in its table (<see cref="ChunkWant"/>).</summary>
+    ChunkWant = 27,
+
+    /// <summary>
+    /// Server to client, reliable: a co-op mission's score at its end (<see cref="SquadScoreMessage"/>), every player's, which each
+    /// shows until the squad goes on.
+    /// </summary>
+    MissionScore = 28,
+}
+
+/// <summary>A player spawn protection shields: who, and for how many ticks more at most (firing ends it sooner).</summary>
+/// <param name="Entity">Its entity.</param>
+/// <param name="TicksLeft">The ticks it has left.</param>
+public readonly record struct ShieldState(int Entity, int TicksLeft)
+{
+    /// <summary>Writes a list of shields, after its message's id.</summary>
+    /// <param name="writer">Where to.</param>
+    /// <param name="shields">The shields.</param>
+    public static void Write(Net.BitWriter writer, IReadOnlyList<ShieldState> shields)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(shields);
+        writer.WriteVarUInt((uint)shields.Count);
+        foreach (ShieldState shield in shields)
+        {
+            writer.WriteVarUInt((uint)Math.Max(0, shield.Entity));
+            writer.WriteVarUInt((uint)Math.Max(0, shield.TicksLeft));
+        }
+    }
+
+    /// <summary>Reads a list <see cref="Write"/> wrote.</summary>
+    /// <param name="reader">Where from.</param>
+    /// <returns>The shields, or <see langword="null"/> for a list cut short.</returns>
+    public static List<ShieldState>? Read(ref Net.BitReader reader)
+    {
+        uint count = reader.ReadVarUInt();
+        if (count > 256)
+        {
+            return null;
+        }
+
+        List<ShieldState> shields = [];
+        for (int i = 0; i < count; i++)
+        {
+            shields.Add(new ShieldState((int)reader.ReadVarUInt(), (int)reader.ReadVarUInt()));
+        }
+
+        return reader.IsOverflowed ? null : shields;
+    }
 }
 
 /// <summary>A player the server re-armed: what it carries now, and whether it was armed from nothing.</summary>

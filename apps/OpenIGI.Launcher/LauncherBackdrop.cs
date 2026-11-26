@@ -8,22 +8,6 @@ using SkiaSharp;
 
 namespace OpenIGI.Launcher;
 
-/// <summary>A decoded picture, with its width over its height.</summary>
-internal readonly record struct BackdropPicture(UiImage Image, float Aspect)
-{
-    /// <summary>Draws the picture filling a box, cropped evenly on the sides that do not fit.</summary>
-    /// <param name="painter">Where to draw.</param>
-    /// <param name="box">The box.</param>
-    public void DrawCover(UiPainter painter, UiRect box)
-    {
-        float aspect = box.Width / MathF.Max(1f, box.Height);
-        UiRect source = Aspect > aspect
-            ? new UiRect((1f - (aspect / Aspect)) * 0.5f, 0f, aspect / Aspect, 1f)
-            : new UiRect(0f, (1f - (Aspect / aspect)) * 0.5f, 1f, Aspect / aspect);
-        painter.DrawSprite(Image, box, source, Core.Graphics.Bgra32.FromRgb(255, 255, 255));
-    }
-}
-
 /// <summary>
 /// The launcher's background: a night shot of the game under the design's vignette.
 /// </summary>
@@ -33,7 +17,7 @@ internal readonly record struct BackdropPicture(UiImage Image, float Aspect)
 /// sideways when the game changes, the way the mock-up's framing does. Without the picture the background
 /// falls back to a gradient in the same tones.
 /// </remarks>
-internal sealed class LauncherBackdrop(BackdropPicture? picture) : UiElement
+internal sealed class LauncherBackdrop(UiPicture? picture) : UiElement
 {
     /// <summary>How far past the window the picture is drawn, which is how far it can drift.</summary>
     private const float Overscan = 1.06f;
@@ -49,7 +33,7 @@ internal sealed class LauncherBackdrop(BackdropPicture? picture) : UiElement
     /// <summary>Decodes the backdrop picture.</summary>
     /// <param name="images">The store the picture is registered in.</param>
     /// <returns>The picture; <see langword="null"/> when it is missing or cannot be decoded.</returns>
-    public static BackdropPicture? LoadPicture(SkiaImageStore images)
+    public static UiPicture? LoadPicture(SkiaImageStore images)
     {
         ArgumentNullException.ThrowIfNull(images);
         if (!File.Exists(PicturePath))
@@ -58,7 +42,7 @@ internal sealed class LauncherBackdrop(BackdropPicture? picture) : UiElement
         }
 
         SKImage? picture = SKImage.FromEncodedData(PicturePath);
-        return picture is null ? null : new BackdropPicture(images.Add(picture), picture.Width / (float)picture.Height);
+        return picture is null ? null : new UiPicture(images.Add(picture), picture.Width, picture.Height);
     }
 
     protected override void OnUpdate(float elapsedSeconds)
@@ -82,7 +66,7 @@ internal sealed class LauncherBackdrop(BackdropPicture? picture) : UiElement
         KitDraw.Vignette(painter, rect, VignetteStyle.Launcher, glow: false);
     }
 
-    private void DrawPicture(UiPainter painter, UiRect rect, BackdropPicture shot)
+    private void DrawPicture(UiPainter painter, UiRect rect, UiPicture shot)
     {
         // Cover: whichever of width or height leaves no gap decides the size, then a little overscan.
         float width = MathF.Max(rect.Width, rect.Height * shot.Aspect) * Overscan;

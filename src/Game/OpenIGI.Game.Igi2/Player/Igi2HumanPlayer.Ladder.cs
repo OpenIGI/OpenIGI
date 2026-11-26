@@ -152,6 +152,49 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
         }
     }
 
+    /// <summary>
+    /// Gets what the player hangs on, for the two games of a session to tell each other: nought for nothing, one a ladder,
+    /// two a wire climbed and three a wire ridden down. Not retail.
+    /// </summary>
+    public int ClimbMode => IsClimbLadder ? 1 : IsClimbWire ? 2 : IsSlideWire ? 3 : 0;
+
+    /// <summary>
+    /// Lets go of the ladder or the wire the player hangs on, at once, and falls: a session's two copies of one player that
+    /// have come apart -- one on a ladder, the other off it -- are both put off it. Not retail.
+    /// </summary>
+    /// <remarks>
+    /// The server's copy runs only the commands that reach it, and one lost is a step its client climbed that it did not: its
+    /// client got off at the top while it hung six steps down, and from then every snapshot pulled the client's falling
+    /// player back to the ladder it had left.
+    /// </remarks>
+    public void LetGoOfClimb()
+    {
+        _slideSound?.Delete();
+        _slideSound = null;
+        if (IsClimbLadder)
+        {
+            IsInitClimbLadder = false;
+            IsDeInitClimbLadder = true;
+            ClimbLadder();
+            DropGround();
+            if (!Has(Igi2PlayerSignal.Dead))
+            {
+                Go(Igi2PlayerState.Fall);
+            }
+
+            return;
+        }
+
+        if ((IsClimbWire || IsSlideWire) && ActivatingTarget is IIgi2Wire wire)
+        {
+            IsClimbWire = false;
+            IsSlideWire = false;
+            _timedActionSound?.Delete();
+            _timedActionSound = null;
+            LetGoOfWire(wire);
+        }
+    }
+
     /// <summary>Faces the ladder: its heading turned half round, <c>Real32x9_GetAngles</c> and <c>Human_PopOrientation</c>.</summary>
     private void FaceLadder(IIgi2Ladder ladder)
     {

@@ -143,6 +143,41 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(worst <= RhiBackends.ColourTolerance(backend), $"{backend} disagrees with {RhiBackends.Reference} by {worst}.");
     }
 
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_sees_the_reference_thermal_picture(string backend)
+    {
+        // The remastered thermal sensor: a heat mask drawn from the triangle, then a compute pass reading the lit scene, its
+        // depth and the mask, before the bloom and the tone map. White-hot: the body in the open glows, the world goes grey and
+        // the sky, where nothing was drawn, is coldest of all.
+        byte[] plain = DrawOn(RhiBackends.Reference);
+        byte[] vulkan = DrawOn(RhiBackends.Reference, thermal: true);
+        byte[] other = DrawOn(backend, thermal: true);
+
+        int corner = ((2 * Size) + 2) * 4;
+        output.WriteLine($"{backend} centre {Describe(other)}; reference {Describe(vulkan)}; sky {other[corner + 1]}");
+
+        Assert.True(Colourful(plain) > 0, "The frame without the sensor has no colour for it to take away.");
+        // White-hot keeps only the faint cool tint a sensor's display has; the scene's green and red are gone.
+        int spread = 0;
+        for (int i = 0; i < vulkan.Length; i += 4)
+        {
+            spread = Math.Max(spread, Math.Max(vulkan[i], Math.Max(vulkan[i + 1], vulkan[i + 2])) - Math.Min(vulkan[i], Math.Min(vulkan[i + 1], vulkan[i + 2])));
+        }
+
+        Assert.True(spread <= 12, $"White-hot left the picture in colour: channels {spread} apart.");
+        Assert.True(vulkan[Centre + 1] > 200, $"The body reads {Describe(vulkan)}, not hot.");
+        Assert.True(vulkan[Centre + 1] > vulkan[corner + 1] + 120, "The body is no hotter than the sky.");
+
+        int worst = 0;
+        for (int i = 0; i < vulkan.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - other[i]));
+        }
+
+        Assert.True(worst <= RhiBackends.ColourTolerance(backend), $"{backend} disagrees with {RhiBackends.Reference} about the sensor by {worst}.");
+    }
+
     /// <summary>Gets each compared backend, once untextured and once textured.</summary>
     public static TheoryData<string, bool> AlbedoCases
     {
@@ -360,7 +395,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows, bool glass, bool silhouette = false)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows, bool glass, bool silhouette = false, bool thermal = false)
     {
         device.SetDebugView(view);
 
@@ -484,6 +519,12 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             device.DrawSilhouette(mesh, [new MeshDrawRange(0, 3)], Matrix4f.Identity, SilhouetteGroup.Hostile);
         }
 
+        // The triangle handed to the thermal sensor as a living body, which re-images the scene as heat before the lens.
+        if (thermal)
+        {
+            device.DrawThermalBody(mesh, [new MeshDrawRange(0, 3)], Matrix4f.Identity, heat: 1f);
+        }
+
         device.EndPass();
 
         device.EndSceneCapture();
@@ -508,6 +549,9 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             // Everything spills, as ultra carries it: nothing in a frame this dim passes a threshold of one.
             BloomThreshold = 0f,
+
+            // White-hot and noiseless where the sensor is up, so every backend has the same picture to agree about.
+            Thermal = thermal ? new ThermalDisplaySettings(Amount: 1f, ThermalPalette.WhiteHot, Noise: 0f) : default,
         });
 
         // And what it does after: the letterbox and the HUD go on top. A clear still pending from the
@@ -535,7 +579,8 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         bool shadows = false,
         bool glass = false,
         IReadOnlyList<PostPassModule>? passes = null,
-        bool silhouette = false)
+        bool silhouette = false,
+        bool thermal = false)
     {
         using RhiBackendHost host = RhiBackends.Open(backend, Size);
 
@@ -550,7 +595,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
                 }
             }
 
-            DrawFrame(device, view, textured, temporal, bloom, shadows, glass, silhouette);
+            DrawFrame(device, view, textured, temporal, bloom, shadows, glass, silhouette, thermal);
         }
 
         return Read(host.Device, host.Target);

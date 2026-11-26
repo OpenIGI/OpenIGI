@@ -14,20 +14,37 @@ namespace OpenIGI.Presentation.Igi2.Hud;
 /// (<see cref="Igi2HudTheme"/>), in place of the retail status display, inventory, action row and messages. The computer, the
 /// cutscene framing, the scopes and the aim's sight stay the original's.
 /// </content>
-public sealed partial class Igi2HudRenderer : ITouchHudSource
+public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
 {
     private readonly HudModel _model = new();
     private RemasteredHud? _remastered;
     private Igi2HudIcons? _icons;
 
+    // The level's weapon types as the player's inventory last held them: what a kill's weapon key is looked up in.
+    private Igi2WeaponTables? _weaponTables;
+
     /// <inheritdoc/>
     public HudTheme Theme => Igi2HudTheme.Theme;
 
-    /// <inheritdoc/>
-    public IHudIconSource? Icons => _icons;
+    /// <inheritdoc cref="ITouchHudSource.Icons"/>
+    public IHudIconSource? Icons => _icons ??= new Igi2HudIcons(() => _assets);
 
     /// <inheritdoc/>
     public HudModel Model => _model;
+
+    /// <inheritdoc/>
+    /// <remarks>The inventory's weapon sprites are drawn muzzle to the left, as I.G.I.'s are.</remarks>
+    public bool WeaponsFaceLeft => true;
+
+    /// <inheritdoc/>
+    public HudIcon WeaponIcon(string weaponKey) => WeaponTypeOf(weaponKey) is { WeaponSprite.Length: > 0 } type ? new HudIcon(type.WeaponSprite) : HudIcon.None;
+
+    /// <inheritdoc/>
+    public string WeaponName(string weaponKey) => WeaponTypeOf(weaponKey)?.WeaponName ?? string.Empty;
+
+    private Igi2WeaponTypeTask? WeaponTypeOf(string weaponKey) =>
+        string.IsNullOrEmpty(weaponKey) ? null
+        : _weaponTables?.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, weaponKey, StringComparison.Ordinal));
 
     /// <summary>Gets a value indicating whether the remastered display draws this frame: chosen, and able to.</summary>
     private bool RemasteredChosen => HudCVars.RemasteredHud.Value && (_remastered ??= CreateRemastered()).IsReady;
@@ -47,15 +64,19 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
             return;
         }
 
-        Build(title, _model);
+        Build(title, _model, _inventoryStrip);
 
         // The lines of the other game's mission the player stands in, after its own, told apart from them by their keys.
         _model.AddMissionMessages(_missionMessages, firstKey: MissionMessageKeys);
         _icons ??= new Igi2HudIcons(() => _assets);
-        float seconds = title.Human.Ticks / 30f;
-        // The player's view as the host draws it: the eye, the view's rows (right, up, forward) and its half width.
+        // The level's clock, which runs through a cutscene: the player's stands still while one plays, and a display timed on it
+        // never finished flickering in, so a cutscene's subtitle was drawn wholly transparent.
+        float seconds = (title.Level?.Ticks ?? title.Human.Ticks) / 30f;
+        // The player's view as the host drew this frame, between ticks; the tick's own view only where the host gave none.
         OpenIGI.Core.Numerics.Matrix3f rows = title.ViewOrientation;
-        HudProjector projector = new(title.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(title.FieldOfViewScale, screenWidth, screenHeight), screenWidth, screenHeight);
+        HudProjector projector = _view is { } drawn
+            ? HudProjector.FromCamera(drawn.Eye, drawn.TanX, screenWidth, screenHeight)
+            : new(title.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(title.FieldOfViewScale, screenWidth, screenHeight), screenWidth, screenHeight);
         hud.Draw(batch, _model, Igi2HudTheme.Theme, _icons, HudFrame.FromSettings(screenWidth, screenHeight, requestedScale, seconds, crosshairSpread: 0f) with
         {
             Projector = projector,
@@ -65,7 +86,8 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
     /// <summary>Reads I.G.I. 2's player into the shared model.</summary>
     /// <param name="title">The player.</param>
     /// <param name="model">The model, refilled.</param>
-    internal static void Build(Igi2TitlePlayer title, HudModel model)
+    /// <param name="strip">The weapons the inventory shows, kept from frame to frame.</param>
+    private static void Build(Igi2TitlePlayer title, HudModel model, InventoryStrip strip)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(model);
@@ -84,6 +106,9 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
             _ => human.IsRunning ? HudStance.Running : HudStance.Standing,
         };
         model.Visibility = Math.Clamp(human.VisibilityFactor, 0f, 1f);
+        // HumanPlayer_StatusDisplayHandler: the eye is red once a squad has spotted the player this mission (nSpotted), not
+        // while the bar runs high -- a shot lights the bar but leaves the eye as it was.
+        model.Spotted = human.TimesSpotted > 0;
 
         IReadOnlyList<float> flash = human.DamageFlash;
         model.Damage = new HudDamage(flash[0], flash[3], flash[1], flash[2]);
@@ -110,16 +135,26 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
             }
         }
 
+        // The aim every frame, the sight shown or not: its hit and kill counts are what the crosshair's marks are timed from, and a
+        // frame without them read as counts fallen to nought -- so a timed action, which hides the sight, ended with the last
+        // kill marked again as the sight came back. Project I.G.I.'s display reads it every frame the same way.
+        model.Aim = title.AimFeedback();
+
         // The crosshair, where the original would draw its sight.
         if (SightShown(title))
         {
             model.Show |= HudParts.Crosshair;
-            model.Aim = title.AimFeedback();
         }
 
         if (title.Inventory is { } inventory)
         {
             BuildWeapon(title, inventory, model);
+            if (playing && InventoryShown(title))
+            {
+                model.Show |= HudParts.Inventory;
+                BuildSlots(title, inventory, model, strip);
+            }
+
             BuildWheel(title, inventory, model);
         }
 
@@ -129,13 +164,13 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
             model.Progress = human.TimedActionTime > 0 ? Math.Clamp((float)human.TimedActionTimer / human.TimedActionTime, 0f, 1f) : 1f;
         }
 
-        // The objective being worked on, where it has a place in the level.
-        if (playing && title.CurrentObjective() is { Position: { } place } objective)
+        // Every objective not yet done, at each place it is still to be done.
+        if (playing && title.ComputerObjectives is { } computer)
         {
-            model.Objective = objective.Text;
-            model.ObjectivePosition = place;
-            double dx = place.X - human.Position.X, dy = place.Y - human.Position.Y, dz = place.Z - human.Position.Z;
-            model.ObjectiveDistanceMetres = (float)(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 4096.0);
+            foreach (OpenIGI.Game.World.MissionObjective objective in computer.Objectives)
+            {
+                model.AddObjective(objective, human.Position);
+            }
         }
 
         if (title.Level?.LevelFlow is { InterfaceTimerEnabled: true, MaxPlayTime: > 0f } flow)
@@ -143,16 +178,48 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
             model.TimerSeconds = Math.Max(0, (int)flow.MaxPlayTime - (flow.Tick / 30));
         }
 
+        // The mission's messages in play; a cutscene's subtitle is not the display's but drawn as the original draws it, low on
+        // the left of the picture (DrawCutsceneLine), so while one plays the strip shows nothing.
+        if (title.IsCutscenePlaying)
+        {
+            return;
+        }
+
         int key = 0;
         foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
             key++;
-            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying)
+            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message is not { IsCutsceneMessage: false })
             {
                 continue;
             }
 
-            model.AddMessage(new HudMessageView(slot.Text[..Math.Min(slot.Printed, slot.Text.Length)], slot.Fade, key));
+            model.AddMessage(new HudMessageView(slot.Text[..Math.Min(slot.Printed, slot.Text.Length)], slot.Opacity, key));
+        }
+    }
+
+    // The weapons carried, column by column as the original's inventory shows them (InventoryStrip), the grenades sharing theirs
+    // and the rest of a slot's weapons past its columns counted on a mark; hidden with it by the profile's option, which the
+    // inventory key flips.
+    private static void BuildSlots(Igi2TitlePlayer title, Igi2Inventory inventory, HudModel model, InventoryStrip strip)
+    {
+        int column = -1;
+        foreach (CarriedSlot carried in strip.Collect(inventory))
+        {
+            if (carried.Head)
+            {
+                column++;
+            }
+
+            model.AddSlot(new HudSlotView(
+                column,
+                carried.Head ? carried.Slot.Key : string.Empty,
+                WeaponShortName(title, carried.Item),
+                carried.Head ? new HudIcon(carried.Item.WeaponType.WeaponSprite) : HudIcon.None,
+                RoundsCarried(inventory, carried) ?? string.Empty,
+                carried.Selected,
+                carried.Head,
+                carried.More));
         }
     }
 
@@ -168,24 +235,29 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
         string mode = held.ActiveFireMode switch { 1 => type.FiremodeName1, 2 => type.FiremodeName2, _ => type.FiremodeName };
         Igi2FireTypeRounds rounds = inventory.FireTypeRounds(held, 0);
         bool counted = rounds.AmmoType is not null;
+        bool loads = counted && LoadsRounds(type);
         int? secondary = type.WeaponId == "WEAPON_ID_M16A2" ? inventory.FireTypeRounds(held, 1).Available : null;
         int action = title.Human.ActionState;
         HudWeaponState state = action == Igi2PlayerActionState.Reload ? HudWeaponState.Reloading
             : action == Igi2PlayerActionState.ChangeWeapon ? HudWeaponState.Switching
-            : counted && rounds.Loaded == 0 ? HudWeaponState.Empty
+            : (loads ? rounds.Loaded == 0 : counted && rounds.Available == 0) ? HudWeaponState.Empty
             : HudWeaponState.Ready;
         model.Weapon = new HudWeaponView(
             type.WeaponId,
             type.WeaponName,
             mode,
             new HudIcon(type.WeaponSprite),
-            counted ? rounds.Loaded : null,
-            counted ? rounds.RoundsPerClip : 0,
+            loads ? rounds.Loaded : null,
+            loads ? rounds.RoundsPerClip : 0,
             counted ? rounds.Available : null,
             secondary,
-            counted ? HudGauge.Clip : HudGauge.None,
+            loads ? HudGauge.Clip : HudGauge.None,
             state);
     }
+
+    // Whether the rounds loaded are worth counting: not for the medipack, which uses the packs carried and never one loaded
+    // (Medipack_StatusDisplayHandler counts only those), as I.G.I. 1's display has it.
+    private static bool LoadsRounds(Igi2WeaponTypeTask type) => type.FireType(0) is not Igi2MedipackTask;
 
     // The weapon wheel while it is open: each weapon it offers with its picture, its short name and its rounds, loaded over
     // carried, as the inventory counts them.
@@ -218,7 +290,8 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
 
             Igi2FireTypeRounds rounds = inventory.FireTypeRounds(item, 0);
             string count = rounds.AmmoType is null ? string.Empty
-                : string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded}/{rounds.Available}");
+                : LoadsRounds(item.WeaponType) ? string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded}/{rounds.Available}")
+                : rounds.Available.ToString(CultureInfo.InvariantCulture);
             string name = title.Strings?.WeaponShortName(item.WeaponType.WeaponName) ?? item.WeaponType.WeaponName;
             model.Wheel.Add(new HudWheelEntry(new HudIcon(item.WeaponType.WeaponSprite), name, count));
         }
@@ -239,7 +312,7 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
                 HudIcon second = context is Igi2WeaponTypeTask give ? new HudIcon(give.PickupSprite) : HudIcon.None;
                 model.AddAction(new HudActionView(new HudIcon(pickup.WeaponType.PickupSprite), second, second.IsSome ? new HudIcon(ThrowAwaySprite) : HudIcon.None, pickup.WeaponType.WeaponId));
             }
-            else if (item is IIgi2Activatable target && InteractionIcon(target) is { } icon)
+            else if (item is IIgi2Activatable target && Igi2ActionBadge.Of(target) is { } icon)
             {
                 model.AddAction(new HudActionView(new HudIcon(icon), HudIcon.None, HudIcon.None, icon));
             }

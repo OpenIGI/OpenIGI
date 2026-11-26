@@ -138,10 +138,96 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         Assert.True(joiner.Missed <= host.Missed + 1, $"{how}: the host missed {host.Missed} of {host.Rounds} rounds, the joiner {joiner.Missed} of {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
     }
 
+    /// <summary>
+    /// The joiner's own rounds mark their hits on its crosshair as they strike -- before the server has even run the command that
+    /// fired them, where once each waited a round trip and the interpolation for the server's word. The guard falls on its
+    /// screen when the server's does and not before, once, and the kill is counted once.
+    /// </summary>
+    /// <remarks>
+    /// The fall is the server's word alone, as Source's is. Foreseen on the joiner's screen from the zone its round struck
+    /// there, this guard -- who takes four of the pistol's rounds -- once fell on the second, which met the head of a copy bent
+    /// out of the pose the server's stood in, and got up again.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void The_joiners_rounds_mark_a_guard_at_once_and_fell_him_once()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.Ping(0.1);
+        pair.RunUntil(() => false, 60);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host.World.Soldiers!;
+        Game.Igi1.Player.SoldierView guard = soldiers.SoldierViews.First(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier));
+        Game.Igi1.Player.SoldierView shown = pair.Joiner!.World.Soldiers!.SoldierByRuntimeId(soldiers.RuntimeIdOf(guard))!;
+        Game.Player.ShotTally tally = pair.Joiner.World.Player!.Shots;
+        (int hits, int kills) = (tally.Hits, tally.Kills);
+        float hurt = soldiers.HealthOf(guard).Damage;
+        int frame = 0, marked = -1, struck = -1, shownFell = -1, fell = -1;
+        RoundsToFell(pair, partner, hostShoots: false, guard, running: false, automatic: false, hostAway: false, head: false, live: false, watch: () =>
+        {
+            frame++;
+            marked = marked < 0 && tally.Hits > hits ? frame : marked;
+            struck = struck < 0 && soldiers.HealthOf(guard).Damage != hurt ? frame : struck;
+            shownFell = shownFell < 0 && shown.IsDead ? frame : shownFell;
+            fell = fell < 0 && guard.IsDead ? frame : fell;
+        });
+
+        Assert.True(marked > 0 && struck > 0, $"marked {marked}, struck on the server {struck}");
+        Assert.True(marked < struck, $"the joiner's first hit was marked on frame {marked}, the server's guard struck on {struck}");
+        Assert.True(fell > 0, "the server's guard never fell");
+        output.WriteLine($"marked on frame {marked}, struck there on {struck}; fell here on frame {shownFell}, there on {fell}");
+
+        pair.RunUntil(() => shown.IsDead, 60);
+        shownFell = shownFell < 0 && shown.IsDead ? frame + 1 : shownFell;
+        Assert.True(shown.IsDead, $"the joiner's guard is up though the server's fell on frame {fell}");
+        Assert.True(shownFell > fell, $"the joiner's guard fell on frame {shownFell}, before the server's on {fell}");
+        pair.RunUntil(() => false, 60);
+        Assert.True(shown.IsDead, "the joiner's guard got up again");
+        Assert.True(kills + 1 == tally.Kills, $"{tally.Kills - kills} kills counted for one guard");
+    }
+
+    /// <summary>
+    /// The host runs the joiner's commands as they arrive, as Source runs a player's (<c>CBasePlayer::PhysicsSimulate</c>),
+    /// so what the joiner does reaches the host's level half a round trip later. The host once gave
+    /// exactly one a tick, and whatever came in a clump -- any hitch -- sat in its queue for the rest of the session: nearly
+    /// five deep after one tenth of a second's hitch, a sixth of a second on every shot and step from then on.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void The_host_runs_the_joiners_commands_as_they_arrive_however_they_came()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.Ping(0.1);
+        pair.RunUntil(() => false, 90);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        long corrections = pair.Client.Session!.Reconciler.Corrections;
+
+        // A hitch, as every session has: the joiner's packets held a tenth of a second and then let through together.
+        pair.JoinerLink.Send.Latency += 0.13;
+        pair.RunUntil(() => false, 10);
+        pair.JoinerLink.Send.Latency -= 0.13;
+        pair.RunUntil(() => false, 30);
+
+        // Walking, so a command run twice or left out would show as a correction.
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        long queued = 0, missed = partner.Commands.Missed;
+        const int Frames = 300;
+        for (int frame = 0; frame < Frames && pair.Step(); frame++)
+        {
+            queued += partner.Commands.Buffered;
+        }
+
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        double depth = queued / (double)Frames;
+        string report = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"the host held {depth:0.00} of the joiner's commands on average after the hitch; {partner.Commands.Missed - missed} dry ticks, {pair.Client.Session.Reconciler.Corrections - corrections} corrections, {partner.Commands.Dropped} dropped");
+        output.WriteLine(report);
+        Assert.True(depth < 1.0, report);
+        Assert.Equal(0, partner.Commands.Dropped);
+    }
+
     // One shooter, a gun in hand, five metres from a guard -- standing, or running three metres either way across its front --
     // clicking the fire button at the guard's chest where its own game shows the guard, until the host's soldier falls: the
     // rounds that took, as the host's game counts them.
-    private static (int Rounds, int Missed, string Log) RoundsToFell(Igi1CoopPair pair, Igi1NetworkPlayer partner, bool hostShoots, Game.Igi1.Player.SoldierView guard, bool running, bool automatic, bool hostAway, bool head, bool live)
+    private static (int Rounds, int Missed, string Log) RoundsToFell(Igi1CoopPair pair, Igi1NetworkPlayer partner, bool hostShoots, Game.Igi1.Player.SoldierView guard, bool running, bool automatic, bool hostAway, bool head, bool live, Action? watch = null)
     {
         Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
         Game.Igi1.Player.PlayerCamera shooter = hostShoots ? pair.Host.World.Player! : partner.Player;
@@ -237,6 +323,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
             {
                 Move();
                 Aim();
+                watch?.Invoke();
                 input.Mouse.SetButton(MouseButton.Left, automatic || frame++ % 6 < 2);
                 foreach (Game.Igi1.Weapons.GunImpact impact in shooter.Impacts)
                 {

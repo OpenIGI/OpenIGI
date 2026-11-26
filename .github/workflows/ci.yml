@@ -76,6 +76,29 @@ jobs:
           path: test-results/*.trx
           retention-days: 7
 
+  # A replay is checked by playing it again on the server, so the simulation's results must be the same bits on every machine
+  # a player records on. The math it takes its angles and curves from is the game's own (SimMath), never the platform's; this
+  # proves its pinned fingerprint on each other platform a release ships for (linux-x64 is proved by build-and-test).
+  determinism:
+    name: determinism (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Check the simulation's math
+        run: >
+          dotnet test tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj --configuration Release
+          --filter "FullyQualifiedName~OpenIGI.Core.Tests.SimMathTests"
+
   # The compiled shaders and the WebGPU bindings are generated and committed, so a contributor without
   # slangc can still build; this is what stops either going stale against its source.
   generated:
@@ -110,11 +133,16 @@ jobs:
 
       # DXIL is checked byte for byte too, so the DXC slangc hands it to is pinned in the same manifest. Its
       # asset names carry the build's date, not the version, so they are read off the tagged release.
+      # The release is read through the API with the run's token: unsigned, every job on the runner's address shares 60
+      # calls an hour, and a busy day runs out (403).
       - name: Install DXC
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pinned=$(jq -r .dxcVersion src/Rendering/OpenIGI.Shaders/ShaderModules.json)
           echo "Pinned DXC release: v$pinned"
-          url=$(curl -fsSL "https://api.github.com/repos/microsoft/DirectXShaderCompiler/releases/tags/v$pinned" \
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/microsoft/DirectXShaderCompiler/releases/tags/v$pinned" \
             | jq -r '.assets[] | select(.name | test("^linux_dxc_.*\\.tar\\.gz$")) | .browser_download_url' | head -n1)
           mkdir -p "$RUNNER_TEMP/dxc"
           curl -fsSL "$url" | tar -xz -C "$RUNNER_TEMP/dxc"

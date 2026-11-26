@@ -21,9 +21,8 @@ public sealed partial class Igi2HudRenderer
     private readonly IOpenIgiLogger _logger;
     private Igi2SpriteResources? _assets;
     private BitmapTextRenderer? _font;
-    private int _loadedRounds = -1;
-    private int _availableRounds = -1;
-    private string _ammunition = string.Empty;
+    private BitmapTextRenderer? _timerFont;
+    private readonly RoundsText[] _rounds = [new(), new()];
     private int _timerSeconds = -1;
     private string _timer = string.Empty;
     private float _scale = 1f;
@@ -31,6 +30,9 @@ public sealed partial class Igi2HudRenderer
     private string _fireMode = string.Empty;
     private string _weaponLabel = string.Empty;
     private static readonly Bgra32 Blue = Bgra32.FromRgba(102, 153, 255, 255);
+
+    /// <summary>The eye once the player has been spotted: <c>HumanPlayer_StatusDisplayHandler</c>'s (0.8, 0.4, 0.5).</summary>
+    private static readonly Bgra32 SpottedRed = Bgra32.FromRgba(204, 102, 128, 255);
 
     /// <summary>Creates the title's HUD presenter.</summary>
     /// <param name="device">The sprite upload device.</param>
@@ -63,6 +65,7 @@ public sealed partial class Igi2HudRenderer
         _remastered?.Dispose();
         _remastered = null;
         _font = null;
+        _timerFont = null;
         _textFont = null;
         if (_bandStripes != TextureHandle.None) { _device.DestroyTexture(_bandStripes); _bandStripes = TextureHandle.None; }
         if (_bandPlain != TextureHandle.None) { _device.DestroyTexture(_bandPlain); _bandPlain = TextureHandle.None; }
@@ -95,7 +98,8 @@ public sealed partial class Igi2HudRenderer
     {
         Igi2HumanPlayer human = title.Human;
         // humanplayer.c HumanPlayer_StatusDisplayHandler: posture and health at the lower left, visibility beside them.
-        string stance = human.Pose switch
+        // Flying (the parachute, state 57) first, then the pose, then running or standing.
+        string stance = human.Locomotion.CurrentState == Igi2PlayerState.Fly ? "stance_flying.spr" : human.Pose switch
         {
             Igi2HumanPose.Crouching => "stance_crouching.spr",
             Igi2HumanPose.LyingFlat => "stance_lying.spr",
@@ -112,7 +116,8 @@ public sealed partial class Igi2HudRenderer
             Bar(batch, "powerbar.spr", 38f - (fill.Width * 0.5f), height - 52f - (fill.Height * 0.5f), health, healthColour, vertical: true);
             float visibilityX = x + frame.Width + 5f, visibilityY = y + 10f;
             Sprite(batch, "visibilitymeter.spr", visibilityX, visibilityY, Blue);
-            Sprite(batch, "visibilityalert.spr", visibilityX + 10f, y, Blue);
+            // The eye: blue until a squad has spotted the player this mission (nSpotted, Human+0x1E0), then red for the rest of it.
+            Sprite(batch, "visibilityalert.spr", visibilityX + 10f, y, human.TimesSpotted > 0 ? SpottedRed : Blue);
             // The bar is the visibility factor (HumanPlayer_UpdateVisibilityFactor): the light, the stance and the movement, not the light alone.
             float light = Math.Clamp(human.VisibilityFactor, 0f, 1f), brightness = Math.Clamp(light - 0.5f, 0f, 0.5f) * 2f;
             Bgra32 visibilityColour = Bgra32.FromRgba(Channel((brightness + 1f) * 0.4f), Channel(0.6f - (brightness * 0.4f)), Channel(1f - (brightness * 0.8f)), 255);
@@ -144,15 +149,18 @@ public sealed partial class Igi2HudRenderer
             }
             float lineWidth = MathF.Max(iconWidth, nameWidth + 3f);
             Fill(batch, new RectF(right - lineWidth, baseline, lineWidth, 1f), Bgra32.FromRgba(102, 153, 255, 128));
-            OpenIGI.Game.Igi2.Weapons.Igi2FireTypeRounds rounds = title.Inventory.FireTypeRounds(held, 0);
-            if (_loadedRounds != rounds.Loaded || _availableRounds != rounds.Available)
+            // WeaponType_StatusDisplayHandler: each fire type its own handler's text, placed by WeaponType_GetFireTypeScreenPosition
+            // ten pixels in from the line's right end, the first ending there and the second starting there.
+            for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
             {
-                _loadedRounds = rounds.Loaded;
-                _availableRounds = rounds.Available;
-                _ammunition = string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded,4}/{rounds.Available,4}");
+                if (_rounds[slot].Update(held.WeaponType.Readout(slot), title.Inventory.FireTypeRounds(held, slot)) is not { } text)
+                {
+                    continue;
+                }
+
+                float textWidth = slot == 0 ? _font?.Measure(text).Width ?? 0f : 0f;
+                Text(batch, text, right - 10f - textWidth, baseline + 4f, Blue);
             }
-            float ammoWidth = _font?.Measure(_ammunition).Width ?? 0f;
-            Text(batch, _ammunition, right - 10f - ammoWidth, baseline + 4f, Blue);
         }
         if (title.Level?.LevelFlow is { InterfaceTimerEnabled: true, MaxPlayTime: > 0f } flow)
         {
@@ -210,7 +218,7 @@ public sealed partial class Igi2HudRenderer
                     tall = below + ActionItem(batch, give.PickupSprite, ThrowAwaySprite, x, y + below);
                 }
             }
-            else if (item is IIgi2Activatable target && InteractionIcon(target) is { } icon)
+            else if (item is IIgi2Activatable target && Igi2ActionBadge.Of(target) is { } icon)
             {
                 tall = ActionItem(batch, icon, null, x, y);
             }
@@ -254,43 +262,33 @@ public sealed partial class Igi2HudRenderer
         return frame.Height;
     }
 
-    /// <summary>Resolves the retail action badge for the target the human has actually selected.</summary>
-    /// <param name="target">The selected target.</param>
-    /// <returns>The status archive sprite name, or null when the target has no badge.</returns>
-    public static string? InteractionIcon(IIgi2Activatable target) => target switch
-    {
-        IIgi2Door { IsLocked: true, IsPickable: true } => "action_picklock.spr",
-        Igi2GenericTbaTask { Sprite.Length: > 0 } action => action.Sprite,
-        { Kind: Igi2ActivateKind.Door } => "a_door.spr",
-        { Kind: Igi2ActivateKind.Cabinet } => "action_searchcab.spr",
-        { Kind: Igi2ActivateKind.Terminal } => "action_comput.spr",
-        { Kind: Igi2ActivateKind.Switch } => "action_pressbutton.spr",
-        { Kind: Igi2ActivateKind.GenericTba } => "a_codepad.spr",
-        { Kind: Igi2ActivateKind.Ladder } => "a_ladder.spr",
-        { Kind: Igi2ActivateKind.Wire } => "a_wire.spr",
-        { Kind: Igi2ActivateKind.Fence } => "a_fence.spr",
-        { Kind: Igi2ActivateKind.StationaryGun } => "a_gun.spr",
-        { Kind: Igi2ActivateKind.SilentKill } => "a_silent.spr",
-        _ => null,
-    };
-
     private void DrawMessages(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
-        float y = title.IsCutscenePlaying ? height - 100f : 36f;
-        foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
-        {
-            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying) { continue; }
-            _font?.DrawCentered(batch, slot.Text.AsSpan(0, Math.Min(slot.Printed, slot.Text.Length)), width * 0.5f * _scale, y * _scale,
-                Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
-            y += 28f;
-        }
 
-        // The other game's mission's lines, under the player's own, in the same face.
+        // StatusMessageScreen_DrawHandler: in a cutscene only the line sent last, left-aligned low on the display.
         if (title.IsCutscenePlaying)
         {
+            DrawCutsceneLine(batch, title, width, height);
             return;
         }
 
+        float y = 36f;
+        foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
+        {
+            if (!slot.IsUsed || slot.Printed <= 0 || slot.Message is not { IsCutsceneMessage: false } || _font is not { } font) { continue; }
+
+            // StatusMessageScreen_FormatMessageText: a message wraps to its box's forty "A"s less six; the last three lines show.
+            string printed = slot.Text[..Math.Min(slot.Printed, slot.Text.Length)];
+            float wrap = (font.Measure(OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthString).Width
+                * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxWidthCount) - OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.BoxMargin;
+            foreach (string line in WrappedLines(font, printed, wrap))
+            {
+                font.DrawCentered(batch, line, width * 0.5f * _scale, y * _scale, Bgra32.FromRgba(255, 255, 255, Channel(slot.Opacity)), _scale, _scale);
+                y += 28f;
+            }
+        }
+
+        // The other game's mission's lines, under the player's own, in the same face.
         foreach (OpenIGI.Game.World.StatusMessageDisplay line in _missionMessages)
         {
             if (line.IsCutscene || line.RevealedCharacters <= 0)
@@ -303,6 +301,78 @@ public sealed partial class Igi2HudRenderer
                 Bgra32.FromRgba(255, 255, 255, Channel(fade)), _scale, _scale);
             y += 28f;
         }
+    }
+
+    /// <summary>
+    /// The countdowns on the game screen, <c>MissionTimerDrawTask_DrawHandler</c>: <c>MM : SS</c> in <c>font3.fnt</c>, white, centred
+    /// across half the display's width with its top at nine tenths of its height, in the display's own pixels.
+    /// </summary>
+    private void DrawMissionTimers(SpriteBatch batch, Igi2TitlePlayer title, int screenWidth, int screenHeight)
+    {
+        foreach (OpenIGI.Game.Igi2.Flow.Igi2MissionTimerTask timer in title.MissionTimers)
+        {
+            if (!timer.IsShown)
+            {
+                continue;
+            }
+
+            _timerFont ??= _assets?.Get("font3.fnt") is { IsFont: true } font ? new BitmapTextRenderer(font) : null;
+            _timerFont?.DrawCentered(
+                batch,
+                timer.DisplayText,
+                (int)(screenWidth * OpenIGI.Game.Igi2.Flow.Igi2MissionTimerTask.DisplayX),
+                (int)(screenHeight * OpenIGI.Game.Igi2.Flow.Igi2MissionTimerTask.DisplayY),
+                Bgra32.FromRgba(255, 255, 255, 255),
+                _scale,
+                _scale);
+        }
+    }
+
+    // StatusMessageScreen_DrawCutSceneMessage: the cutscene's line as its three tilemaps are registered, each at the display's
+    // left and one line under the last, whole -- they are never faded -- in the cutscene's font, which it is wrapped in too.
+    // The places are the original's shares of the whole display, so the line keeps to the picture's lower left at any shape.
+    // The face is grown with the display's height from the 720 lines I.G.I. 2 is laid out for, by a fraction rather than the
+    // whole-number interface scale: that rounds 1080 lines down to the face's own pixels, a line too small to read.
+    private void DrawCutsceneLine(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
+    {
+        if (title.StatusMessages.CutsceneLine is not { Printed: > 0 } slot
+            || Font(OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneFont) is not { } font)
+        {
+            return;
+        }
+
+        // In the display's own pixels: the width and height given are the interface's, its scale times smaller.
+        float screenWidth = width * _scale, screenHeight = height * _scale;
+        float size = Math.Max(1f, screenHeight / AuthoredHeight);
+        string printed = slot.Text[..Math.Min(slot.Printed, slot.Text.Length)];
+        float x = screenWidth * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneLeftShare;
+        float y = screenHeight * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneTopShare;
+        Bgra32 colour = Bgra32.FromRgba(255, 255, 255, Channel(slot.Opacity));
+        float wrap = screenWidth * OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.CutsceneWidthShare / size;
+        foreach (string line in WrappedLines(font, printed, wrap))
+        {
+            font.Draw(batch, line, x, y, colour, size, size);
+            y += font.LineHeight * size;
+        }
+    }
+
+    // The lines a printed message wraps into, kept while its text and width stay as they were.
+    private readonly Dictionary<(string Text, float Width), IReadOnlyList<string>> _wrapped = [];
+
+    private IReadOnlyList<string> WrappedLines(BitmapTextRenderer font, string printed, float wrap)
+    {
+        if (!_wrapped.TryGetValue((printed, wrap), out IReadOnlyList<string>? lines))
+        {
+            if (_wrapped.Count > 256)
+            {
+                _wrapped.Clear();
+            }
+
+            lines = OpenIGI.Game.Igi2.Flow.Igi2StatusMessageLayout.Wrap(printed, text => font.Measure(text).Width, wrap);
+            _wrapped[(printed, wrap)] = lines;
+        }
+
+        return lines;
     }
 
     private void Sprite(SpriteBatch batch, string name, float x, float y, Bgra32 colour)
@@ -325,5 +395,39 @@ public sealed partial class Igi2HudRenderer
         float top = vertical ? 1f - fraction : 0f;
         batch.Draw(sprite.Textures[frame.TextureIndex], new RectF(x * _scale, (y + (frame.Height - h)) * _scale, w * _scale, h * _scale),
             new RectF(frame.U0, frame.V0 + ((frame.V1 - frame.V0) * top), (frame.U1 - frame.U0) * (vertical ? 1f : fraction), (frame.V1 - frame.V0) * (vertical ? fraction : 1f)), colour);
+    }
+
+    /// <summary>One fire type's rounds as its status display handler prints them, made again only when they change.</summary>
+    private sealed class RoundsText
+    {
+        private Igi2RoundsReadout _readout;
+        private int _loaded = -1;
+        private int _carried = -1;
+        private string? _text;
+
+        /// <summary>The text for the fire type's rounds now, or <see langword="null"/> when it shows none.</summary>
+        /// <param name="readout">What the fire type shows.</param>
+        /// <param name="rounds">Its rounds.</param>
+        /// <returns>The text, or <see langword="null"/>.</returns>
+        /// <remarks>A fire type that uses no ammunition shows nothing, as <c>Gun_StatusDisplayHandler</c> declines then.</remarks>
+        public string? Update(Igi2RoundsReadout readout, Igi2FireTypeRounds rounds)
+        {
+            if (readout == Igi2RoundsReadout.None || rounds.AmmoType is null)
+            {
+                return null;
+            }
+
+            if (_text is null || _readout != readout || _loaded != rounds.Loaded || _carried != rounds.Available)
+            {
+                _readout = readout;
+                _loaded = rounds.Loaded;
+                _carried = rounds.Available;
+                _text = readout == Igi2RoundsReadout.LoadedOverCarried
+                    ? string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded,4}/{rounds.Available,4}")
+                    : string.Create(CultureInfo.InvariantCulture, $"{rounds.Available,4}");
+            }
+
+            return _text;
+        }
     }
 }

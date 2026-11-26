@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
@@ -179,7 +179,8 @@ public sealed class ShellTests : ShellTestHarness
             // Each cheat once, in the Cheats group, its gate first: never loose among the general rows doing nothing.
             Toggle enable = Assert.Single(rows.OfType<Toggle>(), toggle => toggle.Label == "Enable Cheats");
             Toggle ammo = Assert.Single(rows.OfType<Toggle>(), toggle => toggle.Label == "Infinite Ammo");
-            Assert.Equal(9, rows.Count(row => row.Tooltip.Contains("(cheat)", StringComparison.Ordinal)));
+            // A row's tooltip ends with the variable it sets.
+            Assert.Equal(9, rows.Count(row => row.Tooltip.Split('\n')[^1].StartsWith("g_cheat_", StringComparison.Ordinal)));
             Assert.True(rows.IndexOf(enable) < rows.IndexOf(ammo));
 
             // Switched on there, a cheat is in force.

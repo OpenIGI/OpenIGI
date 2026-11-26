@@ -16,7 +16,7 @@ namespace OpenIGI.Core.Configuration;
 /// and default tracking live here so every variable behaves identically.
 /// </para>
 /// </remarks>
-public abstract class CVar<T> : ICVar
+public abstract class CVar<T> : ICVar, IScopedCVar
 {
     private T _value;
 
@@ -53,6 +53,15 @@ public abstract class CVar<T> : ICVar
 
     /// <inheritdoc/>
     public CVarOptions Flags { get; }
+
+    /// <inheritdoc cref="ICVar.Scope"/>
+    public IReadOnlyList<string> Scope { get; private set; } = [];
+
+    /// <inheritdoc/>
+    IReadOnlyList<string> IScopedCVar.Scope
+    {
+        set => Scope = value;
+    }
 
     /// <summary>Gets the value the variable holds until something changes it.</summary>
     public T DefaultValue { get; }
@@ -104,6 +113,9 @@ public abstract class CVar<T> : ICVar
 
     /// <inheritdoc/>
     public string ValueText => Format(_value);
+
+    /// <inheritdoc/>
+    public string EffectiveText => Format(Value);
 
     /// <inheritdoc/>
     public string DefaultText => Format(DefaultValue);

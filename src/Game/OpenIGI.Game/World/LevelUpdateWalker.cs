@@ -101,7 +101,7 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
             return null;
         }
 
-        return container.ConditionResolver is { } resolve ? resolve(container) : true;
+        return container.ResolveCondition();
     }
 
     /// <inheritdoc/>

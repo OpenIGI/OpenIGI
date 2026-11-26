@@ -140,8 +140,32 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         EndTick();
 
+        // The original's render of this tick, made by the simulation itself: which soldiers it drew and re-skinned, read by
+        // the next tick (a dead body not drawn leaves the world; a guard's eye is the one its last re-skin left).
+        ObserveSoldiers();
+
         // What the tick changed, told once it is over; nothing in it reads what a listener does.
         mission.EventWatch?.Observe();
+    }
+
+    // From the camera the original renders the tick through: the cutscene's while one plays, else the player's own eye, at
+    // the zoom the sights have this tick. Never the picture's camera, which may be smoothed, over the shoulder or not there.
+    private void ObserveSoldiers()
+    {
+        if (mission.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        Igi1SectorVisibility? cull = mission.SectorCull as Igi1SectorVisibility;
+        if (mission.Cutscenes is { IsPlaying: true, Frame: { } frame })
+        {
+            soldiers.ObserveFrom(frame.Camera, frame.FieldOfView, cull);
+        }
+        else if (mission.Player is { } player)
+        {
+            soldiers.ObserveFrom(player.Camera, player.SmoothedSightZoom(1f).TanX, cull);
+        }
     }
 
     /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>
@@ -182,7 +206,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                best = new SoldierEnemy(other.Player.Body.Eye, true, other.Player.Body.Position, other.Player.IsCrouched, other);
+                best = new SoldierEnemy(other.Player.SeenEyeUnits, true, other.Player.Body.Position, other.Player.IsCrouched, other);
             }
         }
 
@@ -226,7 +250,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     // player standing in its stead.
     private Vector3d PlayerEye => PlayerEyeIfAny ?? default;
 
-    private Vector3d? PlayerEyeIfAny => mission.Player?.Body.Eye ?? mission.PlayerStandIn?.Eyes;
+    private Vector3d? PlayerEyeIfAny => mission.Player?.SeenEyeUnits ?? mission.PlayerStandIn?.Eyes;
 
     private Vector3d PlayerFeet => mission.Player?.Body.Position ?? mission.PlayerStandIn?.Feet ?? default;
 
@@ -456,6 +480,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         mission.PlayerTicks++;
+        mission.SceneClock.Tick(mission.Cutscenes?.IsPlaying == true, mission.Cutscenes?.CanBreak == true);
     }
 
     // What one of a partner's commands set off, resolved as the mission's own player's is: the soldiers hear its throws and
@@ -896,6 +921,19 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
     }
 
+    /// <summary>
+    /// The player's place in the walk counted again after the level's tasks were changed in place (an editor's live edit adding or
+    /// taking out tasks before it), as the load would have counted it: the rounds marched before and after the player follow it.
+    /// </summary>
+    /// <remarks>Not retail: the original's task tree never changes shape under a running level.</remarks>
+    public void RecountPlayerOrder()
+    {
+        if (_playerAnchor is not null && PlayerSpawn.FindGameplayTask(_playerAnchor) is { } stood)
+        {
+            _playerOrder = SoldierSimulation.OrderUnder(_playerAnchor, stood);
+        }
+    }
+
     /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
     /// <remarks>
     /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
@@ -1277,17 +1315,15 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                     -walkingBody.Body.Yaw,
                     walkingBody.LocomotionAnimation,
                     walkingBody.LocomotionAnimationLoops,
-                    new PlayerBodyPose(
-                        walkingBody.UpperBodyAnimation,
-                        walkingBody.UpperBodyAnimationLoops,
-                        walkingBody.UpperBodyBlendSeconds,
-                        walkingBody.UpperBodySequence,
-                        walkingBody.AimPitch));
+                    walkingBody.BodyPose());
             }
             else
             {
                 followedBody.Simulation.HidePlayerBodyFollowing();
             }
+
+            // A race's ghost holds its gun by the player's roster, which it was recorded from.
+            followedBody.UseGhostWeapons(mission.WeaponTypes);
 
             // A co-op session's partners, followed on the same tick the player's body is -- and kept out of sight while a
             // scene plays, whose own actors stand for the players as they stand for the player alone: the outro's Jones at

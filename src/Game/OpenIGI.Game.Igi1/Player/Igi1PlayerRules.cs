@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -34,7 +35,7 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
     private const int BluntBackZone = 14;
 
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
-    private const float BlastShoveUnitsPerTick = 758.51849f;
+    internal const float BlastShoveUnitsPerTick = 758.51849f;
 
     // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
     private const int ExplosionShakeTicks = 90;
@@ -42,10 +43,10 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
     private readonly IIgi1PlayerSurroundings _surroundings = surroundings ?? throw new ArgumentNullException(nameof(surroundings));
 
     /// <summary>
-    /// Gets or sets what is told of a round a player took: the player, who is credited with it (none for a guard's), and
-    /// whether it struck the neck, the one zone that counts as a headshot.
+    /// Gets or sets what is told of harm a player took -- a round, a blast, a blow, a fall, a fence: the player, and who is
+    /// credited with it, with what, and how (<see cref="PlayerHarmNote"/>).
     /// </summary>
-    public Action<IHarmedPlayer, ShotTally?, bool>? RoundTaken { get; set; }
+    public Action<IHarmedPlayer, PlayerHarmNote>? HarmTaken { get; set; }
 
     /// <summary>A round's hit on a player (<c>0x412440</c>): the dose, the grunt, the shake, the flash, the shove and the death.</summary>
     /// <param name="target">The player.</param>
@@ -65,11 +66,17 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         // A versus match's player takes I.G.I. 2's damage for the gun that fired, and a knife in its back kills it as an unaware
         // guard's does.
         bool versus = ReferenceEquals(health.Zones, HumanHitZoneTable.Versus);
+        bool backstab = versus && Multiplayer.Igi1VersusDamage.IsBackstab(round.Category, rig.Body.Position - round.Origin, rig.Body.Yaw);
         float damage = !versus ? round.DamageFactor
-            : Multiplayer.Igi1VersusDamage.IsBackstab(round.Category, rig.Body.Position - round.Origin, rig.Body.Yaw) ? SoldierSimulation.KnifeUnawareDamageFactor
+            : backstab ? SoldierSimulation.KnifeUnawareDamageFactor
             : Multiplayer.Igi1VersusDamage.Of(round.Weapon, round.DamageFactor);
         health.Apply(struck.Zone, damage);
-        RoundTaken?.Invoke(target, round.Credit, struck.Zone == HumanDamage.NeckZone);
+        HarmTaken?.Invoke(target, new PlayerHarmNote(
+            round.Credit,
+            round.Weapon ?? string.Empty,
+            round.Category == WeaponCategory.Knife ? KillCause.Melee : KillCause.Weapon,
+            struck.Zone == HumanDamage.NeckZone,
+            backstab));
         _surroundings.PlayBulletImpact(struck.Position);
 
         // 0x412440's order: the grunt, then the shake, then the flash from the corners the round came in through, each on
@@ -112,8 +119,18 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
     /// <param name="damageFactor">The blast's damage.</param>
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
     /// <param name="bodyRadiusUnits">The bound of the player's body model (<c>Human+0xA0</c>), a third of which the blast is weighed with.</param>
+    /// <param name="credit">The player who threw or fired what went off, or <see langword="null"/> for the level's.</param>
+    /// <param name="weapon">That player's weapon's script id, or <see langword="null"/>.</param>
     public void Blast(
-        IHarmedPlayer target, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy, float bodyRadiusUnits)
+        IHarmedPlayer target,
+        Vector3d position,
+        float radiusUnits,
+        float falloffUnits,
+        float damageFactor,
+        WeaponCategory killedBy,
+        float bodyRadiusUnits,
+        ShotTally? credit = null,
+        string? weapon = null)
     {
         ArgumentNullException.ThrowIfNull(target);
         if (target.Rig is not { } rig || target.Health.IsDead)
@@ -133,6 +150,9 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         if (dose > 0f)
         {
             target.Health.Apply(ExplosionDamage.Zone, dose);
+            HarmTaken?.Invoke(target, credit is null
+                ? PlayerHarmNote.Level(KillCause.Explosive)
+                : new PlayerHarmNote(credit, weapon ?? string.Empty, KillCause.Explosive));
 
             // 0x412990's flash: four independent corner draws.
             target.Senses.FlashCorners();
@@ -168,10 +188,11 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         Vector3d feet = rig.Body.Position;
         Vector3d towardsPlayer = new(feet.X - attacker.X, feet.Y - attacker.Y, feet.Z - attacker.Z);
         float yaw = rig.Body.Yaw;
-        double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
+        double facing = (towardsPlayer.X * -SimMath.Sin(yaw)) + (towardsPlayer.Y * SimMath.Cos(yaw));
         int zone = facing < 0.0 ? BluntFrontZone : BluntBackZone;
 
         target.Health.Apply(zone, damage);
+        HarmTaken?.Invoke(target, PlayerHarmNote.Level(KillCause.Melee));
         bool alive = !target.Health.IsDead;
         if (alive)
         {
@@ -247,7 +268,7 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         double throwY = feet.Y - from.Y;
         double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
         float throwFacing = throwLength > 1e-6
-            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
+            ? (float)SimMath.Atan2(throwX / throwLength, -(throwY / throwLength))
             : rig.Body.Yaw;
         target.Senses.Died(new PlayerFall(
             fall,
@@ -298,6 +319,7 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
         }
 
         // PlayerBody has already added the direct, difficulty-independent dose to the player's health.
+        HarmTaken?.Invoke(target, PlayerHarmNote.Level(KillCause.Fall));
         target.Senses.FlashCentre();
         _surroundings.Logger.Information(
             "Player",
@@ -340,6 +362,8 @@ public sealed class Igi1PlayerRules(IIgi1PlayerSurroundings surroundings)
                     + $"health={target.Health.RemainingFraction:P0} hits={target.Health.Hits}.");
             return;
         }
+
+        HarmTaken?.Invoke(target, PlayerHarmNote.Level(KillCause.World));
 
         // 0x412F80: the full shake for forty-five ticks, and four separate corner draws.
         target.Senses.Shake(HumanViewShake.HitPositionUnits, HumanViewShake.HitAngleRadians, HumanViewShake.FenceTicks);

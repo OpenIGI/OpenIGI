@@ -35,6 +35,18 @@ internal static class Igi2ScriptSystems
             Dictionary<int, object> placed = b.PlacedById;
             levelNatives.Bind(b.Player.Human, id => placed.GetValueOrDefault(id), b.Root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault());
 
+            levelNatives.StandIn = b.Player.StandIn as OpenIGI.Game.Player.IScriptedHuman;
+
+            // The players the scripts weigh (HumanPlayer_isDead: none left alive), which a server's other players join.
+            b.Player.ScriptPlayers = levelNatives.Players;
+
+            // And the player task's isDead with them (HumanPlayer_0.isDead), which most missions fail on: a level with players
+            // reads them; one without keeps the task's own latch.
+            if (OpenIGI.Game.Player.PlayerSpawn.FindGameplayTask(b.Root) is Igi2HumanPlayerTask playerTask)
+            {
+                playerTask.Fallen = () => levelNatives.Players.Count > 0 && levelNatives.NoneLeftAlive;
+            }
+
             // The player's designator marks its target where the level's scripts read it (LaserDesignator_GetTicksHeldOnTask).
             b.Player.Weapons?.Firing.LaserDesignator = levelNatives.LaserDesignator;
         }
@@ -95,6 +107,10 @@ internal static class Igi2ScriptSystems
         });
 
         Igi2Gameplay.HearAiEvents(everyone, () => player.Ai);
+
+        // The soldiers another game's stand for act the level's cutscenes through their doubles, and ride its movers on them.
+        Ai.Runtime.Igi2AiWorld ai = player.Ai;
+        Soldiers.Igi2SoldierDoubles.Attach(level, b.Root, task => task.Ai is { } mind && ai.Graphs?.Graph(mind.GraphId)?.Parent is not null);
 
         // Another game's humans joined to the level hear its AI events after its own, and are struck by its blasts.
         player.Ai.OtherHumans = level.Joined.Humans;
