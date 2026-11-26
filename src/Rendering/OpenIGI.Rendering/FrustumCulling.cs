@@ -45,7 +45,7 @@ public static class FrustumCulling
         private readonly float _ex, _ey, _ez, _ew;
         private readonly float _fx, _fy, _fz, _fw;
 
-        private Frustum(Span<float> planes)
+        private Frustum(ReadOnlySpan<float> planes)
         {
             _ax = planes[0]; _ay = planes[1]; _az = planes[2]; _aw = planes[3];
             _bx = planes[4]; _by = planes[5]; _bz = planes[6]; _bw = planes[7];

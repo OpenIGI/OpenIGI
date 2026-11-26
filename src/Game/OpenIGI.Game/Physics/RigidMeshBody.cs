@@ -353,7 +353,7 @@ public sealed class RigidMeshBody
     }
 
     // A hull vertex at, below or about to reach a triangle's surface this substep.
-    private void VertexContacts(in CollisionTriangle triangle, Vector3d normal, Span<Vector3d> world, Vector3d omega, double dt)
+    private void VertexContacts(in CollisionTriangle triangle, Vector3d normal, ReadOnlySpan<Vector3d> world, Vector3d omega, double dt)
     {
         for (int i = 0; i < world.Length; i++)
         {
