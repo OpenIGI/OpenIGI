@@ -64,7 +64,7 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
             return;
         }
 
-        Build(title, _model);
+        Build(title, _model, _inventoryStrip);
 
         // The lines of the other game's mission the player stands in, after its own, told apart from them by their keys.
         _model.AddMissionMessages(_missionMessages, firstKey: MissionMessageKeys);
@@ -86,7 +86,8 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
     /// <summary>Reads I.G.I. 2's player into the shared model.</summary>
     /// <param name="title">The player.</param>
     /// <param name="model">The model, refilled.</param>
-    internal static void Build(Igi2TitlePlayer title, HudModel model)
+    /// <param name="strip">The weapons the inventory shows, kept from frame to frame.</param>
+    private static void Build(Igi2TitlePlayer title, HudModel model, InventoryStrip strip)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(model);
@@ -151,7 +152,7 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
             if (playing && InventoryShown(title))
             {
                 model.Show |= HudParts.Inventory;
-                BuildSlots(title, inventory, model);
+                BuildSlots(title, inventory, model, strip);
             }
 
             BuildWheel(title, inventory, model);
@@ -197,12 +198,13 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
         }
     }
 
-    // The weapons carried, column by column as the original's inventory shows them (CarriedSlots), the grenades sharing theirs;
-    // hidden with it by the profile's option, which the inventory key flips.
-    private static void BuildSlots(Igi2TitlePlayer title, Igi2Inventory inventory, HudModel model)
+    // The weapons carried, column by column as the original's inventory shows them (InventoryStrip), the grenades sharing theirs
+    // and the rest of a slot's weapons past its columns counted on a mark; hidden with it by the profile's option, which the
+    // inventory key flips.
+    private static void BuildSlots(Igi2TitlePlayer title, Igi2Inventory inventory, HudModel model, InventoryStrip strip)
     {
         int column = -1;
-        foreach (CarriedSlot carried in new CarriedSlots(inventory))
+        foreach (CarriedSlot carried in strip.Collect(inventory))
         {
             if (carried.Head)
             {
@@ -216,7 +218,8 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource, IKillFeedArt
                 carried.Head ? new HudIcon(carried.Item.WeaponType.WeaponSprite) : HudIcon.None,
                 RoundsCarried(inventory, carried) ?? string.Empty,
                 carried.Selected,
-                carried.Head));
+                carried.Head,
+                carried.More));
         }
     }
 

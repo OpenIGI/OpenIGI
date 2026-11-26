@@ -140,7 +140,11 @@ public readonly record struct HudWeaponView(
 /// <param name="Count">The rounds carried for it as the title counts them, or empty for none.</param>
 /// <param name="Selected">Whether it is the one in hand.</param>
 /// <param name="Head">Whether it heads its column; the others below show their names only.</param>
-public readonly record struct HudSlotView(int Column, string KeyLabel, string Name, HudIcon Icon, string Count, bool Selected, bool Head);
+/// <param name="More">
+/// How many more of its kind are carried than the strip has columns for, marked after its column; nought for none. Set on the
+/// last column of its kind shown.
+/// </param>
+public readonly record struct HudSlotView(int Column, string KeyLabel, string Name, HudIcon Icon, string Count, bool Selected, bool Head, int More = 0);
 
 /// <summary>One thing that may be done, on the action row.</summary>
 /// <param name="Icon">Its badge.</param>

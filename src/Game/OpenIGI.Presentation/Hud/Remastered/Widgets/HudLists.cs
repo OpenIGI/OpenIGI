@@ -13,7 +13,9 @@ namespace OpenIGI.Presentation.Hud.Remastered.Widgets;
 /// Each column heads with the weapon's picture, the key that selects it on a small chip at its corner and the rounds carried
 /// for it under the picture; a rule runs under the head, and under the rule go the names of every weapon in the column. The
 /// weapon in hand is lit: its column's head bracketed and a shade brighter, its rule and name in the highlight colour, a bar
-/// beside the name. A weapon with no rounds left shows its count quiet.
+/// beside the name. A weapon with no rounds left shows its count quiet. Where more of a kind are carried than the strip has
+/// columns for, a narrow mark after its last column counts the rest (<see cref="HudSlotView.More"/>); a name too long for its
+/// column is drawn smaller.
 /// </remarks>
 public static class HudInventory
 {
@@ -32,14 +34,16 @@ public static class HudInventory
         HudPalette palette = context.Palette;
         float pad = context.Px(10f);
         float columnWidth = context.Px(92f);
+        float moreWidth = context.Px(34f);
         float gap = context.Px(8f);
         float headHeight = context.Px(58f);
         float ruleGap = context.Px(6f);
         float nameHeight = context.Px(19f);
         float opacity = context.Reactive.Appear;
 
-        // How many columns, and how deep the deepest.
+        // How many columns and marks, and how deep the deepest column.
         int columns = 0;
+        int marks = 0;
         int lastColumn = int.MinValue;
         int deepest = 0;
         int depth = 0;
@@ -52,16 +56,22 @@ public static class HudInventory
                 depth = 0;
             }
 
+            if (slot.More > 0)
+            {
+                marks++;
+            }
+
             deepest = Math.Max(deepest, ++depth);
         }
 
-        float width = pad + (columns * columnWidth) + ((columns - 1) * gap) + pad;
+        float width = pad + (columns * columnWidth) + (marks * moreWidth) + ((columns + marks - 1) * gap) + pad;
         float height = pad + headHeight + ruleGap + (deepest * nameHeight) + pad - context.Px(4f);
         UiRect panel = new(anchor.X, anchor.Y, width, height);
         HudPanel.Draw(context, panel, opacity);
         context.Report(HudElement.Inventory, panel);
 
-        float x = panel.X + pad - columnWidth - gap;
+        float x = panel.X + pad;
+        float next = x;
         float y = 0f;
         lastColumn = int.MinValue;
         foreach (HudSlotView slot in model.Slots)
@@ -69,7 +79,8 @@ public static class HudInventory
             if (slot.Column != lastColumn)
             {
                 lastColumn = slot.Column;
-                x += columnWidth + gap;
+                x = next;
+                next = x + columnWidth + gap;
                 y = panel.Y + pad;
             }
 
@@ -90,9 +101,47 @@ public static class HudInventory
                 context.Painter.FillRect(new UiRect(x, y + context.Px(3f), MathF.Max(1f, context.Px(2f)), nameHeight - context.Px(6f)), HudDrawContext.Fade(palette.Highlight, opacity));
             }
 
-            context.Painter.DrawLabel(context.Fonts.Name, slot.Name.ToUpperInvariant(), new UiVec2(x + context.Px(7f), y + context.Px(1f)), context.Px(15f), HudDrawContext.Fade(colour, (slot.Selected ? 1f : 0.75f) * opacity), 0.04f);
+            // The name, made smaller where it would run past its column into the next.
+            string name = slot.Name.ToUpperInvariant();
+            float nameSize = context.Px(15f);
+            float room = columnWidth - context.Px(9f);
+            float measured = UiPainter.MeasureLabel(context.Fonts.Name, name, nameSize, 0.04f);
+            if (measured > room && measured > 0f)
+            {
+                nameSize *= MathF.Max(0.6f, room / measured);
+            }
+
+            context.Painter.DrawLabel(context.Fonts.Name, name, new UiVec2(x + context.Px(7f), y + context.Px(1f) + ((context.Px(15f) - nameSize) * 0.5f)), nameSize, HudDrawContext.Fade(colour, (slot.Selected ? 1f : 0.75f) * opacity), 0.04f);
             y += nameHeight;
+
+            if (slot.More > 0)
+            {
+                DrawMore(context, slot.More, new UiRect(next, panel.Y + pad, moreWidth, headHeight), opacity);
+                next += moreWidth + gap;
+            }
         }
+    }
+
+    // The mark after a kind's last column: how many more of it are carried than the strip shows, under three dots that say a list
+    // runs on.
+    private static void DrawMore(HudDrawContext context, int more, UiRect rect, float opacity)
+    {
+        HudPalette palette = context.Palette;
+        context.Painter.FillRect(rect, HudDrawContext.Fade(palette.Primary, 0.06f * opacity));
+        float dot = MathF.Max(1f, context.Px(3f));
+        float dotGap = context.Px(4f);
+        float dotsWidth = (dot * 3f) + (dotGap * 2f);
+        float dotX = rect.X + ((rect.Width - dotsWidth) * 0.5f);
+        float dotY = rect.Y + (rect.Height * 0.5f) - context.Px(8f);
+        for (int i = 0; i < 3; i++)
+        {
+            context.Painter.FillRect(new UiRect(dotX + (i * (dot + dotGap)), dotY, dot, dot), HudDrawContext.Fade(palette.Dim, opacity));
+        }
+
+        string label = string.Create(CultureInfo.InvariantCulture, $"+{more}");
+        float size = context.Px(15f);
+        float labelWidth = UiPainter.MeasureLabel(context.Fonts.Value, label, size, 0.02f);
+        context.Painter.DrawLabel(context.Fonts.Value, label, new UiVec2(rect.X + ((rect.Width - labelWidth) * 0.5f), dotY + context.Px(6f)), size, HudDrawContext.Fade(palette.Primary, 0.85f * opacity), 0.02f);
     }
 
     // A column's head: its weapon's picture, its key on a chip at the corner, and its count under the picture at the right.
