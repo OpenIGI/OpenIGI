@@ -60,6 +60,23 @@ public sealed class ConfigTests
         Assert.Equal(0, reloaded.Active.MissionOf("igi3"));
     }
 
+    /// <summary>A finished campaign is kept in OpenIGI's file by game, beside the original's mission reached, and a new player made from the profile keeps it with that progress.</summary>
+    [Fact]
+    public void A_finished_campaign_round_trips()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        profile.ActiveMission = 14;
+        Assert.True(profile.SetFinale(PlayerProfile.RetailTitle, 14));
+        Assert.False(profile.SetFinale(PlayerProfile.RetailTitle, 14));
+
+        PlayerProfile reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config)).Active!;
+        Assert.Equal(14, reloaded.ActiveMission);
+        Assert.Equal(14, reloaded.FinaleOf(PlayerProfile.RetailTitle));
+        Assert.Equal(0, reloaded.FinaleOf("igi2"));
+        Assert.Equal(14, reloaded.Clone().FinaleOf(PlayerProfile.RetailTitle));
+    }
+
     /// <summary>A mission's best is kept in OpenIGI's file by game and mission, every figure exactly, and a new player starts with none.</summary>
     [Fact]
     public void Mission_records_round_trip_and_stay_with_their_player()

@@ -126,6 +126,67 @@ public sealed class CampaignShellTests : ShellTestHarness
         }
     }
 
+    /// <summary>
+    /// The last mission completed finishes the campaign: every row reads completed and the count is whole, though the mission
+    /// reached stays the last, as retail keeps it. Before, it went on reading as still to do, one short of complete.
+    /// </summary>
+    [Fact]
+    public void A_finished_campaign_reads_every_mission_completed()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir, activeMission: 2);
+            shell.Context.Config.Active!.SetFinale(OpenIGI.Core.Titles.GameTitle.Igi1.Id, 2);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            List<ListCard> rows = [.. shell.Stack.Top!.Root!.Descendants().OfType<ListCard>()];
+            Assert.All(rows, static row => Assert.Equal(ListCardMark.Done, row.Mark));
+            Assert.All(rows, static row => Assert.True(row.IsEnabled));
+            Assert.True(rows[^1].Selected);
+
+            // The landing page offers the last mission again rather than nothing.
+            shell.Stack.Reset(new MainMenuScreen(shell.Context), animate: false);
+            Pump(shell, 0.1f);
+            Assert.NotNull(Find<PrimaryAction>(shell.Stack.Top!, static a => a.Title == "PLAY AGAIN"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>The campaign's end lands on the credits under word that the campaign is complete; Extras opened otherwise says nothing of it.</summary>
+    [Fact]
+    public void The_campaigns_end_says_it_is_complete()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            shell.OpenCampaignComplete();
+            Pump(shell, 0.1f);
+            Assert.True(Assert.IsType<ExtrasScreen>(shell.Stack.Top).CampaignComplete);
+            Assert.NotNull(Find<Label>(shell.Stack.Top!, static l => l.Text == "Campaign complete"));
+
+            shell.OpenOn("extras");
+            Pump(shell, 0.1f);
+            Assert.Null(Find<Label>(shell.Stack.Top!, static l => l.Text == "Campaign complete"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public void Clicking_a_mission_row_selects_it_and_previews_that_mission()
     {

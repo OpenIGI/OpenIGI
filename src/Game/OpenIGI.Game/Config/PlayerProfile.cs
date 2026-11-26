@@ -576,6 +576,12 @@ public sealed partial class PlayerProfile
             copy._titleMissions[title] = mission;
         }
 
+        // The finales with the progress they finish: a copy standing at the last mission would read it as still to do.
+        foreach ((string title, int mission) in _finales)
+        {
+            copy._finales[title] = mission;
+        }
+
         // Not the mission records: they are the player's own, and a clone is a new player's start.
         return copy;
     }

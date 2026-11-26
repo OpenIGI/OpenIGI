@@ -55,6 +55,12 @@ public static class ConfigScriptWriter
                 Call("GOTitleMission", Text(title), Number(mission));
             }
 
+            // OpenIGI's own: each game whose campaign is finished, by the last mission completed -- which retail never records.
+            foreach ((string title, int mission) in profile.Finales)
+            {
+                Call("GOTitleFinale", Text(title), Number(mission));
+            }
+
             // OpenIGI's own: the best done in each mission, a title's own figures as two lists of words.
             foreach ((string title, int mission, Scoring.TitleMissionRecord record) in profile.MissionRecords)
             {

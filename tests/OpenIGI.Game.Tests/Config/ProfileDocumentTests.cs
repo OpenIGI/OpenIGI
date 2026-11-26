@@ -66,6 +66,42 @@ public sealed class ProfileDocumentTests
         Assert.Equal(mine.Missions, theirs.Missions);
     }
 
+    /// <summary>
+    /// A finished campaign follows the player through their account: through the document and back, merged to the furthest
+    /// either side finished on, and left out -- so the fingerprint is as before -- by a profile that has finished none.
+    /// </summary>
+    [Fact]
+    public void A_finished_campaign_follows_the_player()
+    {
+        PlayerProfile desk = PlayerProfile.CreateDefault();
+        desk.ActiveMission = 14;
+        desk.SetFinale(PlayerProfile.RetailTitle, 14);
+        PlayerProfile browser = PlayerProfile.CreateDefault();
+        browser.ActiveMission = 6;
+        browser.SetFinale(PlayerProfile.RetailTitle, 6);
+        browser.SetFinale("igi2", 36);
+
+        ProfileDocument? read = ProfileDocument.FromJson(ProfileDocument.From(desk).ToJson());
+        Assert.NotNull(read);
+        PlayerProfile other = PlayerProfile.CreateDefault();
+        read.ApplyTo(other);
+        Assert.Equal(14, other.FinaleOf(PlayerProfile.RetailTitle));
+
+        ProfileDocument merged = ProfileDocument.Merge(ProfileDocument.From(desk), ProfileDocument.From(browser), localIsNewer: false);
+        Assert.Equal(14, merged.Finales![PlayerProfile.RetailTitle]);
+        Assert.Equal(36, merged.Finales["igi2"]);
+
+        PlayerProfile fresh = PlayerProfile.CreateDefault();
+        Assert.Null(ProfileDocument.From(fresh).Finales);
+        Assert.DoesNotContain("finales", ProfileDocument.From(fresh).ToJson().GetRawText(), StringComparison.Ordinal);
+
+        // An older build's document knows none, and takes nothing away.
+        ProfileDocument? old = ProfileDocument.FromJson(System.Text.Json.JsonDocument.Parse(
+            """{"schema":1,"missions":{"igi1":14},"difficulty":1,"invertMouse":false,"mouseSensitivity":0.4,"bindings":[]}""").RootElement);
+        Assert.NotNull(old);
+        Assert.Equal(14, ProfileDocument.Merge(ProfileDocument.From(desk), old, localIsNewer: false).Finales![PlayerProfile.RetailTitle]);
+    }
+
     /// <summary>A document from a newer build, or not one at all, is not read.</summary>
     [Fact]
     public void A_document_this_build_cannot_read_is_refused()

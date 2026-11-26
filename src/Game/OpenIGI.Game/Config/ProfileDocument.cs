@@ -34,6 +34,10 @@ public sealed record ProfileMissionRecord(string Title, int Mission, IReadOnlyLi
 /// The best done in each mission, by game; <see langword="null"/> in a document an older build wrote, which knew none -- and which
 /// passes over the list when it reads a newer one.
 /// </param>
+/// <param name="Finales">
+/// The last mission completed in each game whose campaign is finished, by title id; <see langword="null"/> in a document an older
+/// build wrote.
+/// </param>
 public sealed record ProfileDocument(
     int Schema,
     IReadOnlyDictionary<string, int> Missions,
@@ -41,7 +45,8 @@ public sealed record ProfileDocument(
     bool InvertMouse,
     float MouseSensitivity,
     IReadOnlyList<ProfileBinding> Bindings,
-    IReadOnlyList<ProfileMissionRecord>? MissionRecords = null)
+    IReadOnlyList<ProfileMissionRecord>? MissionRecords = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, int>? Finales = null)
 {
     /// <summary>The version this build writes.</summary>
     public const int CurrentSchema = 1;
@@ -65,12 +70,14 @@ public sealed record ProfileDocument(
             profile.InvertMouse,
             profile.MouseSensitivity,
             [.. profile.Bindings.Select(static b => new ProfileBinding(b.Action, b.Device, b.Key))],
-            [.. profile.MissionRecords.Select(static r => new ProfileMissionRecord(r.TitleId, r.MissionId, r.Record.Counts, r.Record.Figures))]);
+            [.. profile.MissionRecords.Select(static r => new ProfileMissionRecord(r.TitleId, r.MissionId, r.Record.Counts, r.Record.Figures))],
+            // None kept is left out, so a profile that has finished nothing reads as it did before finales were kept.
+            profile.Finales.Count == 0 ? null : new SortedDictionary<string, int>(profile.Finales.ToDictionary(), StringComparer.Ordinal));
     }
 
     /// <summary>
     /// Merges what this computer has with what the account has: in each game the furthest mission either reached (missions
-    /// are numbered in campaign order), in each mission the better best (<see cref="MissionScoring.Prefer"/>), and everything
+    /// are numbered in campaign order) and the furthest finale either finished, in each mission the better best (<see cref="MissionScoring.Prefer"/>), and everything
     /// else from the side that changed last.
     /// </summary>
     /// <param name="local">This computer's.</param>
@@ -88,7 +95,19 @@ public sealed record ProfileDocument(
         }
 
         ProfileDocument settings = localIsNewer ? local : remote;
-        return settings with { Schema = CurrentSchema, Missions = missions, MissionRecords = MergeRecords(local, remote) };
+        return settings with { Schema = CurrentSchema, Missions = missions, MissionRecords = MergeRecords(local, remote), Finales = Furthest(local.Finales, remote.Finales) is { Count: > 0 } finales ? finales : null };
+    }
+
+    // In each game, the furthest mission either side finished the campaign on.
+    private static SortedDictionary<string, int> Furthest(IReadOnlyDictionary<string, int>? local, IReadOnlyDictionary<string, int>? remote)
+    {
+        var furthest = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach ((string title, int mission) in (local ?? new Dictionary<string, int>()).Concat(remote ?? new Dictionary<string, int>()))
+        {
+            furthest[title] = Math.Max(furthest.GetValueOrDefault(title), mission);
+        }
+
+        return furthest;
     }
 
     // Every mission either side keeps a record of; where both do, the better.
@@ -127,6 +146,14 @@ public sealed record ProfileDocument(
             if (mission > 0)
             {
                 profile.SetMission(title, mission);
+            }
+        }
+
+        foreach ((string title, int mission) in Finales ?? new Dictionary<string, int>())
+        {
+            if (title.Length > 0)
+            {
+                profile.SetFinale(title, mission);
             }
         }
 

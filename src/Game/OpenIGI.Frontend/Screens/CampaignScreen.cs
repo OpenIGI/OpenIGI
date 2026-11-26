@@ -390,21 +390,7 @@ public sealed class CampaignScreen : ShellScreen
     // How far the profile is along the game's campaign; a mod's campaign keeps no progress, and starts at its first.
     private int Frontier()
     {
-        if (!IsGameCampaign)
-        {
-            return 0;
-        }
-
-        int activeMission = Context.Config.Active is { } profile ? MissionReached(profile) : MissionRegistry.FirstMissionId;
-        for (int i = 0; i < _missions.Count; i++)
-        {
-            if (_missions[i].Id == activeMission)
-            {
-                return i;
-            }
-        }
-
-        return 0;
+        return IsGameCampaign ? MissionsDone(_missions) : 0;
     }
 
     // The record of the mission shown at the difficulty chosen, once the boards have answered; the row hidden while there is none.

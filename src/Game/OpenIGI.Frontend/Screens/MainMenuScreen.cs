@@ -69,14 +69,17 @@ public sealed class MainMenuScreen : ShellScreen
 
         // The mission the profile is up to in the game's own campaign; with no missions found, the ways in alone.
         (int done, int total) = CampaignProgress();
-        MissionInfo? mission = Context.Missions.Where(static m => m.Campaign is null).Skip(done).FirstOrDefault();
+        MissionInfo? mission = CampaignMission(done);
+        bool finished = total > 0 && done >= total;
         _continue = null;
         if (mission is not null)
         {
             bool fresh = done == 0;
             column.AddChild(new Hero(theme, Size)
             {
-                Eyebrow = string.Create(CultureInfo.InvariantCulture, $"{(fresh ? "START" : "CONTINUE")} CAMPAIGN · MISSION {done + 1} OF {total}"),
+                Eyebrow = finished
+                    ? string.Create(CultureInfo.InvariantCulture, $"CAMPAIGN COMPLETE · ALL {total} MISSIONS")
+                    : string.Create(CultureInfo.InvariantCulture, $"{(fresh ? "START" : "CONTINUE")} CAMPAIGN · MISSION {done + 1} OF {total}"),
                 Title = mission.Name,
                 Briefing = mission.Description,
                 Difficulty = DifficultyName(),
@@ -84,7 +87,7 @@ public sealed class MainMenuScreen : ShellScreen
                 Total = total,
             });
 
-            _continue = new PrimaryAction(theme, fresh ? "Start" : "Continue")
+            _continue = new PrimaryAction(theme, fresh ? "Start" : finished ? "Play again" : "Continue")
             {
                 Key = keys && !compact ? "Enter" : string.Empty,
                 Width = Size switch { ShellSize.Wide => 460f, ShellSize.Medium => 420f, _ => 300f },
@@ -174,7 +177,7 @@ public sealed class MainMenuScreen : ShellScreen
         boards.Feed.ShowTitle(Context.ActiveTitleId);
         boards.Feed.Update(watching: true);
         int difficulty = Context.Config.Active?.Difficulty ?? 1;
-        MissionInfo? mission = Context.Missions.Where(static m => m.Campaign is null).Skip(CampaignProgress().Done).FirstOrDefault();
+        MissionInfo? mission = CampaignMission(CampaignProgress().Done);
         ShellRecord? record = mission is null ? null : Context.Host.Replays?.RecordOf(mission.Id, difficulty);
         Leaderboard? board = boards.Feed.Period == LeaderboardSeasons.Current ? boards.Feed.Board : null;
         if (TeaserMakeup(board, record) != _teaserMade)
@@ -182,6 +185,11 @@ public sealed class MainMenuScreen : ShellScreen
             Invalidate();
         }
     }
+
+    // The mission the landing page offers: the one the profile is up to, or the last once the campaign is finished.
+    private MissionInfo? CampaignMission(int done) =>
+        Context.Missions.Where(static m => m.Campaign is null).Skip(done).FirstOrDefault()
+        ?? (done > 0 ? Context.Missions.LastOrDefault(static m => m.Campaign is null) : null);
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)

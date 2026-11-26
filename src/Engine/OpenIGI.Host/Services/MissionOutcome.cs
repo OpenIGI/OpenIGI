@@ -223,9 +223,13 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
 
                 host.TitlePlayer?.MissionCompleted(nextMissionId);
             }
-            else if (recorded)
+            else
             {
-                host.SaveConfiguration();
+                bool finished = FinishCampaign(completedMission);
+                if (finished || recorded)
+                {
+                    host.SaveConfiguration();
+                }
             }
 
             // The rank screen holds the level until the player goes on (MissionScoreScreen_RunHandler: Space), or a co-op squad's
@@ -301,6 +305,25 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
 
     // The mission completed last, which the rank screen holds the way on from.
     private MissionDescriptor? _completed;
+
+    /// <summary>
+    /// Keeps the campaign as finished in the profile once the mission it has reached, its last, is completed. Retail records
+    /// nothing here (<c>Game_RunHandler</c>, 0x416260, goes to the outro with no successor to unlock), so the menu went on
+    /// showing the last mission as still to do and the campaign one short of complete.
+    /// </summary>
+    /// <param name="mission">The mission completed, which has no successor.</param>
+    /// <returns>Whether the profile changed.</returns>
+    private bool FinishCampaign(MissionDescriptor mission)
+    {
+        // A mission reached by the unlock-all cheat, past the profile's own progress, finishes nothing.
+        if (host.ActiveProfile is not { } profile || profile.MissionOf(host.TitleId) != mission.Id || !profile.SetFinale(host.TitleId, mission.Id))
+        {
+            return false;
+        }
+
+        logger.Information("Mission", $"The profile '{profile.Name}' has finished the campaign of {host.TitleId} with mission {mission.Id}.");
+        return true;
+    }
 
     private bool HasNext(MissionDescriptor mission) =>
         mission.NextMissionId != MissionDescriptor.NextMissionUndefined && host.Missions.TryGet(mission.NextMissionId, out _);
@@ -426,8 +449,8 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             {
                 // Event 7 is the retail outro-screen path. The authored final cutscene has
                 // completed before LevelFlow reaches here, so the shell now continues to its
-                // campaign-complete destination.
-                state.Shell.OpenOn("extras");
+                // campaign-complete destination: the credits, saying the campaign is done.
+                state.Shell.OpenCampaignComplete();
                 host.Menu.MenuMode = true;
                 host.Menu.ShowcasePending = true;
             }

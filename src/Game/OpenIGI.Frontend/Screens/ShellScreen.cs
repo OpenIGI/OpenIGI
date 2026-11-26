@@ -177,9 +177,33 @@ public abstract class ShellScreen : Screen
     protected (int Done, int Total) CampaignProgress()
     {
         List<MissionInfo> missions = [.. Context.Missions.Where(static mission => mission.Campaign is null)];
-        int active = Context.Config.Active is { } profile ? MissionReached(profile) : 0;
-        int done = Math.Max(0, missions.FindIndex(mission => mission.Id == active));
-        return (done, missions.Count);
+        return (MissionsDone(missions), missions.Count);
+    }
+
+    /// <summary>Gets how many of the game's own campaign the active profile has completed.</summary>
+    /// <param name="missions">The game's own campaign, in the order it is played.</param>
+    /// <returns>
+    /// Those before the mission reached; all of them up to and including it once its completion finished the campaign, which
+    /// retail never records by moving the mission reached on (see <see cref="OpenIGI.Game.Config.PlayerProfile.FinaleOf"/>).
+    /// </returns>
+    protected int MissionsDone(IReadOnlyList<MissionInfo> missions)
+    {
+        ArgumentNullException.ThrowIfNull(missions);
+        if (Context.Config.Active is not { } profile)
+        {
+            return 0;
+        }
+
+        int reached = MissionReached(profile);
+        for (int i = 0; i < missions.Count; i++)
+        {
+            if (missions[i].Id == reached)
+            {
+                return profile.FinaleOf(Context.ActiveTitleId) == reached ? i + 1 : i;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>Gets the name the player is shown by: their Discord name once signed in, the profile's own until then.</summary>
