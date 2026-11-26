@@ -60,8 +60,11 @@ public sealed partial class Igi2TitlePlayer : ITitleOrbitView
         if (mode != _orbitMode)
         {
             _orbitMode = mode;
+            // Started straight behind the body, as the original's search for room tries first (igi2 0x4DE380: heading -90° in
+            // the body's frame, whose Y is ahead). The heading reads the frame as the first game's does: Y ahead is
+            // (-M12, M22), so a timed action at a door is watched from this side of it, not through it.
             Matrix3f facing = Human.Orientation;
-            _orbit.Begin(look, middle, (float)SimMath.Atan2(facing.M12, facing.M22), OrbitWalls, death: mode == 5);
+            _orbit.Begin(look, middle, (float)SimMath.Atan2(-facing.M12, facing.M22), OrbitWalls, death: mode == 5);
         }
 
         _orbit.LookSettings = MouseLookSettings.FromSensitivity(input.MouseSensitivity, input.InvertMouse);
