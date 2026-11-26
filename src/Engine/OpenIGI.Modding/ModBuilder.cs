@@ -56,7 +56,7 @@ internal sealed class ModBuilder : IModBuilder
     public IDictionary<string, object?> Properties { get; } = new Dictionary<string, object?>(StringComparer.Ordinal);
 
     public ModLevelSystems<TBuild> LevelSystems<TBuild>()
-        where TBuild : LevelBuild => new(_edits);
+        where TBuild : LevelBuild => new(_edits, _mod.Manifest.Id);
 
     public T ReadConfig<T>(string fileName, JsonTypeInfo<T> typeInfo)
     {

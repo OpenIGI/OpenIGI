@@ -226,7 +226,7 @@ public sealed partial class GameHost
 
         // The walk the mission ticks its level with; a game whose level runs itself behind its player leaves it unused.
         LevelUpdateWalker walker = new(levelRoot);
-        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
+        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission) { Logger = _logger };
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
         if (_title.Services.TryGet(out LevelSystemEdits? edits))
         {
